@@ -1,0 +1,45 @@
+// FlatBuffers schema for Material Asset
+// include must come before ALL other declarations
+include "common_types.fbs";
+
+namespace SomeEngine.Assets.Schema;
+
+attribute "fs_serializer";
+attribute "fs_vector";
+
+table TagEntry {
+    name: string;
+    value: int = 0;
+}
+
+table ComponentEntry {
+    type_name: string;
+    json: string;
+}
+
+table PassEntry {
+    shader_guid: string;
+    entry_point: string;                  // specific entry point name (e.g. "CSDeformStatic")
+    tags: [TagEntry] (fs_vector:"IList");
+    components: [ComponentEntry] (fs_vector:"IList");
+}
+
+table TextureBinding {
+    name: string;                         // param name (e.g. "AlbedoMap")
+    texture_guid: string;
+}
+
+table ScalarParam {
+    name: string;                         // param name (e.g. "Roughness")
+    value: ParamValue;                    // typed value (FloatVal, IntVal, etc.)
+}
+
+table MaterialAsset (fs_serializer) {
+    asset_guid: string;
+    name: string;
+    passes: [PassEntry] (fs_vector:"IList");
+    textures: [TextureBinding] (fs_vector:"IList");
+    scalars: [ScalarParam] (fs_vector:"IList");
+}
+
+root_type MaterialAsset;

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.ECS.Tests" />
+    <InternalsVisibleTo Include="SomeEngine.ECS.Serialization" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>
+

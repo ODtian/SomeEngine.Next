@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <SomeEngineQualityAnalyzerProject>$(SomeEngineRepositoryRoot)harness\quality\SomeEngine.Harness.QualityAnalyzer\SomeEngine.Harness.QualityAnalyzer.csproj</SomeEngineQualityAnalyzerProject>
+    <SomeEngineQualityAnalyzerEnabled Condition="'$(SomeEngineQualityAnalyzerEnabled)' == ''">false</SomeEngineQualityAnalyzerEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SomeEngineQualityAnalyzerEnabled)' == 'true' and '$(SomeEngineQualityAnalyzerOptOut)' != 'true' and $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$([System.IO.Path]::Combine($(SomeEngineRepositoryRoot), `src`))')) == 'true'">
+    <ProjectReference Include="$(SomeEngineQualityAnalyzerProject)" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <AdditionalFiles Include="$(SomeEngineRepositoryRoot)harness\config.json" />
+  </ItemGroup>
+</Project>

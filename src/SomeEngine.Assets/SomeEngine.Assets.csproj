@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Alimer.Bindings.MeshOptimizer" Version="1.2.0" />
+    <PackageReference Include="FlatSharp.Compiler" Version="7.9.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FlatSharp.Runtime" Version="7.9.0" />
+    <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+    <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
+    <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <FlatSharpSchema Include="..\..\assets\Schema\texture_asset.fbs" />
+    <FlatSharpSchema Include="..\..\assets\Schema\mesh_asset.fbs" />
+    <FlatSharpSchema Include="..\..\assets\Schema\shader_asset.fbs" />
+    <FlatSharpSchema Include="..\..\assets\Schema\cluster_render_asset.fbs">
+      <IncludePath>..\..\assets\Schema</IncludePath>
+    </FlatSharpSchema>
+    <FlatSharpSchema Include="..\..\assets\Schema\material_asset.fbs">
+      <IncludePath>..\..\assets\Schema</IncludePath>
+    </FlatSharpSchema>
+    <FlatSharpSchema Include="..\..\assets\Schema\material_instance_asset.fbs">
+      <IncludePath>..\..\assets\Schema</IncludePath>
+    </FlatSharpSchema>
+  </ItemGroup>
+</Project>

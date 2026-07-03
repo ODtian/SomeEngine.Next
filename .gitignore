@@ -1,0 +1,69 @@
+# IDE / local workspace
+.vs/
+.vscode/
+.idea/
+.codex-docs-cache/
+.tmp-real-prompt-eval/
+
+# Build outputs
+bin/
+obj/
+artifacts/
+TestResults/
+BenchmarkDotNet.Artifacts/
+
+# Test / harness generated artifacts
+*.log
+*.trx
+*.coveragexml
+*.nettrace
+*.etl
+*.speedscope.json
+harness/artifacts/*
+!harness/artifacts/.gitkeep
+harness/coverage/coverage.cobertura.xml
+harness/coverage/results/
+
+# User / OS state
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+imgui.ini
+.dotnet_home/
+worktrees/
+
+# Excluded local workspaces/reference trees: not part of accepted product boundary.
+benchmarks/
+samples/
+external/DiligentCore/
+external/Diligent-SharpGenTools/
+external/UnrealEnigne/
+src/SomeEngine.Animation/
+src/SomeEngine.Editor/
+src/SomeEngine.Physics/
+src/SomeEngine.Rhi/
+src/SomeEngine.Rhi.D3D12/
+src/SomeEngine.Runtime/
+src/SomeEngine.UI/
+tests/SomeEngine.Runtime.Tests/
+tests/SomeEngine.Rhi.Tests/
+tools/SomeEngine.Rhi.WindowTests/
+tools/DagVisualizer/
+tools/Inspector/
+tools/eos/
+
+# Declared repo-owned binary dependencies that must remain committable.
+external/dxc/**
+!external/dxc/
+!external/dxc/bin/
+!external/dxc/bin/x64/
+!external/dxc/bin/x64/dxcompiler.dll
+!external/dxc/bin/x64/dxil.dll
+!external/Alimer.Bindings/
+!external/SlangShaderSharp/
+!external/tracy/
+
+# Local agent run artifacts
+.agent-runs/
+harness/grill/sessions/

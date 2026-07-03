@@ -1,0 +1,132 @@
+// FlatBuffers schema for ShaderAsset
+namespace SomeEngine.Assets.Schema;
+
+attribute "fs_serializer";
+
+enum ShaderStage : ubyte {
+    Vertex,
+    Hull,
+    Domain,
+    Geometry,
+    Pixel,
+    Compute,
+    Amplification,
+    Mesh,
+    RayGen,
+    RayMiss,
+    RayClosestHit,
+    RayAnyHit,
+    RayIntersection,
+    Callable
+}
+
+enum ShaderBindingType : ubyte {
+    None,
+    ConstantBuffer,
+    StorageBufferRead,
+    StorageBufferReadWrite,
+    RawBufferRead,
+    RawBufferReadWrite,
+    TextureRead,
+    TextureReadWrite,
+    Sampler,
+    AccelerationStructure
+}
+
+table ShaderResourceReflection {
+    name: string;
+    stages: uint; // shader-stage bitmask
+    binding: uint; // logical binding / Vulkan binding / WebGPU binding index
+    space: uint; // logical space / Vulkan descriptor set / WebGPU bind group
+    resource_type: ubyte; // backend-neutral resource kind numeric value; 0=Unknown
+    binding_type: ShaderBindingType = None;
+}
+
+table ShaderReflectionData {
+    resources: [ShaderResourceReflection];
+}
+
+table ShaderBytecode {
+    backend: string; // "dxil", "spirv"
+    data: [ubyte];
+    entry_point: string;
+    stage: ShaderStage;
+    content_hash: string; // SHA-256 of bytecode (for content-based dedup)
+}
+
+table BackendReflection {
+    backend: string; // "dxil", "spirv", etc.
+    reflection: ShaderReflectionData;
+}
+
+table ShaderEntryPointReflection {
+    backend: string; // "dxil", "spirv", etc.
+    entry_point: string;
+    stage: ShaderStage;
+    reflection: ShaderReflectionData;
+}
+
+table ShaderMaterialBinding {
+    name: string;
+    resource_type: ubyte;    // 0=Texture, 1=Sampler, 2=Buffer
+}
+
+table ShaderMaterialScalarField {
+    name: string;
+    offset: uint;            // byte offset from the start of the scalar payload
+    size: uint;              // field byte size under Slang layout rules
+    row_count: uint;
+    column_count: uint;
+    scalar_type: ubyte;      // SlangScalarType numeric value: Bool=2, Int32=3, UInt32=4, Float32=8
+}
+
+table ShaderMaterialScalarLayout {
+    name: string;            // Slang struct name, e.g. StandardPBRScalars
+    size: uint;              // payload byte size under Slang layout rules
+    fields: [ShaderMaterialScalarField];
+}
+
+table ShaderEntryPointAttribute {
+    variant_index: int;
+    name: string;
+    args: [string];
+}
+
+table ShaderEntryPointMetadata {
+    variant_index: int;
+    vertex_layout_descriptor: [ubyte];
+}
+
+table ShaderMetadata {
+    tags: [string];
+    material_bindings: [ShaderMaterialBinding];
+    material_scalar_layouts: [ShaderMaterialScalarLayout];
+}
+
+table DependencyEntry {
+    path: string;
+    content_hash: string;
+}
+
+table ImportTrace {
+    source_guid: string;
+    source_path: string;
+    sub_asset_key: string;
+    content_fingerprint: string;
+    dependencies: [DependencyEntry];
+    importer_version: uint;
+}
+
+table ShaderAsset (fs_serializer) {
+    asset_guid: string;
+    name: string;
+    import_trace: ImportTrace;
+    variants: [ShaderBytecode];
+    entry_point_attributes: [ShaderEntryPointAttribute];
+    reflections: [BackendReflection];
+    entry_point_reflections: [ShaderEntryPointReflection];
+    metadata: ShaderMetadata;
+    entry_point_metadata: [ShaderEntryPointMetadata];
+}
+
+root_type ShaderAsset;

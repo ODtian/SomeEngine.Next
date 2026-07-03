@@ -1,0 +1,70 @@
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace SomeEngine.Assets.Data;
+
+/// <summary>
+/// Compressed GPU cluster.
+/// Positions are decoded using global quantization: float(IntBase + localOffset) * QuantStep + QuantOrigin.
+/// Center/Radius are packed for LOD; bounds are object-space per-cluster AABB for culling.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct GPUCluster
+{
+    // 0: int3 IntBase (12 bytes) — Cluster integer base for vertex decode
+    public int IntBaseX;
+    public int IntBaseY;
+    public int IntBaseZ;
+
+    // 12: uint PackedCenterXY — CenterOffsetX:16 | CenterOffsetY:16
+    public uint PackedCenterXY;
+
+    // 16: float3 LODCenter (12 bytes)
+    public Vector3 LODCenter;
+
+    // 28: float LODRadius
+    public float LODRadius;
+
+    // 32: uint PackedCenterZRadius — CenterOffsetZ:16 | RadiusQuant:16
+    public uint PackedCenterZRadius;
+
+    // 36: ushort LODErrorHalf (float16)
+    public ushort LODErrorHalf;
+
+    // 38: ushort VertexStart
+    public ushort VertexStart;
+
+    // 40: ushort TriangleStart
+    public ushort TriangleStart;
+
+    // 42: short GroupId
+    public short GroupId;
+
+    // 44: uint PackedCounts — [VertexCount:8][TriangleCount:8][LODLevel:8][Pad:8]
+    public uint PackedCounts;
+
+    // 48: uint PackedMaterials — [mat0:8][mat1:8][mat2:8][Pad:8]
+    public uint PackedMaterials;
+
+    // 52: uint PackedRanges — [range0End:8][range1End:8][Pad:16]
+    public uint PackedRanges;
+
+    // 56: uint MaterialTableOffset — slow path (>3 materials) external table byte offset within page (0xFFFFFFFF = fast path)
+    public uint MaterialTableOffset;
+
+    // 60: uint VRBBatchInfo — VRB batch encoding (fast path: ≤5 batches packed, see BuildVrb)
+    public uint VRBBatchInfo;
+
+    // 64: object-space cluster AABB min
+    public Vector3 BoundMin;
+
+    // 76: object-space cluster AABB max
+    public Vector3 BoundMax;
+
+    public const int SizeInBytes = 88;
+
+    // Helper to pack CenterOffset and RadiusQuant
+    public static uint PackU16(ushort a, ushort b) => (uint)a | ((uint)b << 16);
+    public static (ushort, ushort) UnpackU16(uint packed) => ((ushort)(packed & 0xFFFF), (ushort)(packed >> 16));
+}
+

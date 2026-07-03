@@ -1,0 +1,9 @@
+{
+  "Scenario": "RuntimeStartupOptions accepted-runtime steady frame consumer",
+  "Source": "dotnet-trace",
+  "Frames": 120,
+  "GcGen0PerFrame": 0,
+  "AllocBytesPerFrame": 0,
+  "TraceTool": "dotnet-trace gc-verbose \u002B SomeEngine-RuntimeAllocationProbe frame markers",
+  "TraceFileName": "runtime-allocation.nettrace"
+}

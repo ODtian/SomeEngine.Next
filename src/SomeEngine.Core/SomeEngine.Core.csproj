@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SomeEngine.Job\SomeEngine.Job.csproj" />
+    <ProjectReference Include="..\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+    <ProjectReference Include="..\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,2504 @@
+{
+  "repository": {
+    "rootHint": ".git",
+    "wikiRoot": "wiki",
+    "srcRoot": "src"
+  },
+  "projects": {
+    "productProjects": [
+      {
+        "name": "SomeEngine.Assets",
+        "path": "src/SomeEngine.Assets/SomeEngine.Assets.csproj"
+      },
+      {
+        "name": "SomeEngine.Core",
+        "path": "src/SomeEngine.Core/SomeEngine.Core.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS",
+        "path": "src/SomeEngine.ECS/SomeEngine.ECS.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS.Serialization",
+        "path": "src/SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS.Systems",
+        "path": "src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj"
+      },
+      {
+        "name": "SomeEngine.Job",
+        "path": "src/SomeEngine.Job/SomeEngine.Job.csproj"
+      },
+      {
+        "name": "SomeEngine.Job.Dots",
+        "path": "src/SomeEngine.Job.Dots/SomeEngine.Job.Dots.csproj"
+      },
+      {
+        "name": "SomeEngine.Render",
+        "path": "src/SomeEngine.Render/SomeEngine.Render.csproj"
+      },
+      {
+        "name": "SomeEngine.Render.Cluster",
+        "path": "src/SomeEngine.Render.Cluster/SomeEngine.Render.Cluster.csproj"
+      }
+    ],
+    "buildSupportProjects": [
+      {
+        "name": "SomeEngine.ECS.SourceGen",
+        "path": "src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+      },
+      {
+        "name": "SomeEngine.Generators",
+        "path": "src/SomeEngine.Generators/SomeEngine.Generators.csproj"
+      }
+    ],
+    "testProjects": [
+      {
+        "name": "SomeEngine.Assets.Tests",
+        "path": "tests/SomeEngine.Assets.Tests/SomeEngine.Assets.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.Core.Tests",
+        "path": "tests/SomeEngine.Core.Tests/SomeEngine.Core.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS.Serialization.Tests",
+        "path": "tests/SomeEngine.ECS.Serialization.Tests/SomeEngine.ECS.Serialization.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS.SourceGen.Tests",
+        "path": "tests/SomeEngine.ECS.SourceGen.Tests/SomeEngine.ECS.SourceGen.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS.Systems.Tests",
+        "path": "tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.ECS.Tests",
+        "path": "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.Job.Dots.Tests",
+        "path": "tests/SomeEngine.Job.Dots.Tests/SomeEngine.Job.Dots.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.Job.Tests",
+        "path": "tests/SomeEngine.Job.Tests/SomeEngine.Job.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.Render.Cluster.Tests",
+        "path": "tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.Render.Tests",
+        "path": "tests/SomeEngine.Render.Tests/SomeEngine.Render.Tests.csproj"
+      }
+    ]
+  },
+  "productTests": {
+    "warningTraits": [
+      {
+        "name": "Category",
+        "value": "Performance",
+        "reason": "Performance and allocation-sensitive product tests are warning-run checks for the first-round boundary; functional product tests remain hard."
+      }
+    ],
+    "forbiddenBoundaryReferences": [
+      "SomeEngine.Rhi",
+      "Diligent",
+      "SharpGen",
+      "D3D12",
+      "Direct3D",
+      "DXGI",
+      "SomeEngine.Render.Graph",
+      "RenderGraph",
+      "SomeEngine.Runtime",
+      "SomeEngine.Editor",
+      "ImGui",
+      "imgui",
+      "Swapchain",
+      "SwapChain",
+      "ClusterPipeline",
+      "ClusterPass",
+      "SomeEngine.UI",
+      "Silk.NET",
+      "IDevice",
+      "IQueue",
+      "ISwapchain",
+      "Window",
+      "Windowing",
+      "Present",
+      "BufferHandle",
+      "TextureHandle",
+      "RenderContext",
+      "PipelineCache",
+      "GpuResource",
+      "GpuResourceHandle",
+      "GpuBuffer",
+      "GpuBufferHandle",
+      "GpuTexture",
+      "GpuTextureHandle",
+      "Rhi",
+      "FrameGraph",
+      "RenderGraphHandle",
+      "RenderPass",
+      "RenderPipeline",
+      "ComputePipeline",
+      "GraphicsPipeline",
+      "DeviceContext",
+      "PipelineState",
+      "ShaderResourceBinding",
+      "RootSignature",
+      "DescriptorSet",
+      "RenderEncoder",
+      "ComputeEncoder",
+      "EditorRenderer"
+    ]
+  },
+  "nugetPackages": {
+    "productPackages": [
+      {
+        "project": "SomeEngine.Assets",
+        "packageId": "Alimer.Bindings.MeshOptimizer",
+        "version": "1.2.0"
+      },
+      {
+        "project": "SomeEngine.Assets",
+        "packageId": "FlatSharp.Compiler",
+        "version": "7.9.0"
+      },
+      {
+        "project": "SomeEngine.Assets",
+        "packageId": "FlatSharp.Runtime",
+        "version": "7.9.0"
+      },
+      {
+        "project": "SomeEngine.Assets",
+        "packageId": "SharpGLTF.Core",
+        "version": "1.0.6"
+      }
+    ],
+    "buildSupportPackages": [
+      {
+        "project": "SomeEngine.ECS.SourceGen",
+        "packageId": "Microsoft.CodeAnalysis.Analyzers",
+        "version": "3.11.0"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen",
+        "packageId": "Microsoft.CodeAnalysis.CSharp",
+        "version": "4.13.0"
+      },
+      {
+        "project": "SomeEngine.Generators",
+        "packageId": "Microsoft.CodeAnalysis.CSharp",
+        "version": "4.12.0"
+      },
+      {
+        "project": "SomeEngine.Generators",
+        "packageId": "Microsoft.CodeAnalysis.Analyzers",
+        "version": "3.11.0"
+      }
+    ],
+    "testPackages": [
+      {
+        "project": "SomeEngine.Assets.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.Assets.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Assets.Tests",
+        "packageId": "SharpGLTF.Toolkit",
+        "version": "1.0.6"
+      },
+      {
+        "project": "SomeEngine.Assets.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Assets.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.Core.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.Core.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Core.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Core.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.ECS.Serialization.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.ECS.Serialization.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.ECS.Serialization.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.ECS.Serialization.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.ECS.Systems.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.ECS.Systems.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.ECS.Systems.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.ECS.Systems.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.ECS.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.ECS.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.ECS.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.ECS.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.Job.Dots.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.Job.Dots.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Job.Dots.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Job.Dots.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.Job.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.Job.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Job.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Job.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.Render.Cluster.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.Render.Cluster.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Render.Cluster.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Render.Cluster.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.Render.Tests",
+        "packageId": "coverlet.collector",
+        "version": "6.0.4"
+      },
+      {
+        "project": "SomeEngine.Render.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Render.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Render.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      }
+    ]
+  },
+  "directAssemblyReferences": {
+    "productReferences": [],
+    "buildSupportReferences": [],
+    "testReferences": [
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "include": "SomeEngine.ECS.SourceGen",
+        "hintPath": "src/SomeEngine.ECS.SourceGen/bin/Debug/netstandard2.0/SomeEngine.ECS.SourceGen.dll"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "include": "Microsoft.CodeAnalysis",
+        "hintPath": "$HOME/.nuget/packages/microsoft.codeanalysis.common/4.13.0/lib/netstandard2.0/Microsoft.CodeAnalysis.dll"
+      },
+      {
+        "project": "SomeEngine.ECS.SourceGen.Tests",
+        "include": "Microsoft.CodeAnalysis.CSharp",
+        "hintPath": "$HOME/.nuget/packages/microsoft.codeanalysis.csharp/4.13.0/lib/netstandard2.0/Microsoft.CodeAnalysis.CSharp.dll"
+      }
+    ]
+  },
+  "apiContracts": [
+    {
+      "assembly": "SomeEngine.Job",
+      "type": "SomeEngine.Job.IJob"
+    },
+    {
+      "assembly": "SomeEngine.Job",
+      "type": "SomeEngine.Job.JobSystem"
+    },
+    {
+      "assembly": "SomeEngine.ECS",
+      "type": "SomeEngine.ECS.World"
+    },
+    {
+      "assembly": "SomeEngine.ECS",
+      "type": "SomeEngine.ECS.IComponent"
+    },
+    {
+      "assembly": "SomeEngine.ECS.Systems",
+      "type": "SomeEngine.ECS.Systems.SystemGroup`1"
+    },
+    {
+      "assembly": "SomeEngine.Core",
+      "type": "SomeEngine.Core.ECS.GameWorld"
+    },
+    {
+      "assembly": "SomeEngine.Core",
+      "type": "SomeEngine.Core.Math.TransformQvvs"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetDatabase",
+      "members": [
+        {
+          "name": "Manifest",
+          "kind": "Property"
+        },
+        {
+          "name": "CreateAsset",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        },
+        {
+          "name": "Import",
+          "kind": "Method"
+        },
+        {
+          "name": "Resolve",
+          "kind": "Method"
+        },
+        {
+          "name": "List",
+          "kind": "Method"
+        },
+        {
+          "name": "GetDependencies",
+          "kind": "Method"
+        },
+        {
+          "name": "GetReferencers",
+          "kind": "Method"
+        },
+        {
+          "name": "Validate",
+          "kind": "Method"
+        },
+        {
+          "name": "Dispose",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Data.ClusterBVHNode"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Data.GPUCluster",
+      "members": [
+        {
+          "name": "SizeInBytes",
+          "kind": "Field"
+        },
+        {
+          "name": "PackU16",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Data.MeshPageHeader",
+      "members": [
+        {
+          "name": "Size",
+          "kind": "Field"
+        },
+        {
+          "name": "MaxPageSize",
+          "kind": "Field"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.ClusterBuilderOptions",
+      "members": [
+        {
+          "name": "GenerateMissingTangents",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.ClusterLodConfig",
+      "members": [
+        {
+          "name": "GetDefault",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.GltfImporterSettings",
+      "members": [
+        {
+          "name": "Default",
+          "kind": "Method"
+        },
+        {
+          "name": "LitMaterialTemplate",
+          "kind": "Property"
+        },
+        {
+          "name": "UnlitMaterialTemplate",
+          "kind": "Property"
+        },
+        {
+          "name": "GenerateTangents",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.SlangSourceImporter",
+      "members": [
+        {
+          "name": "ImporterName",
+          "kind": "Property"
+        },
+        {
+          "name": "SourceExtensions",
+          "kind": "Property"
+        },
+        {
+          "name": "MatchesSourcePath",
+          "kind": "Method"
+        },
+        {
+          "name": "GetFingerprint",
+          "kind": "Method"
+        },
+        {
+          "name": "Import",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.AssetCreate",
+      "members": [
+        {
+          "name": "CreateAsset",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.ClusterRenderAssets",
+      "members": [
+        {
+          "name": "DefaultGuid",
+          "kind": "Field"
+        },
+        {
+          "name": "LoadDefault",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.ShaderAsset"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.MaterialAsset"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.PassEntry",
+      "members": [
+        {
+          "name": "ShaderGuid",
+          "kind": "Property"
+        },
+        {
+          "name": "EntryPoint",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.MaterialInstanceAsset"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.MeshAsset"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.TextureAsset"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Schema.ClusterRenderAsset"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.ShaderAssetCodec",
+      "members": [
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.ShaderAssetProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.MaterialAssetCodec",
+      "members": [
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.MaterialAssetProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        },
+        {
+          "name": "GetDependencies",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.MaterialInstanceCodec",
+      "members": [
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.MaterialInstanceProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        },
+        {
+          "name": "GetDependencies",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.MeshAssetCodec",
+      "members": [
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.MeshAssetProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.TextureAssetCodec",
+      "members": [
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.TextureAssetProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.ClusterRenderCodec",
+      "members": [
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Pipeline.ClusterRenderProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        },
+        {
+          "name": "GetDependencies",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.SlangShaderImporter",
+      "members": [
+        {
+          "name": "ImporterVersion",
+          "kind": "Field"
+        },
+        {
+          "name": "Import",
+          "kind": "Method"
+        },
+        {
+          "name": "ImportTransient",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.GltfSourceImporter",
+      "members": [
+        {
+          "name": "ImporterName",
+          "kind": "Property"
+        },
+        {
+          "name": "SourceExtensions",
+          "kind": "Property"
+        },
+        {
+          "name": "MatchesSourcePath",
+          "kind": "Method"
+        },
+        {
+          "name": "GetFingerprint",
+          "kind": "Method"
+        },
+        {
+          "name": "Import",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.Importers.ClusterBuilder",
+      "members": [
+        {
+          "name": "Process",
+          "kind": "Method"
+        },
+        {
+          "name": "ProcessMesh",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.IJobFor"
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.IJobChunk"
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.IJobChunkSource"
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.JobChunk"
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.JobScheduleExtensions"
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.JobForExtensions"
+    },
+    {
+      "assembly": "SomeEngine.Job.Dots",
+      "type": "SomeEngine.Job.JobChunkExtensions"
+    },
+    {
+      "assembly": "SomeEngine.Core",
+      "type": "SomeEngine.Core.Diagnostics.Profiler"
+    },
+    {
+      "assembly": "SomeEngine.Core",
+      "type": "SomeEngine.Core.Diagnostics.ProfilerOptions"
+    },
+    {
+      "assembly": "SomeEngine.Core",
+      "type": "SomeEngine.Core.Diagnostics.ProfilerStatus"
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Assets.Mesh",
+      "members": [
+        {
+          "name": "Name",
+          "kind": "Property"
+        },
+        {
+          "name": "Payload",
+          "kind": "Property"
+        },
+        {
+          "name": "BvhOffset",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Assets.RuntimeAssetLoader",
+      "members": [
+        {
+          "name": "LoadMesh",
+          "kind": "Method"
+        },
+        {
+          "name": "LoadShader",
+          "kind": "Method"
+        },
+        {
+          "name": "RequestMesh",
+          "kind": "Method"
+        },
+        {
+          "name": "RequestShader",
+          "kind": "Method"
+        },
+        {
+          "name": "RequestMaterial",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Components.MeshInstance",
+      "members": [
+        {
+          "name": "Mesh",
+          "kind": "Field"
+        },
+        {
+          "name": "BoundsExpansion",
+          "kind": "Field"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Components.MeshMaterialBindings",
+      "members": [
+        {
+          "name": "Materials",
+          "kind": "Field"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Components.SceneLights",
+      "members": [
+        {
+          "name": "DefaultLightLayerMask",
+          "kind": "Field"
+        },
+        {
+          "name": "NoCookie",
+          "kind": "Field"
+        },
+        {
+          "name": "DirectionalLights",
+          "kind": "Field"
+        },
+        {
+          "name": "PointLights",
+          "kind": "Field"
+        },
+        {
+          "name": "SpotLights",
+          "kind": "Field"
+        },
+        {
+          "name": "LightCookieAtlas",
+          "kind": "Field"
+        },
+        {
+          "name": "IsEmpty",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Data.GpuTransform"
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Data.ClusterInfo"
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Frame.TemporalJitter",
+      "members": [
+        {
+          "name": "DefaultSampleCount",
+          "kind": "Field"
+        },
+        {
+          "name": "SamplePixels",
+          "kind": "Method"
+        },
+        {
+          "name": "ApplyToProjection",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Frame.TemporalState",
+      "members": [
+        {
+          "name": "Ready",
+          "kind": "Property"
+        },
+        {
+          "name": "ResetRequested",
+          "kind": "Property"
+        },
+        {
+          "name": "RequestReset",
+          "kind": "Method"
+        },
+        {
+          "name": "ConsumeReset",
+          "kind": "Method"
+        },
+        {
+          "name": "SetReady",
+          "kind": "Method"
+        },
+        {
+          "name": "Reset",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Frame.TemporalResolveSettings",
+      "members": [
+        {
+          "name": "Default",
+          "kind": "Property"
+        },
+        {
+          "name": "ToUniforms",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Materials.MaterialPass",
+      "members": [
+        {
+          "name": "Target",
+          "kind": "Property"
+        },
+        {
+          "name": "Shader",
+          "kind": "Property"
+        },
+        {
+          "name": "EntryPoint",
+          "kind": "Property"
+        },
+        {
+          "name": "State",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Materials.Material",
+      "members": [
+        {
+          "name": "Passes",
+          "kind": "Property"
+        },
+        {
+          "name": "PassVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "SetPasses",
+          "kind": "Method"
+        },
+        {
+          "name": "Name",
+          "kind": "Property"
+        },
+        {
+          "name": "ScalarRegionLayout",
+          "kind": "Property"
+        },
+        {
+          "name": "ScalarVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "BindingVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "AlbedoMap",
+          "kind": "Property"
+        },
+        {
+          "name": "NormalMap",
+          "kind": "Property"
+        },
+        {
+          "name": "ArmMap",
+          "kind": "Property"
+        },
+        {
+          "name": "EmissiveMap",
+          "kind": "Property"
+        },
+        {
+          "name": "BaseColorTint",
+          "kind": "Property"
+        },
+        {
+          "name": "MetallicFactor",
+          "kind": "Property"
+        },
+        {
+          "name": "Roughness",
+          "kind": "Property"
+        },
+        {
+          "name": "EmissiveFactor",
+          "kind": "Property"
+        },
+        {
+          "name": "ScalarRegionByteSize",
+          "kind": "Property"
+        },
+        {
+          "name": "Clone",
+          "kind": "Method"
+        },
+        {
+          "name": "TouchScalars",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Materials.Shader",
+      "members": [
+        {
+          "name": "Name",
+          "kind": "Property"
+        },
+        {
+          "name": "Variants",
+          "kind": "Property"
+        },
+        {
+          "name": "Attributes",
+          "kind": "Property"
+        },
+        {
+          "name": "Reflections",
+          "kind": "Property"
+        },
+        {
+          "name": "ScalarLayouts",
+          "kind": "Property"
+        },
+        {
+          "name": "TryVariant",
+          "kind": "Method"
+        },
+        {
+          "name": "TryReflection",
+          "kind": "Method"
+        },
+        {
+          "name": "TryEntry",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Materials.Texture",
+      "members": [
+        {
+          "name": "Name",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Materials.ScalarLayout",
+      "members": [
+        {
+          "name": "HeaderByteSize",
+          "kind": "Field"
+        },
+        {
+          "name": "PayloadAlignment",
+          "kind": "Field"
+        },
+        {
+          "name": "Empty",
+          "kind": "Field"
+        },
+        {
+          "name": "Fields",
+          "kind": "Property"
+        },
+        {
+          "name": "PayloadByteSize",
+          "kind": "Property"
+        },
+        {
+          "name": "LayoutHash",
+          "kind": "Property"
+        },
+        {
+          "name": "ByteSize",
+          "kind": "Property"
+        },
+        {
+          "name": "FromFields",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Systems.RenderWorld",
+      "members": [
+        {
+          "name": "World",
+          "kind": "Property"
+        },
+        {
+          "name": "SceneLights",
+          "kind": "Property"
+        },
+        {
+          "name": "Version",
+          "kind": "Property"
+        },
+        {
+          "name": "ShapeVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "InstanceShapeVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "MaterialVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "LightVersion",
+          "kind": "Property"
+        },
+        {
+          "name": "CountInstances",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Systems.RenderWorldExtractor"
+    },
+    {
+      "assembly": "SomeEngine.Render",
+      "type": "SomeEngine.Render.Materials.Opaque"
+    },
+    {
+      "assembly": "SomeEngine.Render.Cluster",
+      "type": "SomeEngine.Render.Cluster.ClusterDebugMode"
+    },
+    {
+      "assembly": "SomeEngine.Render.Cluster",
+      "type": "SomeEngine.Render.Cluster.ClusterShaders"
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.IAssetImporter",
+      "members": [
+        {
+          "name": "ImporterName",
+          "kind": "Property"
+        },
+        {
+          "name": "SourceExtensions",
+          "kind": "Property"
+        },
+        {
+          "name": "MatchesSourcePath",
+          "kind": "Method"
+        },
+        {
+          "name": "GetFingerprint",
+          "kind": "Method"
+        },
+        {
+          "name": "Import",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetImportFingerprint",
+      "members": [
+        {
+          "name": "ContentFingerprint",
+          "kind": "Property"
+        },
+        {
+          "name": "Dependencies",
+          "kind": "Property"
+        },
+        {
+          "name": "ImporterVersion",
+          "kind": "Property"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.IAssetProvider",
+      "members": [
+        {
+          "name": "AssetType",
+          "kind": "Property"
+        },
+        {
+          "name": "RuntimeType",
+          "kind": "Property"
+        },
+        {
+          "name": "Matches",
+          "kind": "Method"
+        },
+        {
+          "name": "Create",
+          "kind": "Method"
+        },
+        {
+          "name": "Destroy",
+          "kind": "Method"
+        },
+        {
+          "name": "GetDependencies",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetManifest",
+      "members": [
+        {
+          "name": "SourceIndexFileName",
+          "kind": "Field"
+        },
+        {
+          "name": "AssetIndexFileName",
+          "kind": "Field"
+        },
+        {
+          "name": "DependencyGraphFileName",
+          "kind": "Field"
+        },
+        {
+          "name": "Sources",
+          "kind": "Property"
+        },
+        {
+          "name": "Assets",
+          "kind": "Property"
+        },
+        {
+          "name": "Dependencies",
+          "kind": "Property"
+        },
+        {
+          "name": "AddSource",
+          "kind": "Method"
+        },
+        {
+          "name": "AddAsset",
+          "kind": "Method"
+        },
+        {
+          "name": "TrySourcePath",
+          "kind": "Method"
+        },
+        {
+          "name": "TryGetAsset",
+          "kind": "Method"
+        },
+        {
+          "name": "TrySourceGuid",
+          "kind": "Method"
+        },
+        {
+          "name": "TryAssetPath",
+          "kind": "Method"
+        },
+        {
+          "name": "TrySourceAsset",
+          "kind": "Method"
+        },
+        {
+          "name": "AssetsBySource",
+          "kind": "Method"
+        },
+        {
+          "name": "GetDependencies",
+          "kind": "Method"
+        },
+        {
+          "name": "GetReferencers",
+          "kind": "Method"
+        },
+        {
+          "name": "List",
+          "kind": "Method"
+        },
+        {
+          "name": "Save",
+          "kind": "Method"
+        },
+        {
+          "name": "Load",
+          "kind": "Method"
+        }
+      ]
+    }
+  ],
+  "externalDependencies": {
+    "localPackages": [
+      {
+        "id": "meshoptimizer",
+        "packageId": "Alimer.Bindings.MeshOptimizer",
+        "version": "1.2.0",
+        "producerProject": "external/Alimer.Bindings/src/Alimer.Bindings.MeshOptimizer/Alimer.Bindings.MeshOptimizer.csproj",
+        "sourcePackage": "artifacts/local-packages/Alimer.Bindings.MeshOptimizer.1.2.0.nupkg",
+        "consumerProject": "src/SomeEngine.Assets/SomeEngine.Assets.csproj",
+        "localFeed": "artifacts/local-packages",
+        "packageSourceKey": "SomeEngine Local Packages",
+        "requiredRuntimeAssets": [
+          "runtimes/win-x64/native/meshoptimizer.dll",
+          "runtimes/linux-x64/native/libmeshoptimizer.so"
+        ]
+      }
+    ],
+    "sourceProjects": [
+      {
+        "name": "SlangShaderSharp",
+        "path": "external/SlangShaderSharp/src/SlangShaderSharp.csproj",
+        "consumerProject": "src/SomeEngine.Assets/SomeEngine.Assets.csproj"
+      }
+    ],
+    "binaryAssets": [
+      {
+        "name": "dxc",
+        "paths": [
+          "external/dxc/bin/x64/dxcompiler.dll",
+          "external/dxc/bin/x64/dxil.dll"
+        ]
+      }
+    ],
+    "nativeSources": [
+      {
+        "name": "tracy",
+        "root": "external/tracy",
+        "requiredFiles": [
+          "public/TracyClient.cpp",
+          "public/tracy/TracyC.h"
+        ]
+      }
+    ],
+    "submodules": [
+      {
+        "name": "Alimer.Bindings",
+        "path": "external/Alimer.Bindings",
+        "url": "https://github.com/ODtian/Alimer.Bindings",
+        "commit": "eb6b6c4e90b4e0f10f883ff5f92c62b5589b4868",
+        "role": "accepted dependency producer for MeshOptimizer bindings"
+      },
+      {
+        "name": "SlangShaderSharp",
+        "path": "external/SlangShaderSharp",
+        "url": "https://github.com/DominicMaas/SlangShaderSharp",
+        "commit": "b3b0f79381f6927ff9fca6af9e8a9a8843258e64",
+        "role": "accepted source project dependency"
+      },
+      {
+        "name": "tracy",
+        "path": "external/tracy",
+        "url": "https://github.com/wolfpld/tracy.git",
+        "commit": "05cceee0df3b8d7c6fa87e9638af311dbabc63cb",
+        "role": "accepted native profiler bridge dependency"
+      }
+    ],
+    "excludedSourceRoots": [
+      "external/DiligentCore",
+      "external/Diligent-SharpGenTools",
+      "external/UnrealEnigne"
+    ]
+  },
+  "naming": {
+    "forbiddenClassSuffixes": [
+      "Plan",
+      "Run",
+      "Program"
+    ],
+    "forbiddenMethodSuffixes": [
+      "Plan",
+      "Run",
+      "Program"
+    ],
+    "classWhitelist": [
+      "Program"
+    ]
+  },
+  "style": {
+    "allowedVarContexts": [
+      "ObjectCreation",
+      "ImplicitObjectCreation",
+      "ArrayCreation",
+      "ImplicitArrayCreation",
+      "StackAllocArrayCreation",
+      "Cast",
+      "DefaultExpression",
+      "ElementAccess",
+      "Invocation",
+      "Tuple"
+    ],
+    "warnOnImplicitCast": true
+  },
+  "complexity": {
+    "maxCyclomaticComplexity": 12,
+    "maxMethodLines": 60,
+    "maxMethodsPerClass": 25,
+    "maxFieldsPerClass": 20,
+    "maxCoupledTypes": 8
+  },
+  "architecture": {
+    "layerContract": {
+      "allowedDependencies": {
+        "SomeEngine.Assets": [
+          "SlangShaderSharp",
+          "Alimer.Bindings.MeshOptimizer"
+        ],
+        "SomeEngine.Core": [
+          "SomeEngine.Job",
+          "SomeEngine.ECS",
+          "SomeEngine.ECS.Systems"
+        ],
+        "SomeEngine.ECS": [],
+        "SomeEngine.ECS.Serialization": [
+          "SomeEngine.ECS"
+        ],
+        "SomeEngine.ECS.Systems": [
+          "SomeEngine.ECS",
+          "SomeEngine.Job"
+        ],
+        "SomeEngine.Job": [],
+        "SomeEngine.Job.Dots": [
+          "SomeEngine.Job"
+        ],
+        "SomeEngine.Render": [
+          "SomeEngine.Core",
+          "SomeEngine.Assets",
+          "SomeEngine.ECS"
+        ],
+        "SomeEngine.Render.Cluster": [
+          "SomeEngine.Render",
+          "SomeEngine.Core",
+          "SomeEngine.Assets"
+        ]
+      }
+    },
+    "excludedProjectNames": [
+      "SomeEngine.Animation",
+      "SomeEngine.Editor",
+      "SomeEngine.Physics",
+      "SomeEngine.Rhi",
+      "SomeEngine.Rhi.D3D12",
+      "SomeEngine.UI",
+      "SomeEngine.Rhi.Tests",
+      "SomeEngine.Rhi.WindowTests",
+      "SomeEngine.Runtime",
+      "SomeEngine.Runtime.Tests"
+    ],
+    "forbiddenProductTypes": [
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterPipeline",
+        "reason": "Execution-shaped Cluster pipeline concept is outside the first-round product boundary."
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterPass",
+        "reason": "Execution-shaped Cluster pass concept is outside the first-round product boundary."
+      }
+    ],
+    "domainBoundaries": [
+      {
+        "name": "SomeEngine.Assets",
+        "path": "src/SomeEngine.Assets",
+        "forbiddenReferences": [
+          "SomeEngine.Rhi",
+          "Diligent",
+          "SharpGen",
+          "SomeEngine.Render.Graph",
+          "RenderGraph",
+          "RenderGraphHandle",
+          "IDevice",
+          "IQueue",
+          "ISwapchain",
+          "Swapchain",
+          "SwapChain",
+          "Present",
+          "Window",
+          "Windowing",
+          "BufferHandle",
+          "TextureHandle",
+          "RenderContext",
+          "PipelineCache",
+          "Silk.NET",
+          "ImGui",
+          "Rhi",
+          "D3D12",
+          "Direct3D",
+          "DXGI",
+          "FrameGraph",
+          "RenderPass",
+          "RenderPipeline",
+          "ComputePipeline",
+          "GraphicsPipeline",
+          "CommandList",
+          "CommandQueue",
+          "GpuResource",
+          "GpuResourceHandle",
+          "GpuBuffer",
+          "GpuBufferHandle",
+          "GpuTexture",
+          "GpuTextureHandle",
+          "SomeEngine.Runtime",
+          "SomeEngine.Editor",
+          "EditorRenderer",
+          "DeviceContext",
+          "PipelineState",
+          "ShaderResourceBinding",
+          "RootSignature",
+          "DescriptorSet",
+          "CommandBuffer",
+          "CommandEncoder",
+          "RenderEncoder",
+          "ComputeEncoder",
+          "ResourceBinding",
+          "SomeEngine.UI",
+          "ClusterPipeline",
+          "ClusterPass"
+        ],
+        "forbiddenPathSegments": [
+          "D3D12",
+          "Direct3D",
+          "DXGI",
+          "Editor",
+          "ImGui",
+          "Present",
+          "RHI",
+          "RenderGraph",
+          "Swapchain",
+          "SwapChain",
+          "UI",
+          "Window",
+          "Windowing",
+          "Runtime"
+        ]
+      },
+      {
+        "name": "SomeEngine.Render",
+        "path": "src/SomeEngine.Render",
+        "forbiddenReferences": [
+          "SomeEngine.Rhi",
+          "Diligent",
+          "SharpGen",
+          "SomeEngine.Render.Graph",
+          "RenderGraph",
+          "RenderGraphHandle",
+          "IDevice",
+          "IQueue",
+          "ISwapchain",
+          "Swapchain",
+          "SwapChain",
+          "Present",
+          "Window",
+          "Windowing",
+          "BufferHandle",
+          "TextureHandle",
+          "RenderContext",
+          "PipelineCache",
+          "Silk.NET",
+          "ImGui",
+          "SomeEngine.Render.Cluster",
+          "Rhi",
+          "D3D12",
+          "Direct3D",
+          "DXGI",
+          "FrameGraph",
+          "RenderPass",
+          "RenderPipeline",
+          "ComputePipeline",
+          "GraphicsPipeline",
+          "CommandList",
+          "CommandQueue",
+          "GpuResource",
+          "GpuResourceHandle",
+          "GpuBuffer",
+          "GpuBufferHandle",
+          "GpuTexture",
+          "GpuTextureHandle",
+          "SomeEngine.Runtime",
+          "SomeEngine.Editor",
+          "EditorRenderer",
+          "DeviceContext",
+          "PipelineState",
+          "ShaderResourceBinding",
+          "RootSignature",
+          "DescriptorSet",
+          "CommandBuffer",
+          "CommandEncoder",
+          "RenderEncoder",
+          "ComputeEncoder",
+          "ResourceBinding",
+          "SomeEngine.UI",
+          "ClusterPipeline",
+          "ClusterPass"
+        ],
+        "forbiddenPathSegments": [
+          "D3D12",
+          "Direct3D",
+          "DXGI",
+          "Editor",
+          "ImGui",
+          "Present",
+          "RenderGraph",
+          "RHI",
+          "Pipelines/ClusterPipeline",
+          "Pipelines",
+          "Swapchain",
+          "SwapChain",
+          "UI",
+          "Window",
+          "Windowing"
+        ]
+      },
+      {
+        "name": "SomeEngine.Render.Cluster",
+        "path": "src/SomeEngine.Render.Cluster",
+        "forbiddenReferences": [
+          "SomeEngine.Rhi",
+          "Diligent",
+          "SharpGen",
+          "SomeEngine.Render.Graph",
+          "RenderGraph",
+          "RenderGraphHandle",
+          "IDevice",
+          "IQueue",
+          "ISwapchain",
+          "Swapchain",
+          "SwapChain",
+          "Present",
+          "Window",
+          "Windowing",
+          "BufferHandle",
+          "TextureHandle",
+          "RenderContext",
+          "PipelineCache",
+          "Silk.NET",
+          "ImGui",
+          "ClusterPipeline",
+          "ClusterPass",
+          "Rhi",
+          "D3D12",
+          "Direct3D",
+          "DXGI",
+          "FrameGraph",
+          "RenderPass",
+          "RenderPipeline",
+          "ComputePipeline",
+          "GraphicsPipeline",
+          "CommandList",
+          "CommandQueue",
+          "GpuResource",
+          "GpuResourceHandle",
+          "GpuBuffer",
+          "GpuBufferHandle",
+          "GpuTexture",
+          "GpuTextureHandle",
+          "SomeEngine.Runtime",
+          "SomeEngine.Editor",
+          "EditorRenderer",
+          "DeviceContext",
+          "PipelineState",
+          "ShaderResourceBinding",
+          "RootSignature",
+          "DescriptorSet",
+          "CommandBuffer",
+          "CommandEncoder",
+          "RenderEncoder",
+          "ComputeEncoder",
+          "ResourceBinding",
+          "SomeEngine.UI"
+        ],
+        "forbiddenPathSegments": [
+          "D3D12",
+          "Direct3D",
+          "DXGI",
+          "Editor",
+          "ImGui",
+          "Present",
+          "RenderGraph",
+          "RHI",
+          "Pipelines",
+          "Swapchain",
+          "SwapChain",
+          "UI",
+          "Window",
+          "Windowing"
+        ]
+      }
+    ],
+    "excludedWorkspaceRoots": [
+      "benchmarks",
+      "samples",
+      "src/SomeEngine.Animation",
+      "src/SomeEngine.Editor",
+      "src/SomeEngine.Physics",
+      "src/SomeEngine.Rhi",
+      "src/SomeEngine.Rhi.D3D12",
+      "src/SomeEngine.UI",
+      "tests/SomeEngine.Rhi.Tests",
+      "tools/SomeEngine.Rhi.WindowTests",
+      "tools/SharpGenDebug"
+    ],
+    "requiredProductTypes": [
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterSlotBuffer",
+        "reason": "Accepted backend-free Cluster slot model.",
+        "members": [
+          {
+            "name": "Layout",
+            "kind": "Property"
+          },
+          {
+            "name": "SlotCount",
+            "kind": "Property"
+          },
+          {
+            "name": "ForceFullUpload",
+            "kind": "Method"
+          },
+          {
+            "name": "TryDirty",
+            "kind": "Method"
+          },
+          {
+            "name": "AllocateRange",
+            "kind": "Method"
+          },
+          {
+            "name": "FreeRange",
+            "kind": "Method"
+          },
+          {
+            "name": "SetField",
+            "kind": "Method"
+          },
+          {
+            "name": "GetField",
+            "kind": "Method"
+          },
+          {
+            "name": "GetData",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterSlotLayout",
+        "reason": "Accepted backend-free Cluster slot/page layout model.",
+        "members": [
+          {
+            "name": "Fields",
+            "kind": "Property"
+          },
+          {
+            "name": "Capacity",
+            "kind": "Property"
+          },
+          {
+            "name": "ElementCount",
+            "kind": "Property"
+          },
+          {
+            "name": "ByteCount",
+            "kind": "Property"
+          },
+          {
+            "name": "Grow",
+            "kind": "Method"
+          },
+          {
+            "name": "Index",
+            "kind": "Method"
+          },
+          {
+            "name": "Span",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.PageHeap",
+        "reason": "Accepted backend-free Cluster page model.",
+        "members": [
+          {
+            "name": "CapacityBytes",
+            "kind": "Field"
+          },
+          {
+            "name": "FreeBytes",
+            "kind": "Property"
+          },
+          {
+            "name": "UsedBytes",
+            "kind": "Property"
+          },
+          {
+            "name": "TryAlloc",
+            "kind": "Method"
+          },
+          {
+            "name": "Free",
+            "kind": "Method"
+          },
+          {
+            "name": "Has",
+            "kind": "Method"
+          },
+          {
+            "name": "Largest",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.PageStream",
+        "reason": "Accepted backend-free Cluster page stream model.",
+        "members": [
+          {
+            "name": "FaultCount",
+            "kind": "Property"
+          },
+          {
+            "name": "LoadedPages",
+            "kind": "Property"
+          },
+          {
+            "name": "ErrorCount",
+            "kind": "Property"
+          },
+          {
+            "name": "QueuedPageCount",
+            "kind": "Property"
+          },
+          {
+            "name": "RequestedPageCount",
+            "kind": "Property"
+          },
+          {
+            "name": "Push",
+            "kind": "Method"
+          },
+          {
+            "name": "Update",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.MeshPages",
+        "reason": "Accepted backend-free Cluster mesh-page model.",
+        "members": [
+          {
+            "name": "Registry",
+            "kind": "Property"
+          },
+          {
+            "name": "LeafNodes",
+            "kind": "Property"
+          },
+          {
+            "name": "Count",
+            "kind": "Property"
+          },
+          {
+            "name": "ResidentCount",
+            "kind": "Property"
+          },
+          {
+            "name": "MissingCount",
+            "kind": "Property"
+          },
+          {
+            "name": "TryAddMesh",
+            "kind": "Method"
+          },
+          {
+            "name": "AddPage",
+            "kind": "Method"
+          },
+          {
+            "name": "AddLeaf",
+            "kind": "Method"
+          },
+          {
+            "name": "Leaves",
+            "kind": "Method"
+          },
+          {
+            "name": "TryLeaf",
+            "kind": "Method"
+          },
+          {
+            "name": "IsResident",
+            "kind": "Method"
+          },
+          {
+            "name": "TrySource",
+            "kind": "Method"
+          },
+          {
+            "name": "MakeResident",
+            "kind": "Method"
+          },
+          {
+            "name": "MakeMissing",
+            "kind": "Method"
+          },
+          {
+            "name": "Touch",
+            "kind": "Method"
+          },
+          {
+            "name": "TryVictim",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.UploadPack",
+        "reason": "Accepted backend-free upload payload description.",
+        "members": [
+          {
+            "name": "Count",
+            "kind": "Property"
+          },
+          {
+            "name": "ByteCount",
+            "kind": "Property"
+          },
+          {
+            "name": "CopyBytes",
+            "kind": "Property"
+          },
+          {
+            "name": "Add",
+            "kind": "Method"
+          },
+          {
+            "name": "Copy",
+            "kind": "Method"
+          },
+          {
+            "name": "Take",
+            "kind": "Method"
+          },
+          {
+            "name": "TryPacked",
+            "kind": "Method"
+          },
+          {
+            "name": "Clear",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.MaterialItem",
+        "reason": "Accepted backend-free Cluster material-planning model.",
+        "members": [
+          {
+            "name": "Handle",
+            "kind": "Property"
+          },
+          {
+            "name": "Material",
+            "kind": "Property"
+          },
+          {
+            "name": "PassVersion",
+            "kind": "Property"
+          },
+          {
+            "name": "BindingVersion",
+            "kind": "Property"
+          },
+          {
+            "name": "State",
+            "kind": "Property"
+          },
+          {
+            "name": "Shade",
+            "kind": "Property"
+          },
+          {
+            "name": "ShadeCache",
+            "kind": "Property"
+          },
+          {
+            "name": "Sw",
+            "kind": "Property"
+          },
+          {
+            "name": "SwCache",
+            "kind": "Property"
+          },
+          {
+            "name": "Vs",
+            "kind": "Property"
+          },
+          {
+            "name": "VsCache",
+            "kind": "Property"
+          },
+          {
+            "name": "Ps",
+            "kind": "Property"
+          },
+          {
+            "name": "Deform",
+            "kind": "Property"
+          },
+          {
+            "name": "HasRaster",
+            "kind": "Method"
+          },
+          {
+            "name": "HasShade",
+            "kind": "Method"
+          },
+          {
+            "name": "HasDeform",
+            "kind": "Method"
+          },
+          {
+            "name": "HasCache",
+            "kind": "Method"
+          },
+          {
+            "name": "BoundsExpansion",
+            "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterShaders",
+        "reason": "Accepted backend-free shader-identity set.",
+        "members": [
+          {
+            "name": "BvhPatch",
+            "kind": "Property"
+          },
+          {
+            "name": "Traverse",
+            "kind": "Property"
+          },
+          {
+            "name": "Cull",
+            "kind": "Property"
+          },
+          {
+            "name": "Binning",
+            "kind": "Property"
+          },
+          {
+            "name": "Draw",
+            "kind": "Property"
+          },
+          {
+            "name": "DepthMerge",
+            "kind": "Property"
+          },
+          {
+            "name": "HiZ",
+            "kind": "Property"
+          },
+          {
+            "name": "ShadeBinning",
+            "kind": "Property"
+          },
+          {
+            "name": "Resolve",
+            "kind": "Property"
+          },
+          {
+            "name": "Temporal",
+            "kind": "Property"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterDebugMode",
+        "reason": "Accepted backend-free Cluster debug mode contract.",
+        "members": [
+          {
+            "name": "None",
+            "kind": "Field"
+          },
+          {
+            "name": "ClusterID",
+            "kind": "Field"
+          },
+          {
+            "name": "LODLevel",
+            "kind": "Field"
+          },
+          {
+            "name": "SWHWView",
+            "kind": "Field"
+          },
+          {
+            "name": "ShadingBin",
+            "kind": "Field"
+          },
+          {
+            "name": "Barycentric",
+            "kind": "Field"
+          },
+          {
+            "name": "Normal",
+            "kind": "Field"
+          },
+          {
+            "name": "UV",
+            "kind": "Field"
+          }
+        ]
+      }
+    ],
+    "forbiddenBoundaryReferences": [
+      "SomeEngine.Rhi",
+      "Diligent",
+      "SharpGen",
+      "D3D12",
+      "Direct3D",
+      "DXGI",
+      "SomeEngine.Render.Graph",
+      "RenderGraph",
+      "SomeEngine.Runtime",
+      "SomeEngine.Editor",
+      "ImGui",
+      "imgui",
+      "Swapchain",
+      "SwapChain",
+      "ClusterPipeline",
+      "ClusterPass",
+      "SomeEngine.UI",
+      "Silk.NET",
+      "IDevice",
+      "IQueue",
+      "ISwapchain",
+      "Window",
+      "Windowing",
+      "Present",
+      "BufferHandle",
+      "TextureHandle",
+      "RenderContext",
+      "PipelineCache",
+      "GpuResource",
+      "GpuResourceHandle",
+      "GpuBuffer",
+      "GpuBufferHandle",
+      "GpuTexture",
+      "GpuTextureHandle",
+      "Rhi",
+      "FrameGraph",
+      "RenderGraphHandle",
+      "RenderPass",
+      "RenderPipeline",
+      "ComputePipeline",
+      "GraphicsPipeline",
+      "DeviceContext",
+      "PipelineState",
+      "ShaderResourceBinding",
+      "RootSignature",
+      "DescriptorSet",
+      "RenderEncoder",
+      "ComputeEncoder",
+      "EditorRenderer"
+    ]
+  },
+  "diffIntent": {
+    "labels": [
+      "bugfix",
+      "feature",
+      "refactor"
+    ],
+    "bugfixMaxFiles": 5,
+    "refactorNewFunctionTolerance": 2
+  },
+  "runtimeAllocation": {
+    "tracePath": "harness/fixtures/runtime-allocation.json",
+    "allowedTraceSources": [
+      "tracy",
+      "dotnet-trace",
+      "etl",
+      "perfview"
+    ],
+    "maxGcGen0PerFrame": 0,
+    "maxAllocBytesPerFrame": 1024
+  },
+  "profiler": {
+    "externalToolRoot": "C:/Users/boqi/App/windows-0.13.1",
+    "requiredTools": [
+      "tracy-capture.exe",
+      "tracy-csvexport.exe",
+      "tracy-profiler.exe"
+    ],
+    "bridgeFiles": [
+      "src/SomeEngine.Core/Diagnostics/Profiler.cs",
+      "src/SomeEngine.Core/Diagnostics/ProfilerTypes.cs",
+      "src/SomeEngine.Core/Diagnostics/TracySink.cs",
+      "src/SomeEngine.Tracy.Native/SomeEngineTracyBridge.cpp",
+      "src/SomeEngine.Tracy.Native/CMakeLists.txt"
+    ],
+    "forbiddenProfilerCenters": [
+      "RuntimeTrace",
+      "RhiTrace",
+      "RenderTrace",
+      "RenderGraphTrace",
+      "PipelineTrace",
+      "ManagedProfilerSink",
+      "ManagedProfileSink",
+      "ProfilerHub",
+      "ProfileCenter",
+      "PipelineProfiler",
+      "RenderProfiler",
+      "RhiProfiler",
+      "TimingTable",
+      "FrameTiming",
+      "Profiler.Count("
+    ]
+  },
+  "coverage": {
+    "reportPath": "harness/coverage/coverage.cobertura.xml",
+    "minLineRate": 0.8,
+    "minBranchRate": 0.6,
+    "requiredAssemblies": [
+      "SomeEngine.ECS",
+      "SomeEngine.ECS.Systems",
+      "SomeEngine.ECS.Serialization",
+      "SomeEngine.Job",
+      "SomeEngine.Job.Dots",
+      "SomeEngine.Core",
+      "SomeEngine.Assets",
+      "SomeEngine.Render",
+      "SomeEngine.Render.Cluster"
+    ],
+    "excludedTestTraits": [
+      {
+        "name": "Category",
+        "value": "Performance",
+        "reason": "Coverage instrumentation changes allocation/timing behaviour; performance and allocation tests run in the product-test warning bucket without coverage collection."
+      }
+    ]
+  }
+}

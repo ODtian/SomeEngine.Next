@@ -1,0 +1,9 @@
+[submodule "external/Alimer.Bindings"]
+	path = external/Alimer.Bindings
+	url = https://github.com/ODtian/Alimer.Bindings
+[submodule "external/SlangShaderSharp"]
+	path = external/SlangShaderSharp
+	url = https://github.com/DominicMaas/SlangShaderSharp
+[submodule "external/tracy"]
+	path = external/tracy
+	url = https://github.com/wolfpld/tracy.git
