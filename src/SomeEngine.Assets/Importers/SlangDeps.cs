@@ -16,7 +16,9 @@ internal static class SlangDeps
         }
 
         return AssetGuid.TryParse(asset.AssetGuid, out var assetGuid)
-            && assetGuid == existingAsset.AssetGuid;
+            && assetGuid == existingAsset.AssetGuid
+            && asset.ImportTrace?.ContentFingerprint == existingAsset.ContentFingerprint
+            && asset.ImportTrace.ImporterVersion == existingAsset.ImporterVersion;
     }
 
     public static DependencyEntryData[] Collect(
@@ -58,7 +60,8 @@ internal static class SlangDeps
     public static AssetImportFingerprint? Refresh(
         IReadOnlyList<DependencyEntryData> dependencies,
         string projectRoot,
-        uint importerVersion)
+        uint importerVersion,
+        params string[] extraParts)
     {
         if (dependencies.Count == 0)
         {
@@ -81,13 +84,14 @@ internal static class SlangDeps
             };
         }
 
-        return AssetFingerprint.Create(currentDependencies, importerVersion);
+        return AssetFingerprint.Create(currentDependencies, importerVersion, extraParts);
     }
 
     public static string Fingerprint(
         IReadOnlyList<DependencyEntryData> dependencies,
-        uint importerVersion)
-        => AssetFingerprint.ComputeContentFingerprint(dependencies, importerVersion);
+        uint importerVersion,
+        params string[] extraParts)
+        => AssetFingerprint.ComputeContentFingerprint(dependencies, importerVersion, extraParts);
 
     public static string ProjectRoot(string sourcePath)
     {

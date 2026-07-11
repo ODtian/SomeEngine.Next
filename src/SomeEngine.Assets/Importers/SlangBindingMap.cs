@@ -20,7 +20,35 @@ internal static class SlangBindingMap
         uint Binding,
         uint Space,
         byte ResourceType,
-        Schema.ShaderBindingType BindingType);
+        Schema.ShaderBindingType BindingType,
+        uint DescriptorCount,
+        Schema.ShaderReflectedAccess ReflectedAccess,
+        Schema.ShaderReflectedOperations ReflectedOperations,
+        Schema.ShaderDeclaredEffect DeclaredEffect,
+        Schema.ShaderDeclaredOperations DeclaredOperations,
+        Schema.ShaderTextureDimension TextureDimension,
+        Schema.ShaderTextureSampleType TextureSampleType,
+        Schema.ShaderStorageFormat StorageFormat,
+        uint SlangResourceShape,
+        uint SlangResourceAccess,
+        uint SlangScalarType,
+        uint SlangImageFormat);
+
+    private readonly record struct ResourceFacts(
+        byte ResourceType,
+        Schema.ShaderBindingType BindingType,
+        uint DescriptorCount,
+        Schema.ShaderReflectedAccess ReflectedAccess,
+        Schema.ShaderReflectedOperations ReflectedOperations,
+        Schema.ShaderDeclaredEffect DeclaredEffect,
+        Schema.ShaderDeclaredOperations DeclaredOperations,
+        Schema.ShaderTextureDimension TextureDimension,
+        Schema.ShaderTextureSampleType TextureSampleType,
+        Schema.ShaderStorageFormat StorageFormat,
+        uint SlangResourceShape,
+        uint SlangResourceAccess,
+        uint SlangScalarType,
+        uint SlangImageFormat);
 
     public readonly record struct SpaceKey(SlangParameterCategory Category, uint Space);
 
@@ -35,6 +63,18 @@ internal static class SlangBindingMap
             .ThenBy(static kvp => kvp.Key.Binding)
             .ThenBy(static kvp => kvp.Key.ResourceType)
             .ThenBy(static kvp => kvp.Key.BindingType)
+            .ThenBy(static kvp => kvp.Key.DescriptorCount)
+            .ThenBy(static kvp => kvp.Key.ReflectedAccess)
+            .ThenBy(static kvp => kvp.Key.ReflectedOperations)
+            .ThenBy(static kvp => kvp.Key.DeclaredEffect)
+            .ThenBy(static kvp => kvp.Key.DeclaredOperations)
+            .ThenBy(static kvp => kvp.Key.TextureDimension)
+            .ThenBy(static kvp => kvp.Key.TextureSampleType)
+            .ThenBy(static kvp => kvp.Key.StorageFormat)
+            .ThenBy(static kvp => kvp.Key.SlangResourceShape)
+            .ThenBy(static kvp => kvp.Key.SlangResourceAccess)
+            .ThenBy(static kvp => kvp.Key.SlangScalarType)
+            .ThenBy(static kvp => kvp.Key.SlangImageFormat)
             .ThenBy(static kvp => kvp.Key.Name, StringComparer.Ordinal))
         {
             dest.Resources.Add(
@@ -46,6 +86,18 @@ internal static class SlangBindingMap
                     Space = kvp.Key.Space,
                     ResourceType = kvp.Key.ResourceType,
                     BindingType = kvp.Key.BindingType,
+                    DescriptorCount = kvp.Key.DescriptorCount,
+                    ReflectedAccess = kvp.Key.ReflectedAccess,
+                    ReflectedOperations = kvp.Key.ReflectedOperations,
+                    DeclaredEffect = kvp.Key.DeclaredEffect,
+                    DeclaredOperations = kvp.Key.DeclaredOperations,
+                    TextureDimension = kvp.Key.TextureDimension,
+                    TextureSampleType = kvp.Key.TextureSampleType,
+                    StorageFormat = kvp.Key.StorageFormat,
+                    SlangResourceShape = kvp.Key.SlangResourceShape,
+                    SlangResourceAccess = kvp.Key.SlangResourceAccess,
+                    SlangScalarType = kvp.Key.SlangScalarType,
+                    SlangImageFormat = kvp.Key.SlangImageFormat,
                 });
         }
     }
@@ -75,7 +127,7 @@ internal static class SlangBindingMap
         foreach (ResourceKey resource in resources.Keys)
         {
             var key = new SpaceKey(BindSpace(backend, resource.ResourceType), resource.Space);
-            uint nextBinding = resource.Binding + 1;
+            uint nextBinding = checked(resource.Binding + Math.Max(1U, resource.DescriptorCount));
             if (!result.TryGetValue(key, out uint existing) || nextBinding > existing)
             {
                 result[key] = nextBinding;
@@ -107,8 +159,13 @@ internal static class SlangBindingMap
         IReadOnlyDictionary<SpaceKey, uint>? entryBases,
         HashSet<string>? skipNames)
     {
-        if (layout == VariableLayoutReflection.Null
-            || TryAdd(layout, baseBinding, baseSpace, fieldBinding, stage, resources, backend, entryBases, skipNames))
+        if (layout == VariableLayoutReflection.Null)
+        {
+            return;
+        }
+
+        ValidateResourceEffectTarget(layout);
+        if (TryAdd(layout, baseBinding, baseSpace, fieldBinding, stage, resources, backend, entryBases, skipNames))
         {
             return;
         }
@@ -178,13 +235,30 @@ internal static class SlangBindingMap
         bool fieldBinding,
         string backend,
         IReadOnlyDictionary<SpaceKey, uint>? entryBases,
-        (byte ResourceType, Schema.ShaderBindingType BindingType) resourceInfo)
+        ResourceFacts resourceInfo)
     {
         SlangParameterCategory bindingNamespace = BindSpace(backend, layout, resourceInfo.ResourceType);
         uint space = GetSpace(layout, bindingNamespace, baseSpace);
         uint relativeBinding = fieldBinding ? baseBinding + layout.BindingIndex : layout.BindingIndex;
         uint binding = BindingWithEntryBase(bindingNamespace, space, relativeBinding, entryBases);
-        return new ResourceKey(layout.Name, binding, space, resourceInfo.ResourceType, resourceInfo.BindingType);
+        return new ResourceKey(
+            layout.Name,
+            binding,
+            space,
+            resourceInfo.ResourceType,
+            resourceInfo.BindingType,
+            resourceInfo.DescriptorCount,
+            resourceInfo.ReflectedAccess,
+            resourceInfo.ReflectedOperations,
+            resourceInfo.DeclaredEffect,
+            resourceInfo.DeclaredOperations,
+            resourceInfo.TextureDimension,
+            resourceInfo.TextureSampleType,
+            resourceInfo.StorageFormat,
+            resourceInfo.SlangResourceShape,
+            resourceInfo.SlangResourceAccess,
+            resourceInfo.SlangScalarType,
+            resourceInfo.SlangImageFormat);
     }
 
     private static uint BindingWithEntryBase(
@@ -232,15 +306,16 @@ internal static class SlangBindingMap
         };
     }
 
-    private static (byte ResourceType, Schema.ShaderBindingType BindingType) ResourceInfo(
+    private static ResourceFacts ResourceInfo(
         VariableLayoutReflection layout,
         out SlangParameterCategory category)
     {
         category = Normalize(layout.Category);
-        TypeReflection type = layout.Type.UnwrapArray();
+        TypeReflection declaredType = layout.Type;
+        TypeReflection type = declaredType.UnwrapArray();
         SlangResourceShape shape = type.ResourceShape & SlangResourceShape.BaseShapeMask;
 
-        var reflectedResource = category switch
+        (byte ResourceType, Schema.ShaderBindingType BindingType) reflectedResource = category switch
         {
             SlangParameterCategory.ConstantBuffer
             or SlangParameterCategory.PushConstantBuffer =>
@@ -254,31 +329,314 @@ internal static class SlangBindingMap
             _ => (Unknown, Schema.ShaderBindingType.None),
         };
 
-        if (reflectedResource.Item1 != Unknown)
+        if (reflectedResource.ResourceType == Unknown)
         {
-            return reflectedResource;
+            switch (type.Kind)
+            {
+                case SlangTypeKind.ConstantBuffer:
+                    category = SlangParameterCategory.ConstantBuffer;
+                    reflectedResource = (ConstantBuffer, Schema.ShaderBindingType.ConstantBuffer);
+                    break;
+                case SlangTypeKind.SamplerState:
+                    category = SlangParameterCategory.SamplerState;
+                    reflectedResource = (Sampler, Schema.ShaderBindingType.Sampler);
+                    break;
+                case SlangTypeKind.Resource:
+                case SlangTypeKind.TextureBuffer:
+                case SlangTypeKind.ShaderStorageBuffer:
+                    bool isWrite = IsWrite(type.ResourceAccess);
+                    category = isWrite
+                        ? SlangParameterCategory.UnorderedAccess
+                        : SlangParameterCategory.ShaderResource;
+                    reflectedResource = isWrite ? ReadWrite(shape) : ReadOnly(shape);
+                    break;
+            }
         }
 
-        switch (type.Kind)
-        {
-            case SlangTypeKind.ConstantBuffer:
-                category = SlangParameterCategory.ConstantBuffer;
-                return (ConstantBuffer, Schema.ShaderBindingType.ConstantBuffer);
-            case SlangTypeKind.SamplerState:
-                category = SlangParameterCategory.SamplerState;
-                return (Sampler, Schema.ShaderBindingType.Sampler);
-            case SlangTypeKind.Resource:
-            case SlangTypeKind.TextureBuffer:
-            case SlangTypeKind.ShaderStorageBuffer:
-                bool isWrite = IsWrite(type.ResourceAccess);
-                category = isWrite
-                    ? SlangParameterCategory.UnorderedAccess
-                    : SlangParameterCategory.ShaderResource;
-                return isWrite ? ReadWrite(shape) : ReadOnly(shape);
-            default:
-                return (Unknown, Schema.ShaderBindingType.None);
-        }
+        return Describe(layout, declaredType, type, reflectedResource);
     }
+
+    private static ResourceFacts Describe(
+        VariableLayoutReflection layout,
+        TypeReflection declaredType,
+        TypeReflection type,
+        (byte ResourceType, Schema.ShaderBindingType BindingType) resource)
+    {
+        SlangResourceShape shape = type.ResourceShape;
+        SlangResourceAccess access = type.ResourceAccess;
+        SlangScalarType scalarType = ResourceScalarType(type);
+        SlangImageFormat imageFormat = layout.ImageFormat;
+        Schema.ShaderReflectedAccess reflectedAccess = ReflectedAccess(access, resource.BindingType);
+        (Schema.ShaderDeclaredEffect Effect, Schema.ShaderDeclaredOperations Operations) declared =
+            DeclaredEffect(layout.Variable, reflectedAccess, resource.BindingType);
+
+        bool texture = resource.BindingType is
+            Schema.ShaderBindingType.TextureRead or
+            Schema.ShaderBindingType.TextureReadWrite;
+        return new ResourceFacts(
+            resource.ResourceType,
+            resource.BindingType,
+            DescriptorCount(declaredType),
+            reflectedAccess,
+            ReflectedOperations(access),
+            declared.Effect,
+            declared.Operations,
+            texture ? TextureDimension(shape) : Schema.ShaderTextureDimension.Unknown,
+            texture ? TextureSampleType(shape, scalarType) : Schema.ShaderTextureSampleType.Unknown,
+            resource.BindingType == Schema.ShaderBindingType.TextureReadWrite
+                ? StorageFormat(imageFormat)
+                : Schema.ShaderStorageFormat.Unknown,
+            checked((uint)shape),
+            checked((uint)access),
+            checked((uint)scalarType),
+            checked((uint)imageFormat));
+    }
+
+    private static uint DescriptorCount(TypeReflection type)
+    {
+        if (!type.IsArray) return 1;
+        nuint count = type.TotalArrayElementCount;
+        return count == Slang.UnknownSize || count == Slang.UnboundedSize || count > uint.MaxValue
+            ? 0
+            : checked((uint)count);
+    }
+
+    private static SlangScalarType ResourceScalarType(TypeReflection type)
+    {
+        TypeReflection result = type.ResourceResultType;
+        if (result == TypeReflection.Null) return SlangScalarType.None;
+        if (result.ScalarType != SlangScalarType.None) return result.ScalarType;
+        return result.ElementType == TypeReflection.Null
+            ? SlangScalarType.None
+            : result.ElementType.ScalarType;
+    }
+
+    private static Schema.ShaderReflectedAccess ReflectedAccess(
+        SlangResourceAccess access,
+        Schema.ShaderBindingType bindingType) => access switch
+    {
+        SlangResourceAccess.Read => Schema.ShaderReflectedAccess.ReadOnly,
+        SlangResourceAccess.Write => Schema.ShaderReflectedAccess.WriteOnly,
+        SlangResourceAccess.ReadWrite or SlangResourceAccess.RasterOrdered or
+            SlangResourceAccess.Append or SlangResourceAccess.Consume or
+            SlangResourceAccess.Feedback => Schema.ShaderReflectedAccess.ReadWrite,
+        _ when bindingType is Schema.ShaderBindingType.ConstantBuffer or
+                              Schema.ShaderBindingType.StorageBufferRead or
+                              Schema.ShaderBindingType.RawBufferRead or
+                              Schema.ShaderBindingType.TextureRead or
+                              Schema.ShaderBindingType.Sampler => Schema.ShaderReflectedAccess.ReadOnly,
+        _ => Schema.ShaderReflectedAccess.Unknown,
+    };
+
+    private static Schema.ShaderReflectedOperations ReflectedOperations(
+        SlangResourceAccess access) => access switch
+    {
+        SlangResourceAccess.Append =>
+            Schema.ShaderReflectedOperations.Atomic | Schema.ShaderReflectedOperations.Append,
+        SlangResourceAccess.Consume =>
+            Schema.ShaderReflectedOperations.Atomic | Schema.ShaderReflectedOperations.Consume,
+        SlangResourceAccess.RasterOrdered => Schema.ShaderReflectedOperations.RasterOrdered,
+        SlangResourceAccess.Feedback => Schema.ShaderReflectedOperations.Feedback,
+        _ => Schema.ShaderReflectedOperations.None,
+    };
+
+    private static Schema.ShaderTextureDimension TextureDimension(SlangResourceShape shape)
+    {
+        SlangResourceShape supportedFlags = SlangResourceShape.TextureShadowFlag |
+            SlangResourceShape.TextureArrayFlag |
+            SlangResourceShape.TextureMultisampleFlag;
+        if ((shape & SlangResourceShape.ResourceExtShapeMask & ~supportedFlags) != 0)
+            return Schema.ShaderTextureDimension.Unknown;
+
+        SlangResourceShape baseShape = shape & SlangResourceShape.BaseShapeMask;
+        bool array = (shape & SlangResourceShape.TextureArrayFlag) != 0;
+        bool multisample = (shape & SlangResourceShape.TextureMultisampleFlag) != 0;
+        return (baseShape, array, multisample) switch
+        {
+            (SlangResourceShape.Texture1D, false, false) => Schema.ShaderTextureDimension.Texture1D,
+            (SlangResourceShape.Texture1D, true, false) => Schema.ShaderTextureDimension.Texture1DArray,
+            (SlangResourceShape.Texture2D, false, false) => Schema.ShaderTextureDimension.Texture2D,
+            (SlangResourceShape.Texture2D, true, false) => Schema.ShaderTextureDimension.Texture2DArray,
+            (SlangResourceShape.Texture2D, false, true) => Schema.ShaderTextureDimension.Texture2DMS,
+            (SlangResourceShape.Texture2D, true, true) => Schema.ShaderTextureDimension.Texture2DMSArray,
+            (SlangResourceShape.TextureCube, false, false) => Schema.ShaderTextureDimension.Cube,
+            (SlangResourceShape.TextureCube, true, false) => Schema.ShaderTextureDimension.CubeArray,
+            (SlangResourceShape.Texture3D, false, false) => Schema.ShaderTextureDimension.Texture3D,
+            (SlangResourceShape.TextureSubpass, false, false) => Schema.ShaderTextureDimension.Texture2D,
+            (SlangResourceShape.TextureSubpass, false, true) => Schema.ShaderTextureDimension.Texture2DMS,
+            _ => Schema.ShaderTextureDimension.Unknown,
+        };
+    }
+
+    private static (Schema.ShaderDeclaredEffect Effect, Schema.ShaderDeclaredOperations Operations) DeclaredEffect(
+        VariableReflection variable,
+        Schema.ShaderReflectedAccess reflectedAccess,
+        Schema.ShaderBindingType bindingType)
+    {
+        AttributeReflection selected = AttributeReflection.Null;
+        for (uint index = 0; index < variable.AttributeCount; index++)
+        {
+            AttributeReflection attribute = variable.GetAttribute(index);
+            if (attribute == AttributeReflection.Null || !IsResourceEffectAttribute(attribute.Name))
+                continue;
+            if (selected != AttributeReflection.Null)
+                throw new InvalidDataException(
+                    $"Shader resource '{variable.Name}' declares ResourceEffect more than once.");
+            selected = attribute;
+        }
+
+        if (selected == AttributeReflection.Null)
+            return (Schema.ShaderDeclaredEffect.Unspecified, Schema.ShaderDeclaredOperations.None);
+        if (bindingType == Schema.ShaderBindingType.Sampler)
+            throw new InvalidDataException(
+                $"Shader sampler '{variable.Name}' cannot declare ResourceEffect.");
+        if (selected.ArgumentCount != 2)
+            throw new InvalidDataException(
+                $"Shader resource '{variable.Name}' ResourceEffect must provide effects and operations arguments.");
+
+        Schema.ShaderDeclaredEffect declared = selected.GetArgumentValueInt(0) switch
+        {
+            1 => Schema.ShaderDeclaredEffect.Read,
+            2 => Schema.ShaderDeclaredEffect.Write,
+            3 => Schema.ShaderDeclaredEffect.ReadWrite,
+            int value => throw new InvalidDataException(
+                $"Shader resource '{variable.Name}' declares invalid ResourceEffects value {value}."),
+        };
+        int operationValue = selected.GetArgumentValueInt(1);
+        const int allOperations = (int)(
+            Schema.ShaderDeclaredOperations.Atomic |
+            Schema.ShaderDeclaredOperations.Append |
+            Schema.ShaderDeclaredOperations.Consume |
+            Schema.ShaderDeclaredOperations.RasterOrdered |
+            Schema.ShaderDeclaredOperations.Feedback);
+        if (operationValue < 0 || (operationValue & ~allOperations) != 0)
+            throw new InvalidDataException(
+                $"Shader resource '{variable.Name}' declares invalid ResourceOperations value {operationValue}.");
+        Schema.ShaderDeclaredOperations operations = (Schema.ShaderDeclaredOperations)operationValue;
+
+        int capability = reflectedAccess switch
+        {
+            Schema.ShaderReflectedAccess.ReadOnly => 1,
+            Schema.ShaderReflectedAccess.WriteOnly => 2,
+            Schema.ShaderReflectedAccess.ReadWrite => 3,
+            _ => bindingType switch
+            {
+                Schema.ShaderBindingType.ConstantBuffer or
+                    Schema.ShaderBindingType.StorageBufferRead or
+                    Schema.ShaderBindingType.RawBufferRead or
+                    Schema.ShaderBindingType.TextureRead => 1,
+                Schema.ShaderBindingType.StorageBufferReadWrite or
+                    Schema.ShaderBindingType.RawBufferReadWrite or
+                    Schema.ShaderBindingType.TextureReadWrite => 3,
+                _ => 0,
+            },
+        };
+        if (((int)declared & ~capability) != 0)
+            throw new InvalidDataException(
+                $"Shader resource '{variable.Name}' declares effect {declared} beyond its reflected access {reflectedAccess}.");
+        ValidateDeclaredOperations(variable.Name, declared, operations, bindingType, reflectedAccess);
+        return (declared, operations);
+    }
+
+    private static void ValidateDeclaredOperations(
+        string resourceName,
+        Schema.ShaderDeclaredEffect effect,
+        Schema.ShaderDeclaredOperations operations,
+        Schema.ShaderBindingType bindingType,
+        Schema.ShaderReflectedAccess reflectedAccess)
+    {
+        bool storage = bindingType is
+            Schema.ShaderBindingType.StorageBufferReadWrite or
+            Schema.ShaderBindingType.RawBufferReadWrite or
+            Schema.ShaderBindingType.TextureReadWrite;
+        if (operations != Schema.ShaderDeclaredOperations.None && !storage)
+            throw new InvalidDataException(
+                $"Shader resource '{resourceName}' declares operation qualifiers on non-storage binding {bindingType}.");
+        if ((operations & Schema.ShaderDeclaredOperations.Atomic) != 0 &&
+            (effect != Schema.ShaderDeclaredEffect.ReadWrite ||
+             reflectedAccess != Schema.ShaderReflectedAccess.ReadWrite))
+        {
+            throw new InvalidDataException(
+                $"Shader resource '{resourceName}' must declare ReadWrite and expose read-write access for Atomic operations.");
+        }
+        if ((operations & Schema.ShaderDeclaredOperations.Append) != 0 &&
+            effect is not (Schema.ShaderDeclaredEffect.Write or Schema.ShaderDeclaredEffect.ReadWrite))
+            throw new InvalidDataException(
+                $"Shader resource '{resourceName}' must include Write for Append operations.");
+        if ((operations & Schema.ShaderDeclaredOperations.Consume) != 0 &&
+            effect is not (Schema.ShaderDeclaredEffect.Read or Schema.ShaderDeclaredEffect.ReadWrite))
+            throw new InvalidDataException(
+                $"Shader resource '{resourceName}' must include Read for Consume operations.");
+        if ((operations & Schema.ShaderDeclaredOperations.RasterOrdered) != 0 &&
+            effect is not (Schema.ShaderDeclaredEffect.Write or Schema.ShaderDeclaredEffect.ReadWrite))
+            throw new InvalidDataException(
+                $"Shader resource '{resourceName}' must include Write for RasterOrdered operations.");
+        if ((operations & Schema.ShaderDeclaredOperations.Feedback) != 0 &&
+            effect != Schema.ShaderDeclaredEffect.ReadWrite)
+            throw new InvalidDataException(
+                $"Shader resource '{resourceName}' must declare ReadWrite for Feedback operations.");
+    }
+
+    private static bool IsResourceEffectAttribute(string name) =>
+        string.Equals(name, "ResourceEffect", StringComparison.Ordinal) ||
+        string.Equals(name, "ResourceEffectAttribute", StringComparison.Ordinal) ||
+        name.EndsWith("::ResourceEffect", StringComparison.Ordinal) ||
+        name.EndsWith("::ResourceEffectAttribute", StringComparison.Ordinal);
+
+    private static void ValidateResourceEffectTarget(VariableLayoutReflection layout)
+    {
+        VariableReflection variable = layout.Variable;
+        bool declared = false;
+        for (uint index = 0; index < variable.AttributeCount; index++)
+        {
+            AttributeReflection attribute = variable.GetAttribute(index);
+            if (attribute != AttributeReflection.Null && IsResourceEffectAttribute(attribute.Name))
+            {
+                declared = true;
+                break;
+            }
+        }
+        if (!declared) return;
+
+        TypeReflection type = variable.Type.UnwrapArray();
+        if (type.Kind is SlangTypeKind.ParameterBlock or SlangTypeKind.Struct)
+            throw new InvalidDataException(
+                $"Shader variable '{variable.Name}' declares ResourceEffect on a resource container instead of a resource-valued leaf.");
+    }
+
+    private static Schema.ShaderTextureSampleType TextureSampleType(
+        SlangResourceShape shape,
+        SlangScalarType scalarType)
+    {
+        if ((shape & SlangResourceShape.TextureShadowFlag) != 0)
+            return Schema.ShaderTextureSampleType.Depth;
+        return scalarType switch
+        {
+            SlangScalarType.Float16 or SlangScalarType.Float32 or SlangScalarType.Float64 =>
+                Schema.ShaderTextureSampleType.Float,
+            SlangScalarType.UInt8 or SlangScalarType.UInt16 or SlangScalarType.UInt32 or
+            SlangScalarType.UInt64 or SlangScalarType.UIntPtr => Schema.ShaderTextureSampleType.UInt,
+            SlangScalarType.Int8 or SlangScalarType.Int16 or SlangScalarType.Int32 or
+            SlangScalarType.Int64 or SlangScalarType.IntPtr => Schema.ShaderTextureSampleType.SInt,
+            _ => Schema.ShaderTextureSampleType.Unknown,
+        };
+    }
+
+    private static Schema.ShaderStorageFormat StorageFormat(SlangImageFormat format) => format switch
+    {
+        SlangImageFormat.RGBA32f => Schema.ShaderStorageFormat.R32G32B32A32Float,
+        SlangImageFormat.RGBA16f => Schema.ShaderStorageFormat.R16G16B16A16Float,
+        SlangImageFormat.RG32f => Schema.ShaderStorageFormat.R32G32Float,
+        SlangImageFormat.RG16f => Schema.ShaderStorageFormat.R16G16Float,
+        SlangImageFormat.R32f => Schema.ShaderStorageFormat.R32Float,
+        SlangImageFormat.R16f => Schema.ShaderStorageFormat.R16Float,
+        SlangImageFormat.RGBA8 => Schema.ShaderStorageFormat.R8G8B8A8UNorm,
+        SlangImageFormat.RG8 => Schema.ShaderStorageFormat.R8G8UNorm,
+        SlangImageFormat.R8 => Schema.ShaderStorageFormat.R8UNorm,
+        SlangImageFormat.R32ui => Schema.ShaderStorageFormat.R32UInt,
+        SlangImageFormat.R16ui => Schema.ShaderStorageFormat.R16UInt,
+        _ => Schema.ShaderStorageFormat.Unknown,
+    };
 
     private static SlangParameterCategory Normalize(SlangParameterCategory category)
         => category == SlangParameterCategory.DescriptorTableSlot
@@ -304,6 +662,7 @@ internal static class SlangBindingMap
             or SlangResourceAccess.RasterOrdered
             or SlangResourceAccess.Append
             or SlangResourceAccess.Consume
+            or SlangResourceAccess.Feedback
             or SlangResourceAccess.Write;
 
     private static (byte ResourceType, Schema.ShaderBindingType BindingType) ReadOnly(SlangResourceShape shape)

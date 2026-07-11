@@ -20,6 +20,6 @@ A Cluster product `Pipelines` folder is likewise not part of the first-round Clu
 
 ## Legacy code
 
-Legacy Render execution and legacy RHI are reference material only. They must not be copied into the accepted product graph to satisfy compilation.
+Legacy Render execution and legacy RHI are reference material only. They must not be copied into the accepted product graph to satisfy compilation. The target Render Graph execution boundary is defined independently in [[Render-Graph]]; importing checkpoint code does not make that code an accepted implementation of the boundary.
 
 参见 [[Product-Boundary]]、[[Harness-Definition]]。

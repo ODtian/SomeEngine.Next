@@ -2,12 +2,12 @@
   "asset_guid": "40101228-9501-58ff-b81a-08767d408801",
   "source_guid": "e3b7a6df-6c90-4e1f-a45d-8cf320efb652",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "76895221bfcd90c2176e3915dd5e386bca0d965e6211208219708e0895cc3c03",
+  "content_fingerprint": "0bb756d708d738b82706ee4078c4215b37be95d4f9c6c07b2715c1324553b135",
   "dependencies": [
     {
       "path": "assets/Shaders/hello_triangle.slang",
       "hash": "a3d7036f6ec412ff8407c202f44c04af5c50986f268edd097698651d43af78af"
     }
   ],
-  "importer_version": 15
+  "importer_version": 18
 }

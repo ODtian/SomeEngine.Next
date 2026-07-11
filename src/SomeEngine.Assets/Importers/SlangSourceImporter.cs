@@ -20,6 +20,7 @@ public sealed class SlangSourceImporter : IAssetImporter
         string fullPath = Path.IsPathRooted(sourcePath)
             ? Path.GetFullPath(sourcePath)
             : Path.GetFullPath(Path.Combine(projectRoot, sourcePath));
+        SlangShaderCookProfile profile = ResolveProfile(sourceMeta, fullPath);
         string outputPath = Path.ChangeExtension(fullPath, ".shader.asset");
         AssetMeta? existingAsset = AssetMetaFiles.TryLoad(outputPath);
         if (existingAsset == null)
@@ -30,11 +31,13 @@ public sealed class SlangSourceImporter : IAssetImporter
         return SlangDeps.Refresh(
                 existingAsset.Dependencies,
                 projectRoot,
-                SlangShaderImporter.ImporterVersion)
+                SlangShaderImporter.ImporterVersion,
+                profile.FingerprintPart)
             ?? SlangDeps.Refresh(
                 existingAsset.Dependencies,
                 Path.GetDirectoryName(fullPath) ?? projectRoot,
-                SlangShaderImporter.ImporterVersion);
+                SlangShaderImporter.ImporterVersion,
+                profile.FingerprintPart);
     }
 
     public IReadOnlyList<ImportedAsset> Import(string projectRoot, string sourcePath)
@@ -43,11 +46,22 @@ public sealed class SlangSourceImporter : IAssetImporter
             ? Path.GetFullPath(sourcePath)
             : Path.GetFullPath(Path.Combine(projectRoot, sourcePath));
         SourceMeta sourceMeta = SourceMetaFiles.GetOrCreate(fullPath, ImporterName);
+        SlangShaderCookProfile profile = ResolveProfile(sourceMeta, fullPath);
         string outputPath = Path.ChangeExtension(fullPath, ".shader.asset");
-        ShaderAsset asset = SlangShaderImporter.Import(fullPath, sourceMeta, AssetMetaFiles.TryLoad(outputPath));
+        ShaderAsset asset = SlangShaderImporter.Import(
+            fullPath,
+            sourceMeta,
+            AssetMetaFiles.TryLoad(outputPath),
+            profile);
         return AssetGuid.TryParse(asset.AssetGuid, out AssetGuid guid) && !guid.IsEmpty
             ? [new ImportedAsset(asset, "shader:main", outputPath)]
             : [];
+    }
+
+    private static SlangShaderCookProfile ResolveProfile(SourceMeta sourceMeta, string fullPath)
+    {
+        SlangShaderImporterSettings settings = SlangShaderImporterSettings.Load(sourceMeta, fullPath);
+        return SlangShaderCookProfiles.Resolve(settings.CookProfile);
     }
 }
 

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Direct3D12 Graphics backend adapter.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Vortice.Direct3D12" Version="3.8.3" />
+    <PackageReference Include="Vortice.Mathematics" Version="2.1.0" />
+  </ItemGroup>
+</Project>

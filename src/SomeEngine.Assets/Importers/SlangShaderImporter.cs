@@ -15,13 +15,14 @@ namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    public const uint ImporterVersion = 15;
+    public const uint ImporterVersion = 18;
+    public const uint ShaderAssetSchemaVersion = 2;
 
     [ThreadStatic]
     private static IGlobalSession? t_globalSession;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<
-        string,
-        (Schema.ShaderAsset Asset, DateTime LastModified)
+        ShaderCacheKey,
+        Schema.ShaderAsset
     > _cache = new();
 
     public static IGlobalSession GlobalSession
@@ -40,10 +41,11 @@ public static partial class SlangShaderImporter
     public static Schema.ShaderAsset Import(string filePath, string? source = null)
     {
         SourceMeta sourceMeta = SourceMetaFiles.GetOrCreate(filePath);
+        SlangShaderCookProfile profile = ResolveProfile(sourceMeta, filePath);
         AssetMeta? existingAsset = AssetMetaFiles.TryLoad(
             Path.ChangeExtension(Path.GetFullPath(filePath), ".shader.asset")
         );
-        return Import(filePath, sourceMeta, existingAsset, source);
+        return Import(filePath, sourceMeta, existingAsset, profile, source);
     }
 
     public static Schema.ShaderAsset ImportTransient(string filePath)
@@ -60,13 +62,34 @@ public static partial class SlangShaderImporter
         AssetMeta? existingAsset = AssetMetaFiles.TryLoad(
             Path.ChangeExtension(filePath, ".shader.asset")
         );
-        return Import(filePath, sourceMeta, existingAsset, source: null, writeCache: false);
+        SlangShaderCookProfile profile = ResolveProfile(sourceMeta, filePath);
+        return Import(filePath, sourceMeta, existingAsset, profile, source: null, writeCache: false);
+    }
+
+    public static Schema.ShaderAsset ImportTransient(
+        string filePath,
+        SlangShaderCookProfile profile)
+    {
+        filePath = Path.GetFullPath(filePath);
+        var sourceMeta = File.Exists(SourceMetaFiles.GetMetaPath(filePath))
+            ? SourceMetaFiles.Load(filePath)
+            : new SourceMeta
+            {
+                SourceGuid = SourceGuid.New(),
+                Importer = nameof(SlangShaderImporter),
+            };
+
+        AssetMeta? existingAsset = AssetMetaFiles.TryLoad(
+            Path.ChangeExtension(filePath, ".shader.asset")
+        );
+        return Import(filePath, sourceMeta, existingAsset, profile, source: null, writeCache: false);
     }
 
     public static Schema.ShaderAsset Import(
         string filePath,
         SourceMeta sourceMeta,
         AssetMeta? existingAsset,
+        SlangShaderCookProfile profile,
         string? source = null,
         bool writeCache = true
     )
@@ -75,6 +98,7 @@ public static partial class SlangShaderImporter
             filePath,
             sourceMeta,
             existingAsset,
+            profile,
             source,
             writeCache);
         if (TryReadCachedAsset(context, out Schema.ShaderAsset? cachedAsset))
@@ -95,6 +119,7 @@ public static partial class SlangShaderImporter
         string filePath,
         SourceMeta sourceMeta,
         AssetMeta? existingAsset,
+        SlangShaderCookProfile profile,
         string? source,
         bool writeCache)
     {
@@ -116,6 +141,7 @@ public static partial class SlangShaderImporter
             assetGuid,
             sourceMeta,
             existingAsset,
+            profile,
             source,
             writeCache);
     }
@@ -133,16 +159,18 @@ public static partial class SlangShaderImporter
         AssetImportFingerprint? historicalFingerprint = SlangDeps.Refresh(
             context.ExistingAsset.Dependencies,
             context.ProjectRoot,
-            ImporterVersion);
+            ImporterVersion,
+            context.Profile.FingerprintPart);
         if (historicalFingerprint?.ContentFingerprint != context.ExistingAsset.ContentFingerprint)
         {
             return false;
         }
 
-        if (_cache.TryGetValue(context.FilePath, out var memoryCached)
-            && SlangDeps.Matches(memoryCached.Asset, context.ExistingAsset))
+        ShaderCacheKey cacheKey = new(context.FilePath, historicalFingerprint.ContentFingerprint);
+        if (_cache.TryGetValue(cacheKey, out Schema.ShaderAsset? memoryCached)
+            && SlangDeps.Matches(memoryCached, context.ExistingAsset))
         {
-            cachedAsset = memoryCached.Asset;
+            cachedAsset = memoryCached;
             return true;
         }
 
@@ -152,15 +180,10 @@ public static partial class SlangShaderImporter
             return false;
         }
 
-        _cache[context.FilePath] = (diskAsset, CacheSourceTime(context));
+        _cache[cacheKey] = diskAsset;
         cachedAsset = diskAsset;
         return true;
     }
-
-    private static DateTime CacheSourceTime(ShaderImportContext context)
-        => File.Exists(context.FilePath)
-            ? File.GetLastWriteTime(context.FilePath)
-            : File.GetLastWriteTime(context.CachePath);
 
     private static ShaderImportState CreateImportState(
         ShaderImportContext context,
@@ -168,8 +191,8 @@ public static partial class SlangShaderImporter
     {
         string name = Path.GetFileNameWithoutExtension(context.FilePath);
         IGlobalSession globalSession = GlobalSession;
-        TargetDesc[] targets = CreateTargets(globalSession);
-        SessionDesc sessionDesc = CreateSessionDesc(context.FilePath, targets);
+        TargetDesc[] targets = CreateTargets(globalSession, context.Profile);
+        SessionDesc sessionDesc = CreateSessionDesc(context.FilePath, context.ProjectRoot, targets);
         globalSession.CreateSession(sessionDesc, out ISession session);
 
         ISlangBlob sourceBlob = Slang.CreateBlob(Encoding.UTF8.GetBytes(source));
@@ -180,7 +203,10 @@ public static partial class SlangShaderImporter
         }
 
         DependencyEntryData[] dependencies = SlangDeps.Collect(module, context.FilePath, context.ProjectRoot);
-        string fingerprint = SlangDeps.Fingerprint(dependencies, ImporterVersion);
+        string fingerprint = SlangDeps.Fingerprint(
+            dependencies,
+            ImporterVersion,
+            context.Profile.FingerprintPart);
         ShaderMetadata metadata = CreateMetadata();
         Schema.ShaderAsset asset = CreateShaderAsset(context, name, fingerprint, dependencies, metadata);
         return new ShaderImportState(
@@ -196,10 +222,12 @@ public static partial class SlangShaderImporter
             []);
     }
 
-    private static TargetDesc[] CreateTargets(IGlobalSession globalSession)
+    private static TargetDesc[] CreateTargets(
+        IGlobalSession globalSession,
+        SlangShaderCookProfile profile)
     {
-        SlangProfileID dxilProfile = globalSession.FindProfile("sm_6_5");
-        SlangProfileID spirvProfile = globalSession.FindProfile("glsl_460");
+        SlangProfileID dxilProfile = globalSession.FindProfile(profile.DxilProfile);
+        SlangProfileID spirvProfile = globalSession.FindProfile(profile.SpirvProfile);
         return
         [
             new() { Format = SlangCompileTarget.Dxil, Profile = dxilProfile },
@@ -207,7 +235,10 @@ public static partial class SlangShaderImporter
         ];
     }
 
-    private static SessionDesc CreateSessionDesc(string filePath, TargetDesc[] targets)
+    private static SessionDesc CreateSessionDesc(
+        string filePath,
+        string projectRoot,
+        TargetDesc[] targets)
     {
         CompilerOptionEntry[] options =
         [
@@ -219,9 +250,19 @@ public static partial class SlangShaderImporter
         {
             Targets = targets,
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.ColumnMajor,
-            SearchPaths = [Path.GetDirectoryName(filePath) ?? ""],
+            SearchPaths = ShaderSearchPaths(filePath, projectRoot),
             CompilerOptionEntries = options,
         };
+    }
+
+    private static string[] ShaderSearchPaths(string filePath, string projectRoot)
+    {
+        string sourceDirectory = Path.GetDirectoryName(filePath) ?? string.Empty;
+        string libraryDirectory = Path.Combine(projectRoot, "assets", "Shaders");
+        return Directory.Exists(libraryDirectory) &&
+               !string.Equals(sourceDirectory, libraryDirectory, StringComparison.OrdinalIgnoreCase)
+            ? [sourceDirectory, libraryDirectory]
+            : [sourceDirectory];
     }
 
     private static ShaderMetadata CreateMetadata()
@@ -243,6 +284,7 @@ public static partial class SlangShaderImporter
     {
         return new Schema.ShaderAsset
         {
+            SchemaVersion = ShaderAssetSchemaVersion,
             AssetGuid = context.AssetGuid.ToFlatString(),
             Name = name,
             ImportTrace = CreateImportTrace(context, fingerprint, dependencies),
@@ -630,7 +672,7 @@ public static partial class SlangShaderImporter
             return;
         }
 
-        _cache[context.FilePath] = (asset, File.GetLastWriteTime(context.FilePath));
+        _cache[new ShaderCacheKey(context.FilePath, fingerprint)] = asset;
         try
         {
             ShaderAssetCodec.Save(asset, context.CachePath);
@@ -676,8 +718,11 @@ public static partial class SlangShaderImporter
         AssetGuid AssetGuid,
         SourceMeta SourceMeta,
         AssetMeta? ExistingAsset,
+        SlangShaderCookProfile Profile,
         string? Source,
         bool WriteCache);
+
+    private readonly record struct ShaderCacheKey(string FilePath, string ContentFingerprint);
 
     private sealed record ShaderImportState(
         ShaderImportContext Context,
@@ -695,6 +740,14 @@ public static partial class SlangShaderImporter
         IEntryPoint EntryPoint,
         IComponentType LinkedProgram,
         IReadOnlyList<SlangEntryMeta.Attr> Attributes);
+
+    private static SlangShaderCookProfile ResolveProfile(SourceMeta sourceMeta, string filePath)
+    {
+        SlangShaderImporterSettings settings = SlangShaderImporterSettings.Load(
+            sourceMeta,
+            Path.GetFullPath(filePath));
+        return SlangShaderCookProfiles.Resolve(settings.CookProfile);
+    }
 
     private static Schema.ShaderStage MapStage(SlangStage stage)
     {

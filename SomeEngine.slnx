@@ -8,6 +8,7 @@
   <Project Path="harness\coverage\SomeEngine.Harness.Coverage\SomeEngine.Harness.Coverage.csproj" />
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
   <Project Path="src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+  <Project Path="tools\SomeEngine.AssetCook\SomeEngine.AssetCook.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
   <Project Path="src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
@@ -29,4 +30,12 @@
   <Project Path="tests\SomeEngine.Render.Cluster.Tests\SomeEngine.Render.Cluster.Tests.csproj" />
   <Project Path="external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
   <Project Path="external\Alimer.Bindings\src\Alimer.Bindings.MeshOptimizer\Alimer.Bindings.MeshOptimizer.csproj" />
+  <Project Path="src\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
+  <Project Path="src\SomeEngine.Graphics.Null\SomeEngine.Graphics.Null.csproj" />
+  <Project Path="src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
+  <Project Path="src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
+  <Project Path="tests\SomeEngine.RenderGraph.Tests\SomeEngine.RenderGraph.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Graphics.Tests\SomeEngine.Graphics.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Graphics.Direct3D12.Tests\SomeEngine.Graphics.Direct3D12.Tests.csproj" />
+  <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
 </Solution>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Description>Cross-platform immediate RenderGraph example using the Null graphics backend.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Null/SomeEngine.Graphics.Null.csproj" />
+  </ItemGroup>
+</Project>

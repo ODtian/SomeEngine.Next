@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Core\SomeEngine.Core.csproj" />
     <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
     <ProjectReference Include="..\SomeEngine.ECS\SomeEngine.ECS.csproj" />
     <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
