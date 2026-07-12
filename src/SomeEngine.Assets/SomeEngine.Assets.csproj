@@ -26,6 +26,30 @@
       <Link>runtimes\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Update="..\..\external\SlangShaderSharp\runtimes\win-x64\native\slang-compiler.dll"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
+      <Link>slang-compiler.dll</Link>
+    </Content>
+    <Content Update="..\..\external\SlangShaderSharp\runtimes\win-arm64\native\slang-compiler.dll"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64'">
+      <Link>slang-compiler.dll</Link>
+    </Content>
+    <Content Update="..\..\external\SlangShaderSharp\runtimes\linux-x64\native\libslang-compiler.so"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'">
+      <Link>libslang-compiler.so</Link>
+    </Content>
+    <Content Update="..\..\external\SlangShaderSharp\runtimes\linux-arm64\native\libslang-compiler.so"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-arm64'">
+      <Link>libslang-compiler.so</Link>
+    </Content>
+    <Content Update="..\..\external\SlangShaderSharp\runtimes\osx-x64\native\libslang-compiler.dylib"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'osx-x64'">
+      <Link>libslang-compiler.dylib</Link>
+    </Content>
+    <Content Update="..\..\external\SlangShaderSharp\runtimes\osx-arm64\native\libslang-compiler.dylib"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'osx-arm64'">
+      <Link>libslang-compiler.dylib</Link>
+    </Content>
     <Content Include="..\..\external\Alimer.Bindings\native\win-x64\meshoptimizer.dll"
              Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
       <Link>meshoptimizer.dll</Link>
