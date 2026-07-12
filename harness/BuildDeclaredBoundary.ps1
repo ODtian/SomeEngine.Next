@@ -65,15 +65,35 @@ foreach ($relativePath in $projectPaths) {
     if (-not (Test-Path -LiteralPath $fullPath)) {
         throw "Declared boundary project does not exist: $relativePath"
     }
+}
 
-    Write-Host "Building declared boundary project: $relativePath"
+$solutionPath = Join-Path $repoRoot ".declared-boundary-$ProjectSet-$PID.slnx"
+$xmlSettings = [System.Xml.XmlWriterSettings]::new()
+$xmlSettings.Indent = $true
+$xmlSettings.Encoding = [System.Text.UTF8Encoding]::new($false)
+$writer = $null
+try {
+    $writer = [System.Xml.XmlWriter]::Create($solutionPath, $xmlSettings)
+    $writer.WriteStartElement("Solution")
+    foreach ($relativePath in $projectPaths) {
+        $writer.WriteStartElement("Project")
+        $writer.WriteAttributeString("Path", $relativePath)
+        $writer.WriteEndElement()
+    }
+    $writer.WriteEndElement()
+    $writer.Flush()
+    $writer.Dispose()
+    $writer = $null
+
+    Write-Host "Building declared boundary graph: $($projectPaths.Count) projects in one MSBuild invocation."
     $buildArgs = @(
         "build",
-        $fullPath,
+        $solutionPath,
         "--configuration",
         $Configuration,
         "-v",
         $Verbosity,
+        "-m",
         # Package availability belongs to this build gate; the separately hosted
         # NuGet vulnerability feed must not turn a successful restore into NU1900.
         "/p:NuGetAudit=false"
@@ -100,15 +120,21 @@ foreach ($relativePath in $projectPaths) {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($OutputRoot)) {
-        $projectName = [System.IO.Path]::GetFileNameWithoutExtension($fullPath)
-        $projectOutputRoot = [System.IO.Path]::GetFullPath((Join-Path (Join-Path $repoRoot $OutputRoot) $projectName))
-        $projectOutputRoot = $projectOutputRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-        $buildArgs += "/p:BaseOutputPath=$projectOutputRoot"
+        $artifactsPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
+        $buildArgs += "/p:UseArtifactsOutput=true"
+        $buildArgs += "/p:ArtifactsPath=$artifactsPath"
     }
 
     & dotnet @buildArgs
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) {
-        exit $exitCode
+    $buildExitCode = $LASTEXITCODE
+}
+finally {
+    if ($null -ne $writer) {
+        $writer.Dispose()
     }
+    Remove-Item -LiteralPath $solutionPath -Force -ErrorAction SilentlyContinue
+}
+
+if ($buildExitCode -ne 0) {
+    exit $buildExitCode
 }

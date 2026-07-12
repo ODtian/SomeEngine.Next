@@ -19,6 +19,7 @@ $script:qualityInfrastructureNoWarn = "RS2008%3BCS0618"
 $script:qualitySoftRuleNoWarn = "SE010%3BSE031%3BSE052%3B$script:qualityInfrastructureNoWarn"
 $script:qualityBoundaryRuleNoWarn = "SE001%3BSE002%3BSE020%3BSE021%3BSE022%3BSE023%3BSE024%3BSE030%3B$script:qualityInfrastructureNoWarn"
 $script:qualityStyleRuleWarningsAsErrors = "SE010%3BSE031%3BSE052"
+. (Join-Path $PSScriptRoot "ProcessExecution.ps1")
 
 function Add-CheckResult {
     param(
@@ -75,30 +76,19 @@ function Invoke-HarnessStep {
 
     Write-Host "==> [$Kind] $Name"
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    $psi = [Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = $FileName
-    $psi.WorkingDirectory = $repoRoot
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
+    $environment = @{}
     if (-not [string]::IsNullOrWhiteSpace($RunId)) {
-        $psi.Environment["SOMEENGINE_AGENT_RUN_ID"] = $RunId
+        $environment["SOMEENGINE_AGENT_RUN_ID"] = $RunId
     }
 
-    foreach ($arg in $Arguments) {
-        [void]$psi.ArgumentList.Add($arg)
-    }
-
-    $process = [Diagnostics.Process]::Start($psi)
-    if ($null -eq $process) {
-        throw "Failed to start $FileName for step $Name."
-    }
-
-    $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
-    $standardErrorTask = $process.StandardError.ReadToEndAsync()
-    $process.WaitForExit()
-    $stdout = $standardOutputTask.GetAwaiter().GetResult()
-    $stderr = $standardErrorTask.GetAwaiter().GetResult()
+    $execution = Start-CapturedProcess `
+        -FileName $FileName `
+        -Arguments $Arguments `
+        -WorkingDirectory $repoRoot `
+        -Environment $environment
+    $result = Complete-CapturedProcess $execution
+    $stdout = $result.StandardOutput
+    $stderr = $result.StandardError
     $sw.Stop()
 
     if (-not [string]::IsNullOrWhiteSpace($stdout)) {
@@ -110,21 +100,21 @@ function Invoke-HarnessStep {
     }
 
     $combined = "$stdout`n$stderr"
-    if ($process.ExitCode -eq 0) {
-        Add-CheckResult -Name $Name -Kind $Kind -ExitCode $process.ExitCode -Seconds $sw.Elapsed.TotalSeconds -Status "PASS"
+    if ($result.ExitCode -eq 0) {
+        Add-CheckResult -Name $Name -Kind $Kind -ExitCode $result.ExitCode -Seconds $sw.Elapsed.TotalSeconds -Status "PASS"
         return $true
     }
 
     if ($Kind -eq "warning") {
         $script:warnings += $Name
-        Add-CheckResult -Name $Name -Kind $Kind -ExitCode $process.ExitCode -Seconds $sw.Elapsed.TotalSeconds -Status "WARNING"
+        Add-CheckResult -Name $Name -Kind $Kind -ExitCode $result.ExitCode -Seconds $sw.Elapsed.TotalSeconds -Status "WARNING"
         Write-Host "WARNING: $Name failed but does not block PASS."
         return $true
     }
 
     $script:failures += $Name
     Set-FailingStatusFromOutput -Output $combined
-    Add-CheckResult -Name $Name -Kind $Kind -ExitCode $process.ExitCode -Seconds $sw.Elapsed.TotalSeconds -Status $script:status
+    Add-CheckResult -Name $Name -Kind $Kind -ExitCode $result.ExitCode -Seconds $sw.Elapsed.TotalSeconds -Status $script:status
     return $false
 }
 
@@ -151,6 +141,16 @@ function Invoke-BuildOnce {
 }
 
 function Invoke-HardBucket {
+    if (-not (Invoke-HarnessStep -Name "harness-execution" -Kind "hard" -FileName "pwsh" -Arguments @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "harness/TestHarnessExecution.ps1"
+    ))) {
+        return $false
+    }
+
     if (-not (Invoke-BuildOnce)) {
         return $false
     }

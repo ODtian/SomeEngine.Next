@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $configPath = Join-Path $repoRoot "harness\config.json"
 $config = Get-Content -Raw $configPath | ConvertFrom-Json
+. (Join-Path $PSScriptRoot "ProcessExecution.ps1")
 
 $projects = @($config.projects.testProjects |
     ForEach-Object { Get-Item (Join-Path $repoRoot $_.path) } |
@@ -61,30 +62,12 @@ function Invoke-TestProject($project) {
 }
 
 function Start-TestProject($project) {
-    $psi = [Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = "dotnet"
-    $psi.WorkingDirectory = $repoRoot
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-
-    foreach ($arg in (New-TestArguments $project.FullName)) {
-        [void]$psi.ArgumentList.Add($arg)
-    }
-
-    $process = [Diagnostics.Process]::Start($psi)
-    if ($null -eq $process) {
-        throw "Failed to start dotnet test for $($project.FullName)."
-    }
-
-    $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
-    $standardErrorTask = $process.StandardError.ReadToEndAsync()
-
     return [pscustomobject]@{
         Project = $project
-        Process = $process
-        StandardOutputTask = $standardOutputTask
-        StandardErrorTask = $standardErrorTask
+        Execution = Start-CapturedProcess `
+            -FileName "dotnet" `
+            -Arguments (New-TestArguments $project.FullName) `
+            -WorkingDirectory $repoRoot
     }
 }
 
@@ -110,21 +93,22 @@ while ($queue.Count -gt 0 -or $running.Count -gt 0) {
     Start-Sleep -Milliseconds 100
     $stillRunning = @()
     foreach ($entry in $running) {
-        if (-not $entry.Process.HasExited) {
+        if (-not $entry.Execution.Process.HasExited) {
             $stillRunning += $entry
             continue
         }
 
-        $stdout = $entry.StandardOutputTask.GetAwaiter().GetResult()
-        $stderr = $entry.StandardErrorTask.GetAwaiter().GetResult()
+        $result = Complete-CapturedProcess $entry.Execution
+        $stdout = $result.StandardOutput
+        $stderr = $result.StandardError
         if (-not [string]::IsNullOrWhiteSpace($stdout)) {
             Write-Host $stdout.TrimEnd()
         }
         if (-not [string]::IsNullOrWhiteSpace($stderr)) {
             Write-Host $stderr.TrimEnd()
         }
-        if ($entry.Process.ExitCode -ne 0 -and $failedExitCode -eq 0) {
-            $failedExitCode = $entry.Process.ExitCode
+        if ($result.ExitCode -ne 0 -and $failedExitCode -eq 0) {
+            $failedExitCode = $result.ExitCode
         }
     }
 

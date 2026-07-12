@@ -121,10 +121,13 @@ public sealed class HarnessScriptBoundaryTests
         Assert.Contains("$NoWarn", buildScript);
         Assert.Contains("$WarningsAsErrors", buildScript);
         Assert.Contains("$OutputRoot", buildScript);
-        Assert.Contains("BaseOutputPath", buildScript);
+        Assert.Contains("UseArtifactsOutput", buildScript);
+        Assert.Contains("ArtifactsPath", buildScript);
         Assert.Contains("$LASTEXITCODE", buildScript);
         Assert.DoesNotContain("SomeEngine.slnx", buildScript);
 
+        Assert.Contains("harness-execution", hardBucket);
+        Assert.Contains("harness/TestHarnessExecution.ps1", hardBucket);
         Assert.Contains("quality-product-boundary", hardBucket);
         Assert.Contains("product-tests", hardBucket);
         Assert.Contains("TraitMode", hardBucket);
@@ -170,6 +173,58 @@ public sealed class HarnessScriptBoundaryTests
         Assert.Contains("hardChecksExecuted", runHarness);
         Assert.Contains("harness-warning-run.json", runHarness);
         Assert.Contains("harness-run.json", runHarness);
+    }
+
+    [Fact]
+    public void DeclaredBoundaryBuildUsesOneGeneratedGraphInvocation()
+    {
+        var root = HarnessConfig.ResolveRepoRoot();
+        var buildScript = File.ReadAllText(Path.Combine(root, "harness", "BuildDeclaredBoundary.ps1"));
+
+        Assert.Contains(".declared-boundary-$ProjectSet-$PID.slnx", buildScript);
+        Assert.Contains("WriteStartElement(\"Solution\")", buildScript);
+        Assert.Contains("WriteStartElement(\"Project\")", buildScript);
+        Assert.Contains("one MSBuild invocation", buildScript);
+        Assert.Contains("\"-m\"", buildScript);
+        Assert.Contains("Remove-Item -LiteralPath $solutionPath", buildScript);
+        Assert.DoesNotContain("Building declared boundary project:", buildScript);
+        Assert.Equal(1, CountOccurrences(buildScript, "& dotnet @buildArgs"));
+    }
+
+    [Fact]
+    public void HarnessProcessExecutionDrainsBothStreamsBeforeWaitingForExit()
+    {
+        var root = HarnessConfig.ResolveRepoRoot();
+        var processExecution = File.ReadAllText(Path.Combine(root, "harness", "ProcessExecution.ps1"));
+        var executionTest = File.ReadAllText(Path.Combine(root, "harness", "TestHarnessExecution.ps1"));
+        var fixture = File.ReadAllText(Path.Combine(root, "harness", "fixtures", "WriteProcessOutput.ps1"));
+
+        int stdoutRead = processExecution.IndexOf("StandardOutput.ReadToEndAsync()", StringComparison.Ordinal);
+        int stderrRead = processExecution.IndexOf("StandardError.ReadToEndAsync()", StringComparison.Ordinal);
+        int waitForExit = processExecution.IndexOf("Process.WaitForExit()", StringComparison.Ordinal);
+        Assert.True(stdoutRead >= 0 && stderrRead >= 0 && waitForExit >= 0);
+        Assert.True(stdoutRead < waitForExit && stderrRead < waitForExit);
+
+        Assert.Contains("4 parallel processes", executionTest);
+        Assert.Contains("$lineCount = 4096", executionTest);
+        Assert.Contains("30 second deadline", executionTest);
+        Assert.Contains("failure exit code", executionTest);
+        Assert.Contains("HARNESS_BROKEN:", executionTest);
+        Assert.Contains("[Console]::Out.WriteLine", fixture);
+        Assert.Contains("[Console]::Error.WriteLine", fixture);
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = source.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 
     private static string SliceFunction(string source, string startMarker, string endMarker)
