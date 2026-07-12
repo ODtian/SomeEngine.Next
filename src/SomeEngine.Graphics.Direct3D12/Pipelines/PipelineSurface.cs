@@ -74,6 +74,7 @@ public sealed partial class Device
             desc.Interface.PushConstants.ToArray(),
             desc.Interface.LayoutHash);
         NativeShader native = new(desc.Key, desc.Stage, desc.EntryPoint, bytecode, shaderInterface, program);
+        ApplyLogicalName(native, desc.Name);
         HandleKey key = _shaders.Add(native);
         return new ShaderHandle(_domain, key.Slot, key.Generation);
     }
@@ -85,6 +86,7 @@ public sealed partial class Device
     {
         EnsureCoordinator();
         ThrowIfUnavailable();
+        if (TryGetCachedPipeline(desc.CacheKey, PipelineType.Raster, out PipelineHandle cached)) return cached;
         NativePipelineLayout layout = _pipelineLayouts.Get(desc.Layout.Domain, desc.Layout.Slot, desc.Layout.Generation, "pipeline layout");
         NativeShader vertexShader = _shaders.Get(desc.VertexShader.Domain, desc.VertexShader.Slot, desc.VertexShader.Generation, "vertex shader");
         NativeShader pixelShader = _shaders.Get(desc.PixelShader.Domain, desc.PixelShader.Slot, desc.PixelShader.Generation, "pixel shader");
@@ -153,9 +155,16 @@ public sealed partial class Device
         };
 
         ID3D12PipelineState pipelineState;
-        try
+        if (desc.CacheKey.IsValid && _nativePipelineLibrary.TryLoadGraphics(desc.CacheKey, nativeDesc, out pipelineState))
         {
+            _pipelineCacheHits++;
+        }
+        else try
+        {
+            if (desc.CacheKey.IsValid) _pipelineCacheMisses++;
             pipelineState = _native.Device.CreateGraphicsPipelineState(nativeDesc);
+            if (desc.CacheKey.IsValid)
+                _nativePipelineLibrary.Store(desc.CacheKey, PipelineType.Raster, pipelineState);
         }
         catch (Exception exception)
         {
@@ -169,18 +178,32 @@ public sealed partial class Device
         layout.AddPipeline();
         vertexShader.AddPipeline();
         pixelShader.AddPipeline();
+        try
+        {
         NativeRasterPipeline native = new(
-            pipelineState,
-            layout,
-            vertexShader,
-            pixelShader,
-            desc.Topology,
-            colorFormats,
-            desc.DepthStencilFormat,
+                pipelineState,
+                layout,
+                vertexShader,
+                pixelShader,
+                desc.Topology,
+                colorFormats,
+                desc.DepthStencilFormat,
             desc.DepthStencil,
             desc.SampleCount);
-        HandleKey key = _pipelines.Add(native);
-        return new PipelineHandle(_domain, key.Slot, key.Generation);
+        ApplyObjectName(native, pipelineState, desc.Name);
+            HandleKey key = _pipelines.Add(native);
+            PipelineHandle result = new(_domain, key.Slot, key.Generation);
+            RegisterCachedPipeline(desc.CacheKey, PipelineType.Raster, result);
+            return result;
+        }
+        catch
+        {
+            pixelShader.RemovePipeline();
+            vertexShader.RemovePipeline();
+            layout.RemovePipeline();
+            pipelineState.Dispose();
+            throw;
+        }
     }
 
     public PipelineHandle CreateComputePipeline(in ComputePipelineDesc desc) => CreateComputePipelineCore(desc);
@@ -239,6 +262,7 @@ public sealed partial class Device
         NativePipeline native = _pipelines.Get(pipeline.Domain, pipeline.Slot, pipeline.Generation, "pipeline");
         RetirementPoint point = BeginRetirement(native);
         _ = _pipelines.Remove(pipeline.Domain, pipeline.Slot, pipeline.Generation, "pipeline");
+        RemoveCachedPipeline(pipeline);
         native.ReleaseDependencies();
         ScheduleRetirement(native, point);
     }
@@ -340,6 +364,15 @@ public sealed partial class Device
                     ArraySize = checked((uint)range.LayerCount),
                 };
                 break;
+            case TextureViewDimension.Texture3D:
+                result.ViewDimension = RenderTargetViewDimension.Texture3D;
+                result.Texture3D = new Texture3DRenderTargetView
+                {
+                    MipSlice = checked((uint)range.Mip),
+                    FirstWSlice = 0,
+                    WSize = checked((uint)Math.Max(1, texture.Depth >> range.Mip)),
+                };
+                break;
             default:
                 throw new ArgumentException($"View dimension {dimension} cannot describe a D3D12 render-target view.", nameof(dimension));
         }
@@ -410,6 +443,10 @@ public sealed partial class Device
         return result;
     }
 
+}
+
+public sealed partial class Device
+{
     private static uint[] BuildSubresourceList(in TextureDesc texture, in ValidatedTextureViewRange range)
     {
         List<uint> result = [];
@@ -455,12 +492,12 @@ public sealed partial class Device
             if (chunkSize > bytecode.Length - chunkOffset - 8) throw new ArgumentException("A DXIL container chunk is truncated.", nameof(bytecode));
             if (!bytecode.Slice(chunkOffset, 4).SequenceEqual("DXIL"u8)) continue;
             if (program.HasValue) throw new ArgumentException("The shader container contains more than one DXIL program chunk.", nameof(bytecode));
-            program = ReadDxilProgram(bytecode.Slice(chunkOffset + 8, checked((int)chunkSize)));
+            program = ReadDxilPayload(bytecode.Slice(chunkOffset + 8, checked((int)chunkSize)));
         }
         return program ?? throw new ArgumentException("The shader container does not contain a DXIL program chunk.", nameof(bytecode));
     }
 
-    private static DxilProgramInfo ReadDxilProgram(ReadOnlySpan<byte> program)
+    private static DxilProgramInfo ReadDxilPayload(ReadOnlySpan<byte> program)
     {
         const int headerSize = 24;
         if (program.Length < headerSize) throw new ArgumentException("The DXIL program header is truncated.", nameof(program));

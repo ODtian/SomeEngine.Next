@@ -16,7 +16,6 @@ public sealed class ShaderArtifactEndToEndTests
     [Fact]
     public void Slang_cook_codec_projection_and_rg_validate_a_nonempty_texture_contract()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         string directory = Path.Combine(
             FindProjectRoot(),

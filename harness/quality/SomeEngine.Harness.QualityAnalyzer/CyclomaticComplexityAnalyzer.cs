@@ -28,21 +28,21 @@ internal static class CyclomaticComplexityAnalyzer
         context.RegisterCompilationStartAction(ctx =>
         {
             var config = AnalyzerConfigLoader.Load(ctx.Options);
-            var max = config.Complexity.MaxCyclomaticComplexity;
-
             ctx.RegisterSyntaxNodeAction(
-                c => Analyze(c, max),
+                c => Analyze(c, config),
                 SyntaxKind.MethodDeclaration);
         });
     }
 
-    private static void Analyze(SyntaxNodeAnalysisContext ctx, int max)
+    private static void Analyze(SyntaxNodeAnalysisContext ctx, AnalyzerHarnessConfig config)
     {
         var method = (MethodDeclarationSyntax)ctx.Node;
+        int max = config.Complexity.MaxCyclomaticComplexity;
         int complexity = 1 + method.DescendantNodes()
             .Count(IsBranchNode);
 
-        if (complexity > max)
+        if (complexity > max &&
+            !AcceptedDiagnosticBaseline.Contains(ctx, config, RuleId, method.Identifier, complexity))
         {
             ctx.ReportDiagnostic(Diagnostic.Create(
                 Descriptors[0],

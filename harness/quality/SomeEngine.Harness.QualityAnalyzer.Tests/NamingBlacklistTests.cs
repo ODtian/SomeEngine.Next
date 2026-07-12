@@ -16,7 +16,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task ClassEndingInPlan_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -37,7 +37,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task ClassEndingInRun_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -58,7 +58,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task ClassEndingInProgram_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -79,7 +79,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task MethodEndingInPlan_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -100,7 +100,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task MethodEndingInRun_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -121,7 +121,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task MethodEndingInProgram_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -142,7 +142,7 @@ public sealed class NamingBlacklistTests
     [Fact]
     public async Task ProgramClass_NoDiagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {

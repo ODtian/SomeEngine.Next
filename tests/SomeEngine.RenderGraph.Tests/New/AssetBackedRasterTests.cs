@@ -18,7 +18,6 @@ public sealed class AssetBackedRasterTests
     [Fact]
     public void Cooked_shader_asset_renders_transient_rg_attachment_and_reads_back_on_warp()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using CookedShaderAssetFixture assets = new();
         ShaderAsset asset = assets.LoadHelloTriangle();

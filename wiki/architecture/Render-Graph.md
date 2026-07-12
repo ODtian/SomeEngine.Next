@@ -1,6 +1,6 @@
 # Render Graph
 
-> Status: accepted architecture target, with an implementation snapshot updated 2026-07-11. The former imported checkpoint remains reference input, not a compatibility target.
+> Status: accepted architecture target, with an implementation snapshot updated 2026-07-12. The former imported checkpoint remains reference input, not a compatibility target.
 
 SomeEngine Render Graph uses an Unreal-RDG-style, per-invocation recording model. Renderer control flow records the graph that actually exists, the recording is frozen once, and the graph is compiled, culled, scheduled, and executed for that invocation. Bindless changes how a declared resource reaches a shader; it does not create a second dependency model.
 
@@ -15,19 +15,22 @@ The Render Graph owns:
 - pass culling and deterministic ordering;
 - queue synchronization and abstract barrier intents;
 - transient lifetime intervals and alias eligibility;
+- persistent resource ownership and temporal history-ring mechanics across successful immediate invocations;
+- completion-gated ownership transfer for explicitly exported graph-created resources;
 - attachment lowering and native render-pass merging;
 - canonical freeze/signature construction, the transparent in-memory compilation cache, and immutable-plan publication and retirement;
+- deterministic structural capture plus the explicitly supported executable replay command subset;
 - diagnostics explaining every dependency, barrier, cull, and alias decision.
 
 The Render Graph does not own:
 
-- renderer history policy, camera-cut invalidation, resize resampling, or temporal slot selection;
+- renderer history policy, camera-cut decisions, resize resampling algorithms, or semantic history migration passes;
 - physical resource creation APIs, descriptor heaps, view caches, residency, streaming, or deferred destruction;
 - the global bindless heap or stable descriptor indices;
 - shader compilation, pipeline compilation, pipeline readiness policy, or pipeline caches;
 - RenderWorld extraction, material selection, quality fallback, or feature scheduling;
 - semantic GPU algorithms such as mip generation, history migration, resolve selection, sparse-page policy, or fallback rendering;
-- device-loss reconstruction or full resource-content capture/replay.
+- device-loss reconstruction or universal resource-content/command replay beyond the capture schema's declared portable subset.
 
 Those systems may use the graph and provide state to it, but they do not become graph subsystems.
 
@@ -80,7 +83,9 @@ Access effects, prior-content requirements, write coverage, binding slots, descr
 
 ## Resource classes
 
-Graph-created resources are transient by definition. Creation records a descriptor but does not allocate a physical resource. A resource removed by culling is never allocated.
+Graph-created resources default to `Transient`, but `BufferResourceDesc` and `TextureResourceDesc` may explicitly select `Persistent` or `Temporal`. A transient removed by culling is never allocated. Persistent and temporal resources are owned by the graph's continuity store and keyed by their stable declaration identity; they do not introduce a retained public graph, template, or second compiler.
+
+A temporal resource owns `HistoryCount + 1` physical slots. The current `TextureId`/`BufferId` is the writable slot and `History(framesAgo)` is a read-only prior slot. Frame advancement and new-content publication happen only after successful submission. Descriptor or history-count changes replace the ring, stale generations are never published, and `ResetHistory` invalidates history explicitly. The renderer still decides when a camera cut, resize, or quality change calls for reset or an explicit migration/resampling pass.
 
 Imported resources are external physical resources temporarily represented by an ordinary Graph Resource. Import does not make their graph accesses implicit or untracked. An import contract supplies:
 
@@ -94,19 +99,15 @@ Imported resources are external physical resources temporarily represented by an
 
 Import is an explicit external-visibility promise. Any declared write to an imported resource is an Observable Graph Output and roots its producers; an imported resource is not a discardable scratch allocation. If external contents do not matter, the renderer creates a graph transient instead. After the last live use, the graph establishes the import's return access and queue ownership and publishes completion to the external owner. This rule applies even when the resource will be imported again by a later recording.
 
+An acquired swapchain backbuffer uses the same import mechanism with explicit backend-neutral `ResourceState.Present` initial and final boundaries. The graph may transition it to an attachment/copy state and must return every touched and untouched subresource to `Present`; only after the graph completion is observed does the external swapchain owner call `Present`. Render Graph does not acquire, resize, or own the swapchain itself.
+
 Within one recording, `(physical identity, generation)` is canonical. Re-importing the same physical object returns the same Graph Resource only when descriptor, initial state, content validity, return contract, and external wait agree; otherwise recording fails. Different views of one physical object are created as Graph Views of that canonical import, not as separate imports.
 
 The Graphics layer must also report physical allocation identity and byte/subresource overlap for externally aliased objects. Simultaneously importing overlapping external aliases as independent resources is rejected unless the backend contract proves the imported ranges are physically disjoint. Render Graph never assumes that different object handles imply different memory.
 
-Extraction applies to a graph-created resource and is an explicit Observable Graph Output. It extends physical ownership beyond the recording, requests a final abstract access and queue contract, and publishes the physical result only after graph execution has established that contract. Import return and transient extraction are therefore distinct operations: one returns an existing external object, while the other transfers a graph-created object outward.
+Export applies to a transient graph-created resource and is an explicit Observable Graph Output. `GraphBuilder.Export` roots its producer, requests a final abstract access and queue contract, and `GraphExecution.Exports` transfers the physical handle only after every producing completion has been published. Failed execution never transfers ownership, and a successful export can be imported later with its exact completion and final state. Import return and transient export are therefore distinct operations: one returns an existing external object, while the other transfers a graph-created object outward.
 
-The graph resource descriptor has no `Persistent`, `Temporal`, `HistoryCount`, `ResizeMode`, `Bindless`, `Exportable`, or `Aliasable` policy flags:
-
-- persistent/history resources are owned outside the graph and imported;
-- resize or history migration is an explicit renderer pass;
-- bindless is a descriptor projection;
-- extraction is an operation, not a creation flag;
-- aliasing is automatically chosen only when proven safe.
+Resource lifetime is an explicit closed enum (`Transient`, `Persistent`, `Temporal`) and temporal history count is part of the canonical resource contract. Resize/history migration remains an explicit renderer decision; bindless remains a descriptor projection; export remains an operation rather than a creation flag; and aliasing remains a compiler decision used only when safety is proven.
 
 ## Pass Access model
 
@@ -546,9 +547,9 @@ Public statistics are coordinator-owned consistent snapshots and expose hits, mi
 
 The optimized and conservative compiler paths share validation, exact producer analysis, culling, queue selection, hazards, and barrier correctness. The optimized path may additionally apply transient alias placement and stable adjacent raster merging when their `RenderGraphOptions` policies are enabled; both policies default to disabled pending representative game workloads. Ordinary background flights are started or joined only when an enabled transform can change lowering. `ConservativePlanUnavailableException` is the sole path that waits at the coordinator-owned required boundary, revalidates the environment, and binds the exact optimized result to the current invocation. Transparent exact-plan reuse is active and verified: equal immediate recordings reuse the compiled plan while binding fresh imported handles, waits, clear values, callbacks, descriptors, transient allocations, and command contexts on every invocation.
 
-The compiler implements exact pass/resource/view culling, deterministic no-alias placement, optional lifetime-proven alias placement, optional stable adjacent raster grouping, and compiled execution batches/record units. A batch may contain multiple record units; imported boundary transitions, including untouched texture cells needed for a final whole-resource return state, are represented by internal graphics record units instead of being lost or attached to a dead pass. `CompiledGraphContract` validates live masks, dependencies, queue topology, placements, raster scopes, alias acquires, and the abstract barrier state machine before a plan can execute or publish. The compiler deliberately does not implement profile-guided queue selection or add ordering edges merely to improve packing/merging. Cross-queue accesses remain conservatively serialized where the current abstract state domain requires it; true enhanced-barrier release/acquire lowering is not yet exposed. Public import obtains immutable live-resource metadata from the RHI rather than accepting a caller descriptor, revalidates it at Freeze, and rejects overlapping ranges sharing one opaque physical-allocation identity. Graph-created-resource extraction and a per-resource return publication target are not yet exposed; `GraphExecution.CompletionSet` is the conservative handoff for a later import. A partial submission failure reports already-published completions but does not claim that every import reached its requested final state.
+The compiler implements exact pass/resource/view culling, deterministic no-alias placement, optional lifetime-proven alias placement, optional stable adjacent raster grouping, and compiled execution batches/record units. A batch may contain multiple record units; imported boundary transitions, including untouched texture cells needed for a final whole-resource return state, are represented by internal graphics record units instead of being lost or attached to a dead pass. `CompiledGraphContract` validates live masks, dependencies, queue topology, placements, raster scopes, alias acquires, and the abstract barrier state machine before a plan can execute or publish. The compiler deliberately does not implement profile-guided queue selection or add ordering edges merely to improve packing/merging. Cross-queue accesses remain conservatively serialized where the current abstract state domain requires it; true enhanced-barrier release/acquire lowering is not yet exposed. Public import obtains immutable live-resource metadata from the RHI rather than accepting a caller descriptor, revalidates it at Freeze, and rejects overlapping ranges sharing one opaque physical-allocation identity. Persistent/temporal realization, transient export, and imported return contracts all publish only after their exact completion set; a partial submission failure reports already-published completions but does not claim that every resource reached its requested final state.
 
-The D3D12 backend is a real Windows/WARP implementation for heaps, committed and placed buffers/textures, exact buffer copies, portable partial buffer↔texture copies through `GetCopyableFootprints`, fences, deferred destruction, RTV/DSV/SRV/UAV/CBV views, samplers, bind groups and descriptor arrays, graphics and compute root signatures/pipelines, push constants, draw/dispatch, shader-model capability validation, and InfoQueue diagnostics. Persistent CPU-only descriptors use device-owned typed page pools and return their slots only when the owning native view/sampler retires; they no longer allocate one native heap per descriptor. Exact buffer/texture allocation requirements are cached by normalized, debug-name-independent descriptors, and the common `TextureDesc` path avoids constructing a format set when no alternate view formats were requested. Each command allocation still owns one fixed shader-visible resource heap and one sampler heap; binding materialization is append-only for the recording lifetime, and allocator plus shader-visible descriptor storage are reused only after exact fence retirement. Queue-aware state lowering prevents compute lists from using pixel-only shader states and rejects states illegal on copy lists.
+The D3D12 backend is a real Windows/WARP implementation for heaps, committed and placed buffers/textures, exact buffer and texture copies, explicit buffer/color/depth/stencil clears, scoped upload/readback mapping, portable partial buffer↔texture copies through `GetCopyableFootprints`, fences, deferred destruction, RTV/DSV/SRV/UAV/CBV views, samplers, bind groups and descriptor arrays, graphics and compute root signatures/pipelines, persistent pipeline libraries, typed indirect draw/indexed-draw/dispatch, native query heaps and clock calibration, swapchains, object names/markers, shader-model capability validation, InfoQueue, and DRED diagnostics. Persistent CPU-only descriptors use device-owned typed page pools and return their slots only when the owning native view/sampler retires. Shader-visible descriptor arenas switch heaps when a page fills, rematerialize the active binding state from CPU descriptor truth, rebind it, and retire old heaps with the exact command allocation; the former fixed 4096-resource/256-sampler failure is not the capacity model. Queue-aware state lowering prevents compute lists from using pixel-only shader states and rejects states illegal on copy lists.
 
 Depth/stencil is plane-aware across RHI, Null, Render Graph, and D3D12. D24S8 resources use a typeless native base, typed DSVs, independent depth/stencil SRV/copy formats and subresource indices, and all writable/read-only DSV flag combinations. Depth-only rendering, independent plane load/store/read-only operations, clear/discard, and D32/D24 buffer readback are supported. Portable color MSAA resolve is explicit (`ResolveSource`/`ResolveDestination`, `Average`) and both Null and D3D12 execute it; multisampled texture-to-buffer copies still require that explicit resolve first. Resource/view contracts now carry 1D/2D/3D resource dimension, explicit view dimension including array/MSAA/cube forms, cube compatibility, and an immutable allowed view-format set. CPU-visible placed Upload/Readback buffers are supported with fixed-state usage validation, while CPU-visible placed textures and graph-created CPU-visible transients remain outside the portable surface. D3D12 raster grouping currently reduces compatible logical passes to one `BeginRendering`/`EndRendering` record unit through the existing OM path; native `BeginRenderPass` and suspend/resume remain future capability-gated lowerings. WARP acceptance covers descriptor arrays, dynamic materialization, compute/UAV output, register/space push constants, strict view ranges, 3D odd-height padded copy footprints, explicit resolve, view-shape lowering, CPU-visible placed buffers, real alias acquire execution, command-list pins, fence retirement, CPU descriptor page reuse, name-insensitive requirements caching, and an error-free InfoQueue. The Null backend mirrors the same state, resolve, view, lifetime, and transactional validation rather than serving as a permissive mock.
 
@@ -644,14 +645,21 @@ Remove from the public/product model:
 
 - `Graph → Template → Compiled → Instance → Frame` execution;
 - public fields/variant domains, user-visible structural signatures, template-owned cached variants, payload leases, and instance pools;
-- `HistoryOffset`, `HistoryCount`, graph-owned temporal history, and resize migration;
+- retained-template history controllers and implicit resize migration;
 - profile-guided queue scheduling;
 - public backend `ResourceState` and `PipelineStage` arguments on pass access methods;
 - public attachment store operation;
-- graph resource `Persistent`, `Bindless`, `Aliasable`, and export policy flags;
+- graph resource `Bindless`, `Aliasable`, and implicit export policy flags;
 - generic `NeverCull`, `HasSideEffect`, `RequireQueue`, `Serial`, `DisableFusion`, `SkipTracking`, and global-state escape switches;
 - execute-time shader validation that discovers the contract after graph compilation;
 - graph-owned bindless generation, residency, pipeline readiness, device recovery, and RenderWorld policy.
+
+Restored checkpoint semantics that now live in the immediate architecture rather than the removed retained model:
+
+- `HistoryOffset`/`HistoryCount` behavior is expressed by graph-owned `Persistent`/`Temporal` resources and read-only `History(framesAgo)` identities;
+- extraction is expressed by completion-gated transient export and single-transfer `ResourceExport` ownership;
+- deterministic JSON/DOT capture is schema-versioned, while executable replay currently recreates portable resources and replays the captured `CopyBuffer` subset with observable output validation;
+- `[PassParameters]` and `[ShaderParameters]` source generation freezes access/view/constant/descriptor glue before execution and pairs shader parameters with cooked asset reflection as the only shader-entry/binding truth.
 
 The implementation is a clean replacement against this architecture and the run harness, not a compatibility refactor of the checkpoint.
 

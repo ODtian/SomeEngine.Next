@@ -11,7 +11,6 @@ public sealed class WarpRhiCorrectnessTests
     [InlineData(true)]
     public void Warp_cpu_visible_fixed_state_barriers_are_no_ops_for_committed_and_placed_buffers(bool placed)
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice(debug: true);
         BufferDesc uploadDesc = new(
@@ -55,7 +54,6 @@ public sealed class WarpRhiCorrectnessTests
     [InlineData(true)]
     public void Warp_cpu_visible_fixed_state_buffers_reject_illegal_transitions_while_recording(bool placed)
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice();
         (BufferHandle upload, HeapHandle uploadHeap) = CreateCpuBuffer(
@@ -87,7 +85,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_three_dimensional_odd_height_copy_uses_aligned_slice_placements_and_round_trips()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice(debug: true);
         const int width = 3;
@@ -164,7 +161,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_texture_barrier_ranges_reject_negative_and_out_of_bounds_indices_without_clamping()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice();
         TextureHandle texture = device.CreateTexture(new TextureDesc(
@@ -205,7 +201,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_non_array_view_dimensions_are_layer_zero_only_while_array_dimensions_select_any_layer()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice(debug: true);
         List<(TextureHandle Texture, TextureViewHandle View)> accepted = [];
@@ -248,7 +243,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_resolve_requires_explicitly_two_dimensional_source_and_destination_resources()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice();
         TextureHandle oneDimensionalSource = device.CreateTexture(new TextureDesc(
@@ -294,7 +288,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_barriers_and_buffer_copies_are_rejected_inside_a_rendering_scope()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice();
         TextureHandle color = device.CreateTexture(new TextureDesc(
@@ -334,7 +327,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_cpu_access_rejects_an_incomplete_submitted_last_use()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice();
         const ulong size = 8UL * 1024 * 1024;
@@ -366,7 +358,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Warp_direct_rhi_aliasing_barrier_hands_one_placed_allocation_to_the_next_buffer()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice(debug: true);
         const int size = 256;
@@ -432,7 +423,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Persistent_cpu_descriptors_share_pages_and_reuse_retired_slots()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice(debug: true);
         BufferHandle buffer = device.CreateBuffer(new BufferDesc(64, BufferUsage.ShaderRead));
@@ -468,7 +458,6 @@ public sealed class WarpRhiCorrectnessTests
     [Fact]
     public void Allocation_requirement_queries_are_cached_independently_of_debug_names()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = CreateDevice();
         ResourceRequirements firstBuffer = device.GetBufferRequirements(

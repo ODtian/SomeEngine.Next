@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "CommandDescriptorArena switches shader-visible heaps on exhaustion, rematerializes all active tables from CPU descriptor truth, rebinds them and retires prior heaps with the command allocation. The required WARP rollover and concurrent-context tests are discovered and pass inside the 66/66 D3D12 suite."
+}

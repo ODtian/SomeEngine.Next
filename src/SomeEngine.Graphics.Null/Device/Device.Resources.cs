@@ -56,17 +56,22 @@ public sealed partial class Device
         lock (_gate)
         {
             EnsureNotDisposed();
-            TextureRecord record = CreateTextureRecord(
-                desc,
-                MemoryType.DeviceLocal,
-                new PhysicalAllocationInfo(PhysicalAllocationId.Allocate(_domain), 0, requirements.Size),
-                new byte[ToArrayLength(TextureLayout.GetByteSize(desc), nameof(desc))],
-                0,
-                default);
-            (uint slot, uint generation) = _textures.Allocate(record);
-            _statistics = _statistics with { TextureCreates = _statistics.TextureCreates + 1 };
-            return new TextureHandle(_domain, slot, generation);
+            return AllocateTexture(desc, requirements);
         }
+    }
+
+    private TextureHandle AllocateTexture(in TextureDesc desc, in ResourceRequirements requirements)
+    {
+        TextureRecord record = CreateTextureRecord(
+            desc,
+            MemoryType.DeviceLocal,
+            new PhysicalAllocationInfo(PhysicalAllocationId.Allocate(_domain), 0, requirements.Size),
+            new byte[ToArrayLength(TextureLayout.GetByteSize(desc), nameof(desc))],
+            0,
+            default);
+        (uint slot, uint generation) = _textures.Allocate(record);
+        _statistics = _statistics with { TextureCreates = _statistics.TextureCreates + 1 };
+        return new TextureHandle(_domain, slot, generation);
     }
 
     public BufferHandle CreatePlacedBuffer(HeapHandle heap, ulong offset, in BufferDesc desc)
@@ -152,6 +157,8 @@ public sealed partial class Device
         lock (_gate)
         {
             EnsureNotDisposed();
+            BufferRecord record = RequireBuffer(buffer);
+            if (record.IsMapped) throw ValidationError("A mapped buffer cannot be destroyed.");
             _buffers.Destroy(buffer.Domain, buffer.Slot, buffer.Generation);
         }
     }
@@ -301,7 +308,10 @@ public sealed partial class Device
             record.Bytes.Slice(checked((int)offset), destination.Length).CopyTo(destination);
         }
     }
+}
 
+public sealed partial class Device
+{
     internal void ValidateBarrierForRecording(in ResourceBarrier barrier)
     {
         lock (_gate)
@@ -374,6 +384,141 @@ public sealed partial class Device
         }
     }
 
+    internal void ValidateTextureCopyForRecording(in TextureToTextureCopy copy)
+    {
+        lock (_gate)
+        {
+            TextureRecord source = RequireTexture(copy.Source);
+            TextureRecord destination = RequireTexture(copy.Destination);
+            RequireUsage(source.Desc.Usage, TextureUsage.CopySource, "texture-copy source");
+            RequireUsage(destination.Desc.Usage, TextureUsage.CopyDestination, "texture-copy destination");
+            (int sourceWidth, int sourceHeight, int sourceDepth, _) =
+                TextureLayout.ValidateTextureRegion(source.Desc, copy.SourceRegion);
+            (int destinationWidth, int destinationHeight, int destinationDepth, _) =
+                TextureLayout.ValidateTextureRegion(destination.Desc, copy.DestinationRegion);
+            ValidateTextureCopyCompatibility(
+                source,
+                destination,
+                sourceWidth,
+                sourceHeight,
+                sourceDepth,
+                destinationWidth,
+                destinationHeight,
+                destinationDepth);
+            ValidateMultisampleTextureCopy(source, destination, copy);
+            ValidateTextureCopyOverlap(copy);
+            ValidateTextureAllocationOverlap(source, destination, copy);
+        }
+    }
+
+    private void ValidateTextureCopyCompatibility(
+        TextureRecord source,
+        TextureRecord destination,
+        int sourceWidth,
+        int sourceHeight,
+        int sourceDepth,
+        int destinationWidth,
+        int destinationHeight,
+        int destinationDepth)
+    {
+        if (source.Desc.Format != destination.Desc.Format ||
+            source.Desc.SampleCount != destination.Desc.SampleCount)
+        {
+            throw ValidationError("Texture copies require matching formats and sample counts.");
+        }
+        if (sourceWidth != destinationWidth || sourceHeight != destinationHeight || sourceDepth != destinationDepth)
+            throw ValidationError("Texture-copy source and destination extents must match exactly.");
+    }
+
+    private static void ValidateMultisampleTextureCopy(
+        TextureRecord source,
+        TextureRecord destination,
+        in TextureToTextureCopy copy)
+    {
+        if (source.Desc.SampleCount > 1 &&
+            (!IsWholeSubresource(source.Desc, copy.SourceRegion) ||
+             !IsWholeSubresource(destination.Desc, copy.DestinationRegion)))
+        {
+            throw new NotSupportedException("Multisampled texture copies must cover complete subresources.");
+        }
+    }
+
+    private void ValidateTextureCopyOverlap(in TextureToTextureCopy copy)
+    {
+        if (copy.Source == copy.Destination &&
+            copy.SourceRegion.MipLevel == copy.DestinationRegion.MipLevel &&
+            copy.SourceRegion.ArrayLayer == copy.DestinationRegion.ArrayLayer &&
+            copy.SourceRegion.Aspect == copy.DestinationRegion.Aspect &&
+            BoxesOverlap(copy.SourceRegion, copy.DestinationRegion))
+        {
+            throw ValidationError("A texture cannot be copied between overlapping regions of one subresource.");
+        }
+    }
+
+    private void ValidateTextureAllocationOverlap(
+        TextureRecord source,
+        TextureRecord destination,
+        in TextureToTextureCopy copy)
+    {
+        if (source.Allocation.Identity == destination.Allocation.Identity &&
+            source.Allocation.Offset < destination.Allocation.End &&
+            destination.Allocation.Offset < source.Allocation.End &&
+            copy.Source != copy.Destination)
+        {
+            throw ValidationError("Texture copies cannot use distinct resources whose physical allocation ranges overlap.");
+        }
+    }
+
+    internal BufferRange ValidateBufferClearForRecording(BufferHandle buffer, in BufferRange range)
+    {
+        lock (_gate)
+        {
+            BufferRecord record = RequireBuffer(buffer);
+            RequireUsage(record.Desc.Usage, BufferUsage.CopyDestination, "buffer clear");
+            ResolveBufferRange(record.Desc, range, out ulong offset, out ulong size);
+            return new BufferRange(offset, size);
+        }
+    }
+
+    internal TextureSubresourceRange ValidateColorClearForRecording(
+        TextureHandle texture,
+        in TextureSubresourceRange range,
+        in System.Numerics.Vector4 color)
+    {
+        lock (_gate)
+        {
+            TextureRecord record = RequireTexture(texture);
+            RequireUsage(record.Desc.Usage, TextureUsage.ColorAttachment, "color clear");
+            if (!float.IsFinite(color.X) || !float.IsFinite(color.Y) ||
+                !float.IsFinite(color.Z) || !float.IsFinite(color.W))
+                throw new ArgumentOutOfRangeException(nameof(color));
+            TextureLayout.NormalizeRange(record.Desc, range,
+                out int firstMip, out int mipCount, out int firstLayer, out int layerCount, out TextureAspect aspects);
+            if (aspects != TextureAspect.Color)
+                throw new ArgumentException("A color clear must select only the color aspect.", nameof(range));
+            return new TextureSubresourceRange(firstMip, mipCount, firstLayer, layerCount, aspects);
+        }
+    }
+
+    internal TextureSubresourceRange ValidateDepthStencilClearForRecording(
+        TextureHandle texture,
+        in TextureSubresourceRange range,
+        float depth)
+    {
+        lock (_gate)
+        {
+            TextureRecord record = RequireTexture(texture);
+            RequireUsage(record.Desc.Usage, TextureUsage.DepthStencilAttachment, "depth-stencil clear");
+            if (!float.IsFinite(depth) || depth is < 0f or > 1f)
+                throw new ArgumentOutOfRangeException(nameof(depth));
+            TextureLayout.NormalizeRange(record.Desc, range,
+                out int firstMip, out int mipCount, out int firstLayer, out int layerCount, out TextureAspect aspects);
+            if ((aspects & TextureAspect.Color) != 0)
+                throw new ArgumentException("A depth-stencil clear cannot select the color aspect.", nameof(range));
+            return new TextureSubresourceRange(firstMip, mipCount, firstLayer, layerCount, aspects);
+        }
+    }
+
     internal void ValidateTextureResolveForRecording(in TextureResolveRegion resolve)
     {
         lock (_gate)
@@ -406,7 +551,10 @@ public sealed partial class Device
             if (offset >= record.Desc.Size || offset % (ulong)size != 0) throw new ArgumentOutOfRangeException(nameof(offset));
         }
     }
+}
 
+public sealed partial class Device
+{
     private HeapRecord RequireHeap(HeapHandle handle) => _heaps.RequireAlive(handle.Domain, handle.Slot, handle.Generation).Value!;
     private BufferRecord RequireBuffer(BufferHandle handle) => _buffers.RequireAlive(handle.Domain, handle.Slot, handle.Generation).Value!;
     private TextureRecord RequireTexture(TextureHandle handle) => _textures.RequireAlive(handle.Domain, handle.Slot, handle.Generation).Value!;
@@ -443,6 +591,18 @@ public sealed partial class Device
             States = states,
         };
     }
+
+    private static bool IsWholeSubresource(in TextureDesc desc, in TextureCopyRegion region)
+    {
+        (int width, int height, int depth) = TextureLayout.GetMipExtent(desc, region.MipLevel);
+        return region.X == 0 && region.Y == 0 && region.Z == 0 &&
+            region.Width == width && region.Height == height && region.Depth == depth;
+    }
+
+    private static bool BoxesOverlap(in TextureCopyRegion left, in TextureCopyRegion right) =>
+        left.X < right.X + right.Width && right.X < left.X + left.Width &&
+        left.Y < right.Y + right.Height && right.Y < left.Y + left.Height &&
+        left.Z < right.Z + right.Depth && right.Z < left.Z + left.Depth;
 
     private static ResourceState InitialBufferState(MemoryType memoryType) => memoryType switch
     {

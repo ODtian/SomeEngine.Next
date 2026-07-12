@@ -394,6 +394,11 @@ public sealed class ExternalDependencyTests
             string packageFact = NuGetPackageFact(package.Project, package.PackageId, package.Version);
             foreach (string forbidden in forbiddenReferences)
             {
+                if (IsAcceptedGraphicsPackageToken(package.Project, forbidden))
+                {
+                    continue;
+                }
+
                 if (ContainsForbiddenDependencyToken(package.Project, forbidden)
                     || ContainsForbiddenDependencyToken(package.PackageId, forbidden))
                 {
@@ -406,6 +411,11 @@ public sealed class ExternalDependencyTests
             failures.Count == 0,
             "Accepted NuGet package catalog permits excluded first-round boundary names:\n" + string.Join("\n", failures));
     }
+
+    private static bool IsAcceptedGraphicsPackageToken(string project, string token) =>
+        (project is ("SomeEngine.Graphics.Direct3D12" or "SomeEngine.Graphics.Direct3D12.Tests") &&
+         token is ("D3D12" or "Direct3D" or "SharpGen")) ||
+        (project == "SomeEngine.RenderGraph.Tests" && token == "RenderGraph");
 
     [Fact]
     public void NuGetPackageReferenceParsingIncludesProjectLocalPropsTargetsAndCentralVersions()

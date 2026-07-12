@@ -9,7 +9,6 @@ public sealed class ResourceMetadataTests
     [Fact]
     public void Warp_reports_committed_and_shared_placed_allocation_metadata()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true });
         BufferDesc desc = new(256, BufferUsage.CopySource);
@@ -42,7 +41,6 @@ public sealed class ResourceMetadataTests
     [Fact]
     public void Warp_supports_d24_and_cpu_visible_placed_buffer_round_trip()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true });
         TextureDesc d24 = new(

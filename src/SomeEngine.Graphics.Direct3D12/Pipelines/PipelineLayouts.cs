@@ -80,6 +80,7 @@ public sealed partial class Device
                 groups,
                 rootBindings.ToArray(),
                 rootConstants.ToArray());
+            ApplyObjectName(native, rootSignature, desc.Name);
             HandleKey key = _pipelineLayouts.Add(native);
             return new PipelineLayoutHandle(_domain, key.Slot, key.Generation);
         }
@@ -95,6 +96,7 @@ public sealed partial class Device
     {
         EnsureCoordinator();
         ThrowIfUnavailable();
+        if (TryGetCachedPipeline(desc.CacheKey, PipelineType.Compute, out PipelineHandle cached)) return cached;
         NativePipelineLayout layout = GetPipelineLayout(desc.Layout);
         NativeShader shader = _shaders.Get(desc.Shader.Domain, desc.Shader.Slot, desc.Shader.Generation, "compute shader");
         if (shader.Stage != ShaderStage.Compute)
@@ -108,9 +110,16 @@ public sealed partial class Device
             Flags = PipelineStateFlags.None,
         };
         ID3D12PipelineState pipelineState;
-        try
+        if (desc.CacheKey.IsValid && _nativePipelineLibrary.TryLoadCompute(desc.CacheKey, nativeDesc, out pipelineState))
         {
+            _pipelineCacheHits++;
+        }
+        else try
+        {
+            if (desc.CacheKey.IsValid) _pipelineCacheMisses++;
             pipelineState = _native.Device.CreateComputePipelineState(nativeDesc);
+            if (desc.CacheKey.IsValid)
+                _nativePipelineLibrary.Store(desc.CacheKey, PipelineType.Compute, pipelineState);
         }
         catch (Exception exception)
         {
@@ -122,8 +131,11 @@ public sealed partial class Device
         try
         {
             NativeComputePipeline native = new(pipelineState, layout, shader);
+            ApplyObjectName(native, pipelineState, desc.Name);
             HandleKey key = _pipelines.Add(native);
-            return new PipelineHandle(_domain, key.Slot, key.Generation);
+            PipelineHandle result = new(_domain, key.Slot, key.Generation);
+            RegisterCachedPipeline(desc.CacheKey, PipelineType.Compute, result);
+            return result;
         }
         catch
         {

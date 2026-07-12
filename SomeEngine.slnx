@@ -38,4 +38,5 @@
   <Project Path="tests\SomeEngine.Graphics.Tests\SomeEngine.Graphics.Tests.csproj" />
   <Project Path="tests\SomeEngine.Graphics.Direct3D12.Tests\SomeEngine.Graphics.Direct3D12.Tests.csproj" />
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
+  <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
 </Solution>

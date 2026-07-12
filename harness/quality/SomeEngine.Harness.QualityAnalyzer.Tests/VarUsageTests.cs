@@ -16,7 +16,7 @@ public sealed class VarUsageTests
     [Fact]
     public async Task ElementAccessVar_NoDiagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -31,7 +31,7 @@ public sealed class VarUsageTests
     [Fact]
     public async Task NonObviousExpressionVar_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {

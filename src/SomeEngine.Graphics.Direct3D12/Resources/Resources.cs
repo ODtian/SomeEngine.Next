@@ -1,3 +1,4 @@
+using System.Numerics;
 using Vortice.Direct3D12;
 using D3D12HeapFlags = Vortice.Direct3D12.HeapFlags;
 using D3D12Range = Vortice.Direct3D12.Range;
@@ -129,6 +130,11 @@ public sealed partial class Device
         }
     }
 
+}
+
+public sealed partial class Device
+{
+
     public HeapHandle CreateHeap(in HeapDesc desc)
     {
         EnsureCoordinator();
@@ -144,11 +150,18 @@ public sealed partial class Device
             throw new ArgumentException("Tier-1 devices require a concrete heap resource class.", nameof(desc));
         }
 
-        HeapDescription nativeDesc = new(desc.Size, HeapProperties(desc.MemoryType), 0, HeapFlags(desc.ResourceClass));
-        ID3D12Heap heap = _native.Device.CreateHeap<ID3D12Heap>(in nativeDesc);
-        NativeHeap native = new(heap, desc, PhysicalAllocationId.Allocate(_domain));
+        NativeHeap native = CreateNativeHeap(desc);
         HandleKey key = _heaps.Add(native);
         return new HeapHandle(_domain, key.Slot, key.Generation);
+    }
+
+    private NativeHeap CreateNativeHeap(in HeapDesc desc)
+    {
+        HeapDescription description = new(desc.Size, HeapProperties(desc.MemoryType), 0, HeapFlags(desc.ResourceClass));
+        ID3D12Heap heap = _native.Device.CreateHeap<ID3D12Heap>(in description);
+        NativeHeap native = new(heap, desc, PhysicalAllocationId.Allocate(_domain));
+        ApplyObjectName(native, heap, desc.Name);
+        return native;
     }
 
     public BufferHandle CreateBuffer(in BufferDesc desc, MemoryType memoryType = MemoryType.DeviceLocal)
@@ -157,19 +170,26 @@ public sealed partial class Device
         ThrowIfUnavailable();
         desc.Validate();
         ValidateCpuMemoryUsage(desc, memoryType);
-        ResourceDescription nativeDesc = CreateBufferDescription(desc);
+        NativeBuffer native = CreateCommittedBuffer(desc, memoryType);
+        HandleKey key = _buffers.Add(native);
+        return new BufferHandle(_domain, key.Slot, key.Generation);
+    }
+
+    private NativeBuffer CreateCommittedBuffer(in BufferDesc desc, MemoryType memoryType)
+    {
+        ResourceDescription description = CreateBufferDescription(desc);
         ResourceRequirements requirements = GetBufferRequirements(desc, memoryType);
-        ResourceStates initialState = InitialState(memoryType);
-        ID3D12Resource resource = _native.Device.CreateCommittedResource(HeapType(memoryType), nativeDesc, initialState);
+        ResourceStates state = InitialState(memoryType);
+        ID3D12Resource resource = _native.Device.CreateCommittedResource(HeapType(memoryType), description, state);
         NativeBuffer native = new(
             resource,
             desc,
             memoryType,
-            initialState,
+            state,
             null,
             new PhysicalAllocationInfo(PhysicalAllocationId.Allocate(_domain), 0, requirements.Size));
-        HandleKey key = _buffers.Add(native);
-        return new BufferHandle(_domain, key.Slot, key.Generation);
+        ApplyObjectName(native, resource, desc.Name);
+        return native;
     }
 
     public TextureHandle CreateTexture(in TextureDesc desc)
@@ -177,19 +197,34 @@ public sealed partial class Device
         EnsureCoordinator();
         ThrowIfUnavailable();
         desc.Validate();
-        ResourceDescription nativeDesc = CreateTextureDescription(desc);
+        NativeTexture native = CreateCommittedTexture(desc);
+        HandleKey key = _textures.Add(native);
+        return new TextureHandle(_domain, key.Slot, key.Generation);
+    }
+
+    private NativeTexture CreateCommittedTexture(in TextureDesc desc)
+    {
         ResourceRequirements requirements = GetTextureRequirements(desc);
-        ID3D12Resource resource = _native.Device.CreateCommittedResource(Vortice.Direct3D12.HeapType.Default, nativeDesc, ResourceStates.Common);
-        NativeTexture native = new(
+        ID3D12Resource resource = CreateCommittedTextureResource(desc);
+        NativeTexture native = WrapCommittedTexture(resource, desc, requirements.Size);
+        ApplyObjectName(native, resource, desc.Name);
+        return native;
+    }
+
+    private ID3D12Resource CreateCommittedTextureResource(in TextureDesc desc) =>
+        _native.Device.CreateCommittedResource(
+            Vortice.Direct3D12.HeapType.Default,
+            CreateTextureDescription(desc),
+            ResourceStates.Common);
+
+    private NativeTexture WrapCommittedTexture(ID3D12Resource resource, in TextureDesc desc, ulong size) =>
+        new(
             resource,
             desc,
             MemoryType.DeviceLocal,
             ResourceStates.Common,
             null,
-            new PhysicalAllocationInfo(PhysicalAllocationId.Allocate(_domain), 0, requirements.Size));
-        HandleKey key = _textures.Add(native);
-        return new TextureHandle(_domain, key.Slot, key.Generation);
-    }
+            new PhysicalAllocationInfo(PhysicalAllocationId.Allocate(_domain), 0, size));
 
     public BufferHandle CreatePlacedBuffer(HeapHandle heap, ulong offset, in BufferDesc desc)
     {
@@ -197,21 +232,36 @@ public sealed partial class Device
         ThrowIfUnavailable();
         desc.Validate();
         NativeHeap nativeHeap = _heaps.Get(heap.Domain, heap.Slot, heap.Generation, "heap");
-        ResourceDescription nativeDesc = CreateBufferDescription(desc);
         ResourceRequirements requirements = GetBufferRequirements(desc, nativeHeap.Desc.MemoryType);
         ValidatePlacement(nativeHeap, offset, requirements);
-        ResourceStates initialState = InitialState(nativeHeap.Desc.MemoryType);
-        ID3D12Resource resource = _native.Device.CreatePlacedResource<ID3D12Resource>(nativeHeap.Heap, offset, nativeDesc, initialState, null);
-        nativeHeap.AddChild(ResourceHeapClass.Buffer);
+        NativeBuffer native = CreateNativePlacedBuffer(nativeHeap, offset, desc, requirements);
+        HandleKey key = _buffers.Add(native);
+        return new BufferHandle(_domain, key.Slot, key.Generation);
+    }
+
+    private NativeBuffer CreateNativePlacedBuffer(
+        NativeHeap heap,
+        ulong offset,
+        in BufferDesc desc,
+        in ResourceRequirements requirements)
+    {
+        ResourceStates state = InitialState(heap.Desc.MemoryType);
+        ID3D12Resource resource = _native.Device.CreatePlacedResource<ID3D12Resource>(
+            heap.Heap,
+            offset,
+            CreateBufferDescription(desc),
+            state,
+            null);
+        heap.AddChild(ResourceHeapClass.Buffer);
         NativeBuffer native = new(
             resource,
             desc,
-            nativeHeap.Desc.MemoryType,
-            initialState,
-            nativeHeap,
-            new PhysicalAllocationInfo(nativeHeap.AllocationId, offset, requirements.Size));
-        HandleKey key = _buffers.Add(native);
-        return new BufferHandle(_domain, key.Slot, key.Generation);
+            heap.Desc.MemoryType,
+            state,
+            heap,
+            new PhysicalAllocationInfo(heap.AllocationId, offset, requirements.Size));
+        ApplyObjectName(native, resource, desc.Name);
+        return native;
     }
 
     public TextureHandle CreatePlacedTexture(HeapHandle heap, ulong offset, in TextureDesc desc)
@@ -222,20 +272,35 @@ public sealed partial class Device
         NativeHeap nativeHeap = _heaps.Get(heap.Domain, heap.Slot, heap.Generation, "heap");
         if (nativeHeap.Desc.MemoryType != MemoryType.DeviceLocal)
             throw new ArgumentException("Placed textures require device-local heaps.", nameof(heap));
-        ResourceDescription nativeDesc = CreateTextureDescription(desc);
         ResourceRequirements requirements = GetTextureRequirements(desc);
         ValidatePlacement(nativeHeap, offset, requirements);
-        ID3D12Resource resource = _native.Device.CreatePlacedResource<ID3D12Resource>(nativeHeap.Heap, offset, nativeDesc, ResourceStates.Common, null);
-        nativeHeap.AddChild(requirements.ResourceClass);
+        NativeTexture native = CreateNativePlacedTexture(nativeHeap, offset, desc, requirements);
+        HandleKey key = _textures.Add(native);
+        return new TextureHandle(_domain, key.Slot, key.Generation);
+    }
+
+    private NativeTexture CreateNativePlacedTexture(
+        NativeHeap heap,
+        ulong offset,
+        in TextureDesc desc,
+        in ResourceRequirements requirements)
+    {
+        ID3D12Resource resource = _native.Device.CreatePlacedResource<ID3D12Resource>(
+            heap.Heap,
+            offset,
+            CreateTextureDescription(desc),
+            ResourceStates.Common,
+            null);
+        heap.AddChild(requirements.ResourceClass);
         NativeTexture native = new(
             resource,
             desc,
-            nativeHeap.Desc.MemoryType,
+            heap.Desc.MemoryType,
             ResourceStates.Common,
-            nativeHeap,
-            new PhysicalAllocationInfo(nativeHeap.AllocationId, offset, requirements.Size));
-        HandleKey key = _textures.Add(native);
-        return new TextureHandle(_domain, key.Slot, key.Generation);
+            heap,
+            new PhysicalAllocationInfo(heap.AllocationId, offset, requirements.Size));
+        ApplyObjectName(native, resource, desc.Name);
+        return native;
     }
 
     public void DestroyHeap(HeapHandle heap)
@@ -254,6 +319,7 @@ public sealed partial class Device
         EnsureCoordinator();
         ThrowIfUnavailable();
         NativeBuffer native = _buffers.Get(buffer.Domain, buffer.Slot, buffer.Generation, "buffer");
+        if (native.IsMapped) throw new InvalidOperationException("A mapped buffer cannot be destroyed.");
         if (native.ViewCount != 0) throw new InvalidOperationException("A buffer cannot be destroyed while buffer views remain alive.");
         RetirementPoint point = BeginRetirement(native);
         _ = _buffers.Remove(buffer.Domain, buffer.Slot, buffer.Generation, "buffer");
@@ -266,12 +332,19 @@ public sealed partial class Device
         EnsureCoordinator();
         ThrowIfUnavailable();
         NativeTexture native = _textures.Get(texture.Domain, texture.Slot, texture.Generation, "texture");
+        if (native.IsSwapchainImage)
+            throw new InvalidOperationException("Swapchain images are owned by their swapchain and cannot be destroyed directly.");
         if (native.ViewCount != 0) throw new InvalidOperationException("A texture cannot be destroyed while texture views remain alive.");
         RetirementPoint point = BeginRetirement(native);
         _ = _textures.Remove(texture.Domain, texture.Slot, texture.Generation, "texture");
         native.Parent?.RemoveChild();
         ScheduleRetirement(native, point);
     }
+
+}
+
+public sealed partial class Device
+{
 
     public BufferMetadata GetBufferMetadata(BufferHandle buffer)
     {
@@ -298,10 +371,18 @@ public sealed partial class Device
         if (!native.HasCompletedLastUse(_native))
             throw new InvalidOperationException("An upload buffer cannot be rewritten before its exact queue use has completed.");
         ValidateRange(native.Desc.Size, offset, checked((ulong)data.Length));
-        int mappedLength = checked((int)(offset + (ulong)data.Length));
-        Span<byte> mapped = native.Resource.Map<byte>(0, mappedLength);
-        data.CopyTo(mapped.Slice(checked((int)offset), data.Length));
-        native.Resource.Unmap(0, new D3D12Range(UIntPtr.Zero, new UIntPtr(offset + (ulong)data.Length)));
+        if (!native.TryBeginMapping()) throw new InvalidOperationException("A buffer permits only one active mapping lease.");
+        try
+        {
+            int mappedLength = checked((int)(offset + (ulong)data.Length));
+            Span<byte> mapped = native.Resource.Map<byte>(0, mappedLength);
+            data.CopyTo(mapped.Slice(checked((int)offset), data.Length));
+            native.Resource.Unmap(0, new D3D12Range(new UIntPtr(offset), new UIntPtr(offset + (ulong)data.Length)));
+        }
+        finally
+        {
+            native.EndMapping();
+        }
     }
 
     public void ReadBuffer(BufferHandle buffer, ulong offset, Span<byte> destination)
@@ -313,10 +394,18 @@ public sealed partial class Device
         if (!native.HasCompletedLastUse(_native))
             throw new InvalidOperationException("A readback buffer cannot be read before its exact queue use has completed.");
         ValidateRange(native.Desc.Size, offset, checked((ulong)destination.Length));
-        int mappedLength = checked((int)(offset + (ulong)destination.Length));
-        Span<byte> mapped = native.Resource.Map<byte>(0, mappedLength);
-        mapped.Slice(checked((int)offset), destination.Length).CopyTo(destination);
-        native.Resource.Unmap(0, new D3D12Range(UIntPtr.Zero, UIntPtr.Zero));
+        if (!native.TryBeginMapping()) throw new InvalidOperationException("A buffer permits only one active mapping lease.");
+        try
+        {
+            int mappedLength = checked((int)(offset + (ulong)destination.Length));
+            Span<byte> mapped = native.Resource.Map<byte>(0, mappedLength);
+            mapped.Slice(checked((int)offset), destination.Length).CopyTo(destination);
+            native.Resource.Unmap(0, new D3D12Range(UIntPtr.Zero, UIntPtr.Zero));
+        }
+        finally
+        {
+            native.EndMapping();
+        }
     }
 
     private static ResourceDescription CreateBufferDescription(in BufferDesc desc) =>
@@ -426,6 +515,11 @@ public sealed partial class Device
         }
     }
 
+}
+
+public sealed partial class Device
+{
+
     private static void ValidatePlacement(NativeHeap heap, ulong offset, in ResourceRequirements requirements)
     {
         if (offset % requirements.Alignment != 0) throw new ArgumentException("Placed-resource offset does not satisfy native alignment.", nameof(offset));
@@ -448,11 +542,40 @@ public sealed partial class Device
         out int mipHeight,
         out int mipDepth)
     {
-        if (desc.SampleCount != 1) throw new NotSupportedException("Multisampled textures must be resolved before linear-buffer copies.");
-        if (region.MipLevel < 0 || region.MipLevel >= desc.MipLevels) throw new ArgumentOutOfRangeException(nameof(region));
-        mipWidth = Math.Max(1, desc.Width >> region.MipLevel);
-        mipHeight = Math.Max(1, desc.Height >> region.MipLevel);
-        mipDepth = Math.Max(1, desc.Depth >> region.MipLevel);
+        ValidateLinearCopySampleCount(desc.SampleCount);
+        (mipWidth, mipHeight, mipDepth) = ValidateTextureRegionCore(desc, region);
+        ValidateDepthStencilCopy(desc, region);
+    }
+
+    internal static void ValidateTextureRegion(in TextureDesc desc, in TextureCopyRegion region)
+    {
+        _ = ValidateTextureRegionCore(desc, region);
+        ValidateDepthStencilCopy(desc, region);
+    }
+
+    private static (int Width, int Height, int Depth) ValidateTextureRegionCore(
+        in TextureDesc desc,
+        in TextureCopyRegion region)
+    {
+        (int width, int height, int depth) = GetMipExtent(desc, region.MipLevel);
+        ValidateTextureLayer(desc, region);
+        ValidateTextureAspect(desc.Format, region.Aspect);
+        ValidateTextureExtent(region, width, height, depth);
+        ValidateTextureShape(desc.Dimension, region);
+        return (width, height, depth);
+    }
+
+    private static (int Width, int Height, int Depth) GetMipExtent(in TextureDesc desc, int mipLevel)
+    {
+        if (mipLevel < 0 || mipLevel >= desc.MipLevels) throw new ArgumentOutOfRangeException(nameof(mipLevel));
+        return (
+            Math.Max(1, desc.Width >> mipLevel),
+            Math.Max(1, desc.Height >> mipLevel),
+            Math.Max(1, desc.Depth >> mipLevel));
+    }
+
+    private static void ValidateTextureLayer(in TextureDesc desc, in TextureCopyRegion region)
+    {
         if (desc.Dimension == TextureDimension.Texture3D)
         {
             if (region.ArrayLayer != 0) throw new ArgumentOutOfRangeException(nameof(region), "A 3D texture has no array layer.");
@@ -461,29 +584,61 @@ public sealed partial class Device
         {
             throw new ArgumentOutOfRangeException(nameof(region));
         }
-        TextureAspect allowed = desc.Format switch
+    }
+
+    private static void ValidateTextureAspect(Format format, TextureAspect aspect)
+    {
+        TextureAspect allowed = format switch
         {
             Format.D24UNormS8UInt => TextureAspect.Depth | TextureAspect.Stencil,
             Format.D32Float => TextureAspect.Depth,
             _ => TextureAspect.Color,
         };
-        byte aspectBits = (byte)region.Aspect;
-        if (aspectBits == 0 || (aspectBits & (aspectBits - 1)) != 0 || (region.Aspect & allowed) == 0)
-            throw new ArgumentOutOfRangeException(nameof(region), "A copy region selects exactly one valid texture plane.");
+        byte aspectBits = (byte)aspect;
+        if (aspectBits == 0 || !BitOperations.IsPow2(aspectBits) || (aspect & allowed) == 0)
+            throw new ArgumentOutOfRangeException(nameof(aspect), "A copy region selects exactly one valid texture plane.");
+    }
+
+    private static void ValidateTextureExtent(in TextureCopyRegion region, int width, int height, int depth)
+    {
         if (region.X < 0 || region.Y < 0 || region.Z < 0 || region.Width <= 0 || region.Height <= 0 || region.Depth <= 0 ||
-            region.X > mipWidth - region.Width || region.Y > mipHeight - region.Height || region.Z > mipDepth - region.Depth)
+            region.X > width - region.Width || region.Y > height - region.Height || region.Z > depth - region.Depth)
             throw new ArgumentOutOfRangeException(nameof(region), "The texture copy region exceeds its mip extent.");
-        if (desc.Dimension == TextureDimension.Texture1D && (region.Y != 0 || region.Height != 1))
+    }
+
+    private static void ValidateTextureShape(TextureDimension dimension, in TextureCopyRegion region)
+    {
+        if (dimension == TextureDimension.Texture1D && (region.Y != 0 || region.Height != 1))
             throw new ArgumentOutOfRangeException(nameof(region), "A 1D texture copy has Y=0 and Height=1.");
-        if (desc.Dimension != TextureDimension.Texture3D && (region.Z != 0 || region.Depth != 1))
+        if (dimension != TextureDimension.Texture3D && (region.Z != 0 || region.Depth != 1))
             throw new ArgumentOutOfRangeException(nameof(region), "A non-3D texture copy has Z=0 and Depth=1.");
-        if ((desc.Usage & TextureUsage.DepthStencilAttachment) != 0 &&
-            (region.X != 0 || region.Y != 0 || region.Z != 0 ||
-             region.Width != mipWidth || region.Height != mipHeight || region.Depth != mipDepth))
-        {
-            throw new NotSupportedException(
-                "D3D12 requires buffer copies involving an ALLOW_DEPTH_STENCIL resource to cover the whole selected subresource.");
-        }
+    }
+
+    private static void ValidateDepthStencilCopy(in TextureDesc desc, in TextureCopyRegion region)
+    {
+        if ((desc.Usage & TextureUsage.DepthStencilAttachment) != 0 && !IsWholeSubresource(desc, region))
+            throw new NotSupportedException("D3D12 depth-stencil texture copies must cover the whole selected subresource.");
+    }
+
+    private static void ValidateLinearCopySampleCount(int sampleCount)
+    {
+        if (sampleCount != 1) throw new NotSupportedException("Multisampled textures must be resolved before linear-buffer copies.");
+    }
+
+    internal static bool IsWholeSubresource(in TextureDesc desc, in TextureCopyRegion region)
+    {
+        int width = Math.Max(1, desc.Width >> region.MipLevel);
+        int height = Math.Max(1, desc.Height >> region.MipLevel);
+        int depth = Math.Max(1, desc.Depth >> region.MipLevel);
+        return region.X == 0 && region.Y == 0 && region.Z == 0 &&
+            region.Width == width && region.Height == height && region.Depth == depth;
+    }
+
+    internal static void ResolveBufferRange(in BufferDesc desc, in BufferRange range, out ulong offset, out ulong size)
+    {
+        offset = range.Offset;
+        size = range.Size == ulong.MaxValue ? checked(desc.Size - offset) : range.Size;
+        ValidateRange(desc.Size, offset, size);
     }
 
     internal static uint NativeSubresource(in TextureDesc desc, int mip, int layer, TextureAspect aspect)
@@ -538,6 +693,7 @@ internal sealed class NativeHeap : NativeLifetime
 internal sealed class NativeBuffer : NativeLifetime
 {
     private int _views;
+    private int _mapped;
     public NativeBuffer(
         ID3D12Resource resource,
         BufferDesc desc,
@@ -560,7 +716,17 @@ internal sealed class NativeBuffer : NativeLifetime
     public ResourceStates InitialState { get; }
     public NativeHeap? Parent { get; }
     public PhysicalAllocationInfo Allocation { get; }
+    public SomeEngine.Graphics.ResidencyPriority Priority { get; set; } = SomeEngine.Graphics.ResidencyPriority.Normal;
     public int ViewCount => Volatile.Read(ref _views);
+    public bool IsMapped => Volatile.Read(ref _mapped) != 0;
+
+    public bool TryBeginMapping() => Interlocked.CompareExchange(ref _mapped, 1, 0) == 0;
+
+    public void EndMapping()
+    {
+        if (Interlocked.Exchange(ref _mapped, 0) == 0)
+            throw new InvalidOperationException("Buffer mapping state underflow.");
+    }
 
     public void AddView() => Interlocked.Increment(ref _views);
 
@@ -592,7 +758,8 @@ internal sealed class NativeTexture : NativeLifetime
         MemoryType memoryType,
         ResourceStates initialState,
         NativeHeap? parent,
-        PhysicalAllocationInfo allocation)
+        PhysicalAllocationInfo allocation,
+        bool isSwapchainImage = false)
     {
         Resource = resource;
         Desc = desc;
@@ -600,6 +767,7 @@ internal sealed class NativeTexture : NativeLifetime
         InitialState = initialState;
         Parent = parent;
         Allocation = allocation;
+        IsSwapchainImage = isSwapchainImage;
     }
 
     public ID3D12Resource Resource { get; }
@@ -608,6 +776,8 @@ internal sealed class NativeTexture : NativeLifetime
     public ResourceStates InitialState { get; }
     public NativeHeap? Parent { get; }
     public PhysicalAllocationInfo Allocation { get; }
+    public bool IsSwapchainImage { get; }
+    public SomeEngine.Graphics.ResidencyPriority Priority { get; set; } = SomeEngine.Graphics.ResidencyPriority.Normal;
     public int ViewCount => Volatile.Read(ref _views);
 
     public void AddView() => Interlocked.Increment(ref _views);

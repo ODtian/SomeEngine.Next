@@ -7,6 +7,21 @@ internal abstract class NativeLifetime : IDisposable
     private int _pending;
     private bool _retiring;
     private bool _disposed;
+    private string? _logicalName;
+
+    public string? LogicalName
+    {
+        get { lock (_gate) return _logicalName; }
+    }
+
+    public void SetLogicalName(string? name)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _logicalName = name;
+        }
+    }
 
     public void PinPending()
     {

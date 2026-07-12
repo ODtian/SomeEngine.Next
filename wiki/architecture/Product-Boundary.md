@@ -12,11 +12,15 @@
 - `SomeEngine.ECS.Systems`
 - `SomeEngine.ECS.Serialization`
 - `SomeEngine.ECS.SourceGen` as build-support source generator code
+- `SomeEngine.Graphics` as the backend-neutral graphics contract
+- `SomeEngine.Graphics.Null` as the executable validation oracle
+- `SomeEngine.Graphics.Direct3D12` as the Windows native backend
 - `SomeEngine.Job`
 - `SomeEngine.Job.Dots`
-- `SomeEngine.Render` as backend-free [[Render-Boundaries|Render Domain]]
+- `SomeEngine.Render` as the asset/material projection side of [[Render-Boundaries|Render Domain]]
 - `SomeEngine.Render.Cluster` as backend-free [[Render-Boundaries|Cluster Renderer]] domain/model
-- `SomeEngine.Generators` and harness projects as build-support code, not runtime product assemblies
+- `SomeEngine.RenderGraph` as the immediate render-graph compiler and execution layer
+- `SomeEngine.Generators`, `SomeEngine.AssetCook`, `SomeEngine.RenderGraph.Sample`, the `SomeEngine.Graphics.Benchmarks` executable test host, and harness projects as build-support/evidence code, not runtime product assemblies
 
 ## 本轮未完成
 
@@ -24,15 +28,14 @@
 
 ## 不属于本轮
 
-- legacy RHI, legacy D3D12/Direct3D/DXGI implementation
-- RenderGraph
-- Render execution
+- the superseded `SomeEngine.Rhi*` legacy RHI projects and old-repository RHI/RenderGraph implementations; they remain migration evidence, not active product assemblies
+- renderer execution beyond the accepted Graphics/RenderGraph core
 - Cluster execution
 - Runtime as a first-round product boundary; Runtime source may remain as reference material
 - Editor renderer integration
-- ImGui/window/present integration, including windowing packages
+- ImGui/editor window integration; backend-neutral swapchain/present contracts and the native D3D12 implementation belong to the accepted Graphics boundary
 - DiligentCore and Diligent-SharpGenTools
-- samples, benchmarks, and third-party samples unless explicitly declared as product or external dependency gates
+- undeclared third-party samples; the declared RenderGraph sample and run-0004 benchmark/soak infrastructure are build-support/evidence surfaces, not runtime product assemblies
 
 ## External dependency policy
 

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://someengine.local/harness/capabilities/graphics-rendergraph-public-api-inventory.schema.json",
+  "title": "SomeEngine original Graphics and RenderGraph public API inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "inventoryId",
+    "acceptedRun",
+    "baselineArtifactSha256",
+    "groups",
+    "symbols"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "inventoryId": { "const": "someengine.graphics-rendergraph.original-public-api" },
+    "acceptedRun": { "const": "0004" },
+    "baselineArtifactSha256": { "type": "string", "pattern": "^[0-9A-F]{64}$" },
+    "groups": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "symbols": {
+      "type": "array",
+      "minItems": 230,
+      "items": { "$ref": "#/$defs/symbol" }
+    }
+  },
+  "$defs": {
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "symbolKind", "path", "expectedCount"],
+      "properties": {
+        "id": { "enum": ["graphics-device-methods", "rendergraph-public-type-declarations"] },
+        "symbolKind": { "enum": ["method", "type-declaration"] },
+        "path": { "type": "string", "minLength": 1 },
+        "pathIsPrefix": { "type": "boolean" },
+        "expectedCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "group",
+        "path",
+        "name",
+        "symbol",
+        "capabilityId",
+        "disposition",
+        "note"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "group": { "enum": ["graphics-device-methods", "rendergraph-public-type-declarations"] },
+        "path": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 },
+        "capabilityId": { "type": "string", "minLength": 1 },
+        "disposition": {
+          "enum": [
+            "restored",
+            "renamed",
+            "accepted-replacement",
+            "recorded-gap",
+            "advanced-record-only"
+          ]
+        },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

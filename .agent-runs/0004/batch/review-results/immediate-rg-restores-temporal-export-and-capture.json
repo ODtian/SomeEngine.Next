@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "The immediate graph owns completion-gated persistent/temporal rings, read-only history offsets, reset generations and single-transfer exports without a retained public graph. Capture schema v3 is deterministic; structural replay remains compiler-lowering while the separate executable replay reconstructs resources, submits CopyBuffer and compares Null output. RenderGraph tests pass 145/145 with zero skips."
+}

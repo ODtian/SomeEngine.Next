@@ -16,7 +16,7 @@ public sealed class DuplicateEnumTests
     [Fact]
     public async Task SharedEnumMember_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -37,7 +37,7 @@ public sealed class DuplicateEnumTests
     [Fact]
     public async Task SharedEnumMemberAcrossFiles_ReportsLaterDeclarationDeterministically()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {

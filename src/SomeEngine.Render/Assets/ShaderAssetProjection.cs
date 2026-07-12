@@ -12,7 +12,7 @@ namespace SomeEngine.Render.Assets;
 
 /// <summary>
 /// Projects a versioned cooked shader asset into the backend-neutral Graphics shader contract.
-/// Source compilation and RenderGraph policy remain outside this composition boundary.
+/// Source compilation and graph-scheduling policy remain outside this composition boundary.
 /// </summary>
 public static class ShaderAssetProjection
 {

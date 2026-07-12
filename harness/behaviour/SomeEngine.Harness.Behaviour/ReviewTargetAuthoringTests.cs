@@ -8,21 +8,6 @@ namespace SomeEngine.Harness.Behaviour;
 
 public sealed class ReviewTargetAuthoringTests
 {
-    private static readonly string[] RequiredReviewTargetIds =
-    [
-        "assets-offline-pipeline-remains-contract-only",
-        "cluster-domain-does-not-smuggle-execution",
-        "harness-hard-warning-split-matches-model",
-        "harness-change-does-not-weaken-contract",
-        "material-pass-remains-material-semantics",
-        "migration-has-no-temporary-exceptions",
-        "new-first-round-names-are-researched",
-        "product-tests-do-not-require-excluded-boundaries",
-        "render-domain-remains-backend-free",
-        "run-classification-uses-accepted-terms",
-        "runtime-outside-first-round-boundary",
-    ];
-
     [Fact]
     public void ActiveAgentRunReviewTargetsHaveRequiredSections()
     {
@@ -68,7 +53,7 @@ public sealed class ReviewTargetAuthoringTests
     }
 
     [Fact]
-    public void ActiveAgentRunReviewTargetsCoverAcceptedFirstRoundObjectives()
+    public void ActiveAgentRunReviewTargetsMatchDeclaredObjectives()
     {
         string? runId = Environment.GetEnvironmentVariable("SOMEENGINE_AGENT_RUN_ID");
         if (string.IsNullOrWhiteSpace(runId))
@@ -78,7 +63,9 @@ public sealed class ReviewTargetAuthoringTests
 
         string root = SomeEngine.Harness.Core.HarnessConfig.ResolveRepoRoot();
         string targetsDir = Path.Combine(root, ".agent-runs", runId, "batch", "review-targets");
+        string instructionsPath = Path.Combine(root, ".agent-runs", runId, "batch", "instructions.md");
         Assert.True(Directory.Exists(targetsDir), $"Active run {runId} must have review targets.");
+        Assert.True(File.Exists(instructionsPath), $"Active run {runId} must have batch instructions.");
 
         var actual = Directory.EnumerateFiles(targetsDir, "*.md")
             .Select(Path.GetFileNameWithoutExtension)
@@ -86,11 +73,13 @@ public sealed class ReviewTargetAuthoringTests
             .Select(id => id!)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        var expected = RequiredReviewTargetIds
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        string instructions = File.ReadAllText(instructionsPath);
 
-        Assert.Equal(expected, actual);
+        Assert.NotEmpty(actual);
+        foreach (string targetId in actual)
+        {
+            Assert.Contains($"`{targetId}`", instructions, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

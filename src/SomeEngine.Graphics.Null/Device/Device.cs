@@ -24,12 +24,28 @@ public sealed partial class Device : IDevice
     private readonly GenerationRegistry<BindGroupLayoutRecord> _bindGroupLayouts;
     private readonly GenerationRegistry<BindGroupRecord> _bindGroups;
     private readonly GenerationRegistry<ShaderRecord> _shaders;
+}
+
+public sealed partial class Device
+{
     private readonly GenerationRegistry<PipelineLayoutRecord> _pipelineLayouts;
     private readonly GenerationRegistry<PipelineRecord> _pipelines;
+    private readonly GenerationRegistry<QueryPoolRecord> _queryPools;
+    private readonly GenerationRegistry<SwapchainRecord> _swapchains;
+    private readonly GenerationRegistry<BindlessTableRecord> _bindlessTables;
     private readonly GenerationRegistry<CommandListRecord> _commandLists;
+    private readonly Dictionary<PipelineCacheKey, PipelineCacheIdentity> _pipelineCache = [];
+    private long _pipelineCacheHits;
+    private long _pipelineCacheMisses;
+    private long _pipelineCacheInvalidations;
+    private ulong _timestampCounter = 0;
+    private DeviceError _lastError = DeviceError.None;
     private Statistics _statistics;
     private bool _disposed;
+}
 
+public sealed partial class Device
+{
     public Device() : this(null) { }
 
     public Device(Options? options)
@@ -46,9 +62,16 @@ public sealed partial class Device : IDevice
         _shaders = new(_domain, "shader");
         _pipelineLayouts = new(_domain, "pipeline layout");
         _pipelines = new(_domain, "pipeline");
+        _queryPools = new(_domain, "query pool");
+        _swapchains = new(_domain, "swapchain");
+        _bindlessTables = new(_domain, "bindless table");
         _commandLists = new(_domain, "command list");
         _options = options ?? new Options();
         ArgumentException.ThrowIfNullOrWhiteSpace(_options.DeviceName);
+        if (!Enum.IsDefined(_options.CreatedPipelineStatus)) throw new ArgumentOutOfRangeException(nameof(options));
+        if (!Enum.IsDefined(_options.PresentStatus)) throw new ArgumentOutOfRangeException(nameof(options));
+        if (_options.DeviceLocalBudget == 0 || _options.UploadBudget == 0 || _options.ReadbackBudget == 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Memory budgets must be non-zero.");
         _coordinatorThreadId = Environment.CurrentManagedThreadId;
         List<QueueType> queues = [QueueType.Graphics];
         if (_options.SupportsAsyncCompute) queues.Add(QueueType.Compute);
@@ -59,13 +82,56 @@ public sealed partial class Device : IDevice
             queues,
             _options.SupportsEnhancedBarriers,
             _options.SupportsAsyncCompute,
-            _options.SupportsCopyQueue);
-        Info = new DeviceInfo(_options.DeviceName, BackendKind.Null, HardwareAccelerated: false);
+            _options.SupportsCopyQueue,
+            _options.SupportsBindless);
+        DeviceLimits limits = new(
+            MaxBufferSize: int.MaxValue,
+            MaxTextureDimension1D: 16_384,
+            MaxTextureDimension2D: 16_384,
+            MaxTextureDimension3D: 2_048,
+            MaxTextureArrayLayers: 2_048,
+            MaxBindGroups: 8,
+            MaxBindingsPerGroup: 64,
+            MaxDescriptorArrayLength: 1_024,
+            MaxPushConstantBytes: 256,
+            MinConstantBufferOffsetAlignment: 256,
+            MinStorageBufferOffsetAlignment: 16,
+            TextureDataPitchAlignment: 1,
+            TextureDataPlacementAlignment: 1);
+        Capabilities = new DeviceCapabilities(
+            SupportsTraditionalBinding: true,
+            SupportsIndirectDraw: true,
+            SupportsIndirectDrawIndexed: true,
+            SupportsIndirectDispatch: true,
+            SupportsTimestampQueries: true,
+            SupportsOcclusionQueries: true,
+            SupportsPipelineStatisticsQueries: true,
+            SupportsSwapchain: true,
+            SupportsPipelineCache: true,
+            SupportsMemoryBudget: true,
+            SupportsBindless: _options.SupportsBindless,
+            SupportsMeshShaders: false,
+            SupportsVariableRateShading: false,
+            SupportsRayTracing: false,
+            SupportsSparseResources: false,
+            SupportsSamplerFeedback: false,
+            SupportsWorkGraphs: false,
+            HighestShaderModel: new Version(6, 2),
+            Limits: limits);
+        Info = new DeviceInfo(
+            _options.DeviceName,
+            BackendKind.Null,
+            HardwareAccelerated: false,
+            DriverVersion: "deterministic",
+            ApiVersion: "1.0",
+            ValidationEnabled: true);
     }
 
     public DeviceDomain Domain => _domain;
     public DeviceInfo Info { get; }
+    public DeviceCapabilities Capabilities { get; }
     public DeviceCompilationSnapshot Compilation { get; }
+    public DeviceError LastError { get { lock (_gate) return _lastError; } }
     public Statistics Statistics { get { lock (_gate) return _statistics; } }
 
     public ResourceRequirements GetBufferRequirements(
@@ -258,8 +324,11 @@ public sealed partial class Device : IDevice
             EnsureNotDisposed();
             int retired = 0;
             retired += _commandLists.Collect(_completed);
+            retired += _swapchains.Collect(_completed);
+            retired += _bindlessTables.Collect(_completed);
             retired += _bindGroups.Collect(_completed);
             retired += _pipelines.Collect(_completed);
+            retired += _queryPools.Collect(_completed);
             retired += _pipelineLayouts.Collect(_completed);
             retired += _shaders.Collect(_completed);
             retired += _bindGroupLayouts.Collect(_completed);
@@ -305,6 +374,9 @@ public sealed partial class Device : IDevice
                 record.ReferencesPinned = false;
             }
             _commandLists.Clear();
+            _swapchains.Clear();
+            _bindlessTables.Clear();
+            _queryPools.Clear();
             _bindGroups.Clear();
             _pipelines.Clear();
             _pipelineLayouts.Clear();
@@ -320,7 +392,10 @@ public sealed partial class Device : IDevice
             Monitor.PulseAll(_gate);
         }
     }
+}
 
+public sealed partial class Device
+{
     internal CommandListHandle PublishCommandList(QueueType queue, RecordedCommand[] commands, CommandReferences references, string? name)
     {
         lock (_gate)
@@ -365,9 +440,32 @@ public sealed partial class Device : IDevice
             if (!_disposed)
             {
                 _diagnostics.Add(new GraphicsDiagnostic(GraphicsDiagnosticSeverity.Error, "Null", message));
+                _lastError = new DeviceError(DeviceErrorKind.Validation, message);
             }
         }
         return new InvalidOperationException(message);
+    }
+
+    internal NotSupportedException UnsupportedError(string message)
+    {
+        lock (_gate)
+        {
+            if (!_disposed)
+            {
+                _diagnostics.Add(new GraphicsDiagnostic(GraphicsDiagnosticSeverity.Error, "Null", message));
+                _lastError = new DeviceError(DeviceErrorKind.Unsupported, message);
+            }
+        }
+        return new NotSupportedException(message);
+    }
+
+    private void SetDeviceError(DeviceError error)
+    {
+        _lastError = error;
+        if (error.IsError)
+        {
+            _diagnostics.Add(new GraphicsDiagnostic(GraphicsDiagnosticSeverity.Error, "Null", error.Message, error.NativeCode));
+        }
     }
 
     private void ValidateWaits(ReadOnlySpan<GpuCompletion> waits)

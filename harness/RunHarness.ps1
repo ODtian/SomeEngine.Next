@@ -155,6 +155,7 @@ function Invoke-HardBucket {
 
     $steps = @(
         @{ Name = "product-tests"; File = "pwsh"; Args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "harness/RunProductTests.ps1", "-Configuration", $Configuration, "-Verbosity", $Verbosity, "-NoBuild", "-Parallelism", $ProductTestParallelism, "-TraitMode", "Hard") },
+        @{ Name = "graphics-benchmark-soak"; File = "dotnet"; Args = @("run", "--project", "benchmarks/SomeEngine.Graphics.Benchmarks/SomeEngine.Graphics.Benchmarks.csproj", "--no-build", "--no-restore", "--configuration", $Configuration) },
         @{ Name = "architecture"; File = "dotnet"; Args = @("test", "harness/architecture/SomeEngine.Harness.Architecture/SomeEngine.Harness.Architecture.csproj", "--no-build", "--no-restore", "--configuration", $Configuration, "--verbosity", $Verbosity) },
         @{ Name = "behaviour"; File = "dotnet"; Args = @("test", "harness/behaviour/SomeEngine.Harness.Behaviour/SomeEngine.Harness.Behaviour.csproj", "--no-build", "--no-restore", "--configuration", $Configuration, "--verbosity", $Verbosity) },
         @{ Name = "quality-analyzer-tests"; File = "dotnet"; Args = @("test", "harness/quality/SomeEngine.Harness.QualityAnalyzer.Tests/SomeEngine.Harness.QualityAnalyzer.Tests.csproj", "--no-build", "--no-restore", "--configuration", $Configuration, "--verbosity", $Verbosity) },

@@ -1,12 +1,13 @@
 namespace SomeEngine.Graphics.Null;
 
-internal sealed class CommandContext : ICommandContext
+internal sealed partial class CommandContext : ICommandContext
 {
     private readonly Device _device;
     private readonly string? _name;
     private readonly List<RecordedCommand> _commands = [];
     private readonly CommandReferences _references = new();
     private readonly Dictionary<uint, BindGroupLayoutHandle> _boundGroups = [];
+    private readonly HashSet<(QueryPoolHandle Pool, uint Index)> _activeQueries = [];
     private int _ownerThreadId;
     private bool _rendering;
     private bool _finished;
@@ -14,6 +15,7 @@ internal sealed class CommandContext : ICommandContext
     private int _debugDepth;
     private PipelineHandle _pipeline;
     private PipelineKind? _pipelineKind;
+    private bool _indexBufferBound;
 
     public CommandContext(Device device, QueueType queue, string? name)
     {
@@ -76,6 +78,47 @@ internal sealed class CommandContext : ICommandContext
         _commands.Add(new CopyTextureToBufferCommand(copy));
     }
 
+    public void CopyTexture(in TextureToTextureCopy copy)
+    {
+        EnterRecording();
+        RequireOutsideRendering(nameof(CopyTexture));
+        _device.ValidateTextureCopyForRecording(in copy);
+        _references.Textures.Add(copy.Source);
+        _references.Textures.Add(copy.Destination);
+        _commands.Add(new CopyTextureCommand(copy));
+    }
+
+    public void ClearBuffer(BufferHandle buffer, in BufferRange range, uint pattern = 0)
+    {
+        EnterRecording();
+        RequireOutsideRendering(nameof(ClearBuffer));
+        BufferRange normalized = _device.ValidateBufferClearForRecording(buffer, range);
+        _references.Buffers.Add(buffer);
+        _commands.Add(new ClearBufferCommand(buffer, normalized, pattern));
+    }
+
+    public void ClearTexture(TextureHandle texture, in TextureSubresourceRange range, in System.Numerics.Vector4 color)
+    {
+        EnterRecording();
+        RequireOutsideRendering(nameof(ClearTexture));
+        TextureSubresourceRange normalized = _device.ValidateColorClearForRecording(texture, range, color);
+        _references.Textures.Add(texture);
+        _commands.Add(new ClearTextureCommand(texture, normalized, color));
+    }
+
+    public void ClearDepthStencilTexture(
+        TextureHandle texture,
+        in TextureSubresourceRange range,
+        float depth = 1f,
+        byte stencil = 0)
+    {
+        EnterRecording();
+        RequireOutsideRendering(nameof(ClearDepthStencilTexture));
+        TextureSubresourceRange normalized = _device.ValidateDepthStencilClearForRecording(texture, range, depth);
+        _references.Textures.Add(texture);
+        _commands.Add(new ClearDepthStencilTextureCommand(texture, normalized, depth, stencil));
+    }
+
     public void ResolveTexture(in TextureResolveRegion resolve)
     {
         EnterRecording();
@@ -102,6 +145,8 @@ internal sealed class CommandContext : ICommandContext
     {
         EnterRecording();
         if (!_rendering) throw _device.ValidationError("No rendering scope is open.");
+        if (_activeQueries.Any(active => _device.GetQueryTypeForRecording(active.Pool, active.Index) == QueryType.Occlusion))
+            throw _device.ValidationError("Occlusion queries must end before the rendering scope closes.");
         _rendering = false;
         _commands.Add(new EndRenderingCommand());
     }
@@ -197,6 +242,7 @@ internal sealed class CommandContext : ICommandContext
         if (Queue != QueueType.Graphics) throw _device.ValidationError("Index buffers require the graphics queue.");
         _device.ValidateIndexBufferForRecording(buffer, offset, format);
         _references.Buffers.Add(buffer);
+        _indexBufferBound = true;
         _commands.Add(new SetIndexBufferCommand(buffer, offset, format));
     }
 
@@ -237,80 +283,61 @@ internal sealed class CommandContext : ICommandContext
         _commands.Add(new DispatchCommand(groupCountX, groupCountY, groupCountZ));
     }
 
-    public void PushDebugGroup(string name)
+    public void DrawIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
     {
         EnterRecording();
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        _debugDepth++;
-        _commands.Add(new PushDebugGroupCommand(name));
+        if (!_rendering || _pipelineKind != PipelineKind.Raster)
+            throw _device.ValidationError("DrawIndirect requires an open rendering scope and a raster pipeline.");
+        _device.ValidatePipelineBindings(_pipeline, _boundGroups);
+        AddIndirectReferences(argumentBuffer, argumentOffset, maxCommandCount, commandStride,
+            DrawIndirectArguments.ByteSize, countBuffer, countBufferOffset);
+        _commands.Add(new DrawIndirectCommand(
+            argumentBuffer, argumentOffset, maxCommandCount, commandStride, countBuffer, countBufferOffset));
     }
 
-    public void PopDebugGroup()
+    public void DrawIndexedIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
     {
         EnterRecording();
-        if (_debugDepth == 0) throw _device.ValidationError("No debug group is open.");
-        _debugDepth--;
-        _commands.Add(new PopDebugGroupCommand());
+        if (!_rendering || _pipelineKind != PipelineKind.Raster)
+            throw _device.ValidationError("DrawIndexedIndirect requires an open rendering scope and a raster pipeline.");
+        if (!_indexBufferBound)
+            throw _device.ValidationError("DrawIndexedIndirect requires an index buffer.");
+        _device.ValidatePipelineBindings(_pipeline, _boundGroups);
+        AddIndirectReferences(argumentBuffer, argumentOffset, maxCommandCount, commandStride,
+            DrawIndexedIndirectArguments.ByteSize, countBuffer, countBufferOffset);
+        _commands.Add(new DrawIndexedIndirectCommand(
+            argumentBuffer, argumentOffset, maxCommandCount, commandStride, countBuffer, countBufferOffset));
     }
 
-    public CommandListHandle Finish()
+    public void DispatchIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
     {
         EnterRecording();
-        if (_rendering) throw _device.ValidationError("Finish rejected an unclosed rendering scope.");
-        if (_debugDepth != 0) throw _device.ValidationError("Finish rejected unclosed debug groups.");
-        if (_finished) throw _device.ValidationError("A command context can be finished only once.");
-        _finished = true;
-        return _device.PublishCommandList(Queue, _commands.ToArray(), _references, _name);
+        RequireOutsideRendering(nameof(DispatchIndirect));
+        if (Queue == QueueType.Copy || _pipelineKind != PipelineKind.Compute)
+            throw _device.ValidationError("DispatchIndirect requires a compute pipeline on a graphics or compute queue.");
+        _device.ValidatePipelineBindings(_pipeline, _boundGroups);
+        AddIndirectReferences(argumentBuffer, argumentOffset, maxCommandCount, commandStride,
+            DispatchIndirectArguments.ByteSize, countBuffer, countBufferOffset);
+        _commands.Add(new DispatchIndirectCommand(
+            argumentBuffer, argumentOffset, maxCommandCount, commandStride, countBuffer, countBufferOffset));
     }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        BindOrValidateThread();
-        _disposed = true;
-        if (!_finished) _commands.Clear();
-    }
-
-    private void EnterRecording()
-    {
-        _device.EnsureAvailableForContext();
-        BindOrValidateThread();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_finished) throw _device.ValidationError("The command context has already been finished.");
-    }
-
-    private void BindOrValidateThread()
-    {
-        int current = Environment.CurrentManagedThreadId;
-        int owner = Volatile.Read(ref _ownerThreadId);
-        if (owner == 0)
-        {
-            owner = Interlocked.CompareExchange(ref _ownerThreadId, current, 0);
-            if (owner == 0) owner = current;
-        }
-        if (owner != current)
-        {
-            throw _device.ValidationError($"Command context is owned by managed thread {owner}, not {current}.");
-        }
-    }
-
-    private void RequireOutsideRendering(string operation)
-    {
-        if (_rendering) throw _device.ValidationError($"{operation} is not permitted inside a rendering scope.");
-    }
-
-    private void AddResourceReference(ResourceHandle resource)
-    {
-        switch (resource.Kind)
-        {
-            case ResourceKind.Buffer:
-                _references.Buffers.Add(new BufferHandle(resource.Domain, resource.Slot, resource.Generation));
-                break;
-            case ResourceKind.Texture:
-                _references.Textures.Add(new TextureHandle(resource.Domain, resource.Slot, resource.Generation));
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(resource));
-        }
-    }
 }

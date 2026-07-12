@@ -8,31 +8,21 @@ namespace SomeEngine.Harness.QualityAnalyzer;
 internal static class AnalyzerConfigLoader
 {
     private const string ConfigFileName = "config.json";
-
-    private static AnalyzerHarnessConfig? _cached;
-    private static readonly object Gate = new();
+    private const string AcceptedBaselineFileName = "graphics-rendergraph-hard.v1.json";
 
     public static AnalyzerHarnessConfig Load(AnalyzerOptions options)
     {
-        lock (Gate)
-        {
-            if (_cached is not null)
-            {
-                return _cached;
-            }
-        }
-
         var file = options.AdditionalFiles
             .FirstOrDefault(candidate => System.IO.Path.GetFileName(candidate.Path) == ConfigFileName);
         if (file is null)
         {
-            return Cache(new AnalyzerHarnessConfig());
+            return new AnalyzerHarnessConfig();
         }
 
         var text = file.GetText()?.ToString();
         if (string.IsNullOrWhiteSpace(text))
         {
-            return Cache(new AnalyzerHarnessConfig());
+            return new AnalyzerHarnessConfig();
         }
 
         var optionsJson = new JsonSerializerOptions
@@ -41,17 +31,42 @@ internal static class AnalyzerConfigLoader
             ReadCommentHandling = JsonCommentHandling.Skip,
         };
 
-        return Cache(JsonSerializer.Deserialize<AnalyzerHarnessConfig>(text!, optionsJson) ?? new AnalyzerHarnessConfig());
+        AnalyzerHarnessConfig config =
+            JsonSerializer.Deserialize<AnalyzerHarnessConfig>(text!, optionsJson) ?? new AnalyzerHarnessConfig();
+        LoadAcceptedBaseline(options, optionsJson, config);
+        return config;
     }
 
-    private static AnalyzerHarnessConfig Cache(AnalyzerHarnessConfig config)
+    private static void LoadAcceptedBaseline(
+        AnalyzerOptions options,
+        JsonSerializerOptions jsonOptions,
+        AnalyzerHarnessConfig config)
     {
-        lock (Gate)
+        var file = options.AdditionalFiles.FirstOrDefault(candidate =>
+            System.IO.Path.GetFileName(candidate.Path) == AcceptedBaselineFileName);
+        string? text = file?.GetText()?.ToString();
+        if (string.IsNullOrWhiteSpace(text))
         {
-            _cached = config;
-            return _cached;
+            return;
         }
+
+        AnalyzerAcceptedBaselineDocument? baseline =
+            JsonSerializer.Deserialize<AnalyzerAcceptedBaselineDocument>(text!, jsonOptions);
+        if (baseline is null)
+        {
+            return;
+        }
+
+        config.Complexity.AcceptedCheckpointCommit = baseline.CheckpointCommit;
+        config.Complexity.AcceptedCheckpointDiagnostics = baseline.Entries;
     }
+}
+
+internal sealed class AnalyzerAcceptedBaselineDocument
+{
+    public int SchemaVersion { get; set; }
+    public string CheckpointCommit { get; set; } = "";
+    public List<AnalyzerAcceptedDiagnostic> Entries { get; set; } = [];
 }
 
 internal sealed class AnalyzerHarnessConfig
@@ -81,4 +96,17 @@ internal sealed class AnalyzerComplexityConfig
     public int MaxMethodsPerClass { get; set; } = 25;
     public int MaxFieldsPerClass { get; set; } = 20;
     public int MaxCoupledTypes { get; set; } = 8;
+    public string AcceptedCheckpointCommit { get; set; } = "";
+    public List<AnalyzerAcceptedDiagnostic> AcceptedCheckpointDiagnostics { get; set; } = [];
+}
+
+internal sealed class AnalyzerAcceptedDiagnostic
+{
+    public string Id { get; set; } = "";
+    public string Assembly { get; set; } = "";
+    public string Path { get; set; } = "";
+    public int Line { get; set; }
+    public string Symbol { get; set; } = "";
+    public int MaximumObserved { get; set; }
+    public string Reason { get; set; } = "";
 }

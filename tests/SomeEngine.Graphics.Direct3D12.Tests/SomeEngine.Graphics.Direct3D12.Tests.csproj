@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Fixtures/*.dxil" CopyToOutputDirectory="PreserveNewest" />

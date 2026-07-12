@@ -27,6 +27,18 @@
         "path": "src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj"
       },
       {
+        "name": "SomeEngine.Graphics",
+        "path": "src/SomeEngine.Graphics/SomeEngine.Graphics.csproj"
+      },
+      {
+        "name": "SomeEngine.Graphics.Direct3D12",
+        "path": "src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj"
+      },
+      {
+        "name": "SomeEngine.Graphics.Null",
+        "path": "src/SomeEngine.Graphics.Null/SomeEngine.Graphics.Null.csproj"
+      },
+      {
         "name": "SomeEngine.Job",
         "path": "src/SomeEngine.Job/SomeEngine.Job.csproj"
       },
@@ -41,9 +53,21 @@
       {
         "name": "SomeEngine.Render.Cluster",
         "path": "src/SomeEngine.Render.Cluster/SomeEngine.Render.Cluster.csproj"
+      },
+      {
+        "name": "SomeEngine.RenderGraph",
+        "path": "src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj"
       }
     ],
     "buildSupportProjects": [
+      {
+        "name": "SomeEngine.Graphics.Benchmarks",
+        "path": "benchmarks/SomeEngine.Graphics.Benchmarks/SomeEngine.Graphics.Benchmarks.csproj"
+      },
+      {
+        "name": "SomeEngine.AssetCook",
+        "path": "tools/SomeEngine.AssetCook/SomeEngine.AssetCook.csproj"
+      },
       {
         "name": "SomeEngine.ECS.SourceGen",
         "path": "src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
@@ -51,6 +75,10 @@
       {
         "name": "SomeEngine.Generators",
         "path": "src/SomeEngine.Generators/SomeEngine.Generators.csproj"
+      },
+      {
+        "name": "SomeEngine.RenderGraph.Sample",
+        "path": "samples/SomeEngine.RenderGraph.Sample/SomeEngine.RenderGraph.Sample.csproj"
       }
     ],
     "testProjects": [
@@ -79,6 +107,14 @@
         "path": "tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj"
       },
       {
+        "name": "SomeEngine.Graphics.Direct3D12.Tests",
+        "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/SomeEngine.Graphics.Direct3D12.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.Graphics.Tests",
+        "path": "tests/SomeEngine.Graphics.Tests/SomeEngine.Graphics.Tests.csproj"
+      },
+      {
         "name": "SomeEngine.Job.Dots.Tests",
         "path": "tests/SomeEngine.Job.Dots.Tests/SomeEngine.Job.Dots.Tests.csproj"
       },
@@ -93,6 +129,10 @@
       {
         "name": "SomeEngine.Render.Tests",
         "path": "tests/SomeEngine.Render.Tests/SomeEngine.Render.Tests.csproj"
+      },
+      {
+        "name": "SomeEngine.RenderGraph.Tests",
+        "path": "tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj"
       }
     ]
   },
@@ -177,6 +217,16 @@
         "project": "SomeEngine.Assets",
         "packageId": "SharpGLTF.Core",
         "version": "1.0.6"
+      },
+      {
+        "project": "SomeEngine.Graphics.Direct3D12",
+        "packageId": "Vortice.Direct3D12",
+        "version": "3.8.3"
+      },
+      {
+        "project": "SomeEngine.Graphics.Direct3D12",
+        "packageId": "Vortice.Mathematics",
+        "version": "2.1.0"
       }
     ],
     "buildSupportPackages": [
@@ -328,6 +378,36 @@
         "version": "3.1.4"
       },
       {
+        "project": "SomeEngine.Graphics.Direct3D12.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Graphics.Direct3D12.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Graphics.Direct3D12.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.Graphics.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.Graphics.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.Graphics.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
         "project": "SomeEngine.Job.Dots.Tests",
         "packageId": "coverlet.collector",
         "version": "6.0.4"
@@ -404,6 +484,21 @@
       },
       {
         "project": "SomeEngine.Render.Tests",
+        "packageId": "xunit.runner.visualstudio",
+        "version": "3.1.4"
+      },
+      {
+        "project": "SomeEngine.RenderGraph.Tests",
+        "packageId": "Microsoft.NET.Test.Sdk",
+        "version": "17.14.1"
+      },
+      {
+        "project": "SomeEngine.RenderGraph.Tests",
+        "packageId": "xunit",
+        "version": "2.9.3"
+      },
+      {
+        "project": "SomeEngine.RenderGraph.Tests",
         "packageId": "xunit.runner.visualstudio",
         "version": "3.1.4"
       }
@@ -1659,13 +1754,22 @@
           "SomeEngine.ECS",
           "SomeEngine.ECS.Systems"
         ],
-        "SomeEngine.ECS": [],
+        "SomeEngine.ECS": [
+          "SomeEngine.Job"
+        ],
         "SomeEngine.ECS.Serialization": [
           "SomeEngine.ECS"
         ],
         "SomeEngine.ECS.Systems": [
           "SomeEngine.ECS",
           "SomeEngine.Job"
+        ],
+        "SomeEngine.Graphics": [],
+        "SomeEngine.Graphics.Direct3D12": [
+          "SomeEngine.Graphics"
+        ],
+        "SomeEngine.Graphics.Null": [
+          "SomeEngine.Graphics"
         ],
         "SomeEngine.Job": [],
         "SomeEngine.Job.Dots": [
@@ -1674,12 +1778,17 @@
         "SomeEngine.Render": [
           "SomeEngine.Core",
           "SomeEngine.Assets",
-          "SomeEngine.ECS"
+          "SomeEngine.ECS",
+          "SomeEngine.Graphics"
         ],
         "SomeEngine.Render.Cluster": [
           "SomeEngine.Render",
           "SomeEngine.Core",
           "SomeEngine.Assets"
+        ],
+        "SomeEngine.RenderGraph": [
+          "SomeEngine.Graphics",
+          "SomeEngine.Job"
         ]
       }
     },
@@ -1733,7 +1842,6 @@
           "Silk.NET",
           "ImGui",
           "Rhi",
-          "D3D12",
           "Direct3D",
           "DXGI",
           "FrameGraph",
@@ -1767,7 +1875,6 @@
           "ClusterPass"
         ],
         "forbiddenPathSegments": [
-          "D3D12",
           "Direct3D",
           "DXGI",
           "Editor",
@@ -1937,8 +2044,6 @@
       }
     ],
     "excludedWorkspaceRoots": [
-      "benchmarks",
-      "samples",
       "src/SomeEngine.Animation",
       "src/SomeEngine.Editor",
       "src/SomeEngine.Physics",
@@ -2486,12 +2591,16 @@
       "SomeEngine.ECS",
       "SomeEngine.ECS.Systems",
       "SomeEngine.ECS.Serialization",
+      "SomeEngine.Graphics",
+      "SomeEngine.Graphics.Direct3D12",
+      "SomeEngine.Graphics.Null",
       "SomeEngine.Job",
       "SomeEngine.Job.Dots",
       "SomeEngine.Core",
       "SomeEngine.Assets",
       "SomeEngine.Render",
-      "SomeEngine.Render.Cluster"
+      "SomeEngine.Render.Cluster",
+      "SomeEngine.RenderGraph"
     ],
     "excludedTestTraits": [
       {

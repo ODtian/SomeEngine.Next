@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Null/SomeEngine.Graphics.Null.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
+  </ItemGroup>
+</Project>

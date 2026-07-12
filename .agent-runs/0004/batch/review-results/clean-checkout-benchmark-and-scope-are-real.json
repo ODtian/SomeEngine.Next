@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "AssetCook uses tracked DXC runtime inputs, the declared boundary contains the four Graphics/RG product and test families, and the hard benchmark executes compiler/cache, real WARP RHI and 10,000-frame soak scenarios into schema-v1 machine metadata. The reviewed migration scope excludes the user's ECS, Job and RenderWorld changes and never writes F:/SomeEngine."
+}

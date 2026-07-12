@@ -101,41 +101,62 @@ public sealed partial class Device
         lock (_gate)
         {
             EnsureNotDisposed();
-            PipelineLayoutRecord layout = RequirePipelineLayout(desc.Layout);
-            ShaderRecord vertex = RequireShader(desc.VertexShader);
-            ShaderRecord pixel = RequireShader(desc.PixelShader);
-            RequireShaderStage(vertex.Desc, ShaderStage.Vertex, nameof(desc.VertexShader));
-            RequireShaderStage(pixel.Desc, ShaderStage.Pixel, nameof(desc.PixelShader));
-            ValidateShaderInterface(layout, vertex.Desc);
-            ValidateShaderInterface(layout, pixel.Desc);
-            Format[] colorFormats = desc.ColorFormats.ToArray();
-            if (colorFormats.Any(static format => format == Format.Unknown || TextureLayout.IsDepth(format)))
-                throw new ArgumentException("Raster color formats must be concrete color formats.", nameof(desc));
-            if (desc.DepthStencilFormat != Format.Unknown && !TextureLayout.IsDepth(desc.DepthStencilFormat))
-                throw new ArgumentException("DepthStencilFormat must be a depth format.", nameof(desc));
-            BlendAttachmentDesc[] blends = desc.BlendAttachments.ToArray();
-            if (blends.Length != 0 && blends.Length != colorFormats.Length)
-                throw new ArgumentException("Blend attachment count must match color format count.", nameof(desc));
-            RasterPipelineDesc frozen = desc with
-            {
-                ColorFormats = colorFormats,
-                VertexAttributes = desc.VertexAttributes.ToArray(),
-                VertexBuffers = desc.VertexBuffers.ToArray(),
-                BlendAttachments = blends,
-            };
-            (uint slot, uint generation) = _pipelines.Allocate(new PipelineRecord(
-                PipelineKind.Raster,
-                desc.Layout,
-                desc.VertexShader,
-                desc.PixelShader,
-                frozen,
-                default,
-                desc.Name));
-            _pipelineLayouts.AddChild(desc.Layout.Domain, desc.Layout.Slot, desc.Layout.Generation);
-            _shaders.AddChild(desc.VertexShader.Domain, desc.VertexShader.Slot, desc.VertexShader.Generation);
-            _shaders.AddChild(desc.PixelShader.Domain, desc.PixelShader.Slot, desc.PixelShader.Generation);
-            return new PipelineHandle(_domain, slot, generation);
+            PipelineCacheIdentity cacheIdentity = ValidateRasterPipelineShaders(desc);
+            RasterPipelineDesc frozen = FreezeRasterPipelineDesc(desc);
+            TrackPipelineCache(desc.CacheKey, cacheIdentity);
+            return AllocateRasterPipeline(desc, frozen);
         }
+    }
+
+    private PipelineCacheIdentity ValidateRasterPipelineShaders(in RasterPipelineDesc desc)
+    {
+        PipelineLayoutRecord layout = RequirePipelineLayout(desc.Layout);
+        ShaderRecord vertex = RequireShader(desc.VertexShader);
+        ShaderRecord pixel = RequireShader(desc.PixelShader);
+        RequireShaderStage(vertex.Desc, ShaderStage.Vertex, nameof(desc.VertexShader));
+        RequireShaderStage(pixel.Desc, ShaderStage.Pixel, nameof(desc.PixelShader));
+        ValidateShaderInterface(layout, vertex.Desc);
+        ValidateShaderInterface(layout, pixel.Desc);
+        return new PipelineCacheIdentity(PipelineKind.Raster, desc.Layout, vertex.Desc.Key, pixel.Desc.Key);
+    }
+
+    private static RasterPipelineDesc FreezeRasterPipelineDesc(in RasterPipelineDesc desc)
+    {
+        Format[] colorFormats = desc.ColorFormats.ToArray();
+        if (colorFormats.Any(static format => format == Format.Unknown || TextureLayout.IsDepth(format)))
+            throw new ArgumentException("Raster color formats must be concrete color formats.", nameof(desc));
+        if (desc.DepthStencilFormat != Format.Unknown && !TextureLayout.IsDepth(desc.DepthStencilFormat))
+            throw new ArgumentException("DepthStencilFormat must be a depth format.", nameof(desc));
+        BlendAttachmentDesc[] blends = desc.BlendAttachments.ToArray();
+        if (blends.Length != 0 && blends.Length != colorFormats.Length)
+            throw new ArgumentException("Blend attachment count must match color format count.", nameof(desc));
+        return desc with
+        {
+            ColorFormats = colorFormats,
+            VertexAttributes = desc.VertexAttributes.ToArray(),
+            VertexBuffers = desc.VertexBuffers.ToArray(),
+            BlendAttachments = blends,
+        };
+    }
+
+    private PipelineHandle AllocateRasterPipeline(
+        in RasterPipelineDesc desc,
+        in RasterPipelineDesc frozen)
+    {
+        (uint slot, uint generation) = _pipelines.Allocate(new PipelineRecord(
+            PipelineKind.Raster,
+            desc.Layout,
+            desc.VertexShader,
+            desc.PixelShader,
+            frozen,
+            default,
+            desc.Name,
+            _options.CreatedPipelineStatus,
+            desc.CacheKey));
+        _pipelineLayouts.AddChild(desc.Layout.Domain, desc.Layout.Slot, desc.Layout.Generation);
+        _shaders.AddChild(desc.VertexShader.Domain, desc.VertexShader.Slot, desc.VertexShader.Generation);
+        _shaders.AddChild(desc.PixelShader.Domain, desc.PixelShader.Slot, desc.PixelShader.Generation);
+        return new PipelineHandle(_domain, slot, generation);
     }
 
     public PipelineHandle CreateComputePipeline(in ComputePipelineDesc desc)
@@ -148,6 +169,12 @@ public sealed partial class Device
             ShaderRecord shader = RequireShader(desc.Shader);
             RequireShaderStage(shader.Desc, ShaderStage.Compute, nameof(desc.Shader));
             ValidateShaderInterface(layout, shader.Desc);
+            PipelineCacheIdentity cacheIdentity = new(
+                PipelineKind.Compute,
+                desc.Layout,
+                shader.Desc.Key,
+                default);
+            TrackPipelineCache(desc.CacheKey, cacheIdentity);
             (uint slot, uint generation) = _pipelines.Allocate(new PipelineRecord(
                 PipelineKind.Compute,
                 desc.Layout,
@@ -155,7 +182,9 @@ public sealed partial class Device
                 default,
                 default,
                 desc,
-                desc.Name));
+                desc.Name,
+                _options.CreatedPipelineStatus,
+                desc.CacheKey));
             _pipelineLayouts.AddChild(desc.Layout.Domain, desc.Layout.Slot, desc.Layout.Generation);
             _shaders.AddChild(desc.Shader.Domain, desc.Shader.Slot, desc.Shader.Generation);
             return new PipelineHandle(_domain, slot, generation);
@@ -184,6 +213,52 @@ public sealed partial class Device
                     new PipelineShaderIdentity(first.Key, first.Stage),
                     new PipelineShaderIdentity(second.Key, second.Stage),
                 ]);
+        }
+    }
+
+    public PipelineStatus GetPipelineStatus(PipelineHandle pipeline)
+    {
+        EnsureCoordinatorThread();
+        lock (_gate)
+        {
+            EnsureNotDisposed();
+            return RequirePipeline(pipeline).Status;
+        }
+    }
+
+    public PipelineCacheStats GetPipelineCacheStats()
+    {
+        EnsureCoordinatorThread();
+        lock (_gate)
+        {
+            EnsureNotDisposed();
+            return new PipelineCacheStats(
+                _pipelineCache.Count,
+                _pipelineCacheHits,
+                _pipelineCacheMisses,
+                _pipelineCacheInvalidations);
+        }
+    }
+
+    public void InvalidatePipelineCache(PipelineCacheKey key)
+    {
+        EnsureCoordinatorThread();
+        if (!key.IsValid) throw new ArgumentException("A stable pipeline cache key is required.", nameof(key));
+        lock (_gate)
+        {
+            EnsureNotDisposed();
+            if (_pipelineCache.Remove(key)) _pipelineCacheInvalidations++;
+        }
+    }
+
+    public void InvalidateAllPipelines()
+    {
+        EnsureCoordinatorThread();
+        lock (_gate)
+        {
+            EnsureNotDisposed();
+            _pipelineCacheInvalidations = checked(_pipelineCacheInvalidations + _pipelineCache.Count);
+            _pipelineCache.Clear();
         }
     }
 
@@ -224,10 +299,20 @@ public sealed partial class Device
             }
         }
     }
+}
 
+public sealed partial class Device
+{
     internal PipelineRecord GetPipelineForRecording(PipelineHandle pipeline)
     {
-        lock (_gate) { EnsureNotDisposed(); return RequirePipeline(pipeline); }
+        lock (_gate)
+        {
+            EnsureNotDisposed();
+            PipelineRecord record = RequirePipeline(pipeline);
+            if (record.Status != PipelineStatus.Ready)
+                throw ValidationError($"Pipeline {pipeline} is {record.Status} and cannot be bound.");
+            return record;
+        }
     }
 
     internal BindGroupRecord GetBindGroupForRecording(BindGroupHandle group)
@@ -452,6 +537,21 @@ public sealed partial class Device
     private static void RequireShaderStage(in ShaderDesc shader, ShaderStage required, string parameter)
     {
         if (shader.Stage != required) throw new ArgumentException($"Shader stage must be {required}.", parameter);
+    }
+
+    private void TrackPipelineCache(PipelineCacheKey key, PipelineCacheIdentity identity)
+    {
+        if (!key.IsValid) return;
+        if (_pipelineCache.TryGetValue(key, out PipelineCacheIdentity cached))
+        {
+            if (cached != identity)
+                throw ValidationError("A pipeline cache key was reused for a different pipeline identity.");
+            _pipelineCacheHits++;
+            return;
+        }
+
+        _pipelineCache.Add(key, identity);
+        _pipelineCacheMisses++;
     }
 
     private BindGroupLayoutRecord RequireBindGroupLayout(BindGroupLayoutHandle handle) => _bindGroupLayouts.RequireAlive(handle.Domain, handle.Slot, handle.Generation).Value!;

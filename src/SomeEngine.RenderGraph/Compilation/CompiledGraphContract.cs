@@ -34,7 +34,7 @@ internal static class CompiledGraphContract
         ValidateQueuesAndDependencies(source, result, device, expected);
         ExecutionTopology topology = ValidateExecutionTopology(source, result, device, expected);
         ValidatePlacements(source, result, expected);
-        ValidateBarrierProgram(source, result, topology, expected);
+        ValidateBarrierSequence(source, result, topology, expected);
     }
 
     private static void ValidateTopLevelShape(FrozenGraph source, CompiledGraph result)
@@ -376,58 +376,127 @@ internal static class CompiledGraphContract
         }
     }
 
-    private static void ValidateBarrierProgram(
+    private static void ValidateBarrierSequence(
         FrozenGraph source,
         CompiledGraph result,
         ExecutionTopology topology,
         GraphLiveness expected)
     {
-        ResourceState[] bufferStates = new ResourceState[source.Resources.Length];
-        int[] bufferLastUnits = Enumerable.Repeat(-1, source.Resources.Length).ToArray();
-        TextureSimulation?[] textureStates = new TextureSimulation?[source.Resources.Length];
-        for (int resource = 0; resource < source.Resources.Length; resource++)
+        new BarrierSequenceSimulation(source, result, topology, expected).Validate();
+    }
+
+    private sealed class BarrierSequenceSimulation
+    {
+        private readonly FrozenGraph _source;
+        private readonly CompiledGraph _result;
+        private readonly ExecutionTopology _topology;
+        private readonly GraphLiveness _expected;
+        private readonly ResourceState[] _bufferStates;
+        private readonly int[] _bufferLastUnits;
+        private readonly TextureSimulation?[] _textureStates;
+
+        public BarrierSequenceSimulation(
+            FrozenGraph source,
+            CompiledGraph result,
+            ExecutionTopology topology,
+            GraphLiveness expected)
         {
-            FrozenResource value = source.Resources[resource];
-            ResourceState initial = InitialState(value);
-            if (value.Kind == ResourceNodeKind.Buffer) bufferStates[resource] = initial;
-            else textureStates[resource] = new TextureSimulation(value.TextureDesc, initial);
+            _source = source;
+            _result = result;
+            _topology = topology;
+            _expected = expected;
+            _bufferStates = new ResourceState[source.Resources.Length];
+            _bufferLastUnits = Enumerable.Repeat(-1, source.Resources.Length).ToArray();
+            _textureStates = new TextureSimulation?[source.Resources.Length];
+            InitializeStates();
         }
 
-        for (int batch = 0; batch < result.ExecutionBatches.Length; batch++)
-        foreach (int unitOrdinal in result.ExecutionBatches[batch].RecordUnits)
+        public void Validate()
         {
-            CompiledRecordUnit unit = result.RecordUnits[unitOrdinal];
+            ApplyRecordUnits();
+            ValidateFinalStates();
+        }
+
+        private void InitializeStates()
+        {
+            for (int resource = 0; resource < _source.Resources.Length; resource++)
+            {
+                FrozenResource value = _source.Resources[resource];
+                ResourceState initial = InitialState(value);
+                if (value.Kind == ResourceNodeKind.Buffer) _bufferStates[resource] = initial;
+                else _textureStates[resource] = new TextureSimulation(value.TextureDesc, initial);
+            }
+        }
+
+        private void ApplyRecordUnits()
+        {
+            foreach (CompiledExecutionBatch batch in _result.ExecutionBatches)
+            foreach (int unitOrdinal in batch.RecordUnits)
+                ApplyRecordUnit(unitOrdinal);
+        }
+
+        private void ApplyRecordUnit(int unitOrdinal)
+        {
+            CompiledRecordUnit unit = _result.RecordUnits[unitOrdinal];
             if (unit.Kind == CompiledRecordUnitKind.InternalBarriers)
             {
                 foreach (BarrierTemplate barrier in unit.InternalBarriers)
-                    ApplyBarrier(source, result, topology, unitOrdinal, unit.Queue, barrier, bufferStates, bufferLastUnits, textureStates);
-                continue;
+                    Apply(unitOrdinal, unit.Queue, barrier);
+                return;
             }
-            foreach (int pass in unit.LogicalPassOrdinals)
-            {
-                foreach (BarrierTemplate barrier in result.BeforeBarriers[pass])
-                    ApplyBarrier(source, result, topology, unitOrdinal, unit.Queue, barrier, bufferStates, bufferLastUnits, textureStates);
-                foreach (FrozenAccess access in source.Passes[pass].Accesses)
-                    ValidateAccessState(source, topology, unitOrdinal, access, bufferStates, bufferLastUnits, textureStates);
-                foreach (BarrierTemplate barrier in result.AfterBarriers[pass])
-                    ApplyBarrier(source, result, topology, unitOrdinal, unit.Queue, barrier, bufferStates, bufferLastUnits, textureStates);
-            }
+            foreach (int pass in unit.LogicalPassOrdinals) ApplyPass(unitOrdinal, unit.Queue, pass);
         }
 
-        for (int resource = 0; resource < source.Resources.Length; resource++)
+        private void ApplyPass(int unitOrdinal, QueueType queue, int pass)
         {
-            FrozenResource value = source.Resources[resource];
-            if (!value.IsImported || !expected.Resources[resource]) continue;
+            foreach (BarrierTemplate barrier in _result.BeforeBarriers[pass])
+                Apply(unitOrdinal, queue, barrier);
+            foreach (FrozenAccess access in _source.Passes[pass].Accesses)
+                ValidateAccessState(
+                    _source,
+                    _topology,
+                    unitOrdinal,
+                    access,
+                    _bufferStates,
+                    _bufferLastUnits,
+                    _textureStates);
+            foreach (BarrierTemplate barrier in _result.AfterBarriers[pass])
+                Apply(unitOrdinal, queue, barrier);
+        }
+
+        private void Apply(int unitOrdinal, QueueType queue, in BarrierTemplate barrier) =>
+            ApplyBarrier(
+                _source,
+                _result,
+                _topology,
+                unitOrdinal,
+                queue,
+                barrier,
+                _bufferStates,
+                _bufferLastUnits,
+                _textureStates);
+
+        private void ValidateFinalStates()
+        {
+            for (int resource = 0; resource < _source.Resources.Length; resource++)
+                ValidateFinalState(resource);
+        }
+
+        private void ValidateFinalState(int resource)
+        {
+            FrozenResource value = _source.Resources[resource];
+            if (!value.IsImported || !_expected.Resources[resource]) return;
             ResourceState final = FinalState(value);
             if (value.Kind == ResourceNodeKind.Buffer)
             {
-                if (bufferStates[resource] != final)
-                    throw new InvalidOperationException("A live imported buffer does not finish in its requested whole-resource final state.");
+                if (_bufferStates[resource] != final)
+                    throw new InvalidOperationException(
+                        "A live imported buffer does not finish in its requested whole-resource final state.");
+                return;
             }
-            else if (textureStates[resource]!.States.Any(state => state != final))
-            {
-                throw new InvalidOperationException("A live imported texture does not finish every subresource in its requested final state.");
-            }
+            if (_textureStates[resource]!.States.Any(state => state != final))
+                throw new InvalidOperationException(
+                    "A live imported texture does not finish every subresource in its requested final state.");
         }
     }
 
@@ -553,12 +622,12 @@ internal static class CompiledGraphContract
     };
 
     private static ResourceState InitialState(in FrozenResource resource) => resource.Kind == ResourceNodeKind.Buffer
-        ? resource.IsImported ? Map(resource.ImportedBuffer.InitialUse) : ResourceState.Common
-        : resource.IsImported ? Map(resource.ImportedTexture.InitialUse) : ResourceState.Common;
+        ? resource.IsImported ? resource.ImportedBuffer.InitialStateOverride ?? Map(resource.ImportedBuffer.InitialUse) : ResourceState.Common
+        : resource.IsImported ? resource.ImportedTexture.InitialStateOverride ?? Map(resource.ImportedTexture.InitialUse) : ResourceState.Common;
 
     private static ResourceState FinalState(in FrozenResource resource) => resource.Kind == ResourceNodeKind.Buffer
-        ? Map(resource.ImportedBuffer.FinalUse)
-        : Map(resource.ImportedTexture.FinalUse);
+        ? resource.ImportedBuffer.FinalStateOverride ?? Map(resource.ImportedBuffer.FinalUse)
+        : resource.ImportedTexture.FinalStateOverride ?? Map(resource.ImportedTexture.FinalUse);
 
     private static ResourceState Map(BufferUse use) => use switch
     {

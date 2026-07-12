@@ -5,6 +5,7 @@ public sealed class RenderGraph : IDisposable
     private readonly IDevice _device;
     private readonly int _coordinatorThread;
     private readonly CompilationCache _cache;
+    private readonly ResourceContinuity _continuity;
     private readonly RenderGraphOptions _options;
     private GraphRecording? _active;
     private long _recordings;
@@ -26,6 +27,7 @@ public sealed class RenderGraph : IDisposable
     private RenderGraphRasterStatistics _lastRaster;
     private RenderGraphCullingStatistics _lastCulling;
     private bool _disposed;
+    private long _nextFrameIndex;
 
     public RenderGraph(IDevice device, RenderGraphOptions? options = null)
     {
@@ -36,6 +38,7 @@ public sealed class RenderGraph : IDisposable
         if (_options.CompilationCachePayloadByteBudget < 0)
             throw new ArgumentOutOfRangeException(nameof(options), "Compilation cache payload budget cannot be negative.");
         _coordinatorThread = Environment.CurrentManagedThreadId;
+        _continuity = new ResourceContinuity(device);
         bool enableTransientAliasing = _options.EnableTransientAliasing;
         bool enableRenderPassMerging = _options.EnableRenderPassMerging;
         ulong compilerPolicy = (enableTransientAliasing ? 1UL : 0UL) |
@@ -107,15 +110,37 @@ public sealed class RenderGraph : IDisposable
         if (!ReferenceEquals(recording, _active)) throw new ArgumentException("The builder is not the active recording.", nameof(builder));
         _active = null;
 
+        long frameIndex = _nextFrameIndex;
         DeviceCompilationSnapshot compilation = _device.Compilation;
-        FrozenGraph frozen = recording.Freeze(_device);
+        FrozenGraph frozen;
+        try
+        {
+            recording.PrepareManagedResources(_continuity, frameIndex);
+            frozen = recording.Freeze(_device);
+        }
+        catch
+        {
+            _continuity.Abort(frameIndex);
+            throw;
+        }
         if (_device.Compilation.SemanticGeneration != compilation.SemanticGeneration)
         {
+            _continuity.Abort(frameIndex);
             throw new InvalidOperationException(
                 "Device compilation semantics changed while the graph was being frozen; the consumed recording cannot be compiled against mixed generations.");
         }
         _cache.Drain();
-        CompiledGraphLease lease = _cache.Acquire(frozen, compilation);
+        CompiledGraphLease lease;
+        try
+        {
+            lease = _cache.Acquire(frozen, compilation);
+        }
+        catch
+        {
+            _continuity.Abort(frameIndex);
+            throw;
+        }
+        CompiledGraph compiled = lease.Graph;
         int recordUnitCount = lease.Graph.RecordUnits.Length;
         int executionBatchCount = lease.Graph.ExecutionBatches.Length;
         CompiledAliasingStatistics aliasing = lease.Graph.Aliasing;
@@ -159,11 +184,45 @@ public sealed class RenderGraph : IDisposable
             culling.CulledTransientBytes,
             culling.ImportedWriteRoots);
 
-        GraphInvocation invocation = GraphInvocation.Realize(_device, frozen, lease);
-        GpuCompletion[] completions = invocation.RecordAndSubmit();
+        Capture? capture = _options.EnableCapture ? Capture.Create(frozen, compiled, compilation, _device) : null;
+        GpuCompletion[] completions;
+        try
+        {
+            GraphInvocation invocation = GraphInvocation.Realize(_device, frozen, lease, capture);
+            completions = invocation.RecordAndSubmit();
+            _continuity.Complete(frozen, compiled, frameIndex, completions);
+        }
+        catch
+        {
+            _continuity.Abort(frameIndex);
+            throw;
+        }
+        _nextFrameIndex = checked(frameIndex + 1);
         _recordedCommandLists += recordUnitCount;
         _submissions += executionBatchCount;
-        return new GraphExecution(_device, completions);
+        long[] exportTickets = frozen.Resources
+            .Where(static resource => resource.Exported)
+            .Select(static resource => resource.ExportTicket)
+            .ToArray();
+        return new GraphExecution(_device, completions, _continuity, exportTickets, capture);
+    }
+
+    /// <summary>Invalidates every temporal generation. In-flight resources retire normally.</summary>
+    public void ResetHistory()
+    {
+        EnsureCoordinator();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_active is not null) throw new InvalidOperationException("History cannot be reset while a recording is active.");
+        _continuity.ResetHistory();
+    }
+
+    /// <summary>Invalidates one explicitly identified temporal resource generation.</summary>
+    public void ResetHistory(Guid stableId)
+    {
+        EnsureCoordinator();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_active is not null) throw new InvalidOperationException("History cannot be reset while a recording is active.");
+        _continuity.ResetHistory(stableId);
     }
 
     internal void Abandon(GraphRecording recording)
@@ -181,6 +240,7 @@ public sealed class RenderGraph : IDisposable
         EnsureCoordinator();
         if (_active is not null) throw new InvalidOperationException("Dispose the active GraphBuilder before disposing RenderGraph.");
         _cache.Dispose();
+        _continuity.Dispose();
         _disposed = true;
     }
 
@@ -212,6 +272,12 @@ public sealed class RenderGraph : IDisposable
 
 public sealed record RenderGraphOptions
 {
+    /// <summary>
+    /// Captures deterministic compiled topology and barrier diagnostics for each execution. Off by
+    /// default so diagnostic snapshot allocation is never part of the immediate graph hot path.
+    /// </summary>
+    public bool EnableCapture { get; init; }
+
     /// <summary>
     /// Target maximum number of exact reusable plans visible to lookup. Zero disables retention.
     /// An entry with an active invocation lease may temporarily exceed a positive limit until the

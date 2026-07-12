@@ -7,6 +7,18 @@ internal static class TextureResolveValidation
         in TextureDesc source,
         in TextureDesc destination)
     {
+        ValidateOperation(resolve, source, destination);
+        ValidateResourceContract(resolve, source, destination);
+        ValidateSubresource(source, resolve.SourceMipLevel, resolve.SourceArrayLayer, "source");
+        ValidateSubresource(destination, resolve.DestinationMipLevel, resolve.DestinationArrayLayer, "destination");
+        ValidateExtent(resolve, source, destination);
+    }
+
+    private static void ValidateOperation(
+        in TextureResolveRegion resolve,
+        in TextureDesc source,
+        in TextureDesc destination)
+    {
         if (!Enum.IsDefined(resolve.Mode))
             throw new ArgumentOutOfRangeException(nameof(resolve), "The resolve mode is not defined.");
         if (resolve.Mode != ResolveMode.Average)
@@ -26,6 +38,13 @@ internal static class TextureResolveValidation
             throw new NotSupportedException(
                 $"Format {source.Format} does not support the portable normalized/floating-point Average resolve.");
         }
+    }
+
+    private static void ValidateResourceContract(
+        in TextureResolveRegion resolve,
+        in TextureDesc source,
+        in TextureDesc destination)
+    {
         if (source.Format != destination.Format)
             throw new ArgumentException("Resolve source and destination formats must match exactly.", nameof(resolve));
         if (source.SampleCount <= 1)
@@ -36,10 +55,13 @@ internal static class TextureResolveValidation
             throw new ArgumentException("Resolve source is missing CopySource usage.", nameof(resolve));
         if ((destination.Usage & TextureUsage.CopyDestination) == 0)
             throw new ArgumentException("Resolve destination is missing CopyDestination usage.", nameof(resolve));
+    }
 
-        ValidateSubresource(source, resolve.SourceMipLevel, resolve.SourceArrayLayer, "source");
-        ValidateSubresource(destination, resolve.DestinationMipLevel, resolve.DestinationArrayLayer, "destination");
-
+    private static void ValidateExtent(
+        in TextureResolveRegion resolve,
+        in TextureDesc source,
+        in TextureDesc destination)
+    {
         int sourceWidth = Math.Max(1, source.Width >> resolve.SourceMipLevel);
         int sourceHeight = Math.Max(1, source.Height >> resolve.SourceMipLevel);
         int destinationWidth = Math.Max(1, destination.Width >> resolve.DestinationMipLevel);

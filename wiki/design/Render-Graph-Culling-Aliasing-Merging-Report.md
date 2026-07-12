@@ -1,6 +1,6 @@
 # Render Graph culling、alias placement、render-pass merging 与 RHI 边界报告
 
-> 日期：2026-07-11
+> 日期：2026-07-12
 >
 > 状态：调研结论已经落到产品代码，并完成 backend-neutral 与 D3D12 WARP correctness 验证；仍不声称已有真实游戏负载收益。
 >
@@ -656,14 +656,15 @@ Slang reflection/artifact必须保留并验证：
 - buffer/texture requirements对仅 debug name不同的 descriptor只做一次native query；
 - 3D odd-height texture copy使用512-byte对齐slice pitch并通过WARP readback。
 
-### 2026-07-11 实际验证结果
+### 2026-07-12 实际验证结果
 
-- `SomeEngine.Graphics.Tests`：32/32 通过；
-- `SomeEngine.Graphics.Direct3D12.Tests`：34/34 通过，使用 WARP 与 D3D12 debug/InfoQueue 验证；
-- `SomeEngine.Assets.Tests`：104/104 通过，包含实际 Slang cook、artifact codec 与正式 shader projection；
-- `SomeEngine.RenderGraph.Tests`：111/111 通过；
-- 聚焦矩阵合计 281/281 通过；
-- `SomeEngine.slnx` 构建过程中，Graphics、Null、D3D12、Assets、AssetCook、Render、RenderGraph、RenderGraph Sample 及其相关测试项目均成功编译；解决方案最终仅在并行 ECS 工作树的 `TopologyFinalizerAndHierarchyPropagationTests.cs:466` 失败，该调用缺少 `HierarchyPropagationPartitionProof` 新增的 `structureEpoch` 参数，与本报告范围内的 RG/RHI 改动无依赖关系。
+- `SomeEngine.Graphics.Tests`：59/59 通过，0 skip；
+- `SomeEngine.Graphics.Direct3D12.Tests`：66/66 通过，0 skip，覆盖 WARP、真实硬件/display HWND、D3D12 debug/InfoQueue 与真实 DRED；
+- `SomeEngine.Assets.Tests`：105/105 通过，0 skip，包含实际 Slang cook、artifact codec、shader projection 与生成参数契约；
+- `SomeEngine.RenderGraph.Tests`：145/145 通过，0 skip，包含 WARP 上的 generated binding、三类 indirect GPU producer/count/output、temporal/export/capture replay；
+- 聚焦 Graphics/RG/Assets 矩阵合计 375/375 通过；
+- capability-continuity 硬门禁 10/10 通过，机械核对原 ZIP 中 `IDevice` 130 个 method declaration 与 `RenderGraph.Core` 100 个 public type declaration；
+- benchmark/soak 硬执行覆盖 128 次 compiler/cache、512 次真实 WARP RHI descriptor/resource 场景与 10,000 frame lightweight soak，并写出带 OS、CPU、adapter、driver 与 build metadata 的 schema-v1 JSON。
 
 ## 指标与启用门槛
 

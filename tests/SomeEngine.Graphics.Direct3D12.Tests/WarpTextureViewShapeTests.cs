@@ -9,7 +9,6 @@ public sealed class WarpTextureViewShapeTests
     [Fact]
     public void Warp_lowers_explicit_resource_and_view_dimensions_without_debug_errors()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -164,7 +163,6 @@ public sealed class WarpTextureViewShapeTests
     [Fact]
     public void Warp_creates_typed_linear_and_srgb_views_over_one_typeless_rgba8_resource()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {

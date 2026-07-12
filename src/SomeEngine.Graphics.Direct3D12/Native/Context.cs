@@ -57,76 +57,150 @@ internal sealed class NativeContext : IDisposable
             throw new PlatformNotSupportedException("Direct3D 12 requires Windows.");
         }
 
-        if (options.EnableDebugLayer)
+        EnableDebugValidation(options);
+        var resources = CreateNativeResources(options);
+        try
         {
-            try
-            {
-                using ID3D12Debug1 debug = D3D12.D3D12GetDebugInterface<ID3D12Debug1>();
-                debug.EnableDebugLayer();
-                debug.SetEnableGPUBasedValidation(options.EnableGpuValidation);
-            }
-            catch (Exception exception)
-            {
-                throw new InvalidOperationException("The D3D12 debug layer was requested but could not be enabled.", exception);
-            }
+            DeviceInfo info = CreateDeviceInfo(resources.Adapter, resources.ShaderModel, options.EnableDebugLayer);
+            DeviceCompilationSnapshot compilation = CreateCompilationSnapshot(resources.Device);
+            return new NativeContext(
+                resources.Factory,
+                resources.Adapter,
+                resources.Device,
+                resources.Graphics,
+                resources.Compute,
+                resources.Copy,
+                resources.InfoQueue,
+                resources.ShaderModel,
+                info,
+                compilation);
         }
+        catch
+        {
+            DisposeNativeResources(resources);
+            throw;
+        }
+    }
 
+    private static void EnableDebugValidation(Options options)
+    {
+        if (!options.EnableDebugLayer) return;
+        try
+        {
+            using ID3D12Debug1 debug = D3D12.D3D12GetDebugInterface<ID3D12Debug1>();
+            debug.EnableDebugLayer();
+            debug.SetEnableGPUBasedValidation(options.EnableGpuValidation);
+            using ID3D12DeviceRemovedExtendedDataSettings1 dred =
+                D3D12.D3D12GetDebugInterface<ID3D12DeviceRemovedExtendedDataSettings1>();
+            dred.SetAutoBreadcrumbsEnablement(DredEnablement.ForcedOn);
+            dred.SetPageFaultEnablement(DredEnablement.ForcedOn);
+            dred.SetBreadcrumbContextEnablement(DredEnablement.ForcedOn);
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException("The D3D12 debug layer was requested but could not be enabled.", exception);
+        }
+    }
+
+    private static (
+        IDXGIFactory4 Factory,
+        IDXGIAdapter1 Adapter,
+        ID3D12Device Device,
+        NativeQueue Graphics,
+        NativeQueue Compute,
+        NativeQueue Copy,
+        ID3D12InfoQueue? InfoQueue,
+        ShaderModel ShaderModel) CreateNativeResources(Options options)
+    {
         IDXGIFactory4? factory = null;
         IDXGIAdapter1? adapter = null;
         ID3D12Device? device = null;
-        NativeQueue? graphics = null;
-        NativeQueue? compute = null;
-        NativeQueue? copy = null;
+        var queues = (Graphics: (NativeQueue?)null, Compute: (NativeQueue?)null, Copy: (NativeQueue?)null);
         ID3D12InfoQueue? infoQueue = null;
         try
         {
             factory = DXGI.CreateDXGIFactory2<IDXGIFactory4>(options.EnableDebugLayer);
-            (adapter, device) = options.UseWarpAdapter
-                ? CreateWarpDevice(factory)
-                : CreateHardwareDevice(factory);
-
-            graphics = NativeQueue.Create(device, QueueType.Graphics);
-            compute = NativeQueue.Create(device, QueueType.Compute);
-            copy = NativeQueue.Create(device, QueueType.Copy);
-
-            if (options.EnableDebugLayer)
-            {
-                infoQueue = device.QueryInterface<ID3D12InfoQueue>();
-            }
-
-            AdapterDescription1 description = adapter.Description1;
-            bool hardware = (description.Flags & AdapterFlags.Software) == 0;
-            DeviceInfo info = new(
-                description.Description.TrimEnd('\0'),
-                BackendKind.Direct3D12,
-                hardware,
-                description.VendorId,
-                description.DeviceId);
-
-            ResourceHeapTier heapTier = QueryResourceHeapTier(device);
-            ShaderModel highestShaderModel = QueryHighestShaderModel(device);
-            DeviceCompilationSnapshot compilation = new(
-                semanticGeneration: 1,
-                heapTier,
-                [QueueType.Graphics, QueueType.Compute, QueueType.Copy],
-                supportsEnhancedBarriers: false,
-                supportsAsyncCompute: true,
-                supportsCopyQueue: true);
-
-            return new NativeContext(factory, adapter, device, graphics, compute, copy, infoQueue, highestShaderModel, info, compilation);
+            var selection = options.UseWarpAdapter ? CreateWarpDevice(factory) : CreateHardwareDevice(factory);
+            adapter = selection.Adapter;
+            device = selection.Device;
+            queues = CreateNativeQueues(device);
+            infoQueue = options.EnableDebugLayer ? device.QueryInterface<ID3D12InfoQueue>() : null;
+            return (factory, adapter, device, queues.Graphics!, queues.Compute!, queues.Copy!, infoQueue, selection.HighestShaderModel);
         }
         catch
         {
             infoQueue?.Dispose();
-            copy?.Dispose();
-            compute?.Dispose();
-            graphics?.Dispose();
+            queues.Copy?.Dispose();
+            queues.Compute?.Dispose();
+            queues.Graphics?.Dispose();
             device?.Dispose();
             adapter?.Dispose();
             factory?.Dispose();
             throw;
         }
     }
+
+    private static (NativeQueue Graphics, NativeQueue Compute, NativeQueue Copy) CreateNativeQueues(
+        ID3D12Device device)
+    {
+        NativeQueue? graphics = null;
+        NativeQueue? compute = null;
+        try
+        {
+            graphics = NativeQueue.Create(device, QueueType.Graphics);
+            compute = NativeQueue.Create(device, QueueType.Compute);
+            NativeQueue copy = NativeQueue.Create(device, QueueType.Copy);
+            return (graphics, compute, copy);
+        }
+        catch
+        {
+            compute?.Dispose();
+            graphics?.Dispose();
+            throw;
+        }
+    }
+
+    private static void DisposeNativeResources((
+        IDXGIFactory4 Factory,
+        IDXGIAdapter1 Adapter,
+        ID3D12Device Device,
+        NativeQueue Graphics,
+        NativeQueue Compute,
+        NativeQueue Copy,
+        ID3D12InfoQueue? InfoQueue,
+        ShaderModel ShaderModel) resources)
+    {
+        resources.InfoQueue?.Dispose();
+        resources.Copy.Dispose();
+        resources.Compute.Dispose();
+        resources.Graphics.Dispose();
+        resources.Device.Dispose();
+        resources.Adapter.Dispose();
+        resources.Factory.Dispose();
+    }
+
+    private static DeviceInfo CreateDeviceInfo(IDXGIAdapter1 adapter, ShaderModel shaderModel, bool debugLayer)
+    {
+        AdapterDescription1 description = adapter.Description1;
+        return new DeviceInfo(
+            description.Description.TrimEnd('\0'),
+            BackendKind.Direct3D12,
+            (description.Flags & AdapterFlags.Software) == 0,
+            description.VendorId,
+            description.DeviceId,
+            QueryDriverVersion(adapter),
+            $"D3D12 FL12_0 / SM {DxilProgramInfo.Format(shaderModel)}",
+            debugLayer);
+    }
+
+    private static DeviceCompilationSnapshot CreateCompilationSnapshot(ID3D12Device device) => new(
+        semanticGeneration: 1,
+        QueryResourceHeapTier(device),
+        [QueueType.Graphics, QueueType.Compute, QueueType.Copy],
+        supportsEnhancedBarriers: false,
+        supportsAsyncCompute: true,
+        supportsCopyQueue: true,
+        supportsBindless: false);
 
     public NativeQueue GetQueue(QueueType queue) => queue switch
     {
@@ -136,21 +210,28 @@ internal sealed class NativeContext : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(queue)),
     };
 
-    private static (IDXGIAdapter1 Adapter, ID3D12Device Device) CreateWarpDevice(IDXGIFactory4 factory)
+    private static (IDXGIAdapter1 Adapter, ID3D12Device Device, ShaderModel HighestShaderModel) CreateWarpDevice(
+        IDXGIFactory4 factory)
     {
         IDXGIAdapter1 adapter = factory.EnumWarpAdapter<IDXGIAdapter1>();
+        ID3D12Device? device = null;
         try
         {
-            return (adapter, D3D12.D3D12CreateDevice<ID3D12Device>(adapter, FeatureLevel.Level_12_0));
+            device = D3D12.D3D12CreateDevice<ID3D12Device>(adapter, FeatureLevel.Level_12_0);
+            ShaderModel highestShaderModel = QueryHighestShaderModel(device);
+            RequireBaselineShaderModel(highestShaderModel, adapter.Description1.Description);
+            return (adapter, device, highestShaderModel);
         }
         catch
         {
+            device?.Dispose();
             adapter.Dispose();
             throw;
         }
     }
 
-    private static (IDXGIAdapter1 Adapter, ID3D12Device Device) CreateHardwareDevice(IDXGIFactory4 factory)
+    private static (IDXGIAdapter1 Adapter, ID3D12Device Device, ShaderModel HighestShaderModel) CreateHardwareDevice(
+        IDXGIFactory4 factory)
     {
         for (uint index = 0; ; index++)
         {
@@ -164,8 +245,7 @@ internal sealed class NativeContext : IDisposable
                     continue;
                 }
 
-                ID3D12Device device = D3D12.D3D12CreateDevice<ID3D12Device>(adapter, FeatureLevel.Level_12_0);
-                return (adapter, device);
+                return CreateHardwareDevice(adapter);
             }
             catch (SharpGen.Runtime.SharpGenException) when (adapter is null)
             {
@@ -177,7 +257,26 @@ internal sealed class NativeContext : IDisposable
             }
         }
 
-        throw new PlatformNotSupportedException("No Direct3D 12 feature-level 12.0 hardware adapter is available. Use WARP explicitly for software execution.");
+        throw new PlatformNotSupportedException(
+            "No hardware adapter satisfies the Direct3D 12 FL12_0 and Shader Model 6.2 baseline. " +
+            "Use WARP explicitly for software execution.");
+    }
+
+    private static (IDXGIAdapter1 Adapter, ID3D12Device Device, ShaderModel HighestShaderModel) CreateHardwareDevice(
+        IDXGIAdapter1 adapter)
+    {
+        ID3D12Device device = D3D12.D3D12CreateDevice<ID3D12Device>(adapter, FeatureLevel.Level_12_0);
+        try
+        {
+            ShaderModel shaderModel = QueryHighestShaderModel(device);
+            RequireBaselineShaderModel(shaderModel, adapter.Description1.Description);
+            return (adapter, device, shaderModel);
+        }
+        catch
+        {
+            device.Dispose();
+            throw;
+        }
     }
 
     private static ResourceHeapTier QueryResourceHeapTier(ID3D12Device device)
@@ -215,6 +314,27 @@ internal sealed class NativeContext : IDisposable
         }
 
         throw new PlatformNotSupportedException("The D3D12 device did not report support for a known shader model.");
+    }
+
+    private static void RequireBaselineShaderModel(ShaderModel highestShaderModel, string adapterName)
+    {
+        if (highestShaderModel >= ShaderModel.Model6_2) return;
+        throw new PlatformNotSupportedException(
+            $"D3D12 adapter '{adapterName.TrimEnd('\0')}' reports Shader Model " +
+            $"{DxilProgramInfo.Format(highestShaderModel)}; SomeEngine requires Shader Model 6.2 or newer.");
+    }
+
+    private static string QueryDriverVersion(IDXGIAdapter1 adapter)
+    {
+        try
+        {
+            adapter.CheckInterfaceSupport(typeof(ID3D12Device).GUID, out long version).CheckError();
+            return $"0x{unchecked((ulong)version):X16}";
+        }
+        catch (Exception exception)
+        {
+            return $"unavailable(0x{unchecked((uint)exception.HResult):X8})";
+        }
     }
 
     public void Dispose()

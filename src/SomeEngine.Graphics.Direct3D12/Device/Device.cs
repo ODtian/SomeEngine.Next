@@ -11,14 +11,21 @@ public sealed partial class Device : IDevice
     private readonly int _coordinatorThread;
     private readonly ConcurrentQueue<GraphicsDiagnostic> _diagnostics = new();
     private readonly ConcurrentDictionary<Format, bool> _averageResolveSupport = new();
+    private readonly ConcurrentDictionary<IndirectSignatureKey, Lazy<ID3D12CommandSignature>> _indirectSignatures = new();
     private readonly object _requirementGate = new();
     private readonly Dictionary<(BufferDesc Desc, MemoryType MemoryType), ResourceRequirements> _bufferRequirements = [];
     private readonly Dictionary<TextureDesc, ResourceRequirements> _textureRequirements = [];
     private readonly CpuDescriptorPool _cpuDescriptors;
+    private readonly NativePipelineLibrary _nativePipelineLibrary;
     private readonly HandleTable<NativeHeap> _heaps;
     private readonly HandleTable<NativeBuffer> _buffers;
     private readonly HandleTable<NativeTexture> _textures;
     private readonly HandleTable<RecordedCommand> _commands;
+
+}
+
+public sealed partial class Device
+{
     private readonly object _retirementGate = new();
     private readonly List<RetiredNative> _retiredObjects = new();
     private readonly List<RetiredAllocation> _retiredAllocations = new();
@@ -28,6 +35,8 @@ public sealed partial class Device : IDevice
     private int _nativeBufferRequirementQueries;
     private int _nativeTextureRequirementQueries;
     private bool _lost;
+    private readonly object _errorGate = new();
+    private DeviceError _lastError = DeviceError.None;
     private bool _disposed;
 
     public Device(Options? options = null)
@@ -42,6 +51,8 @@ public sealed partial class Device : IDevice
         _buffers = new(_domain);
         _textures = new(_domain);
         _commands = new(_domain);
+        _queryPools = new(_domain);
+        _swapchains = new(_domain);
         _textureViews = new(_domain);
         _bufferViews = new(_domain);
         _samplers = new(_domain);
@@ -51,18 +62,77 @@ public sealed partial class Device : IDevice
         _pipelineLayouts = new(_domain);
         _pipelines = new(_domain);
         _native = NativeContext.Create(_options);
-        _cpuDescriptors = new CpuDescriptorPool(_native.Device);
+        try
+        {
+            _cpuDescriptors = new CpuDescriptorPool(_native.Device);
+            try
+            {
+                _nativePipelineLibrary = new NativePipelineLibrary(
+                    _native.Device,
+                    _options.PipelineCachePath,
+                    warning => _diagnostics.Enqueue(new GraphicsDiagnostic(
+                        GraphicsDiagnosticSeverity.Warning,
+                        "D3D12 Pipeline Library",
+                        warning)));
+            }
+            catch
+            {
+                _cpuDescriptors.Dispose();
+                throw;
+            }
+        }
+        catch
+        {
+            _native.Dispose();
+            throw;
+        }
         _coordinatorThread = Environment.CurrentManagedThreadId;
     }
 
     public DeviceDomain Domain => _domain;
     public DeviceInfo Info => _native.Info;
     public DeviceCompilationSnapshot Compilation => _native.Compilation;
+    public DeviceError LastError
+    {
+        get { lock (_errorGate) return _lastError; }
+    }
     internal ID3D12Device NativeDevice => _native.Device;
     internal int CpuDescriptorHeapCount => _cpuDescriptors.HeapCount;
     internal int OutstandingCpuDescriptorCount => _cpuDescriptors.OutstandingDescriptorCount;
     internal int NativeBufferRequirementQueryCount => Volatile.Read(ref _nativeBufferRequirementQueries);
     internal int NativeTextureRequirementQueryCount => Volatile.Read(ref _nativeTextureRequirementQueries);
+
+    internal ID3D12CommandSignature GetIndirectCommandSignature(IndirectArgumentType type, uint stride)
+    {
+        if (stride == 0 || stride > int.MaxValue || (stride & 3) != 0)
+            throw new ArgumentOutOfRangeException(nameof(stride));
+        IndirectSignatureKey key = new(type, stride);
+        Lazy<ID3D12CommandSignature> signature = _indirectSignatures.GetOrAdd(
+            key,
+            static (candidate, device) => new Lazy<ID3D12CommandSignature>(
+                () =>
+                {
+                    CommandSignatureDescription description = new()
+                    {
+                        ByteStride = checked((int)candidate.Stride),
+                        IndirectArguments = [new IndirectArgumentDescription { Type = candidate.Type }],
+                        NodeMask = 0,
+                    };
+                    return device.CreateCommandSignature<ID3D12CommandSignature>(description, null!);
+                },
+                LazyThreadSafetyMode.ExecutionAndPublication),
+            _native.Device);
+        try
+        {
+            return signature.Value;
+        }
+        catch
+        {
+            _ = ((ICollection<KeyValuePair<IndirectSignatureKey, Lazy<ID3D12CommandSignature>>>)_indirectSignatures)
+                .Remove(KeyValuePair.Create(key, signature));
+            throw;
+        }
+    }
 
     internal bool SupportsAverageTextureResolve(Format format) =>
         _averageResolveSupport.GetOrAdd(format, QueryAverageTextureResolveSupport);
@@ -90,6 +160,7 @@ public sealed partial class Device : IDevice
             if (_availableAllocations[index].TryPop(out CommandAllocation? available))
             {
                 allocation = available;
+                allocation.ReleaseTransients();
                 allocation.Allocator.Reset();
                 allocation.List.Reset(allocation.Allocator, null!);
                 allocation.Descriptors.Reset();
@@ -110,7 +181,10 @@ public sealed partial class Device : IDevice
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(name)) allocation.Name = name;
+        if (name is not null) ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        allocation.Name = name;
+        allocation.List.Name = name ?? string.Empty;
+        allocation.Allocator.Name = name is null ? string.Empty : $"{name}.allocator";
         return new CommandContext(this, allocation);
     }
 
@@ -147,6 +221,14 @@ public sealed partial class Device : IDevice
             ulong value = checked(destination.SubmittedValue + 1);
             try
             {
+                int removedReason = _native.Device.DeviceRemovedReason.Code;
+                if (IsDeviceLossCode(removedReason))
+                {
+                    throw new System.Runtime.InteropServices.COMException(
+                        "The D3D12 device was removed before command submission.",
+                        removedReason);
+                }
+
                 for (int index = 0; index < waits.Length; index++)
                 {
                     GpuCompletion wait = waits[index];
@@ -171,7 +253,11 @@ public sealed partial class Device : IDevice
             catch (Exception exception)
             {
                 _lost = true;
-                RecordFailure("Submit", exception);
+                int removedReason = _native.Device.DeviceRemovedReason.Code;
+                if (IsDeviceLossCode(exception.HResult) || IsDeviceLossCode(removedReason))
+                    RecordDeviceLost("Submit", exception);
+                else
+                    RecordFailure("Submit", exception);
                 throw new InvalidOperationException("D3D12 submission failed; the device execution domain is no longer usable.", exception);
             }
         }
@@ -183,6 +269,7 @@ public sealed partial class Device : IDevice
         ThrowIfUnavailable();
         RecordedCommand record = _commands.Remove(commandList.Domain, commandList.Slot, commandList.Generation, "command list");
         record.Cancel();
+        record.Allocation.ReleaseTransients();
         lock (_allocationGates[(int)record.Queue]) _availableAllocations[(int)record.Queue].Push(record.Allocation);
     }
 
@@ -219,6 +306,10 @@ public sealed partial class Device : IDevice
         }
     }
 
+}
+
+public sealed partial class Device
+{
     public int CollectGarbage()
     {
         EnsureCoordinator();
@@ -251,6 +342,7 @@ public sealed partial class Device : IDevice
                 RetiredAllocation retired = _retiredAllocations[index];
                 if (_native.GetQueue(retired.Queue).Fence.CompletedValue < retired.Value) continue;
                 _retiredAllocations.RemoveAt(index);
+                retired.Allocation.ReleaseTransients();
                 lock (_allocationGates[(int)retired.Queue])
                 {
                     _availableAllocations[(int)retired.Queue].Push(retired.Allocation);
@@ -271,9 +363,12 @@ public sealed partial class Device : IDevice
     internal NativeBuffer GetBuffer(BufferHandle handle) => _buffers.Get(handle.Domain, handle.Slot, handle.Generation, "buffer");
     internal NativeTexture GetTexture(TextureHandle handle) => _textures.Get(handle.Domain, handle.Slot, handle.Generation, "texture");
 
-    internal CommandListHandle Register(CommandAllocation allocation, IReadOnlyCollection<NativeLifetime> usage)
+    internal CommandListHandle Register(
+        CommandAllocation allocation,
+        IReadOnlyCollection<NativeLifetime> usage,
+        QueryAvailabilityMutation[] queryMutations)
     {
-        RecordedCommand command = new(allocation, usage.ToArray());
+        RecordedCommand command = new(allocation, usage.ToArray(), queryMutations);
         HandleKey key = _commands.Add(command);
         return new CommandListHandle(_domain, key.Slot, key.Generation);
     }
@@ -282,11 +377,34 @@ public sealed partial class Device : IDevice
     {
         foreach (NativeLifetime item in usage) item.CancelPending();
         allocation.List.Close();
+        allocation.ReleaseTransients();
         lock (_allocationGates[(int)allocation.Queue]) _availableAllocations[(int)allocation.Queue].Push(allocation);
     }
 
-    internal void RecordFailure(string operation, Exception exception) =>
-        _diagnostics.Enqueue(new GraphicsDiagnostic(GraphicsDiagnosticSeverity.Error, "D3D12", $"{operation}: {exception.Message}"));
+    internal void RecordFailure(string operation, Exception exception)
+    {
+        DeviceError error = new(DeviceErrorKind.Backend, $"{operation}: {exception.Message}", exception.HResult);
+        lock (_errorGate) _lastError = error;
+        _diagnostics.Enqueue(new GraphicsDiagnostic(GraphicsDiagnosticSeverity.Error, "D3D12", error.Message, error.NativeCode));
+    }
+
+    internal DeviceError RecordDeviceLost(string operation, Exception exception)
+    {
+        // Vortice exposes ID3D12Device::GetDeviceRemovedReason as DeviceRemovedReason.
+        SharpGen.Runtime.Result removedReason = _native.Device.DeviceRemovedReason;
+        int nativeCode = removedReason.Code != 0 ? removedReason.Code : exception.HResult;
+        GraphicsDiagnostic[] dred = CaptureDredDiagnostics();
+        foreach (GraphicsDiagnostic diagnostic in dred) _diagnostics.Enqueue(diagnostic);
+        string dredSummary = string.Join(" | ", dred.Select(static item => $"{item.Source}: {item.Message}"));
+        DeviceError error = new(
+            DeviceErrorKind.DeviceLost,
+            $"{operation}: {exception.Message}; removedReason=0x{unchecked((uint)nativeCode):X8}; {dredSummary}",
+            nativeCode);
+        lock (_errorGate) _lastError = error;
+        _diagnostics.Enqueue(new GraphicsDiagnostic(GraphicsDiagnosticSeverity.Error, "D3D12", error.Message, error.NativeCode));
+        _lost = true;
+        return error;
+    }
 
     internal RetirementPoint BeginRetirement(NativeLifetime value) => value.BeginRetirement();
 
@@ -362,6 +480,8 @@ public sealed partial class Device : IDevice
             command.Cancel();
             command.Allocation.Dispose();
         }
+        foreach (NativeQueryPool queryPool in _queryPools.Drain()) queryPool.Dispose();
+        DisposePresentation();
         foreach (NativeBuffer buffer in _buffers.Drain()) buffer.Dispose();
         foreach (NativeTexture texture in _textures.Drain()) texture.Dispose();
         lock (_retirementGate)
@@ -389,20 +509,27 @@ public sealed partial class Device : IDevice
             }
         }
 
+        _nativePipelineLibrary.Dispose();
         DisposePipelineState();
+        foreach (Lazy<ID3D12CommandSignature> signature in _indirectSignatures.Values)
+            if (signature.IsValueCreated) signature.Value.Dispose();
+        _indirectSignatures.Clear();
         _cpuDescriptors.Dispose();
         _native.Dispose();
         _disposed = true;
     }
 
     partial void DisposePipelineState();
+    partial void DisposePresentation();
 
     private readonly record struct RetiredNative(NativeLifetime Value, RetirementPoint Point);
     private readonly record struct RetiredAllocation(CommandAllocation Allocation, QueueType Queue, ulong Value);
+    private readonly record struct IndirectSignatureKey(IndirectArgumentType Type, uint Stride);
 }
 
 internal sealed class CommandAllocation : IDisposable
 {
+    private readonly List<IDisposable> _transients = [];
     public CommandAllocation(
         QueueType queue,
         ID3D12CommandAllocator allocator,
@@ -421,8 +548,22 @@ internal sealed class CommandAllocation : IDisposable
     public CommandDescriptorArena Descriptors { get; }
     public string? Name { get; set; }
 
+    public void AddTransient(IDisposable transient)
+    {
+        ArgumentNullException.ThrowIfNull(transient);
+        _transients.Add(transient);
+    }
+
+    public void ReleaseTransients()
+    {
+        for (int index = _transients.Count - 1; index >= 0; index--)
+            _transients[index].Dispose();
+        _transients.Clear();
+    }
+
     public void Dispose()
     {
+        ReleaseTransients();
         Descriptors.Dispose();
         List.Dispose();
         Allocator.Dispose();
@@ -432,11 +573,16 @@ internal sealed class CommandAllocation : IDisposable
 internal sealed class RecordedCommand
 {
     private readonly NativeLifetime[] _usage;
+    private readonly QueryAvailabilityMutation[] _queryMutations;
 
-    public RecordedCommand(CommandAllocation allocation, NativeLifetime[] usage)
+    public RecordedCommand(
+        CommandAllocation allocation,
+        NativeLifetime[] usage,
+        QueryAvailabilityMutation[] queryMutations)
     {
         Allocation = allocation;
         _usage = usage;
+        _queryMutations = queryMutations;
     }
 
     public CommandAllocation Allocation { get; }
@@ -445,6 +591,8 @@ internal sealed class RecordedCommand
     public void MarkSubmitted(QueueType queue, ulong value)
     {
         foreach (NativeLifetime item in _usage) item.MarkSubmitted(queue, value);
+        foreach (QueryAvailabilityMutation mutation in _queryMutations)
+            mutation.Pool.CommitAvailability(mutation.Index, mutation.Written);
     }
 
     public void Cancel()

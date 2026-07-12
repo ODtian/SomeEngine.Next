@@ -33,22 +33,22 @@ internal static class ClassSizeAnalyzer
         context.RegisterCompilationStartAction(ctx =>
         {
             var config = AnalyzerConfigLoader.Load(ctx.Options);
-            int maxMethods = config.Complexity.MaxMethodsPerClass;
-            int maxFields = config.Complexity.MaxFieldsPerClass;
-
             ctx.RegisterSyntaxNodeAction(
-                c => Analyze(c, maxMethods, maxFields),
+                c => Analyze(c, config),
                 SyntaxKind.ClassDeclaration);
         });
     }
 
-    private static void Analyze(SyntaxNodeAnalysisContext ctx, int maxMethods, int maxFields)
+    private static void Analyze(SyntaxNodeAnalysisContext ctx, AnalyzerHarnessConfig config)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
         var name = cls.Identifier.ValueText;
+        int maxMethods = config.Complexity.MaxMethodsPerClass;
+        int maxFields = config.Complexity.MaxFieldsPerClass;
 
         int methods = cls.Members.Count(m => m is MethodDeclarationSyntax);
-        if (methods > maxMethods)
+        if (methods > maxMethods &&
+            !AcceptedDiagnosticBaseline.Contains(ctx, config, RuleIdMethods, cls.Identifier, methods))
         {
             ctx.ReportDiagnostic(Diagnostic.Create(
                 Descriptors[0], cls.Identifier.GetLocation(), name, methods, maxMethods));
@@ -58,7 +58,8 @@ internal static class ClassSizeAnalyzer
             .Where(m => m is FieldDeclarationSyntax)
             .Cast<FieldDeclarationSyntax>()
             .Sum(f => f.Declaration.Variables.Count);
-        if (fields > maxFields)
+        if (fields > maxFields &&
+            !AcceptedDiagnosticBaseline.Contains(ctx, config, RuleIdFields, cls.Identifier, fields))
         {
             ctx.ReportDiagnostic(Diagnostic.Create(
                 Descriptors[1], cls.Identifier.GetLocation(), name, fields, maxFields));

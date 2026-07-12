@@ -10,7 +10,6 @@ public sealed class WarpResolveTests
     [Fact]
     public void Average_color_resolve_round_trips_on_warp_without_debug_errors()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -105,7 +104,6 @@ public sealed class WarpResolveTests
     [Fact]
     public void Multisampled_texture_still_cannot_use_a_linear_buffer_copy_on_warp()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true });
         TextureDesc desc = new(

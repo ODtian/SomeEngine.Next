@@ -16,6 +16,9 @@ internal sealed class BufferRecord
     public required int BaseOffset { get; init; }
     public HeapHandle Heap { get; init; }
     public ResourceState State { get; set; }
+    public ResidencyPriority Priority { get; set; } = ResidencyPriority.Normal;
+    public bool Resident { get; set; } = true;
+    public bool IsMapped { get; set; }
 
     public Span<byte> Bytes => Storage.AsSpan(BaseOffset, checked((int)Desc.Size));
 }
@@ -29,6 +32,8 @@ internal sealed class TextureRecord
     public required int BaseOffset { get; init; }
     public required ResourceState[] States { get; init; }
     public HeapHandle Heap { get; init; }
+    public ResidencyPriority Priority { get; set; } = ResidencyPriority.Normal;
+    public bool Resident { get; set; } = true;
 
     public Span<byte> Bytes => Storage.AsSpan(BaseOffset, checked((int)TextureLayout.GetByteSize(Desc)));
 }
@@ -54,7 +59,39 @@ internal sealed record PipelineRecord(
     ShaderHandle SecondShader,
     RasterPipelineDesc Raster,
     ComputePipelineDesc Compute,
-    string? Name);
+    string? Name,
+    PipelineStatus Status,
+    PipelineCacheKey CacheKey);
+
+internal readonly record struct PipelineCacheIdentity(
+    PipelineKind Kind,
+    PipelineLayoutHandle Layout,
+    ShaderArtifactKey FirstShader,
+    ShaderArtifactKey SecondShader);
+
+internal sealed class QueryPoolRecord
+{
+    public required QueryPoolDesc Desc { get; init; }
+    public required byte[][] Values { get; init; }
+    public required bool[] Ready { get; init; }
+}
+
+internal sealed class SwapchainRecord
+{
+    public required SwapchainDesc Desc { get; set; }
+    public required TextureHandle[] Images { get; set; }
+    public int AcquiredImage { get; set; } = -1;
+    public uint NextImage { get; set; }
+}
+
+internal sealed class BindlessTableRecord
+{
+    public required BindlessTableDesc Desc { get; init; }
+    public required uint[] Generations { get; init; }
+    public required bool[] Allocated { get; init; }
+    public required bool[] HasValue { get; init; }
+    public required BindingWrite[] Values { get; init; }
+}
 
 internal sealed class CommandReferences
 {
@@ -69,6 +106,7 @@ internal sealed class CommandReferences
     public HashSet<ShaderHandle> Shaders { get; } = [];
     public HashSet<PipelineLayoutHandle> PipelineLayouts { get; } = [];
     public HashSet<PipelineHandle> Pipelines { get; } = [];
+    public HashSet<QueryPoolHandle> QueryPools { get; } = [];
 }
 
 internal sealed class CommandListRecord

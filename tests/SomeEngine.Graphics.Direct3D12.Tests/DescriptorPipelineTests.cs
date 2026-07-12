@@ -33,7 +33,6 @@ public sealed class DescriptorPipelineTests
     [Fact]
     public void Warp_executes_multi_group_descriptor_arrays_push_constants_and_compute()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         byte[] dxil = CompileSm62Compute();
         using Device device = new(new Options
@@ -164,9 +163,8 @@ public sealed class DescriptorPipelineTests
     }
 
     [Fact]
-    public void Descriptor_rebinding_burns_through_the_command_allocation_capacity()
+    public void Descriptor_rebinding_rolls_over_instead_of_failing_at_page_capacity()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         byte[] dxil = CompileSm62Compute();
         using Device device = new(new Options
@@ -203,9 +201,9 @@ public sealed class DescriptorPipelineTests
                 BindingWrite.Buffer(3, input1, 1),
             ];
             commands.SetBindings(1, array, writes);
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-                commands.SetBindings(1, array, writes));
-            Assert.Contains("descriptor heap is exhausted", exception.Message, StringComparison.OrdinalIgnoreCase);
+            commands.SetBindings(1, array, writes);
+            commands.SetBindings(1, array, writes);
+            Assert.False(commands.IsFinished);
         }
 
         device.DestroyPipeline(pipeline);

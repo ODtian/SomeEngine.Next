@@ -38,6 +38,15 @@ public sealed partial class Device
 
     private void ExpandAndValidateReferences(CommandReferences references)
     {
+        ExpandPipelineReferences(references);
+        ExpandBindingReferences(references);
+        ExpandResourceReferences(references);
+        ValidateViewAndHeapReferences(references);
+        ValidatePipelineReferences(references);
+    }
+
+    private void ExpandPipelineReferences(CommandReferences references)
+    {
         foreach (PipelineHandle handle in references.Pipelines.ToArray())
         {
             PipelineRecord pipeline = RequirePipeline(handle);
@@ -50,6 +59,10 @@ public sealed partial class Device
             PipelineLayoutRecord layout = RequirePipelineLayout(handle);
             foreach (BindGroupLayoutHandle group in layout.Groups) references.BindGroupLayouts.Add(group);
         }
+    }
+
+    private void ExpandBindingReferences(CommandReferences references)
+    {
         foreach (BindGroupHandle handle in references.BindGroups.ToArray())
         {
             BindGroupRecord group = RequireBindGroup(handle);
@@ -66,6 +79,10 @@ public sealed partial class Device
             BufferViewRecord view = RequireBufferView(handle);
             references.Buffers.Add(view.Desc.Buffer);
         }
+    }
+
+    private void ExpandResourceReferences(CommandReferences references)
+    {
         foreach (BufferHandle handle in references.Buffers.ToArray())
         {
             BufferRecord buffer = RequireBuffer(handle);
@@ -76,10 +93,19 @@ public sealed partial class Device
             TextureRecord texture = RequireTexture(handle);
             if (texture.Heap.IsValid) references.Heaps.Add(texture.Heap);
         }
+    }
+
+    private void ValidateViewAndHeapReferences(CommandReferences references)
+    {
         foreach (HeapHandle handle in references.Heaps) _ = RequireHeap(handle);
+        foreach (QueryPoolHandle handle in references.QueryPools) _ = RequireQueryPool(handle);
         foreach (TextureViewHandle handle in references.TextureViews) _ = RequireTextureView(handle);
         foreach (BufferViewHandle handle in references.BufferViews) _ = RequireBufferView(handle);
         foreach (SamplerHandle handle in references.Samplers) _ = RequireSampler(handle);
+    }
+
+    private void ValidatePipelineReferences(CommandReferences references)
+    {
         foreach (BindGroupLayoutHandle handle in references.BindGroupLayouts) _ = RequireBindGroupLayout(handle);
         foreach (ShaderHandle handle in references.Shaders) _ = RequireShader(handle);
     }

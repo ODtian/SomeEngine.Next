@@ -6,11 +6,13 @@ using Vortice.Mathematics;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-internal sealed class CommandContext : ICommandContext
+internal sealed partial class CommandContext : ICommandContext
 {
     private readonly Device _device;
     private readonly CommandAllocation _allocation;
     private readonly HashSet<NativeLifetime> _usage = new();
+    private readonly HashSet<(NativeQueryPool Pool, uint Index)> _activeQueries = [];
+    private readonly Dictionary<(NativeQueryPool Pool, uint Index), bool> _queryAvailability = [];
     private readonly Dictionary<uint, BoundDescriptorGroup> _boundGroups = [];
     private NativePipeline? _pipeline;
     private BoundColorAttachment[]? _renderingColors;
@@ -19,6 +21,7 @@ internal sealed class CommandContext : ICommandContext
     private int _ownerThread;
     private bool _finished;
     private bool _disposed;
+    private int _debugDepth;
 
     public CommandContext(Device device, CommandAllocation allocation)
     {
@@ -28,6 +31,7 @@ internal sealed class CommandContext : ICommandContext
 
     public QueueType Queue => _allocation.Queue;
     public bool IsFinished => _finished;
+    internal int DescriptorPageCount => _allocation.Descriptors.PageCount;
 
     public void Barriers(ReadOnlySpan<ResourceBarrier> barriers)
     {
@@ -137,6 +141,132 @@ internal sealed class CommandContext : ICommandContext
         Track(source);
         Track(destination);
         CopyBufferTexture(destination, copy.DestinationLayout, source, copy.SourceRegion, bufferToTexture: false);
+    }
+
+    public void CopyTexture(in TextureToTextureCopy copy)
+    {
+        EnsureRecording();
+        EnsureOutsideRendering(nameof(CopyTexture));
+        NativeTexture source = _device.GetTexture(copy.Source);
+        NativeTexture destination = _device.GetTexture(copy.Destination);
+        if ((source.Desc.Usage & TextureUsage.CopySource) == 0)
+            throw new ArgumentException("Source texture is missing CopySource usage.", nameof(copy));
+        if ((destination.Desc.Usage & TextureUsage.CopyDestination) == 0)
+            throw new ArgumentException("Destination texture is missing CopyDestination usage.", nameof(copy));
+        Device.ValidateTextureRegion(source.Desc, copy.SourceRegion);
+        Device.ValidateTextureRegion(destination.Desc, copy.DestinationRegion);
+        if (source.Desc.Format != destination.Desc.Format ||
+            source.Desc.SampleCount != destination.Desc.SampleCount ||
+            copy.SourceRegion.Aspect != copy.DestinationRegion.Aspect)
+        {
+            throw new ArgumentException(
+                "Texture copies require matching formats, sample counts, and planes.",
+                nameof(copy));
+        }
+        if (copy.SourceRegion.Width != copy.DestinationRegion.Width ||
+            copy.SourceRegion.Height != copy.DestinationRegion.Height ||
+            copy.SourceRegion.Depth != copy.DestinationRegion.Depth)
+            throw new ArgumentException("Texture-copy source and destination extents must match exactly.", nameof(copy));
+        if (source.Desc.SampleCount > 1 &&
+            (!Device.IsWholeSubresource(source.Desc, copy.SourceRegion) ||
+             !Device.IsWholeSubresource(destination.Desc, copy.DestinationRegion)))
+            throw new NotSupportedException("Multisampled texture copies must cover complete subresources.");
+        if (ReferenceEquals(source, destination) &&
+            copy.SourceRegion.MipLevel == copy.DestinationRegion.MipLevel &&
+            copy.SourceRegion.ArrayLayer == copy.DestinationRegion.ArrayLayer &&
+            copy.SourceRegion.Aspect == copy.DestinationRegion.Aspect &&
+            BoxesOverlap(copy.SourceRegion, copy.DestinationRegion))
+            throw new ArgumentException("A texture cannot be copied between overlapping regions of one subresource.", nameof(copy));
+        if (!ReferenceEquals(source, destination) &&
+            source.Allocation.Identity == destination.Allocation.Identity &&
+            source.Allocation.Offset < destination.Allocation.End &&
+            destination.Allocation.Offset < source.Allocation.End)
+            throw new ArgumentException(
+                "Texture copies cannot use distinct resources whose physical allocation ranges overlap.",
+                nameof(copy));
+
+        Track(source);
+        Track(destination);
+        uint sourceSubresource = Device.NativeSubresource(
+            source.Desc, copy.SourceRegion.MipLevel, copy.SourceRegion.ArrayLayer, copy.SourceRegion.Aspect);
+        uint destinationSubresource = Device.NativeSubresource(
+            destination.Desc, copy.DestinationRegion.MipLevel, copy.DestinationRegion.ArrayLayer, copy.DestinationRegion.Aspect);
+        TextureCopyLocation sourceLocation = new(source.Resource, sourceSubresource);
+        TextureCopyLocation destinationLocation = new(destination.Resource, destinationSubresource);
+        Box? sourceBox = source.Desc.SampleCount > 1
+            ? null
+            : new Box(
+                copy.SourceRegion.X,
+                copy.SourceRegion.Y,
+                copy.SourceRegion.Z,
+                checked(copy.SourceRegion.X + copy.SourceRegion.Width),
+                checked(copy.SourceRegion.Y + copy.SourceRegion.Height),
+                checked(copy.SourceRegion.Z + copy.SourceRegion.Depth));
+        _allocation.List.CopyTextureRegion(
+            destinationLocation,
+            checked((uint)copy.DestinationRegion.X),
+            checked((uint)copy.DestinationRegion.Y),
+            checked((uint)copy.DestinationRegion.Z),
+            sourceLocation,
+            sourceBox);
+    }
+
+    public void ClearBuffer(BufferHandle buffer, in BufferRange range, uint pattern = 0)
+    {
+        EnsureRecording();
+        EnsureOutsideRendering(nameof(ClearBuffer));
+        NativeBuffer destination = _device.GetBuffer(buffer);
+        if ((destination.Desc.Usage & BufferUsage.CopyDestination) == 0)
+            throw new ArgumentException("ClearBuffer requires CopyDestination usage.", nameof(buffer));
+        Device.ResolveBufferRange(destination.Desc, range, out ulong offset, out ulong size);
+        ID3D12Resource upload = _device.CreatePatternUpload(size, pattern);
+        _allocation.AddTransient(upload);
+        Track(destination);
+        _allocation.List.CopyBufferRegion(destination.Resource, offset, upload, 0, size);
+    }
+
+    public void ClearTexture(TextureHandle texture, in TextureSubresourceRange range, in System.Numerics.Vector4 color)
+    {
+        EnsureGraphics(nameof(ClearTexture));
+        EnsureOutsideRendering(nameof(ClearTexture));
+        if (!float.IsFinite(color.X) || !float.IsFinite(color.Y) ||
+            !float.IsFinite(color.Z) || !float.IsFinite(color.W))
+            throw new ArgumentOutOfRangeException(nameof(color));
+        NativeTexture destination = _device.GetTexture(texture);
+        if ((destination.Desc.Usage & TextureUsage.ColorAttachment) == 0)
+            throw new ArgumentException("ClearTexture requires ColorAttachment usage.", nameof(texture));
+        NativeCpuDescriptor[] descriptors = _device.CreateColorClearDescriptors(destination, range);
+        foreach (NativeCpuDescriptor descriptor in descriptors)
+        {
+            _allocation.AddTransient(descriptor);
+            _allocation.List.ClearRenderTargetView(
+                descriptor.Handle,
+                new Color4(color.X, color.Y, color.Z, color.W));
+        }
+        Track(destination);
+    }
+
+    public void ClearDepthStencilTexture(
+        TextureHandle texture,
+        in TextureSubresourceRange range,
+        float depth = 1f,
+        byte stencil = 0)
+    {
+        EnsureGraphics(nameof(ClearDepthStencilTexture));
+        EnsureOutsideRendering(nameof(ClearDepthStencilTexture));
+        if (!float.IsFinite(depth) || depth is < 0f or > 1f)
+            throw new ArgumentOutOfRangeException(nameof(depth));
+        NativeTexture destination = _device.GetTexture(texture);
+        if ((destination.Desc.Usage & TextureUsage.DepthStencilAttachment) == 0)
+            throw new ArgumentException("ClearDepthStencilTexture requires DepthStencilAttachment usage.", nameof(texture));
+        (NativeCpuDescriptor[] descriptors, ClearFlags flags) =
+            _device.CreateDepthStencilClearDescriptors(destination, range);
+        foreach (NativeCpuDescriptor descriptor in descriptors)
+        {
+            _allocation.AddTransient(descriptor);
+            _allocation.List.ClearDepthStencilView(descriptor.Handle, flags, depth, stencil);
+        }
+        Track(destination);
     }
 
     public void ResolveTexture(in TextureResolveRegion resolve)
@@ -292,6 +422,10 @@ internal sealed class CommandContext : ICommandContext
         }
     }
 
+}
+
+internal sealed partial class CommandContext
+{
     public void SetBindGroup(uint groupIndex, BindGroupHandle group)
     {
         EnsureDescriptorCommand(nameof(SetBindGroup));
@@ -427,34 +561,374 @@ internal sealed class CommandContext : ICommandContext
         _allocation.List.Dispatch(groupCountX, groupCountY, groupCountZ);
     }
 
+    public void DrawIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
+    {
+        EnsureCanDraw();
+        ExecuteIndirect(
+            IndirectArgumentType.Draw,
+            DrawIndirectArguments.ByteSize,
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            countBuffer,
+            countBufferOffset);
+    }
+
+    public void DrawIndexedIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
+    {
+        EnsureCanDraw();
+        ExecuteIndirect(
+            IndirectArgumentType.DrawIndexed,
+            DrawIndexedIndirectArguments.ByteSize,
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            countBuffer,
+            countBufferOffset);
+    }
+
+    public void DispatchIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
+    {
+        EnsureRecording();
+        if (_renderingColors is not null) throw new InvalidOperationException("DispatchIndirect is not permitted inside a rendering scope.");
+        if (Queue == QueueType.Copy || _pipeline is not NativeComputePipeline)
+            throw new InvalidOperationException("DispatchIndirect requires a compute pipeline on a graphics or compute queue.");
+        ValidateBoundGroups();
+        ExecuteIndirect(
+            IndirectArgumentType.Dispatch,
+            DispatchIndirectArguments.ByteSize,
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            countBuffer,
+            countBufferOffset);
+    }
+
+    public void ResetQueryPool(QueryPoolHandle pool, uint firstQuery, uint queryCount)
+    {
+        EnsureRecording();
+        EnsureOutsideRendering(nameof(ResetQueryPool));
+        NativeQueryPool native = _device.GetQueryPool(pool);
+        native.ValidateReset(firstQuery, queryCount);
+        for (uint query = firstQuery; query < checked(firstQuery + queryCount); query++)
+            _queryAvailability[(native, query)] = false;
+        Track(native);
+    }
+
+    public void BeginQuery(QueryPoolHandle pool, uint queryIndex)
+    {
+        EnsureRecording();
+        NativeQueryPool native = _device.GetQueryPool(pool);
+        if (native.Desc.Type == QueryType.Timestamp)
+            throw new InvalidOperationException("Timestamp queries are written with WriteTimestamp and cannot be begun.");
+        EnsureQueryQueue(native.Desc.Type);
+        if (native.Desc.Type == QueryType.Occlusion && _renderingColors is null)
+            throw new InvalidOperationException("Occlusion queries must begin inside a rendering scope.");
+        if (native.Desc.Type == QueryType.PipelineStatistics && _pipeline is null)
+            throw new InvalidOperationException("Pipeline-statistics queries require a bound pipeline.");
+        native.Begin(queryIndex);
+        if (!_activeQueries.Add((native, queryIndex)))
+        {
+            native.CancelBegin(queryIndex);
+            throw new InvalidOperationException($"Query {queryIndex} is already active in this command context.");
+        }
+        Track(native);
+        _allocation.List.BeginQuery(native.Heap, MapQueryType(native.Desc.Type), queryIndex);
+    }
+
+    public void EndQuery(QueryPoolHandle pool, uint queryIndex)
+    {
+        EnsureRecording();
+        NativeQueryPool native = _device.GetQueryPool(pool);
+        if (native.Desc.Type == QueryType.Occlusion && _renderingColors is null)
+            throw new InvalidOperationException("Occlusion queries must end inside their rendering scope.");
+        if (!_activeQueries.Remove((native, queryIndex)))
+            throw new InvalidOperationException($"Query {queryIndex} was not begun by this command context.");
+        native.End(queryIndex);
+        _queryAvailability[(native, queryIndex)] = true;
+        Track(native);
+        _allocation.List.EndQuery(native.Heap, MapQueryType(native.Desc.Type), queryIndex);
+    }
+
+    public void WriteTimestamp(QueryPoolHandle pool, uint queryIndex)
+    {
+        EnsureRecording();
+        NativeQueryPool native = _device.GetQueryPool(pool);
+        if (native.Desc.Type != QueryType.Timestamp)
+            throw new InvalidOperationException("WriteTimestamp requires a timestamp query pool.");
+        EnsureOutsideRendering(nameof(WriteTimestamp));
+        if (Queue == QueueType.Copy)
+            throw new InvalidOperationException("Timestamp queries require a graphics or compute command context.");
+        native.WriteTimestamp(queryIndex);
+        _queryAvailability[(native, queryIndex)] = true;
+        Track(native);
+        _allocation.List.EndQuery(native.Heap, Vortice.Direct3D12.QueryType.Timestamp, queryIndex);
+    }
+
+    public void ResolveQueryPool(
+        QueryPoolHandle pool,
+        uint firstQuery,
+        uint queryCount,
+        BufferHandle destination,
+        ulong destinationOffset,
+        ulong destinationStride = 0)
+    {
+        EnsureRecording();
+        EnsureOutsideRendering(nameof(ResolveQueryPool));
+        NativeQueryPool native = _device.GetQueryPool(pool);
+        native.ValidateRange(firstQuery, queryCount);
+        for (uint query = firstQuery; query < checked(firstQuery + queryCount); query++)
+        {
+            bool written = _queryAvailability.TryGetValue((native, query), out bool local)
+                ? local
+                : native.IsWritten(query);
+            if (!written)
+                throw new InvalidOperationException($"Query {query} has not produced a submitted result since its last reset.");
+        }
+        NativeBuffer buffer = _device.GetBuffer(destination);
+        if ((buffer.Desc.Usage & BufferUsage.CopyDestination) == 0)
+            throw new ArgumentException("Query resolve destination is missing CopyDestination usage.", nameof(destination));
+
+        ulong resultSize = native.Desc.ResultSize;
+        ulong stride = destinationStride == 0 ? resultSize : destinationStride;
+        if (stride < resultSize || (stride & 7) != 0)
+            throw new ArgumentOutOfRangeException(nameof(destinationStride), "Query result stride must cover the result and be 8-byte aligned.");
+        if ((destinationOffset & 7) != 0)
+            throw new ArgumentOutOfRangeException(nameof(destinationOffset), "Query result offset must be 8-byte aligned.");
+        ulong required = checked((ulong)(queryCount - 1) * stride + resultSize);
+        Device.ValidateRange(buffer.Desc.Size, destinationOffset, required);
+        Track(native);
+        Track(buffer);
+
+        Vortice.Direct3D12.QueryType type = MapQueryType(native.Desc.Type);
+        if (stride == resultSize)
+        {
+            _allocation.List.ResolveQueryData(native.Heap, type, firstQuery, queryCount, buffer.Resource, destinationOffset);
+        }
+        else
+        {
+            for (uint index = 0; index < queryCount; index++)
+            {
+                _allocation.List.ResolveQueryData(
+                    native.Heap,
+                    type,
+                    checked(firstQuery + index),
+                    1,
+                    buffer.Resource,
+                    checked(destinationOffset + (ulong)index * stride));
+            }
+        }
+    }
+
+}
+
+internal sealed partial class CommandContext
+{
     public void PushDebugGroup(string name)
     {
         EnsureRecording();
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        _debugDepth++;
         _allocation.List.BeginEvent(name);
     }
 
     public void PopDebugGroup()
     {
         EnsureRecording();
+        if (_debugDepth == 0) throw new InvalidOperationException("No debug group is open.");
+        _debugDepth--;
         _allocation.List.EndEvent();
+    }
+
+    public void InsertDebugMarker(string name)
+    {
+        EnsureRecording();
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        _allocation.List.SetMarker(name);
     }
 
     public CommandListHandle Finish()
     {
         EnsureRecording();
         if (_renderingColors is not null) throw new InvalidOperationException("EndRendering must be called before Finish.");
+        if (_activeQueries.Count != 0) throw new InvalidOperationException("Every begun query must be ended before Finish.");
+        if (_debugDepth != 0) throw new InvalidOperationException("Every pushed debug group must be popped before Finish.");
         _allocation.List.Close();
         _finished = true;
-        return _device.Register(_allocation, _usage);
+        QueryAvailabilityMutation[] queryMutations = _queryAvailability
+            .Select(static pair => new QueryAvailabilityMutation(pair.Key.Pool, pair.Key.Index, pair.Value))
+            .ToArray();
+        return _device.Register(_allocation, _usage, queryMutations);
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        foreach ((NativeQueryPool pool, uint index) in _activeQueries) pool.CancelBegin(index);
+        _activeQueries.Clear();
         if (!_finished) _device.Discard(_allocation, _usage);
     }
+
+    private void ExecuteIndirect(
+        IndirectArgumentType type,
+        uint nativeArgumentSize,
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer,
+        ulong countBufferOffset)
+    {
+        ValidateIndirectCommandRange(nativeArgumentSize, argumentOffset, maxCommandCount, commandStride);
+        NativeBuffer arguments = ResolveIndirectArguments(
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            nativeArgumentSize,
+            out ulong argumentBytes);
+        NativeBuffer? counts = ResolveIndirectCount(
+            arguments,
+            argumentOffset,
+            argumentBytes,
+            countBuffer,
+            countBufferOffset);
+        SubmitIndirect(type, commandStride, maxCommandCount, arguments, argumentOffset, counts, countBufferOffset);
+    }
+
+    private static void ValidateIndirectCommandRange(
+        uint nativeArgumentSize,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride)
+    {
+        if (maxCommandCount == 0) throw new ArgumentOutOfRangeException(nameof(maxCommandCount));
+        if ((argumentOffset & 3) != 0) throw new ArgumentOutOfRangeException(nameof(argumentOffset));
+        if (commandStride < nativeArgumentSize || (commandStride & 3) != 0)
+            throw new ArgumentOutOfRangeException(nameof(commandStride));
+    }
+
+    private NativeBuffer ResolveIndirectArguments(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        uint nativeArgumentSize,
+        out ulong argumentBytes)
+    {
+        NativeBuffer arguments = _device.GetBuffer(argumentBuffer);
+        if ((arguments.Desc.Usage & BufferUsage.Indirect) == 0)
+            throw new ArgumentException("Argument buffer is missing Indirect usage.", nameof(argumentBuffer));
+        argumentBytes = checked((ulong)(maxCommandCount - 1) * commandStride + nativeArgumentSize);
+        Device.ValidateRange(arguments.Desc.Size, argumentOffset, argumentBytes);
+        return arguments;
+    }
+
+    private NativeBuffer? ResolveIndirectCount(
+        NativeBuffer arguments,
+        ulong argumentOffset,
+        ulong argumentBytes,
+        BufferHandle countBuffer,
+        ulong countBufferOffset)
+    {
+        if (!countBuffer.IsValid)
+        {
+            if (countBuffer != default || countBufferOffset != 0)
+                throw new ArgumentException("A count-buffer offset requires a valid count buffer.", nameof(countBuffer));
+            return null;
+        }
+
+        NativeBuffer counts = _device.GetBuffer(countBuffer);
+        if ((counts.Desc.Usage & BufferUsage.Indirect) == 0)
+            throw new ArgumentException("Count buffer is missing Indirect usage.", nameof(countBuffer));
+        if ((countBufferOffset & 3) != 0)
+            throw new ArgumentOutOfRangeException(nameof(countBufferOffset));
+        Device.ValidateRange(counts.Desc.Size, countBufferOffset, sizeof(uint));
+        ValidateIndirectRangeSeparation(arguments, argumentOffset, argumentBytes, counts, countBufferOffset);
+        return counts;
+    }
+
+    private static void ValidateIndirectRangeSeparation(
+        NativeBuffer arguments,
+        ulong argumentOffset,
+        ulong argumentBytes,
+        NativeBuffer counts,
+        ulong countBufferOffset)
+    {
+        if (!ReferenceEquals(arguments, counts)) return;
+        ulong argumentEnd = checked(argumentOffset + argumentBytes);
+        ulong countEnd = checked(countBufferOffset + sizeof(uint));
+        if (argumentOffset < countEnd && countBufferOffset < argumentEnd)
+        {
+            throw new ArgumentException(
+                "Argument and count ranges must not overlap when they share one indirect buffer.",
+                nameof(counts));
+        }
+    }
+
+    private void SubmitIndirect(
+        IndirectArgumentType type,
+        uint commandStride,
+        uint maxCommandCount,
+        NativeBuffer arguments,
+        ulong argumentOffset,
+        NativeBuffer? counts,
+        ulong countBufferOffset)
+    {
+        Track(arguments);
+        if (counts is not null) Track(counts);
+        ID3D12CommandSignature signature = _device.GetIndirectCommandSignature(type, commandStride);
+        _allocation.List.ExecuteIndirect(
+            signature,
+            maxCommandCount,
+            arguments.Resource,
+            argumentOffset,
+            counts?.Resource,
+            countBufferOffset);
+    }
+
+}
+
+internal sealed partial class CommandContext
+{
+
+    private void EnsureQueryQueue(QueryType type)
+    {
+        if (Queue == QueueType.Copy && type != QueryType.Timestamp)
+            throw new InvalidOperationException($"{type} queries are not supported on a copy command context.");
+        if (Queue == QueueType.Compute && type == QueryType.Occlusion)
+            throw new InvalidOperationException("Occlusion queries require a graphics command context.");
+    }
+
+    private static Vortice.Direct3D12.QueryType MapQueryType(QueryType type) => type switch
+    {
+        QueryType.Timestamp => Vortice.Direct3D12.QueryType.Timestamp,
+        QueryType.Occlusion => Vortice.Direct3D12.QueryType.Occlusion,
+        QueryType.PipelineStatistics => Vortice.Direct3D12.QueryType.PipelineStatistics,
+        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+    };
 
     private void EnsureRecording()
     {
@@ -554,6 +1028,11 @@ internal sealed class CommandContext : ICommandContext
             }
         }
     }
+
+    private static bool BoxesOverlap(in TextureCopyRegion left, in TextureCopyRegion right) =>
+        left.X < right.X + right.Width && right.X < left.X + left.Width &&
+        left.Y < right.Y + right.Height && right.Y < left.Y + left.Height &&
+        left.Z < right.Z + right.Depth && right.Z < left.Z + left.Depth;
 
     private void ValidateTextureBufferLayout(
         in TextureDesc texture,
@@ -685,6 +1164,10 @@ internal sealed class CommandContext : ICommandContext
         }
     }
 
+}
+
+internal sealed partial class CommandContext
+{
     private void MaterializeGroup(uint groupIndex, in BoundDescriptorGroup group)
     {
         NativePipeline pipeline = _pipeline ?? throw new InvalidOperationException("A pipeline must be selected before materializing descriptors.");
@@ -694,9 +1177,64 @@ internal sealed class CommandContext : ICommandContext
             throw new ArgumentException($"Descriptor group {groupIndex} does not match the selected pipeline layout.", nameof(groupIndex));
         }
 
+        if (!_allocation.Descriptors.HasCapacity(
+                group.Layout.ResourceDescriptorCount,
+                group.Layout.SamplerDescriptorCount))
+        {
+            int activeResources = group.Layout.ResourceDescriptorCount;
+            int activeSamplers = group.Layout.SamplerDescriptorCount;
+            foreach ((uint activeIndex, BoundDescriptorGroup active) in _boundGroups)
+            {
+                if (activeIndex == groupIndex ||
+                    activeIndex >= (uint)pipeline.Layout.Groups.Length ||
+                    !ReferenceEquals(active.Layout, pipeline.Layout.Groups[activeIndex]))
+                {
+                    continue;
+                }
+
+                activeResources = checked(activeResources + active.Layout.ResourceDescriptorCount);
+                activeSamplers = checked(activeSamplers + active.Layout.SamplerDescriptorCount);
+            }
+
+            _allocation.Descriptors.RollOver(activeResources, activeSamplers);
+            _allocation.List.SetDescriptorHeaps(_allocation.Descriptors.Heaps);
+            _descriptorHeapsSet = true;
+
+            // SetDescriptorHeaps invalidates every graphics and compute root descriptor table.
+            // Recreate all still-active tables from their immutable CPU descriptor sources.
+            foreach ((uint activeIndex, BoundDescriptorGroup active) in _boundGroups.OrderBy(static pair => pair.Key))
+            {
+                if (activeIndex == groupIndex ||
+                    activeIndex >= (uint)pipeline.Layout.Groups.Length ||
+                    !ReferenceEquals(active.Layout, pipeline.Layout.Groups[activeIndex]))
+                {
+                    continue;
+                }
+
+                MaterializeGroupCore(activeIndex, active, pipeline);
+            }
+        }
+
         EnsureDescriptorHeaps();
+        MaterializeGroupCore(groupIndex, group, pipeline);
+    }
+
+    private void MaterializeGroupCore(
+        uint groupIndex,
+        in BoundDescriptorGroup group,
+        NativePipeline pipeline)
+    {
         DescriptorBlock resources = _allocation.Descriptors.AllocateResources(group.Layout.ResourceDescriptorCount);
         DescriptorBlock samplers = _allocation.Descriptors.AllocateSamplers(group.Layout.SamplerDescriptorCount);
+        CopyGroupDescriptors(group, resources, samplers);
+        BindRootDescriptorTables(groupIndex, pipeline, resources, samplers);
+    }
+
+    private void CopyGroupDescriptors(
+        in BoundDescriptorGroup group,
+        in DescriptorBlock resources,
+        in DescriptorBlock samplers)
+    {
         foreach (FrozenBinding binding in group.Bindings)
         {
             bool sampler = binding.Kind == BindingKind.Sampler;
@@ -710,7 +1248,14 @@ internal sealed class CommandContext : ICommandContext
                 binding.Descriptor.Handle,
                 type);
         }
+    }
 
+    private void BindRootDescriptorTables(
+        uint groupIndex,
+        NativePipeline pipeline,
+        in DescriptorBlock resources,
+        in DescriptorBlock samplers)
+    {
         foreach (NativeRootBinding root in pipeline.Layout.Bindings)
         {
             if (root.Group != groupIndex) continue;

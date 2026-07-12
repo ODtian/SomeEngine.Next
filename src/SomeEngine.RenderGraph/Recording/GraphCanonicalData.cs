@@ -24,7 +24,7 @@ internal sealed class GraphCanonicalData : IEquatable<GraphCanonicalData>
         using MemoryStream stream = new();
         using (BinaryWriter writer = new(stream, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(10u); // canonical schema
+            writer.Write(11u); // canonical schema
             writer.Write(device.SemanticGeneration);
             writer.Write((byte)device.ResourceHeapTier);
             writer.Write(device.SupportsEnhancedBarriers);
@@ -80,6 +80,13 @@ internal sealed class GraphCanonicalData : IEquatable<GraphCanonicalData>
     {
         writer.Write((byte)resource.Kind);
         writer.Write(resource.IsImported);
+        writer.Write((byte)resource.Lifetime);
+        writer.Write(resource.StableId.ToByteArray());
+        writer.Write(resource.BaseOrdinal);
+        writer.Write(resource.HistoryOffset);
+        writer.Write(resource.HistoryCount);
+        writer.Write(resource.Exported);
+        writer.Write(resource.ContinuityGeneration);
         if (resource.Kind == ResourceNodeKind.Buffer)
         {
             writer.Write(resource.BufferDesc.Size);
@@ -88,6 +95,10 @@ internal sealed class GraphCanonicalData : IEquatable<GraphCanonicalData>
             {
                 writer.Write((byte)resource.ImportedBuffer.InitialUse);
                 writer.Write((byte)resource.ImportedBuffer.FinalUse);
+                writer.Write(resource.ImportedBuffer.InitialStateOverride.HasValue);
+                if (resource.ImportedBuffer.InitialStateOverride is ResourceState bufferInitial) writer.Write((byte)bufferInitial);
+                writer.Write(resource.ImportedBuffer.FinalStateOverride.HasValue);
+                if (resource.ImportedBuffer.FinalStateOverride is ResourceState bufferFinal) writer.Write((byte)bufferFinal);
                 writer.Write(resource.ImportedBuffer.ContentsAvailable);
                 writer.Write((byte)resource.ImportedBuffer.Metadata.MemoryType);
                 WriteReadinessShape(writer, resource.ImportedBuffer.Readiness);
@@ -111,6 +122,10 @@ internal sealed class GraphCanonicalData : IEquatable<GraphCanonicalData>
             {
                 writer.Write((byte)resource.ImportedTexture.InitialUse);
                 writer.Write((byte)resource.ImportedTexture.FinalUse);
+                writer.Write(resource.ImportedTexture.InitialStateOverride.HasValue);
+                if (resource.ImportedTexture.InitialStateOverride is ResourceState textureInitial) writer.Write((byte)textureInitial);
+                writer.Write(resource.ImportedTexture.FinalStateOverride.HasValue);
+                if (resource.ImportedTexture.FinalStateOverride is ResourceState textureFinal) writer.Write((byte)textureFinal);
                 writer.Write(resource.ImportedTexture.ContentsAvailable);
                 writer.Write((byte)resource.ImportedTexture.Metadata.MemoryType);
                 WriteReadinessShape(writer, resource.ImportedTexture.Readiness);

@@ -16,7 +16,7 @@ public sealed class HardcodedLiteralTests
     [Fact]
     public async Task StringLiteralInMethod_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -35,7 +35,7 @@ public sealed class HardcodedLiteralTests
     [Fact]
     public async Task ConstString_NoDiagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -50,7 +50,7 @@ public sealed class HardcodedLiteralTests
     [Fact]
     public async Task ExceptionMessage_NoDiagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {
@@ -65,7 +65,7 @@ public sealed class HardcodedLiteralTests
     [Fact]
     public async Task SmallStructuralNumber_NoDiagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {

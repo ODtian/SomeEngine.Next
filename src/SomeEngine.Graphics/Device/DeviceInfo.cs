@@ -13,7 +13,10 @@ public readonly record struct DeviceInfo(
     BackendKind Backend,
     bool HardwareAccelerated,
     uint VendorId = 0,
-    uint DeviceId = 0);
+    uint DeviceId = 0,
+    string DriverVersion = "",
+    string ApiVersion = "",
+    bool ValidationEnabled = false);
 
 public enum ResourceHeapTier : byte
 {
@@ -34,7 +37,8 @@ public sealed class DeviceCompilationSnapshot
         IEnumerable<QueueType> queues,
         bool supportsEnhancedBarriers,
         bool supportsAsyncCompute,
-        bool supportsCopyQueue)
+        bool supportsCopyQueue,
+        bool supportsBindless = false)
     {
         if (semanticGeneration == 0) throw new ArgumentOutOfRangeException(nameof(semanticGeneration));
         ArgumentNullException.ThrowIfNull(queues);
@@ -50,6 +54,7 @@ public sealed class DeviceCompilationSnapshot
         SupportsEnhancedBarriers = supportsEnhancedBarriers;
         SupportsAsyncCompute = supportsAsyncCompute;
         SupportsCopyQueue = supportsCopyQueue;
+        SupportsBindless = supportsBindless;
     }
 
     public ulong SemanticGeneration { get; }
@@ -58,6 +63,7 @@ public sealed class DeviceCompilationSnapshot
     public bool SupportsEnhancedBarriers { get; }
     public bool SupportsAsyncCompute { get; }
     public bool SupportsCopyQueue { get; }
+    public bool SupportsBindless { get; }
 
     public bool Supports(QueueType queue) => _queues.Contains(queue);
 }

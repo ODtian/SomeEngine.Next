@@ -1,12 +1,103 @@
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Null;
 using Xunit;
+using D3DDevice = SomeEngine.Graphics.Direct3D12.Device;
+using D3DOptions = SomeEngine.Graphics.Direct3D12.Options;
 
 namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class TransientAliasingTests
 {
     private const ulong ResourceSize = 256;
+
+    [Fact]
+    [Trait("Category", "CapabilityContinuity")]
+    public void Warp_aliases_transient_resources_and_preserves_observable_output()
+    {
+        using D3DDevice device = new(new D3DOptions { UseWarpAdapter = true, EnableDebugLayer = true });
+        using RenderGraph graph = new(device, new RenderGraphOptions { EnableTransientAliasing = true });
+        BufferHandle upload = device.CreateBuffer(
+            new BufferDesc(ResourceSize, BufferUsage.CopySource),
+            MemoryType.Upload);
+        BufferHandle readback = device.CreateBuffer(
+            new BufferDesc(ResourceSize * 2, BufferUsage.CopyDestination),
+            MemoryType.Readback);
+        byte[] expected = Enumerable.Range(0, checked((int)ResourceSize))
+            .Select(static value => unchecked((byte)(value * 17 + 31)))
+            .ToArray();
+        device.WriteBuffer(upload, 0, expected);
+        try
+        {
+            bool selectedAliasPlan = false;
+            for (int attempt = 0; attempt < 32 && !selectedAliasPlan; attempt++)
+            {
+                GraphBuilder builder = graph.Begin();
+                BufferId source = builder.ImportBuffer(upload, BufferUse.CopySource, BufferUse.CopySource);
+                BufferId output = builder.ImportBuffer(
+                    readback,
+                    BufferUse.CopyDestination,
+                    BufferUse.CopyDestination,
+                    contentsAvailable: false);
+                BufferDesc transientDesc = new(
+                    ResourceSize,
+                    BufferUsage.CopySource | BufferUsage.CopyDestination);
+                BufferId first = builder.CreateBuffer(transientDesc with { Name = "warp-alias-first" });
+                BufferId second = builder.CreateBuffer(transientDesc with { Name = "warp-alias-second" });
+
+                AddCopyPass(ref builder, "warp-first-write", source, first, 0, 0);
+                AddCopyPass(ref builder, "warp-first-read", first, output, 0, 0);
+                AddCopyPass(ref builder, "warp-second-write", source, second, 0, 0);
+                AddCopyPass(ref builder, "warp-second-read", second, output, 0, ResourceSize);
+
+                GraphExecution execution = graph.Execute(ref builder);
+                Assert.True(execution.Wait(TimeSpan.FromSeconds(5)));
+                selectedAliasPlan = graph.Statistics.LastAliasing.Enabled &&
+                    graph.Statistics.LastAliasing.AliasAcquireCount > 0;
+                if (!selectedAliasPlan) Thread.Yield();
+            }
+
+            Assert.True(selectedAliasPlan);
+            Assert.True(graph.Statistics.LastAliasing.AliasSavingsBytes >= ResourceSize);
+            byte[] actual = new byte[checked((int)(ResourceSize * 2))];
+            device.ReadBuffer(readback, 0, actual);
+            Assert.Equal(expected, actual.AsSpan(0, expected.Length).ToArray());
+            Assert.Equal(expected, actual.AsSpan(expected.Length, expected.Length).ToArray());
+            Assert.DoesNotContain(device.DrainDiagnostics(), static diagnostic =>
+                diagnostic.Severity is GraphicsDiagnosticSeverity.Error or GraphicsDiagnosticSeverity.Corruption);
+        }
+        finally
+        {
+            device.DestroyBuffer(readback);
+            device.DestroyBuffer(upload);
+            device.CollectGarbage();
+        }
+    }
+
+    private static void AddCopyPass(
+        ref GraphBuilder builder,
+        string name,
+        BufferId source,
+        BufferId destination,
+        ulong sourceOffset,
+        ulong destinationOffset)
+    {
+        PassBuilder pass = builder.AddPass(name, QueueSelection.Copy);
+        BufferAccess input = pass.Read(
+            source,
+            BufferUse.CopySource,
+            new BufferRange(sourceOffset, ResourceSize));
+        BufferAccess output = pass.Write(
+            destination,
+            BufferUse.CopyDestination,
+            new BufferRange(destinationOffset, ResourceSize));
+        pass.Execute((ICommandContext commands, in PassResources resources) =>
+            commands.CopyBuffer(
+                resources.Get(input),
+                sourceOffset,
+                resources.Get(output),
+                destinationOffset,
+                ResourceSize));
+    }
 
     [Fact]
     public void Sequential_comparable_resources_share_placement_and_insert_frontier_alias_acquire()

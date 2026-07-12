@@ -51,11 +51,8 @@ public sealed class BoundaryDocumentationTests
         {
             "Runtime",
             "legacy RHI",
-            "D3D12/Direct3D/DXGI",
-            "RenderGraph",
-            "Render execution",
             "Cluster execution",
-            "ImGui/window/present",
+            "ImGui/editor window integration",
             "DiligentCore",
             "Diligent-SharpGenTools",
         })
@@ -63,6 +60,21 @@ public sealed class BoundaryDocumentationTests
             if (!outsideThisRun.Contains(requiredPhrase, StringComparison.OrdinalIgnoreCase))
             {
                 failures.Add($"Product boundary wiki `不属于本轮` must mention {requiredPhrase}.");
+            }
+        }
+
+        foreach (string requiredPhrase in new[]
+        {
+            "SomeEngine.Graphics.Direct3D12",
+            "D3D12",
+            "SomeEngine.RenderGraph",
+            "swapchain/present",
+        })
+        {
+            if (!completedThisRun.Contains(requiredPhrase, StringComparison.OrdinalIgnoreCase)
+                && !markdown.Contains(requiredPhrase, StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add($"Product boundary wiki must record accepted Graphics/RenderGraph fact {requiredPhrase}.");
             }
         }
 

@@ -4,15 +4,42 @@ public sealed class GraphExecution
 {
     private readonly IDevice _device;
     private readonly GpuCompletionSet _completionSet;
+    private readonly ResourceContinuity? _continuity;
+    private readonly long[] _exportTickets;
+    private ResourceExport[]? _exports;
 
-    internal GraphExecution(IDevice device, GpuCompletion[] completions)
+    internal GraphExecution(
+        IDevice device,
+        GpuCompletion[] completions,
+        ResourceContinuity? continuity = null,
+        long[]? exportTickets = null,
+        Capture? capture = null)
     {
         _device = device;
         _completionSet = completions.Length == 0 ? GpuCompletionSet.Empty : new GpuCompletionSet(completions);
+        _continuity = continuity;
+        _exportTickets = exportTickets ?? [];
+        Capture = capture;
     }
 
     public GpuCompletionSet CompletionSet => _completionSet;
     public IReadOnlyList<GpuCompletion> Completions => _completionSet.Completions;
+    public Capture? Capture { get; }
+
+    /// <summary>
+    /// Publishes exported ownership once all producer completions have passed. Access before GPU
+    /// completion fails closed; call <see cref="Wait"/> first when blocking publication is desired.
+    /// </summary>
+    public IReadOnlyList<ResourceExport> Exports
+    {
+        get
+        {
+            if (_exports is not null) return _exports;
+            if (_exportTickets.Length == 0) return _exports = [];
+            if (_continuity is null) throw new InvalidOperationException("This execution has no export owner.");
+            return _exports = _continuity.TransferExports(_exportTickets);
+        }
+    }
 
     public bool Wait(TimeSpan timeout)
     {

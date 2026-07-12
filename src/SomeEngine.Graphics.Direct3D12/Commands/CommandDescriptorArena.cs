@@ -3,78 +3,129 @@ using Vortice.Direct3D12;
 namespace SomeEngine.Graphics.Direct3D12;
 
 /// <summary>
-/// Owns the one shader-visible resource heap and one shader-visible sampler heap used by a
-/// command allocation. Descriptor blocks are append-only for an entire recording and are reset
-/// only after the allocation's submission fence completes.
+/// Owns the shader-visible descriptor-heap pages referenced by one command allocation.
+/// Pages are append-only while the allocation is in flight. A rollover switches to a fresh
+/// resource/sampler heap pair; the command context then replays every active root table from
+/// its CPU descriptor sources. All pages stay alive until the allocation's submission fence
+/// completes and <see cref="Reset"/> is called.
 /// </summary>
 internal sealed class CommandDescriptorArena : IDisposable
 {
-    private readonly int _resourceCapacity;
-    private readonly int _samplerCapacity;
+    private readonly ID3D12Device _device;
+    private readonly int _defaultResourceCapacity;
+    private readonly int _defaultSamplerCapacity;
     private readonly int _resourceIncrement;
     private readonly int _samplerIncrement;
+    private readonly List<HeapPair> _pages = [];
+    private HeapPair _current;
     private int _resourceCursor;
     private int _samplerCursor;
 
     public CommandDescriptorArena(ID3D12Device device, int resourceCapacity, int samplerCapacity)
     {
         ArgumentNullException.ThrowIfNull(device);
-        _resourceCapacity = resourceCapacity;
-        _samplerCapacity = samplerCapacity;
-        ResourceHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription(
-            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-            checked((uint)resourceCapacity),
-            DescriptorHeapFlags.ShaderVisible,
-            0));
-        try
-        {
-            SamplerHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription(
-                DescriptorHeapType.Sampler,
-                checked((uint)samplerCapacity),
-                DescriptorHeapFlags.ShaderVisible,
-                0));
-        }
-        catch
-        {
-            ResourceHeap.Dispose();
-            throw;
-        }
+        if (resourceCapacity <= 0) throw new ArgumentOutOfRangeException(nameof(resourceCapacity));
+        if (samplerCapacity <= 0) throw new ArgumentOutOfRangeException(nameof(samplerCapacity));
+
+        _device = device;
+        _defaultResourceCapacity = resourceCapacity;
+        _defaultSamplerCapacity = samplerCapacity;
         _resourceIncrement = checked((int)device.GetDescriptorHandleIncrementSize(
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView));
         _samplerIncrement = checked((int)device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler));
-        Heaps = [ResourceHeap, SamplerHeap];
+        _current = CreatePair(resourceCapacity, samplerCapacity);
+        _pages.Add(_current);
     }
 
-    public ID3D12DescriptorHeap ResourceHeap { get; }
-    public ID3D12DescriptorHeap SamplerHeap { get; }
-    public ID3D12DescriptorHeap[] Heaps { get; }
+    public ID3D12DescriptorHeap[] Heaps => _current.Heaps;
+    internal int PageCount => _pages.Count;
+
+    public bool HasCapacity(int resourceCount, int samplerCount)
+    {
+        if (resourceCount < 0) throw new ArgumentOutOfRangeException(nameof(resourceCount));
+        if (samplerCount < 0) throw new ArgumentOutOfRangeException(nameof(samplerCount));
+        return _resourceCursor <= _current.ResourceCapacity - resourceCount &&
+               _samplerCursor <= _current.SamplerCapacity - samplerCount;
+    }
+
+    /// <summary>
+    /// Starts a new shader-visible heap page large enough to rematerialize all active tables.
+    /// The previous page remains owned by this arena until GPU completion returns the command
+    /// allocation to the device.
+    /// </summary>
+    public void RollOver(int activeResourceCount, int activeSamplerCount)
+    {
+        if (activeResourceCount < 0) throw new ArgumentOutOfRangeException(nameof(activeResourceCount));
+        if (activeSamplerCount < 0) throw new ArgumentOutOfRangeException(nameof(activeSamplerCount));
+
+        int resourceCapacity = Math.Max(_defaultResourceCapacity, Math.Max(1, activeResourceCount));
+        int samplerCapacity = Math.Max(_defaultSamplerCapacity, Math.Max(1, activeSamplerCount));
+        _current = CreatePair(resourceCapacity, samplerCapacity);
+        _pages.Add(_current);
+        _resourceCursor = 0;
+        _samplerCursor = 0;
+    }
 
     public DescriptorBlock AllocateResources(int count) => Allocate(
         count,
         ref _resourceCursor,
-        _resourceCapacity,
+        _current.ResourceCapacity,
         _resourceIncrement,
-        ResourceHeap,
+        _current.ResourceHeap,
         "CBV/SRV/UAV");
 
     public DescriptorBlock AllocateSamplers(int count) => Allocate(
         count,
         ref _samplerCursor,
-        _samplerCapacity,
+        _current.SamplerCapacity,
         _samplerIncrement,
-        SamplerHeap,
+        _current.SamplerHeap,
         "sampler");
 
     public void Reset()
     {
+        // Device.CollectGarbage only makes an allocation available after its submission fence
+        // completes, so releasing rollover pages here cannot race the GPU.
+        for (int index = _pages.Count - 1; index > 0; index--)
+        {
+            _pages[index].Dispose();
+            _pages.RemoveAt(index);
+        }
+
+        _current = _pages[0];
         _resourceCursor = 0;
         _samplerCursor = 0;
     }
 
     public void Dispose()
     {
-        SamplerHeap.Dispose();
-        ResourceHeap.Dispose();
+        for (int index = _pages.Count - 1; index >= 0; index--) _pages[index].Dispose();
+        _pages.Clear();
+    }
+
+    private HeapPair CreatePair(int resourceCapacity, int samplerCapacity)
+    {
+        ID3D12DescriptorHeap resourceHeap = _device.CreateDescriptorHeap<ID3D12DescriptorHeap>(
+            new DescriptorHeapDescription(
+                DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
+                checked((uint)resourceCapacity),
+                DescriptorHeapFlags.ShaderVisible,
+                0));
+        try
+        {
+            ID3D12DescriptorHeap samplerHeap = _device.CreateDescriptorHeap<ID3D12DescriptorHeap>(
+                new DescriptorHeapDescription(
+                    DescriptorHeapType.Sampler,
+                    checked((uint)samplerCapacity),
+                    DescriptorHeapFlags.ShaderVisible,
+                    0));
+            return new HeapPair(resourceHeap, samplerHeap, resourceCapacity, samplerCapacity);
+        }
+        catch
+        {
+            resourceHeap.Dispose();
+            throw;
+        }
     }
 
     private static DescriptorBlock Allocate(
@@ -90,8 +141,8 @@ internal sealed class CommandDescriptorArena : IDisposable
         if (cursor > capacity - count)
         {
             throw new InvalidOperationException(
-                $"The command-list {kind} descriptor heap is exhausted: requested {count}, " +
-                $"remaining {capacity - cursor}, capacity {capacity}. Increase the corresponding D3D12 Options capacity.");
+                $"The current command-list {kind} descriptor page cannot hold {count} additional descriptor(s). " +
+                "CommandContext must roll over and replay active descriptor tables before allocating.");
         }
 
         int byteOffset = checked(cursor * increment);
@@ -102,6 +153,34 @@ internal sealed class CommandDescriptorArena : IDisposable
             count);
         cursor += count;
         return result;
+    }
+
+    private sealed class HeapPair : IDisposable
+    {
+        public HeapPair(
+            ID3D12DescriptorHeap resourceHeap,
+            ID3D12DescriptorHeap samplerHeap,
+            int resourceCapacity,
+            int samplerCapacity)
+        {
+            ResourceHeap = resourceHeap;
+            SamplerHeap = samplerHeap;
+            ResourceCapacity = resourceCapacity;
+            SamplerCapacity = samplerCapacity;
+            Heaps = [resourceHeap, samplerHeap];
+        }
+
+        public ID3D12DescriptorHeap ResourceHeap { get; }
+        public ID3D12DescriptorHeap SamplerHeap { get; }
+        public int ResourceCapacity { get; }
+        public int SamplerCapacity { get; }
+        public ID3D12DescriptorHeap[] Heaps { get; }
+
+        public void Dispose()
+        {
+            SamplerHeap.Dispose();
+            ResourceHeap.Dispose();
+        }
     }
 }
 

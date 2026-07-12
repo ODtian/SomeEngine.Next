@@ -54,6 +54,19 @@ public sealed partial class ProductTestBoundaryTests
     }
 
     [Fact]
+    public void AcceptedRenderGraphTestIntegrationIsProjectScoped()
+    {
+        string[] references = ["RenderGraph"];
+
+        Assert.Empty(TestForbiddenReferencesForProject(
+            new ProjectConfig { Name = "SomeEngine.Assets.Tests" }, references));
+        Assert.Empty(TestForbiddenReferencesForProject(
+            new ProjectConfig { Name = "SomeEngine.Graphics.Direct3D12.Tests" }, references));
+        Assert.Contains("RenderGraph", TestForbiddenReferencesForProject(
+            new ProjectConfig { Name = "SomeEngine.Render.Tests" }, references));
+    }
+
+    [Fact]
     public void DeclaredProductTestsDoNotRequireExcludedBackendOrUiContracts()
     {
         string repoRoot = HarnessConfig.ResolveRepoRoot();
@@ -858,6 +871,11 @@ public sealed partial class ProductTestBoundaryTests
     {
         foreach (string forbidden in forbiddenReferences)
         {
+            if (IsAcceptedGraphicsTestBoundaryToken(project.Name, forbidden))
+            {
+                continue;
+            }
+
             if (IsCommonIntegrationWord(forbidden) && !IsRenderOrAssetBoundaryTestProject(project.Name))
             {
                 continue;
@@ -872,6 +890,39 @@ public sealed partial class ProductTestBoundaryTests
 
     private static bool IsRenderOrAssetBoundaryTestProject(string projectName)
         => projectName is "SomeEngine.Assets.Tests" or "SomeEngine.Render.Tests" or "SomeEngine.Render.Cluster.Tests";
+
+    private static bool IsAcceptedGraphicsTestBoundaryToken(string projectName, string token)
+    {
+        if (projectName == "SomeEngine.Assets.Tests" && token is "D3D12" or "RenderGraph")
+        {
+            return true;
+        }
+
+        bool portableGraphicsTerm = token is
+            "Swapchain" or "SwapChain" or "IDevice" or "IQueue" or "ISwapchain" or
+            "Present" or "BufferHandle" or "TextureHandle" or "RenderContext" or
+            "PipelineCache" or "GpuResource" or "GpuResourceHandle" or "GpuBuffer" or
+            "GpuBufferHandle" or "GpuTexture" or "GpuTextureHandle" or "RenderPass" or
+            "RenderPipeline" or "ComputePipeline" or "GraphicsPipeline" or "PipelineState" or
+            "DescriptorSet" or "RenderEncoder" or "ComputeEncoder";
+
+        if (projectName == "SomeEngine.Graphics.Tests")
+        {
+            return portableGraphicsTerm || token is "Rhi" or "D3D12" or "Direct3D";
+        }
+
+        if (projectName == "SomeEngine.Graphics.Direct3D12.Tests")
+        {
+            return portableGraphicsTerm || token is
+                "Rhi" or "D3D12" or "Direct3D" or "DXGI" or "SharpGen" or "DeviceContext" or
+                "ShaderResourceBinding" or "RootSignature" or "RenderGraph";
+        }
+
+        return projectName == "SomeEngine.RenderGraph.Tests" &&
+               (portableGraphicsTerm || token is
+                   "Rhi" or "D3D12" or "Direct3D" or "DXGI" or
+                   "RenderGraph" or "RenderGraphHandle");
+    }
 
     private static bool ContainsForbiddenPathSegment(string relativePath, string segment)
     {

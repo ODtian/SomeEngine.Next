@@ -5,6 +5,14 @@ internal sealed record BarrierCommand(ResourceBarrier[] Barriers) : RecordedComm
 internal sealed record CopyBufferCommand(BufferHandle Source, ulong SourceOffset, BufferHandle Destination, ulong DestinationOffset, ulong Size) : RecordedCommand;
 internal sealed record CopyBufferToTextureCommand(BufferTextureCopy Copy) : RecordedCommand;
 internal sealed record CopyTextureToBufferCommand(TextureBufferCopy Copy) : RecordedCommand;
+internal sealed record CopyTextureCommand(TextureToTextureCopy Copy) : RecordedCommand;
+internal sealed record ClearBufferCommand(BufferHandle Buffer, BufferRange Range, uint Pattern) : RecordedCommand;
+internal sealed record ClearTextureCommand(TextureHandle Texture, TextureSubresourceRange Range, System.Numerics.Vector4 Color) : RecordedCommand;
+internal sealed record ClearDepthStencilTextureCommand(
+    TextureHandle Texture,
+    TextureSubresourceRange Range,
+    float Depth,
+    byte Stencil) : RecordedCommand;
 internal sealed record ResolveTextureCommand(TextureResolveRegion Resolve) : RecordedCommand;
 internal sealed record BeginRenderingCommand(RenderingInfo Rendering) : RecordedCommand;
 internal sealed record EndRenderingCommand : RecordedCommand;
@@ -23,5 +31,38 @@ internal sealed record SetIndexBufferCommand(BufferHandle Buffer, ulong Offset, 
 internal sealed record DrawCommand(uint VertexCount, uint InstanceCount, uint FirstVertex, uint FirstInstance) : RecordedCommand;
 internal sealed record DrawIndexedCommand(uint IndexCount, uint InstanceCount, uint FirstIndex, int VertexOffset, uint FirstInstance) : RecordedCommand;
 internal sealed record DispatchCommand(uint X, uint Y, uint Z) : RecordedCommand;
+internal sealed record DrawIndirectCommand(
+    BufferHandle ArgumentBuffer,
+    ulong ArgumentOffset,
+    uint MaxCommandCount,
+    uint CommandStride,
+    BufferHandle CountBuffer,
+    ulong CountBufferOffset) : RecordedCommand;
+internal sealed record DrawIndexedIndirectCommand(
+    BufferHandle ArgumentBuffer,
+    ulong ArgumentOffset,
+    uint MaxCommandCount,
+    uint CommandStride,
+    BufferHandle CountBuffer,
+    ulong CountBufferOffset) : RecordedCommand;
+internal sealed record DispatchIndirectCommand(
+    BufferHandle ArgumentBuffer,
+    ulong ArgumentOffset,
+    uint MaxCommandCount,
+    uint CommandStride,
+    BufferHandle CountBuffer,
+    ulong CountBufferOffset) : RecordedCommand;
+internal sealed record ResetQueryPoolCommand(QueryPoolHandle Pool, uint FirstQuery, uint QueryCount) : RecordedCommand;
+internal sealed record BeginQueryCommand(QueryPoolHandle Pool, uint QueryIndex) : RecordedCommand;
+internal sealed record EndQueryCommand(QueryPoolHandle Pool, uint QueryIndex) : RecordedCommand;
+internal sealed record WriteTimestampCommand(QueryPoolHandle Pool, uint QueryIndex) : RecordedCommand;
+internal sealed record ResolveQueryPoolCommand(
+    QueryPoolHandle Pool,
+    uint FirstQuery,
+    uint QueryCount,
+    BufferHandle Destination,
+    ulong DestinationOffset,
+    ulong DestinationStride) : RecordedCommand;
 internal sealed record PushDebugGroupCommand(string Name) : RecordedCommand;
 internal sealed record PopDebugGroupCommand : RecordedCommand;
+internal sealed record InsertDebugMarkerCommand(string Name) : RecordedCommand;

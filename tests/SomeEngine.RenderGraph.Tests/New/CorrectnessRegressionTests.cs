@@ -283,6 +283,94 @@ public sealed class CorrectnessRegressionTests
         Assert.NotEqual(ownerThread, workerThread);
         Assert.Equal(ownerThread, coordinatorThread);
         Assert.True(execution.Wait(TimeSpan.Zero));
+        AssertCrossQueueBatchOrderingAndOutput();
+    }
+
+    private static void AssertCrossQueueBatchOrderingAndOutput()
+    {
+        using Device device = new(new Options { AutoCompleteSubmissions = false });
+        byte[] expected = Enumerable.Range(0, 64).Select(static value => unchecked((byte)(value * 23 + 9))).ToArray();
+        BufferHandle upload = device.CreateBuffer(
+            new BufferDesc((ulong)expected.Length, BufferUsage.CopySource),
+            MemoryType.Upload);
+        BufferHandle readback = device.CreateBuffer(
+            new BufferDesc((ulong)expected.Length, BufferUsage.CopyDestination),
+            MemoryType.Readback);
+        device.WriteBuffer(upload, 0, expected);
+        try
+        {
+            using (RenderGraph compileGraph = new(device))
+            {
+                GraphBuilder compileBuilder = compileGraph.Begin();
+                BuildCrossQueueCopy(ref compileBuilder, upload, readback, (ulong)expected.Length);
+                GraphRecording recording = compileBuilder.Consume(compileGraph);
+                compileGraph.Abandon(recording);
+                FrozenGraph frozen = recording.Freeze(device);
+                CompiledGraph compiled = Compiler.Compile(frozen, device.Compilation, optimized: false);
+
+                Assert.Equal(2, compiled.ExecutionBatches.Length);
+                Assert.Equal(QueueType.Copy, compiled.ExecutionBatches[0].Queue);
+                Assert.Equal(QueueType.Graphics, compiled.ExecutionBatches[1].Queue);
+                Assert.Contains(0, compiled.ExecutionBatches[1].Dependencies);
+            }
+
+            using RenderGraph graph = new(device, new RenderGraphOptions
+            {
+                CompileOptimizedPlansAsynchronously = false,
+            });
+            GraphBuilder builder = graph.Begin();
+            BuildCrossQueueCopy(ref builder, upload, readback, (ulong)expected.Length);
+            GraphExecution execution = graph.Execute(ref builder);
+
+            Assert.Equal(2, device.Statistics.Submissions);
+            Assert.Equal(1, device.Statistics.SubmissionWaits);
+            GpuCompletion copy = Assert.Single(execution.Completions, static value => value.Queue == QueueType.Copy);
+            GpuCompletion graphics = Assert.Single(execution.Completions, static value => value.Queue == QueueType.Graphics);
+            Assert.Equal(0UL, device.GetCompletedValue(QueueType.Copy));
+            Assert.Equal(0UL, device.GetCompletedValue(QueueType.Graphics));
+            device.AdvanceCompletion(copy);
+            Assert.False(execution.Wait(TimeSpan.Zero));
+            device.AdvanceCompletion(graphics);
+            Assert.True(execution.Wait(TimeSpan.Zero));
+            byte[] actual = new byte[expected.Length];
+            device.ReadBuffer(readback, 0, actual);
+            Assert.Equal(expected, actual);
+        }
+        finally
+        {
+            device.DestroyBuffer(readback);
+            device.DestroyBuffer(upload);
+            device.CollectGarbage();
+        }
+    }
+
+    private static void BuildCrossQueueCopy(
+        ref GraphBuilder builder,
+        BufferHandle upload,
+        BufferHandle readback,
+        ulong size)
+    {
+        BufferId source = builder.ImportBuffer(upload, BufferUse.CopySource, BufferUse.CopySource);
+        BufferId destination = builder.ImportBuffer(
+            readback,
+            BufferUse.CopyDestination,
+            BufferUse.CopyDestination,
+            contentsAvailable: false);
+        BufferId intermediate = builder.CreateBuffer(new BufferDesc(
+            size,
+            BufferUsage.CopySource | BufferUsage.CopyDestination));
+
+        PassBuilder producer = builder.AddPass("cross-queue-producer", QueueSelection.Copy);
+        BufferAccess input = producer.Read(source, BufferUse.CopySource);
+        BufferAccess intermediateWrite = producer.Write(intermediate, BufferUse.CopyDestination);
+        producer.Execute((ICommandContext commands, in PassResources resources) =>
+            commands.CopyBuffer(resources.Get(input), 0, resources.Get(intermediateWrite), 0, size));
+
+        PassBuilder consumer = builder.AddPass("cross-queue-consumer", QueueSelection.Graphics);
+        BufferAccess intermediateRead = consumer.Read(intermediate, BufferUse.CopySource);
+        BufferAccess output = consumer.Write(destination, BufferUse.CopyDestination);
+        consumer.Execute((ICommandContext commands, in PassResources resources) =>
+            commands.CopyBuffer(resources.Get(intermediateRead), 0, resources.Get(output), 0, size));
     }
 
     private sealed class ObservableOutput : IDisposable

@@ -62,6 +62,21 @@ public readonly record struct CommandListHandle(DeviceDomain Domain, uint Slot, 
     public bool IsValid => Domain.IsValid && Slot != 0 && Generation != 0;
 }
 
+public readonly record struct QueryPoolHandle(DeviceDomain Domain, uint Slot, uint Generation)
+{
+    public bool IsValid => Domain.IsValid && Slot != 0 && Generation != 0;
+}
+
+public readonly record struct SwapchainHandle(DeviceDomain Domain, uint Slot, uint Generation)
+{
+    public bool IsValid => Domain.IsValid && Slot != 0 && Generation != 0;
+}
+
+public readonly record struct BindlessTableHandle(DeviceDomain Domain, uint Slot, uint Generation)
+{
+    public bool IsValid => Domain.IsValid && Slot != 0 && Generation != 0;
+}
+
 public enum ResourceKind : byte
 {
     Buffer,

@@ -30,17 +30,16 @@ internal static class CouplingComplexityAnalyzer
         context.RegisterCompilationStartAction(ctx =>
         {
             var config = AnalyzerConfigLoader.Load(ctx.Options);
-            var max = config.Complexity.MaxCoupledTypes;
-
             ctx.RegisterSyntaxNodeAction(
-                c => Analyze(c, max),
+                c => Analyze(c, config),
                 SyntaxKind.MethodDeclaration);
         });
     }
 
-    private static void Analyze(SyntaxNodeAnalysisContext ctx, int max)
+    private static void Analyze(SyntaxNodeAnalysisContext ctx, AnalyzerHarnessConfig config)
     {
         var method = (MethodDeclarationSyntax)ctx.Node;
+        int max = config.Complexity.MaxCoupledTypes;
         var types = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
         var containingType = ctx.SemanticModel.GetDeclaredSymbol(method)?.ContainingType;
 
@@ -55,7 +54,8 @@ internal static class CouplingComplexityAnalyzer
             CollectReferencedType(ctx, node, containingType, types);
         }
 
-        if (types.Count > max)
+        if (types.Count > max &&
+            !AcceptedDiagnosticBaseline.Contains(ctx, config, RuleId, method.Identifier, types.Count))
         {
             ctx.ReportDiagnostic(Diagnostic.Create(
                 Descriptors[0],

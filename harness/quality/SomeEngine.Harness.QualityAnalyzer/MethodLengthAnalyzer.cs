@@ -26,25 +26,25 @@ internal static class MethodLengthAnalyzer
         context.RegisterCompilationStartAction(ctx =>
         {
             var config = AnalyzerConfigLoader.Load(ctx.Options);
-            var max = config.Complexity.MaxMethodLines;
-
             ctx.RegisterSyntaxNodeAction(
-                c => Analyze(c, max),
+                c => Analyze(c, config),
                 SyntaxKind.MethodDeclaration);
         });
     }
 
-    private static void Analyze(SyntaxNodeAnalysisContext ctx, int max)
+    private static void Analyze(SyntaxNodeAnalysisContext ctx, AnalyzerHarnessConfig config)
     {
         var method = (MethodDeclarationSyntax)ctx.Node;
         if (method.Body is null && method.ExpressionBody is null) return;
+        int max = config.Complexity.MaxMethodLines;
 
         var span = method.Body ?? (SyntaxNode)method.ExpressionBody!;
         int lines = span.SyntaxTree.GetLineSpan(span.Span).EndLinePosition.Line
                   - span.SyntaxTree.GetLineSpan(span.Span).StartLinePosition.Line
                   + 1;
 
-        if (lines > max)
+        if (lines > max &&
+            !AcceptedDiagnosticBaseline.Contains(ctx, config, RuleId, method.Identifier, lines))
         {
             ctx.ReportDiagnostic(Diagnostic.Create(
                 Descriptors[0],

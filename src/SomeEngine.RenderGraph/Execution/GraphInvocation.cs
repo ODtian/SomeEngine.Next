@@ -12,8 +12,13 @@ internal sealed class GraphInvocation
     private readonly CommandListHandle[] _commands;
     private readonly GpuCompletion[] _batchCompletions;
     private readonly GpuCompletion[][] _externalWaits;
+    private readonly Capture? _capture;
 
-    private GraphInvocation(IDevice device, FrozenGraph frozen, CompiledGraphLease compiledLease)
+    private GraphInvocation(
+        IDevice device,
+        FrozenGraph frozen,
+        CompiledGraphLease compiledLease,
+        Capture? capture)
     {
         _device = device;
         Frozen = frozen;
@@ -28,6 +33,7 @@ internal sealed class GraphInvocation
         _commands = new CommandListHandle[_compiled.RecordUnits.Length];
         _batchCompletions = new GpuCompletion[_compiled.ExecutionBatches.Length];
         _externalWaits = BuildExternalWaits(frozen, _compiled);
+        _capture = capture;
     }
 
     public FrozenGraph Frozen { get; }
@@ -36,15 +42,20 @@ internal sealed class GraphInvocation
     public BufferViewHandle[] BufferViews { get; }
     public TextureViewHandle[] TextureViews { get; }
     internal DeviceDomain Domain => _device.Domain;
+    internal Capture? Capture => _capture;
 
-    public static GraphInvocation Realize(IDevice device, FrozenGraph frozen, CompiledGraphLease compiledLease)
+    public static GraphInvocation Realize(
+        IDevice device,
+        FrozenGraph frozen,
+        CompiledGraphLease compiledLease,
+        Capture? capture = null)
     {
         ArgumentNullException.ThrowIfNull(compiledLease);
         GraphInvocation? invocation = null;
         Exception? failure = null;
         try
         {
-            invocation = new GraphInvocation(device, frozen, compiledLease);
+            invocation = new GraphInvocation(device, frozen, compiledLease, capture);
             invocation.RealizeResourcesAndViews();
         }
         catch (Exception exception)

@@ -8,18 +8,26 @@ public readonly struct BufferId : IEquatable<BufferId>
 {
     private readonly GraphToken? _owner;
 
-    internal BufferId(GraphToken owner, int ordinal)
+    internal BufferId(GraphToken owner, int ordinal, short historyOffset = 0)
     {
         _owner = owner;
         Ordinal = ordinal;
+        HistoryOffset = historyOffset;
     }
 
     internal GraphToken? Owner => _owner;
     internal int Ordinal { get; }
+    internal short HistoryOffset { get; }
     public bool IsValid => _owner is not null && Ordinal >= 0;
-    public bool Equals(BufferId other) => ReferenceEquals(_owner, other._owner) && Ordinal == other.Ordinal;
+    public BufferId History(int framesAgo)
+    {
+        if (!IsValid) throw new InvalidOperationException("An invalid buffer id has no history.");
+        if (framesAgo <= 0 || framesAgo > short.MaxValue) throw new ArgumentOutOfRangeException(nameof(framesAgo));
+        return new BufferId(_owner!, Ordinal, checked((short)framesAgo));
+    }
+    public bool Equals(BufferId other) => ReferenceEquals(_owner, other._owner) && Ordinal == other.Ordinal && HistoryOffset == other.HistoryOffset;
     public override bool Equals(object? obj) => obj is BufferId other && Equals(other);
-    public override int GetHashCode() => HashCode.Combine(_owner, Ordinal);
+    public override int GetHashCode() => HashCode.Combine(_owner, Ordinal, HistoryOffset);
     public static bool operator ==(BufferId left, BufferId right) => left.Equals(right);
     public static bool operator !=(BufferId left, BufferId right) => !left.Equals(right);
 }
@@ -28,18 +36,26 @@ public readonly struct TextureId : IEquatable<TextureId>
 {
     private readonly GraphToken? _owner;
 
-    internal TextureId(GraphToken owner, int ordinal)
+    internal TextureId(GraphToken owner, int ordinal, short historyOffset = 0)
     {
         _owner = owner;
         Ordinal = ordinal;
+        HistoryOffset = historyOffset;
     }
 
     internal GraphToken? Owner => _owner;
     internal int Ordinal { get; }
+    internal short HistoryOffset { get; }
     public bool IsValid => _owner is not null && Ordinal >= 0;
-    public bool Equals(TextureId other) => ReferenceEquals(_owner, other._owner) && Ordinal == other.Ordinal;
+    public TextureId History(int framesAgo)
+    {
+        if (!IsValid) throw new InvalidOperationException("An invalid texture id has no history.");
+        if (framesAgo <= 0 || framesAgo > short.MaxValue) throw new ArgumentOutOfRangeException(nameof(framesAgo));
+        return new TextureId(_owner!, Ordinal, checked((short)framesAgo));
+    }
+    public bool Equals(TextureId other) => ReferenceEquals(_owner, other._owner) && Ordinal == other.Ordinal && HistoryOffset == other.HistoryOffset;
     public override bool Equals(object? obj) => obj is TextureId other && Equals(other);
-    public override int GetHashCode() => HashCode.Combine(_owner, Ordinal);
+    public override int GetHashCode() => HashCode.Combine(_owner, Ordinal, HistoryOffset);
     public static bool operator ==(TextureId left, TextureId right) => left.Equals(right);
     public static bool operator !=(TextureId left, TextureId right) => !left.Equals(right);
 }

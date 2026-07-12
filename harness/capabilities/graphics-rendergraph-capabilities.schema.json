@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://someengine.local/harness/capabilities/graphics-rendergraph-capabilities.schema.json",
+  "title": "SomeEngine Graphics and RenderGraph capability continuity manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestId",
+    "acceptedRun",
+    "targetRepository",
+    "checkpointCommit",
+    "baselineArtifact",
+    "baselinePublicApiInventory",
+    "levelOrder",
+    "lanes",
+    "capabilities"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "manifestId": { "const": "someengine.graphics-rendergraph.capability-continuity" },
+    "acceptedRun": { "const": "0004" },
+    "targetRepository": { "const": "F:/SomeEngine.Next" },
+    "checkpointCommit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "baselineArtifact": { "$ref": "#/$defs/baselineArtifact" },
+    "baselinePublicApiInventory": { "$ref": "#/$defs/baselinePublicApiInventory" },
+    "levelOrder": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "absent" },
+        { "const": "metadata" },
+        { "const": "public-contract" },
+        { "const": "compiler-lowering" },
+        { "const": "null-execution" },
+        { "const": "native-call" },
+        { "const": "native-execution" },
+        { "const": "renderer-consumer" }
+      ],
+      "items": false,
+      "minItems": 8,
+      "maxItems": 8
+    },
+    "lanes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/lane" }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/capability" }
+    }
+  },
+  "$defs": {
+    "level": {
+      "enum": [
+        "absent",
+        "metadata",
+        "public-contract",
+        "compiler-lowering",
+        "null-execution",
+        "native-call",
+        "native-execution",
+        "renderer-consumer"
+      ]
+    },
+    "baselineArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "requiredInCleanCheckout"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9A-F]{64}$" },
+        "requiredInCleanCheckout": { "type": "boolean" },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "baselinePublicApiInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "schemaPath", "schemaVersion", "groups"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "schemaPath": { "type": "string", "minLength": 1 },
+        "schemaVersion": { "const": 1 },
+        "groups": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "expectedCount"],
+            "properties": {
+              "id": { "enum": ["graphics-device-methods", "rendergraph-public-type-declarations"] },
+              "expectedCount": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "lane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "testProject", "required", "allowSilentSkip"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "testProject": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "allowSilentSkip": { "type": "boolean" },
+        "platform": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "note"],
+      "properties": {
+        "kind": { "enum": ["source-symbol", "test-symbol", "negative-audit"] },
+        "path": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "symbol"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 }
+      }
+    },
+    "testMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "symbol", "testId", "lane"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 },
+        "testId": { "type": "string", "minLength": 1 },
+        "lane": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mappings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public", "null", "d3d12", "renderGraph", "tests"],
+      "properties": {
+        "public": { "type": "array", "items": { "$ref": "#/$defs/mapping" } },
+        "null": { "type": "array", "items": { "$ref": "#/$defs/mapping" } },
+        "d3d12": { "type": "array", "items": { "$ref": "#/$defs/mapping" } },
+        "renderGraph": { "type": "array", "items": { "$ref": "#/$defs/mapping" } },
+        "tests": { "type": "array", "items": { "$ref": "#/$defs/testMapping" } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "run", "reason", "observableSemantics"],
+      "properties": {
+        "kind": { "enum": ["accepted-replacement", "truth-correction", "record-only-this-run"] },
+        "run": { "const": "0004" },
+        "reason": { "type": "string", "minLength": 1 },
+        "observableSemantics": { "type": "string", "minLength": 1 }
+      }
+    },
+    "documentationClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "marker", "claimedLevel"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "marker": { "type": "string", "minLength": 1 },
+        "claimedLevel": { "$ref": "#/$defs/level" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "aliases",
+        "family",
+        "scope",
+        "baselineLevel",
+        "baselineEvidence",
+        "currentLevel",
+        "requiredLevel",
+        "requiredAreas",
+        "requiredLanes",
+        "requiredTestIds",
+        "mappings",
+        "gaps",
+        "missingSemantics",
+        "documentationClaims"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "family": { "type": "string", "minLength": 1 },
+        "scope": {
+          "enum": [
+            "mandatory-core",
+            "retained-regression",
+            "accepted-replacement",
+            "advanced-record-only",
+            "recorded-gap"
+          ]
+        },
+        "baselineLevel": { "$ref": "#/$defs/level" },
+        "baselineEvidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+        "currentLevel": { "$ref": "#/$defs/level" },
+        "requiredLevel": { "$ref": "#/$defs/level" },
+        "requiredAreas": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["public", "null", "d3d12", "renderGraph", "tests"] }
+        },
+        "requiredLanes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "requiredTestIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "mappings": { "$ref": "#/$defs/mappings" },
+        "acceptedDecision": { "$ref": "#/$defs/decision" },
+        "gaps": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "missingSemantics": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "documentationClaims": { "type": "array", "items": { "$ref": "#/$defs/documentationClaim" } }
+      }
+    }
+  }
+}

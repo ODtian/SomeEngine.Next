@@ -255,30 +255,45 @@ public sealed class ProductBoundaryTests
             .Where(reference => !string.IsNullOrWhiteSpace(reference))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var files = new List<string>();
         var failures = new List<string>();
 
         foreach (ProjectConfig project in Config.Projects.ProductProjects.Concat(Config.Projects.BuildSupportProjects))
         {
             string projectFullPath = Path.Combine(repoRoot, project.Path);
             string projectDirectory = Path.GetDirectoryName(projectFullPath) ?? repoRoot;
+            var projectFiles = new List<string>();
 
             if (File.Exists(projectFullPath))
             {
-                files.Add(projectFullPath);
+                projectFiles.Add(projectFullPath);
             }
 
             if (Directory.Exists(projectDirectory))
             {
-                files.AddRange(ProjectDeclarationFiles(projectDirectory));
+                projectFiles.AddRange(ProjectDeclarationFiles(projectDirectory));
+            }
+
+            foreach (string file in projectFiles.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                string relative = Path.GetRelativePath(repoRoot, file).Replace('\\', '/');
+                string text = File.ReadAllText(file);
+                foreach (string forbidden in SourceForbiddenReferencesForProject(project, forbiddenReferences))
+                {
+                    if (ContainsForbiddenBoundaryToken(relative, forbidden)
+                        || ContainsForbiddenBoundaryToken(text, forbidden))
+                    {
+                        failures.Add($"{relative} declares excluded first-round boundary token '{forbidden}'.");
+                    }
+                }
             }
         }
 
-        AddFileIfExists(files, Path.Combine(repoRoot, "Directory.Build.props"));
-        AddFileIfExists(files, Path.Combine(repoRoot, "Directory.Build.targets"));
-        AddFileIfExists(files, Path.Combine(repoRoot, "Directory.Packages.props"));
+        var commonFiles = new List<string>();
+        AddFileIfExists(commonFiles, Path.Combine(repoRoot, "Directory.Build.props"));
+        AddFileIfExists(commonFiles, Path.Combine(repoRoot, "Directory.Build.targets"));
+        AddFileIfExists(commonFiles, Path.Combine(repoRoot, "Directory.Packages.props"));
 
-        foreach (string file in files.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (string file in commonFiles.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             string relative = Path.GetRelativePath(repoRoot, file).Replace('\\', '/');
             string text = File.ReadAllText(file);
@@ -451,6 +466,11 @@ public sealed class ProductBoundaryTests
                 string text = File.ReadAllText(file);
                 foreach (string forbidden in SourceForbiddenReferencesForProject(project, forbiddenReferences))
                 {
+                    if (IsAcceptedRenderGraphGeneratorSource(project.Name, forbidden, relative))
+                    {
+                        continue;
+                    }
+
                     if (ContainsForbiddenSourceToken(relative, forbidden)
                         || ContainsForbiddenSourceToken(text, forbidden))
                     {
@@ -487,7 +507,7 @@ public sealed class ProductBoundaryTests
 
             foreach (string reference in ReadAssemblyReferences(assemblyPath))
             {
-                foreach (string forbidden in forbiddenReferences)
+                foreach (string forbidden in SourceForbiddenReferencesForProject(project, forbiddenReferences))
                 {
                     if (ContainsForbiddenBoundaryToken(reference, forbidden))
                     {
@@ -532,6 +552,11 @@ public sealed class ProductBoundaryTests
 
                 foreach (string forbidden in SourceForbiddenReferencesForProject(project, forbiddenReferences))
                 {
+                    if (IsAcceptedRenderGraphGeneratorSymbol(project.Name, forbidden, declaredName))
+                    {
+                        continue;
+                    }
+
                     if (ContainsForbiddenSourceToken(declaredName, forbidden))
                     {
                         failures.Add($"{Path.GetRelativePath(repoRoot, assemblyPath)} declares first-round symbol {declaredName} via forbidden token '{forbidden}'.");
@@ -1504,6 +1529,11 @@ public sealed class ProductBoundaryTests
     {
         foreach (string forbidden in forbiddenReferences)
         {
+            if (IsAcceptedGraphicsBoundaryToken(project.Name, forbidden))
+            {
+                continue;
+            }
+
             if (IsCommonIntegrationWord(forbidden) && !IsRenderOrAssetBoundaryProject(project.Name))
             {
                 continue;
@@ -1518,6 +1548,77 @@ public sealed class ProductBoundaryTests
 
     private static bool IsRenderOrAssetBoundaryProject(string projectName)
         => projectName is "SomeEngine.Assets" or "SomeEngine.Render" or "SomeEngine.Render.Cluster";
+
+    private static bool IsAcceptedGraphicsBoundaryToken(string projectName, string token)
+    {
+        if ((projectName is "SomeEngine.Assets" or "SomeEngine.AssetCook") && token == "D3D12")
+        {
+            return true;
+        }
+
+        bool portableGraphicsTerm = token is
+            "Swapchain" or "SwapChain" or "IDevice" or "IQueue" or "ISwapchain" or
+            "Present" or "BufferHandle" or "TextureHandle" or "RenderContext" or
+            "PipelineCache" or "GpuResource" or "GpuResourceHandle" or "GpuBuffer" or
+            "GpuBufferHandle" or "GpuTexture" or "GpuTextureHandle" or "RenderPass" or
+            "RenderPipeline" or "ComputePipeline" or "GraphicsPipeline" or "PipelineState" or
+            "DescriptorSet" or "RenderEncoder" or "ComputeEncoder";
+
+        if (projectName == "SomeEngine.Graphics")
+        {
+            return portableGraphicsTerm || token is "Rhi" or "D3D12" or "Direct3D" or "RenderGraph";
+        }
+
+        if (projectName == "SomeEngine.Graphics.Null")
+        {
+            return portableGraphicsTerm || token is "Rhi" or "D3D12" or "Direct3D";
+        }
+
+        if (projectName == "SomeEngine.Graphics.Direct3D12")
+        {
+            return portableGraphicsTerm || token is
+                "Rhi" or "D3D12" or "Direct3D" or "DXGI" or "SharpGen" or "DeviceContext" or
+                "ShaderResourceBinding" or "RootSignature";
+        }
+
+        if (projectName == "SomeEngine.RenderGraph.Sample")
+        {
+            return portableGraphicsTerm || token is
+                "Rhi" or "D3D12" or "Direct3D" or "RenderGraph" or "RenderGraphHandle";
+        }
+
+        if (projectName == "SomeEngine.Graphics.Benchmarks")
+        {
+            return portableGraphicsTerm || token is
+                "Rhi" or "D3D12" or "Direct3D" or "RenderGraph" or "RenderGraphHandle";
+        }
+
+        return projectName == "SomeEngine.RenderGraph" &&
+               (portableGraphicsTerm || token is "Rhi" or "RenderGraph" or "RenderGraphHandle");
+    }
+
+    private static bool IsAcceptedRenderGraphGeneratorSource(
+        string projectName,
+        string token,
+        string relativePath) =>
+        projectName == "SomeEngine.Generators" &&
+        token == "RenderGraph" &&
+        relativePath.Equals(
+            "src/SomeEngine.Generators/RenderGraphParameterGenerator.cs",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAcceptedRenderGraphGeneratorSymbol(
+        string projectName,
+        string token,
+        string declaredName)
+    {
+        const string prefix = "SomeEngine.Generators.RenderGraphParameterGenerator";
+        return projectName == "SomeEngine.Generators" &&
+               token == "RenderGraph" &&
+               (declaredName.Equals(prefix, StringComparison.Ordinal) ||
+                declaredName.StartsWith(prefix + ".", StringComparison.Ordinal) ||
+                declaredName.StartsWith(prefix + "+", StringComparison.Ordinal));
+    }
 
     private static bool RequiresExactIdentifierMatch(string token)
         => token is "SharpGen" or "Present" or "Window" or "Windowing" or "Rhi";

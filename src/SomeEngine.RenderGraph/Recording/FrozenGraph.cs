@@ -92,7 +92,8 @@ internal sealed class FrozenGraph
                 pass.Shaders,
                 [],
                 null,
-                pass.Identity);
+                pass.Identity,
+                []);
         }
         return new FrozenGraph(Token, resources, BufferViews, TextureViews, passes, Canonical);
     }
@@ -115,9 +116,18 @@ internal readonly record struct FrozenResource(
     bool Imported,
     ImportedBuffer ImportedBuffer,
     ImportedTexture ImportedTexture,
-    ResourceRequirements Requirements)
+    ResourceRequirements Requirements,
+    ResourceLifetime Lifetime = ResourceLifetime.Transient,
+    Guid StableId = default,
+    int BaseOrdinal = 0,
+    short HistoryOffset = 0,
+    int HistoryCount = 0,
+    bool Exported = false,
+    ulong ContinuityGeneration = 0,
+    long ExportTicket = 0)
 {
     public bool IsImported => Imported;
+    public bool IsManaged => Lifetime != ResourceLifetime.Transient || Exported;
 }
 
 internal readonly record struct FrozenBufferView(
@@ -148,7 +158,8 @@ internal sealed class FrozenPass
         FrozenShaderContract[] shaders,
         PipelineHandle[] pipelines,
         PassExecution? execution,
-        ExecutorIdentity identity)
+        ExecutorIdentity identity,
+        FrozenQueryPool[]? queryPools = null)
     {
         Name = name;
         Queues = queues;
@@ -160,6 +171,7 @@ internal sealed class FrozenPass
         Pipelines = pipelines;
         Execution = execution;
         Identity = identity;
+        QueryPools = queryPools ?? [];
     }
 
     public string Name { get; }
@@ -172,7 +184,10 @@ internal sealed class FrozenPass
     public PipelineHandle[] Pipelines { get; }
     public PassExecution? Execution { get; }
     public ExecutorIdentity Identity { get; }
+    public FrozenQueryPool[] QueryPools { get; }
 }
+
+internal readonly record struct FrozenQueryPool(QueryPoolHandle Handle, QueryPoolMetadata Metadata);
 
 internal readonly record struct FrozenAccess(
     ResourceNodeKind Kind,

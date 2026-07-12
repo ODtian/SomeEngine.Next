@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "The run-0004 naming record cites established DrawIndirect/DrawIndexedIndirect/DispatchIndirect, QueryPool, Swapchain, parameter, history/export and capture terminology. Mechanical review finds no new prohibited public *Plan, *Run or non-entry *Program type, no obsolete forwarding shell and no backend-native name in the portable boundary."
+}

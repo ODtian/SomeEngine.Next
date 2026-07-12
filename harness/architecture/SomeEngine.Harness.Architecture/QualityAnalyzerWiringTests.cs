@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Xml.Linq;
 using SomeEngine.Harness.Core;
 using Xunit;
@@ -77,9 +78,77 @@ public sealed class QualityAnalyzerWiringTests
             .ToArray();
 
         Assert.Contains(additionalFiles, include => include.EndsWith("harness\\config.json"));
+        Assert.Contains(additionalFiles, include =>
+            include.EndsWith("harness\\quality-baselines\\graphics-rendergraph-hard.v1.json"));
+
+        string baselineDefault = document.Descendants()
+            .Single(element => element.Name.LocalName == "SomeEngineQualityBaselineEnabled")
+            .Value.Trim();
+        Assert.Equal("true", baselineDefault);
+
+        XElement baselineAdditionalFile = document.Descendants()
+            .Single(element =>
+                element.Name.LocalName == "AdditionalFiles"
+                && (element.Attribute("Include")?.Value ?? "").EndsWith(
+                    "harness\\quality-baselines\\graphics-rendergraph-hard.v1.json"));
+        Assert.Contains("SomeEngineQualityBaselineEnabled", baselineAdditionalFile.Attribute("Condition")?.Value ?? "");
 
         var itemGroupCondition = analyzerReference!.Parent?.Attribute("Condition")?.Value ?? "";
         Assert.Contains("SomeEngineQualityAnalyzerEnabled", itemGroupCondition);
+    }
+
+    [Fact]
+    public void GraphicsRenderGraphCheckpointBaselineIsExactAndReviewable()
+    {
+        string repoRoot = HarnessConfig.ResolveRepoRoot();
+        string baselinePath = Path.Combine(
+            repoRoot,
+            "harness",
+            "quality-baselines",
+            "graphics-rendergraph-hard.v1.json");
+        Assert.True(File.Exists(baselinePath), "The accepted RHI/RG quality baseline must be tracked.");
+
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(baselinePath));
+        JsonElement root = document.RootElement;
+        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal("c0ac382e", root.GetProperty("checkpointCommit").GetString());
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        int count = 0;
+        foreach (JsonElement entry in root.GetProperty("entries").EnumerateArray())
+        {
+            count++;
+            string id = entry.GetProperty("id").GetString() ?? "";
+            string assembly = entry.GetProperty("assembly").GetString() ?? "";
+            string path = entry.GetProperty("path").GetString() ?? "";
+            int line = entry.GetProperty("line").GetInt32();
+            string symbol = entry.GetProperty("symbol").GetString() ?? "";
+            int maximumObserved = entry.GetProperty("maximumObserved").GetInt32();
+            string reason = entry.GetProperty("reason").GetString() ?? "";
+
+            Assert.Contains(id, new[] { "SE020", "SE021", "SE022", "SE023", "SE024" });
+            Assert.Contains(assembly, new[]
+            {
+                "SomeEngine.Graphics.Direct3D12",
+                "SomeEngine.RenderGraph",
+            });
+            Assert.StartsWith("src/", path, StringComparison.Ordinal);
+            Assert.True(line > 0);
+            Assert.False(string.IsNullOrWhiteSpace(symbol));
+            Assert.True(maximumObserved > 0);
+            Assert.Contains("c0ac382e", reason, StringComparison.Ordinal);
+
+            string key = $"{id}|{assembly}|{path}|{line}|{symbol}";
+            Assert.True(keys.Add(key), $"Duplicate accepted quality diagnostic: {key}");
+
+            string sourcePath = Path.Combine(repoRoot, path.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(sourcePath), $"Accepted diagnostic source is missing: {path}");
+            string[] sourceLines = File.ReadAllLines(sourcePath);
+            Assert.InRange(line, 1, sourceLines.Length);
+            Assert.Contains(symbol, sourceLines[line - 1], StringComparison.Ordinal);
+        }
+
+        Assert.True(count > 0, "The checkpoint baseline must contain measured accepted diagnostics.");
     }
 
     [Fact]

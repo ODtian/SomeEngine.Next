@@ -11,7 +11,6 @@ public sealed class RasterPipelineTests
     [Fact]
     public void Unsupported_dxil_shader_model_is_rejected_before_pso_creation()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -42,7 +41,6 @@ public sealed class RasterPipelineTests
     [Fact]
     public void Sm62_zero_binding_triangle_pipeline_is_created_on_warp()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -109,7 +107,6 @@ public sealed class RasterPipelineTests
     [Fact]
     public void Sm62_triangle_draws_with_a_native_d32_depth_pipeline_and_attachment()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {

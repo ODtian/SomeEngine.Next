@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "Manifest and docs preserve checkpoint-vs-current truth: mesh shader, VRS and DXR remain absent after native-call-only checkpoint fragments; tiled/sparse and work graphs remain absent; sampler feedback remains metadata only. Missing API, tier, lowering and hardware-output semantics are enumerated without unsupported capability claims."
+}

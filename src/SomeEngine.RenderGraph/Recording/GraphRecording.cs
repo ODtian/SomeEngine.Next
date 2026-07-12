@@ -12,11 +12,17 @@ internal sealed class GraphRecording
     private readonly List<MutablePass> _passes = new();
     private readonly Dictionary<BufferHandle, int> _importedBuffers = new();
     private readonly Dictionary<TextureHandle, int> _importedTextures = new();
+    private readonly Dictionary<(int Resource, short HistoryOffset), int> _historyResources = new();
+    private readonly List<int> _exports = new();
     private bool _consumed;
 
     public GraphRecording() => Token = new GraphToken();
 
     public GraphToken Token { get; }
+    public long[] PreparedExportTickets => _resources
+        .Where(static resource => resource.Exported && resource.ExportTicket != 0)
+        .Select(static resource => resource.ExportTicket)
+        .ToArray();
 
     public BufferId AddBuffer(in BufferDesc desc, ImportedBuffer import)
     {
@@ -24,7 +30,16 @@ internal sealed class GraphRecording
         if (import.IsValid && !_importedBuffers.TryAdd(import.Handle, _resources.Count))
             throw new InvalidOperationException("A physical buffer may be imported only once per graph invocation.");
         int ordinal = _resources.Count;
-        _resources.Add(MutableResource.Buffer(desc, import));
+        _resources.Add(MutableResource.Buffer(desc, import, ordinal));
+        return new BufferId(Token, ordinal);
+    }
+
+    public BufferId AddBuffer(in BufferResourceDesc desc)
+    {
+        EnsureMutable();
+        desc.Validate();
+        int ordinal = _resources.Count;
+        _resources.Add(MutableResource.Buffer(desc, ordinal));
         return new BufferId(Token, ordinal);
     }
 
@@ -34,7 +49,16 @@ internal sealed class GraphRecording
         if (import.IsValid && !_importedTextures.TryAdd(import.Handle, _resources.Count))
             throw new InvalidOperationException("A physical texture may be imported only once per graph invocation.");
         int ordinal = _resources.Count;
-        _resources.Add(MutableResource.Texture(desc, import));
+        _resources.Add(MutableResource.Texture(desc, import, ordinal));
+        return new TextureId(Token, ordinal);
+    }
+
+    public TextureId AddTexture(in TextureResourceDesc desc)
+    {
+        EnsureMutable();
+        desc.Validate();
+        int ordinal = _resources.Count;
+        _resources.Add(MutableResource.Texture(desc, ordinal));
         return new TextureId(Token, ordinal);
     }
 
@@ -47,12 +71,12 @@ internal sealed class GraphRecording
         string? name)
     {
         EnsureMutable();
-        ValidateResource(buffer.Owner, buffer.Ordinal, ResourceNodeKind.Buffer);
-        FrozenResource resource = _resources[buffer.Ordinal].Freeze(default);
+        int resourceOrdinal = ResolveResource(buffer);
+        FrozenResource resource = _resources[resourceOrdinal].Freeze(default);
         BufferRange normalized = AccessNormalizer.NormalizeBuffer(resource.BufferDesc, range);
         ValidateBufferView(resource.BufferDesc, kind, format, stride, normalized);
         int ordinal = _bufferViews.Count;
-        _bufferViews.Add(new MutableBufferView(buffer.Ordinal, normalized, kind, format, stride, name));
+        _bufferViews.Add(new MutableBufferView(resourceOrdinal, normalized, kind, format, stride, name));
         return new BufferViewId(Token, ordinal);
     }
 
@@ -65,8 +89,8 @@ internal sealed class GraphRecording
         TextureViewDimension? dimension = null)
     {
         EnsureMutable();
-        ValidateResource(texture.Owner, texture.Ordinal, ResourceNodeKind.Texture);
-        FrozenResource resource = _resources[texture.Ordinal].Freeze(default);
+        int resourceOrdinal = ResolveResource(texture);
+        FrozenResource resource = _resources[resourceOrdinal].Freeze(default);
         TextureViewDimension resolvedDimension = dimension ?? InferTextureViewDimension(resource.TextureDesc);
         ValidatedTextureViewDescription validated = TextureViewValidation.Validate(
             resource.TextureDesc,
@@ -76,7 +100,7 @@ internal sealed class GraphRecording
             resolvedDimension);
         int ordinal = _textureViews.Count;
         _textureViews.Add(new MutableTextureView(
-            texture.Ordinal,
+            resourceOrdinal,
             validated.Range,
             validated.Usage,
             validated.Format,
@@ -123,8 +147,10 @@ internal sealed class GraphRecording
         WriteCoverage coverage)
     {
         EnsureMutable();
-        ValidateResource(buffer.Owner, buffer.Ordinal, ResourceNodeKind.Buffer);
-        return AddBufferAccessCore(pass, buffer.Ordinal, -1, effect, use, range, priorContents, coverage);
+        int resource = ResolveResource(buffer);
+        if (buffer.HistoryOffset != 0 && effect != ResourceEffect.Read)
+            throw new InvalidOperationException("Temporal history slices are read-only; write the current resource id instead.");
+        return AddBufferAccessCore(pass, resource, -1, effect, use, range, priorContents, coverage);
     }
 
     public TextureAccess AddTextureAccess(
@@ -137,10 +163,53 @@ internal sealed class GraphRecording
         WriteCoverage coverage)
     {
         EnsureMutable();
-        ValidateResource(texture.Owner, texture.Ordinal, ResourceNodeKind.Texture);
+        int resource = ResolveResource(texture);
+        if (texture.HistoryOffset != 0 && effect != ResourceEffect.Read)
+            throw new InvalidOperationException("Temporal history slices are read-only; write the current resource id instead.");
         if (use == TextureUse.ColorAttachment)
             throw new ArgumentException("Color attachments must be declared through PassBuilder.ColorAttachment using a graph texture view.", nameof(use));
-        return AddTextureAccessCore(pass, texture.Ordinal, -1, effect, use, range, priorContents, coverage);
+        return AddTextureAccessCore(pass, resource, -1, effect, use, range, priorContents, coverage);
+    }
+
+    public void AddExport(BufferId buffer)
+    {
+        EnsureMutable();
+        ValidateExport(buffer.Owner, buffer.Ordinal, buffer.HistoryOffset, ResourceNodeKind.Buffer);
+    }
+
+    public void AddExport(TextureId texture)
+    {
+        EnsureMutable();
+        ValidateExport(texture.Owner, texture.Ordinal, texture.HistoryOffset, ResourceNodeKind.Texture);
+    }
+
+    public void PrepareManagedResources(ResourceContinuity continuity, long frameIndex)
+    {
+        EnsureMutable();
+        ArgumentNullException.ThrowIfNull(continuity);
+        for (int resource = 0; resource < _resources.Count; resource++)
+        {
+            MutableResource value = _resources[resource];
+            if (!value.IsManaged || value.IsImported) continue;
+            PreparedResource prepared = continuity.Prepare(value, frameIndex);
+            value = value with
+            {
+                ImportedBuffer = prepared.Buffer,
+                ImportedTexture = prepared.Texture,
+                ContinuityGeneration = prepared.Generation,
+                ExportTicket = prepared.ExportTicket,
+            };
+            if (value.Kind == ResourceNodeKind.Buffer)
+            {
+                if (!_importedBuffers.TryAdd(prepared.Buffer.Handle, resource))
+                    throw new InvalidOperationException("Managed buffer identity resolves to the same physical slice more than once in one invocation.");
+            }
+            else if (!_importedTextures.TryAdd(prepared.Texture.Handle, resource))
+            {
+                throw new InvalidOperationException("Managed texture identity resolves to the same physical slice more than once in one invocation.");
+            }
+            _resources[resource] = value;
+        }
     }
 
     public BufferViewAccess AddBufferViewAccess(
@@ -363,6 +432,15 @@ internal sealed class GraphRecording
             throw new InvalidOperationException($"Pass '{mutablePass.Name}' already declares pipeline {pipeline}.");
     }
 
+    public void AddQueryPool(int pass, QueryPoolHandle pool)
+    {
+        EnsureMutable();
+        if (!pool.IsValid) throw new ArgumentException("A valid query-pool handle is required.", nameof(pool));
+        MutablePass mutablePass = GetPass(pass);
+        if (!mutablePass.QueryPools.Add(pool))
+            throw new InvalidOperationException($"Pass '{mutablePass.Name}' already declares query pool {pool}.");
+    }
+
     public void SetExecution(int pass, PassExecution execution)
     {
         EnsureMutable();
@@ -383,6 +461,8 @@ internal sealed class GraphRecording
         for (int index = 0; index < resources.Length; index++)
         {
             MutableResource resource = _resources[index];
+            if (resource.IsManaged && !resource.IsImported)
+                throw new InvalidOperationException("Managed graph resources must be prepared by their owning RenderGraph before freezing.");
             ResourceRequirements requirements = default;
             if (!resource.IsImported)
             {
@@ -407,6 +487,9 @@ internal sealed class GraphRecording
                 .Select(static attachment => attachment.Freeze())
                 .ToArray();
             FrozenDepthStencilAttachment? depthStencil = pass.DepthStencilAttachment?.Freeze();
+            FrozenQueryPool[] queryPools = pass.QueryPools
+                .Select(pool => new FrozenQueryPool(pool, device.GetQueryPoolMetadata(pool)))
+                .ToArray();
             foreach (FrozenShaderContract shader in pass.Shaders)
                 ShaderContractValidator.Validate(shader, pass.Name, accesses, bufferViews, textureViews);
             passes[index] = new FrozenPass(
@@ -419,11 +502,61 @@ internal sealed class GraphRecording
                 pass.Shaders.ToArray(),
                 pass.Pipelines.OrderBy(static pipeline => pipeline.Slot).ThenBy(static pipeline => pipeline.Generation).ToArray(),
                 execution,
-                identity);
+                identity,
+                queryPools);
         }
 
         GraphCanonicalData canonical = GraphCanonicalData.Create(device.Compilation, resources, bufferViews, textureViews, passes);
         return new FrozenGraph(Token, resources, bufferViews, textureViews, passes, canonical);
+    }
+
+    private int ResolveResource(BufferId buffer)
+    {
+        ValidateResource(buffer.Owner, buffer.Ordinal, ResourceNodeKind.Buffer);
+        return ResolveHistoryResource(buffer.Ordinal, buffer.HistoryOffset);
+    }
+
+    private int ResolveResource(TextureId texture)
+    {
+        ValidateResource(texture.Owner, texture.Ordinal, ResourceNodeKind.Texture);
+        return ResolveHistoryResource(texture.Ordinal, texture.HistoryOffset);
+    }
+
+    private int ResolveHistoryResource(int baseResource, short historyOffset)
+    {
+        if (historyOffset == 0) return baseResource;
+        MutableResource value = _resources[baseResource];
+        if (value.Lifetime != ResourceLifetime.Temporal)
+            throw new InvalidOperationException("Only temporal resources expose history slices.");
+        if (historyOffset > value.HistoryCount)
+            throw new ArgumentOutOfRangeException(nameof(historyOffset), $"The resource retains {value.HistoryCount} prior frames.");
+        if (_historyResources.TryGetValue((baseResource, historyOffset), out int existing)) return existing;
+        int ordinal = _resources.Count;
+        _resources.Add(value with
+        {
+            BaseOrdinal = baseResource,
+            HistoryOffset = historyOffset,
+            ImportedBuffer = default,
+            ImportedTexture = default,
+            Exported = false,
+            ExportTicket = 0,
+            ContinuityGeneration = 0,
+        });
+        _historyResources.Add((baseResource, historyOffset), ordinal);
+        return ordinal;
+    }
+
+    private void ValidateExport(GraphToken? owner, int ordinal, short historyOffset, ResourceNodeKind kind)
+    {
+        ValidateResource(owner, ordinal, kind);
+        if (historyOffset != 0) throw new InvalidOperationException("A prior history slice cannot be exported.");
+        MutableResource resource = _resources[ordinal];
+        if (resource.IsImported) throw new InvalidOperationException("Imported resources already have external ownership and cannot be exported.");
+        if (resource.Lifetime != ResourceLifetime.Transient)
+            throw new InvalidOperationException("Temporal and persistent resources remain owned by RenderGraph and cannot be exported.");
+        if (resource.Exported) throw new InvalidOperationException("A graph resource may be exported only once.");
+        _resources[ordinal] = resource with { Exported = true };
+        _exports.Add(ordinal);
     }
 
     private BufferAccess AddBufferAccessCore(
@@ -436,6 +569,8 @@ internal sealed class GraphRecording
         PriorContents priorContents,
         WriteCoverage coverage)
     {
+        if (_resources[resource].HistoryOffset != 0 && effect != ResourceEffect.Read)
+            throw new InvalidOperationException("Temporal history slices are read-only; write the current resource id instead.");
         ValidateBufferEffect(effect, use);
         MutablePass mutablePass = GetPass(pass);
         int access = mutablePass.Accesses.Count;
@@ -453,6 +588,8 @@ internal sealed class GraphRecording
         PriorContents priorContents,
         WriteCoverage coverage)
     {
+        if (_resources[resource].HistoryOffset != 0 && effect != ResourceEffect.Read)
+            throw new InvalidOperationException("Temporal history slices are read-only; write the current resource id instead.");
         ValidateTextureEffect(effect, use);
         MutablePass mutablePass = GetPass(pass);
         int access = mutablePass.Accesses.Count;
@@ -720,6 +857,7 @@ internal sealed class MutablePass
     public MutableDepthStencilAttachment? DepthStencilAttachment { get; set; }
     public List<FrozenShaderContract> Shaders { get; } = new();
     public HashSet<PipelineHandle> Pipelines { get; } = [];
+    public HashSet<QueryPoolHandle> QueryPools { get; } = [];
     public PassExecution? Execution { get; set; }
 }
 
@@ -729,7 +867,9 @@ internal readonly record struct ImportedBuffer(
     BufferUse InitialUse,
     BufferUse FinalUse,
     bool ContentsAvailable,
-    GpuCompletion[]? Readiness = null)
+    GpuCompletion[]? Readiness = null,
+    ResourceState? InitialStateOverride = null,
+    ResourceState? FinalStateOverride = null)
 {
     public bool IsValid => Handle.IsValid;
 }
@@ -740,7 +880,9 @@ internal readonly record struct ImportedTexture(
     TextureUse InitialUse,
     TextureUse FinalUse,
     bool ContentsAvailable,
-    GpuCompletion[]? Readiness = null)
+    GpuCompletion[]? Readiness = null,
+    ResourceState? InitialStateOverride = null,
+    ResourceState? FinalStateOverride = null)
 {
     public bool IsValid => Handle.IsValid;
 }
@@ -750,13 +892,47 @@ internal readonly record struct MutableResource(
     BufferDesc BufferDesc,
     TextureDesc TextureDesc,
     ImportedBuffer ImportedBuffer,
-    ImportedTexture ImportedTexture)
+    ImportedTexture ImportedTexture,
+    ResourceLifetime Lifetime,
+    Guid StableId,
+    int BaseOrdinal,
+    short HistoryOffset,
+    int HistoryCount,
+    bool Exported,
+    ulong ContinuityGeneration,
+    long ExportTicket)
 {
     public bool IsImported => Kind == ResourceNodeKind.Buffer ? ImportedBuffer.IsValid : ImportedTexture.IsValid;
+    public bool IsManaged => Lifetime != ResourceLifetime.Transient || Exported;
 
-    public static MutableResource Buffer(in BufferDesc desc, ImportedBuffer import) => new(ResourceNodeKind.Buffer, desc, default, import, default);
-    public static MutableResource Texture(in TextureDesc desc, ImportedTexture import) => new(ResourceNodeKind.Texture, default, desc, default, import);
-    public FrozenResource Freeze(ResourceRequirements requirements) => new(Kind, BufferDesc, TextureDesc, IsImported, ImportedBuffer, ImportedTexture, requirements);
+    public static MutableResource Buffer(in BufferDesc desc, ImportedBuffer import, int ordinal) =>
+        new(ResourceNodeKind.Buffer, desc, default, import, default, ResourceLifetime.Transient, default, ordinal, 0, 0, false, 0, 0);
+
+    public static MutableResource Buffer(in BufferResourceDesc desc, int ordinal) =>
+        new(ResourceNodeKind.Buffer, desc.Description, default, default, default, desc.Lifetime, desc.StableId, ordinal, 0, desc.HistoryCount, false, 0, 0);
+
+    public static MutableResource Texture(in TextureDesc desc, ImportedTexture import, int ordinal) =>
+        new(ResourceNodeKind.Texture, default, desc, default, import, ResourceLifetime.Transient, default, ordinal, 0, 0, false, 0, 0);
+
+    public static MutableResource Texture(in TextureResourceDesc desc, int ordinal) =>
+        new(ResourceNodeKind.Texture, default, desc.Description, default, default, desc.Lifetime, desc.StableId, ordinal, 0, desc.HistoryCount, false, 0, 0);
+
+    public FrozenResource Freeze(ResourceRequirements requirements) => new(
+        Kind,
+        BufferDesc,
+        TextureDesc,
+        IsImported,
+        ImportedBuffer,
+        ImportedTexture,
+        requirements,
+        Lifetime,
+        StableId,
+        BaseOrdinal,
+        HistoryOffset,
+        HistoryCount,
+        Exported,
+        ContinuityGeneration,
+        ExportTicket);
 }
 
 internal readonly record struct MutableAccess(

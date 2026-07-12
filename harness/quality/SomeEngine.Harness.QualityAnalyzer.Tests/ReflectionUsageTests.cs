@@ -16,7 +16,7 @@ public sealed class ReflectionUsageTests
     [Fact]
     public async Task SystemReflectionInvocation_Diagnostic()
     {
-        var test = new CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier>
+        var test = new OfflineAnalyzerTest
         {
             TestState =
             {

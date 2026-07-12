@@ -73,7 +73,10 @@ foreach ($relativePath in $projectPaths) {
         "--configuration",
         $Configuration,
         "-v",
-        $Verbosity
+        $Verbosity,
+        # Package availability belongs to this build gate; the separately hosted
+        # NuGet vulnerability feed must not turn a successful restore into NU1900.
+        "/p:NuGetAudit=false"
     )
 
     if ($NoRestore) {

@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace SomeEngine.RenderGraph;
 
 /// <summary>
@@ -33,6 +35,13 @@ internal sealed class GraphCommandContext : ICommandContext
         RequireBufferAccess(source, BufferUse.CopySource, ResourceEffect.Read, sourceOffset, size, nameof(CopyBuffer));
         RequireBufferAccess(destination, BufferUse.CopyDestination, ResourceEffect.Write, destinationOffset, size, nameof(CopyBuffer));
         _inner.CopyBuffer(source, sourceOffset, destination, destinationOffset, size);
+        _invocation.Capture?.RecordCommand(_pass, new CaptureCommand(
+            CaptureCommandKind.CopyBuffer,
+            FindBufferOrdinal(source, nameof(CopyBuffer)),
+            sourceOffset,
+            FindBufferOrdinal(destination, nameof(CopyBuffer)),
+            destinationOffset,
+            size));
     }
 
     public void CopyBufferToTexture(in BufferTextureCopy copy)
@@ -73,6 +82,27 @@ internal sealed class GraphCommandContext : ICommandContext
         _inner.CopyTextureToBuffer(copy);
     }
 
+    public void CopyTexture(in TextureToTextureCopy copy)
+    {
+        RequireTextureAccess(
+            copy.Source,
+            TextureUse.CopySource,
+            ResourceEffect.Read,
+            copy.SourceRegion.MipLevel,
+            copy.SourceRegion.ArrayLayer,
+            copy.SourceRegion.Aspect,
+            nameof(CopyTexture));
+        RequireTextureAccess(
+            copy.Destination,
+            TextureUse.CopyDestination,
+            ResourceEffect.Write,
+            copy.DestinationRegion.MipLevel,
+            copy.DestinationRegion.ArrayLayer,
+            copy.DestinationRegion.Aspect,
+            nameof(CopyTexture));
+        _inner.CopyTexture(copy);
+    }
+
     public void ResolveTexture(in TextureResolveRegion resolve)
     {
         RequireTextureAccess(
@@ -92,6 +122,51 @@ internal sealed class GraphCommandContext : ICommandContext
             resolve.Aspect,
             nameof(ResolveTexture));
         _inner.ResolveTexture(resolve);
+    }
+
+    public void ClearBuffer(BufferHandle buffer, in BufferRange range, uint pattern = 0)
+    {
+        BufferRange normalized = NormalizeBufferRange(buffer, range, nameof(ClearBuffer));
+        RequireBufferAccess(
+            buffer,
+            BufferUse.CopyDestination,
+            ResourceEffect.Write,
+            normalized.Offset,
+            normalized.Size,
+            nameof(ClearBuffer));
+        _inner.ClearBuffer(buffer, normalized, pattern);
+    }
+
+    public void ClearTexture(TextureHandle texture, in TextureSubresourceRange range, in Vector4 color)
+    {
+        TextureSubresourceRange normalized = AccessNormalizer.NormalizeTexture(
+            FindTextureDesc(texture, nameof(ClearTexture)),
+            range);
+        RequireTextureRangeAccess(
+            texture,
+            TextureUse.ColorAttachment,
+            ResourceEffect.Write,
+            normalized,
+            nameof(ClearTexture));
+        _inner.ClearTexture(texture, normalized, color);
+    }
+
+    public void ClearDepthStencilTexture(
+        TextureHandle texture,
+        in TextureSubresourceRange range,
+        float depth = 1f,
+        byte stencil = 0)
+    {
+        TextureSubresourceRange normalized = AccessNormalizer.NormalizeTexture(
+            FindTextureDesc(texture, nameof(ClearDepthStencilTexture)),
+            range);
+        RequireTextureRangeAccess(
+            texture,
+            TextureUse.DepthWrite,
+            ResourceEffect.Write,
+            normalized,
+            nameof(ClearDepthStencilTexture));
+        _inner.ClearDepthStencilTexture(texture, normalized, depth, stencil);
     }
 
     public void BeginRendering(in RenderingInfo rendering) =>
@@ -141,15 +216,7 @@ internal sealed class GraphCommandContext : ICommandContext
         foreach (FrozenShaderContract shader in Pass.Shaders)
         {
             if ((remaining & shader.Stage) == 0) continue;
-            foreach (PushConstantRange range in shader.PushConstants)
-            {
-                ulong rangeEnd = checked((ulong)range.Offset + range.Size);
-                if (byteOffset >= range.Offset && end <= rangeEnd && (range.Visibility & shader.Stage) != 0)
-                {
-                    remaining &= ~shader.Stage;
-                    break;
-                }
-            }
+            if (GraphCommandBindingValidation.CoversPushConstants(shader, byteOffset, end)) remaining &= ~shader.Stage;
         }
         if (remaining != 0)
             throw new InvalidOperationException("Push-constant write is not covered by every requested shader stage contract in this pass.");
@@ -197,8 +264,122 @@ internal sealed class GraphCommandContext : ICommandContext
     public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ) =>
         _inner.Dispatch(groupCountX, groupCountY, groupCountZ);
 
+    public void DrawIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
+    {
+        RequireIndirectArguments(
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            DrawIndirectArguments.ByteSize,
+            countBuffer,
+            countBufferOffset,
+            nameof(DrawIndirect));
+        _inner.DrawIndirect(argumentBuffer, argumentOffset, maxCommandCount, commandStride, countBuffer, countBufferOffset);
+    }
+
+    public void DrawIndexedIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
+    {
+        RequireIndirectArguments(
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            DrawIndexedIndirectArguments.ByteSize,
+            countBuffer,
+            countBufferOffset,
+            nameof(DrawIndexedIndirect));
+        _inner.DrawIndexedIndirect(argumentBuffer, argumentOffset, maxCommandCount, commandStride, countBuffer, countBufferOffset);
+    }
+
+    public void DispatchIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0)
+    {
+        RequireIndirectArguments(
+            argumentBuffer,
+            argumentOffset,
+            maxCommandCount,
+            commandStride,
+            DispatchIndirectArguments.ByteSize,
+            countBuffer,
+            countBufferOffset,
+            nameof(DispatchIndirect));
+        _inner.DispatchIndirect(argumentBuffer, argumentOffset, maxCommandCount, commandStride, countBuffer, countBufferOffset);
+    }
+
+    public void ResetQueryPool(QueryPoolHandle pool, uint firstQuery, uint queryCount)
+    {
+        _ = RequireQueryPool(pool, firstQuery, queryCount);
+        _inner.ResetQueryPool(pool, firstQuery, queryCount);
+    }
+
+    public void BeginQuery(QueryPoolHandle pool, uint queryIndex)
+    {
+        _ = RequireQueryPool(pool, queryIndex, 1);
+        _inner.BeginQuery(pool, queryIndex);
+    }
+
+    public void EndQuery(QueryPoolHandle pool, uint queryIndex)
+    {
+        _ = RequireQueryPool(pool, queryIndex, 1);
+        _inner.EndQuery(pool, queryIndex);
+    }
+
+    public void WriteTimestamp(QueryPoolHandle pool, uint queryIndex)
+    {
+        _ = RequireQueryPool(pool, queryIndex, 1);
+        _inner.WriteTimestamp(pool, queryIndex);
+    }
+
+    public void ResolveQueryPool(
+        QueryPoolHandle pool,
+        uint firstQuery,
+        uint queryCount,
+        BufferHandle destination,
+        ulong destinationOffset,
+        ulong destinationStride = 0)
+    {
+        QueryPoolMetadata metadata = RequireQueryPool(pool, firstQuery, queryCount).Metadata;
+        ulong stride = destinationStride == 0 ? metadata.ResultSize : destinationStride;
+        if (stride < metadata.ResultSize || (stride & 7) != 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(destinationStride),
+                "Query result stride must cover one result and be eight-byte aligned.");
+        if ((destinationOffset & 7) != 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(destinationOffset),
+                "Query result offset must be eight-byte aligned.");
+        ulong size = checked((ulong)(queryCount - 1) * stride + metadata.ResultSize);
+        RequireBufferAccess(
+            destination,
+            BufferUse.CopyDestination,
+            ResourceEffect.Write,
+            destinationOffset,
+            size,
+            nameof(ResolveQueryPool));
+        _inner.ResolveQueryPool(pool, firstQuery, queryCount, destination, destinationOffset, destinationStride);
+    }
+
     public void PushDebugGroup(string name) => _inner.PushDebugGroup(name);
     public void PopDebugGroup() => _inner.PopDebugGroup();
+    public void InsertDebugMarker(string name) => _inner.InsertDebugMarker(name);
 
     public CommandListHandle Finish() =>
         throw new InvalidOperationException("Command-list completion is owned by the render graph.");
@@ -207,6 +388,60 @@ internal sealed class GraphCommandContext : ICommandContext
         throw new InvalidOperationException("Command-context lifetime is owned by the render graph.");
 
     private FrozenPass Pass => _invocation.Frozen.Passes[_pass];
+
+    private void RequireIndirectArguments(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        uint recordSize,
+        BufferHandle countBuffer,
+        ulong countBufferOffset,
+        string operation)
+    {
+        if (maxCommandCount == 0) throw new ArgumentOutOfRangeException(nameof(maxCommandCount));
+        if ((argumentOffset & 3) != 0) throw new ArgumentOutOfRangeException(nameof(argumentOffset));
+        if (commandStride < recordSize || (commandStride & 3) != 0)
+            throw new ArgumentOutOfRangeException(nameof(commandStride));
+        ulong argumentBytes = checked((ulong)(maxCommandCount - 1) * commandStride + recordSize);
+        RequireBufferAccess(
+            argumentBuffer,
+            BufferUse.Indirect,
+            ResourceEffect.Read,
+            argumentOffset,
+            argumentBytes,
+            operation);
+        if (countBuffer.IsValid)
+        {
+            if ((countBufferOffset & 3) != 0) throw new ArgumentOutOfRangeException(nameof(countBufferOffset));
+            if (countBuffer == argumentBuffer)
+            {
+                ulong argumentEnd = checked(argumentOffset + argumentBytes);
+                ulong countEnd = checked(countBufferOffset + sizeof(uint));
+                if (argumentOffset < countEnd && countBufferOffset < argumentEnd)
+                    throw new ArgumentException(
+                        "Indirect argument and count ranges in the same buffer must not overlap.",
+                        nameof(countBufferOffset));
+            }
+            RequireBufferAccess(countBuffer, BufferUse.Indirect, ResourceEffect.Read, countBufferOffset, sizeof(uint), operation);
+        }
+        else if (countBufferOffset != 0)
+            throw new ArgumentException("A count-buffer offset requires a count buffer.", nameof(countBufferOffset));
+    }
+
+    private FrozenQueryPool RequireQueryPool(QueryPoolHandle pool, uint firstQuery, uint queryCount)
+    {
+        if (!pool.IsValid || pool.Domain != _invocation.Domain)
+            throw new ArgumentException("The query pool must be a valid handle from this device.", nameof(pool));
+        foreach (FrozenQueryPool frozen in Pass.QueryPools)
+        {
+            if (frozen.Handle != pool) continue;
+            if (queryCount == 0 || firstQuery >= frozen.Metadata.Count || queryCount > frozen.Metadata.Count - firstQuery)
+                throw new ArgumentOutOfRangeException(nameof(firstQuery), "The query range is outside the frozen query pool.");
+            return frozen;
+        }
+        throw new InvalidOperationException("The query pool was not frozen as an allowed choice for this pass.");
+    }
 
     private void RequireBufferAccess(
         BufferHandle handle,
@@ -252,34 +487,40 @@ internal sealed class GraphCommandContext : ICommandContext
         string operation)
     {
         if (!handle.IsValid) throw new ArgumentException($"{operation} requires a valid texture.");
-        for (int resource = 0; resource < _invocation.Textures.Length; resource++)
-        {
-            if (_invocation.Textures[resource] != handle) continue;
-            foreach (FrozenAccess access in Pass.Accesses)
-            {
-                TextureSubresourceRange range = access.TextureRange;
-                if (access.Kind != ResourceNodeKind.Texture ||
-                    access.Resource != resource ||
-                    access.TextureUse != use ||
-                    !Covers(access.Effect, requiredEffect) ||
-                    (range.Aspect & aspect) == 0)
-                {
-                    continue;
-                }
-
-                if (mip >= range.FirstMip &&
-                    mip < range.FirstMip + range.MipCount &&
-                    layer >= range.FirstLayer &&
-                    layer < range.FirstLayer + range.LayerCount)
-                {
-                    return;
-                }
-            }
+        int resource = Array.IndexOf(_invocation.Textures, handle);
+        if (resource < 0)
             throw new InvalidOperationException(
-                $"{operation} uses texture {handle} outside this pass's declared {requiredEffect}/{use} subresources.");
-        }
+                $"{operation} uses a texture that is not declared by this render-graph invocation.");
+        if (Pass.Accesses.Any(access => GraphCommandBindingValidation.CoversTextureAccess(
+                access,
+                resource,
+                use,
+                requiredEffect,
+                mip,
+                layer,
+                aspect)))
+            return;
         throw new InvalidOperationException(
-            $"{operation} uses a texture that is not declared by this render-graph invocation.");
+            $"{operation} uses texture {handle} outside this pass's declared {requiredEffect}/{use} subresources.");
+    }
+
+    private void RequireTextureRangeAccess(
+        TextureHandle handle,
+        TextureUse use,
+        ResourceEffect requiredEffect,
+        in TextureSubresourceRange range,
+        string operation)
+    {
+        for (int mip = range.FirstMip; mip < range.FirstMip + range.MipCount; mip++)
+        for (int layer = range.FirstLayer; layer < range.FirstLayer + range.LayerCount; layer++)
+        {
+            if ((range.Aspect & TextureAspect.Color) != 0)
+                RequireTextureAccess(handle, use, requiredEffect, mip, layer, TextureAspect.Color, operation);
+            if ((range.Aspect & TextureAspect.Depth) != 0)
+                RequireTextureAccess(handle, use, requiredEffect, mip, layer, TextureAspect.Depth, operation);
+            if ((range.Aspect & TextureAspect.Stencil) != 0)
+                RequireTextureAccess(handle, use, requiredEffect, mip, layer, TextureAspect.Stencil, operation);
+        }
     }
 
     private void ValidateBindingWrite(uint group, in BindingWrite write)
@@ -288,79 +529,16 @@ internal sealed class GraphCommandContext : ICommandContext
         foreach (FrozenShaderContract shader in Pass.Shaders)
         foreach (FrozenShaderBindingAccess mapping in shader.Accesses)
         {
-            if (mapping.Group != group ||
-                mapping.Binding != write.Binding ||
-                mapping.Element != write.Element)
-            {
-                continue;
-            }
+            if (!GraphCommandBindingValidation.Matches(mapping, group, write)) continue;
 
             matched = true;
-            ShaderBinding binding = shader.Bindings.Single(candidate =>
-                candidate.Group == mapping.Group && candidate.Binding == mapping.Binding);
-            ValidateBindingValueKind(binding.Kind, write);
-            switch (mapping.Kind)
-            {
-                case ShaderBindingAccessKind.BufferView:
-                    if (write.ValueKind != BindingValueKind.BufferView ||
-                        write.BufferView != _invocation.BufferViews[mapping.View])
-                    {
-                        throw new InvalidOperationException(
-                            "The bound buffer view does not match the pass's exact shader mapping.");
-                    }
-                    break;
-                case ShaderBindingAccessKind.TextureView:
-                    if (write.ValueKind != BindingValueKind.TextureView ||
-                        write.TextureView != _invocation.TextureViews[mapping.View])
-                    {
-                        throw new InvalidOperationException(
-                            "The bound texture view does not match the pass's exact shader mapping.");
-                    }
-                    break;
-                case ShaderBindingAccessKind.ExternallyManaged:
-                    ValidateExternalBindingDomain(write);
-                    break;
-                default:
-                    throw new InvalidOperationException("The frozen shader mapping kind is invalid.");
-            }
+            GraphCommandBindingValidation.ValidateMapped(_invocation, shader, mapping, write);
         }
 
         if (!matched)
         {
             throw new InvalidOperationException(
                 $"Descriptor ({group}, {write.Binding}) element {write.Element} is not frozen in this pass's shader contract.");
-        }
-    }
-
-    private void ValidateExternalBindingDomain(in BindingWrite write)
-    {
-        DeviceDomain domain = write.ValueKind switch
-        {
-            BindingValueKind.TextureView when write.TextureView.IsValid => write.TextureView.Domain,
-            BindingValueKind.BufferView when write.BufferView.IsValid => write.BufferView.Domain,
-            BindingValueKind.Sampler when write.Sampler.IsValid => write.Sampler.Domain,
-            _ => throw new ArgumentException(
-                "An externally managed descriptor write must contain one valid handle."),
-        };
-        if (domain != _invocation.Domain)
-            throw new ArgumentException("An externally managed descriptor belongs to another device domain.");
-    }
-
-    private static void ValidateBindingValueKind(BindingKind expected, in BindingWrite write)
-    {
-        BindingValueKind expectedValue = expected switch
-        {
-            BindingKind.ConstantBuffer or
-            BindingKind.ReadOnlyBuffer or
-            BindingKind.StorageBuffer => BindingValueKind.BufferView,
-            BindingKind.SampledTexture or BindingKind.StorageTexture => BindingValueKind.TextureView,
-            BindingKind.Sampler => BindingValueKind.Sampler,
-            _ => throw new InvalidOperationException($"Unsupported shader binding kind {expected}."),
-        };
-        if (write.ValueKind != expectedValue)
-        {
-            throw new InvalidOperationException(
-                $"Descriptor value kind {write.ValueKind} does not match shader binding kind {expected}.");
         }
     }
 
@@ -425,4 +603,133 @@ internal sealed class GraphCommandContext : ICommandContext
         }
         throw new InvalidOperationException($"{operation} uses a buffer outside this render-graph invocation.");
     }
+
+    private int FindBufferOrdinal(BufferHandle handle, string operation)
+    {
+        for (int resource = 0; resource < _invocation.Buffers.Length; resource++)
+            if (_invocation.Buffers[resource] == handle) return resource;
+        throw new InvalidOperationException($"{operation} uses a buffer outside this render-graph invocation.");
+    }
+
+    private BufferRange NormalizeBufferRange(BufferHandle handle, in BufferRange range, string operation)
+    {
+        ulong size = range.Size == ulong.MaxValue
+            ? RemainingBufferSize(handle, range.Offset, operation)
+            : range.Size;
+        if (size == 0) throw new ArgumentOutOfRangeException(nameof(range), $"{operation} requires a non-empty range.");
+        _ = checked(range.Offset + size);
+        return new BufferRange(range.Offset, size);
+    }
+}
+
+internal static class GraphCommandBindingValidation
+{
+    public static bool CoversPushConstants(in FrozenShaderContract shader, uint offset, ulong end)
+    {
+        foreach (PushConstantRange range in shader.PushConstants)
+        {
+            ulong rangeEnd = checked((ulong)range.Offset + range.Size);
+            if (offset >= range.Offset && end <= rangeEnd && (range.Visibility & shader.Stage) != 0)
+                return true;
+        }
+        return false;
+    }
+
+    public static bool CoversTextureAccess(
+        in FrozenAccess access,
+        int resource,
+        TextureUse use,
+        ResourceEffect requiredEffect,
+        int mip,
+        int layer,
+        TextureAspect aspect)
+    {
+        TextureSubresourceRange range = access.TextureRange;
+        return access.Kind == ResourceNodeKind.Texture &&
+            access.Resource == resource &&
+            access.TextureUse == use &&
+            Covers(access.Effect, requiredEffect) &&
+            (range.Aspect & aspect) != 0 &&
+            mip >= range.FirstMip &&
+            mip < range.FirstMip + range.MipCount &&
+            layer >= range.FirstLayer &&
+            layer < range.FirstLayer + range.LayerCount;
+    }
+
+    public static bool Matches(
+        in FrozenShaderBindingAccess mapping,
+        uint group,
+        in BindingWrite write) =>
+        mapping.Group == group && mapping.Binding == write.Binding && mapping.Element == write.Element;
+
+    public static void ValidateMapped(
+        GraphInvocation invocation,
+        in FrozenShaderContract shader,
+        in FrozenShaderBindingAccess mapping,
+        in BindingWrite write)
+    {
+        uint group = mapping.Group;
+        uint slot = mapping.Binding;
+        ShaderBinding binding = shader.Bindings.Single(candidate =>
+            candidate.Group == group && candidate.Binding == slot);
+        ValidateValueKind(binding.Kind, write);
+        switch (mapping.Kind)
+        {
+            case ShaderBindingAccessKind.BufferView:
+                if (write.ValueKind != BindingValueKind.BufferView ||
+                    write.BufferView != invocation.BufferViews[mapping.View])
+                    throw new InvalidOperationException(
+                        "The bound buffer view does not match the pass's exact shader mapping.");
+                break;
+            case ShaderBindingAccessKind.TextureView:
+                if (write.ValueKind != BindingValueKind.TextureView ||
+                    write.TextureView != invocation.TextureViews[mapping.View])
+                    throw new InvalidOperationException(
+                        "The bound texture view does not match the pass's exact shader mapping.");
+                break;
+            case ShaderBindingAccessKind.ExternallyManaged:
+                ValidateExternalDomain(invocation.Domain, write);
+                break;
+            default:
+                throw new InvalidOperationException("The frozen shader mapping kind is invalid.");
+        }
+    }
+
+    private static void ValidateExternalDomain(DeviceDomain expected, in BindingWrite write)
+    {
+        DeviceDomain actual = write.ValueKind switch
+        {
+            BindingValueKind.TextureView when write.TextureView.IsValid => write.TextureView.Domain,
+            BindingValueKind.BufferView when write.BufferView.IsValid => write.BufferView.Domain,
+            BindingValueKind.Sampler when write.Sampler.IsValid => write.Sampler.Domain,
+            _ => throw new ArgumentException(
+                "An externally managed descriptor write must contain one valid handle."),
+        };
+        if (actual != expected)
+            throw new ArgumentException("An externally managed descriptor belongs to another device domain.");
+    }
+
+    private static void ValidateValueKind(BindingKind expected, in BindingWrite write)
+    {
+        BindingValueKind expectedValue = expected switch
+        {
+            BindingKind.ConstantBuffer or
+            BindingKind.ReadOnlyBuffer or
+            BindingKind.StorageBuffer => BindingValueKind.BufferView,
+            BindingKind.SampledTexture or BindingKind.StorageTexture => BindingValueKind.TextureView,
+            BindingKind.Sampler => BindingValueKind.Sampler,
+            _ => throw new InvalidOperationException($"Unsupported shader binding kind {expected}."),
+        };
+        if (write.ValueKind != expectedValue)
+            throw new InvalidOperationException(
+                $"Descriptor value kind {write.ValueKind} does not match shader binding kind {expected}.");
+    }
+
+    private static bool Covers(ResourceEffect actual, ResourceEffect required) => required switch
+    {
+        ResourceEffect.Read => actual is ResourceEffect.Read or ResourceEffect.ReadWrite,
+        ResourceEffect.Write => actual is ResourceEffect.Write or ResourceEffect.ReadWrite,
+        ResourceEffect.ReadWrite => actual == ResourceEffect.ReadWrite,
+        _ => false,
+    };
 }

@@ -1,0 +1,942 @@
+{
+  "schemaVersion": 1,
+  "checkpointCommit": "c0ac382e",
+  "entries": [
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 36,
+      "symbol": "Barriers",
+      "maximumObserved": 63,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 36,
+      "symbol": "Barriers",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 146,
+      "symbol": "CopyTexture",
+      "maximumObserved": 22,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 146,
+      "symbol": "CopyTexture",
+      "maximumObserved": 66,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 306,
+      "symbol": "BeginRendering",
+      "maximumObserved": 20,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 306,
+      "symbol": "BeginRendering",
+      "maximumObserved": 66,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 306,
+      "symbol": "BeginRendering",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 451,
+      "symbol": "SetPushConstants",
+      "maximumObserved": 18,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 942,
+      "symbol": "Track",
+      "maximumObserved": 12,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 1278,
+      "symbol": "BindDepthStencil",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+      "line": 1378,
+      "symbol": "ValidatePipelineCompatibility",
+      "maximumObserved": 16,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 150,
+      "symbol": "AcquireCommandContext",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 191,
+      "symbol": "Submit",
+      "maximumObserved": 13,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 191,
+      "symbol": "Submit",
+      "maximumObserved": 73,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 191,
+      "symbol": "Submit",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 282,
+      "symbol": "Wait",
+      "maximumObserved": 13,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 464,
+      "symbol": "Dispose",
+      "maximumObserved": 19,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+      "line": 464,
+      "symbol": "Dispose",
+      "maximumObserved": 17,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 10,
+      "symbol": "CreateTextureViewCore",
+      "maximumObserved": 16,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 10,
+      "symbol": "CreateTextureViewCore",
+      "maximumObserved": 116,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 10,
+      "symbol": "CreateTextureViewCore",
+      "maximumObserved": 19,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 160,
+      "symbol": "CreateSamplerCore",
+      "maximumObserved": 11,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 377,
+      "symbol": "CreateBufferDescriptor",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 431,
+      "symbol": "ValidateBufferView",
+      "maximumObserved": 16,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 484,
+      "symbol": "CreateTextureShaderResourceView",
+      "maximumObserved": 97,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 484,
+      "symbol": "CreateTextureShaderResourceView",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/BindingSurface.cs",
+      "line": 587,
+      "symbol": "CreateTextureUnorderedAccessView",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineLayouts.cs",
+      "line": 7,
+      "symbol": "CreatePipelineLayoutCore",
+      "maximumObserved": 86,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineLayouts.cs",
+      "line": 7,
+      "symbol": "CreatePipelineLayoutCore",
+      "maximumObserved": 21,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineLayouts.cs",
+      "line": 95,
+      "symbol": "CreateComputePipelineCore",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineLayouts.cs",
+      "line": 177,
+      "symbol": "ValidatePushConstants",
+      "maximumObserved": 13,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 85,
+      "symbol": "CreateRasterPipeline",
+      "maximumObserved": 25,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 85,
+      "symbol": "CreateRasterPipeline",
+      "maximumObserved": 122,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 85,
+      "symbol": "CreateRasterPipeline",
+      "maximumObserved": 26,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 280,
+      "symbol": "DisposePipelineState",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 312,
+      "symbol": "CreateRenderTargetViewDescription",
+      "maximumObserved": 64,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 312,
+      "symbol": "CreateRenderTargetViewDescription",
+      "maximumObserved": 11,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 382,
+      "symbol": "CreateDepthStencilViewDescription",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 470,
+      "symbol": "ValidateDxilContainer",
+      "maximumObserved": 13,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 539,
+      "symbol": "CreateInputLayout",
+      "maximumObserved": 13,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.Graphics.Direct3D12",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
+      "line": 579,
+      "symbol": "CreateBlendState",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE022",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
+      "line": 5,
+      "symbol": "CompilationCache",
+      "maximumObserved": 26,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
+      "line": 59,
+      "symbol": "Acquire",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
+      "line": 186,
+      "symbol": "DrainCore",
+      "maximumObserved": 17,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
+      "line": 186,
+      "symbol": "DrainCore",
+      "maximumObserved": 79,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
+      "line": 283,
+      "symbol": "AcquireRequiredOptimized",
+      "maximumObserved": 80,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompiledGraphContract.cs",
+      "line": 40,
+      "symbol": "ValidateTopLevelShape",
+      "maximumObserved": 35,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompiledGraphContract.cs",
+      "line": 122,
+      "symbol": "ValidateExecutionTopology",
+      "maximumObserved": 62,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompiledGraphContract.cs",
+      "line": 122,
+      "symbol": "ValidateExecutionTopology",
+      "maximumObserved": 128,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompiledGraphContract.cs",
+      "line": 256,
+      "symbol": "ValidateRasterScope",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompiledGraphContract.cs",
+      "line": 317,
+      "symbol": "ValidatePlacements",
+      "maximumObserved": 24,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/CompiledGraphContract.cs",
+      "line": 658,
+      "symbol": "EnumerateCellIndices",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE022",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 3,
+      "symbol": "Compiler",
+      "maximumObserved": 29,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 13,
+      "symbol": "Compile",
+      "maximumObserved": 83,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 13,
+      "symbol": "Compile",
+      "maximumObserved": 15,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 128,
+      "symbol": "BuildExecution",
+      "maximumObserved": 38,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 128,
+      "symbol": "BuildExecution",
+      "maximumObserved": 152,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 419,
+      "symbol": "ValidateContents",
+      "maximumObserved": 30,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 419,
+      "symbol": "ValidateContents",
+      "maximumObserved": 81,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 419,
+      "symbol": "ValidateContents",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 502,
+      "symbol": "BuildRenderingPlans",
+      "maximumObserved": 55,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 502,
+      "symbol": "BuildRenderingPlans",
+      "maximumObserved": 121,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 502,
+      "symbol": "BuildRenderingPlans",
+      "maximumObserved": 19,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 625,
+      "symbol": "ValidateDepthStencilPlane",
+      "maximumObserved": 24,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 625,
+      "symbol": "ValidateDepthStencilPlane",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 676,
+      "symbol": "ValidateResourceContracts",
+      "maximumObserved": 19,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 725,
+      "symbol": "ValidateViewAccess",
+      "maximumObserved": 16,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 828,
+      "symbol": "BuildDependencies",
+      "maximumObserved": 17,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 870,
+      "symbol": "BuildBarriers",
+      "maximumObserved": 35,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 870,
+      "symbol": "BuildBarriers",
+      "maximumObserved": 170,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+      "line": 870,
+      "symbol": "BuildBarriers",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/GraphLiveness.cs",
+      "line": 35,
+      "symbol": "Analyze",
+      "maximumObserved": 26,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/GraphLiveness.cs",
+      "line": 35,
+      "symbol": "Analyze",
+      "maximumObserved": 95,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/RasterScopeCompiler.cs",
+      "line": 56,
+      "symbol": "Group",
+      "maximumObserved": 65,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/RasterScopeCompiler.cs",
+      "line": 132,
+      "symbol": "BreakReason",
+      "maximumObserved": 32,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/RasterScopeCompiler.cs",
+      "line": 132,
+      "symbol": "BreakReason",
+      "maximumObserved": 61,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/RasterScopeCompiler.cs",
+      "line": 132,
+      "symbol": "BreakReason",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/TransientAliasAllocator.cs",
+      "line": 31,
+      "symbol": "Place",
+      "maximumObserved": 22,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Compilation/TransientAliasAllocator.cs",
+      "line": 31,
+      "symbol": "Place",
+      "maximumObserved": 94,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE022",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs",
+      "line": 9,
+      "symbol": "GraphCommandContext",
+      "maximumObserved": 47,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/GraphInvocation.cs",
+      "line": 105,
+      "symbol": "RealizeResourcesAndViews",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/GraphInvocation.cs",
+      "line": 422,
+      "symbol": "MaterializeRenderingInfo",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/GraphInvocation.cs",
+      "line": 475,
+      "symbol": "DestroyTransients",
+      "maximumObserved": 13,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE023",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+      "line": 3,
+      "symbol": "RenderGraph",
+      "maximumObserved": 26,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+      "line": 105,
+      "symbol": "Execute",
+      "maximumObserved": 103,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+      "line": 105,
+      "symbol": "Execute",
+      "maximumObserved": 19,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/FrozenGraph.cs",
+      "line": 36,
+      "symbol": "DetachForCompilation",
+      "maximumObserved": 63,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphCanonicalData.cs",
+      "line": 79,
+      "symbol": "WriteResource",
+      "maximumObserved": 64,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphCanonicalData.cs",
+      "line": 152,
+      "symbol": "WritePass",
+      "maximumObserved": 84,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphCanonicalData.cs",
+      "line": 152,
+      "symbol": "WritePass",
+      "maximumObserved": 11,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE022",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 6,
+      "symbol": "GraphRecording",
+      "maximumObserved": 47,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 282,
+      "symbol": "AddColorAttachment",
+      "maximumObserved": 12,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 310,
+      "symbol": "AddDepthStencilAttachment",
+      "maximumObserved": 12,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 414,
+      "symbol": "AddShader",
+      "maximumObserved": 9,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 452,
+      "symbol": "Freeze",
+      "maximumObserved": 26,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 636,
+      "symbol": "ValidateImportedResources",
+      "maximumObserved": 21,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 636,
+      "symbol": "ValidateImportedResources",
+      "maximumObserved": 75,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/GraphRecording.cs",
+      "line": 636,
+      "symbol": "ValidateImportedResources",
+      "maximumObserved": 12,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/ShaderContracts.cs",
+      "line": 74,
+      "symbol": "Validate",
+      "maximumObserved": 17,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/ShaderContracts.cs",
+      "line": 74,
+      "symbol": "Validate",
+      "maximumObserved": 88,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/ShaderContracts.cs",
+      "line": 169,
+      "symbol": "ValidateInterface",
+      "maximumObserved": 33,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE021",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/ShaderContracts.cs",
+      "line": 169,
+      "symbol": "ValidateInterface",
+      "maximumObserved": 89,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE024",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/ShaderContracts.cs",
+      "line": 169,
+      "symbol": "ValidateInterface",
+      "maximumObserved": 10,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    },
+    {
+      "id": "SE020",
+      "assembly": "SomeEngine.RenderGraph",
+      "path": "src/SomeEngine.RenderGraph/Recording/ShaderContracts.cs",
+      "line": 290,
+      "symbol": "ValidateTextureMapping",
+      "maximumObserved": 14,
+      "reason": "c0ac382e accepted RHI/RG checkpoint; new or worsened diagnostics remain hard failures"
+    }
+  ]
+}

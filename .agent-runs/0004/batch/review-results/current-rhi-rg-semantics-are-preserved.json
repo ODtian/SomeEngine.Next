@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "Restored objects and commands use the existing DeviceDomain, slot/generation, submission, pinning and completion-retirement model. Native allocation requirements, CPU descriptor truth, exact buffer/subresource hazards, immediate recording, transparent exact-plan cache and ShaderAsset admission remain authoritative; no ZIP monolith, CPU mirror or second compiler was restored."
+}

@@ -37,6 +37,12 @@ internal static class TextureViewValidation
 
     private static void ValidateUsage(in TextureDesc texture, TextureViewUsage usage, Format format)
     {
+        ValidateResourceUsage(texture, usage);
+        ValidateFormatUsage(usage, format);
+    }
+
+    private static void ValidateResourceUsage(in TextureDesc texture, TextureViewUsage usage)
+    {
         if ((usage & TextureViewUsage.ShaderResource) != 0 && (texture.Usage & TextureUsage.Sampled) == 0)
             throw new ArgumentException("Shader-resource view usage requires a sampled texture.", nameof(usage));
         if ((usage & TextureViewUsage.Storage) != 0 && (texture.Usage & TextureUsage.Storage) == 0)
@@ -48,7 +54,10 @@ internal static class TextureViewValidation
         {
             throw new ArgumentException("Depth-stencil view usage requires a depth-stencil texture.", nameof(usage));
         }
+    }
 
+    private static void ValidateFormatUsage(TextureViewUsage usage, Format format)
+    {
         bool depth = IsDepth(format);
         if (depth && (usage & (TextureViewUsage.ColorAttachment | TextureViewUsage.Storage)) != 0)
             throw new ArgumentException("A depth format cannot have color-attachment or storage view usage.", nameof(usage));
@@ -65,25 +74,56 @@ internal static class TextureViewValidation
         Format format)
     {
         TextureAspect allowed = AllowedAspects(format);
-        TextureAspect defaultAspect = format == Format.D24UNormS8UInt &&
-                                      (usage & TextureViewUsage.DepthStencilAttachment) != 0
-            ? TextureAspect.Depth | TextureAspect.Stencil
-            : allowed == TextureAspect.Color ? TextureAspect.Color : TextureAspect.Depth;
+        TextureAspect defaultAspect = GetDefaultAspect(format, usage, allowed);
         bool whole = requested == default;
         int firstMip = whole ? 0 : requested.FirstMip;
         int firstLayer = whole ? 0 : requested.FirstLayer;
-        int mipCount = whole || requested.MipCount == int.MaxValue
-            ? texture.MipLevels - firstMip
-            : requested.MipCount;
-        int layerCount = whole || requested.LayerCount == int.MaxValue
-            ? texture.ArrayLayers - firstLayer
-            : requested.LayerCount;
+        int mipCount = ResolveCount(whole, requested.MipCount, texture.MipLevels, firstMip);
+        int layerCount = ResolveCount(whole, requested.LayerCount, texture.ArrayLayers, firstLayer);
         TextureAspect aspect = whole ? defaultAspect : requested.Aspect;
 
+        ValidateRange(texture, requested, firstMip, mipCount, firstLayer, layerCount);
+        ValidateAspect(requested, usage, aspect, allowed);
+        return new TextureSubresourceRange(firstMip, mipCount, firstLayer, layerCount, aspect);
+    }
+
+    private static TextureAspect GetDefaultAspect(
+        Format format,
+        TextureViewUsage usage,
+        TextureAspect allowed)
+    {
+        if (format == Format.D24UNormS8UInt &&
+            (usage & TextureViewUsage.DepthStencilAttachment) != 0)
+        {
+            return TextureAspect.Depth | TextureAspect.Stencil;
+        }
+
+        return allowed == TextureAspect.Color ? TextureAspect.Color : TextureAspect.Depth;
+    }
+
+    private static int ResolveCount(bool whole, int requested, int available, int first) =>
+        whole || requested == int.MaxValue ? available - first : requested;
+
+    private static void ValidateRange(
+        in TextureDesc texture,
+        in TextureSubresourceRange requested,
+        int firstMip,
+        int mipCount,
+        int firstLayer,
+        int layerCount)
+    {
         if (firstMip < 0 || mipCount <= 0 || firstMip > texture.MipLevels - mipCount)
             throw new ArgumentOutOfRangeException(nameof(requested), "Texture view mip range exceeds the resource.");
         if (firstLayer < 0 || layerCount <= 0 || firstLayer > texture.ArrayLayers - layerCount)
             throw new ArgumentOutOfRangeException(nameof(requested), "Texture view layer range exceeds the resource.");
+    }
+
+    private static void ValidateAspect(
+        in TextureSubresourceRange requested,
+        TextureViewUsage usage,
+        TextureAspect aspect,
+        TextureAspect allowed)
+    {
         if (aspect == 0 || (aspect & ~allowed) != 0)
             throw new ArgumentException("Texture view aspect is not exposed by its view format.", nameof(requested));
         if ((usage & TextureViewUsage.ShaderResource) != 0 &&
@@ -93,7 +133,6 @@ internal static class TextureViewValidation
         {
             throw new ArgumentException("A shader-resource view selects exactly one texture aspect.", nameof(requested));
         }
-        return new TextureSubresourceRange(firstMip, mipCount, firstLayer, layerCount, aspect);
     }
 
     private static void ValidateDimension(

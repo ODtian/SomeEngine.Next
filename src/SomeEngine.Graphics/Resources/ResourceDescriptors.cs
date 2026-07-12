@@ -155,14 +155,34 @@ public readonly struct TextureDesc : IEquatable<TextureDesc>
 
     public void Validate()
     {
+        ValidateExtents();
+        ValidateEnumsAndUsage();
+        ValidateViewFormats();
+        ValidateFormatUsage();
+        ValidateDimension();
+        ValidateMipLevels();
+        ValidateMultisampling();
+        ValidateCubeCompatibility();
+    }
+
+    private void ValidateExtents()
+    {
         if (Width <= 0 || Height <= 0 || Depth <= 0) throw new ArgumentOutOfRangeException(nameof(Width));
         if (MipLevels <= 0 || ArrayLayers <= 0 || SampleCount <= 0) throw new ArgumentOutOfRangeException(nameof(MipLevels));
+    }
+
+    private void ValidateEnumsAndUsage()
+    {
         if (!Enum.IsDefined(Dimension)) throw new ArgumentOutOfRangeException(nameof(Dimension));
         if (!Enum.IsDefined(Format) || Format == Format.Unknown) throw new ArgumentOutOfRangeException(nameof(Format));
         const TextureUsage allUsage = TextureUsage.CopySource | TextureUsage.CopyDestination |
                                         TextureUsage.Sampled | TextureUsage.Storage |
                                         TextureUsage.ColorAttachment | TextureUsage.DepthStencilAttachment;
         if (Usage == TextureUsage.None || (Usage & ~allUsage) != 0) throw new ArgumentOutOfRangeException(nameof(Usage));
+    }
+
+    private void ValidateViewFormats()
+    {
         if (AllowedViewFormats.IsDefaultOrEmpty || !AllowedViewFormats.Contains(Format))
             throw new ArgumentException("Allowed view formats must contain the resource format.", nameof(AllowedViewFormats));
         foreach (Format allowed in AllowedViewFormats)
@@ -174,13 +194,19 @@ public readonly struct TextureDesc : IEquatable<TextureDesc>
                     nameof(AllowedViewFormats));
             }
         }
+    }
 
+    private void ValidateFormatUsage()
+    {
         bool depthFormat = Format is Format.D24UNormS8UInt or Format.D32Float;
         if (depthFormat && (Usage & (TextureUsage.ColorAttachment | TextureUsage.Storage)) != 0)
             throw new ArgumentException("Depth formats cannot be color attachments or storage textures.", nameof(Usage));
         if (!depthFormat && (Usage & TextureUsage.DepthStencilAttachment) != 0)
             throw new ArgumentException("A color format cannot be a depth-stencil attachment.", nameof(Usage));
+    }
 
+    private void ValidateDimension()
+    {
         switch (Dimension)
         {
             case TextureDimension.Texture1D:
@@ -200,7 +226,10 @@ public readonly struct TextureDesc : IEquatable<TextureDesc>
             default:
                 throw new ArgumentOutOfRangeException(nameof(Dimension));
         }
+    }
 
+    private void ValidateMipLevels()
+    {
         int maximumMipLevels = 1 + (int)Math.Floor(Math.Log2(Dimension switch
         {
             TextureDimension.Texture1D => Width,
@@ -210,7 +239,10 @@ public readonly struct TextureDesc : IEquatable<TextureDesc>
         }));
         if (MipLevels > maximumMipLevels)
             throw new ArgumentOutOfRangeException(nameof(MipLevels), "Texture mip count exceeds its largest extent.");
+    }
 
+    private void ValidateMultisampling()
+    {
         if (SampleCount > 1 && (Dimension != TextureDimension.Texture2D || MipLevels != 1))
             throw new ArgumentException("A multisampled texture must be two-dimensional and expose exactly one mip level.", nameof(SampleCount));
         if (SampleCount > 1 && (Usage & TextureUsage.Storage) != 0)
@@ -219,6 +251,10 @@ public readonly struct TextureDesc : IEquatable<TextureDesc>
                 "A multisampled texture cannot declare storage usage.",
                 nameof(Usage));
         }
+    }
+
+    private void ValidateCubeCompatibility()
+    {
         if (CubeCompatible &&
             (Dimension != TextureDimension.Texture2D || SampleCount != 1 || Width != Height ||
              ArrayLayers < 6 || ArrayLayers % 6 != 0))

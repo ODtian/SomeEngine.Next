@@ -146,9 +146,12 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
                 boundariesByName.TryGetValue(boundaryName, out DomainBoundaryConfig? boundary),
                 $"Domain boundary {boundaryName} must be declared in harness/config.json.");
 
+            IEnumerable<string> requiredBackendReferences = boundaryName == "SomeEngine.Assets"
+                ? RequiredBackendForbiddenReferences.Where(static value => value != "D3D12")
+                : RequiredBackendForbiddenReferences;
             RequireContains(
                 $"{boundaryName} forbidden references",
-                RequiredBackendForbiddenReferences,
+                requiredBackendReferences,
                 boundary.ForbiddenReferences);
         }
 
@@ -686,7 +689,7 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         foreach (string required in new[]
         {
             "ActiveAgentRunReviewTargetsHaveRequiredSections",
-            "ActiveAgentRunReviewTargetsCoverAcceptedFirstRoundObjectives",
+            "ActiveAgentRunReviewTargetsMatchDeclaredObjectives",
             "ActiveAgentRunBatchInstructionsUseAcceptedAuthoringShape",
             "harness-change-does-not-weaken-contract",
             "migration-has-no-temporary-exceptions",
@@ -809,10 +812,14 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.ECS",
         "SomeEngine.ECS.Serialization",
         "SomeEngine.ECS.Systems",
+        "SomeEngine.Graphics",
+        "SomeEngine.Graphics.Direct3D12",
+        "SomeEngine.Graphics.Null",
         "SomeEngine.Job",
         "SomeEngine.Job.Dots",
         "SomeEngine.Render",
         "SomeEngine.Render.Cluster",
+        "SomeEngine.RenderGraph",
     ];
 
     private static readonly string[] RequiredProductProjectFacts =
@@ -822,22 +829,32 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.ECS:src/SomeEngine.ECS/SomeEngine.ECS.csproj",
         "SomeEngine.ECS.Serialization:src/SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj",
         "SomeEngine.ECS.Systems:src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj",
+        "SomeEngine.Graphics:src/SomeEngine.Graphics/SomeEngine.Graphics.csproj",
+        "SomeEngine.Graphics.Direct3D12:src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj",
+        "SomeEngine.Graphics.Null:src/SomeEngine.Graphics.Null/SomeEngine.Graphics.Null.csproj",
         "SomeEngine.Job:src/SomeEngine.Job/SomeEngine.Job.csproj",
         "SomeEngine.Job.Dots:src/SomeEngine.Job.Dots/SomeEngine.Job.Dots.csproj",
         "SomeEngine.Render:src/SomeEngine.Render/SomeEngine.Render.csproj",
         "SomeEngine.Render.Cluster:src/SomeEngine.Render.Cluster/SomeEngine.Render.Cluster.csproj",
+        "SomeEngine.RenderGraph:src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj",
     ];
 
     private static readonly string[] RequiredBuildSupportProjects =
     [
+        "SomeEngine.Graphics.Benchmarks",
+        "SomeEngine.AssetCook",
         "SomeEngine.ECS.SourceGen",
         "SomeEngine.Generators",
+        "SomeEngine.RenderGraph.Sample",
     ];
 
     private static readonly string[] RequiredBuildSupportProjectFacts =
     [
+        "SomeEngine.Graphics.Benchmarks:benchmarks/SomeEngine.Graphics.Benchmarks/SomeEngine.Graphics.Benchmarks.csproj",
+        "SomeEngine.AssetCook:tools/SomeEngine.AssetCook/SomeEngine.AssetCook.csproj",
         "SomeEngine.ECS.SourceGen:src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj",
         "SomeEngine.Generators:src/SomeEngine.Generators/SomeEngine.Generators.csproj",
+        "SomeEngine.RenderGraph.Sample:samples/SomeEngine.RenderGraph.Sample/SomeEngine.RenderGraph.Sample.csproj",
     ];
 
     private static readonly string[] RequiredTestProjects =
@@ -848,10 +865,13 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.ECS.SourceGen.Tests",
         "SomeEngine.ECS.Systems.Tests",
         "SomeEngine.ECS.Tests",
+        "SomeEngine.Graphics.Direct3D12.Tests",
+        "SomeEngine.Graphics.Tests",
         "SomeEngine.Job.Dots.Tests",
         "SomeEngine.Job.Tests",
         "SomeEngine.Render.Cluster.Tests",
         "SomeEngine.Render.Tests",
+        "SomeEngine.RenderGraph.Tests",
     ];
 
     private static readonly string[] RequiredTestProjectFacts =
@@ -862,10 +882,13 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.ECS.SourceGen.Tests:tests/SomeEngine.ECS.SourceGen.Tests/SomeEngine.ECS.SourceGen.Tests.csproj",
         "SomeEngine.ECS.Systems.Tests:tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj",
         "SomeEngine.ECS.Tests:tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj",
+        "SomeEngine.Graphics.Direct3D12.Tests:tests/SomeEngine.Graphics.Direct3D12.Tests/SomeEngine.Graphics.Direct3D12.Tests.csproj",
+        "SomeEngine.Graphics.Tests:tests/SomeEngine.Graphics.Tests/SomeEngine.Graphics.Tests.csproj",
         "SomeEngine.Job.Dots.Tests:tests/SomeEngine.Job.Dots.Tests/SomeEngine.Job.Dots.Tests.csproj",
         "SomeEngine.Job.Tests:tests/SomeEngine.Job.Tests/SomeEngine.Job.Tests.csproj",
         "SomeEngine.Render.Cluster.Tests:tests/SomeEngine.Render.Cluster.Tests/SomeEngine.Render.Cluster.Tests.csproj",
         "SomeEngine.Render.Tests:tests/SomeEngine.Render.Tests/SomeEngine.Render.Tests.csproj",
+        "SomeEngine.RenderGraph.Tests:tests/SomeEngine.RenderGraph.Tests/SomeEngine.RenderGraph.Tests.csproj",
     ];
 
     private static readonly string[] RequiredProductNuGetPackages =
@@ -874,6 +897,8 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.Assets:FlatSharp.Compiler:7.9.0",
         "SomeEngine.Assets:FlatSharp.Runtime:7.9.0",
         "SomeEngine.Assets:SharpGLTF.Core:1.0.6",
+        "SomeEngine.Graphics.Direct3D12:Vortice.Direct3D12:3.8.3",
+        "SomeEngine.Graphics.Direct3D12:Vortice.Mathematics:2.1.0",
     ];
 
     private static readonly string[] RequiredBuildSupportNuGetPackages =
@@ -911,6 +936,12 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.ECS.Tests:coverlet.collector:6.0.4",
         "SomeEngine.ECS.Tests:xunit.runner.visualstudio:3.1.4",
         "SomeEngine.ECS.Tests:xunit:2.9.3",
+        "SomeEngine.Graphics.Direct3D12.Tests:Microsoft.NET.Test.Sdk:17.14.1",
+        "SomeEngine.Graphics.Direct3D12.Tests:xunit.runner.visualstudio:3.1.4",
+        "SomeEngine.Graphics.Direct3D12.Tests:xunit:2.9.3",
+        "SomeEngine.Graphics.Tests:Microsoft.NET.Test.Sdk:17.14.1",
+        "SomeEngine.Graphics.Tests:xunit.runner.visualstudio:3.1.4",
+        "SomeEngine.Graphics.Tests:xunit:2.9.3",
         "SomeEngine.Job.Dots.Tests:Microsoft.NET.Test.Sdk:17.14.1",
         "SomeEngine.Job.Dots.Tests:coverlet.collector:6.0.4",
         "SomeEngine.Job.Dots.Tests:xunit.runner.visualstudio:3.1.4",
@@ -927,6 +958,9 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.Render.Tests:coverlet.collector:6.0.4",
         "SomeEngine.Render.Tests:xunit.runner.visualstudio:3.1.4",
         "SomeEngine.Render.Tests:xunit:2.9.3",
+        "SomeEngine.RenderGraph.Tests:Microsoft.NET.Test.Sdk:17.14.1",
+        "SomeEngine.RenderGraph.Tests:xunit.runner.visualstudio:3.1.4",
+        "SomeEngine.RenderGraph.Tests:xunit:2.9.3",
     ];
 
     private static readonly string[] RequiredProductDirectAssemblyReferences =
@@ -949,13 +983,17 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         {
             ["SomeEngine.Assets"] = ["SlangShaderSharp", "Alimer.Bindings.MeshOptimizer"],
             ["SomeEngine.Core"] = ["SomeEngine.Job", "SomeEngine.ECS", "SomeEngine.ECS.Systems"],
-            ["SomeEngine.ECS"] = [],
+            ["SomeEngine.ECS"] = ["SomeEngine.Job"],
             ["SomeEngine.ECS.Serialization"] = ["SomeEngine.ECS"],
             ["SomeEngine.ECS.Systems"] = ["SomeEngine.ECS", "SomeEngine.Job"],
+            ["SomeEngine.Graphics"] = [],
+            ["SomeEngine.Graphics.Direct3D12"] = ["SomeEngine.Graphics"],
+            ["SomeEngine.Graphics.Null"] = ["SomeEngine.Graphics"],
             ["SomeEngine.Job"] = [],
             ["SomeEngine.Job.Dots"] = ["SomeEngine.Job"],
-            ["SomeEngine.Render"] = ["SomeEngine.Core", "SomeEngine.Assets", "SomeEngine.ECS"],
+            ["SomeEngine.Render"] = ["SomeEngine.Core", "SomeEngine.Assets", "SomeEngine.ECS", "SomeEngine.Graphics"],
             ["SomeEngine.Render.Cluster"] = ["SomeEngine.Render", "SomeEngine.Core", "SomeEngine.Assets"],
+            ["SomeEngine.RenderGraph"] = ["SomeEngine.Graphics", "SomeEngine.Job"],
         };
 
     private static readonly string[] RequiredCoverageAssemblies =
@@ -965,10 +1003,14 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.ECS",
         "SomeEngine.ECS.Serialization",
         "SomeEngine.ECS.Systems",
+        "SomeEngine.Graphics",
+        "SomeEngine.Graphics.Direct3D12",
+        "SomeEngine.Graphics.Null",
         "SomeEngine.Job",
         "SomeEngine.Job.Dots",
         "SomeEngine.Render",
         "SomeEngine.Render.Cluster",
+        "SomeEngine.RenderGraph",
     ];
 
     private static readonly string[] RequiredExcludedProjectNames =
@@ -987,8 +1029,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
     private static readonly string[] RequiredExcludedWorkspaceRoots =
     [
-        "benchmarks",
-        "samples",
         "src/SomeEngine.Animation",
         "src/SomeEngine.Editor",
         "src/SomeEngine.Physics",
@@ -1072,7 +1112,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
     private static readonly string[] RequiredAssetsForbiddenPathSegments =
     [
-        "D3D12",
         "Direct3D",
         "DXGI",
         "Editor",

@@ -10,7 +10,6 @@ public sealed class ImmediateGraphTests
     [Fact]
     public void Immediate_graph_records_submits_and_reads_back_through_warp()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true, EnableDebugLayer = true });
         using RenderGraph graph = new(device);
@@ -55,7 +54,6 @@ public sealed class ImmediateGraphTests
     [Fact]
     public void Optimized_alias_plan_executes_internal_acquire_batches_on_warp()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true, EnableDebugLayer = true });
         using RenderGraph graph = new(device, new RenderGraphOptions { EnableTransientAliasing = true });
@@ -135,7 +133,6 @@ public sealed class ImmediateGraphTests
     [Fact]
     public void Reading_unproduced_transient_content_is_rejected()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true, EnableDebugLayer = true });
         using RenderGraph graph = new(device);
@@ -161,7 +158,6 @@ public sealed class ImmediateGraphTests
     [Fact]
     public void Dispose_joins_async_flight_without_terminal_publication_or_eviction_events()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true, EnableDebugLayer = true });
         FrozenGraph frozen = CreateFrozenCopy(device);

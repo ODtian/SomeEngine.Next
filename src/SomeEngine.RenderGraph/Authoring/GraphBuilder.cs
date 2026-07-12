@@ -22,11 +22,23 @@ public ref struct GraphBuilder
         return recording.AddBuffer(desc, default);
     }
 
+    public BufferId CreateBuffer(in BufferResourceDesc desc)
+    {
+        desc.Validate();
+        return GetRecording().AddBuffer(desc);
+    }
+
     public TextureId CreateTexture(in TextureDesc desc)
     {
         GraphRecording recording = GetRecording();
         desc.Validate();
         return recording.AddTexture(desc, default);
+    }
+
+    public TextureId CreateTexture(in TextureResourceDesc desc)
+    {
+        desc.Validate();
+        return GetRecording().AddTexture(desc);
     }
 
     public BufferViewId CreateBufferView(
@@ -66,6 +78,25 @@ public ref struct GraphBuilder
             readiness?.ToArray() ?? []));
     }
 
+    public BufferId ImportBuffer(
+        in ResourceExport export,
+        BufferUse finalUse,
+        bool contentsAvailable = true)
+    {
+        if (!export.IsBuffer) throw new ArgumentException("The export does not contain a buffer.", nameof(export));
+        BufferMetadata metadata = _owner.GetBufferMetadata(export.Buffer);
+        ValidateReadiness(export.Buffer.Domain, export.Completion);
+        return GetRecording().AddBuffer(metadata.Description, new ImportedBuffer(
+            export.Buffer,
+            metadata,
+            default,
+            finalUse,
+            contentsAvailable,
+            export.Completion.ToArray(),
+            export.FinalState,
+            null));
+    }
+
     public TextureId ImportTexture(
         TextureHandle texture,
         TextureUse initialUse,
@@ -85,6 +116,53 @@ public ref struct GraphBuilder
             readiness?.ToArray() ?? []));
     }
 
+    /// <summary>
+    /// Imports a texture whose external owner exposes explicit backend-neutral boundary states.
+    /// This keeps presentation ownership outside the graph while allowing an acquired backbuffer
+    /// to enter and leave the graph in <see cref="ResourceState.Present"/>.
+    /// </summary>
+    public TextureId ImportTexture(
+        TextureHandle texture,
+        ResourceState initialState,
+        ResourceState finalState,
+        bool contentsAvailable = true,
+        GpuCompletionSet? readiness = null)
+    {
+        if (!texture.IsValid) throw new ArgumentException("Imported texture handle is invalid.", nameof(texture));
+        if (!Enum.IsDefined(initialState)) throw new ArgumentOutOfRangeException(nameof(initialState));
+        if (!Enum.IsDefined(finalState)) throw new ArgumentOutOfRangeException(nameof(finalState));
+        TextureMetadata metadata = _owner.GetTextureMetadata(texture);
+        ValidateReadiness(texture.Domain, readiness);
+        return GetRecording().AddTexture(metadata.Description, new ImportedTexture(
+            texture,
+            metadata,
+            default,
+            default,
+            contentsAvailable,
+            readiness?.ToArray() ?? [],
+            initialState,
+            finalState));
+    }
+
+    public TextureId ImportTexture(
+        in ResourceExport export,
+        TextureUse finalUse,
+        bool contentsAvailable = true)
+    {
+        if (!export.IsTexture) throw new ArgumentException("The export does not contain a texture.", nameof(export));
+        TextureMetadata metadata = _owner.GetTextureMetadata(export.Texture);
+        ValidateReadiness(export.Texture.Domain, export.Completion);
+        return GetRecording().AddTexture(metadata.Description, new ImportedTexture(
+            export.Texture,
+            metadata,
+            default,
+            finalUse,
+            contentsAvailable,
+            export.Completion.ToArray(),
+            export.FinalState,
+            null));
+    }
+
     public PassBuilder AddPass(
         string name,
         QueueSelection allowedQueues,
@@ -96,6 +174,15 @@ public ref struct GraphBuilder
         int pass = recording.AddPass(name, allowedQueues, recordingLane);
         return new PassBuilder(recording, pass);
     }
+
+    /// <summary>
+    /// Makes a transient resource observable and transfers ownership only after the invocation's
+    /// GPU completion is published through <see cref="GraphExecution.Exports"/>.
+    /// </summary>
+    public void Export(BufferId buffer) => GetRecording().AddExport(buffer);
+
+    /// <inheritdoc cref="Export(BufferId)"/>
+    public void Export(TextureId texture) => GetRecording().AddExport(texture);
 
     internal GraphRecording Consume(RenderGraph owner)
     {
@@ -206,14 +293,14 @@ public ref struct PassBuilder
         StencilAttachmentOps? stencil = null) =>
         _recording.AddDepthStencilAttachment(_pass, view, depth, stencil);
 
-    public ShaderBindingAccess MapShaderBinding(
+    internal ShaderBindingAccess MapShaderBinding(
         uint group,
         uint binding,
         BufferViewAccess access,
         uint element = 0) =>
         _recording.AddShaderBindingAccess(_pass, group, binding, element, access);
 
-    public ShaderBindingAccess MapShaderBinding(
+    internal ShaderBindingAccess MapShaderBinding(
         uint group,
         uint binding,
         TextureViewAccess access,
@@ -224,16 +311,22 @@ public ref struct PassBuilder
     /// Marks a descriptor element as managed outside the render graph. Only bindings whose resolved
     /// shader effect is read-only may use this marker.
     /// </summary>
-    public ShaderBindingAccess MapExternallyManagedShaderBinding(uint group, uint binding, uint element = 0) =>
+    internal ShaderBindingAccess MapExternallyManagedShaderBinding(uint group, uint binding, uint element = 0) =>
         _recording.AddExternallyManagedShaderBinding(_pass, group, binding, element);
 
     public void UsesShader(in ShaderDesc shader) => _recording.AddShader(_pass, shader, ReadOnlySpan<ShaderBindingAccess>.Empty);
 
-    public void UsesShader(in ShaderDesc shader, ReadOnlySpan<ShaderBindingAccess> bindings) =>
+    internal void UsesShader(in ShaderDesc shader, ReadOnlySpan<ShaderBindingAccess> bindings) =>
         _recording.AddShader(_pass, shader, bindings);
 
     /// <summary>Freezes one physical pipeline as an allowed execute-time choice for this pass.</summary>
     public void UsesPipeline(PipelineHandle pipeline) => _recording.AddPipeline(_pass, pipeline);
+
+    /// <summary>
+    /// Freezes one physical query pool, including its type, count, and result width, as an
+    /// allowed execute-time choice for this pass.
+    /// </summary>
+    public void UsesQueryPool(QueryPoolHandle pool) => _recording.AddQueryPool(_pass, pool);
 
     public void Execute(PassExecution execute)
     {

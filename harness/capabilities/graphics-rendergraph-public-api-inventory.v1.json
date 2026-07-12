@@ -1,0 +1,2325 @@
+{
+  "$schema": "graphics-rendergraph-public-api-inventory.schema.json",
+  "schemaVersion": 1,
+  "inventoryId": "someengine.graphics-rendergraph.original-public-api",
+  "acceptedRun": "0004",
+  "baselineArtifactSha256": "F2C1FC049134DB57C8B6BF038E3D0270ECC5FF7AB1A58E72D8D411FF81E53987",
+  "groups": [
+    {
+      "id": "graphics-device-methods",
+      "symbolKind": "method",
+      "path": "src/Graphics/IDevice.cs",
+      "pathIsPrefix": false,
+      "expectedCount": 130
+    },
+    {
+      "id": "rendergraph-public-type-declarations",
+      "symbolKind": "type-declaration",
+      "path": "src/RenderGraph.Core/",
+      "pathIsPrefix": true,
+      "expectedCount": 100
+    }
+  ],
+  "symbols": [
+    {
+      "id": "graphics.idevice.001",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetMemoryBudget",
+      "symbol": "MemoryBudget GetMemoryBudget(HeapClass heapClass);",
+      "capabilityId": "rhi.memory-budget-residency",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.memory-budget-residency; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.002",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetName",
+      "symbol": "void SetName(ObjectKind kind, uint handle, string? name);",
+      "capabilityId": "rhi.object-naming-debug-markers",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.object-naming-debug-markers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.003",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetTextureRequirements",
+      "symbol": "ResourceRequirements GetTextureRequirements(in TextureDesc desc);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.004",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetBufferRequirements",
+      "symbol": "ResourceRequirements GetBufferRequirements(in BufferDesc desc);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.005",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateHeap",
+      "symbol": "HeapHandle CreateHeap(in HeapDesc desc);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.006",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyHeap",
+      "symbol": "void DestroyHeap(HeapHandle heap);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.007",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreatePlacedTexture",
+      "symbol": "TextureHandle CreatePlacedTexture(HeapHandle heap, ulong offset, in TextureDesc desc);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.008",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreatePlacedBuffer",
+      "symbol": "BufferHandle CreatePlacedBuffer(HeapHandle heap, ulong offset, in BufferDesc desc);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.009",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyTexture",
+      "symbol": "void DestroyTexture(TextureHandle texture);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.010",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyBuffer",
+      "symbol": "void DestroyBuffer(BufferHandle buffer);",
+      "capabilityId": "rhi.resource-allocation-aliasing",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.resource-allocation-aliasing; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.011",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateTextureView",
+      "symbol": "TextureViewHandle CreateTextureView(in TextureViewDesc desc);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.012",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateBufferView",
+      "symbol": "BufferViewHandle CreateBufferView(in BufferViewDesc desc);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.013",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateSampler",
+      "symbol": "SamplerHandle CreateSampler(in SamplerDesc desc);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.014",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyTextureView",
+      "symbol": "void DestroyTextureView(TextureViewHandle view);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.015",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyBufferView",
+      "symbol": "void DestroyBufferView(BufferViewHandle view);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.016",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroySampler",
+      "symbol": "void DestroySampler(SamplerHandle sampler);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.017",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateBindGroupLayout",
+      "symbol": "BindGroupLayoutHandle CreateBindGroupLayout(ReadOnlySpan<BindingDesc> bindings);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.018",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreatePipelineLayout",
+      "symbol": "PipelineLayoutHandle CreatePipelineLayout(ReadOnlySpan<BindGroupLayoutHandle> groups, ReadOnlySpan<PushConstantRange> pushConstants);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.019",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateShader",
+      "symbol": "ShaderHandle CreateShader(in ShaderDesc desc);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.020",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateRasterPipeline",
+      "symbol": "PipelineHandle CreateRasterPipeline(in RasterPipelineDesc desc);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.021",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateComputePipeline",
+      "symbol": "PipelineHandle CreateComputePipeline(in ComputePipelineDesc desc);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.022",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateMeshPipeline",
+      "symbol": "PipelineHandle CreateMeshPipeline(in MeshPipelineDesc desc);",
+      "capabilityId": "advanced.mesh-shader",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.mesh-shader; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.023",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateRayTracingPipeline",
+      "symbol": "PipelineHandle CreateRayTracingPipeline(in RayTracingPipelineDesc desc);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.024",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateWorkGraphProgram",
+      "symbol": "WorkGraphProgramHandle CreateWorkGraphProgram(in WorkGraphProgramDesc desc);",
+      "capabilityId": "advanced.work-graphs",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.work-graphs; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.025",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetWorkGraphMemoryRequirements",
+      "symbol": "WorkGraphMemoryRequirements GetWorkGraphMemoryRequirements(WorkGraphProgramHandle program);",
+      "capabilityId": "advanced.work-graphs",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.work-graphs; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.026",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyWorkGraphProgram",
+      "symbol": "void DestroyWorkGraphProgram(WorkGraphProgramHandle program);",
+      "capabilityId": "advanced.work-graphs",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.work-graphs; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.027",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetPipelineInfo",
+      "symbol": "PipelineInfo GetPipelineInfo(PipelineHandle pipeline);",
+      "capabilityId": "rhi.pipeline-readiness-cache",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.pipeline-readiness-cache; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.028",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetPipelineStatus",
+      "symbol": "PipelineStatus GetPipelineStatus(PipelineHandle pipeline);",
+      "capabilityId": "rhi.pipeline-readiness-cache",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.pipeline-readiness-cache; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.029",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetPipelineCacheStats",
+      "symbol": "PipelineCacheStats GetPipelineCacheStats();",
+      "capabilityId": "rhi.pipeline-readiness-cache",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.pipeline-readiness-cache; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.030",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "InvalidatePipelineCache",
+      "symbol": "void InvalidatePipelineCache(PipelineCacheKey key);",
+      "capabilityId": "rhi.pipeline-readiness-cache",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.pipeline-readiness-cache; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.031",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "InvalidateAllPipelines",
+      "symbol": "void InvalidateAllPipelines();",
+      "capabilityId": "rhi.pipeline-readiness-cache",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.pipeline-readiness-cache; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.032",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateSwapchain",
+      "symbol": "SwapchainHandle CreateSwapchain(in SwapchainDesc desc);",
+      "capabilityId": "rhi.swapchain-presentation",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.swapchain-presentation; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.033",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "AcquireNextTexture",
+      "symbol": "TextureHandle AcquireNextTexture(SwapchainHandle swapchain, out uint imageIndex);",
+      "capabilityId": "rhi.swapchain-presentation",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.swapchain-presentation; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.034",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "Present",
+      "symbol": "Status Present(SwapchainHandle swapchain, uint imageIndex, ReadOnlySpan<QueueWait> waits);",
+      "capabilityId": "rhi.swapchain-presentation",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.swapchain-presentation; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.035",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ResizeSwapchain",
+      "symbol": "void ResizeSwapchain(SwapchainHandle swapchain, int width, int height);",
+      "capabilityId": "rhi.swapchain-presentation",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.swapchain-presentation; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.036",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyBindGroupLayout",
+      "symbol": "void DestroyBindGroupLayout(BindGroupLayoutHandle layout);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.037",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyPipelineLayout",
+      "symbol": "void DestroyPipelineLayout(PipelineLayoutHandle layout);",
+      "capabilityId": "rhi.traditional-binding-descriptor-arrays",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.traditional-binding-descriptor-arrays; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.038",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyShader",
+      "symbol": "void DestroyShader(ShaderHandle shader);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.039",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyPipeline",
+      "symbol": "void DestroyPipeline(PipelineHandle pipeline);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.040",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroySwapchain",
+      "symbol": "void DestroySwapchain(SwapchainHandle swapchain);",
+      "capabilityId": "rhi.swapchain-presentation",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.swapchain-presentation; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.041",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetAccelerationStructurePrebuildInfo",
+      "symbol": "AccelerationStructurePrebuildInfo GetAccelerationStructurePrebuildInfo(in AccelerationStructureDesc desc);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.042",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateAccelerationStructure",
+      "symbol": "AccelerationStructureHandle CreateAccelerationStructure(in AccelerationStructureDesc desc);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.043",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CompactAccelerationStructure",
+      "symbol": "void CompactAccelerationStructure(CommandBufferHandle commandBuffer, in AccelerationStructureCompactionInfo info);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.044",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyAccelerationStructure",
+      "symbol": "void DestroyAccelerationStructure(AccelerationStructureHandle accelerationStructure);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.045",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetResidencyPriority",
+      "symbol": "void SetResidencyPriority(ResourceHandle resource, ResidencyPriority priority);",
+      "capabilityId": "rhi.memory-budget-residency",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.memory-budget-residency; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.046",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetResourceMemoryInfo",
+      "symbol": "ResourceMemoryInfo GetResourceMemoryInfo(ResourceHandle resource);",
+      "capabilityId": "rhi.memory-budget-residency",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.memory-budget-residency; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.047",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetFormatSupport",
+      "symbol": "FormatSupport GetFormatSupport(Format format);",
+      "capabilityId": "rhi.format-support-limits",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.format-support-limits; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.048",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateQueryPool",
+      "symbol": "QueryPoolHandle CreateQueryPool(in QueryPoolDesc desc);",
+      "capabilityId": "rhi.query.timestamp",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.timestamp; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.049",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyQueryPool",
+      "symbol": "void DestroyQueryPool(QueryPoolHandle pool);",
+      "capabilityId": "rhi.query.timestamp",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.timestamp; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.050",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetTimestampCalibration",
+      "symbol": "TimestampCalibration GetTimestampCalibration(QueueType queue);",
+      "capabilityId": "rhi.query.clock-calibration",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.clock-calibration; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.051",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "BeginPersistentBindGroup",
+      "symbol": "PersistentBindGroupWriter BeginPersistentBindGroup(BindGroupLayoutHandle layout, uint variableDescriptorCount = 0);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.052",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindGroupTexture",
+      "symbol": "void WriteBindGroupTexture(uint writerToken, ushort binding, uint element, DescriptorKind kind, TextureViewHandle view);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.053",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindGroupBuffer",
+      "symbol": "void WriteBindGroupBuffer(uint writerToken, ushort binding, uint element, DescriptorKind kind, BufferViewHandle view);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.054",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindGroupSampler",
+      "symbol": "void WriteBindGroupSampler(uint writerToken, ushort binding, uint element, SamplerHandle sampler);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.055",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindGroupAccelerationStructure",
+      "symbol": "void WriteBindGroupAccelerationStructure(uint writerToken, ushort binding, uint element, AccelerationStructureHandle accelerationStructure);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.056",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CommitPersistentBindGroup",
+      "symbol": "Status CommitPersistentBindGroup(uint writerToken, out BindGroupHandle group);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.057",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyBindGroup",
+      "symbol": "void DestroyBindGroup(BindGroupHandle group);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.058",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateBindlessTable",
+      "symbol": "BindlessTableHandle CreateBindlessTable(in BindlessTableDesc desc);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.059",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyBindlessTable",
+      "symbol": "void DestroyBindlessTable(BindlessTableHandle table);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.060",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "AllocateBindlessSlot",
+      "symbol": "BindlessSlot AllocateBindlessSlot(BindlessTableHandle table);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.061",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "FreeBindlessSlot",
+      "symbol": "void FreeBindlessSlot(in BindlessSlot slot);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.062",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindlessTexture",
+      "symbol": "void WriteBindlessTexture(in BindlessSlot slot, DescriptorKind kind, TextureViewHandle view);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.063",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindlessBuffer",
+      "symbol": "void WriteBindlessBuffer(in BindlessSlot slot, DescriptorKind kind, BufferViewHandle view);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.064",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindlessSampler",
+      "symbol": "void WriteBindlessSampler(in BindlessSlot slot, SamplerHandle sampler);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.065",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBindlessAccelerationStructure",
+      "symbol": "void WriteBindlessAccelerationStructure(in BindlessSlot slot, AccelerationStructureHandle accelerationStructure);",
+      "capabilityId": "rhi.bindless-optional-profile",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by rhi.bindless-optional-profile; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.066",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CreateCommandPool",
+      "symbol": "CommandPoolHandle CreateCommandPool(QueueType queue, in CommandPoolDesc desc);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.067",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ResetCommandPool",
+      "symbol": "Status ResetCommandPool(CommandPoolHandle pool, in CommandPoolResetInfo info);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.068",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DestroyCommandPool",
+      "symbol": "void DestroyCommandPool(CommandPoolHandle pool);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.069",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "AllocateCommandBuffer",
+      "symbol": "Status AllocateCommandBuffer(CommandPoolHandle pool, CommandBufferLevel level, out CommandBufferHandle commandBuffer);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.070",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "BeginCommandBuffer",
+      "symbol": "CommandEncoder BeginCommandBuffer(CommandBufferHandle commandBuffer, CommandBufferBeginInfo info);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.071",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ExecuteSecondaryCommandBuffers",
+      "symbol": "void ExecuteSecondaryCommandBuffers(CommandBufferHandle primary, ReadOnlySpan<CommandBufferHandle> secondaryCommandBuffers);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.072",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "EndCommandBuffer",
+      "symbol": "Status EndCommandBuffer(CommandBufferHandle commandBuffer);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.073",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DiscardCommandBuffer",
+      "symbol": "void DiscardCommandBuffer(CommandBufferHandle commandBuffer);",
+      "capabilityId": "compat.rhi.command-pools-secondary-buffers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.command-pools-secondary-buffers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.074",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ReserveTransientBindGroups",
+      "symbol": "Status ReserveTransientBindGroups(CommandBufferHandle commandBuffer, scoped ReadOnlySpan<TransientBindGroupReservation> reservations);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.075",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "BeginTransientBindGroup",
+      "symbol": "uint BeginTransientBindGroup(CommandBufferHandle commandBuffer, BindGroupLayoutHandle layout, uint variableDescriptorCount = 0);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.076",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteTransientBindGroupTexture",
+      "symbol": "void WriteTransientBindGroupTexture(uint writerToken, ushort binding, uint element, DescriptorKind kind, TextureViewHandle view);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.077",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteTransientBindGroupBuffer",
+      "symbol": "void WriteTransientBindGroupBuffer(uint writerToken, ushort binding, uint element, DescriptorKind kind, BufferViewHandle view);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.078",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteTransientBindGroupSampler",
+      "symbol": "void WriteTransientBindGroupSampler(uint writerToken, ushort binding, uint element, SamplerHandle sampler);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.079",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteTransientBindGroupAccelerationStructure",
+      "symbol": "void WriteTransientBindGroupAccelerationStructure(uint writerToken, ushort binding, uint element, AccelerationStructureHandle accelerationStructure);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.080",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CommitTransientBindGroup",
+      "symbol": "Status CommitTransientBindGroup(uint writerToken, out TransientBindGroup group);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.081",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetPersistentBindGroup",
+      "symbol": "void SetPersistentBindGroup(CommandBufferHandle commandBuffer, BindPoint bindPoint, uint groupIndex, BindGroupHandle group, ReadOnlySpan<uint> dynamicOffsets);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.082",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetTransientBindGroup",
+      "symbol": "void SetTransientBindGroup(CommandBufferHandle commandBuffer, BindPoint bindPoint, uint groupIndex, in TransientBindGroup group, ReadOnlySpan<uint> dynamicOffsets);",
+      "capabilityId": "compat.rhi.bind-group-writers",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.bind-group-writers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.083",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ResourceBarriers",
+      "symbol": "void ResourceBarriers(CommandBufferHandle commandBuffer, scoped ReadOnlySpan<ResourceBarrier> barriers);",
+      "capabilityId": "rhi.queue-submission-lifetime",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.queue-submission-lifetime; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.084",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "BeginRendering",
+      "symbol": "void BeginRendering(CommandBufferHandle commandBuffer, in RenderingInfo info);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.085",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "EndRendering",
+      "symbol": "void EndRendering(CommandBufferHandle commandBuffer);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.086",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetRasterPipeline",
+      "symbol": "void SetRasterPipeline(CommandBufferHandle commandBuffer, PipelineHandle pipeline);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.087",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetComputePipeline",
+      "symbol": "void SetComputePipeline(CommandBufferHandle commandBuffer, PipelineHandle pipeline);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.088",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetRayTracingPipeline",
+      "symbol": "void SetRayTracingPipeline(CommandBufferHandle commandBuffer, PipelineHandle pipeline);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.089",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetViewport",
+      "symbol": "void SetViewport(CommandBufferHandle commandBuffer, in Viewport viewport);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.090",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetScissor",
+      "symbol": "void SetScissor(CommandBufferHandle commandBuffer, in Rect2D rect);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.091",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetVertexBuffer",
+      "symbol": "void SetVertexBuffer(CommandBufferHandle commandBuffer, uint slot, BufferHandle buffer, ulong offset, uint stride);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.092",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetIndexBuffer",
+      "symbol": "void SetIndexBuffer(CommandBufferHandle commandBuffer, BufferHandle buffer, ulong offset, IndexFormat format);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.093",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DrawIndexed",
+      "symbol": "void DrawIndexed(CommandBufferHandle commandBuffer, uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.094",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DrawIndirect",
+      "symbol": "void DrawIndirect(CommandBufferHandle commandBuffer, BufferHandle argumentBuffer, ulong offset, uint drawCount, uint stride);",
+      "capabilityId": "rhi.indirect.draw",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.indirect.draw; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.095",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DrawIndexedIndirect",
+      "symbol": "void DrawIndexedIndirect(CommandBufferHandle commandBuffer, BufferHandle argumentBuffer, ulong offset, uint drawCount, uint stride);",
+      "capabilityId": "rhi.indirect.draw-indexed",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.indirect.draw-indexed; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.096",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DispatchMesh",
+      "symbol": "void DispatchMesh(CommandBufferHandle commandBuffer, uint groupCountX, uint groupCountY, uint groupCountZ);",
+      "capabilityId": "advanced.mesh-shader",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.mesh-shader; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.097",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DispatchRays",
+      "symbol": "void DispatchRays(CommandBufferHandle commandBuffer, in DispatchRaysInfo info);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.098",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DispatchWorkGraph",
+      "symbol": "void DispatchWorkGraph(CommandBufferHandle commandBuffer, in WorkGraphDispatchInfo info);",
+      "capabilityId": "advanced.work-graphs",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.work-graphs; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.099",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "DispatchIndirect",
+      "symbol": "void DispatchIndirect(CommandBufferHandle commandBuffer, BufferHandle argumentBuffer, ulong offset);",
+      "capabilityId": "rhi.indirect.dispatch",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.indirect.dispatch; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.100",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "SetShadingRate",
+      "symbol": "void SetShadingRate(CommandBufferHandle commandBuffer, ShadingRate rate, TextureViewHandle image = default);",
+      "capabilityId": "advanced.variable-rate-shading",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.variable-rate-shading; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.101",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "BuildAccelerationStructure",
+      "symbol": "void BuildAccelerationStructure(CommandBufferHandle commandBuffer, in AccelerationStructureBuildInfo info);",
+      "capabilityId": "advanced.dxr",
+      "disposition": "advanced-record-only",
+      "note": "Original IDevice method is accounted for by advanced.dxr; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.102",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ResetQueryPool",
+      "symbol": "void ResetQueryPool(CommandBufferHandle commandBuffer, QueryPoolHandle pool, int firstQuery, int queryCount);",
+      "capabilityId": "rhi.query.timestamp",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.timestamp; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.103",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "BeginQuery",
+      "symbol": "void BeginQuery(CommandBufferHandle commandBuffer, QueryPoolHandle pool, int queryIndex);",
+      "capabilityId": "rhi.query.occlusion",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.occlusion; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.104",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "EndQuery",
+      "symbol": "void EndQuery(CommandBufferHandle commandBuffer, QueryPoolHandle pool, int queryIndex);",
+      "capabilityId": "rhi.query.occlusion",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.occlusion; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.105",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteTimestamp",
+      "symbol": "void WriteTimestamp(CommandBufferHandle commandBuffer, PipelineStage stage, QueryPoolHandle pool, int queryIndex);",
+      "capabilityId": "rhi.query.timestamp",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.timestamp; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.106",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ResolveQueryPool",
+      "symbol": "void ResolveQueryPool(CommandBufferHandle commandBuffer, QueryPoolHandle pool, int firstQuery, int queryCount, BufferHandle destination, ulong destinationOffset);",
+      "capabilityId": "rhi.query.timestamp",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.query.timestamp; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.107",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ClearTexture",
+      "symbol": "void ClearTexture(CommandBufferHandle commandBuffer, TextureHandle texture, in TextureSubresourceRange range, in ClearValue value);",
+      "capabilityId": "rhi.explicit-resource-clears",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.explicit-resource-clears; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.108",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ClearDepthStencilTexture",
+      "symbol": "void ClearDepthStencilTexture(CommandBufferHandle commandBuffer, TextureHandle texture, in TextureSubresourceRange range, float depth, byte stencil);",
+      "capabilityId": "rhi.explicit-resource-clears",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.explicit-resource-clears; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.109",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ClearBuffer",
+      "symbol": "void ClearBuffer(CommandBufferHandle commandBuffer, BufferHandle buffer, in BufferRange range, uint value);",
+      "capabilityId": "rhi.explicit-resource-clears",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.explicit-resource-clears; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.110",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CopyTexture",
+      "symbol": "void CopyTexture(CommandBufferHandle commandBuffer, TextureHandle source, TextureHandle destination, in TextureSubresourceRange range);",
+      "capabilityId": "rhi.texture-to-texture-copy",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.texture-to-texture-copy; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.111",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CopyTextureRegion",
+      "symbol": "void CopyTextureRegion(CommandBufferHandle commandBuffer, TextureHandle source, TextureHandle destination, in TextureCopyRegion region);",
+      "capabilityId": "rhi.texture-to-texture-copy",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.texture-to-texture-copy; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.112",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CopyBuffer",
+      "symbol": "void CopyBuffer(CommandBufferHandle commandBuffer, BufferHandle source, BufferHandle destination, ulong sourceOffset, ulong destinationOffset, ulong size);",
+      "capabilityId": "rhi.copy-resolve-footprints",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.copy-resolve-footprints; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.113",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CopyBufferToTexture",
+      "symbol": "void CopyBufferToTexture(CommandBufferHandle commandBuffer, in BufferTextureCopy copy);",
+      "capabilityId": "rhi.copy-resolve-footprints",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.copy-resolve-footprints; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.114",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CopyTextureToBuffer",
+      "symbol": "void CopyTextureToBuffer(CommandBufferHandle commandBuffer, in BufferTextureCopy copy);",
+      "capabilityId": "rhi.copy-resolve-footprints",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.copy-resolve-footprints; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.115",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ResolveTexture",
+      "symbol": "void ResolveTexture(CommandBufferHandle commandBuffer, TextureHandle source, TextureHandle destination, in TextureResolveRegion region);",
+      "capabilityId": "rhi.copy-resolve-footprints",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.copy-resolve-footprints; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.116",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "Dispatch",
+      "symbol": "void Dispatch(CommandBufferHandle commandBuffer, uint groupCountX, uint groupCountY, uint groupCountZ);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.117",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "Draw",
+      "symbol": "void Draw(CommandBufferHandle commandBuffer, uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance);",
+      "capabilityId": "rhi.raster-compute-pipelines",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.raster-compute-pipelines; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.118",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "PushDebugGroup",
+      "symbol": "void PushDebugGroup(CommandBufferHandle commandBuffer, string name);",
+      "capabilityId": "rhi.object-naming-debug-markers",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.object-naming-debug-markers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.119",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "PopDebugGroup",
+      "symbol": "void PopDebugGroup(CommandBufferHandle commandBuffer);",
+      "capabilityId": "rhi.object-naming-debug-markers",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.object-naming-debug-markers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.120",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "InsertDebugMarker",
+      "symbol": "void InsertDebugMarker(CommandBufferHandle commandBuffer, string name);",
+      "capabilityId": "rhi.object-naming-debug-markers",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.object-naming-debug-markers; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.121",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WriteBuffer",
+      "symbol": "Status WriteBuffer(BufferHandle buffer, ulong offset, ReadOnlySpan<byte> data);",
+      "capabilityId": "rhi.host-buffer-mapping",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.host-buffer-mapping; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.122",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "ReadBuffer",
+      "symbol": "byte[] ReadBuffer(BufferHandle buffer, ulong offset, int size);",
+      "capabilityId": "rhi.host-buffer-mapping",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.host-buffer-mapping; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.123",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "MapBuffer",
+      "symbol": "Memory<byte> MapBuffer(BufferHandle buffer, BufferMapMode mode, in BufferRange range);",
+      "capabilityId": "rhi.host-buffer-mapping",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.host-buffer-mapping; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.124",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "UnmapBuffer",
+      "symbol": "void UnmapBuffer(BufferHandle buffer);",
+      "capabilityId": "rhi.host-buffer-mapping",
+      "disposition": "renamed",
+      "note": "Original IDevice method is accounted for by rhi.host-buffer-mapping; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.125",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "Submit",
+      "symbol": "Status Submit(QueueType queue, ReadOnlySpan<CommandBufferHandle> commandBuffers, ReadOnlySpan<QueueWait> waits, out GpuSignal completion);",
+      "capabilityId": "rhi.queue-submission-lifetime",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.queue-submission-lifetime; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.126",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "GetCompletedValue",
+      "symbol": "ulong GetCompletedValue(QueueType queue);",
+      "capabilityId": "rhi.queue-submission-lifetime",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.queue-submission-lifetime; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.127",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "Wait",
+      "symbol": "Status Wait(in GpuSignal signal, TimeSpan timeout);",
+      "capabilityId": "rhi.queue-submission-lifetime",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.queue-submission-lifetime; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.128",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WaitForValue",
+      "symbol": "void WaitForValue(QueueType queue, ulong value);",
+      "capabilityId": "compat.rhi.queue-value-wait-idle",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.queue-value-wait-idle; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.129",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "WaitIdle",
+      "symbol": "void WaitIdle();",
+      "capabilityId": "compat.rhi.queue-value-wait-idle",
+      "disposition": "accepted-replacement",
+      "note": "Original IDevice method is accounted for by compat.rhi.queue-value-wait-idle; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "graphics.idevice.130",
+      "group": "graphics-device-methods",
+      "path": "src/Graphics/IDevice.cs",
+      "name": "CollectGarbage",
+      "symbol": "Status CollectGarbage();",
+      "capabilityId": "rhi.queue-submission-lifetime",
+      "disposition": "restored",
+      "note": "Original IDevice method is accounted for by rhi.queue-submission-lifetime; the capability ledger level and required lanes remain authoritative."
+    },
+    {
+      "id": "rendergraph.public-type.001",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/CompiledData.cs",
+      "name": "Fingerprint",
+      "symbol": "public readonly record struct Fingerprint",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.002",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/CompiledGraph.cs",
+      "name": "Compiled",
+      "symbol": "public sealed partial class Compiled",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.003",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/CompiledGraph.Equality.cs",
+      "name": "Compiled",
+      "symbol": "public sealed partial class Compiled",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.004",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ExternalResources.cs",
+      "name": "ExternalBuffer",
+      "symbol": "public readonly record struct ExternalBuffer",
+      "capabilityId": "rg.external-resource-import-readiness",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.external-resource-import-readiness; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.005",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ExternalResources.cs",
+      "name": "ExternalResources",
+      "symbol": "public sealed class ExternalResources",
+      "capabilityId": "rg.external-resource-import-readiness",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.external-resource-import-readiness; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.006",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ExternalResources.cs",
+      "name": "ExternalTexture",
+      "symbol": "public readonly record struct ExternalTexture",
+      "capabilityId": "rg.external-resource-import-readiness",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.external-resource-import-readiness; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.007",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphBuilder.cs",
+      "name": "Builder",
+      "symbol": "public ref struct Builder",
+      "capabilityId": "rg.pass-liveness-versioning",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-liveness-versioning; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.008",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphBuilder.cs",
+      "name": "PassBuilder",
+      "symbol": "public ref struct PassBuilder",
+      "capabilityId": "rg.pass-liveness-versioning",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-liveness-versioning; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.009",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "Capture",
+      "symbol": "public sealed class Capture",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.010",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "CaptureOptions",
+      "symbol": "public readonly record struct CaptureOptions",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.011",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "ReplayCommand",
+      "symbol": "public readonly record struct ReplayCommand",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.012",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "ReplayCommandKind",
+      "symbol": "public enum ReplayCommandKind",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.013",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "ReplayExecutionResult",
+      "symbol": "public readonly record struct ReplayExecutionResult",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.014",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "ReplayExecutor",
+      "symbol": "public static class ReplayExecutor",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.015",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphCapture.cs",
+      "name": "ReplayManifest",
+      "symbol": "public readonly record struct ReplayManifest",
+      "capabilityId": "rg.capture-replay-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.capture-replay-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.016",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDefinition.cs",
+      "name": "BuildCapacity",
+      "symbol": "public readonly record struct BuildCapacity",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.017",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDefinition.cs",
+      "name": "BuildContext",
+      "symbol": "public readonly ref struct BuildContext",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.018",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDefinition.cs",
+      "name": "ICapacityHint",
+      "symbol": "public interface ICapacityHint",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.019",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDefinition.cs",
+      "name": "IDefinition",
+      "symbol": "public interface IDefinition",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.020",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "DiagnosticAccess",
+      "symbol": "public readonly record struct DiagnosticAccess",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.021",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "DiagnosticBatch",
+      "symbol": "public readonly record struct DiagnosticBatch",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.022",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "DiagnosticFusionGroup",
+      "symbol": "public readonly record struct DiagnosticFusionGroup",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.023",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "DiagnosticPass",
+      "symbol": "public readonly record struct DiagnosticPass",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.024",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "DiagnosticResource",
+      "symbol": "public readonly record struct DiagnosticResource",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.025",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "Diagnostics",
+      "symbol": "public sealed partial class Diagnostics",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.026",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+      "name": "DiagnosticVersionEvent",
+      "symbol": "public readonly record struct DiagnosticVersionEvent",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.027",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.Dot.cs",
+      "name": "Diagnostics",
+      "symbol": "public sealed partial class Diagnostics",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.028",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphDiagnostics.Json.cs",
+      "name": "Diagnostics",
+      "symbol": "public sealed partial class Diagnostics",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.029",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "BufferAccess",
+      "symbol": "public readonly struct BufferAccess",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.030",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "BufferBinding",
+      "symbol": "public readonly struct BufferBinding",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.031",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "BufferId",
+      "symbol": "public readonly struct BufferId",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.032",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "Field",
+      "symbol": "public readonly struct Field",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.033",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "ParameterHandle",
+      "symbol": "public readonly struct ParameterHandle",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.034",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "TextureAccess",
+      "symbol": "public readonly struct TextureAccess",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.035",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "TextureBinding",
+      "symbol": "public readonly struct TextureBinding",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.036",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "TextureId",
+      "symbol": "public readonly struct TextureId",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.037",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphHandles.cs",
+      "name": "VariantDomain",
+      "symbol": "public readonly struct VariantDomain",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.038",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.Barriers.cs",
+      "name": "Instance",
+      "symbol": "public sealed partial class Instance",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.039",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.cs",
+      "name": "ExecutionStatistics",
+      "symbol": "public readonly record struct ExecutionStatistics",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.040",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.cs",
+      "name": "Instance",
+      "symbol": "public sealed partial class Instance",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.041",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.cs",
+      "name": "RecordedGraphRange",
+      "symbol": "public readonly record struct RecordedGraphRange",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.042",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.Execution.cs",
+      "name": "Instance",
+      "symbol": "public sealed partial class Instance",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.043",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.Lifetime.cs",
+      "name": "Instance",
+      "symbol": "public sealed partial class Instance",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.044",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstance.Resources.cs",
+      "name": "Instance",
+      "symbol": "public sealed partial class Instance",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.045",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstancePool.cs",
+      "name": "InstanceLease",
+      "symbol": "public ref struct InstanceLease",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.046",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstancePool.cs",
+      "name": "InstancePool",
+      "symbol": "public sealed class InstancePool",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.047",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstancePool.cs",
+      "name": "InstancePoolStatistics",
+      "symbol": "public readonly record struct InstancePoolStatistics",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.048",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphInstancePool.cs",
+      "name": "InstancePoolTrimOptions",
+      "symbol": "public readonly record struct InstancePoolTrimOptions",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.049",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTemplate.cs",
+      "name": "Template",
+      "symbol": "public sealed class Template",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.050",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "AccessMode",
+      "symbol": "public enum AccessMode",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.051",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "BufferResourceDesc",
+      "symbol": "public readonly record struct BufferResourceDesc",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.052",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "CompileOptions",
+      "symbol": "public readonly record struct CompileOptions",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.053",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "ImportedResourceState",
+      "symbol": "public readonly record struct ImportedResourceState",
+      "capabilityId": "rg.external-resource-import-readiness",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.external-resource-import-readiness; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.054",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "InstanceOptions",
+      "symbol": "public readonly record struct InstanceOptions",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.055",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "PassFlags",
+      "symbol": "public enum PassFlags",
+      "capabilityId": "rg.pass-liveness-versioning",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-liveness-versioning; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.056",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "QueueProfile",
+      "symbol": "public readonly record struct QueueProfile",
+      "capabilityId": "rg.queue-batch-scheduling",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.queue-batch-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.057",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "ResourceLifetime",
+      "symbol": "public enum ResourceLifetime",
+      "capabilityId": "rg.temporal-history",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.temporal-history; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.058",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "Statistics",
+      "symbol": "public readonly record struct Statistics",
+      "capabilityId": "rg.compiled-diagnostics",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.compiled-diagnostics; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.059",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/GraphTypes.cs",
+      "name": "TextureResourceDesc",
+      "symbol": "public readonly record struct TextureResourceDesc",
+      "capabilityId": "rg.range-subresource-hazards",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.range-subresource-hazards; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.060",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/PassApi.cs",
+      "name": "IPass",
+      "symbol": "public interface IPass",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.061",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/PassApi.cs",
+      "name": "PassContext",
+      "symbol": "public ref partial struct PassContext",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.062",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/PassApi.ShaderValidation.cs",
+      "name": "PassContext",
+      "symbol": "public ref partial struct PassContext",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.063",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/PassApi.ShaderValidation.cs",
+      "name": "ShaderAccessBinding",
+      "symbol": "public readonly struct ShaderAccessBinding",
+      "capabilityId": "rg.pass-parameters",
+      "disposition": "renamed",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.pass-parameters; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.064",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "AsyncOverlapProfile",
+      "symbol": "public readonly record struct AsyncOverlapProfile",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.065",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "BatchGpuProfile",
+      "symbol": "public readonly record struct BatchGpuProfile",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.066",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "CaptureArtifact",
+      "symbol": "public sealed class CaptureArtifact",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.067",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "CaptureArtifactOptions",
+      "symbol": "public readonly record struct CaptureArtifactOptions",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.068",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "CaptureReplayTools",
+      "symbol": "public static class CaptureReplayTools",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.069",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "CompiledPayloadMemoryPolicy",
+      "symbol": "public sealed class CompiledPayloadMemoryPolicy",
+      "capabilityId": "rg.resource-realization-retirement",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.resource-realization-retirement; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.070",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "ConformanceFuzzer",
+      "symbol": "public static class ConformanceFuzzer",
+      "capabilityId": "harness.rg.conformance-fuzz",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by harness.rg.conformance-fuzz; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.071",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "ConformanceFuzzOptions",
+      "symbol": "public readonly record struct ConformanceFuzzOptions",
+      "capabilityId": "harness.rg.conformance-fuzz",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by harness.rg.conformance-fuzz; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.072",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "ConformanceFuzzReport",
+      "symbol": "public readonly record struct ConformanceFuzzReport",
+      "capabilityId": "harness.rg.conformance-fuzz",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by harness.rg.conformance-fuzz; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.073",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "DescriptorSnapshot",
+      "symbol": "public readonly record struct DescriptorSnapshot",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.074",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "ExternalResourceStub",
+      "symbol": "public readonly record struct ExternalResourceStub",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.075",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "FusionMetricSummary",
+      "symbol": "public readonly record struct FusionMetricSummary",
+      "capabilityId": "rg.raster-scope-merging",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.raster-scope-merging; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.076",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "FusionMetricTools",
+      "symbol": "public static class FusionMetricTools",
+      "capabilityId": "rg.raster-scope-merging",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.raster-scope-merging; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.077",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "FuzzCategories",
+      "symbol": "public enum FuzzCategories",
+      "capabilityId": "harness.rg.conformance-fuzz",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by harness.rg.conformance-fuzz; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.078",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "FuzzCategory",
+      "symbol": "public enum FuzzCategory",
+      "capabilityId": "harness.rg.conformance-fuzz",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by harness.rg.conformance-fuzz; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.079",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "FuzzFailure",
+      "symbol": "public readonly record struct FuzzFailure",
+      "capabilityId": "harness.rg.conformance-fuzz",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by harness.rg.conformance-fuzz; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.080",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "GpuFrameProfile",
+      "symbol": "public sealed class GpuFrameProfile",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.081",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "HistoryKey",
+      "symbol": "public readonly record struct HistoryKey",
+      "capabilityId": "rg.temporal-history",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.temporal-history; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.082",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "HistoryState",
+      "symbol": "public readonly record struct HistoryState",
+      "capabilityId": "rg.temporal-history",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.temporal-history; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.083",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "PassGpuProfile",
+      "symbol": "public readonly record struct PassGpuProfile",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.084",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "PayloadMemoryBudget",
+      "symbol": "public readonly record struct PayloadMemoryBudget",
+      "capabilityId": "rg.resource-realization-retirement",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.resource-realization-retirement; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.085",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "PayloadMemoryDiagnostics",
+      "symbol": "public readonly record struct PayloadMemoryDiagnostics",
+      "capabilityId": "rg.resource-realization-retirement",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.resource-realization-retirement; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.086",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "PipelineSnapshot",
+      "symbol": "public readonly record struct PipelineSnapshot",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.087",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "ProfileGuidedScheduler",
+      "symbol": "public sealed class ProfileGuidedScheduler",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.088",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "QueueProfileRule",
+      "symbol": "public readonly record struct QueueProfileRule",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.089",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "QueueSchedulingDecision",
+      "symbol": "public readonly record struct QueueSchedulingDecision",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.090",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "QueueWaitGpuProfile",
+      "symbol": "public readonly record struct QueueWaitGpuProfile",
+      "capabilityId": "tooling.rg.profile-guided-scheduling",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.profile-guided-scheduling; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.091",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "ReplayDiff",
+      "symbol": "public readonly record struct ReplayDiff",
+      "capabilityId": "tooling.rg.capture-artifact-diff-minimize",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by tooling.rg.capture-artifact-diff-minimize; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.092",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/ProfileCaptureFuzz.P1.cs",
+      "name": "TemporalHistoryRegistry",
+      "symbol": "public sealed class TemporalHistoryRegistry",
+      "capabilityId": "rg.temporal-history",
+      "disposition": "restored",
+      "note": "Original RenderGraph public type declaration is accounted for by rg.temporal-history; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.093",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/RenderFrame.cs",
+      "name": "Frame",
+      "symbol": "public ref struct Frame",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.094",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/RenderGraph.cs",
+      "name": "Graph",
+      "symbol": "public sealed class Graph",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.095",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/RenderWorldAdapter.cs",
+      "name": "ExtractedFrameSnapshot",
+      "symbol": "public readonly record struct ExtractedFrameSnapshot",
+      "capabilityId": "renderer.rg.render-world-adapter",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by renderer.rg.render-world-adapter; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.096",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/RenderWorldAdapter.cs",
+      "name": "RenderWorldAdapter",
+      "symbol": "public static class RenderWorldAdapter",
+      "capabilityId": "renderer.rg.render-world-adapter",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by renderer.rg.render-world-adapter; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.097",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/RenderWorldAdapter.cs",
+      "name": "RenderWorldFrameAdapterOptions",
+      "symbol": "public readonly record struct RenderWorldFrameAdapterOptions",
+      "capabilityId": "renderer.rg.render-world-adapter",
+      "disposition": "recorded-gap",
+      "note": "Original RenderGraph public type declaration is accounted for by renderer.rg.render-world-adapter; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.098",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/VariantValues.cs",
+      "name": "VariantDomainSnapshot",
+      "symbol": "public readonly record struct VariantDomainSnapshot",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.099",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/VariantValues.cs",
+      "name": "VariantFieldSlot",
+      "symbol": "public readonly record struct VariantFieldSlot",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    },
+    {
+      "id": "rendergraph.public-type.100",
+      "group": "rendergraph-public-type-declarations",
+      "path": "src/RenderGraph.Core/VariantValues.cs",
+      "name": "Variants",
+      "symbol": "public class Variants",
+      "capabilityId": "compat.rg.templates-variants-instance-pools",
+      "disposition": "accepted-replacement",
+      "note": "Original RenderGraph public type declaration is accounted for by compat.rg.templates-variants-instance-pools; partial declarations remain separate ZIP evidence entries."
+    }
+  ]
+}

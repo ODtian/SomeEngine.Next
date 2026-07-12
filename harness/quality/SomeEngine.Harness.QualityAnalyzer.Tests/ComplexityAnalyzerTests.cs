@@ -110,13 +110,62 @@ public sealed class ComplexityAnalyzerTests
         await test.RunAsync();
     }
 
-    private static CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier> NewAnalyzerTest(string source)
-        => new()
-        {
-            TestState =
-            {
-                Sources = { source },
-                AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-            },
-        };
+    [Fact]
+    public async Task AcceptedCheckpointDiagnostic_IsExactAndMetricBounded()
+    {
+        string branches = string.Join(
+            " ",
+            Enumerable.Range(0, 13).Select(index => $"if (v == {index}) return {index};"));
+        string config = File.ReadAllText(ConfigPath).Replace(
+            "\"maxCoupledTypes\": 8",
+            "\"maxCoupledTypes\": 8, " +
+            "\"acceptedCheckpointCommit\": \"c0ac382e\", " +
+            "\"acceptedCheckpointDiagnostics\": [{" +
+            "\"id\":\"SE020\",\"assembly\":\"TestProject\"," +
+            "\"path\":\"Test0.cs\",\"line\":1,\"symbol\":\"M\"," +
+            "\"maximumObserved\":14,\"reason\":\"accepted checkpoint\"}]",
+            System.StringComparison.Ordinal);
+        var test = NewAnalyzerTest(
+            $"class Sample {{ int M(int v) {{ {branches} return v; }} }}",
+            config);
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task AcceptedCheckpointDiagnostic_DoesNotHideRegression()
+    {
+        string branches = string.Join(
+            " ",
+            Enumerable.Range(0, 14).Select(index => $"if (v == {index}) return {index};"));
+        string config = File.ReadAllText(ConfigPath).Replace(
+            "\"maxCoupledTypes\": 8",
+            "\"maxCoupledTypes\": 8, " +
+            "\"acceptedCheckpointCommit\": \"c0ac382e\", " +
+            "\"acceptedCheckpointDiagnostics\": [{" +
+            "\"id\":\"SE020\",\"assembly\":\"TestProject\"," +
+            "\"path\":\"Test0.cs\",\"line\":1,\"symbol\":\"M\"," +
+            "\"maximumObserved\":14,\"reason\":\"accepted checkpoint\"}]",
+            System.StringComparison.Ordinal);
+        var test = NewAnalyzerTest(
+            $"class Sample {{ int M(int v) {{ {branches} return v; }} }}",
+            config);
+        test.ExpectedDiagnostics.Add(
+            DiagnosticResult.CompilerError("SE020")
+                .WithSpan(1, 20, 1, 21)
+                .WithArguments("M", 15, 12));
+
+        await test.RunAsync();
+    }
+
+    private static CSharpAnalyzerTest<SomeEngineQualityAnalyzer, DefaultVerifier> NewAnalyzerTest(
+        string source,
+        string? config = null)
+    {
+        var test = new OfflineAnalyzerTest();
+        test.TestState.Sources.Add(source);
+        test.TestState.AdditionalFiles.Add(
+            (Path.Combine("harness", "config.json"), config ?? File.ReadAllText(ConfigPath)));
+        return test;
+    }
 }

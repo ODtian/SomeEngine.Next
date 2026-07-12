@@ -132,8 +132,25 @@ internal static class TextureLayout
         in TextureCopyRegion region)
     {
         if (desc.SampleCount != 1) throw new NotSupportedException("Multisampled textures must be resolved before linear-buffer copies.");
+        return ValidateTextureRegion(desc, region);
+    }
+
+    public static (int Width, int Height, int Depth, int BytesPerTexel) ValidateTextureRegion(
+        in TextureDesc desc,
+        in TextureCopyRegion region)
+    {
         ValidateSingleAspect(desc.Format, region.Aspect);
         if ((uint)region.MipLevel >= (uint)desc.MipLevels) throw new ArgumentOutOfRangeException(nameof(region));
+        ValidateTextureLayer(desc, region);
+
+        (int mipWidth, int mipHeight, int mipDepth) = GetMipExtent(desc, region.MipLevel);
+        ValidateTextureBounds(region, mipWidth, mipHeight, mipDepth);
+        ValidateTextureDimension(desc.Dimension, region);
+        return (region.Width, region.Height, region.Depth, GetBytesPerTexel(desc.Format, region.Aspect));
+    }
+
+    private static void ValidateTextureLayer(in TextureDesc desc, in TextureCopyRegion region)
+    {
         if (desc.Dimension == TextureDimension.Texture3D)
         {
             if (region.ArrayLayer != 0) throw new ArgumentOutOfRangeException(nameof(region), "Three-dimensional textures do not expose array layers.");
@@ -142,8 +159,14 @@ internal static class TextureLayout
         {
             throw new ArgumentOutOfRangeException(nameof(region));
         }
+    }
 
-        (int mipWidth, int mipHeight, int mipDepth) = GetMipExtent(desc, region.MipLevel);
+    private static void ValidateTextureBounds(
+        in TextureCopyRegion region,
+        int mipWidth,
+        int mipHeight,
+        int mipDepth)
+    {
         if (region.X < 0 || region.Y < 0 || region.Z < 0 ||
             region.Width <= 0 || region.Height <= 0 || region.Depth <= 0 ||
             region.X > mipWidth - region.Width ||
@@ -152,11 +175,14 @@ internal static class TextureLayout
         {
             throw new ArgumentOutOfRangeException(nameof(region), "Texture copy region exceeds the selected mip.");
         }
-        if (desc.Dimension == TextureDimension.Texture1D && (region.Y != 0 || region.Height != 1))
+    }
+
+    private static void ValidateTextureDimension(TextureDimension dimension, in TextureCopyRegion region)
+    {
+        if (dimension == TextureDimension.Texture1D && (region.Y != 0 || region.Height != 1))
             throw new ArgumentOutOfRangeException(nameof(region), "A one-dimensional texture copy has Y=0 and Height=1.");
-        if (desc.Dimension != TextureDimension.Texture3D && (region.Z != 0 || region.Depth != 1))
+        if (dimension != TextureDimension.Texture3D && (region.Z != 0 || region.Depth != 1))
             throw new ArgumentOutOfRangeException(nameof(region), "A non-3D texture copy has Z=0 and Depth=1.");
-        return (region.Width, region.Height, region.Depth, GetBytesPerTexel(desc.Format, region.Aspect));
     }
 
     public static int GetStateCount(in TextureDesc desc) =>

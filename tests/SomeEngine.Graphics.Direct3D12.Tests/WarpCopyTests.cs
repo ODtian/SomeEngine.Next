@@ -9,7 +9,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Texture_copy_round_trip_respects_backend_footprints_and_partial_regions()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -114,7 +113,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Depth_only_dsv_clear_round_trips_through_the_depth_plane_and_pins_the_view()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -198,7 +196,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void D24_depth_only_dsv_does_not_require_an_undeclared_stencil_operation()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -250,7 +247,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void D24_depth_clear_preserves_the_independent_stencil_plane_on_warp()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -355,7 +351,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Handles_and_completions_are_scoped_to_their_native_device()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device first = new(new Options { UseWarpAdapter = true });
         using Device second = new(new Options { UseWarpAdapter = true });
@@ -423,7 +418,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Copy_queue_round_trips_native_memory_and_reuses_retired_context()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -463,7 +457,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Buffer_requirements_come_from_the_native_device()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true, EnableDebugLayer = true });
         ResourceRequirements requirements = device.GetBufferRequirements(
@@ -478,7 +471,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Placed_resource_is_released_before_its_native_heap()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
@@ -519,7 +511,6 @@ public sealed class WarpCopyTests
     [Fact]
     public void Failed_destruction_of_an_unsubmitted_resource_preserves_its_handle()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options { UseWarpAdapter = true });
         BufferHandle source = device.CreateBuffer(

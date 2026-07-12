@@ -12,7 +12,15 @@ public interface ICommandContext : IDisposable
     void CopyBuffer(BufferHandle source, ulong sourceOffset, BufferHandle destination, ulong destinationOffset, ulong size);
     void CopyBufferToTexture(in BufferTextureCopy copy);
     void CopyTextureToBuffer(in TextureBufferCopy copy);
+    void CopyTexture(in TextureToTextureCopy copy);
     void ResolveTexture(in TextureResolveRegion resolve);
+    void ClearBuffer(BufferHandle buffer, in BufferRange range, uint pattern = 0);
+    void ClearTexture(TextureHandle texture, in TextureSubresourceRange range, in Vector4 color);
+    void ClearDepthStencilTexture(
+        TextureHandle texture,
+        in TextureSubresourceRange range,
+        float depth = 1f,
+        byte stencil = 0);
 
     void BeginRendering(in RenderingInfo rendering);
     void EndRendering();
@@ -31,9 +39,43 @@ public interface ICommandContext : IDisposable
     void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
     void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0);
     void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ);
+    void DrawIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0);
+    void DrawIndexedIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0);
+    void DispatchIndirect(
+        BufferHandle argumentBuffer,
+        ulong argumentOffset,
+        uint maxCommandCount,
+        uint commandStride,
+        BufferHandle countBuffer = default,
+        ulong countBufferOffset = 0);
+
+    void ResetQueryPool(QueryPoolHandle pool, uint firstQuery, uint queryCount);
+    void BeginQuery(QueryPoolHandle pool, uint queryIndex);
+    void EndQuery(QueryPoolHandle pool, uint queryIndex);
+    void WriteTimestamp(QueryPoolHandle pool, uint queryIndex);
+    void ResolveQueryPool(
+        QueryPoolHandle pool,
+        uint firstQuery,
+        uint queryCount,
+        BufferHandle destination,
+        ulong destinationOffset,
+        ulong destinationStride = 0);
 
     void PushDebugGroup(string name);
     void PopDebugGroup();
+    void InsertDebugMarker(string name);
 
     /// <summary>Closes the native command list and transfers its ownership back to the device.</summary>
     CommandListHandle Finish();
@@ -127,6 +169,16 @@ public readonly record struct TextureBufferCopy(
     TextureCopyRegion SourceRegion,
     BufferHandle Destination,
     TextureBufferLayout DestinationLayout);
+
+/// <summary>
+/// An exact texture-to-texture copy. Source and destination regions independently select their
+/// mip, array layer, plane, origin, and extent; their extents and compatible formats must match.
+/// </summary>
+public readonly record struct TextureToTextureCopy(
+    TextureHandle Source,
+    TextureCopyRegion SourceRegion,
+    TextureHandle Destination,
+    TextureCopyRegion DestinationRegion);
 
 /// <summary>The reduction used when resolving samples into one destination texel.</summary>
 public enum ResolveMode : byte

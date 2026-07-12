@@ -413,6 +413,7 @@ internal static class Compiler
                 }
             }
         }
+
     }
 
     private static void ValidateContents(FrozenGraph graph)
@@ -473,6 +474,28 @@ internal static class Compiler
                     }
                 }
             }
+        }
+
+        for (int resource = 0; resource < graph.Resources.Length; resource++)
+        {
+            FrozenResource value = graph.Resources[resource];
+            if (!value.Exported) continue;
+            if (value.Kind == ResourceNodeKind.Buffer)
+            {
+                if (!bufferContents[resource]!.Contains(0, value.BufferDesc.Size))
+                    throw new InvalidOperationException("An exported buffer must be fully produced before ownership can be published.");
+                continue;
+            }
+
+            TextureSubresourceRange whole = new(
+                0,
+                value.TextureDesc.MipLevels,
+                0,
+                value.TextureDesc.ArrayLayers,
+                AspectFor(value.TextureDesc.Format));
+            HashSet<TextureCell> contents = textureContents[resource]!;
+            if (EnumerateCells(value.TextureDesc, whole).Any(cell => !contents.Contains(cell)))
+                throw new InvalidOperationException("An exported texture must be fully produced before ownership can be published.");
         }
     }
 
@@ -659,16 +682,20 @@ internal static class Compiler
             bool used = liveness.Resources[resource];
             if (value.Kind == ResourceNodeKind.Buffer)
             {
-                RequireBufferUsage(value.BufferDesc, value.ImportedBuffer.InitialUse, "initial import");
-                RequireBufferUsage(value.BufferDesc, value.ImportedBuffer.FinalUse, "final import");
-                if (!used && value.ImportedBuffer.InitialUse != value.ImportedBuffer.FinalUse)
+                if (value.ImportedBuffer.InitialStateOverride is null)
+                    RequireBufferUsage(value.BufferDesc, value.ImportedBuffer.InitialUse, "initial import");
+                if (value.ImportedBuffer.FinalStateOverride is null)
+                    RequireBufferUsage(value.BufferDesc, value.ImportedBuffer.FinalUse, "final import");
+                if (!used && InitialState(value) != FinalState(value))
                     throw new InvalidOperationException("An unused imported buffer cannot establish a different final use because no submission owns the transition.");
             }
             else
             {
-                RequireTextureUsage(value.TextureDesc, value.ImportedTexture.InitialUse, "initial import");
-                RequireTextureUsage(value.TextureDesc, value.ImportedTexture.FinalUse, "final import");
-                if (!used && value.ImportedTexture.InitialUse != value.ImportedTexture.FinalUse)
+                if (value.ImportedTexture.InitialStateOverride is null)
+                    RequireTextureUsage(value.TextureDesc, value.ImportedTexture.InitialUse, "initial import");
+                if (value.ImportedTexture.FinalStateOverride is null)
+                    RequireTextureUsage(value.TextureDesc, value.ImportedTexture.FinalUse, "final import");
+                if (!used && InitialState(value) != FinalState(value))
                     throw new InvalidOperationException("An unused imported texture cannot establish a different final use because no submission owns the transition.");
             }
         }
@@ -785,7 +812,7 @@ internal static class Compiler
     private static bool QueueSupports(QueueType queue, BufferUse use) => queue switch
     {
         QueueType.Graphics => true,
-        QueueType.Compute => use is BufferUse.CopySource or BufferUse.CopyDestination or BufferUse.ShaderRead or BufferUse.ShaderWrite,
+        QueueType.Compute => use is BufferUse.CopySource or BufferUse.CopyDestination or BufferUse.ShaderRead or BufferUse.ShaderWrite or BufferUse.Indirect,
         QueueType.Copy => use is BufferUse.CopySource or BufferUse.CopyDestination,
         _ => false,
     };
@@ -1074,12 +1101,12 @@ internal static class Compiler
         };
 
     private static ResourceState InitialState(in FrozenResource resource) => resource.Kind == ResourceNodeKind.Buffer
-        ? resource.IsImported ? Map(resource.ImportedBuffer.InitialUse) : ResourceState.Common
-        : resource.IsImported ? Map(resource.ImportedTexture.InitialUse) : ResourceState.Common;
+        ? resource.IsImported ? resource.ImportedBuffer.InitialStateOverride ?? Map(resource.ImportedBuffer.InitialUse) : ResourceState.Common
+        : resource.IsImported ? resource.ImportedTexture.InitialStateOverride ?? Map(resource.ImportedTexture.InitialUse) : ResourceState.Common;
 
     private static ResourceState FinalState(in FrozenResource resource) => resource.Kind == ResourceNodeKind.Buffer
-        ? Map(resource.ImportedBuffer.FinalUse)
-        : Map(resource.ImportedTexture.FinalUse);
+        ? resource.ImportedBuffer.FinalStateOverride ?? Map(resource.ImportedBuffer.FinalUse)
+        : resource.ImportedTexture.FinalStateOverride ?? Map(resource.ImportedTexture.FinalUse);
 
     private static ResourceState Map(BufferUse use) => use switch
     {

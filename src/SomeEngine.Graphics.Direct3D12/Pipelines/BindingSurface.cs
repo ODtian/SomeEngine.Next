@@ -103,6 +103,7 @@ public sealed partial class Device
                 storage,
                 depthStencil,
                 attachmentSubresources);
+            ApplyLogicalName(native, desc.Name);
             HandleKey key = _textureViews.Add(native);
             renderTarget = null;
             shaderResource = null;
@@ -143,6 +144,7 @@ public sealed partial class Device
             buffer.AddView();
             childAdded = true;
             NativeBufferView native = new(buffer, frozenDesc, offset, size, descriptor);
+            ApplyLogicalName(native, desc.Name);
             HandleKey key = _bufferViews.Add(native);
             descriptor = null;
             return new BufferViewHandle(_domain, key.Slot, key.Generation);
@@ -176,6 +178,7 @@ public sealed partial class Device
             _native.Device.CreateSampler(ref nativeDesc, destination);
         });
         NativeSampler native = new(frozenDesc, descriptor);
+        ApplyLogicalName(native, desc.Name);
         HandleKey key = _samplers.Add(native);
         return new SamplerHandle(_domain, key.Slot, key.Generation);
     }
@@ -230,6 +233,7 @@ public sealed partial class Device
             foreach (FrozenBinding binding in frozen) binding.Dependency.AddBinding();
             dependenciesAdded = true;
             NativeBindGroup native = new(layout, frozen, name);
+            ApplyLogicalName(native, name);
             HandleKey key = _bindGroups.Add(native);
             return new BindGroupHandle(_domain, key.Slot, key.Generation);
         }

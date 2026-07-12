@@ -110,9 +110,11 @@ public readonly record struct RasterPipelineDesc(
     DepthStencilDesc DepthStencil = default,
     ReadOnlyMemory<BlendAttachmentDesc> BlendAttachments = default,
     int SampleCount = 1,
-    string? Name = null);
+    string? Name = null,
+    PipelineCacheKey CacheKey = default);
 
 public readonly record struct ComputePipelineDesc(
     PipelineLayoutHandle Layout,
     ShaderHandle Shader,
-    string? Name = null);
+    string? Name = null,
+    PipelineCacheKey CacheKey = default);

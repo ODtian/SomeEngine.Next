@@ -11,7 +11,6 @@ public sealed class NativeDiagnosticsTests
     [Fact]
     public void DrainDiagnostics_reads_and_clears_filtered_native_messages()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         using Device device = new(new Options
         {
