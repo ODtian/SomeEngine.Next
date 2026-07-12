@@ -94,9 +94,11 @@ function Invoke-HarnessStep {
         throw "Failed to start $FileName for step $Name."
     }
 
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
+    $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+    $standardErrorTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
+    $stdout = $standardOutputTask.GetAwaiter().GetResult()
+    $stderr = $standardErrorTask.GetAwaiter().GetResult()
     $sw.Stop()
 
     if (-not [string]::IsNullOrWhiteSpace($stdout)) {

@@ -77,9 +77,14 @@ function Start-TestProject($project) {
         throw "Failed to start dotnet test for $($project.FullName)."
     }
 
+    $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+    $standardErrorTask = $process.StandardError.ReadToEndAsync()
+
     return [pscustomobject]@{
         Project = $project
         Process = $process
+        StandardOutputTask = $standardOutputTask
+        StandardErrorTask = $standardErrorTask
     }
 }
 
@@ -110,8 +115,8 @@ while ($queue.Count -gt 0 -or $running.Count -gt 0) {
             continue
         }
 
-        $stdout = $entry.Process.StandardOutput.ReadToEnd()
-        $stderr = $entry.Process.StandardError.ReadToEnd()
+        $stdout = $entry.StandardOutputTask.GetAwaiter().GetResult()
+        $stderr = $entry.StandardErrorTask.GetAwaiter().GetResult()
         if (-not [string]::IsNullOrWhiteSpace($stdout)) {
             Write-Host $stdout.TrimEnd()
         }
