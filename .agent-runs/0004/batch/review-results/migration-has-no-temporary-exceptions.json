@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "The scoped migration contains no new warning suppression, skipped required test, empty backend implementation, API deletion or silent fallback. Bindless remains optional, the production baseline remains FL12_0 plus SM6.2 with traditional binding, and unimplemented advanced features remain explicit recorded gaps."
+}

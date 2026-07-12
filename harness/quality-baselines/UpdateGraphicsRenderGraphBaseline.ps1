@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$outputPath = Join-Path $PSScriptRoot "graphics-rendergraph-hard.v1.json"
+$outputPath = Join-Path $PSScriptRoot "graphics-hard-baseline.v1.json"
 $projects = @(
     @{
         Assembly = "SomeEngine.Graphics.Direct3D12"

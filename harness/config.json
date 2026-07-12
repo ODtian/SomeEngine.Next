@@ -200,11 +200,6 @@
     "productPackages": [
       {
         "project": "SomeEngine.Assets",
-        "packageId": "Alimer.Bindings.MeshOptimizer",
-        "version": "1.2.0"
-      },
-      {
-        "project": "SomeEngine.Assets",
         "packageId": "FlatSharp.Compiler",
         "version": "7.9.0"
       },
@@ -1634,23 +1629,13 @@
     }
   ],
   "externalDependencies": {
-    "localPackages": [
-      {
-        "id": "meshoptimizer",
-        "packageId": "Alimer.Bindings.MeshOptimizer",
-        "version": "1.2.0",
-        "producerProject": "external/Alimer.Bindings/src/Alimer.Bindings.MeshOptimizer/Alimer.Bindings.MeshOptimizer.csproj",
-        "sourcePackage": "artifacts/local-packages/Alimer.Bindings.MeshOptimizer.1.2.0.nupkg",
-        "consumerProject": "src/SomeEngine.Assets/SomeEngine.Assets.csproj",
-        "localFeed": "artifacts/local-packages",
-        "packageSourceKey": "SomeEngine Local Packages",
-        "requiredRuntimeAssets": [
-          "runtimes/win-x64/native/meshoptimizer.dll",
-          "runtimes/linux-x64/native/libmeshoptimizer.so"
-        ]
-      }
-    ],
+    "localPackages": [],
     "sourceProjects": [
+      {
+        "name": "Alimer.Bindings.MeshOptimizer",
+        "path": "external/Alimer.Bindings/src/Alimer.Bindings.MeshOptimizer/Alimer.Bindings.MeshOptimizer.csproj",
+        "consumerProject": "src/SomeEngine.Assets/SomeEngine.Assets.csproj"
+      },
       {
         "name": "SlangShaderSharp",
         "path": "external/SlangShaderSharp/src/SlangShaderSharp.csproj",
@@ -1681,14 +1666,14 @@
         "name": "Alimer.Bindings",
         "path": "external/Alimer.Bindings",
         "url": "https://github.com/ODtian/Alimer.Bindings",
-        "commit": "eb6b6c4e90b4e0f10f883ff5f92c62b5589b4868",
+        "commit": "8d15f4e182f77df0c9af3aaf7ccd5dd8aeafc2a4",
         "role": "accepted dependency producer for MeshOptimizer bindings"
       },
       {
         "name": "SlangShaderSharp",
         "path": "external/SlangShaderSharp",
         "url": "https://github.com/DominicMaas/SlangShaderSharp",
-        "commit": "b3b0f79381f6927ff9fca6af9e8a9a8843258e64",
+        "commit": "cac1f1b1b616af7fa3a54c5b241f68e37a15f166",
         "role": "accepted source project dependency"
       },
       {

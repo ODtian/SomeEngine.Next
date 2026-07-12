@@ -9,13 +9,13 @@
     <NoWarn>$(NoWarn);CS0618</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Alimer.Bindings.MeshOptimizer" Version="1.2.0" />
     <PackageReference Include="FlatSharp.Compiler" Version="7.9.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FlatSharp.Runtime" Version="7.9.0" />
     <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+    <ProjectReference Include="..\..\external\Alimer.Bindings\src\Alimer.Bindings.MeshOptimizer\Alimer.Bindings.MeshOptimizer.csproj" />
     <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
     <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
@@ -24,6 +24,31 @@
   <ItemGroup>
     <Content Include="..\..\external\SlangShaderSharp\runtimes\**">
       <Link>runtimes\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\external\Alimer.Bindings\native\win-x64\meshoptimizer.dll"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
+      <Link>meshoptimizer.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\external\Alimer.Bindings\native\win-arm64\meshoptimizer.dll"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64'">
+      <Link>meshoptimizer.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\external\Alimer.Bindings\native\linux-x64\libmeshoptimizer.so"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'">
+      <Link>libmeshoptimizer.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\external\Alimer.Bindings\native\linux-arm64\libmeshoptimizer.so"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-arm64'">
+      <Link>libmeshoptimizer.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\external\Alimer.Bindings\native\osx\libmeshoptimizer.dylib"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'osx-x64' Or '$(NETCoreSdkRuntimeIdentifier)' == 'osx-arm64'">
+      <Link>libmeshoptimizer.dylib</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

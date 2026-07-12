@@ -3,7 +3,7 @@ using Schema = global::SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Assets.Importers;
 
-internal static class SlangBindingMap
+internal static partial class SlangBindingMap
 {
     private const byte Unknown = 0;
     private const byte ConstantBuffer = 1;
@@ -468,10 +468,37 @@ internal static class SlangBindingMap
         };
     }
 
+}
+
+internal static partial class SlangBindingMap
+{
     private static (Schema.ShaderDeclaredEffect Effect, Schema.ShaderDeclaredOperations Operations) DeclaredEffect(
         VariableReflection variable,
         Schema.ShaderReflectedAccess reflectedAccess,
         Schema.ShaderBindingType bindingType)
+    {
+        AttributeReflection selected = FindResourceEffect(variable);
+        if (selected == AttributeReflection.Null)
+            return (Schema.ShaderDeclaredEffect.Unspecified, Schema.ShaderDeclaredOperations.None);
+        if (bindingType == Schema.ShaderBindingType.Sampler)
+            throw new InvalidDataException(
+                $"Shader sampler '{variable.Name}' cannot declare ResourceEffect.");
+        if (selected.ArgumentCount != 2)
+            throw new InvalidDataException(
+                $"Shader resource '{variable.Name}' ResourceEffect must provide effects and operations arguments.");
+
+        Schema.ShaderDeclaredEffect declared = ParseDeclaredEffect(variable.Name, selected);
+        Schema.ShaderDeclaredOperations operations = ParseDeclaredOperations(variable.Name, selected);
+
+        int capability = ReflectedCapability(reflectedAccess, bindingType);
+        if (((int)declared & ~capability) != 0)
+            throw new InvalidDataException(
+                $"Shader resource '{variable.Name}' declares effect {declared} beyond its reflected access {reflectedAccess}.");
+        ValidateDeclaredOperations(variable.Name, declared, operations, bindingType, reflectedAccess);
+        return (declared, operations);
+    }
+
+    private static AttributeReflection FindResourceEffect(VariableReflection variable)
     {
         AttributeReflection selected = AttributeReflection.Null;
         for (uint index = 0; index < variable.AttributeCount; index++)
@@ -484,25 +511,25 @@ internal static class SlangBindingMap
                     $"Shader resource '{variable.Name}' declares ResourceEffect more than once.");
             selected = attribute;
         }
+        return selected;
+    }
 
-        if (selected == AttributeReflection.Null)
-            return (Schema.ShaderDeclaredEffect.Unspecified, Schema.ShaderDeclaredOperations.None);
-        if (bindingType == Schema.ShaderBindingType.Sampler)
-            throw new InvalidDataException(
-                $"Shader sampler '{variable.Name}' cannot declare ResourceEffect.");
-        if (selected.ArgumentCount != 2)
-            throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' ResourceEffect must provide effects and operations arguments.");
+    private static Schema.ShaderDeclaredEffect ParseDeclaredEffect(
+        string resourceName,
+        AttributeReflection attribute) => attribute.GetArgumentValueInt(0) switch
+    {
+        1 => Schema.ShaderDeclaredEffect.Read,
+        2 => Schema.ShaderDeclaredEffect.Write,
+        3 => Schema.ShaderDeclaredEffect.ReadWrite,
+        int value => throw new InvalidDataException(
+            $"Shader resource '{resourceName}' declares invalid ResourceEffects value {value}."),
+    };
 
-        Schema.ShaderDeclaredEffect declared = selected.GetArgumentValueInt(0) switch
-        {
-            1 => Schema.ShaderDeclaredEffect.Read,
-            2 => Schema.ShaderDeclaredEffect.Write,
-            3 => Schema.ShaderDeclaredEffect.ReadWrite,
-            int value => throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' declares invalid ResourceEffects value {value}."),
-        };
-        int operationValue = selected.GetArgumentValueInt(1);
+    private static Schema.ShaderDeclaredOperations ParseDeclaredOperations(
+        string resourceName,
+        AttributeReflection attribute)
+    {
+        int operationValue = attribute.GetArgumentValueInt(1);
         const int allOperations = (int)(
             Schema.ShaderDeclaredOperations.Atomic |
             Schema.ShaderDeclaredOperations.Append |
@@ -511,32 +538,29 @@ internal static class SlangBindingMap
             Schema.ShaderDeclaredOperations.Feedback);
         if (operationValue < 0 || (operationValue & ~allOperations) != 0)
             throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' declares invalid ResourceOperations value {operationValue}.");
-        Schema.ShaderDeclaredOperations operations = (Schema.ShaderDeclaredOperations)operationValue;
-
-        int capability = reflectedAccess switch
-        {
-            Schema.ShaderReflectedAccess.ReadOnly => 1,
-            Schema.ShaderReflectedAccess.WriteOnly => 2,
-            Schema.ShaderReflectedAccess.ReadWrite => 3,
-            _ => bindingType switch
-            {
-                Schema.ShaderBindingType.ConstantBuffer or
-                    Schema.ShaderBindingType.StorageBufferRead or
-                    Schema.ShaderBindingType.RawBufferRead or
-                    Schema.ShaderBindingType.TextureRead => 1,
-                Schema.ShaderBindingType.StorageBufferReadWrite or
-                    Schema.ShaderBindingType.RawBufferReadWrite or
-                    Schema.ShaderBindingType.TextureReadWrite => 3,
-                _ => 0,
-            },
-        };
-        if (((int)declared & ~capability) != 0)
-            throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' declares effect {declared} beyond its reflected access {reflectedAccess}.");
-        ValidateDeclaredOperations(variable.Name, declared, operations, bindingType, reflectedAccess);
-        return (declared, operations);
+                $"Shader resource '{resourceName}' declares invalid ResourceOperations value {operationValue}.");
+        return (Schema.ShaderDeclaredOperations)operationValue;
     }
+
+    private static int ReflectedCapability(
+        Schema.ShaderReflectedAccess reflectedAccess,
+        Schema.ShaderBindingType bindingType) => reflectedAccess switch
+    {
+        Schema.ShaderReflectedAccess.ReadOnly => 1,
+        Schema.ShaderReflectedAccess.WriteOnly => 2,
+        Schema.ShaderReflectedAccess.ReadWrite => 3,
+        _ => bindingType switch
+        {
+            Schema.ShaderBindingType.ConstantBuffer or
+                Schema.ShaderBindingType.StorageBufferRead or
+                Schema.ShaderBindingType.RawBufferRead or
+                Schema.ShaderBindingType.TextureRead => 1,
+            Schema.ShaderBindingType.StorageBufferReadWrite or
+                Schema.ShaderBindingType.RawBufferReadWrite or
+                Schema.ShaderBindingType.TextureReadWrite => 3,
+            _ => 0,
+        },
+    };
 
     private static void ValidateDeclaredOperations(
         string resourceName,
@@ -545,6 +569,29 @@ internal static class SlangBindingMap
         Schema.ShaderBindingType bindingType,
         Schema.ShaderReflectedAccess reflectedAccess)
     {
+        ValidateStorageOperations(resourceName, operations, bindingType);
+        ValidateAtomicOperation(resourceName, effect, operations, reflectedAccess);
+        ValidateWriteOperation(
+            resourceName,
+            effect,
+            operations,
+            Schema.ShaderDeclaredOperations.Append,
+            "Append");
+        ValidateReadOperation(resourceName, effect, operations);
+        ValidateWriteOperation(
+            resourceName,
+            effect,
+            operations,
+            Schema.ShaderDeclaredOperations.RasterOrdered,
+            "RasterOrdered");
+        ValidateFeedbackOperation(resourceName, effect, operations);
+    }
+
+    private static void ValidateStorageOperations(
+        string resourceName,
+        Schema.ShaderDeclaredOperations operations,
+        Schema.ShaderBindingType bindingType)
+    {
         bool storage = bindingType is
             Schema.ShaderBindingType.StorageBufferReadWrite or
             Schema.ShaderBindingType.RawBufferReadWrite or
@@ -552,6 +599,14 @@ internal static class SlangBindingMap
         if (operations != Schema.ShaderDeclaredOperations.None && !storage)
             throw new InvalidDataException(
                 $"Shader resource '{resourceName}' declares operation qualifiers on non-storage binding {bindingType}.");
+    }
+
+    private static void ValidateAtomicOperation(
+        string resourceName,
+        Schema.ShaderDeclaredEffect effect,
+        Schema.ShaderDeclaredOperations operations,
+        Schema.ShaderReflectedAccess reflectedAccess)
+    {
         if ((operations & Schema.ShaderDeclaredOperations.Atomic) != 0 &&
             (effect != Schema.ShaderDeclaredEffect.ReadWrite ||
              reflectedAccess != Schema.ShaderReflectedAccess.ReadWrite))
@@ -559,18 +614,37 @@ internal static class SlangBindingMap
             throw new InvalidDataException(
                 $"Shader resource '{resourceName}' must declare ReadWrite and expose read-write access for Atomic operations.");
         }
-        if ((operations & Schema.ShaderDeclaredOperations.Append) != 0 &&
+    }
+
+    private static void ValidateWriteOperation(
+        string resourceName,
+        Schema.ShaderDeclaredEffect effect,
+        Schema.ShaderDeclaredOperations operations,
+        Schema.ShaderDeclaredOperations operation,
+        string operationName)
+    {
+        if ((operations & operation) != 0 &&
             effect is not (Schema.ShaderDeclaredEffect.Write or Schema.ShaderDeclaredEffect.ReadWrite))
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' must include Write for Append operations.");
+                $"Shader resource '{resourceName}' must include Write for {operationName} operations.");
+    }
+
+    private static void ValidateReadOperation(
+        string resourceName,
+        Schema.ShaderDeclaredEffect effect,
+        Schema.ShaderDeclaredOperations operations)
+    {
         if ((operations & Schema.ShaderDeclaredOperations.Consume) != 0 &&
             effect is not (Schema.ShaderDeclaredEffect.Read or Schema.ShaderDeclaredEffect.ReadWrite))
             throw new InvalidDataException(
                 $"Shader resource '{resourceName}' must include Read for Consume operations.");
-        if ((operations & Schema.ShaderDeclaredOperations.RasterOrdered) != 0 &&
-            effect is not (Schema.ShaderDeclaredEffect.Write or Schema.ShaderDeclaredEffect.ReadWrite))
-            throw new InvalidDataException(
-                $"Shader resource '{resourceName}' must include Write for RasterOrdered operations.");
+    }
+
+    private static void ValidateFeedbackOperation(
+        string resourceName,
+        Schema.ShaderDeclaredEffect effect,
+        Schema.ShaderDeclaredOperations operations)
+    {
         if ((operations & Schema.ShaderDeclaredOperations.Feedback) != 0 &&
             effect != Schema.ShaderDeclaredEffect.ReadWrite)
             throw new InvalidDataException(

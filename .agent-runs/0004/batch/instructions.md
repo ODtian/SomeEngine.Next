@@ -23,7 +23,10 @@
 - `d3d12-core-is-native-and-backend-neutral`
 - `descriptor-rollover-replays-active-state`
 - `immediate-rg-restores-temporal-export-and-capture`
+- `harness-change-does-not-weaken-contract`
+- `migration-has-no-temporary-exceptions`
 - `naming-research-and-breaking-migration-are-complete`
+- `run-classification-uses-accepted-terms`
 - `shader-parameter-generation-uses-asset-truth`
 
 ## Classification

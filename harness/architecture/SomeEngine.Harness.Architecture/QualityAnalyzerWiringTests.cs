@@ -79,7 +79,7 @@ public sealed class QualityAnalyzerWiringTests
 
         Assert.Contains(additionalFiles, include => include.EndsWith("harness\\config.json"));
         Assert.Contains(additionalFiles, include =>
-            include.EndsWith("harness\\quality-baselines\\graphics-rendergraph-hard.v1.json"));
+            include.EndsWith("harness\\quality-baselines\\graphics-hard-baseline.v1.json"));
 
         string baselineDefault = document.Descendants()
             .Single(element => element.Name.LocalName == "SomeEngineQualityBaselineEnabled")
@@ -90,7 +90,7 @@ public sealed class QualityAnalyzerWiringTests
             .Single(element =>
                 element.Name.LocalName == "AdditionalFiles"
                 && (element.Attribute("Include")?.Value ?? "").EndsWith(
-                    "harness\\quality-baselines\\graphics-rendergraph-hard.v1.json"));
+                    "harness\\quality-baselines\\graphics-hard-baseline.v1.json"));
         Assert.Contains("SomeEngineQualityBaselineEnabled", baselineAdditionalFile.Attribute("Condition")?.Value ?? "");
 
         var itemGroupCondition = analyzerReference!.Parent?.Attribute("Condition")?.Value ?? "";
@@ -105,7 +105,7 @@ public sealed class QualityAnalyzerWiringTests
             repoRoot,
             "harness",
             "quality-baselines",
-            "graphics-rendergraph-hard.v1.json");
+            "graphics-hard-baseline.v1.json");
         Assert.True(File.Exists(baselinePath), "The accepted RHI/RG quality baseline must be tracked.");
 
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(baselinePath));

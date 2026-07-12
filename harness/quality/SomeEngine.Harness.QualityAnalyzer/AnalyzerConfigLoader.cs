@@ -8,7 +8,7 @@ namespace SomeEngine.Harness.QualityAnalyzer;
 internal static class AnalyzerConfigLoader
 {
     private const string ConfigFileName = "config.json";
-    private const string AcceptedBaselineFileName = "graphics-rendergraph-hard.v1.json";
+    private const string AcceptedBaselineFileName = "graphics-hard-baseline.v1.json";
 
     public static AnalyzerHarnessConfig Load(AnalyzerOptions options)
     {

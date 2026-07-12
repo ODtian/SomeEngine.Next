@@ -190,124 +190,137 @@ public sealed class SwapchainTests
 
     private static void ExecuteHardwareDisplayScenario()
     {
-        using VisibleWindow window = new(400, 240);
-        window.Show();
-
         using (Device device = CreateHardwareDevice())
         {
             Assert.True(device.Info.HardwareAccelerated, "The display lane must not fall back to WARP.");
-
-            SwapchainHandle fifo = device.CreateSwapchain(new SwapchainDesc(
-                window.Handle,
-                400,
-                240,
-                Format.R8G8B8A8UNorm,
-                PresentMode: SwapchainPresentMode.Fifo,
-                Name: "display.vsync"));
-            PresentResult fifoPresent = PresentUntilVisible(
-                device,
-                fifo,
-                new PresentOptions(VSync: true, AllowTearing: false),
-                window);
-            Assert.True(
-                fifoPresent.Status == PresentStatus.Success,
-                $"FIFO presentation remained {fifoPresent.Status}. {window.DescribeVisibility()}");
-            device.DestroySwapchain(fifo);
-
-            SwapchainHandle tearing = device.CreateSwapchain(new SwapchainDesc(
-                window.Handle,
-                400,
-                240,
-                Format.R8G8B8A8UNorm,
-                PresentMode: SwapchainPresentMode.Immediate,
-                AllowTearing: true,
-                Name: "display.tearing"));
-            PresentResult tearingPresent = PresentUntilVisible(
-                device,
-                tearing,
-                new PresentOptions(VSync: false, AllowTearing: true),
-                window);
-            Assert.True(
-                tearingPresent.Status == PresentStatus.Success,
-                $"Tearing presentation remained {tearingPresent.Status}. {window.DescribeVisibility()}");
-            device.DestroySwapchain(tearing);
-
-            SwapchainHandle occluded = device.CreateSwapchain(new SwapchainDesc(
-                window.Handle,
-                400,
-                240,
-                Format.R8G8B8A8UNorm,
-                PresentMode: SwapchainPresentMode.Immediate,
-                Name: "display.occlusion"));
-            window.Minimize();
-            PresentStatus occlusionStatus = PresentStatus.Success;
-            for (int attempt = 0; attempt < 64 && occlusionStatus != PresentStatus.Occluded; attempt++)
-            {
-                SwapchainImage occludedImage = device.AcquireNextImage(occluded);
-                occlusionStatus = device.Present(
-                    occluded,
-                    occludedImage.ImageIndex,
-                    new PresentOptions(VSync: false, AllowTearing: false)).Status;
-                window.PumpMessages();
-                if (occlusionStatus != PresentStatus.Occluded) Thread.Sleep(16);
-            }
-            Assert.True(
-                occlusionStatus == PresentStatus.Occluded,
-                $"Minimized presentation remained {occlusionStatus}. {window.DescribeVisibility()}");
-            device.DestroySwapchain(occluded);
-            window.Show();
-
+            ExerciseFifoPresentation(device);
+            ExerciseTearingPresentation(device);
+            ExerciseOccludedPresentation(device);
             Assert.DoesNotContain(
                 device.DrainDiagnostics(),
                 static diagnostic => diagnostic.Severity is GraphicsDiagnosticSeverity.Error or GraphicsDiagnosticSeverity.Corruption);
         }
 
-        // An SDR desktop is allowed to reject the HDR10 color space, but the real DXGI query and
-        // SetColorSpace1 path must execute and report that rejection explicitly.
         using (Device hdrDevice = CreateHardwareDevice())
-        {
-            try
-            {
-                SwapchainHandle hdr = hdrDevice.CreateSwapchain(new SwapchainDesc(
-                    window.Handle,
-                    400,
-                    240,
-                    Format.R16G16B16A16Float,
-                    PresentMode: SwapchainPresentMode.Fifo,
-                    ColorSpace: SwapchainColorSpace.Hdr10,
-                    Name: "display.hdr10"));
-                PresentResult hdrPresent = PresentUntilVisible(hdrDevice, hdr, default, window);
-                Assert.True(
-                    hdrPresent.Status == PresentStatus.Success,
-                    $"HDR presentation remained {hdrPresent.Status}. {window.DescribeVisibility()}");
-                hdrDevice.DestroySwapchain(hdr);
-            }
-            catch (NotSupportedException exception)
-            {
-                Assert.Contains("Hdr10", exception.Message, StringComparison.Ordinal);
-            }
-        }
+            ExerciseHdrPresentation(hdrDevice);
 
         using (Device removedDevice = CreateHardwareDevice())
+            ExerciseDeviceRemovalPresentation(removedDevice);
+    }
+
+    private static void ExerciseFifoPresentation(Device device)
+    {
+        using VisibleWindow window = CreateVisibleWindow();
+        SwapchainHandle swapchain = device.CreateSwapchain(new SwapchainDesc(
+            window.Handle,
+            400,
+            240,
+            Format.R8G8B8A8UNorm,
+            PresentMode: SwapchainPresentMode.Fifo,
+            Name: "display.vsync"));
+        PresentResult result = PresentUntilVisible(
+            device,
+            swapchain,
+            new PresentOptions(VSync: true, AllowTearing: false),
+            window);
+        Assert.True(result.Status == PresentStatus.Success, $"FIFO presentation remained {result.Status}. {window.DescribeVisibility()}");
+        device.DestroySwapchain(swapchain);
+    }
+
+    private static void ExerciseTearingPresentation(Device device)
+    {
+        using VisibleWindow window = CreateVisibleWindow();
+        SwapchainHandle swapchain = device.CreateSwapchain(new SwapchainDesc(
+            window.Handle,
+            400,
+            240,
+            Format.R8G8B8A8UNorm,
+            PresentMode: SwapchainPresentMode.Immediate,
+            AllowTearing: true,
+            Name: "display.tearing"));
+        PresentResult result = PresentUntilVisible(
+            device,
+            swapchain,
+            new PresentOptions(VSync: false, AllowTearing: true),
+            window);
+        Assert.True(result.Status == PresentStatus.Success, $"Tearing presentation remained {result.Status}. {window.DescribeVisibility()}");
+        device.DestroySwapchain(swapchain);
+    }
+
+    private static void ExerciseOccludedPresentation(Device device)
+    {
+        using VisibleWindow window = CreateVisibleWindow();
+        SwapchainHandle swapchain = device.CreateSwapchain(new SwapchainDesc(
+            window.Handle,
+            400,
+            240,
+            Format.R8G8B8A8UNorm,
+            PresentMode: SwapchainPresentMode.Immediate,
+            Name: "display.occlusion"));
+        window.Minimize();
+        PresentStatus status = PresentStatus.Success;
+        for (int attempt = 0; attempt < 64 && status != PresentStatus.Occluded; attempt++)
         {
-            SwapchainHandle removedSwapchain = removedDevice.CreateSwapchain(new SwapchainDesc(
+            SwapchainImage image = device.AcquireNextImage(swapchain);
+            status = device.Present(
+                swapchain,
+                image.ImageIndex,
+                new PresentOptions(VSync: false, AllowTearing: false)).Status;
+            window.PumpMessages();
+            if (status != PresentStatus.Occluded) Thread.Sleep(16);
+        }
+        Assert.True(status == PresentStatus.Occluded, $"Minimized presentation remained {status}. {window.DescribeVisibility()}");
+        device.DestroySwapchain(swapchain);
+    }
+
+    private static void ExerciseHdrPresentation(Device device)
+    {
+        using VisibleWindow window = CreateVisibleWindow();
+        // An SDR desktop may reject HDR10, but the real DXGI query and SetColorSpace1 path must execute.
+        try
+        {
+            SwapchainHandle swapchain = device.CreateSwapchain(new SwapchainDesc(
                 window.Handle,
                 400,
                 240,
-                Format.R8G8B8A8UNorm,
-                PresentMode: SwapchainPresentMode.Immediate,
-                Name: "display.device-removed"));
-            SwapchainImage removedImage = removedDevice.AcquireNextImage(removedSwapchain);
-            using (ID3D12Device5 removal = removedDevice.NativeDevice.QueryInterface<ID3D12Device5>())
-            {
-                removal.RemoveDevice();
-            }
-
-            PresentResult removed = removedDevice.Present(removedSwapchain, removedImage.ImageIndex);
-            Assert.Equal(PresentStatus.DeviceLost, removed.Status);
-            Assert.Equal(DeviceErrorKind.DeviceLost, removed.Error.Kind);
-            Assert.Equal(DeviceErrorKind.DeviceLost, removedDevice.LastError.Kind);
+                Format.R16G16B16A16Float,
+                PresentMode: SwapchainPresentMode.Fifo,
+                ColorSpace: SwapchainColorSpace.Hdr10,
+                Name: "display.hdr10"));
+            PresentResult result = PresentUntilVisible(device, swapchain, default, window);
+            Assert.True(result.Status == PresentStatus.Success, $"HDR presentation remained {result.Status}. {window.DescribeVisibility()}");
+            device.DestroySwapchain(swapchain);
         }
+        catch (NotSupportedException exception)
+        {
+            Assert.Contains("Hdr10", exception.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static void ExerciseDeviceRemovalPresentation(Device device)
+    {
+        using VisibleWindow window = CreateVisibleWindow();
+        SwapchainHandle swapchain = device.CreateSwapchain(new SwapchainDesc(
+            window.Handle,
+            400,
+            240,
+            Format.R8G8B8A8UNorm,
+            PresentMode: SwapchainPresentMode.Immediate,
+            Name: "display.device-removed"));
+        SwapchainImage image = device.AcquireNextImage(swapchain);
+        using (ID3D12Device5 removal = device.NativeDevice.QueryInterface<ID3D12Device5>())
+            removal.RemoveDevice();
+        PresentResult result = device.Present(swapchain, image.ImageIndex);
+        Assert.Equal(PresentStatus.DeviceLost, result.Status);
+        Assert.Equal(DeviceErrorKind.DeviceLost, result.Error.Kind);
+        Assert.Equal(DeviceErrorKind.DeviceLost, device.LastError.Kind);
+    }
+
+    private static VisibleWindow CreateVisibleWindow()
+    {
+        VisibleWindow window = new(400, 240);
+        window.Show();
+        return window;
     }
 
     private static PresentResult PresentUntilVisible(

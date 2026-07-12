@@ -1,0 +1,4 @@
+{
+  "pass": true,
+  "comment": "Harness changes preserve every mandatory capability, required lane and hard failure policy. The quality baseline is exact to diagnostics proven present at c0ac382e; new or worsened diagnostics remain hard failures. Dependency edits replace untracked inputs with pinned source projects and tracked runtimes rather than weakening clean-checkout validation."
+}

@@ -1483,7 +1483,7 @@
             "symbol": "public QueryPoolHandle CreateQueryPool"
           },
           {
-            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.cs",
+            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.Queries.cs",
             "symbol": "public void WriteTimestamp"
           }
         ],
@@ -1598,7 +1598,7 @@
             "symbol": "public QueryPoolHandle CreateQueryPool"
           },
           {
-            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.cs",
+            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.Queries.cs",
             "symbol": "public void BeginQuery"
           }
         ],
@@ -1707,7 +1707,7 @@
             "symbol": "public QueryPoolHandle CreateQueryPool"
           },
           {
-            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.cs",
+            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.Queries.cs",
             "symbol": "public void BeginQuery"
           }
         ],
@@ -2443,7 +2443,7 @@
           },
           {
             "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
-            "symbol": "public static class ReplayExecutor"
+            "symbol": "public static partial class ReplayExecutor"
           }
         ],
         "null": [],
@@ -3562,7 +3562,7 @@
             "symbol": "public void SetName(BufferHandle buffer"
           },
           {
-            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.cs",
+            "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.Queries.cs",
             "symbol": "public void InsertDebugMarker"
           }
         ],
@@ -4122,7 +4122,7 @@
         "public": [
           {
             "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
-            "symbol": "public static class ReplayExecutor"
+            "symbol": "public static partial class ReplayExecutor"
           },
           {
             "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",

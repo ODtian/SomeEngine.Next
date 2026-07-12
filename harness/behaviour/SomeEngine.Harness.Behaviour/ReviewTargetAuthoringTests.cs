@@ -8,6 +8,13 @@ namespace SomeEngine.Harness.Behaviour;
 
 public sealed class ReviewTargetAuthoringTests
 {
+    private static readonly string[] RequiredContractTargets =
+    [
+        "harness-change-does-not-weaken-contract",
+        "migration-has-no-temporary-exceptions",
+        "run-classification-uses-accepted-terms",
+    ];
+
     [Fact]
     public void ActiveAgentRunReviewTargetsHaveRequiredSections()
     {
@@ -76,6 +83,11 @@ public sealed class ReviewTargetAuthoringTests
         string instructions = File.ReadAllText(instructionsPath);
 
         Assert.NotEmpty(actual);
+        foreach (string requiredTarget in RequiredContractTargets)
+        {
+            Assert.Contains(requiredTarget, actual);
+        }
+
         foreach (string targetId in actual)
         {
             Assert.Contains($"`{targetId}`", instructions, StringComparison.Ordinal);

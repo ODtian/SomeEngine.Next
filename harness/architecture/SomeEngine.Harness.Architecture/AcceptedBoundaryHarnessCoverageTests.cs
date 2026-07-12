@@ -893,7 +893,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
     private static readonly string[] RequiredProductNuGetPackages =
     [
-        "SomeEngine.Assets:Alimer.Bindings.MeshOptimizer:1.2.0",
         "SomeEngine.Assets:FlatSharp.Compiler:7.9.0",
         "SomeEngine.Assets:FlatSharp.Runtime:7.9.0",
         "SomeEngine.Assets:SharpGLTF.Core:1.0.6",

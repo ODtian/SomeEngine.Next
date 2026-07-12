@@ -8,7 +8,7 @@
   <ItemGroup Condition="'$(SomeEngineQualityAnalyzerEnabled)' == 'true' and '$(SomeEngineQualityAnalyzerOptOut)' != 'true' and $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$([System.IO.Path]::Combine($(SomeEngineRepositoryRoot), `src`))')) == 'true'">
     <ProjectReference Include="$(SomeEngineQualityAnalyzerProject)" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <AdditionalFiles Include="$(SomeEngineRepositoryRoot)harness\config.json" />
-    <AdditionalFiles Include="$(SomeEngineRepositoryRoot)harness\quality-baselines\graphics-rendergraph-hard.v1.json"
+    <AdditionalFiles Include="$(SomeEngineRepositoryRoot)harness\quality-baselines\graphics-hard-baseline.v1.json"
                      Condition="'$(SomeEngineQualityBaselineEnabled)' == 'true'" />
   </ItemGroup>
 </Project>
