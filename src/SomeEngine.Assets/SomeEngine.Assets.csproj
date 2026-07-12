@@ -22,6 +22,12 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="..\..\external\SlangShaderSharp\runtimes\**">
+      <Link>runtimes\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <FlatSharpSchema Include="..\..\assets\Schema\texture_asset.fbs" />
     <FlatSharpSchema Include="..\..\assets\Schema\mesh_asset.fbs" />
     <FlatSharpSchema Include="..\..\assets\Schema\shader_asset.fbs" />
