@@ -2,13 +2,27 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Description>Direct3D12 Graphics backend adapter.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Vortice.Direct3D12" Version="3.8.3" />
-    <PackageReference Include="Vortice.Mathematics" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Direct3D.D3D12" Version="1.619.5"
+                      GeneratePathProperty="true" />
+    <PackageReference Include="Silk.NET.Direct3D12" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.DXGI" Version="2.23.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\D3D12Core.dll"
+             Link="D3D12\D3D12Core.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\d3d12SDKLayers.dll"
+             Link="D3D12\d3d12SDKLayers.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
