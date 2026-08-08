@@ -1,0 +1,120 @@
+digraph RhiRenderGraphSurvivors {
+  graph [
+    rankdir=TB,
+    bgcolor="#0b1020",
+    fontname="Microsoft YaHei",
+    fontcolor="#e5e7eb",
+    fontsize=20,
+    label="RG / RHI survivor mental model — four layers, horizontal extension only",
+    labelloc=t,
+    pad=0.25,
+    nodesep=0.38,
+    ranksep=0.65,
+    splines=polyline
+  ];
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#64748b",
+    fillcolor="#172033",
+    fontcolor="#f8fafc",
+    fontname="Microsoft YaHei",
+    fontsize=11,
+    margin="0.14,0.09"
+  ];
+  edge [
+    color="#94a3b8",
+    fontcolor="#cbd5e1",
+    fontname="Microsoft YaHei",
+    fontsize=9,
+    arrowsize=0.7
+  ];
+
+  subgraph cluster_l0 {
+    label="L0 · immutable facts";
+    color="#0ea5e9";
+    fontcolor="#7dd3fc";
+    style="rounded,dashed";
+    create [label="complete owner-create input\nDesc only here"];
+    locator [label="graph-scoped Id\nstructural Key"];
+    coordinates [label="exact Range / Region\nResourceState"];
+    queue_position [label="one Queue scalar coordinate\nQueuePosition"];
+    device_position [label="same-Device product coordinate\nDevicePosition"];
+    queue_position -> device_position [label="one maximum per Queue"];
+  }
+
+  subgraph cluster_l1 {
+    label="L1 · lifecycle entities";
+    color="#22c55e";
+    fontcolor="#86efac";
+    style="rounded,dashed";
+    device [label="Device\nunique RHI root owner", fillcolor="#123524"];
+    queue [label="Queue\nordered submission timeline owner"];
+    resources [label="Heap / Buffer / Texture\nunique owners"];
+    binding [label="View / Sampler / Layout / BindGroup\nunique owners"];
+    pipeline [label="Pipeline / QueryPool / Swapchain / WorkGraph\nunique owners"];
+    obligations [label="Bindless slot / acquired image / mapping\nunique obligations"];
+    transient [label="device-owned transient placement pool\ninternal"];
+    device -> queue [label="owns"];
+    device -> resources [label="creates"];
+    device -> binding [label="creates"];
+    device -> pipeline [label="creates"];
+    device -> transient [label="owns"];
+    resources -> binding [dir=back, label="target owner pin"];
+    binding -> obligations [dir=back, label="parent owner pin"];
+  }
+
+  subgraph cluster_l2 {
+    label="L2 · command scope";
+    color="#f59e0b";
+    fontcolor="#fcd34d";
+    style="rounded,dashed";
+    recorder [label="single-use command recording owner"];
+    payload [label="explicit command variants\nbarrier / descriptor / AS build payload"];
+    command_list [label="finished command-list\nunique owner"];
+    recorder -> payload [label="materializes once"];
+    payload -> command_list [label="Finish transfers"];
+    command_list -> queue [label="Submit consumes once"];
+    resources -> recorder [label="borrow + pin"];
+    binding -> recorder [label="borrow + pin"];
+    pipeline -> recorder [label="borrow + pin"];
+    queue -> queue_position [label="publishes"];
+  }
+
+  subgraph cluster_l3 {
+    label="L3 · graph invocation";
+    color="#a855f7";
+    fontcolor="#d8b4fe";
+    style="rounded,dashed";
+    graph_invocation [label="Graph\nsingle-use invocation owner", fillcolor="#2b1740"];
+    graph_id [label="one graph-scoped Id family"];
+    pass [label="Pass\ndeclarations + callback behavior"];
+    access [label="canonical access / dependency / placement rows"];
+    graph_invocation -> graph_id [label="owns"];
+    graph_invocation -> pass [label="owns"];
+    pass -> access [label="declares"];
+    pass -> recorder [label="callback-lifetime borrow"];
+    graph_invocation -> transient [label="acquire / return active placements"];
+    graph_invocation -> device_position [label="Execute returns"];
+  }
+
+  device -> graph_invocation [label="borrowed by one invocation"];
+  resources -> graph_id [label="external owner borrow"];
+  binding -> graph_id [label="external owner borrow"];
+  pipeline -> graph_id [label="external owner borrow"];
+
+  snapshot [
+    label="immutable diagnostics Snapshot owner\nexplicit access + barrier variants\noutside the four runtime layers",
+    fillcolor="#312e3f",
+    color="#c084fc"
+  ];
+  graph_invocation -> snapshot [style=dashed, label="explicit projection + one materialization"];
+
+  deleted [
+    label="forbidden vertical families\nGpu* · public *Handle · *Context · *Info · *Operations\nwrapper *Result · *Identity · *Token · public transient leases\nfeature Device / Command interfaces\nextraction / replay / descriptor mirrors",
+    shape=note,
+    fillcolor="#3f1d24",
+    color="#f87171",
+    fontcolor="#fecaca"
+  ];
+}
