@@ -1,19 +1,21 @@
 namespace SomeEngine.Graphics;
 
-public enum PipelineStatus : byte
+public readonly ref struct PipelineCacheDesc
 {
-    Ready,
-    Pending,
-    Failed,
+    public PipelineCacheDesc(ReadOnlySpan<byte> data = default, string? label = null)
+    {
+        Data = data;
+        Label = label;
+    }
+
+    public ReadOnlySpan<byte> Data { get; }
+    public string? Label { get; }
 }
 
-public readonly record struct PipelineCacheKey(Guid StableId, ulong Version = 0)
+public abstract class PipelineCache : DeviceResource
 {
-    public bool IsValid => StableId != Guid.Empty;
+    internal PipelineCache(Device device, string? label)
+        : base(device, label)
+    {
+    }
 }
-
-public readonly record struct PipelineCacheStats(
-    int Entries,
-    long Hits,
-    long Misses,
-    long Invalidations);

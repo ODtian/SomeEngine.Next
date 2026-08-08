@@ -2,6 +2,10 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Description>Backend-neutral graphics device, resource, command, synchronization, and presentation contracts.</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
+  </ItemGroup>
 </Project>
