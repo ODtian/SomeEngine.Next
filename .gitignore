@@ -3,7 +3,13 @@
 .vscode/
 .idea/
 .codex-docs-cache/
+.codex/inspection/
 .tmp-real-prompt-eval/
+.tmp/
+tmp/
+.agent-tmp/
+.artifacts/
+Library/
 
 # Build outputs
 bin/
@@ -18,11 +24,17 @@ BenchmarkDotNet.Artifacts/
 *.coveragexml
 *.nettrace
 *.etl
+*.etlx
+*.rdc
 *.speedscope.json
 harness/artifacts/*
 !harness/artifacts/.gitkeep
 harness/coverage/coverage.cobertura.xml
 harness/coverage/results/
+benchmarks/.codex-*-probe-*/
+harness/tmp_*.pdf
+tmp_resource_refs.txt
+*-checkpoint-*.zip
 
 # User / OS state
 *.user
@@ -44,9 +56,7 @@ src/SomeEngine.Rhi/
 src/SomeEngine.Rhi.D3D12/
 tests/SomeEngine.Rhi.Tests/
 tools/SomeEngine.Rhi.WindowTests/
-src/SomeEngine.Runtime/
 src/SomeEngine.UI/
-tests/SomeEngine.Runtime.Tests/
 tools/DagVisualizer/
 tools/Inspector/
 tools/eos/
