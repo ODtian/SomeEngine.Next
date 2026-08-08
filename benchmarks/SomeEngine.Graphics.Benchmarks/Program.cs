@@ -1,17 +1,26 @@
-namespace SomeEngine.Graphics;
+namespace SomeEngine.Graphics.Benchmarks;
 
 internal static class Program
 {
-    public static int Main()
+    public static int Main(string[] args)
     {
         try
         {
-            var scenarios = new Benchmarks();
-            scenarios.CompilerCacheScenario();
-            scenarios.RhiDescriptorResourceScenario();
-            scenarios.LightweightTenThousandFrameSoak();
-            Console.WriteLine("Graphics benchmark/soak artifact: harness/artifacts/graphics-benchmarks/graphics-rendergraph.v1.json");
-            return 0;
+            BenchmarkOptions options = BenchmarkOptions.Parse(args);
+            return options.Command switch
+            {
+                BenchmarkCommand.Warp => BenchmarkController.RunWarp(options),
+                BenchmarkCommand.Certify => BenchmarkController.RunCertification(options),
+                BenchmarkCommand.Worker => BenchmarkWorker.Run(options),
+                BenchmarkCommand.Evaluate => BenchmarkController.EvaluateExisting(options),
+                _ => throw new ArgumentOutOfRangeException(nameof(options.Command)),
+            };
+        }
+        catch (BenchmarkUsageException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            Console.Error.WriteLine(BenchmarkOptions.Usage);
+            return 2;
         }
         catch (Exception exception)
         {
