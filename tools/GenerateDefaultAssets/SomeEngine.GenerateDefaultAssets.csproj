@@ -9,7 +9,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Assets.Importers\SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
   </ItemGroup>
 
   <ItemGroup>

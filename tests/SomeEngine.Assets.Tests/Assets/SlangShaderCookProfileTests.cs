@@ -2,13 +2,14 @@ using System.Text.Json;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class SlangShaderCookProfileTests
 {
     [Fact]
-    public void SourceProfile_InvalidatesCacheAndPreservesAssetIdentityAndReflection()
+    public async Task SourceProfile_ChangesImportFingerprintAndPreservesAssetIdentityAndReflection()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -35,14 +36,16 @@ public sealed class SlangShaderCookProfileTests
             WriteMeta(sourcePath, sourceGuid, SlangShaderCookProfiles.DefaultName);
             var importer = new SlangSourceImporter();
 
-            ShaderAsset defaultAsset = Assert.IsType<ShaderAsset>(
-                Assert.Single(importer.Import(projectRoot, sourcePath)).Asset);
+            ImportedAsset defaultImport = Assert.Single(
+                await importer.ImportAsync(projectRoot, sourcePath));
+            Shader defaultAsset = await Shader.ReadAsync(defaultImport.OutputPath);
             AssetMeta defaultMeta = AssetMetaFiles.TryLoad(
                 Path.ChangeExtension(sourcePath, ".shader.asset"))!;
 
             WriteMeta(sourcePath, sourceGuid, SlangShaderCookProfiles.D3D12ShaderModel62Name);
-            ShaderAsset sm62Asset = Assert.IsType<ShaderAsset>(
-                Assert.Single(importer.Import(projectRoot, sourcePath)).Asset);
+            ImportedAsset sm62Import = Assert.Single(
+                await importer.ImportAsync(projectRoot, sourcePath));
+            Shader sm62Asset = await Shader.ReadAsync(sm62Import.OutputPath);
             string outputPath = Path.ChangeExtension(sourcePath, ".shader.asset");
             AssetMeta sm62Meta = AssetMetaFiles.TryLoad(outputPath)!;
 
@@ -78,8 +81,9 @@ public sealed class SlangShaderCookProfileTests
                 sm62SourceMeta)!;
             Assert.Equal(sm62Meta.ContentFingerprint, currentFingerprint.ContentFingerprint);
 
-            var provider = new ShaderAssetProvider();
-            ShaderAsset loaded = provider.Create(sm62Meta.AssetGuid, outputPath);
+            await using BinaryDocument<Shader> document =
+                await AssetProject.OpenAsync<Shader>(outputPath);
+            Shader loaded = document.Root;
             Assert.Equal(sm62Asset.AssetGuid, loaded.AssetGuid);
             Assert.Equal(ReflectionSurface(sm62Asset), ReflectionSurface(loaded));
         }
@@ -92,6 +96,7 @@ public sealed class SlangShaderCookProfileTests
     [Theory]
     [InlineData(SlangShaderCookProfiles.DefaultName, "sm_6_5", "glsl_460")]
     [InlineData(SlangShaderCookProfiles.D3D12ShaderModel62Name, "sm_6_2", "glsl_460")]
+    [InlineData(SlangShaderCookProfiles.D3D12ShaderModel66Name, "sm_6_6", "glsl_460")]
     public void BuiltInProfilesExposeReproducibleTargets(
         string name,
         string expectedDxil,
@@ -121,11 +126,11 @@ public sealed class SlangShaderCookProfileTests
             });
     }
 
-    private static int CountBackend(ShaderAsset asset, string backend)
+    private static int CountBackend(Shader asset, string backend)
         => asset.Variants!.Count(variant =>
             string.Equals(variant.Backend, backend, StringComparison.Ordinal));
 
-    private static string[] ReflectionSurface(ShaderAsset asset)
+    private static string[] ReflectionSurface(Shader asset)
         => asset.EntryPointReflections!
             .Select(reflection =>
                 $"{reflection.Backend}:{reflection.Stage}:{reflection.EntryPoint}:"
@@ -133,7 +138,7 @@ public sealed class SlangShaderCookProfileTests
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
 
-    private static string[] BackendHashes(ShaderAsset asset, string backend)
+    private static string[] BackendHashes(Shader asset, string backend)
         => asset.Variants!
             .Where(variant => string.Equals(variant.Backend, backend, StringComparison.Ordinal))
             .Select(static variant => variant.ContentHash!)

@@ -25,13 +25,13 @@ public class AssetProjectValidatorTests
             CreateDummyFile(dir, "assets/Meshes/a.mesh.asset");
 
             AssetManifest manifest = new();
-            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/a.shader.asset", nameof(ShaderAsset));
-            manifest.AddAsset(materialGuid, "MaterialA", "assets/Materials/a.material.asset", nameof(MaterialAsset), dependencies: [shaderGuid]);
-            manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", nameof(MeshAsset), dependencies: [materialGuid]);
+            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/a.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint);
+            manifest.AddAsset(materialGuid, "MaterialA", "assets/Materials/a.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [shaderGuid]);
+            manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", AssetType<Mesh>.Name, Mesh.SchemaFingerprint, dependencies: [materialGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetDatabase db = AssetCatalog.CreateDatabase(dir);
-            IReadOnlyList<AssetDiagnostic> diagnostics = db.Validate();
+            AssetProject project = AssetAuthoring.CreateProject(dir);
+            IReadOnlyList<AssetDiagnostic> diagnostics = project.Validate();
 
             Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Kind == AssetDiagnosticKind.MissingAssetFile);
             Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Kind == AssetDiagnosticKind.DanglingReference);
@@ -55,15 +55,15 @@ public class AssetProjectValidatorTests
 
             AssetManifest manifest = new();
             manifest.AddSource(sourceGuid, "assets/Shaders/shared.slang");
-            manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", nameof(ShaderAsset), sourceGuid, "shader:main");
-            manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", nameof(ShaderAsset), sourceGuid, "shader:shadow");
+            manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint, sourceGuid, "shader:main");
+            manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint, sourceGuid, "shader:shadow");
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
-            AssetDatabase db = AssetCatalog.CreateDatabase(dir);
+            AssetProject project = AssetAuthoring.CreateProject(dir);
 
-            Assert.Null(db.Resolve("assets/Shaders/shared.slang"));
-            Assert.Equal(mainGuid, db.Resolve("assets/Shaders/shared.slang", "shader:main"));
-            Assert.Equal(shadowGuid, db.Resolve("assets/Shaders/shared.slang", "shader:shadow"));
+            Assert.Null(project.Resolve("assets/Shaders/shared.slang"));
+            Assert.Equal(mainGuid, project.Resolve("assets/Shaders/shared.slang", "shader:main"));
+            Assert.Equal(shadowGuid, project.Resolve("assets/Shaders/shared.slang", "shader:shadow"));
         }
         finally
         {

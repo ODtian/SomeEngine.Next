@@ -17,7 +17,7 @@ public enum ValueType : byte
     Float64
 }
 
-public class VertexAttributeDescriptor
+public class VertexAttributeriptor
 {
     public string Name = "ATTRIB";
     public ValueType Type = ValueType.Float32;

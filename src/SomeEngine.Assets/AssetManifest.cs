@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace SomeEngine.Assets;
 
@@ -11,10 +14,11 @@ public readonly record struct AssetManifestRecord(
     string Name,
     string Path,
     string AssetType,
+    ulong SchemaFingerprint,
     SourceGuid SourceGuid,
     string SubAssetKey);
 
-public sealed class AssetManifest
+public sealed partial class AssetManifest
 {
     public const string SourceIndexFileName = "source_index.json";
     public const string AssetIndexFileName = "asset_index.json";
@@ -55,6 +59,7 @@ public sealed class AssetManifest
         string name,
         string path,
         string assetType,
+        ulong schemaFingerprint,
         SourceGuid sourceGuid = default,
         string subAssetKey = "",
         IEnumerable<AssetGuid>? dependencies = null)
@@ -62,6 +67,12 @@ public sealed class AssetManifest
         if (guid.IsEmpty)
         {
             throw new ArgumentException("Asset guid cannot be empty.", nameof(guid));
+        }
+        if (schemaFingerprint == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(schemaFingerprint),
+                "An asset manifest entry requires an exact schema fingerprint.");
         }
 
         string normalizedPath = AssetIoHelpers.NormalizePath(path);
@@ -77,7 +88,14 @@ public sealed class AssetManifest
             _assetGuidsByPath.Remove(existing.Path);
         }
 
-        _assets[guid] = new AssetManifestRecord(guid, name ?? string.Empty, normalizedPath, assetType ?? string.Empty, sourceGuid, subAssetKey ?? string.Empty);
+        _assets[guid] = new AssetManifestRecord(
+            guid,
+            name ?? string.Empty,
+            normalizedPath,
+            assetType ?? string.Empty,
+            schemaFingerprint,
+            sourceGuid,
+            subAssetKey ?? string.Empty);
         _assetGuidsByPath[normalizedPath] = guid;
         _dependencies[guid] = NormalizeDependencies(guid, dependencies);
         _assetsBySource = null;
@@ -144,9 +162,18 @@ public sealed class AssetManifest
     public void Save(string manifestDirectory)
     {
         Directory.CreateDirectory(manifestDirectory = Path.GetFullPath(manifestDirectory));
-        WriteDocument(Path.Combine(manifestDirectory, SourceIndexFileName), CreateSourceIndex());
-        WriteDocument(Path.Combine(manifestDirectory, AssetIndexFileName), CreateAssetIndex());
-        WriteDocument(Path.Combine(manifestDirectory, DependencyGraphFileName), CreateDependencyGraph());
+        WriteDocument(
+            Path.Combine(manifestDirectory, SourceIndexFileName),
+            CreateSourceIndex(),
+            AssetManifestJsonContext.Default.SourceIndexDocument);
+        WriteDocument(
+            Path.Combine(manifestDirectory, AssetIndexFileName),
+            CreateAssetIndex(),
+            AssetManifestJsonContext.Default.AssetIndexDocument);
+        WriteDocument(
+            Path.Combine(manifestDirectory, DependencyGraphFileName),
+            CreateDependencyGraph(),
+            AssetManifestJsonContext.Default.DependencyGraphDocument);
     }
 
     public static AssetManifest Load(string manifestDirectory)
@@ -154,7 +181,9 @@ public sealed class AssetManifest
         manifestDirectory = Path.GetFullPath(manifestDirectory);
         AssetManifest manifest = new();
 
-        SourceIndexDocument sourceIndex = ReadDocument<SourceIndexDocument>(Path.Combine(manifestDirectory, SourceIndexFileName));
+        SourceIndexDocument sourceIndex = ReadDocument(
+            Path.Combine(manifestDirectory, SourceIndexFileName),
+            AssetManifestJsonContext.Default.SourceIndexDocument);
         foreach (SourceEntryDoc entry in sourceIndex.Sources)
         {
             if (SourceGuid.TryParse(entry.SourceGuid, out SourceGuid guid))
@@ -165,7 +194,9 @@ public sealed class AssetManifest
 
         Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> dependencies = ReadDependencies(manifestDirectory);
 
-        AssetIndexDocument assetIndex = ReadDocument<AssetIndexDocument>(Path.Combine(manifestDirectory, AssetIndexFileName));
+        AssetIndexDocument assetIndex = ReadDocument(
+            Path.Combine(manifestDirectory, AssetIndexFileName),
+            AssetManifestJsonContext.Default.AssetIndexDocument);
         foreach (AssetEntryDoc entry in assetIndex.Assets)
         {
             if (!AssetGuid.TryParse(entry.AssetGuid, out AssetGuid guid))
@@ -174,7 +205,15 @@ public sealed class AssetManifest
             }
 
             SourceGuid sourceGuid = SourceGuid.TryParse(entry.SourceGuid, out SourceGuid parsedSourceGuid) ? parsedSourceGuid : SourceGuid.Empty;
-            manifest.AddAsset(guid, entry.Name, entry.Path, entry.AssetType, sourceGuid, entry.SubAssetKey, dependencies.TryGetValue(guid, out IReadOnlyList<AssetGuid>? values) ? values : []);
+            manifest.AddAsset(
+                guid,
+                entry.Name,
+                entry.Path,
+                entry.AssetType,
+                ParseSchemaFingerprint(entry),
+                sourceGuid,
+                entry.SubAssetKey,
+                dependencies.TryGetValue(guid, out IReadOnlyList<AssetGuid>? values) ? values : []);
         }
 
         return manifest;
@@ -222,6 +261,7 @@ public sealed class AssetManifest
             Name = record.Name,
             Path = record.Path,
             AssetType = record.AssetType,
+            SchemaFingerprint = record.SchemaFingerprint.ToString("X16", CultureInfo.InvariantCulture),
             SourceGuid = record.SourceGuid.IsEmpty ? string.Empty : record.SourceGuid.ToFlatString(),
             SubAssetKey = record.SubAssetKey,
         };
@@ -229,7 +269,9 @@ public sealed class AssetManifest
     private static Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> ReadDependencies(string manifestDirectory)
     {
         Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> dependencies = [];
-        DependencyGraphDocument graph = ReadDocument<DependencyGraphDocument>(Path.Combine(manifestDirectory, DependencyGraphFileName));
+        DependencyGraphDocument graph = ReadDocument(
+            Path.Combine(manifestDirectory, DependencyGraphFileName),
+            AssetManifestJsonContext.Default.DependencyGraphDocument);
         foreach (DepEntryDoc entry in graph.Assets)
         {
             if (AssetGuid.TryParse(entry.AssetGuid, out AssetGuid guid))
@@ -239,6 +281,21 @@ public sealed class AssetManifest
         }
 
         return dependencies;
+    }
+
+    private static ulong ParseSchemaFingerprint(AssetEntryDoc entry)
+    {
+        if (!ulong.TryParse(
+                entry.SchemaFingerprint,
+                NumberStyles.AllowHexSpecifier,
+                CultureInfo.InvariantCulture,
+                out ulong value)
+            || value == 0)
+        {
+            throw new InvalidDataException(
+                $"Asset manifest entry '{entry.Path}' has no current exact schema fingerprint.");
+        }
+        return value;
     }
 
     private static IReadOnlyList<AssetGuid> ParseDependencies(DepEntryDoc entry)
@@ -303,14 +360,19 @@ public sealed class AssetManifest
             .OrderBy(static dependency => dependency.ToString(), StringComparer.Ordinal)
             .ToArray() ?? [];
 
-    private static TDocument ReadDocument<TDocument>(string path)
+    private static TDocument ReadDocument<TDocument>(
+        string path,
+        JsonTypeInfo<TDocument> typeInfo)
         where TDocument : new()
         => File.Exists(path)
-            ? JsonSerializer.Deserialize<TDocument>(File.ReadAllText(path), AssetIoHelpers.JsonOptions) ?? new TDocument()
+            ? JsonSerializer.Deserialize(File.ReadAllText(path), typeInfo) ?? new TDocument()
             : new TDocument();
 
-    private static void WriteDocument<TDocument>(string path, TDocument document)
-        => File.WriteAllText(path, JsonSerializer.Serialize(document, AssetIoHelpers.JsonOptions));
+    private static void WriteDocument<TDocument>(
+        string path,
+        TDocument document,
+        JsonTypeInfo<TDocument> typeInfo)
+        => File.WriteAllText(path, JsonSerializer.Serialize(document, typeInfo));
 
     private sealed class SourceIndexDocument
     {
@@ -334,6 +396,7 @@ public sealed class AssetManifest
         public string Name { get; set; } = string.Empty;
         public string Path { get; set; } = string.Empty;
         public string AssetType { get; set; } = string.Empty;
+        public string SchemaFingerprint { get; set; } = string.Empty;
         public string SourceGuid { get; set; } = string.Empty;
         public string SubAssetKey { get; set; } = string.Empty;
     }
@@ -347,6 +410,16 @@ public sealed class AssetManifest
     {
         public string AssetGuid { get; set; } = string.Empty;
         public List<string> Dependencies { get; set; } = [];
+    }
+
+    [JsonSourceGenerationOptions(
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+    [JsonSerializable(typeof(SourceIndexDocument))]
+    [JsonSerializable(typeof(AssetIndexDocument))]
+    [JsonSerializable(typeof(DependencyGraphDocument))]
+    private sealed partial class AssetManifestJsonContext : JsonSerializerContext
+    {
     }
 }
 

@@ -12,8 +12,11 @@ namespace SomeEngine.Tests.Assets;
 
 public class GltfSourceImporterTests
 {
+    private const string LitShaderGuid = "3ecf4b6f-4ca4-4ad0-88e2-37688ad9b010";
+    private const string UnlitShaderGuid = "4774aa8d-36c4-40db-9821-d982e19f9f84";
+
     [Fact]
-    public void Import_UsesDefaultTemplates_WhenSourceMetaLacksImporterSettings()
+    public async Task Import_UsesDefaultTemplates_WhenSourceMetaLacksImporterSettings()
     {
         string dir = CreateTempDir();
 
@@ -22,7 +25,7 @@ public class GltfSourceImporterTests
             string gltfPath = WriteTestProject(dir, writeImporterSettings: false);
             var importer = new GltfSourceImporter();
 
-            IReadOnlyList<ImportedAsset> imported = importer.Import(dir, gltfPath);
+            IReadOnlyList<ImportedAsset> imported = await importer.ImportAsync(dir, gltfPath);
 
             Assert.Contains(imported, asset => asset.SubAssetKey.StartsWith("material:", StringComparison.Ordinal));
         }
@@ -33,7 +36,7 @@ public class GltfSourceImporterTests
     }
 
     [Fact]
-    public void Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndMeshRegionsWithoutMaterialDependencies()
+    public async Task Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndMeshRegionsWithoutMaterialDependencies()
     {
         string dir = CreateTempDir();
 
@@ -42,29 +45,31 @@ public class GltfSourceImporterTests
             string gltfPath = WriteTestProject(dir, writeImporterSettings: true);
             var importer = new GltfSourceImporter();
 
-            IReadOnlyList<ImportedAsset> first = importer.Import(dir, gltfPath);
-            IReadOnlyList<ImportedAsset> second = importer.Import(dir, gltfPath);
+            IReadOnlyList<ImportedAsset> first = await importer.ImportAsync(dir, gltfPath);
+            IReadOnlyList<ImportedAsset> second = await importer.ImportAsync(dir, gltfPath);
 
             Assert.Equal(9, first.Count); // 5 textures + 2 materials + 2 meshes
             Assert.Equal(
                 first.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.SubAssetKey),
                 second.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.SubAssetKey));
             Assert.Equal(
-                first.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.Asset.AssetGuid),
-                second.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.Asset.AssetGuid));
+                first.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.AssetGuid),
+                second.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.AssetGuid));
 
             ImportedAsset maskedMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:0:MaskedLit");
             ImportedAsset transparentMaterial = Assert.Single(first, asset => asset.SubAssetKey == "material:1:TransparentUnlit");
             ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:0:Body");
             ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:1:Eyes");
 
-            MaterialAsset maskedAsset = MaterialAssetCodec.Load(maskedMaterial.OutputPath);
-            MaterialAsset transparentAsset = MaterialAssetCodec.Load(transparentMaterial.OutputPath);
-            MeshAsset bodyAsset = MeshAssetCodec.Load(bodyMesh.OutputPath);
-            MeshAsset eyesAsset = MeshAssetCodec.Load(eyesMesh.OutputPath);
+            Material maskedAsset =
+                await AssetProject.ReadAsync<Material>(maskedMaterial.OutputPath);
+            Material transparentAsset =
+                await AssetProject.ReadAsync<Material>(transparentMaterial.OutputPath);
+            Mesh bodyAsset = await Mesh.ReadAsync(bodyMesh.OutputPath);
+            Mesh eyesAsset = await Mesh.ReadAsync(eyesMesh.OutputPath);
             AssetMeta? bodyMeshMeta = AssetMetaFiles.TryLoad(bodyMesh.OutputPath);
 
-            Assert.Equal("lit-shader-guid", maskedAsset.Passes![0].ShaderGuid);
+            Assert.Equal(LitShaderGuid, maskedAsset.Passes![0].ShaderGuid);
             Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "masked");
             Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "two_sided");
             Assert.DoesNotContain(maskedAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
@@ -80,7 +85,7 @@ public class GltfSourceImporterTests
             Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "AlphaCutoff");
             Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "EmissiveFactor");
 
-            Assert.Equal("unlit-shader-guid", transparentAsset.Passes![0].ShaderGuid);
+            Assert.Equal(UnlitShaderGuid, transparentAsset.Passes![0].ShaderGuid);
             Assert.Contains(transparentAsset.Passes[0].Tags!, tag => tag.Name == "translucent");
             Assert.DoesNotContain(transparentAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
 
@@ -169,10 +174,10 @@ public class GltfSourceImporterTests
     {
         string templateDir = Path.Combine(dir, "assets", "Materials", "Templates");
         Directory.CreateDirectory(templateDir);
-        WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", "lit-shader-guid");
-        WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", "unlit-shader-guid");
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "DefaultPBR", "lit-shader-guid");
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultUnlitMaterialTemplate), "TestUnlit_1", "unlit-shader-guid");
+        WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", LitShaderGuid);
+        WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", UnlitShaderGuid);
+        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "DefaultPBR", LitShaderGuid);
+        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultUnlitMaterialTemplate), "TestUnlit_1", UnlitShaderGuid);
 
         string modelDir = Path.Combine(dir, "assets", "Models");
         string textureDir = Path.Combine(modelDir, "textures");
@@ -212,7 +217,7 @@ public class GltfSourceImporterTests
     private static void WriteTemplate(string path, string name, string shaderGuid)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        MaterialAssetCodec.Save(new MaterialAsset
+        AssetWriter.Write(new Material
         {
             AssetGuid = AssetGuid.New().ToFlatString(),
             Name = name,

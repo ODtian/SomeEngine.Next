@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -17,12 +16,18 @@ public readonly record struct AssetGuid(Guid Value)
             return Empty;
         }
 
-        byte[] namespaceBytes = sourceGuid.Value.ToByteArray();
+        Span<byte> namespaceBytes = stackalloc byte[16];
+        if (!sourceGuid.Value.TryWriteBytes(namespaceBytes))
+            throw new InvalidOperationException("Unable to encode the source GUID.");
         SwapOrder(namespaceBytes);
-        byte[] nameBytes = Encoding.UTF8.GetBytes(subAssetKey);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        hash.AppendData(namespaceBytes);
+        AppendUtf8(hash, subAssetKey);
 
-        byte[] hash = SHA1.HashData(namespaceBytes.Concat(nameBytes).ToArray());
-        byte[] guidBytes = hash[..16];
+        Span<byte> digest = stackalloc byte[20];
+        if (!hash.TryGetHashAndReset(digest, out int written) || written != digest.Length)
+            throw new CryptographicException("SHA-1 did not produce the UUID-v5 digest.");
+        Span<byte> guidBytes = digest[..16];
         guidBytes[6] = (byte)((guidBytes[6] & 0x0F) | 0x50);
         guidBytes[8] = (byte)((guidBytes[8] & 0x3F) | 0x80);
         SwapOrder(guidBytes);
@@ -41,7 +46,29 @@ public readonly record struct AssetGuid(Guid Value)
         return success;
     }
 
-    private static void SwapOrder(byte[] guid)
+    private static void AppendUtf8(IncrementalHash hash, ReadOnlySpan<char> value)
+    {
+        Encoder encoder = Encoding.UTF8.GetEncoder();
+        Span<byte> buffer = stackalloc byte[256];
+        do
+        {
+            encoder.Convert(
+                value,
+                buffer,
+                flush: true,
+                out int charsUsed,
+                out int bytesUsed,
+                out bool completed);
+            if (bytesUsed != 0)
+                hash.AppendData(buffer[..bytesUsed]);
+            value = value[charsUsed..];
+            if (completed)
+                return;
+        }
+        while (true);
+    }
+
+    private static void SwapOrder(Span<byte> guid)
     {
         (guid[0], guid[3]) = (guid[3], guid[0]);
         (guid[1], guid[2]) = (guid[2], guid[1]);
@@ -69,7 +96,7 @@ public readonly record struct SourceGuid(Guid Value)
 }
 
 public readonly record struct AssetRef<TAsset>(AssetGuid Id)
-    where TAsset : class, IAsset
+    where TAsset : class
 {
     public static AssetRef<TAsset> Empty => new(AssetGuid.Empty);
     public bool IsEmpty => Id.IsEmpty;

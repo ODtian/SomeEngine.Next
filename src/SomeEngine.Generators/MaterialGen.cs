@@ -107,6 +107,20 @@ public sealed class MaterialGen : IIncrementalGenerator
         foreach (FieldInfo field in material.Scalars.OrderBy(static field => field.Name, StringComparer.Ordinal))
             sb.Append("        layout.Write(\"").Append(Escape(field.Name)).Append("\", ").Append(field.Member).AppendLine(", payload);");
         sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    internal partial bool SupportsScalarField(string name)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        return name switch");
+        sb.AppendLine("        {");
+        foreach (IGrouping<string, FieldInfo> fields in material.Scalars
+                     .OrderBy(static field => field.Name, StringComparer.Ordinal)
+                     .GroupBy(static field => field.Name, StringComparer.Ordinal))
+        {
+            sb.Append("            \"").Append(Escape(fields.Key)).AppendLine("\" => true,");
+        }
+        sb.AppendLine("            _ => false,");
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
     }
 
     private static string MemberType(ISymbol member)

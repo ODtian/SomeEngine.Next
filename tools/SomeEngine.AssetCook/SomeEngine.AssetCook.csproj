@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Assets.Importers\SomeEngine.Assets.Importers.csproj" />
   </ItemGroup>
 
   <ItemGroup>

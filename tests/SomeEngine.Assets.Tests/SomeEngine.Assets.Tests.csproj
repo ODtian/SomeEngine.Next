@@ -18,14 +18,15 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="SomeEngine.Assets.Importers" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Core\SomeEngine.Core.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Assets.Importers\SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
-    <ProjectReference Include="..\..\src\SomeEngine.Graphics.Null\SomeEngine.Graphics.Null.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />

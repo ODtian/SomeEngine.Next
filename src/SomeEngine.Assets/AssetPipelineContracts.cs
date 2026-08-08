@@ -8,7 +8,10 @@ public interface IAssetImporter
     IReadOnlyList<string> SourceExtensions { get; }
     bool MatchesSourcePath(string sourcePath);
     AssetImportFingerprint? GetFingerprint(string projectRoot, string sourcePath, SourceMeta sourceMeta);
-    IReadOnlyList<ImportedAsset> Import(string projectRoot, string sourcePath);
+    ValueTask<IReadOnlyList<ImportedAsset>> ImportAsync(
+        string projectRoot,
+        string sourcePath,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AssetImportFingerprint

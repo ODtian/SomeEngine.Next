@@ -2,10 +2,11 @@ using System.Text.Json;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Serialization.Containers;
 
-return Run(args);
+return await RunAsync(args);
 
-static int Run(string[] args)
+static async Task<int> RunAsync(string[] args)
 {
     if (!TryParse(args, out string sourceArgument, out string profileName))
     {
@@ -56,8 +57,8 @@ static int Run(string[] args)
         };
         SourceMetaFiles.Save(sourcePath, updatedMeta);
 
-        using AssetDatabase database = AssetCatalog.CreateDatabase(projectRoot);
-        IReadOnlyList<AssetGuid> imported = database.Import(sourcePath);
+        AssetProject project = AssetAuthoring.CreateProject(projectRoot);
+        IReadOnlyList<AssetGuid> imported = await project.ImportAsync(sourcePath);
         if (imported.Count != 1)
         {
             throw new InvalidOperationException(
@@ -65,9 +66,12 @@ static int Run(string[] args)
         }
 
         AssetGuid assetGuid = imported[0];
-        ShaderAsset asset = database.Load<ShaderAsset>(assetGuid)
-            ?? throw new InvalidOperationException(
-                $"Shader provider could not load freshly cooked asset '{assetGuid}'.");
+        IAssetStorage storage = project.CreateStorage();
+        if (!storage.TryFind(assetGuid, out AssetEntry entry))
+            throw new InvalidOperationException($"Cooked shader '{assetGuid}' was not published.");
+        await using BinaryDocument<Shader> document =
+            await AssetProject.OpenAsync<Shader>(storage, entry);
+        Shader asset = document.Root;
         string assetPath = Path.ChangeExtension(sourcePath, ".shader.asset");
         AssetMeta assetMeta = AssetMetaFiles.TryLoad(assetPath)
             ?? throw new InvalidOperationException($"Cooked shader meta '{assetPath}.meta' is missing.");
@@ -93,7 +97,7 @@ static int Run(string[] args)
         Console.WriteLine($"content-fingerprint={assetMeta.ContentFingerprint}");
         Console.WriteLine($"variants=dxil:{dxilCount},spirv:{spirvCount}");
         Console.WriteLine($"entry-reflections={reflectionCount}");
-        Console.WriteLine("provider-load=ok");
+        Console.WriteLine("storage-open=ok");
         return 0;
     }
     catch (Exception exception)

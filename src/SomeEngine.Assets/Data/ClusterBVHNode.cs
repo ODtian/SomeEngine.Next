@@ -14,12 +14,15 @@ public struct ClusterBVHNode
     public uint ChildCount;
     public uint NodeType; // 0 = Internal, 1 = Leaf
 
-    public const uint PageFaultMarker = 0xFFFFFFFF;
-
     // Helper for encoding leaf data node counts
     public void SetLeafData(uint clusterStart, uint clusterCount)
     {
-        ChildCount = (clusterCount << 12) | (clusterStart & 0xFFF);
+        if (clusterStart > 0xFFF)
+            throw new ArgumentOutOfRangeException(nameof(clusterStart), clusterStart, "A BVH leaf cluster start must fit in 12 bits.");
+        if (clusterCount is 0 or > 0xFFFFF)
+            throw new ArgumentOutOfRangeException(nameof(clusterCount), clusterCount, "A BVH leaf cluster count must be in the 20-bit range 1..1048575.");
+
+        ChildCount = (clusterCount << 12) | clusterStart;
     }
 
     public readonly void GetLeafData(out uint clusterStart, out uint clusterCount)

@@ -1,6 +1,7 @@
 using System.IO;
-using FlatSharp;
+using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -13,7 +14,7 @@ namespace SomeEngine.Tests;
 public class IcoSphereTest
 {
     [Fact]
-    public void TestIcoSphereGeneration()
+    public async Task TestIcoSphereGeneration()
     {
         // Level 3 subdivision -> 1280 triangles, 642 vertices
         // Level 4 subdivision -> 5120 triangles, 2562 vertices
@@ -45,17 +46,12 @@ public class IcoSphereTest
         Assert.Equal("TEXCOORD_0", meshAsset.Attributes[2].Name);
 
         // Save to test output, not the excluded samples workspace.
-        string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh");
+        string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh.asset");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
-        using var fs = File.Create(outputPath);
-
-        // Serialize using FlatSharp generated Serializer
-        int maxSize = MeshAsset.Serializer.GetMaxSize(meshAsset);
-        byte[] buffer = new byte[maxSize];
-        int bytesWritten = MeshAsset.Serializer.Write(buffer, meshAsset);
-
-        fs.Write(buffer, 0, bytesWritten);
+        AssetWriter.Write(meshAsset, outputPath);
+        Mesh roundTrip = await Mesh.ReadAsync(outputPath);
+        Assert.Equal(meshAsset.Payload.Value.ToArray(), roundTrip.Payload!.Value.ToArray());
     }
 
     [Fact]
