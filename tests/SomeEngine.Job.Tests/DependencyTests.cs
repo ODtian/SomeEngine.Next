@@ -83,17 +83,34 @@ public sealed class DependencyTests
         Assert.False(DependencyJobs.DependentRan);
     }
 
+    [Fact]
+    public void InternalFinalizerRunsAfterFaultedDependencyAndCanRethrowIt()
+    {
+        var dependency = JobSystem.Schedule(new DependencyJobs.ThrowingJob());
+        var finalizer = JobSystem.ScheduleFinally(
+            new DependencyJobs.ObservingFinalizerJob(dependency),
+            JobScheduleOptions.Default,
+            dependency);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => finalizer.Complete());
+
+        Assert.Equal("dependency failed", ex.Message);
+        Assert.True(DependencyJobs.FinalizerRan);
+    }
+
     private static class DependencyJobs
     {
         internal static int Counter;
         internal static bool DependencyRan;
         internal static bool DependentRan;
+        internal static bool FinalizerRan;
 
         internal static void Reset()
         {
             Counter = 0;
             DependencyRan = false;
             DependentRan = false;
+            FinalizerRan = false;
         }
 
         internal readonly struct BlockingJob : IJob
@@ -136,6 +153,22 @@ public sealed class DependencyTests
             public void Execute()
             {
                 throw new InvalidOperationException("dependency failed");
+            }
+        }
+
+        internal readonly struct ObservingFinalizerJob : IJob
+        {
+            private readonly JobHandle _dependency;
+
+            internal ObservingFinalizerJob(JobHandle dependency)
+            {
+                _dependency = dependency;
+            }
+
+            public void Execute()
+            {
+                FinalizerRan = true;
+                _dependency.Complete();
             }
         }
     }

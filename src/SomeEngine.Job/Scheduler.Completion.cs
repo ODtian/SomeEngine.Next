@@ -26,7 +26,11 @@ internal sealed partial class Scheduler
 
         bool TryGetCompletedFault(CompletionLease lease, bool markObserved, out ExceptionDispatchInfo? fault);
 
+        bool NeedsLifetimeTracking(JobHandle handle);
+
         void ReleaseSuccess(JobHandle handle);
+
+        JobHandle GetParent(JobHandle handle);
     }
 
     private interface IDependencyStore
@@ -54,7 +58,10 @@ internal sealed partial class Scheduler
     {
         bool CanExecute(JobHandle handle);
 
-        bool CompleteItem(JobHandle handle, ExceptionDispatchInfo? itemFault);
+        bool CompleteItem(
+            JobHandle handle,
+            ExceptionDispatchInfo? itemFault,
+            out bool workFinished);
 
         WorkRelease BeginWork(JobHandle handle);
 
@@ -65,6 +72,11 @@ internal sealed partial class Scheduler
         CompleteCallbacks EndDispatch(JobHandle handle);
 
         bool SetResources(JobHandle handle, ResourceAccessRegistration registration);
+
+        bool HasResourceAccess(
+            JobHandle handle,
+            JobResourceAccess required,
+            out bool mayExecuteConcurrently);
     }
 
     private interface IScopeStore
@@ -86,6 +98,11 @@ internal sealed partial class Scheduler
     internal bool IsCompleted(JobHandle handle)
     {
         return _completion.IsCompleted(handle);
+    }
+
+    internal bool NeedsLifetimeTracking(JobHandle handle)
+    {
+        return _completion.NeedsLifetimeTracking(handle);
     }
 
     internal void Complete(JobHandle handle)
@@ -142,6 +159,31 @@ internal sealed partial class Scheduler
         {
             _completion.EndWait(lease);
         }
+    }
+
+    internal JobHandle GetCurrentScope()
+    {
+        ScopeToken scope = s_currentScope;
+        return scope.Index != 0 && scope.Generation == Generation
+            ? scope.ToHandle()
+            : default;
+    }
+
+    internal bool IsScopeDescendantOf(JobHandle scope, JobHandle ancestor)
+    {
+        while (scope.Index != 0)
+        {
+            if (scope.Index == ancestor.Index &&
+                scope.Version == ancestor.Version &&
+                scope.Generation == ancestor.Generation)
+            {
+                return true;
+            }
+
+            scope = _completion.GetParent(scope);
+        }
+
+        return false;
     }
 
     private JobHandle CreateState(

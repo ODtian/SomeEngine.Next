@@ -287,10 +287,34 @@ internal sealed partial class Scheduler
                 fault = state.Fault;
                 if (markObserved && fault is not null)
                 {
+                    if (state.FaultObserved)
+                    {
+                        fault = null;
+                        return true;
+                    }
                     state.FaultObserved = true;
                 }
 
                 return true;
+            }
+        }
+
+        public bool NeedsLifetimeTracking(JobHandle handle)
+        {
+            if (handle.Index == 0)
+                return false;
+
+            CompletionState? state = GetState(handle);
+            if (state is null)
+                return false;
+
+            lock (state.Sync)
+            {
+                if (!state.InUse || state.Version != handle.Version)
+                    return false;
+
+                return !state.Completed ||
+                    (state.Fault is not null && !state.FaultObserved);
             }
         }
 
@@ -322,6 +346,20 @@ internal sealed partial class Scheduler
                     state.Release();
                     _freeStates.Push(handle.Index);
                 }
+            }
+        }
+
+        public JobHandle GetParent(JobHandle handle)
+        {
+            CompletionState? state = GetState(handle);
+            if (state is null)
+                return default;
+
+            lock (state.Sync)
+            {
+                return state.InUse && state.Version == handle.Version
+                    ? state.Parent.ToHandle()
+                    : default;
             }
         }
 

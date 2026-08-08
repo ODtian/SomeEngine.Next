@@ -17,6 +17,48 @@ public readonly struct JobResourceAccess
     internal readonly long RangeStart;
     internal readonly long RangeLength;
 
+    internal bool Covers(JobResourceAccess required)
+    {
+        if (!CoversIdentityAndMode(required))
+        {
+            return false;
+        }
+
+        if (!HasRange)
+        {
+            return true;
+        }
+
+        if (!required.HasRange)
+        {
+            return false;
+        }
+
+        long end = RangeStart + RangeLength;
+        long requiredEnd = required.RangeStart + required.RangeLength;
+        return RangeStart <= required.RangeStart && end >= requiredEnd;
+    }
+
+    internal bool CoversIdentityAndMode(JobResourceAccess required)
+    {
+        return Kind == required.Kind
+            && Id == required.Id
+            && Version == required.Version
+            && Generation == required.Generation
+            && ModeCovers(Mode, required.Mode);
+    }
+
+    private static bool ModeCovers(JobAccessMode declared, JobAccessMode required)
+    {
+        return declared switch
+        {
+            JobAccessMode.Read => required == JobAccessMode.Read,
+            JobAccessMode.Write => required is JobAccessMode.Read or JobAccessMode.Write,
+            JobAccessMode.Exclusive => true,
+            _ => false,
+        };
+    }
+
     private JobResourceAccess(
         ResourceKind kind,
         int id,
@@ -49,6 +91,26 @@ public readonly struct JobResourceAccess
             resource.Id,
             resource.Version,
             resource.Generation,
+            JobAccessMode.Read,
+            new IndexRange(start, length));
+    }
+
+    internal static JobResourceAccess Read(JobResourceKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        JobResourceToken token = JobSystem.GetContainerResourceToken(key);
+        return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Read);
+    }
+
+    internal static JobResourceAccess Read(JobResourceKey key, long start, long length)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        JobResourceToken token = JobSystem.GetContainerResourceToken(key);
+        return CreateRange(
+            ResourceKind.Token,
+            token.Id,
+            token.Version,
+            token.Generation,
             JobAccessMode.Read,
             new IndexRange(start, length));
     }
@@ -152,6 +214,26 @@ public readonly struct JobResourceAccess
             new IndexRange(start, length));
     }
 
+    internal static JobResourceAccess Write(JobResourceKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        JobResourceToken token = JobSystem.GetContainerResourceToken(key);
+        return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Write);
+    }
+
+    internal static JobResourceAccess Write(JobResourceKey key, long start, long length)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        JobResourceToken token = JobSystem.GetContainerResourceToken(key);
+        return CreateRange(
+            ResourceKind.Token,
+            token.Id,
+            token.Version,
+            token.Generation,
+            JobAccessMode.Write,
+            new IndexRange(start, length));
+    }
+
     public static JobResourceAccess Write(JobResourceToken token)
     {
         return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Write);
@@ -223,6 +305,13 @@ public readonly struct JobResourceAccess
     public static JobResourceAccess Exclusive(JobResource resource)
     {
         return Create(ResourceKind.Resource, resource.Id, resource.Version, resource.Generation, JobAccessMode.Exclusive);
+    }
+
+    internal static JobResourceAccess Exclusive(JobResourceKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        JobResourceToken token = JobSystem.GetContainerResourceToken(key);
+        return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Exclusive);
     }
 
     public static JobResourceAccess Exclusive(JobResourceToken token)

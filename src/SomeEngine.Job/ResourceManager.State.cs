@@ -90,7 +90,9 @@ internal sealed partial class ResourceManager
             return;
         }
 
-        if (!fromScope && state.ActiveAccesses.Count != 0 && _safetyMode != JobSafetyMode.Fast)
+        if (!fromScope &&
+            (state.ActiveAccesses.Count != 0 || state.PendingReservations != 0) &&
+            _safetyMode != JobSafetyMode.Fast)
         {
             throw CreateException(
                 $"Cannot release {kind.ToString().ToLowerInvariant()} '{Describe(state)}' while it is in use.",
@@ -240,10 +242,13 @@ internal sealed partial class ResourceManager
         internal readonly int Id;
         internal readonly List<ActiveResourceAccess> ActiveAccesses = [];
         internal readonly List<ActiveResourceAccess> UnrangedReadersSinceLastWriter = [];
+        internal readonly RangedResourceFrontier RangedAll = new();
+        internal readonly RangedResourceFrontier RangedWriters = new();
         internal ActiveResourceAccess LastUnrangedWriter;
         internal int Version;
         internal int ReleasedVersion;
         internal int RangedAccessCount;
+        internal int PendingReservations;
         internal bool InUse;
         internal bool HasLastUnrangedWriter;
         internal ResourceKind Kind;
@@ -262,6 +267,7 @@ internal sealed partial class ResourceManager
             Kind = kind;
             Name = name;
             ActiveAccesses.Clear();
+            PendingReservations = 0;
             ClearFrontier();
         }
 
@@ -271,6 +277,7 @@ internal sealed partial class ResourceManager
             Version++;
             InUse = false;
             ActiveAccesses.Clear();
+            PendingReservations = 0;
             ClearFrontier();
         }
 
@@ -278,7 +285,20 @@ internal sealed partial class ResourceManager
         {
             if (access.Access.HasRange)
             {
-                RangedAccessCount++;
+                int rangedAccessCount = checked(RangedAccessCount + 1);
+                RangedAll.Add(access);
+                try
+                {
+                    if (access.Access.Mode != JobAccessMode.Read)
+                        RangedWriters.Add(access);
+                }
+                catch
+                {
+                    RangedAll.Remove(access);
+                    throw;
+                }
+
+                RangedAccessCount = rangedAccessCount;
                 return;
             }
 
@@ -297,10 +317,15 @@ internal sealed partial class ResourceManager
         {
             if (access.Access.HasRange)
             {
-                Debug.Assert(RangedAccessCount > 0, RangedFrontierUnderflowMessage);
-                if (RangedAccessCount > 0)
+                bool removed = RangedAll.Remove(access);
+                bool removedWriter = access.Access.Mode == JobAccessMode.Read
+                    || RangedWriters.Remove(access);
+                Debug.Assert(removed == removedWriter, "Ranged resource frontier views diverged.");
+                if (removed)
                 {
-                    RangedAccessCount--;
+                    Debug.Assert(RangedAccessCount > 0, RangedFrontierUnderflowMessage);
+                    if (RangedAccessCount > 0)
+                        RangedAccessCount--;
                 }
 
                 return;
@@ -314,8 +339,29 @@ internal sealed partial class ResourceManager
 
             if (HasLastUnrangedWriter && LastUnrangedWriter.Equals(access))
             {
-                RebuildFrontierFromActiveAccesses();
+                RebuildUnrangedFrontierFromActiveAccesses();
             }
+        }
+
+        internal void RemoveOwnerAccesses(JobHandle owner)
+        {
+            bool removed = false;
+            for (int i = ActiveAccesses.Count - 1; i >= 0; i--)
+            {
+                JobHandle activeOwner = ActiveAccesses[i].Owner;
+                if (activeOwner.Index != owner.Index ||
+                    activeOwner.Version != owner.Version ||
+                    activeOwner.Generation != owner.Generation)
+                {
+                    continue;
+                }
+
+                ActiveAccesses.RemoveAt(i);
+                removed = true;
+            }
+
+            if (removed)
+                RebuildFrontierFromActiveAccesses();
         }
 
         private void RebuildFrontierFromActiveAccesses()
@@ -327,10 +373,27 @@ internal sealed partial class ResourceManager
             }
         }
 
+        private void RebuildUnrangedFrontierFromActiveAccesses()
+        {
+            ClearUnrangedFrontier();
+            foreach (ActiveResourceAccess active in ActiveAccesses)
+            {
+                if (!active.Access.HasRange)
+                    AddFrontierAccess(active);
+            }
+        }
+
         private void ClearFrontier()
         {
-            LastUnrangedWriter = default;
+            RangedAll.Clear();
+            RangedWriters.Clear();
             RangedAccessCount = 0;
+            ClearUnrangedFrontier();
+        }
+
+        private void ClearUnrangedFrontier()
+        {
+            LastUnrangedWriter = default;
             HasLastUnrangedWriter = false;
             UnrangedReadersSinceLastWriter.Clear();
         }

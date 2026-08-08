@@ -10,6 +10,8 @@ public static class JobChunkExtensions
         where TJob : struct, IJobChunk
         where TSource : IJobChunkSource
     {
+        JobTraits.RequireSynchronousCallback<TJob, IJobChunk>(
+            JobChunkExecuteTraits<TJob>.IsAsyncStateMachine);
         var chunkCount = GetChunkCount(source);
         return JobSystem.ScheduleParallel(
             new ChunkJobParallelAdapter<TJob, TSource>(job, source),
@@ -27,6 +29,8 @@ public static class JobChunkExtensions
         where TJob : struct, IJobChunk
         where TSource : IJobChunkSource
     {
+        JobTraits.RequireSynchronousCallback<TJob, IJobChunk>(
+            JobChunkExecuteTraits<TJob>.IsAsyncStateMachine);
         var chunkCount = GetChunkCount(source);
         return JobSystem.ScheduleParallel(
             new ChunkJobParallelAdapter<TJob, TSource>(job, source),
@@ -45,6 +49,8 @@ public static class JobChunkExtensions
         where TJob : struct, IJobChunk
         where TSource : IJobChunkSource
     {
+        JobTraits.RequireSynchronousCallback<TJob, IJobChunk>(
+            JobChunkExecuteTraits<TJob>.IsAsyncStateMachine);
         var chunkCount = GetChunkCount(source);
         return JobSystem.ScheduleParallel(
             new ChunkJobParallelAdapter<TJob, TSource>(job, source),
@@ -64,6 +70,19 @@ public static class JobChunkExtensions
         }
 
         return chunkCount;
+    }
+
+    private static class JobChunkExecuteTraits<T>
+        where T : struct, IJobChunk
+    {
+        internal static readonly bool IsAsyncStateMachine = Create();
+
+        private static bool Create()
+        {
+            T target = default;
+            Action<JobChunk> callback = target.Execute;
+            return JobTraits.IsAsyncCallback(callback.Method);
+        }
     }
 }
 

@@ -16,7 +16,9 @@ internal sealed partial class Scheduler
         }
 
         ScopeToken previousScope = s_currentScope;
-        s_currentScope = ScopeToken.FromHandle(handle);
+        ScopeToken nextScope = ScopeToken.FromHandle(handle);
+        JobExecutionContext.Enter();
+        s_currentScope = nextScope;
         ExceptionDispatchInfo? fault = null;
 
         try
@@ -31,7 +33,14 @@ internal sealed partial class Scheduler
         }
         finally
         {
-            s_currentScope = previousScope;
+            try
+            {
+                s_currentScope = previousScope;
+            }
+            finally
+            {
+                JobExecutionContext.Exit();
+            }
         }
 
         TItem.Release(ref item);
@@ -40,7 +49,7 @@ internal sealed partial class Scheduler
 
     private void CompleteStreamItem(JobHandle handle, ExceptionDispatchInfo? itemFault)
     {
-        if (_execution.CompleteItem(handle, itemFault))
+        if (_execution.CompleteItem(handle, itemFault, out bool workFinished) && workFinished)
         {
             TryReleaseWorkDependencies(handle);
             TryCompleteState(handle);
@@ -91,6 +100,7 @@ internal sealed partial class Scheduler
                 handle,
                 callbacks.Continuations,
                 callbacks.ExternalContinuations,
+                callbacks.ExternalContinuationLease,
                 callbacks.Parent,
                 callbacks.Fault);
         }
@@ -100,6 +110,7 @@ internal sealed partial class Scheduler
         JobHandle handle,
         List<DependencyContinuation>? continuations,
         List<ExternalCompletionContinuation>? externalContinuations,
+        CompletionLease externalContinuationLease,
         ScopeToken parent,
         ExceptionDispatchInfo? fault)
     {
@@ -127,12 +138,18 @@ internal sealed partial class Scheduler
 
         if (externalContinuations is not null)
         {
-            foreach (var continuation in externalContinuations)
+            try
             {
-                continuation.InvokeAndSuppressObserverExceptions();
+                foreach (var continuation in externalContinuations)
+                {
+                    continuation.InvokeAndSuppressObserverExceptions();
+                }
             }
-
-            externalContinuations.Clear();
+            finally
+            {
+                externalContinuations.Clear();
+                _completion.EndWait(externalContinuationLease);
+            }
         }
 
         if (fault is null)

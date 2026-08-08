@@ -27,6 +27,7 @@ internal sealed partial class Scheduler
         internal bool WorkDependenciesReleased;
         internal bool WorkDependencyReleaseInProgress;
         internal bool CompletionDispatchInProgress;
+        internal bool MayExecuteConcurrently;
         internal List<DependencyContinuation> WorkContinuations { get; } = [];
         internal List<DependencyContinuation> WorkContinuationDispatchBuffer { get; } = [];
         internal ResourceAccessRegistration ResourceAccesses { get; set; } = ResourceAccessRegistration.Empty;
@@ -54,6 +55,7 @@ internal sealed partial class Scheduler
             WorkDependenciesReleased = pendingWork == 0;
             WorkDependencyReleaseInProgress = false;
             CompletionDispatchInProgress = false;
+            MayExecuteConcurrently = pendingWork > 1;
             ClearIfNotEmpty(WorkContinuations);
             ClearIfNotEmpty(WorkContinuationDispatchBuffer);
             ResourceAccesses = ResourceAccessRegistration.Empty;
@@ -81,6 +83,7 @@ internal sealed partial class Scheduler
             WorkDependenciesReleased = true;
             WorkDependencyReleaseInProgress = false;
             CompletionDispatchInProgress = false;
+            MayExecuteConcurrently = false;
             ClearIfNotEmpty(WorkContinuations);
             ClearIfNotEmpty(WorkContinuationDispatchBuffer);
             ResourceAccesses = ResourceAccessRegistration.Empty;

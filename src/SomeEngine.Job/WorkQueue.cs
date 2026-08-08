@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
@@ -21,6 +22,15 @@ internal interface IWorkQueue : IDisposable
 
     bool TryExecuteOne(bool wait);
 
+    bool TryHandoffLatencyWork(
+        object? state,
+        Action<object?, int> action,
+        int value,
+        JobPriority priority,
+        out long sequence);
+
+    void JoinLatencyWork(long sequence);
+
     void Pulse();
 }
 
@@ -29,7 +39,7 @@ internal sealed class WorkQueue : IWorkQueue
     private const int NoWorkerThread = -1;
     private const int WorkStealingQueueInitialCapacity = 4;
     private const int WorkStealingQueueGrowthFactor = 2;
-    private const int WaitForWorkMilliseconds = 10;
+    private const int WaitForExternalStateMilliseconds = 10;
     private const int DrainBatchItemLimit = 64;
 
     private readonly Scheduler _scheduler;
@@ -37,10 +47,20 @@ internal sealed class WorkQueue : IWorkQueue
     private readonly int _maxQueuedWorkItems;
     // Monitor.Wait/Pulse require a monitor object; keep this separate from Lock.
     private readonly object _queueLock = new();
+    private readonly AutoResetEvent _latencyCompletedSignal = new(initialState: false);
     private readonly Queue<WorkStream>[] _globalQueues;
     private readonly WorkStealingQueue[,] _localQueues;
     private readonly Thread[] _workers;
     private int _queuedWorkItemCount;
+    private object? _latencyState;
+    private Action<object?, int>? _latencyAction;
+    private ExceptionDispatchInfo? _latencyFailure;
+    private int _latencyValue;
+    private int _latencyPriorityIndex;
+    private long _latencyRequestedSequence;
+    private long _latencyClaimedSequence;
+    private long _latencyCompletedSequence;
+    private long _latencyJoinedSequence;
     private bool _disposed;
 
     [ThreadStatic]
@@ -188,12 +208,20 @@ internal sealed class WorkQueue : IWorkQueue
     }
 
     public bool TryExecuteOne(bool wait)
+        => TryExecuteOne(wait, waitIndefinitely: false);
+
+    private bool TryExecuteOne(bool wait, bool waitIndefinitely)
     {
         WorkStream stream;
         bool stole = false;
         int priorityIndex = JobPriorityOrder.PriorityIndex(JobPriority.Normal);
         lock (_queueLock)
         {
+            if (_latencyClaimedSequence != _latencyRequestedSequence)
+            {
+                return false;
+            }
+
             int workerIndex = CurrentWorkerIndex;
             if (!TryDequeueForWorker(workerIndex, out stream, out stole, out priorityIndex))
             {
@@ -202,7 +230,12 @@ internal sealed class WorkQueue : IWorkQueue
                     return false;
                 }
 
-                Monitor.Wait(_queueLock, TimeSpan.FromMilliseconds(WaitForWorkMilliseconds));
+                if (waitIndefinitely)
+                    Monitor.Wait(_queueLock);
+                else
+                    Monitor.Wait(
+                        _queueLock,
+                        TimeSpan.FromMilliseconds(WaitForExternalStateMilliseconds));
                 if (!TryDequeueForWorker(workerIndex, out stream, out stole, out priorityIndex))
                 {
                     return false;
@@ -225,6 +258,71 @@ internal sealed class WorkQueue : IWorkQueue
         }
 
         return claimed > 0 || hasMoreWork;
+    }
+
+    public bool TryHandoffLatencyWork(
+        object? state,
+        Action<object?, int> action,
+        int value,
+        JobPriority priority,
+        out long sequence)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        lock (_queueLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_workers.Length == 0)
+            {
+                sequence = 0;
+                return false;
+            }
+
+            while (_latencyCompletedSequence != _latencyRequestedSequence ||
+                   _latencyJoinedSequence != _latencyRequestedSequence)
+            {
+                Monitor.Wait(_queueLock);
+                ObjectDisposedException.ThrowIf(_disposed, this);
+            }
+
+            sequence = checked(_latencyRequestedSequence + 1);
+            _latencyState = state;
+            _latencyAction = action;
+            _latencyFailure = null;
+            _latencyValue = value;
+            _latencyPriorityIndex = JobPriorityOrder.PriorityIndex(priority);
+            Volatile.Write(ref _latencyRequestedSequence, sequence);
+            Monitor.Pulse(_queueLock);
+            return true;
+        }
+    }
+
+    public void JoinLatencyWork(long sequence)
+    {
+        if (sequence <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sequence));
+        }
+
+        while (Volatile.Read(ref _latencyCompletedSequence) != sequence)
+        {
+            _latencyCompletedSignal.WaitOne();
+        }
+
+        ExceptionDispatchInfo? failure;
+        lock (_queueLock)
+        {
+            if (_latencyCompletedSequence != sequence ||
+                _latencyJoinedSequence >= sequence)
+            {
+                throw new InvalidOperationException("Latency work has already been joined or superseded.");
+            }
+
+            failure = _latencyFailure;
+            _latencyFailure = null;
+            _latencyJoinedSequence = sequence;
+            Monitor.Pulse(_queueLock);
+        }
+        failure?.Throw();
     }
 
     private void FinishDrain(
@@ -281,6 +379,7 @@ internal sealed class WorkQueue : IWorkQueue
                 worker.Join();
             }
         }
+        _latencyCompletedSignal.Dispose();
     }
 
     private void EnsureQueuedCapacity(int workItemCount)
@@ -348,21 +447,93 @@ internal sealed class WorkQueue : IWorkQueue
         {
             while (true)
             {
+                if (TryExecuteLatencyWork())
+                {
+                    continue;
+                }
+
                 lock (_queueLock)
                 {
-                    if (_disposed && _queuedWorkItemCount == 0)
+                    if (_disposed &&
+                        _queuedWorkItemCount == 0 &&
+                        _latencyCompletedSequence == _latencyRequestedSequence)
                     {
                         return;
                     }
                 }
 
-                TryExecuteOne(wait: true);
+                TryExecuteOne(wait: true, waitIndefinitely: true);
             }
         }
         finally
         {
             s_workerIndexPlusOne = 0;
         }
+    }
+
+    private bool TryExecuteLatencyWork()
+    {
+        object? state;
+        Action<object?, int>? action;
+        int value;
+        long sequence;
+        lock (_queueLock)
+        {
+            sequence = _latencyRequestedSequence;
+            if (sequence == _latencyClaimedSequence)
+            {
+                return false;
+            }
+            if (HasQueuedHigherPriority(_latencyPriorityIndex))
+            {
+                return false;
+            }
+
+            _latencyClaimedSequence = sequence;
+            state = _latencyState;
+            action = _latencyAction;
+            value = _latencyValue;
+        }
+
+        ExceptionDispatchInfo? failure = null;
+        try
+        {
+            action!(state, value);
+        }
+        catch (Exception exception)
+        {
+            failure = ExceptionDispatchInfo.Capture(exception);
+        }
+
+        lock (_queueLock)
+        {
+            _latencyFailure = failure;
+            _latencyState = null;
+            _latencyAction = null;
+            Volatile.Write(ref _latencyCompletedSequence, sequence);
+            _latencyCompletedSignal.Set();
+            Monitor.Pulse(_queueLock);
+        }
+        return true;
+    }
+
+    private bool HasQueuedHigherPriority(int priorityIndex)
+    {
+        for (int priority = 0; priority < priorityIndex; priority++)
+        {
+            if (_globalQueues[priority].Count != 0)
+            {
+                return true;
+            }
+            for (int worker = 0; worker < _workers.Length; worker++)
+            {
+                if (_localQueues[worker, priority].HasItems)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static int CurrentWorkerIndex => s_workerIndexPlusOne == 0 ? NoWorkerThread : s_workerIndexPlusOne - 1;
@@ -374,6 +545,8 @@ internal sealed class WorkQueue : IWorkQueue
         private WorkStream?[] _items = new WorkStream?[WorkStealingQueueInitialCapacity];
         private int _head;
         private int _count;
+
+        internal bool HasItems => _count != 0;
 
         internal void Push(WorkStream stream)
         {

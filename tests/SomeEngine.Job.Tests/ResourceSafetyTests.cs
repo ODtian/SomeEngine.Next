@@ -10,6 +10,53 @@ public sealed class ResourceSafetyTests
     }
 
     [Fact]
+    public void CollectedContainerBindingRetriesTokenReleaseAfterActiveOwnerCompletes()
+    {
+        (JobResourceAccess access, WeakReference container) =
+            CreateEphemeralContainerAccess();
+        using var started = new ManualResetEventSlim();
+        using var gate = new ManualResetEventSlim();
+        JobHandle owner = JobSystem.Schedule(
+            new ResourceJobs.BlockingSignalJob(started, gate),
+            access);
+        Assert.True(started.Wait(1_000));
+
+        // The first finalizer attempt observes the live owner and must re-register itself.
+        ForceFullCollection();
+        Assert.False(container.IsAlive);
+
+        gate.Set();
+        owner.Complete();
+        ForceFullCollection();
+
+        // A successful retry released the token identity; retaining only the old access must not
+        // keep the ResourceState alive or make the stale capability usable.
+        Assert.Throws<JobResourceSafetyException>(() =>
+            JobSystem.Schedule(new ResourceJobs.NoOpJob(), access));
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static (JobResourceAccess Access, WeakReference Container)
+        CreateEphemeralContainerAccess()
+    {
+        var container = new int[1];
+        var weak = new WeakReference(container);
+        JobResourceAccess access = JobResourceAccess.Write(container);
+        return (access, weak);
+    }
+
+    private static void ForceFullCollection()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+    }
+
+    [Fact]
     public void ValidResourceSchedulesAndStaleHandleIsRejected()
     {
         var resource = JobSystem.CreateResource("valid-resource");
@@ -876,6 +923,260 @@ public sealed class ResourceSafetyTests
     }
 
     [Fact]
+    public void ExternalSuccessorWaitsForParentBodyInsteadOfAttachedChildCompletion()
+    {
+        var parentResource = JobSystem.CreateResource("parent-work-release");
+        var childResource = JobSystem.CreateResource("attached-child-work-release");
+        using var parentStarted = new ManualResetEventSlim();
+        using var allowChildSchedule = new ManualResetEventSlim();
+        using var childScheduled = new ManualResetEventSlim();
+        using var parentBodyReturning = new ManualResetEventSlim();
+        using var childStarted = new ManualResetEventSlim();
+        using var successorStarted = new ManualResetEventSlim();
+        using var successorGate = new ManualResetEventSlim();
+
+        var parent = JobSystem.Schedule(
+            new ResourceJobs.ParentSchedulesChildAfterGate(
+                childResource,
+                parentStarted,
+                allowChildSchedule,
+                childScheduled,
+                parentBodyReturning,
+                childStarted),
+            JobResourceAccess.Write(parentResource));
+
+        Assert.True(parentStarted.Wait(1_000));
+
+        JobResourceAccess[] successorAccesses =
+        [
+            JobResourceAccess.Write(parentResource),
+            JobResourceAccess.Write(childResource)
+        ];
+        var successor = JobSystem.Schedule(
+            new ResourceJobs.BlockingSignalJob(successorStarted, successorGate),
+            successorAccesses);
+
+        try
+        {
+            Assert.False(successorStarted.Wait(100));
+            allowChildSchedule.Set();
+            Assert.True(childScheduled.Wait(1_000));
+            Assert.True(parentBodyReturning.Wait(1_000));
+
+            // The successor owns childResource before the parent creates its attached child.
+            // The child therefore waits for the successor, while the successor waits only for
+            // the parent's resource-owning work body -- not for the parent's attached child.
+            Assert.True(successorStarted.Wait(1_000));
+            Assert.False(childStarted.Wait(100));
+            Assert.False(parent.IsCompleted);
+        }
+        finally
+        {
+            allowChildSchedule.Set();
+            successorGate.Set();
+        }
+
+        successor.Complete();
+        parent.Complete();
+        Assert.True(childStarted.IsSet);
+    }
+
+    [Fact]
+    public void ExplicitResourceSuccessorReservesThenActivatesAfterLaterAttachedChild()
+    {
+        var parentResource = JobSystem.CreateResource("deferred-parent-resource");
+        var childResource = JobSystem.CreateResource("deferred-child-resource");
+        using var parentStarted = new ManualResetEventSlim();
+        using var allowChildSchedule = new ManualResetEventSlim();
+        using var childScheduled = new ManualResetEventSlim();
+        using var childStarted = new ManualResetEventSlim();
+        using var childGate = new ManualResetEventSlim();
+        using var successorStarted = new ManualResetEventSlim();
+
+        var parent = JobSystem.Schedule(
+            new ResourceJobs.ParentSchedulesConflictingChildAfterGate(
+                childResource,
+                parentStarted,
+                allowChildSchedule,
+                childScheduled,
+                childStarted,
+                childGate),
+            JobResourceAccess.Write(parentResource));
+        Assert.True(parentStarted.Wait(1_000));
+
+        JobResourceAccess[] successorAccesses =
+        [
+            JobResourceAccess.Write(parentResource),
+            JobResourceAccess.Write(childResource)
+        ];
+        var successor = JobSystem.Schedule(
+            new ResourceJobs.SignalJob(successorStarted),
+            successorAccesses,
+            parent);
+
+        // A deferred access is absent from the conflict frontier, but it still retains the
+        // resource identity for the complete lifetime of the pending schedule.
+        Assert.Throws<JobResourceSafetyException>(() =>
+            JobSystem.ReleaseResource(childResource));
+
+        try
+        {
+            Assert.False(successorStarted.Wait(100));
+            allowChildSchedule.Set();
+            Assert.True(childScheduled.Wait(1_000));
+            Assert.True(childStarted.Wait(1_000));
+            Assert.False(successorStarted.Wait(100));
+            Assert.False(parent.IsCompleted);
+
+            childGate.Set();
+            Assert.True(successorStarted.Wait(1_000));
+            successor.Complete();
+            parent.Complete();
+        }
+        finally
+        {
+            allowChildSchedule.Set();
+            childGate.Set();
+        }
+
+        JobSystem.ReleaseResource(parentResource);
+        JobSystem.ReleaseResource(childResource);
+    }
+
+    [Fact]
+    public void ParallelExplicitResourceSuccessorActivatesAfterLaterAttachedChild()
+    {
+        var parentResource = JobSystem.CreateResource("parallel-deferred-parent");
+        var childResource = JobSystem.CreateResource("parallel-deferred-child");
+        using var parentStarted = new ManualResetEventSlim();
+        using var allowChildSchedule = new ManualResetEventSlim();
+        using var childScheduled = new ManualResetEventSlim();
+        using var childStarted = new ManualResetEventSlim();
+        using var childGate = new ManualResetEventSlim();
+        using var successorStarted = new ManualResetEventSlim();
+        var values = new int[8];
+
+        var parent = JobSystem.Schedule(
+            new ResourceJobs.ParentSchedulesConflictingChildAfterGate(
+                childResource,
+                parentStarted,
+                allowChildSchedule,
+                childScheduled,
+                childStarted,
+                childGate),
+            JobResourceAccess.Write(parentResource));
+        Assert.True(parentStarted.Wait(1_000));
+
+        JobResourceAccess[] successorAccesses =
+        [
+            JobResourceAccess.Write(parentResource),
+            JobResourceAccess.Write(childResource)
+        ];
+        var successor = JobSystem.ScheduleParallel(
+            new ResourceJobs.MarkIndexJob(values, successorStarted),
+            values.Length,
+            batchSize: 1,
+            successorAccesses,
+            parent);
+
+        try
+        {
+            allowChildSchedule.Set();
+            Assert.True(childScheduled.Wait(1_000));
+            Assert.True(childStarted.Wait(1_000));
+            Assert.False(successorStarted.Wait(100));
+
+            childGate.Set();
+            Assert.True(successorStarted.Wait(1_000));
+            successor.Complete();
+            parent.Complete();
+            Assert.All(values, static value => Assert.Equal(1, value));
+        }
+        finally
+        {
+            allowChildSchedule.Set();
+            childGate.Set();
+        }
+
+        JobSystem.ReleaseResource(parentResource);
+        JobSystem.ReleaseResource(childResource);
+    }
+
+    [Fact]
+    public void FaultedExplicitDependencyCancelsDeferredResourceReservation()
+    {
+        var resource = JobSystem.CreateResource("faulted-deferred-reservation");
+        using var dependencyStarted = new ManualResetEventSlim();
+        using var dependencyGate = new ManualResetEventSlim();
+        using var successorStarted = new ManualResetEventSlim();
+
+        var dependency = JobSystem.Schedule(
+            new ResourceJobs.BlockingThrowJob(dependencyStarted, dependencyGate));
+        Assert.True(dependencyStarted.Wait(1_000));
+
+        var successor = JobSystem.Schedule(
+            new ResourceJobs.SignalJob(successorStarted),
+            JobResourceAccess.Write(resource),
+            dependency);
+
+        // The access has not entered the conflict frontier, but the pending schedule must
+        // retain its identity until the explicit dependency either succeeds or faults.
+        Assert.Throws<JobResourceSafetyException>(() =>
+            JobSystem.ReleaseResource(resource));
+
+        try
+        {
+            dependencyGate.Set();
+            var successorFault = Assert.Throws<InvalidOperationException>(() => successor.Complete());
+            Assert.Equal("deferred dependency failed", successorFault.Message);
+            Assert.False(successorStarted.IsSet);
+
+            // Fault propagation cancels the reservation rather than leaking a permanent use.
+            JobSystem.ReleaseResource(resource);
+            var dependencyFault = Assert.Throws<InvalidOperationException>(() => dependency.Complete());
+            Assert.Equal("deferred dependency failed", dependencyFault.Message);
+        }
+        finally
+        {
+            dependencyGate.Set();
+        }
+    }
+
+    [Fact]
+    public void FaultedResourceHazardOrdersButDoesNotCancelSuccessor()
+    {
+        JobResource resource = JobSystem.CreateResource("faulted-resource-hazard");
+        using var predecessorStarted = new ManualResetEventSlim();
+        using var predecessorGate = new ManualResetEventSlim();
+        using var successorStarted = new ManualResetEventSlim();
+        JobHandle predecessor = JobSystem.Schedule(
+            new ResourceJobs.BlockingThrowJob(predecessorStarted, predecessorGate),
+            JobResourceAccess.Write(resource));
+        Assert.True(predecessorStarted.Wait(TimeSpan.FromSeconds(5)));
+        JobHandle successor = JobSystem.Schedule(
+            new ResourceJobs.SignalJob(successorStarted),
+            JobResourceAccess.Write(resource));
+
+        try
+        {
+            Assert.False(successorStarted.Wait(TimeSpan.FromMilliseconds(100)));
+            predecessorGate.Set();
+
+            successor.Complete();
+            Assert.True(successorStarted.IsSet);
+            InvalidOperationException predecessorFault =
+                Assert.Throws<InvalidOperationException>(() => predecessor.Complete());
+            Assert.Equal("deferred dependency failed", predecessorFault.Message);
+        }
+        finally
+        {
+            predecessorGate.Set();
+        }
+
+        JobSystem.ReleaseResource(resource);
+    }
+
+    [Fact]
     public void MixedRefFreeAndRefContainingJobsShareResourceGraph()
     {
         var resource = JobSystem.CreateResource("mixed-lanes");
@@ -1343,6 +1644,131 @@ public sealed class ResourceSafetyTests
                     new BlockingRecordJob(11, _writerStarted, _writerGate),
                     JobResourceAccess.Write(_resource));
                 _childrenScheduled.Set();
+            }
+        }
+
+        internal readonly struct ParentSchedulesChildAfterGate : IJob
+        {
+            private readonly JobResource _childResource;
+            private readonly ManualResetEventSlim _parentStarted;
+            private readonly ManualResetEventSlim _allowChildSchedule;
+            private readonly ManualResetEventSlim _childScheduled;
+            private readonly ManualResetEventSlim _parentBodyReturning;
+            private readonly ManualResetEventSlim _childStarted;
+
+            internal ParentSchedulesChildAfterGate(
+                JobResource childResource,
+                ManualResetEventSlim parentStarted,
+                ManualResetEventSlim allowChildSchedule,
+                ManualResetEventSlim childScheduled,
+                ManualResetEventSlim parentBodyReturning,
+                ManualResetEventSlim childStarted)
+            {
+                _childResource = childResource;
+                _parentStarted = parentStarted;
+                _allowChildSchedule = allowChildSchedule;
+                _childScheduled = childScheduled;
+                _parentBodyReturning = parentBodyReturning;
+                _childStarted = childStarted;
+            }
+
+            public void Execute()
+            {
+                _parentStarted.Set();
+                _allowChildSchedule.Wait();
+                JobSystem.Schedule(
+                    new SignalJob(_childStarted),
+                    JobResourceAccess.Write(_childResource));
+                _childScheduled.Set();
+                _parentBodyReturning.Set();
+            }
+        }
+
+        internal readonly struct ParentSchedulesConflictingChildAfterGate : IJob
+        {
+            private readonly JobResource _childResource;
+            private readonly ManualResetEventSlim _parentStarted;
+            private readonly ManualResetEventSlim _allowChildSchedule;
+            private readonly ManualResetEventSlim _childScheduled;
+            private readonly ManualResetEventSlim _childStarted;
+            private readonly ManualResetEventSlim _childGate;
+
+            internal ParentSchedulesConflictingChildAfterGate(
+                JobResource childResource,
+                ManualResetEventSlim parentStarted,
+                ManualResetEventSlim allowChildSchedule,
+                ManualResetEventSlim childScheduled,
+                ManualResetEventSlim childStarted,
+                ManualResetEventSlim childGate)
+            {
+                _childResource = childResource;
+                _parentStarted = parentStarted;
+                _allowChildSchedule = allowChildSchedule;
+                _childScheduled = childScheduled;
+                _childStarted = childStarted;
+                _childGate = childGate;
+            }
+
+            public void Execute()
+            {
+                _parentStarted.Set();
+                _allowChildSchedule.Wait();
+                JobSystem.Schedule(
+                    new BlockingSignalJob(_childStarted, _childGate),
+                    JobResourceAccess.Write(_childResource));
+                _childScheduled.Set();
+            }
+        }
+
+        internal readonly struct BlockingSignalJob : IJob
+        {
+            private readonly ManualResetEventSlim _started;
+            private readonly ManualResetEventSlim _gate;
+
+            internal BlockingSignalJob(ManualResetEventSlim started, ManualResetEventSlim gate)
+            {
+                _started = started;
+                _gate = gate;
+            }
+
+            public void Execute()
+            {
+                _started.Set();
+                _gate.Wait();
+            }
+        }
+
+        internal readonly struct BlockingThrowJob : IJob
+        {
+            private readonly ManualResetEventSlim _started;
+            private readonly ManualResetEventSlim _gate;
+
+            internal BlockingThrowJob(ManualResetEventSlim started, ManualResetEventSlim gate)
+            {
+                _started = started;
+                _gate = gate;
+            }
+
+            public void Execute()
+            {
+                _started.Set();
+                _gate.Wait();
+                throw new InvalidOperationException("deferred dependency failed");
+            }
+        }
+
+        internal readonly struct SignalJob : IJob
+        {
+            private readonly ManualResetEventSlim _started;
+
+            internal SignalJob(ManualResetEventSlim started)
+            {
+                _started = started;
+            }
+
+            public void Execute()
+            {
+                _started.Set();
             }
         }
 

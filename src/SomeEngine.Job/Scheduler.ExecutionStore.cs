@@ -48,6 +48,7 @@ internal sealed partial class Scheduler
         internal readonly bool Completed;
         internal readonly List<DependencyContinuation>? Continuations;
         internal readonly List<ExternalCompletionContinuation>? ExternalContinuations;
+        internal readonly CompletionLease ExternalContinuationLease;
         internal readonly ScopeToken Parent;
         internal readonly ExceptionDispatchInfo? Fault;
 
@@ -55,12 +56,14 @@ internal sealed partial class Scheduler
             bool completed,
             List<DependencyContinuation>? continuations,
             List<ExternalCompletionContinuation>? externalContinuations,
+            CompletionLease externalContinuationLease,
             ScopeToken parent,
             ExceptionDispatchInfo? fault)
         {
             Completed = completed;
             Continuations = continuations;
             ExternalContinuations = externalContinuations;
+            ExternalContinuationLease = externalContinuationLease;
             Parent = parent;
             Fault = fault;
         }
@@ -93,8 +96,12 @@ internal sealed partial class Scheduler
             }
         }
 
-        public bool CompleteItem(JobHandle handle, ExceptionDispatchInfo? itemFault)
+        public bool CompleteItem(
+            JobHandle handle,
+            ExceptionDispatchInfo? itemFault,
+            out bool workFinished)
         {
+            workFinished = false;
             CompletionState? state = GetState(handle);
             if (state is null)
             {
@@ -114,6 +121,7 @@ internal sealed partial class Scheduler
                 }
 
                 state.PendingWork--;
+                workFinished = state.PendingWork == 0;
                 return true;
             }
         }
@@ -232,6 +240,7 @@ internal sealed partial class Scheduler
                 ScopeToken parent = state.Parent;
                 List<DependencyContinuation>? continuations;
                 List<ExternalCompletionContinuation>? externalContinuations;
+                CompletionLease externalContinuationLease = default;
 
                 if (state.Continuations.Count == 0)
                 {
@@ -254,12 +263,15 @@ internal sealed partial class Scheduler
                     externalContinuations = state.ExternalContinuationDispatchBuffer;
                     externalContinuations.AddRange(state.ExternalContinuations);
                     state.ExternalContinuations.Clear();
+                    state.ActiveCompleters++;
+                    externalContinuationLease = new CompletionLease(state, handle);
                 }
 
                 return new CompleteCallbacks(
                     completed: true,
                     continuations,
                     externalContinuations,
+                    externalContinuationLease,
                     parent,
                     fault);
             }
@@ -287,6 +299,31 @@ internal sealed partial class Scheduler
 
                 state.ResourceAccesses = registration;
                 return true;
+            }
+        }
+
+        public bool HasResourceAccess(
+            JobHandle handle,
+            JobResourceAccess required,
+            out bool mayExecuteConcurrently)
+        {
+            mayExecuteConcurrently = false;
+            CompletionState? state = GetState(handle);
+            if (state is null)
+            {
+                return false;
+            }
+
+            lock (state.Sync)
+            {
+                if (!state.InUse || state.Version != handle.Version || state.Completed)
+                {
+                    return false;
+                }
+
+                mayExecuteConcurrently = state.MayExecuteConcurrently;
+                ResourceAccessRegistration registration = state.ResourceAccesses;
+                return registration.Covers(required);
             }
         }
     }

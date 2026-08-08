@@ -10,13 +10,16 @@ internal sealed partial class Scheduler
         ArgumentNullException.ThrowIfNull(fence);
         EnsureCurrentScopeBelongsToThisRuntime();
 
-        JobHandle state = CreateState(pendingWork: 1, pendingDependencies: 0);
+        JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
+        JobHandle state = default;
         ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
         try
         {
-            registration = _resources.RegisterAccesses(state, accesses, fence.GetType(), s_currentScope.ToHandle());
+            state = CreateState(pendingWork: 1, pendingDependencies: 0);
+            registration = _resources.RegisterAccesses(state, accesses, fence.GetType());
             SetResourceAccesses(state, registration);
             AttachToCurrentScope(state);
+            submission.Bind(state);
             RegisterExternalDependencies(state, registration);
 
             fence.OnSignaled(ExternalFenceSignal, new ExternalFenceSignalState(this, state));
@@ -25,8 +28,16 @@ internal sealed partial class Scheduler
         }
         catch
         {
-            ReleaseAccessesIfRegistered(registration);
-            CancelUnscheduledState(state);
+            try
+            {
+                ReleaseAccessesIfRegistered(registration);
+                if (state.Index != 0)
+                    CancelUnscheduledState(state);
+            }
+            finally
+            {
+                submission.Rollback();
+            }
             throw;
         }
     }

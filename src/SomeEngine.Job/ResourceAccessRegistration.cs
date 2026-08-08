@@ -29,6 +29,57 @@ internal readonly struct ResourceAccessRegistration
         return Data!.Accesses.Get(index);
     }
 
+    internal bool Covers(JobResourceAccess required)
+    {
+        if (Data is { HasCoverageIndex: true } indexed)
+            return indexed.Covers(required);
+
+        for (int i = 0; i < AccessCount; i++)
+        {
+            if (GetAccess(i).Access.Covers(required))
+            {
+                return true;
+            }
+        }
+
+        if (!required.HasRange)
+        {
+            return false;
+        }
+
+        long requiredEnd = required.RangeStart + required.RangeLength;
+        long coveredUntil = required.RangeStart;
+        while (coveredUntil < requiredEnd)
+        {
+            long nextCoveredUntil = coveredUntil;
+            for (int i = 0; i < AccessCount; i++)
+            {
+                JobResourceAccess declared = GetAccess(i).Access;
+                if (!declared.HasRange
+                    || !declared.CoversIdentityAndMode(required)
+                    || declared.RangeStart > coveredUntil)
+                {
+                    continue;
+                }
+
+                long declaredEnd = declared.RangeStart + declared.RangeLength;
+                if (declaredEnd > nextCoveredUntil)
+                {
+                    nextCoveredUntil = declaredEnd;
+                }
+            }
+
+            if (nextCoveredUntil == coveredUntil)
+            {
+                return false;
+            }
+
+            coveredUntil = nextCoveredUntil;
+        }
+
+        return true;
+    }
+
     internal ResourceDependency GetDependency(int index)
     {
         if ((uint)index >= (uint)DependencyCount)
@@ -42,22 +93,52 @@ internal readonly struct ResourceAccessRegistration
 
 internal sealed class ResourceAccessRegistrationData
 {
+    private ResourceAccessCoverageIndex? _coverage;
+
     internal AccessBuilder<ResourceManager.ActiveResourceAccess> Accesses { get; private set; }
 
     internal AccessBuilder<ResourceDependency> Dependencies { get; private set; }
+
+    internal bool HasCoverageIndex { get; private set; }
 
     internal void Reset(
         AccessBuilder<ResourceManager.ActiveResourceAccess> accesses,
         AccessBuilder<ResourceDependency> dependencies)
     {
+        HasCoverageIndex = accesses.Count > AccessBuilder<ResourceManager.ActiveResourceAccess>.InlineCapacity;
+        try
+        {
+            if (HasCoverageIndex)
+            {
+                (_coverage ??= new ResourceAccessCoverageIndex()).Build(accesses);
+            }
+            else
+            {
+                _coverage?.Clear();
+            }
+        }
+        catch
+        {
+            _coverage?.Clear();
+            HasCoverageIndex = false;
+            throw;
+        }
+
+        // Transfer the pooled builders only after every fallible index operation succeeds. The
+        // caller still owns and must roll them back if coverage construction faults.
         Accesses = accesses;
         Dependencies = dependencies;
     }
+
+    internal bool Covers(JobResourceAccess required) =>
+        _coverage?.Covers(required) == true;
 
     internal void Clear()
     {
         Accesses.Clear();
         Dependencies.Clear();
+        _coverage?.Clear();
+        HasCoverageIndex = false;
     }
 }
 

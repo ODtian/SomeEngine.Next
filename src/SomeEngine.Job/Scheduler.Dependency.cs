@@ -122,35 +122,129 @@ internal sealed partial class Scheduler
         JobHandle state,
         JobHandle explicitDependency,
         ResourceAccessRegistration registration,
-        WorkBatch work)
+        WorkBatch work,
+        bool ignoreExplicitDependencyFault = false)
     {
-        RegisterScheduleDependency(state, explicitDependency, work, waitForWorkOnly: false);
+        RegisterScheduleDependency(
+            state,
+            explicitDependency,
+            work,
+            waitForWorkOnly: false,
+            ignoreDependencyFault: ignoreExplicitDependencyFault);
         for (int i = 0; i < registration.DependencyCount; i++)
         {
             ResourceDependency dependency = registration.GetDependency(i);
-            RegisterScheduleDependency(state, dependency.Handle, work, dependency.WaitForWorkOnly);
+            RegisterScheduleDependency(
+                state,
+                dependency.Handle,
+                work,
+                dependency.WaitForWorkOnly,
+                ignoreDependencyFault: dependency.WaitForWorkOnly);
         }
 
         return SealScheduleDependencies(state);
+    }
+
+    private void RegisterDeferredResourceScheduleDependency(
+        JobHandle state,
+        JobHandle explicitDependency,
+        ResourceAccessReservation reservation,
+        WorkBatch work)
+    {
+        if (!_dependencies.AddPending(state))
+        {
+            throw new InvalidOperationException(
+                "Deferred resource admission could not retain its scheduled state.");
+        }
+
+        if (!_dependencies.AddContinuation(
+                explicitDependency,
+                waitForWorkOnly: false,
+                DependencyContinuation.CreateResourceAdmission(
+                    this,
+                    state,
+                    work,
+                    reservation),
+                out ExceptionDispatchInfo? immediateFault))
+        {
+            CompleteDeferredResourceAdmission(
+                state,
+                work,
+                reservation,
+                immediateFault);
+        }
+    }
+
+    private void CompleteDeferredResourceAdmission(
+        JobHandle state,
+        WorkBatch work,
+        ResourceAccessReservation reservation,
+        ExceptionDispatchInfo? explicitDependencyFault)
+    {
+        ExceptionDispatchInfo? admissionFault = explicitDependencyFault;
+        if (admissionFault is null)
+        {
+            try
+            {
+                ResourceAccessRegistration registration =
+                    _resources.ActivateReservation(state, reservation);
+                if (!SetResourceAccesses(state, registration))
+                {
+                    work.ReleaseJobs();
+                    return;
+                }
+
+                for (int i = 0; i < registration.DependencyCount; i++)
+                {
+                    ResourceDependency dependency = registration.GetDependency(i);
+                    RegisterScheduleDependency(
+                        state,
+                        dependency.Handle,
+                        work,
+                        dependency.WaitForWorkOnly,
+                        ignoreDependencyFault: dependency.WaitForWorkOnly);
+                }
+            }
+            catch (Exception exception)
+            {
+                admissionFault = ExceptionDispatchInfo.Capture(exception);
+            }
+        }
+
+        CancelReservation(reservation);
+
+        // The explicit full dependency remains counted until resource activation has published
+        // every work-only hazard. Sealing before releasing that final count prevents a transient
+        // enqueue between the two dependency classes.
+        SealScheduleDependencies(state);
+        ReleaseScheduleDependency(state, work, admissionFault);
     }
 
     private bool RegisterScheduleDependency(
         JobHandle state,
         JobHandle dependency,
         WorkBatch work,
-        bool waitForWorkOnly)
+        bool waitForWorkOnly,
+        bool ignoreDependencyFault)
     {
         bool satisfied = RegisterDependencyCore(
             state,
             dependency,
             waitForWorkOnly,
-            DependencyContinuation.CreateSchedule(this, state, work),
+            DependencyContinuation.CreateSchedule(
+                this,
+                state,
+                work,
+                ignoreDependencyFault),
             out var shouldRelease,
             out ExceptionDispatchInfo? immediateFault);
 
         if (shouldRelease)
         {
-            ReleaseScheduleDependency(state, work, immediateFault);
+            ReleaseScheduleDependency(
+                state,
+                work,
+                ignoreDependencyFault ? null : immediateFault);
         }
 
         return satisfied;
@@ -196,23 +290,31 @@ internal sealed partial class Scheduler
         for (int i = 0; i < registration.DependencyCount; i++)
         {
             ResourceDependency dependency = registration.GetDependency(i);
-            RegisterExternalDependency(state, dependency.Handle, dependency.WaitForWorkOnly);
+            RegisterExternalDependency(
+                state,
+                dependency.Handle,
+                dependency.WaitForWorkOnly,
+                ignoreDependencyFault: dependency.WaitForWorkOnly);
         }
     }
 
-    private void RegisterExternalDependency(JobHandle state, JobHandle dependency, bool waitForWorkOnly)
+    private void RegisterExternalDependency(
+        JobHandle state,
+        JobHandle dependency,
+        bool waitForWorkOnly,
+        bool ignoreDependencyFault)
     {
         RegisterDependencyCore(
             state,
             dependency,
             waitForWorkOnly,
-            DependencyContinuation.CreateExternal(this, state),
+            DependencyContinuation.CreateExternal(this, state, ignoreDependencyFault),
             out var shouldRelease,
             out ExceptionDispatchInfo? immediateFault);
 
         if (shouldRelease)
         {
-            ReleaseExternalDependency(state, immediateFault);
+            ReleaseExternalDependency(state, ignoreDependencyFault ? null : immediateFault);
         }
     }
 
@@ -300,26 +402,38 @@ internal sealed partial class Scheduler
         private readonly Scheduler? _scheduler;
         private readonly JobHandle _target;
         private readonly WorkBatch _work;
+        private readonly ResourceAccessReservation _reservation;
         private readonly ContinuationKind _kind;
+        private readonly bool _ignoreDependencyFault;
 
         private DependencyContinuation(
             Scheduler scheduler,
             ContinuationKind kind,
             JobHandle target,
-            WorkBatch work)
+            WorkBatch work,
+            ResourceAccessReservation reservation = default,
+            bool ignoreDependencyFault = false)
         {
             _scheduler = scheduler;
             _kind = kind;
             _target = target;
             _work = work;
+            _reservation = reservation;
+            _ignoreDependencyFault = ignoreDependencyFault;
         }
 
         internal static DependencyContinuation CreateSchedule(
             Scheduler scheduler,
             JobHandle target,
-            WorkBatch work)
+            WorkBatch work,
+            bool ignoreDependencyFault)
         {
-            return new DependencyContinuation(scheduler, ContinuationKind.Schedule, target, work);
+            return new DependencyContinuation(
+                scheduler,
+                ContinuationKind.Schedule,
+                target,
+                work,
+                ignoreDependencyFault: ignoreDependencyFault);
         }
 
         internal static DependencyContinuation CreateCombined(Scheduler scheduler, JobHandle target)
@@ -327,9 +441,31 @@ internal sealed partial class Scheduler
             return new DependencyContinuation(scheduler, ContinuationKind.Combine, target, default);
         }
 
-        internal static DependencyContinuation CreateExternal(Scheduler scheduler, JobHandle target)
+        internal static DependencyContinuation CreateResourceAdmission(
+            Scheduler scheduler,
+            JobHandle target,
+            WorkBatch work,
+            ResourceAccessReservation reservation)
         {
-            return new DependencyContinuation(scheduler, ContinuationKind.External, target, default);
+            return new DependencyContinuation(
+                scheduler,
+                ContinuationKind.ResourceAdmission,
+                target,
+                work,
+                reservation);
+        }
+
+        internal static DependencyContinuation CreateExternal(
+            Scheduler scheduler,
+            JobHandle target,
+            bool ignoreDependencyFault)
+        {
+            return new DependencyContinuation(
+                scheduler,
+                ContinuationKind.External,
+                target,
+                default,
+                ignoreDependencyFault: ignoreDependencyFault);
         }
 
         internal void Invoke(ExceptionDispatchInfo? fault)
@@ -341,11 +477,24 @@ internal sealed partial class Scheduler
             }
             else if (_kind == ContinuationKind.External)
             {
-                scheduler.ReleaseExternalDependency(_target, fault);
+                scheduler.ReleaseExternalDependency(
+                    _target,
+                    _ignoreDependencyFault ? null : fault);
+            }
+            else if (_kind == ContinuationKind.ResourceAdmission)
+            {
+                scheduler.CompleteDeferredResourceAdmission(
+                    _target,
+                    _work,
+                    _reservation,
+                    fault);
             }
             else
             {
-                scheduler.ReleaseScheduleDependency(_target, _work, fault);
+                scheduler.ReleaseScheduleDependency(
+                    _target,
+                    _work,
+                    _ignoreDependencyFault ? null : fault);
             }
         }
     }
@@ -354,7 +503,8 @@ internal sealed partial class Scheduler
     {
         Schedule,
         Combine,
-        External
+        External,
+        ResourceAdmission
     }
 
     private enum DependencyReleaseAction

@@ -2,11 +2,24 @@ namespace SomeEngine.Job;
 
 internal sealed partial class ResourceManager
 {
-    private static void AddDependency(
+    private void AddDependency(
         ref AccessBuilder<ResourceDependency> dependencies,
+        ref HashSet<ResourceDependencyKey>? dependencySet,
         JobHandle handle,
         bool waitForWorkOnly)
     {
+        var key = new ResourceDependencyKey(
+            handle.Index,
+            handle.Version,
+            handle.Generation,
+            waitForWorkOnly);
+        if (dependencySet is not null)
+        {
+            if (dependencySet.Add(key))
+                dependencies.Add(new ResourceDependency(handle, waitForWorkOnly));
+            return;
+        }
+
         for (int i = 0; i < dependencies.Count; i++)
         {
             ResourceDependency dependency = dependencies.Get(i);
@@ -19,6 +32,31 @@ internal sealed partial class ResourceManager
             }
         }
 
+        if (dependencies.Count == AccessBuilder<ResourceDependency>.InlineCapacity)
+        {
+            HashSet<ResourceDependencyKey> rented = RentResourceDependencySet();
+            try
+            {
+                for (int i = 0; i < dependencies.Count; i++)
+                {
+                    ResourceDependency dependency = dependencies.Get(i);
+                    rented.Add(new ResourceDependencyKey(
+                        dependency.Handle.Index,
+                        dependency.Handle.Version,
+                        dependency.Handle.Generation,
+                        dependency.WaitForWorkOnly));
+                }
+
+                rented.Add(key);
+                dependencySet = rented;
+            }
+            catch
+            {
+                ReturnResourceDependencySet(rented);
+                throw;
+            }
+        }
+
         dependencies.Add(new ResourceDependency(handle, waitForWorkOnly));
     }
 
@@ -27,66 +65,68 @@ internal sealed partial class ResourceManager
         return !access.HasRange && state.RangedAccessCount == 0;
     }
 
-    private static void RegisterUnrangedDependencies(
+    private int RegisterUnrangedDependencies(
         ResourceState state,
         JobHandle owner,
         JobResourceAccess access,
-        JobHandle currentScope,
-        ref AccessBuilder<ResourceDependency> dependencies)
+        ref AccessBuilder<ResourceDependency> dependencies,
+        ref HashSet<ResourceDependencyKey>? dependencySet)
     {
+        int steps = 0;
         if (state.HasLastUnrangedWriter)
         {
-            AddDependency(ref dependencies, state.LastUnrangedWriter, owner, currentScope);
+            steps++;
+            AddDependency(
+                ref dependencies,
+                ref dependencySet,
+                state.LastUnrangedWriter,
+                owner);
         }
 
         if (access.Mode == JobAccessMode.Read)
-        {
-            return;
-        }
+            return steps;
 
         foreach (ActiveResourceAccess active in state.UnrangedReadersSinceLastWriter)
         {
-            AddDependency(ref dependencies, active, owner, currentScope);
+            steps++;
+            AddDependency(ref dependencies, ref dependencySet, active, owner);
         }
+
+        return steps;
     }
 
-    private void RegisterScannedDependencies(
+    private void RegisterIndexedDependencies(
         ResourceState state,
         JobHandle owner,
         JobResourceAccess access,
-        JobHandle currentScope,
-        ref AccessBuilder<ResourceDependency> dependencies)
+        ref AccessBuilder<ResourceDependency> dependencies,
+        ref HashSet<ResourceDependencyKey>? dependencySet)
     {
-        int steps = 0;
-        foreach (ActiveResourceAccess active in state.ActiveAccesses)
-        {
-            steps++;
-            if (!Conflicts(active.Access, access))
-            {
-                continue;
-            }
-
-            AddDependency(ref dependencies, active, owner, currentScope);
-        }
-
+        int steps = RegisterUnrangedDependencies(
+            state,
+            owner,
+            access,
+            ref dependencies,
+            ref dependencySet);
+        RangedResourceFrontier ranged = access.Mode == JobAccessMode.Read
+            ? state.RangedWriters
+            : state.RangedAll;
+        steps += ranged.AddDependencies(
+            this,
+            access,
+            owner,
+            ref dependencies,
+            ref dependencySet);
         _counters.ResourceConflictCheck(steps);
     }
 
-    private static void AddDependency(
+    internal void AddDependency(
         ref AccessBuilder<ResourceDependency> dependencies,
+        ref HashSet<ResourceDependencyKey>? dependencySet,
         ActiveResourceAccess active,
-        JobHandle owner,
-        JobHandle currentScope)
+        JobHandle owner)
     {
-        AddDependency(ref dependencies, active.Owner, owner, currentScope);
-    }
-
-    private static void AddDependency(
-        ref AccessBuilder<ResourceDependency> dependencies,
-        JobHandle dependency,
-        JobHandle owner,
-        JobHandle currentScope)
-    {
+        JobHandle dependency = active.Owner;
         if (dependency.Index == owner.Index
             && dependency.Version == owner.Version
             && dependency.Generation == owner.Generation)
@@ -96,40 +136,18 @@ internal sealed partial class ResourceManager
 
         AddDependency(
             ref dependencies,
+            ref dependencySet,
             dependency,
-            currentScope.Index == dependency.Index
-                && currentScope.Version == dependency.Version
-                && currentScope.Generation == dependency.Generation);
+            // A resource grant belongs to the owner's work body. Attached children extend the
+            // handle's lifetime, but they do not extend that grant: ReleaseAccesses runs as soon
+            // as PendingWork reaches zero. Waiting for full completion here can therefore create
+            // a ring when an attached child needs a resource already registered by the successor.
+            waitForWorkOnly: true);
     }
 
-    private static bool Conflicts(JobResourceAccess existing, JobResourceAccess candidate)
-    {
-        if (!RangesOverlap(existing, candidate))
-        {
-            return false;
-        }
-
-        if (existing.Mode == JobAccessMode.Read && candidate.Mode == JobAccessMode.Read)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool RangesOverlap(JobResourceAccess existing, JobResourceAccess candidate)
-    {
-        if (!existing.HasRange || !candidate.HasRange)
-        {
-            return true;
-        }
-
-        long existingEnd = existing.RangeStart + existing.RangeLength;
-        long candidateEnd = candidate.RangeStart + candidate.RangeLength;
-        return existing.RangeStart < candidateEnd && candidate.RangeStart < existingEnd;
-    }
-
+    internal readonly record struct ResourceDependencyKey(
+        int Index,
+        int Version,
+        long Generation,
+        bool WaitForWorkOnly);
 }
-
-
-

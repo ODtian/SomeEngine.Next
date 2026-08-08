@@ -182,6 +182,8 @@ public static partial class JobSystem
 
 public static partial class JobSystem
 {
+    internal static bool IsExecutingJob => JobExecutionContext.IsActive;
+
     public static JobHandle CreateExternalFenceHandle(IJobExternalFence fence)
     {
         return Current.CreateExternalFenceHandle(fence, ReadOnlySpan<JobResourceAccess>.Empty);
@@ -245,14 +247,83 @@ public static partial class JobSystem
         return Current.IsCompleted(handle);
     }
 
+    internal static bool NeedsLifetimeTracking(JobHandle handle)
+    {
+        return Current.NeedsLifetimeTracking(handle);
+    }
+
     internal static void Complete(JobHandle handle)
     {
         Current.Complete(handle);
     }
 
+    internal static bool TryHandoffLatencyWork(
+        object? state,
+        Action<object?, int> action,
+        int value,
+        JobPriority priority,
+        out long sequence)
+    {
+        return Current.TryHandoffLatencyWork(state, action, value, priority, out sequence);
+    }
+
+    internal static void JoinLatencyWork(long sequence)
+    {
+        Current.JoinLatencyWork(sequence);
+    }
+
+    internal static JobSubmissionScope EnterSubmissionScope(IJobSubmissionObserver observer)
+    {
+        return JobSubmissionTracker.Enter(observer);
+    }
+
+    internal static JobHandle GetCurrentScope()
+    {
+        return Current.GetCurrentScope();
+    }
+
+    internal static bool IsScopeDescendantOf(JobHandle scope, JobHandle ancestor)
+    {
+        return Current.IsScopeDescendantOf(scope, ancestor);
+    }
+
     internal static JobResourceToken GetContainerResourceToken(object container)
     {
         return Current.GetContainerResourceToken(container);
+    }
+
+    internal static void RequireCurrentAccess(
+        JobResourceAccess required,
+        bool requireSingleWorkItem = false)
+    {
+        Current.RequireCurrentAccess(required, requireSingleWorkItem);
+    }
+
+    /// <summary>
+    /// Schedules an internal cleanup job after <paramref name="dependency"/> reaches a terminal
+    /// state, even when that dependency faulted. The cleanup job is responsible for observing and
+    /// propagating the dependency fault after it has restored its owner's invariants.
+    /// </summary>
+    internal static JobHandle ScheduleFinally<T>(
+        in T job,
+        JobScheduleOptions options,
+        JobHandle dependency)
+        where T : struct, IJob
+    {
+        return Current.ScheduleFinally(job, options, dependency);
+    }
+
+    internal static SynchronousResourceOwner AcquireSynchronousAccess(
+        JobResourceAccess access)
+    {
+        ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
+        return Current.AcquireSynchronousAccess(accesses);
+    }
+
+    internal static SynchronousResourceOwner AcquireSynchronousAccess(
+        ReadOnlySpan<JobResourceAccess> accesses)
+    {
+        return Current.AcquireSynchronousAccess(accesses);
     }
 
     internal static void ResetForTesting(int workerCount = DefaultTestingWorkerCount)

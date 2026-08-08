@@ -16,6 +16,8 @@ internal sealed partial class Scheduler : IDisposable
     private readonly IScopeStore _scopes;
     private readonly IFenceStore _fences;
     private readonly ResourceManager _resources;
+    private readonly Lock _submissionObserverGate = new();
+    private readonly Dictionary<SubmissionResourceIdentity, IJobSubmissionObserver> _submissionObservers = [];
     private readonly IWorkQueue _workQueue;
     private int _managedPayloadPolicy;
 
@@ -43,6 +45,27 @@ internal sealed partial class Scheduler : IDisposable
 
     internal long Generation { get; }
 
+    internal IJobSubmissionObserver? GetSubmissionObserver(JobResourceAccess access)
+    {
+        var identity = new SubmissionResourceIdentity(
+            access.Kind,
+            access.Id,
+            access.Version,
+            access.Generation);
+        lock (_submissionObserverGate)
+        {
+            return _submissionObservers.TryGetValue(identity, out IJobSubmissionObserver? observer)
+                ? observer
+                : null;
+        }
+    }
+
+    private readonly record struct SubmissionResourceIdentity(
+        ResourceKind Kind,
+        int Id,
+        int Version,
+        long Generation);
+
     internal JobSafetyMode SafetyMode
     {
         get => _resources.SafetyMode;
@@ -66,6 +89,22 @@ internal sealed partial class Scheduler : IDisposable
     internal JobRuntimeStats GetStats()
     {
         return _counters.Snapshot();
+    }
+
+    internal bool TryHandoffLatencyWork(
+        object? state,
+        Action<object?, int> action,
+        int value,
+        JobPriority priority,
+        out long sequence)
+    {
+        EnsureCurrentScopeBelongsToThisRuntime();
+        return _workQueue.TryHandoffLatencyWork(state, action, value, priority, out sequence);
+    }
+
+    internal void JoinLatencyWork(long sequence)
+    {
+        _workQueue.JoinLatencyWork(sequence);
     }
 
     internal JobHandle Schedule<T>(in T job, JobHandle dependency)
@@ -111,35 +150,96 @@ internal sealed partial class Scheduler : IDisposable
         JobHandle dependency)
         where T : struct, IJob
     {
+        return ScheduleCore(
+            job,
+            accesses,
+            options,
+            dependency,
+            ignoreExplicitDependencyFault: false);
+    }
+
+    internal JobHandle ScheduleFinally<T>(
+        in T job,
+        JobScheduleOptions options,
+        JobHandle dependency)
+        where T : struct, IJob
+    {
+        return ScheduleCore(
+            job,
+            ReadOnlySpan<JobResourceAccess>.Empty,
+            options,
+            dependency,
+            ignoreExplicitDependencyFault: true);
+    }
+
+    private JobHandle ScheduleCore<T>(
+        in T job,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobScheduleOptions options,
+        JobHandle dependency,
+        bool ignoreExplicitDependencyFault)
+        where T : struct, IJob
+    {
         JobPayloadLane lane = BeginSchedule<T>(options);
+        JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
         bool hasResourceAccesses = accesses.Length != 0;
         bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
-        JobHandle state = CreateState(
-            pendingWork: 1,
-            pendingDependencies: 0,
-            scheduleDependenciesSealed: !hasScheduleDependencies);
+        bool deferResourceActivation =
+            hasResourceAccesses &&
+            dependency.Index != 0 &&
+            !_dependencies.IsSatisfied(dependency, waitForWorkOnly: false);
+        JobHandle state = default;
         ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
+        ResourceAccessReservation reservation = ResourceAccessReservation.Empty;
         WorkBatch work = default;
         try
         {
-            registration = RegisterAccesses<T>(state, accesses, hasResourceAccesses);
+            state = CreateState(
+                pendingWork: 1,
+                pendingDependencies: 0,
+                scheduleDependenciesSealed: !hasScheduleDependencies);
+            if (deferResourceActivation)
+                reservation = ReserveAccesses<T>(accesses);
+            else
+                registration = RegisterAccesses<T>(state, accesses, hasResourceAccesses);
             AttachToCurrentScope(state);
-            ScheduleSingleWork(job, state, dependency, registration, options, hasScheduleDependencies, ref work);
+            submission.Bind(state);
+            ScheduleSingleWork(
+                job,
+                state,
+                dependency,
+                registration,
+                reservation,
+                options,
+                hasScheduleDependencies,
+                deferResourceActivation,
+                ignoreExplicitDependencyFault,
+                ref work);
             _counters.Scheduled(lane);
             return state;
         }
         catch
         {
-            CleanupUnscheduled(state, registration, work);
+            try
+            {
+                CancelReservation(reservation);
+                if (state.Index != 0)
+                    CleanupUnscheduled(state, registration, work);
+            }
+            finally
+            {
+                submission.Rollback();
+            }
             throw;
         }
     }
 
     private JobPayloadLane BeginSchedule<T>(JobScheduleOptions options)
-        where T : struct
+        where T : struct, IJob
     {
         ValidatePriority(options);
         EnsureCurrentScopeBelongsToThisRuntime();
+        JobTraits.RequireSynchronousJob<T>();
         JobPayloadLane lane = JobTraits.GetPayloadLane<T>();
         ApplyManagedPayloadPolicy<T>(lane);
         return lane;
@@ -160,7 +260,7 @@ internal sealed partial class Scheduler : IDisposable
         if (!hasResourceAccesses)
             return ResourceAccessRegistration.Empty;
 
-        var registration = _resources.RegisterAccesses(state, accesses, typeof(T), s_currentScope.ToHandle());
+        var registration = _resources.RegisterAccesses(state, accesses, typeof(T));
         SetResourceAccesses(state, registration);
         return registration;
     }
@@ -170,8 +270,11 @@ internal sealed partial class Scheduler : IDisposable
         JobHandle state,
         JobHandle dependency,
         ResourceAccessRegistration registration,
+        ResourceAccessReservation reservation,
         JobScheduleOptions options,
         bool hasScheduleDependencies,
+        bool deferResourceActivation,
+        bool ignoreExplicitDependencyFault,
         ref WorkBatch work)
         where T : struct, IJob
     {
@@ -185,7 +288,20 @@ internal sealed partial class Scheduler : IDisposable
 
         int slot = stream.Prepare(scheduled);
         work = WorkBatch.CreateSingle(stream, slot, options.Priority);
-        if (RegisterScheduleDependencies(state, dependency, registration, work))
+        if (deferResourceActivation)
+        {
+            RegisterDeferredResourceScheduleDependency(
+                state,
+                dependency,
+                reservation,
+                work);
+        }
+        else if (RegisterScheduleDependencies(
+                     state,
+                     dependency,
+                     registration,
+                     work,
+                     ignoreExplicitDependencyFault))
             _workQueue.Enqueue(work);
     }
 
@@ -265,33 +381,47 @@ internal sealed partial class Scheduler : IDisposable
         if (length <= 0)
             return dependency;
 
+        JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
+
         int batchCount = CalculateParallelBatchCount(length, batchSize);
         _workQueue.EnsureItemCapacity(batchCount);
         bool hasResourceAccesses = accesses.Length != 0;
         bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
-        JobHandle state = CreateState(
-            batchCount,
-            pendingDependencies: 0,
-            scheduleDependenciesSealed: !hasScheduleDependencies);
+        bool deferResourceActivation =
+            hasResourceAccesses &&
+            dependency.Index != 0 &&
+            !_dependencies.IsSatisfied(dependency, waitForWorkOnly: false);
+        JobHandle state = default;
         ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
+        ResourceAccessReservation reservation = ResourceAccessReservation.Empty;
         WorkBatch work = default;
         int[]? slots = null;
         WorkStream<ScheduledParallelJob<T>>? stream = null;
         int preparedSlots = 0;
         try
         {
-            registration = RegisterAccesses<T>(state, accesses, hasResourceAccesses);
+            state = CreateState(
+                batchCount,
+                pendingDependencies: 0,
+                scheduleDependenciesSealed: !hasScheduleDependencies);
+            if (deferResourceActivation)
+                reservation = ReserveAccesses<T>(accesses);
+            else
+                registration = RegisterAccesses<T>(state, accesses, hasResourceAccesses);
             AttachToCurrentScope(state);
+            submission.Bind(state);
             ScheduleParallelWork(
                 job,
                 state,
                 dependency,
                 registration,
+                reservation,
                 options,
                 length,
                 batchSize,
                 batchCount,
                 hasScheduleDependencies,
+                deferResourceActivation,
                 ref work,
                 ref slots,
                 ref stream,
@@ -301,21 +431,31 @@ internal sealed partial class Scheduler : IDisposable
         }
         catch
         {
-            CleanupParallelUnscheduled(work, stream, slots, preparedSlots);
-            ReleaseAccessesIfRegistered(registration);
-            CancelUnscheduledState(state);
+            try
+            {
+                CancelReservation(reservation);
+                CleanupParallelUnscheduled(work, stream, slots, preparedSlots);
+                ReleaseAccessesIfRegistered(registration);
+                if (state.Index != 0)
+                    CancelUnscheduledState(state);
+            }
+            finally
+            {
+                submission.Rollback();
+            }
             throw;
         }
     }
 
     private JobPayloadLane BeginParallelSchedule<T>(JobScheduleOptions options, int batchSize)
-        where T : struct
+        where T : struct, IJobParallelFor
     {
         if (batchSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(batchSize), InvalidBatchSizeMessage);
 
         ValidatePriority(options);
         EnsureCurrentScopeBelongsToThisRuntime();
+        JobTraits.RequireSynchronousParallelJob<T>();
         JobPayloadLane lane = JobTraits.GetPayloadLane<T>();
         ApplyManagedPayloadPolicy<T>(lane);
         return lane;
@@ -326,11 +466,13 @@ internal sealed partial class Scheduler : IDisposable
         JobHandle state,
         JobHandle dependency,
         ResourceAccessRegistration registration,
+        ResourceAccessReservation reservation,
         JobScheduleOptions options,
         int length,
         int batchSize,
         int batchCount,
         bool hasScheduleDependencies,
+        bool deferResourceActivation,
         ref WorkBatch work,
         ref int[]? slots,
         ref WorkStream<ScheduledParallelJob<T>>? stream,
@@ -349,7 +491,15 @@ internal sealed partial class Scheduler : IDisposable
         preparedSlots = stream.PrepareMany(slots.AsSpan(0, batchCount), ref source);
         work = WorkBatch.CreateArray(stream, slots, batchCount, pooledSlotsArray: true, options.Priority);
         slots = null;
-        if (RegisterScheduleDependencies(state, dependency, registration, work))
+        if (deferResourceActivation)
+        {
+            RegisterDeferredResourceScheduleDependency(
+                state,
+                dependency,
+                reservation,
+                work);
+        }
+        else if (RegisterScheduleDependencies(state, dependency, registration, work))
             _workQueue.Enqueue(work);
     }
 
@@ -375,6 +525,7 @@ internal sealed partial class Scheduler : IDisposable
         if (slots is not null)
             ArrayPool<int>.Shared.Return(slots);
     }
+
 }
 
 internal sealed partial class Scheduler

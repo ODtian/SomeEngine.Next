@@ -13,6 +13,8 @@ internal sealed partial class ResourceManager
     private readonly List<ResourceState?> _states = [null];
     private readonly Stack<int> _freeStates = new();
     private readonly Stack<ResourceAccessRegistrationData> _freeRegistrations = new();
+    private readonly Stack<Dictionary<ResourceState, int>> _freeResourceStateMaps = new();
+    private readonly Stack<HashSet<ResourceDependencyKey>> _freeResourceDependencySets = new();
     private JobSafetyMode _safetyMode = JobSafetyMode.Checked;
 
     internal ResourceManager(JobRuntimeConfig config, RuntimeCounters counters, long generation)
@@ -21,6 +23,7 @@ internal sealed partial class ResourceManager
         _counters = counters;
         _generation = generation;
         _safetyMode = config.SafetyMode;
+        _createContainerResourceBinding = CreateContainerResourceBinding;
     }
 
     internal JobSafetyMode SafetyMode
@@ -67,6 +70,28 @@ internal sealed partial class ResourceManager
     internal void Release(JobResourceToken token)
     {
         Release(token.Id, token.Version, token.Generation, ResourceKind.Token, fromScope: false);
+    }
+
+    private Dictionary<ResourceState, int> RentResourceStateMap() =>
+        _freeResourceStateMaps.Count == 0
+            ? new Dictionary<ResourceState, int>()
+            : _freeResourceStateMaps.Pop();
+
+    private void ReturnResourceStateMap(Dictionary<ResourceState, int> map)
+    {
+        map.Clear();
+        _freeResourceStateMaps.Push(map);
+    }
+
+    private HashSet<ResourceDependencyKey> RentResourceDependencySet() =>
+        _freeResourceDependencySets.Count == 0
+            ? new HashSet<ResourceDependencyKey>()
+            : _freeResourceDependencySets.Pop();
+
+    private void ReturnResourceDependencySet(HashSet<ResourceDependencyKey> set)
+    {
+        set.Clear();
+        _freeResourceDependencySets.Push(set);
     }
 
 }

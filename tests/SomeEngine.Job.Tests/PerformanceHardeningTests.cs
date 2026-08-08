@@ -12,6 +12,62 @@ public sealed class PerformanceHardeningTests
     }
 
     [Fact]
+    public void LatencyHandoffUsesExistingWorkerStateWithoutCreatingAJobHandle()
+    {
+        int[] observed = [0];
+        long scheduledBefore = JobSystem.GetStats().ScheduledJobs;
+
+        Assert.True(JobSystem.TryHandoffLatencyWork(
+            observed,
+            static (state, value) => Volatile.Write(ref ((int[])state!)[0], value),
+            42,
+            JobPriority.High,
+            out long sequence));
+        JobSystem.JoinLatencyWork(sequence);
+
+        Assert.Equal(42, Volatile.Read(ref observed[0]));
+        Assert.Equal(scheduledBefore, JobSystem.GetStats().ScheduledJobs);
+    }
+
+    [Fact]
+    public void LatencyHandoffPropagatesFailureAndReusesTheSameSequenceSlot()
+    {
+        Assert.True(JobSystem.TryHandoffLatencyWork(
+            null,
+            static (_, _) => throw new InvalidOperationException("latency-failure"),
+            0,
+            JobPriority.High,
+            out long failedSequence));
+        InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
+            () => JobSystem.JoinLatencyWork(failedSequence));
+        Assert.Equal("latency-failure", failure.Message);
+
+        int[] observed = [0];
+        Assert.True(JobSystem.TryHandoffLatencyWork(
+            observed,
+            static (state, value) => Volatile.Write(ref ((int[])state!)[0], value),
+            7,
+            JobPriority.High,
+            out long recoveredSequence));
+        JobSystem.JoinLatencyWork(recoveredSequence);
+        Assert.Equal(7, Volatile.Read(ref observed[0]));
+    }
+
+    [Fact]
+    public void LatencyHandoffFallsBackWhenTheRuntimeHasNoWorker()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+
+        Assert.False(JobSystem.TryHandoffLatencyWork(
+            null,
+            static (_, _) => { },
+            0,
+            JobPriority.High,
+            out long sequence));
+        Assert.Equal(0, sequence);
+    }
+
+    [Fact]
     public void DefaultAndCustomConfigInitializeRuntime()
     {
         JobSystem.Initialize(JobRuntimeConfig.Default);
@@ -193,6 +249,248 @@ public sealed class PerformanceHardeningTests
     }
 
     [Fact]
+    public void LargeRangeRegistrationDoesNotRescanItsOwnDisjointSlices()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("large-range-frontier");
+        const int rangeCount = 256;
+        var accesses = new JobResourceAccess[rangeCount];
+        for (int i = 0; i < accesses.Length; i++)
+        {
+            accesses[i] = JobResourceAccess.Write(
+                resource,
+                start: i * 2L,
+                length: 1);
+        }
+
+        JobSystem.Schedule(new HardeningJobs.IncrementJob(), accesses).Complete();
+
+        JobRuntimeStats stats = JobSystem.GetStats();
+        Assert.Equal(rangeCount, stats.ResourceConflictChecks);
+        Assert.Equal(0, stats.ResourceConflictCheckSteps);
+        Assert.Equal(1, HardeningJobs.Counter);
+    }
+
+    [Fact]
+    public void LargeDisjointRangeOwnersUseIndexedFrontier()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("cross-owner-range-frontier");
+        const int rangeCount = 256;
+        JobResourceAccess[] firstAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            rangeCount,
+            offset: 0);
+        JobResourceAccess[] secondAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            rangeCount,
+            offset: 2);
+
+        var first = JobSystem.Schedule(new HardeningJobs.IncrementJob(), firstAccesses);
+        var second = JobSystem.Schedule(new HardeningJobs.IncrementJob(), secondAccesses);
+
+        JobRuntimeStats stats = JobSystem.GetStats();
+        Assert.Equal(rangeCount * 2L, stats.ResourceConflictChecks);
+        Assert.InRange(stats.ResourceConflictCheckSteps, 1, rangeCount * 20L);
+
+        second.Complete();
+        first.Complete();
+        Assert.Equal(2, HardeningJobs.Counter);
+    }
+
+    [Fact]
+    public void IndexedRangeFrontierRetainsSingleOverlapDependency()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        var resource = JobSystem.CreateResource("indexed-range-overlap");
+        const int rangeCount = 256;
+        using var firstStarted = new ManualResetEventSlim();
+        using var firstGate = new ManualResetEventSlim();
+        using var secondStarted = new ManualResetEventSlim();
+        JobResourceAccess[] firstAccesses = CreateInterleavedReadAccesses(
+            resource,
+            rangeCount,
+            offset: 0);
+        JobResourceAccess[] secondAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            rangeCount,
+            offset: 2);
+        secondAccesses[rangeCount / 2] = JobResourceAccess.Write(
+            resource,
+            start: (rangeCount / 2) * 4L,
+            length: 1);
+
+        var first = JobSystem.Schedule(
+            new HardeningJobs.BlockingIncrementJob(firstStarted, firstGate),
+            firstAccesses);
+        Assert.True(firstStarted.Wait(1_000));
+        var second = JobSystem.Schedule(
+            new HardeningJobs.SignalingIncrementJob(secondStarted),
+            secondAccesses);
+
+        try
+        {
+            Assert.False(secondStarted.Wait(100));
+            firstGate.Set();
+            Assert.True(secondStarted.Wait(1_000));
+            JobSystem.CombineDependencies([first, second]).Complete();
+        }
+        finally
+        {
+            firstGate.Set();
+        }
+
+        Assert.Equal(2, HardeningJobs.Counter);
+    }
+
+    [Fact]
+    public void LargeOverlappingReadOwnersBypassWriterRangeIndex()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("read-only-range-frontier");
+        const int rangeCount = 256;
+        JobResourceAccess[] firstAccesses = CreateInterleavedReadAccesses(
+            resource,
+            rangeCount,
+            offset: 0);
+        JobResourceAccess[] secondAccesses = CreateInterleavedReadAccesses(
+            resource,
+            rangeCount,
+            offset: 0);
+
+        var first = JobSystem.Schedule(new HardeningJobs.IncrementJob(), firstAccesses);
+        var second = JobSystem.Schedule(new HardeningJobs.IncrementJob(), secondAccesses);
+
+        JobRuntimeStats stats = JobSystem.GetStats();
+        Assert.Equal(rangeCount * 2L, stats.ResourceConflictChecks);
+        Assert.Equal(0, stats.ResourceConflictCheckSteps);
+
+        second.Complete();
+        first.Complete();
+        Assert.Equal(2, HardeningJobs.Counter);
+    }
+
+    [Fact]
+    public void DeferredLargeDisjointRangeOwnerUsesIndexedActivationFrontier()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("deferred-indexed-range-frontier");
+        const int rangeCount = 256;
+        var fence = new ControlledFence();
+        JobHandle dependency = JobSystem.CreateExternalFenceHandle(fence);
+        JobResourceAccess[] activeAccesses = CreateInterleavedReadAccesses(
+            resource,
+            rangeCount,
+            offset: 0);
+        JobResourceAccess[] deferredAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            rangeCount,
+            offset: 2);
+
+        var active = JobSystem.Schedule(new HardeningJobs.IncrementJob(), activeAccesses);
+        var deferred = JobSystem.Schedule(
+            new HardeningJobs.IncrementJob(),
+            deferredAccesses,
+            dependency);
+
+        Assert.Equal(rangeCount, JobSystem.GetStats().ResourceConflictChecks);
+        fence.Signal();
+
+        JobRuntimeStats stats = JobSystem.GetStats();
+        Assert.Equal(rangeCount * 2L, stats.ResourceConflictChecks);
+        Assert.InRange(stats.ResourceConflictCheckSteps, 1, rangeCount * 20L);
+
+        deferred.Complete();
+        active.Complete();
+        Assert.Equal(2, HardeningJobs.Counter);
+    }
+
+    [Fact]
+    public void DeferredIndexedRangeActivationRetainsSingleOverlapDependency()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        var resource = JobSystem.CreateResource("deferred-indexed-range-overlap");
+        const int rangeCount = 256;
+        var fence = new ControlledFence();
+        JobHandle dependency = JobSystem.CreateExternalFenceHandle(fence);
+        using var activeStarted = new ManualResetEventSlim();
+        using var activeGate = new ManualResetEventSlim();
+        using var deferredStarted = new ManualResetEventSlim();
+        JobResourceAccess[] activeAccesses = CreateInterleavedReadAccesses(
+            resource,
+            rangeCount,
+            offset: 0);
+        JobResourceAccess[] deferredAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            rangeCount,
+            offset: 2);
+        deferredAccesses[rangeCount / 2] = JobResourceAccess.Write(
+            resource,
+            start: (rangeCount / 2) * 4L,
+            length: 1);
+
+        var active = JobSystem.Schedule(
+            new HardeningJobs.BlockingIncrementJob(activeStarted, activeGate),
+            activeAccesses);
+        Assert.True(activeStarted.Wait(1_000));
+        var deferred = JobSystem.Schedule(
+            new HardeningJobs.SignalingIncrementJob(deferredStarted),
+            deferredAccesses,
+            dependency);
+
+        try
+        {
+            fence.Signal();
+            Assert.False(deferredStarted.Wait(100));
+            activeGate.Set();
+            Assert.True(deferredStarted.Wait(1_000));
+            JobSystem.CombineDependencies([active, deferred]).Complete();
+        }
+        finally
+        {
+            activeGate.Set();
+        }
+
+        Assert.Equal(2, HardeningJobs.Counter);
+    }
+
+    [Fact]
+    public void RangeDependencyDedupeBeyondInlineCapacityPreservesEveryOwner()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("range-dependency-dedupe");
+        const int ownerCount = 8;
+        var fences = new ControlledFence[ownerCount];
+        var owners = new JobHandle[ownerCount];
+        for (int i = 0; i < ownerCount; i++)
+        {
+            fences[i] = new ControlledFence();
+            owners[i] = JobSystem.CreateExternalFenceHandle(
+                fences[i],
+                JobResourceAccess.Write(resource, start: 0, length: 16));
+        }
+
+        const int duplicateQueryCount = 64;
+        var candidateAccesses = new JobResourceAccess[duplicateQueryCount];
+        Array.Fill(
+            candidateAccesses,
+            JobResourceAccess.Read(resource, start: 0, length: 16));
+        var candidate = JobSystem.Schedule(
+            new HardeningJobs.IncrementJob(),
+            candidateAccesses);
+
+        Assert.False(candidate.IsCompleted);
+        for (int i = 0; i < fences.Length; i++)
+            fences[i].Signal();
+
+        candidate.Complete();
+        for (int i = 0; i < owners.Length; i++)
+            owners[i].Complete();
+
+        Assert.Equal(1, HardeningJobs.Counter);
+    }
+
+    [Fact]
     public void HighPriorityJobsRunBeforeEarlierLowPriorityJobs()
     {
         JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
@@ -237,6 +535,11 @@ public sealed class PerformanceHardeningTests
         Assert.True(enoughChildrenStarted.Wait(TimeSpan.FromSeconds(2)));
         gate.Set();
         parent.Complete();
+
+        Assert.True(SpinWait.SpinUntil(
+            () => Volatile.Read(ref HardeningJobs.Counter) == 16 &&
+                  JobSystem.GetStats().StolenWorkItems > 0,
+            TimeSpan.FromSeconds(2)));
 
         var stats = JobSystem.GetStats();
         Assert.Equal(16, HardeningJobs.Counter);
@@ -337,6 +640,32 @@ public sealed class PerformanceHardeningTests
 
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.InRange(allocated, 0, 1_024);
+    }
+
+    [Fact]
+    [Trait("Category", "Performance")]
+    public void WarmedLargeRangeFrontierReusesRetainedIndexStorage()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("warmed-range-index");
+        JobResourceAccess[] firstAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            count: 64,
+            offset: 0);
+        JobResourceAccess[] secondAccesses = CreateInterleavedWriteAccesses(
+            resource,
+            count: 64,
+            offset: 2);
+
+        for (int i = 0; i < 16; i++)
+            CompleteDisjointRangeOwners(firstAccesses, secondAccesses);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 8; i++)
+            CompleteDisjointRangeOwners(firstAccesses, secondAccesses);
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.InRange(allocated, 0, 4_096);
     }
 
     [Fact]
@@ -549,6 +878,84 @@ public sealed class PerformanceHardeningTests
         reader.Complete();
     }
 
+    private static JobResourceAccess[] CreateInterleavedWriteAccesses(
+        JobResource resource,
+        int count,
+        int offset)
+    {
+        var accesses = new JobResourceAccess[count];
+        for (int i = 0; i < accesses.Length; i++)
+        {
+            accesses[i] = JobResourceAccess.Write(
+                resource,
+                start: i * 4L + offset,
+                length: 1);
+        }
+
+        return accesses;
+    }
+
+    private static JobResourceAccess[] CreateInterleavedReadAccesses(
+        JobResource resource,
+        int count,
+        int offset)
+    {
+        var accesses = new JobResourceAccess[count];
+        for (int i = 0; i < accesses.Length; i++)
+        {
+            accesses[i] = JobResourceAccess.Read(
+                resource,
+                start: i * 4L + offset,
+                length: 1);
+        }
+
+        return accesses;
+    }
+
+    private static void CompleteDisjointRangeOwners(
+        JobResourceAccess[] firstAccesses,
+        JobResourceAccess[] secondAccesses)
+    {
+        var first = JobSystem.Schedule(new HardeningJobs.IncrementJob(), firstAccesses);
+        var second = JobSystem.Schedule(new HardeningJobs.IncrementJob(), secondAccesses);
+        second.Complete();
+        first.Complete();
+    }
+
+    private sealed class ControlledFence : IJobExternalFence
+    {
+        private Action<object?>? _continuation;
+        private object? _state;
+
+        public bool IsSignaled { get; private set; }
+
+        public void OnSignaled(Action<object?> continuation, object? state)
+        {
+            ArgumentNullException.ThrowIfNull(continuation);
+            if (IsSignaled)
+            {
+                continuation(state);
+                return;
+            }
+
+            _continuation = continuation;
+            _state = state;
+        }
+
+        internal void Signal()
+        {
+            if (IsSignaled)
+                return;
+
+            IsSignaled = true;
+            Action<object?>? continuation = _continuation;
+            object? state = _state;
+            _continuation = null;
+            _state = null;
+            continuation?.Invoke(state);
+        }
+    }
+
     private static class HardeningJobs
     {
         internal static readonly List<string> ManagedLog = [];
@@ -708,6 +1115,43 @@ public sealed class PerformanceHardeningTests
             public void Execute()
             {
                 _gate.Wait();
+                Interlocked.Increment(ref Counter);
+            }
+        }
+
+        internal readonly struct BlockingIncrementJob : IJob
+        {
+            private readonly ManualResetEventSlim _started;
+            private readonly ManualResetEventSlim _gate;
+
+            internal BlockingIncrementJob(
+                ManualResetEventSlim started,
+                ManualResetEventSlim gate)
+            {
+                _started = started;
+                _gate = gate;
+            }
+
+            public void Execute()
+            {
+                _started.Set();
+                _gate.Wait();
+                Interlocked.Increment(ref Counter);
+            }
+        }
+
+        internal readonly struct SignalingIncrementJob : IJob
+        {
+            private readonly ManualResetEventSlim _started;
+
+            internal SignalingIncrementJob(ManualResetEventSlim started)
+            {
+                _started = started;
+            }
+
+            public void Execute()
+            {
+                _started.Set();
                 Interlocked.Increment(ref Counter);
             }
         }

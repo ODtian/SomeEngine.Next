@@ -9,6 +9,8 @@ public static class JobForExtensions
         JobHandle dependency = default)
         where T : struct, IJobFor
     {
+        JobTraits.RequireSynchronousCallback<T, IJobFor>(
+            JobForExecuteTraits<T>.IsAsyncStateMachine);
         return JobSystem.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, dependency);
     }
 
@@ -20,6 +22,8 @@ public static class JobForExtensions
         JobHandle dependency = default)
         where T : struct, IJobFor
     {
+        JobTraits.RequireSynchronousCallback<T, IJobFor>(
+            JobForExecuteTraits<T>.IsAsyncStateMachine);
         return JobSystem.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, access, dependency);
     }
 
@@ -31,7 +35,22 @@ public static class JobForExtensions
         JobHandle dependency = default)
         where T : struct, IJobFor
     {
+        JobTraits.RequireSynchronousCallback<T, IJobFor>(
+            JobForExecuteTraits<T>.IsAsyncStateMachine);
         return JobSystem.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, accesses, dependency);
+    }
+
+    private static class JobForExecuteTraits<T>
+        where T : struct, IJobFor
+    {
+        internal static readonly bool IsAsyncStateMachine = Create();
+
+        private static bool Create()
+        {
+            T target = default;
+            Action<int> callback = target.Execute;
+            return JobTraits.IsAsyncCallback(callback.Method);
+        }
     }
 }
 
