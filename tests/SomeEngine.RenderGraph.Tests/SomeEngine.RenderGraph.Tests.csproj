@@ -4,25 +4,26 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Graphics.Null/SomeEngine.Graphics.Null.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.RenderGraph.Diagnostics/SomeEngine.RenderGraph.Diagnostics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Serialization/SomeEngine.Serialization.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Render/SomeEngine.Render.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+                      ReferenceOutputAssembly="true" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="New/**/*.cs" />
     <None Include="../../assets/Shaders/hello_triangle.shader.asset"
           Link="Content/Shaders/hello_triangle.shader.asset"
           CopyToOutputDirectory="PreserveNewest" />

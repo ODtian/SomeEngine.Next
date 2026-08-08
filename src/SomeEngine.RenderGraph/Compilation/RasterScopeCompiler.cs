@@ -1,95 +1,77 @@
 namespace SomeEngine.RenderGraph;
 
-internal enum RasterMergeBreakReason : byte
+internal enum PassBreakReason : byte
 {
     NonRaster,
     Queue,
-    RecordingLane,
+    PassPolicy,
     ExtentOrSamples,
     AttachmentSet,
-    LoadAction,
+    LoadType,
     DepthStencilMode,
     Barrier,
-    AliasAcquire,
+    AliasBarrier,
     CrossQueueSynchronization,
     ExternalReadiness,
+    Resolve,
 }
 
-internal sealed class RasterGrouping
-{
-    public RasterGrouping(int[][] logicalPassGroups, CompiledRasterStatistics statistics)
-    {
-        LogicalPassGroups = logicalPassGroups;
-        Statistics = statistics;
-    }
-
-    public int[][] LogicalPassGroups { get; }
-    public CompiledRasterStatistics Statistics { get; }
-}
-
-internal readonly record struct CompiledRasterStatistics(
+internal readonly record struct RasterStatistics(
     bool Enabled,
     int LiveRasterPasses,
     int CandidateScopes,
     int MergedLogicalPasses,
-    int RecordUnitCount,
-    int[] BreakReasonCounts);
+    int CommandUnitCount,
+    ArenaSlice<int> BreakReasonCounts);
 
 internal static class RasterScopeCompiler
 {
-    public static RasterGrouping WithoutMerging(
-        int[] activePassOrdinals,
-        CompiledRendering?[] rendering)
+    public static void Group(
+        RenderGraph graph,
+        ReadOnlySpan<int> activePassOrdinals,
+        ArenaSlice<QueueType> queues,
+        ArenaSlice<Extent2D> rendering,
+        ArenaSlice<PlannedAliasingBarrier> aliasAcquires,
+        ReachabilityTable reachability,
+        out ArenaColumn<int> passRows,
+        out ArenaColumn<int> groupStarts,
+        out RasterStatistics statistics)
     {
-        int[][] groups = activePassOrdinals.Select(static pass => new[] { pass }).ToArray();
-        return new RasterGrouping(
-            groups,
-            new CompiledRasterStatistics(
-                Enabled: false,
-                LiveRasterPasses: activePassOrdinals.Count(pass => rendering[pass] is not null),
-                CandidateScopes: 0,
-                MergedLogicalPasses: 0,
-                RecordUnitCount: groups.Length,
-                BreakReasonCounts: new int[Enum.GetValues<RasterMergeBreakReason>().Length]));
-    }
-
-    public static RasterGrouping Group(
-        FrozenGraph graph,
-        int[] activePassOrdinals,
-        QueueType[] queues,
-        CompiledRendering?[] rendering,
-        BarrierTemplate[][] beforeBarriers,
-        BarrierTemplate[][] afterBarriers,
-        AliasAcquireEdge[] aliasAcquires,
-        PassReachability reachability,
-        bool enableMerging)
-    {
-        HashSet<int> aliasBoundaries = aliasAcquires
-            .SelectMany(static acquire => acquire.StartPasses)
-            .ToHashSet();
-        int[] breakReasons = new int[Enum.GetValues<RasterMergeBreakReason>().Length];
-        List<List<int>> groups = [];
-        HashSet<(int Resource, QueueType Queue)> seenImportedResources = [];
+        passRows = graph.CreateArenaColumn<int>();
+        groupStarts = graph.CreateArenaColumn<int>();
+        passRows.EnsureCapacity(activePassOrdinals.Length);
+        groupStarts.EnsureCapacity(checked(activePassOrdinals.Length + 1));
+        ArenaSlice<byte> aliasBoundaries = graph.AllocateSlice<byte>(graph.Passes.Length);
+        foreach (PlannedAliasingBarrier acquire in aliasAcquires)
+        foreach (int pass in acquire.StartPasses)
+            aliasBoundaries[pass] = 1;
+        ArenaSlice<int> breakReasons = graph.AllocateSlice<int>(
+            Enum.GetValues<PassBreakReason>().Length);
+        ArenaSlice<byte> seenImportedResources = graph.AllocateSlice<byte>(
+            checked(graph.ResourceCount * 3));
         int candidateScopes = 0;
         bool previousWasCandidate = false;
         foreach (int pass in activePassOrdinals)
         {
-            if (groups.Count == 0)
+            if (groupStarts.Count == 0)
             {
-                groups.Add([pass]);
+                int offset = passRows.Count;
+                groupStarts.Add(offset);
+                passRows.Add(pass);
                 AddImportedResources(graph, pass, queues[pass], seenImportedResources);
                 continue;
             }
 
-            List<int> current = groups[^1];
-            RasterMergeBreakReason? reason = BreakReason(
+            int currentOffset = groupStarts[groupStarts.Count - 1];
+            int currentCount = passRows.Count - currentOffset;
+            ReadOnlySpan<int> currentPasses =
+                passRows.GetReadOnlySpan(currentOffset, currentCount);
+            PassBreakReason? reason = BreakReason(
                 graph,
-                current,
+                currentPasses,
                 pass,
                 queues,
                 rendering,
-                beforeBarriers,
-                afterBarriers,
                 aliasBoundaries,
                 reachability,
                 seenImportedResources);
@@ -97,144 +79,175 @@ internal static class RasterScopeCompiler
             {
                 if (!previousWasCandidate) candidateScopes++;
                 previousWasCandidate = true;
-                if (enableMerging)
-                {
-                    current.Add(pass);
-                    AddImportedResources(graph, pass, queues[pass], seenImportedResources);
-                    continue;
-                }
+                passRows.Add(pass);
+                AddImportedResources(graph, pass, queues[pass], seenImportedResources);
+                continue;
             }
             else
             {
                 breakReasons[(int)reason.Value]++;
                 previousWasCandidate = false;
             }
-            groups.Add([pass]);
+            int nextOffset = passRows.Count;
+            groupStarts.Add(nextOffset);
+            passRows.Add(pass);
             AddImportedResources(graph, pass, queues[pass], seenImportedResources);
         }
 
-        int[][] result = groups.Select(static group => group.ToArray()).ToArray();
-        int liveRasterPasses = activePassOrdinals.Count(pass => rendering[pass] is not null);
-        int mergedLogicalPasses = enableMerging
-            ? result.Where(static group => group.Length > 1).Sum(static group => group.Length)
-            : 0;
-        return new RasterGrouping(
-            result,
-            new CompiledRasterStatistics(
-                enableMerging,
-                liveRasterPasses,
-                candidateScopes,
-                mergedLogicalPasses,
-                result.Length,
-                breakReasons));
+        int liveRasterPasses = 0;
+        foreach (int pass in activePassOrdinals)
+            if (GetExtent2D(rendering, pass).IsValid) liveRasterPasses++;
+        int mergedLogicalPasses = 0;
+        int groupCount = groupStarts.Count;
+        for (int group = 0; group < groupCount; group++)
+        {
+            int afterLast = group + 1 < groupCount
+                ? groupStarts[group + 1]
+                : passRows.Count;
+            int count = afterLast - groupStarts[group];
+            if (count > 1) mergedLogicalPasses += count;
+        }
+        groupStarts.Add(passRows.Count);
+        statistics = new RasterStatistics(
+            Enabled: true,
+            liveRasterPasses,
+            candidateScopes,
+            mergedLogicalPasses,
+            groupCount,
+            breakReasons);
     }
 
-    private static RasterMergeBreakReason? BreakReason(
-        FrozenGraph graph,
-        List<int> currentScope,
+    private static PassBreakReason? BreakReason(
+        RenderGraph graph,
+        ReadOnlySpan<int> currentScope,
         int next,
-        QueueType[] queues,
-        CompiledRendering?[] rendering,
-        BarrierTemplate[][] beforeBarriers,
-        BarrierTemplate[][] afterBarriers,
-        HashSet<int> aliasBoundaries,
-        PassReachability reachability,
-        HashSet<(int Resource, QueueType Queue)> seenImportedResources)
+        ArenaSlice<QueueType> queues,
+        ArenaSlice<Extent2D> rendering,
+        ArenaSlice<byte> aliasBoundaries,
+        ReachabilityTable reachability,
+        ArenaSlice<byte> seenImportedResources)
     {
         int previous = currentScope[^1];
-        if (rendering[previous] is not CompiledRendering left || rendering[next] is not CompiledRendering right)
-            return RasterMergeBreakReason.NonRaster;
+        Extent2D left = GetExtent2D(rendering, previous);
+        Extent2D right = GetExtent2D(rendering, next);
+        if (!left.IsValid || !right.IsValid)
+            return PassBreakReason.NonRaster;
         if (queues[previous] != QueueType.Graphics || queues[next] != QueueType.Graphics)
-            return RasterMergeBreakReason.Queue;
-        if (graph.Passes[previous].RecordingLane != graph.Passes[next].RecordingLane)
-            return RasterMergeBreakReason.RecordingLane;
-        if (left != right) return RasterMergeBreakReason.ExtentOrSamples;
-        if (aliasBoundaries.Contains(next)) return RasterMergeBreakReason.AliasAcquire;
-        if (afterBarriers[previous].Length != 0 || beforeBarriers[next].Length != 0)
-            return RasterMergeBreakReason.Barrier;
+            return PassBreakReason.Queue;
+        if ((graph.Passes[previous].Flags & PassFlags.NeverMerge) != 0 ||
+            (graph.Passes[next].Flags & PassFlags.NeverMerge) != 0)
+            return PassBreakReason.PassPolicy;
+        if ((graph.Passes[previous].Flags & PassFlags.NeverParallel) != 0 ||
+            (graph.Passes[next].Flags & PassFlags.NeverParallel) != 0)
+            return PassBreakReason.PassPolicy;
+        if (left != right) return PassBreakReason.ExtentOrSamples;
+        if (aliasBoundaries[next] != 0) return PassBreakReason.AliasBarrier;
+        if (graph.GetAfterBarriers(previous).Length != 0 || graph.GetBeforeBarriers(next).Length != 0)
+            return PassBreakReason.Barrier;
         if (ChangesCrossQueueSchedule(currentScope, next, queues, reachability))
-            return RasterMergeBreakReason.CrossQueueSynchronization;
-        FrozenPass first = graph.Passes[previous];
-        FrozenPass second = graph.Passes[next];
-        if (first.ColorAttachments.Length != second.ColorAttachments.Length)
-            return RasterMergeBreakReason.AttachmentSet;
-        for (int index = 0; index < first.ColorAttachments.Length; index++)
+            return PassBreakReason.CrossQueueSynchronization;
+        ref readonly PassData first = ref graph.Passes[previous];
+        ref readonly PassData second = ref graph.Passes[next];
+        ReadOnlySpan<PassFragmentData> firstColors = graph.GetPassColorAttachments(first);
+        ReadOnlySpan<PassFragmentData> secondColors = graph.GetPassColorAttachments(second);
+        foreach (PassFragmentData attachment in firstColors)
+            if (attachment.HasResolve) return PassBreakReason.Resolve;
+        if (firstColors.Length != secondColors.Length)
+            return PassBreakReason.AttachmentSet;
+        for (int index = 0; index < firstColors.Length; index++)
         {
-            FrozenColorAttachment firstColor = first.ColorAttachments[index];
-            FrozenColorAttachment secondColor = second.ColorAttachments[index];
+            PassFragmentData firstColor = firstColors[index];
+            PassFragmentData secondColor = secondColors[index];
             if (firstColor.Slot != secondColor.Slot || firstColor.View != secondColor.View)
-                return RasterMergeBreakReason.AttachmentSet;
-            if (secondColor.Load != LoadAction.Load) return RasterMergeBreakReason.LoadAction;
+                return PassBreakReason.AttachmentSet;
+            if (secondColor.Load != LoadType.Load) return PassBreakReason.LoadType;
         }
 
-        if (first.DepthStencilAttachment is null != (second.DepthStencilAttachment is null))
-            return RasterMergeBreakReason.AttachmentSet;
-        if (first.DepthStencilAttachment is FrozenDepthStencilAttachment firstDepth &&
-            second.DepthStencilAttachment is FrozenDepthStencilAttachment secondDepth)
+        PassFragmentData? firstDepthStencil = graph.GetPassDepthStencilAttachment(first);
+        PassFragmentData? secondDepthStencil = graph.GetPassDepthStencilAttachment(second);
+        if (firstDepthStencil is null != (secondDepthStencil is null))
+            return PassBreakReason.AttachmentSet;
+        if (firstDepthStencil is PassFragmentData firstDepth &&
+            secondDepthStencil is PassFragmentData secondDepth)
         {
             if (firstDepth.View != secondDepth.View ||
-                (firstDepth.Depth is null) != (secondDepth.Depth is null) ||
-                (firstDepth.Stencil is null) != (secondDepth.Stencil is null))
+                firstDepth.HasDepth != secondDepth.HasDepth ||
+                firstDepth.HasStencil != secondDepth.HasStencil)
             {
-                return RasterMergeBreakReason.AttachmentSet;
+                return PassBreakReason.AttachmentSet;
             }
-            if (firstDepth.Depth is DepthAttachmentOps firstDepthOps &&
-                secondDepth.Depth is DepthAttachmentOps secondDepthOps)
+            if (firstDepth.HasDepth)
             {
-                if (firstDepthOps.ReadOnly != secondDepthOps.ReadOnly)
-                    return RasterMergeBreakReason.DepthStencilMode;
-                if (secondDepthOps.Load != LoadAction.Load) return RasterMergeBreakReason.LoadAction;
+                if (firstDepth.DepthReadOnly != secondDepth.DepthReadOnly)
+                    return PassBreakReason.DepthStencilMode;
+                if (secondDepth.DepthLoad != LoadType.Load) return PassBreakReason.LoadType;
             }
-            if (firstDepth.Stencil is StencilAttachmentOps firstStencilOps &&
-                secondDepth.Stencil is StencilAttachmentOps secondStencilOps)
+            if (firstDepth.HasStencil)
             {
-                if (firstStencilOps.ReadOnly != secondStencilOps.ReadOnly)
-                    return RasterMergeBreakReason.DepthStencilMode;
-                if (secondStencilOps.Load != LoadAction.Load) return RasterMergeBreakReason.LoadAction;
+                if (firstDepth.StencilReadOnly != secondDepth.StencilReadOnly)
+                    return PassBreakReason.DepthStencilMode;
+                if (secondDepth.StencilLoad != LoadType.Load) return PassBreakReason.LoadType;
             }
         }
-        if (graph.Passes[next].Accesses.Any(access =>
-                !seenImportedResources.Contains((access.Resource, queues[next])) &&
-                HasCrossQueueReadiness(graph.Resources[access.Resource], queues[next])))
+        foreach (ref readonly PassInputData access in graph.GetPassAccesses(graph.Passes[next]))
         {
-            return RasterMergeBreakReason.ExternalReadiness;
+            int resource = graph.GetResourceOrdinal(access);
+            if (seenImportedResources[checked(resource * 3 + (int)queues[next])] == 0 &&
+                HasCrossQueueReadiness(graph, resource, queues[next]))
+                return PassBreakReason.ExternalReadiness;
         }
         return null;
     }
 
-    private static bool HasCrossQueueReadiness(in FrozenResource resource, QueueType queue)
+    private static Extent2D GetExtent2D(
+        ArenaSlice<Extent2D> rendering,
+        int pass) => rendering.IsEmpty ? default : rendering[pass];
+
+    private static bool HasCrossQueueReadiness(
+        RenderGraph graph,
+        int resource,
+        QueueType queue)
     {
-        if (!resource.IsImported) return false;
-        GpuCompletion[] readiness = resource.Kind == ResourceNodeKind.Buffer
-            ? resource.ImportedBuffer.Readiness ?? []
-            : resource.ImportedTexture.Readiness ?? [];
-        return readiness.Any(completion => completion.Queue != queue);
+        if (!graph.IsResourceImported(resource)) return false;
+        foreach (QueueCompletion completion in graph.GetResourceReadiness(resource))
+            if (completion.Queue.Type != queue) return true;
+        return false;
     }
 
     private static bool ChangesCrossQueueSchedule(
-        List<int> currentScope,
+        ReadOnlySpan<int> currentScope,
         int next,
-        QueueType[] queues,
-        PassReachability reachability)
+        ArenaSlice<QueueType> queues,
+        ReachabilityTable reachability)
     {
         foreach (int other in reachability.ActivePassOrdinals)
         {
             if (queues[other] == QueueType.Graphics || other == next || currentScope.Contains(other)) continue;
             bool entersNext = reachability.Before(other, next);
-            if (entersNext && currentScope.Any(pass => !reachability.Before(other, pass))) return true;
-            bool leavesScope = currentScope.Any(pass => reachability.Before(pass, other));
+            bool entersWholeScope = true;
+            bool leavesScope = false;
+            foreach (int pass in currentScope)
+            {
+                if (!reachability.Before(other, pass)) entersWholeScope = false;
+                if (reachability.Before(pass, other)) leavesScope = true;
+            }
+            if (entersNext && !entersWholeScope) return true;
             if (leavesScope && !reachability.Before(next, other)) return true;
         }
         return false;
     }
 
     private static void AddImportedResources(
-        FrozenGraph graph,
+        RenderGraph graph,
         int pass,
         QueueType queue,
-        HashSet<(int Resource, QueueType Queue)> seen)
+        ArenaSlice<byte> seen)
     {
-        foreach (FrozenAccess access in graph.Passes[pass].Accesses)
-            if (graph.Resources[access.Resource].IsImported) seen.Add((access.Resource, queue));
+        foreach (ref readonly PassInputData access in graph.GetPassAccesses(graph.Passes[pass]))
+        {
+            int resource = graph.GetResourceOrdinal(access);
+            if (graph.IsResourceImported(resource))
+                seen[checked(resource * 3 + (int)queue)] = 1;
+        }
     }
 }

@@ -2,58 +2,50 @@ namespace SomeEngine.RenderGraph;
 
 internal static class AccessNormalizer
 {
-    public static FrozenAccess[] Normalize(FrozenResource[] resources, FrozenAccess[] accesses)
-    {
-        FrozenAccess[] normalized = new FrozenAccess[accesses.Length];
-        for (int index = 0; index < accesses.Length; index++)
-        {
-            FrozenAccess access = accesses[index];
-            FrozenResource resource = resources[access.Resource];
-            normalized[index] = access.Kind == ResourceNodeKind.Buffer
-                ? access with { BufferRange = NormalizeBuffer(resource.BufferDesc, access.BufferRange) }
-                : access with { TextureRange = NormalizeTexture(resource.TextureDesc, access.TextureRange) };
-        }
-        return normalized;
-    }
+    public static BufferRange NormalizeBuffer(in BufferDesc desc, BufferRange? requested) =>
+        NormalizeBuffer(desc.Size, requested);
 
-    public static BufferRange NormalizeBuffer(in BufferDesc desc, in BufferRange requested)
+    public static BufferRange NormalizeBuffer(ulong bufferSize, BufferRange? requested)
     {
-        ulong offset = requested.Offset;
-        if (offset >= desc.Size) throw new ArgumentOutOfRangeException(nameof(requested), "Buffer access starts outside the resource.");
-        ulong size = requested.Size == ulong.MaxValue ? desc.Size - offset : requested.Size;
-        if (size == 0 || size > desc.Size - offset) throw new ArgumentOutOfRangeException(nameof(requested), "Buffer access exceeds the resource.");
+        BufferRange exact = requested ?? new BufferRange(0, bufferSize);
+        ulong offset = exact.Offset;
+        if (offset >= bufferSize) throw new ArgumentOutOfRangeException(nameof(requested), "Buffer access starts outside the resource.");
+        ulong size = exact.Size;
+        if (size == 0 || size > bufferSize - offset) throw new ArgumentOutOfRangeException(nameof(requested), "Buffer access exceeds the resource.");
         return new BufferRange(offset, size);
     }
 
-    public static TextureSubresourceRange NormalizeTexture(in TextureDesc desc, in TextureSubresourceRange requested)
+    public static TextureSubresourceRange NormalizeTexture(in GraphTextureDescription desc, TextureSubresourceRange? requested)
     {
-        int firstMip = requested.FirstMip;
-        int firstLayer = requested.FirstLayer;
-        if ((uint)firstMip >= (uint)desc.MipLevels || (uint)firstLayer >= (uint)desc.ArrayLayers)
+        TextureSubresourceRange exact = requested ?? new TextureSubresourceRange(
+            0,
+            checked((uint)desc.MipLevels),
+            0,
+            checked((uint)desc.ArrayLayers),
+            GraphFormat.AllowedAspects(desc.Format));
+        uint firstMip = exact.FirstMipLevel;
+        uint firstLayer = exact.FirstArrayLayer;
+        if (firstMip >= (uint)desc.MipLevels || firstLayer >= (uint)desc.ArrayLayers)
             throw new ArgumentOutOfRangeException(nameof(requested), "Texture access starts outside the resource.");
-        int mipCount = requested.MipCount == int.MaxValue ? desc.MipLevels - firstMip : requested.MipCount;
-        int layerCount = requested.LayerCount == int.MaxValue ? desc.ArrayLayers - firstLayer : requested.LayerCount;
-        if (mipCount <= 0 || mipCount > desc.MipLevels - firstMip || layerCount <= 0 || layerCount > desc.ArrayLayers - firstLayer)
+        uint mipCount = exact.MipLevelCount;
+        uint layerCount = exact.ArrayLayerCount;
+        if (mipCount == 0 || mipCount > (uint)desc.MipLevels - firstMip ||
+            layerCount == 0 || layerCount > (uint)desc.ArrayLayers - firstLayer)
             throw new ArgumentOutOfRangeException(nameof(requested), "Texture access exceeds the resource.");
-        TextureAspect allowed = desc.Format switch
-        {
-            Format.D32Float => TextureAspect.Depth,
-            Format.D24UNormS8UInt => TextureAspect.Depth | TextureAspect.Stencil,
-            _ => TextureAspect.Color,
-        };
-        if (requested.Aspect == 0 || (requested.Aspect & ~allowed) != 0)
+        TextureAspects allowed = GraphFormat.AllowedAspects(desc.Format);
+        if (exact.Aspects == TextureAspects.None || (exact.Aspects & ~allowed) != 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requested),
                 $"Texture format {desc.Format} exposes only the {allowed} aspect planes.");
         }
-        return new TextureSubresourceRange(firstMip, mipCount, firstLayer, layerCount, requested.Aspect);
+        return new TextureSubresourceRange(firstMip, mipCount, firstLayer, layerCount, exact.Aspects);
     }
 
-    public static bool Overlaps(in FrozenAccess left, in FrozenAccess right)
+    public static bool Overlaps(in PassInputData left, in PassInputData right)
     {
-        if (left.Kind != right.Kind || left.Resource != right.Resource) return false;
-        if (left.Kind == ResourceNodeKind.Buffer)
+        if (left.Resource != right.Resource) return false;
+        if (left.IsBuffer)
         {
             ulong leftEnd = checked(left.BufferRange.Offset + left.BufferRange.Size);
             ulong rightEnd = checked(right.BufferRange.Offset + right.BufferRange.Size);
@@ -62,8 +54,16 @@ internal static class AccessNormalizer
 
         TextureSubresourceRange a = left.TextureRange;
         TextureSubresourceRange b = right.TextureRange;
-        bool mip = a.FirstMip < b.FirstMip + b.MipCount && b.FirstMip < a.FirstMip + a.MipCount;
-        bool layer = a.FirstLayer < b.FirstLayer + b.LayerCount && b.FirstLayer < a.FirstLayer + a.LayerCount;
-        return mip && layer && (a.Aspect & b.Aspect) != 0;
+        bool mip = a.FirstMipLevel < b.FirstMipLevel + b.MipLevelCount && b.FirstMipLevel < a.FirstMipLevel + a.MipLevelCount;
+        bool layer = a.FirstArrayLayer < b.FirstArrayLayer + b.ArrayLayerCount && b.FirstArrayLayer < a.FirstArrayLayer + a.ArrayLayerCount;
+        return mip && layer && (a.Aspects & b.Aspects) != 0;
     }
+
+    internal static bool IsReadOnlyDepthLocalRead(in PassInputData left, in PassInputData right) =>
+        !left.IsBuffer &&
+        !right.IsBuffer &&
+        left.Flags == GraphAccess.Read &&
+        right.Flags == GraphAccess.Read &&
+        (left.State == GraphResourceUsage.DepthRead && right.State == GraphResourceUsage.ShaderResource ||
+         left.State == GraphResourceUsage.ShaderResource && right.State == GraphResourceUsage.DepthRead);
 }

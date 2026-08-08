@@ -3,9 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <Description>Immediate render-graph recording, transparent compilation reuse, and deterministic execution.</Description>
+    <Description>Immediate per-frame render-graph compilation and deterministic parallel execution.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
     <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
   </ItemGroup>
@@ -14,10 +15,11 @@
     <Compile Include="Recording/**/*.cs" />
     <Compile Include="Compilation/**/*.cs" />
     <Compile Include="Execution/**/*.cs" />
-    <Compile Include="Diagnostics/**/*.cs" />
     <Compile Include="Internal/**/*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.RenderGraph.Diagnostics" />
+    <InternalsVisibleTo Include="SomeEngine.Runtime" />
     <InternalsVisibleTo Include="SomeEngine.RenderGraph.Tests" />
   </ItemGroup>
 </Project>
