@@ -6,8 +6,7 @@ public partial interface IGraphicsBackend
 {
     DescriptorTable CreateDescriptorTable(
         Device device,
-        DescriptorTableType type,
-        uint count,
+        ReadOnlySpan<ResourceBindingType> slotTypes,
         string? label = null);
 
     uint GetDescriptorIndex(DescriptorTable table, uint slot);
@@ -34,10 +33,9 @@ public sealed partial class Graphics<TBackend>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public DescriptorTable CreateDescriptorTable(
         Device device,
-        DescriptorTableType type,
-        uint count,
+        ReadOnlySpan<ResourceBindingType> slotTypes,
         string? label = null) =>
-        Receiver.CreateDescriptorTable(device, type, count, label);
+        Receiver.CreateDescriptorTable(device, slotTypes, label);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public uint GetDescriptorIndex(DescriptorTable table, uint slot) =>

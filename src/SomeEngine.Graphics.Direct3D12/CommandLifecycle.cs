@@ -13,11 +13,6 @@ public sealed unsafe partial class D3D12Backend
         nativeDevice.ThrowIfUnavailable();
         if (desc.InitialSlotCount == 0)
             throw new ArgumentOutOfRangeException(nameof(desc), "InitialSlotCount must be nonzero.");
-        if (desc.NodeIndex >= 32 ||
-            (nativeDevice.EnabledNodeMask & (1u << checked((int)desc.NodeIndex))) == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(desc), "The selected node is not enabled.");
-        }
 
         D3D12Queue queue = nativeDevice.GetQueue(desc.QueueType, desc.QueueIndex);
         D3D12CommandContext result = new(nativeDevice, queue, desc);
@@ -315,6 +310,7 @@ public sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly D3D12Queue _queue;
+        private readonly uint _nodeMask;
         private readonly bool _enhancedBarriers;
         private readonly object _gate = new();
         private readonly List<D3D12CommandSlot> _slots = [];
@@ -331,17 +327,18 @@ public sealed unsafe partial class D3D12Backend
                 device,
                 description.QueueType,
                 description.QueueIndex,
-                description.NodeIndex,
                 description.Bundle,
                 description.Label)
         {
             _device = device;
             _queue = queue;
+            _nodeMask = queue.NodeMask;
             _enhancedBarriers = device.EnhancedBarriers;
         }
 
         internal D3D12Device NativeDevice => _device;
         internal D3D12Queue NativeQueue => _queue;
+        internal uint NativeNodeMask => _nodeMask;
         internal bool EnhancedBarriers => _enhancedBarriers;
         internal ID3D12GraphicsCommandList10* List
         {
@@ -603,8 +600,22 @@ public sealed unsafe partial class D3D12Backend
         private ID3D12GraphicsCommandList10* _list;
         private int _pipelineSetters;
         private int _persistentBindingSetters;
+        private int _transientBindingSetters;
+        private int _vertexBufferSetters;
+        private int _indexBufferSetters;
+        private int _streamOutputBufferSetters;
         private int _viewportSetters;
         private int _scissorSetters;
+        private int _blendConstantSetters;
+        private int _stencilReferenceSetters;
+        private int _depthBoundsSetters;
+        private int _depthBiasSetters;
+        private int _primitiveTopologySetters;
+        private int _stripCutSetters;
+        private int _predicationSetters;
+        private int _shadingRateSetters;
+        private int _shadingRateImageSetters;
+        private int _workGraphProgramSetters;
         private int _references = 1;
         private int _busy;
 
@@ -632,7 +643,7 @@ public sealed unsafe partial class D3D12Backend
                 ID3D12GraphicsCommandList10* list = null;
                 NativeCall.ThrowIfFailed(
                     device.Native->CreateCommandList1(
-                        1u << checked((int)context.NodeIndex),
+                        context.NativeNodeMask,
                         type,
                         CommandListFlags.None,
                         &listIid,
@@ -655,12 +666,45 @@ public sealed unsafe partial class D3D12Backend
             _pipelineSetters,
             _persistentBindingSetters,
             _viewportSetters,
-            _scissorSetters);
+            _scissorSetters,
+            new D3D12StateSetterStatistics(
+                _pipelineSetters,
+                _persistentBindingSetters,
+                _transientBindingSetters,
+                _vertexBufferSetters,
+                _indexBufferSetters,
+                _streamOutputBufferSetters,
+                _viewportSetters,
+                _scissorSetters,
+                _blendConstantSetters,
+                _stencilReferenceSetters,
+                _depthBoundsSetters,
+                _depthBiasSetters,
+                _primitiveTopologySetters,
+                _stripCutSetters,
+                _predicationSetters,
+                _shadingRateSetters,
+                _shadingRateImageSetters,
+                _workGraphProgramSetters));
 
         internal void RecordPipelineSetter() => _pipelineSetters++;
         internal void RecordPersistentBindingSetter() => _persistentBindingSetters++;
+        internal void RecordTransientBindingSetter() => _transientBindingSetters++;
+        internal void RecordVertexBufferSetter() => _vertexBufferSetters++;
+        internal void RecordIndexBufferSetter() => _indexBufferSetters++;
+        internal void RecordStreamOutputBufferSetter() => _streamOutputBufferSetters++;
         internal void RecordViewportSetter() => _viewportSetters++;
         internal void RecordScissorSetter() => _scissorSetters++;
+        internal void RecordBlendConstantSetter() => _blendConstantSetters++;
+        internal void RecordStencilReferenceSetter() => _stencilReferenceSetters++;
+        internal void RecordDepthBoundsSetter() => _depthBoundsSetters++;
+        internal void RecordDepthBiasSetter() => _depthBiasSetters++;
+        internal void RecordPrimitiveTopologySetter() => _primitiveTopologySetters++;
+        internal void RecordStripCutSetter() => _stripCutSetters++;
+        internal void RecordPredicationSetter() => _predicationSetters++;
+        internal void RecordShadingRateSetter() => _shadingRateSetters++;
+        internal void RecordShadingRateImageSetter() => _shadingRateImageSetters++;
+        internal void RecordWorkGraphProgramSetter() => _workGraphProgramSetters++;
 
         internal D3D12RecordedCommandsLease ActivateCommands(ulong sequence)
         {
@@ -690,8 +734,22 @@ public sealed unsafe partial class D3D12Backend
             ReleaseTransients();
             _pipelineSetters = 0;
             _persistentBindingSetters = 0;
+            _transientBindingSetters = 0;
+            _vertexBufferSetters = 0;
+            _indexBufferSetters = 0;
+            _streamOutputBufferSetters = 0;
             _viewportSetters = 0;
             _scissorSetters = 0;
+            _blendConstantSetters = 0;
+            _stencilReferenceSetters = 0;
+            _depthBoundsSetters = 0;
+            _depthBiasSetters = 0;
+            _primitiveTopologySetters = 0;
+            _stripCutSetters = 0;
+            _predicationSetters = 0;
+            _shadingRateSetters = 0;
+            _shadingRateImageSetters = 0;
+            _workGraphProgramSetters = 0;
             ResetOrdinaryDataArena();
             ResetTemporaryAttachmentDescriptors();
             if (_context.QueueType != QueueType.Copy)
@@ -955,6 +1013,10 @@ public sealed unsafe partial class D3D12Backend
                     : slot.List;
             }
         }
+
+        internal D3D12CommandStatistics Statistics => _slot is D3D12CommandSlot slot
+            ? slot.Statistics
+            : throw new ObjectDisposedException(nameof(D3D12RecordedBundle));
 
         internal void RetainExecution()
         {
@@ -1265,10 +1327,13 @@ public sealed unsafe partial class D3D12Backend
         internal static D3D12CommandContext CommandContext(CommandContext value)
         {
 #if DEBUG
-            return (D3D12CommandContext)value;
+            D3D12CommandContext result = (D3D12CommandContext)value;
 #else
-            return System.Runtime.CompilerServices.Unsafe.As<CommandContext, D3D12CommandContext>(ref value);
+            D3D12CommandContext result =
+                System.Runtime.CompilerServices.Unsafe.As<CommandContext, D3D12CommandContext>(ref value);
 #endif
+            result.BeginPublicCall();
+            return result;
         }
 
         internal static D3D12RecordedBundle Bundle(RecordedBundle value)

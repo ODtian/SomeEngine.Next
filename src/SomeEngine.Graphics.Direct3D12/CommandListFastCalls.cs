@@ -13,6 +13,8 @@ internal static unsafe class D3D12CommandListFastCalls
     private const int DrawInstancedSlot = 12;
     private const int DrawIndexedInstancedSlot = 13;
     private const int DispatchSlot = 14;
+    private const int SetComputeRoot32BitConstantsSlot = 35;
+    private const int SetGraphicsRoot32BitConstantsSlot = 36;
     private const int SetComputeRootConstantBufferViewSlot = 37;
     private const int SetGraphicsRootConstantBufferViewSlot = 38;
 
@@ -72,5 +74,22 @@ internal static unsafe class D3D12CommandListFastCalls
         var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
             ID3D12GraphicsCommandList10*, uint, ulong, void>)vtable[slot];
         call(list, rootParameter, address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetRoot32BitConstants(
+        ID3D12GraphicsCommandList10* list,
+        bool compute,
+        uint rootParameter,
+        uint count,
+        void* values)
+    {
+        void** vtable = *(void***)list;
+        int slot = compute
+            ? SetComputeRoot32BitConstantsSlot
+            : SetGraphicsRoot32BitConstantsSlot;
+        var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
+            ID3D12GraphicsCommandList10*, uint, uint, void*, uint, void>)vtable[slot];
+        call(list, rootParameter, count, values, 0);
     }
 }

@@ -100,7 +100,7 @@ public sealed class WarpCapabilityTests
                 MemoryType.Readback);
             using CommandContext context = backend.CreateCommandContext(
                 device,
-                new CommandContextDesc(type, 0, 0, 1));
+                new CommandContextDesc(type, 0, 1));
 
             backend.Begin(context);
             backend.WriteTimestamp(context, pool, 0);
@@ -124,7 +124,7 @@ public sealed class WarpCapabilityTests
             new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 1));
         using CommandContext computeContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(computeContext);
         Assert.Throws<InvalidOperationException>(() =>
             backend.WriteTimestamp(computeContext, graphicsPool, 0));
@@ -177,6 +177,7 @@ public sealed class WarpCapabilityTests
 
         Assert.True(backend.TryGetCapability(device, out RayTracing? rays));
         Assert.NotNull(rays);
+        Assert.True(rays.PipelineRayTracing);
         Assert.Equal(16_777_216U, rays.MaximumGeometriesPerBottomLevel);
         Assert.Equal(16_777_216U, rays.MaximumInstancesPerTopLevel);
         Assert.Equal(536_870_912U, rays.MaximumPrimitivesPerBottomLevel);
@@ -190,6 +191,33 @@ public sealed class WarpCapabilityTests
         Assert.True(backend.TryGetCapability(device, out IndirectCommands? indirect));
         Assert.NotNull(indirect);
         Assert.Equal(0xFFFF_FFFCU, indirect.MaximumStride);
+
+        Format[] allFormats = Enum.GetValues<Format>();
+        Assert.Equal(allFormats.Length, device.Capabilities.Formats.Length);
+        for (int index = 0; index < allFormats.Length; index++)
+            Assert.Equal(allFormats[index], device.Capabilities.Formats[index].Format);
+        FormatSupport color = device.Capabilities.GetFormatSupport(Format.R8G8B8A8UNorm);
+        Assert.Equal(
+            FormatFeatures.Texture2D |
+            FormatFeatures.ShaderLoad |
+            FormatFeatures.ShaderSample |
+            FormatFeatures.ColorAttachment,
+            color.Features &
+            (FormatFeatures.Texture2D |
+             FormatFeatures.ShaderLoad |
+             FormatFeatures.ShaderSample |
+             FormatFeatures.ColorAttachment));
+        Assert.True(color.SupportsSampleCount(1));
+        Assert.False(color.SupportsSampleCount(3));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            device.Capabilities.GetFormatSupport((Format)0));
+
+        foreach (Format format in sparse.SupportedTexture2DFormats)
+        {
+            FormatSupport support = device.Capabilities.GetFormatSupport(format);
+            Assert.True((support.Features & FormatFeatures.SparseTexture2D) != 0);
+            Assert.True(support.SupportsSparseSampleCount(1));
+        }
 
         bool samplerFeedbackAvailable = backend.TryGetCapability(
             device,
@@ -377,7 +405,7 @@ public sealed class WarpCapabilityTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(context);
         backend.Barrier(context, new BufferBarrier(
             source,
@@ -510,7 +538,7 @@ public sealed class WarpCapabilityTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(context);
         backend.SetPipeline(context, pipeline);
         backend.ExecuteIndirect(
@@ -539,7 +567,7 @@ public sealed class WarpCapabilityTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         Texture? image = null;
         try
         {
@@ -699,7 +727,7 @@ public sealed class WarpCapabilityTests
         }
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         ColorAttachmentDesc[] colors =
         [
             new(

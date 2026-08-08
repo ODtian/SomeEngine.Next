@@ -1,15 +1,18 @@
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
+using SlangShaderSharp;
+
 namespace SomeEngine.Graphics.Validation;
 
 public sealed partial class ValidationLayer<TBackend>
 {
     public DescriptorTable CreateDescriptorTable(
         Device device,
-        DescriptorTableType type,
-        uint count,
+        ReadOnlySpan<ResourceBindingType> slotTypes,
         string? label = null)
     {
         RequireDevice(device);
-        return Track(Backend.CreateDescriptorTable(device, type, count, label), device);
+        return Track(Backend.CreateDescriptorTable(device, slotTypes, label), device);
     }
 
     public uint GetDescriptorIndex(DescriptorTable table, uint slot)
@@ -38,13 +41,13 @@ public sealed partial class ValidationLayer<TBackend>
         GraphicsObject[] dependencies = ValidateBindings(
             device,
             bindings,
-            out ParameterBindingContract contract);
+            out ValidationParameterBlockLayout reflectedLayout);
         PersistentParameterBindings result = Track(
             Backend.CreatePersistentParameterBindings(device, bindings, label),
             device);
         _persistentBindingStates.Add(
             result,
-            new BindingValidationState(contract, dependencies));
+            new BindingValidationState(reflectedLayout, dependencies));
         return result;
     }
 
@@ -63,7 +66,7 @@ public sealed partial class ValidationLayer<TBackend>
         GraphicsObject[] dependencies = ValidateBindings(
             destination.Device,
             bindings,
-            state!.Contract);
+            state!.Layout);
         Backend.UpdatePersistentParameterBindings(destination, bindings);
         state.Dependencies = dependencies;
     }
@@ -110,7 +113,12 @@ public sealed partial class ValidationLayer<TBackend>
         RequireDevice(device);
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
-        return Track(Backend.CreateGraphicsPipeline(device, desc, cache), device);
+        EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
+        PipelineBindingValidationState bindings =
+            ReflectPipelineBindings(desc.Program, entries);
+        Pipeline result = Track(Backend.CreateGraphicsPipeline(device, desc, cache), device);
+        _pipelineBindingStates.Add(result, bindings);
+        return result;
     }
 
     public Pipeline CreateComputePipeline(
@@ -121,7 +129,12 @@ public sealed partial class ValidationLayer<TBackend>
         RequireDevice(device);
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
-        return Track(Backend.CreateComputePipeline(device, desc, cache), device);
+        EntryPointReflection[] entries = [desc.Compute];
+        PipelineBindingValidationState bindings =
+            ReflectPipelineBindings(desc.Program, entries);
+        Pipeline result = Track(Backend.CreateComputePipeline(device, desc, cache), device);
+        _pipelineBindingStates.Add(result, bindings);
+        return result;
     }
 
     public Pipeline CreateMeshPipeline(
@@ -132,19 +145,28 @@ public sealed partial class ValidationLayer<TBackend>
         RequireCapability<MeshShaders>(device);
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
-        return Track(Backend.CreateMeshPipeline(device, desc, cache), device);
+        List<EntryPointReflection> entries = [desc.Mesh];
+        if (desc.Amplification != EntryPointReflection.Null)
+            entries.Add(desc.Amplification);
+        if (desc.Pixel != EntryPointReflection.Null)
+            entries.Add(desc.Pixel);
+        PipelineBindingValidationState bindings =
+            ReflectPipelineBindings(desc.Program, CollectionsMarshal.AsSpan(entries));
+        Pipeline result = Track(Backend.CreateMeshPipeline(device, desc, cache), device);
+        _pipelineBindingStates.Add(result, bindings);
+        return result;
     }
 
     private GraphicsObject[] ValidateBindings(
         Device device,
         in ParameterBlockBindings bindings,
-        out ParameterBindingContract contract)
+        out ValidationParameterBlockLayout reflectedLayout)
     {
         if (bindings.Layout == SlangShaderSharp.VariableLayoutReflection.Null)
             Reject("Bindings", "ParameterBlockBindings.Layout is null.");
         try
         {
-            contract = ParameterBindingContract.Compile(bindings.Layout);
+            reflectedLayout = ValidationParameterBlockLayout.Reflect(bindings.Layout);
         }
         catch (Exception exception) when (exception is ArgumentException or
             GraphicsException or OverflowException)
@@ -152,21 +174,23 @@ public sealed partial class ValidationLayer<TBackend>
             Reject("Bindings", exception.Message);
             throw;
         }
-        return ValidateBindings(device, bindings, contract);
+        return ValidateBindings(device, bindings, reflectedLayout);
     }
 
     private GraphicsObject[] ValidateBindings(
         Device device,
         in ParameterBlockBindings bindings,
-        ParameterBindingContract contract)
+        ValidationParameterBlockLayout reflectedLayout)
     {
-        if (bindings.Layout != contract.Layout)
+        if (bindings.Layout != reflectedLayout.Layout)
         {
             Reject(
                 "Bindings",
                 "The parameter layout cannot change during a complete binding replacement.");
         }
-        if (contract.Diagnose(bindings.Resources, bindings.OrdinaryData) is string diagnostic)
+        if (reflectedLayout.Diagnose(
+                bindings.Resources,
+                bindings.OrdinaryData) is string diagnostic)
             Reject("Bindings", diagnostic);
 
         var dependencies = new HashSet<GraphicsObject>(ReferenceEqualityComparer.Instance);
@@ -186,5 +210,42 @@ public sealed partial class ValidationLayer<TBackend>
             }
         }
         return dependencies.ToArray();
+    }
+
+    private PipelineBindingValidationState ReflectPipelineBindings(
+        IComponentType program,
+        ReadOnlySpan<EntryPointReflection> entries)
+    {
+        ArgumentNullException.ThrowIfNull(program);
+        ISlangBlob? diagnostics = null;
+        try
+        {
+            ShaderReflection reflection = program.GetLayout(0, out diagnostics);
+            if (reflection == ShaderReflection.Null)
+            {
+                Reject(
+                    "Bindings",
+                    "Slang did not expose the selected linked program layout.");
+            }
+
+            var result = new PipelineBindingValidationState();
+            VariableLayoutReflection global = reflection.GetGlobalParamsVarLayout()
+                ?? VariableLayoutReflection.Null;
+            result.Add(global);
+            foreach (EntryPointReflection entry in entries)
+                result.Add(entry.VarLayout);
+            return result;
+        }
+        catch (Exception exception) when (exception is ArgumentException or
+            InvalidOperationException or OverflowException)
+        {
+            Reject("Bindings", exception.Message);
+            throw;
+        }
+        finally
+        {
+            if ((object?)diagnostics is ComObject wrapper)
+                wrapper.FinalRelease();
+        }
     }
 }

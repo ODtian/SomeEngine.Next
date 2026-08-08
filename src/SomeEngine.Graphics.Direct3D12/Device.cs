@@ -201,7 +201,6 @@ public sealed unsafe partial class D3D12Backend
         internal DescriptorAllocator RenderTargetDescriptors { get; }
         internal DescriptorAllocator DepthStencilDescriptors { get; }
         internal DescriptorPublisher Descriptors { get; }
-        internal SparseResources? SparseCapability { get; private set; }
 
         internal static D3D12Device Create(
             D3D12Backend backend,
@@ -281,6 +280,16 @@ public sealed unsafe partial class D3D12Backend
 
             capability = null;
             return false;
+        }
+
+        internal TCapability RequireCapability<TCapability>(string operation)
+            where TCapability : DeviceCapability
+        {
+            ThrowIfUnavailable();
+            if (_capabilities.TryGetValue(typeof(TCapability), out DeviceCapability? value))
+                return (TCapability)value;
+            throw new NotSupportedException(
+                $"{operation} requires the unavailable {typeof(TCapability).Name} capability.");
         }
 
         internal GraphicsException MarkLost(GraphicsException exception)
@@ -407,11 +416,9 @@ public sealed unsafe partial class D3D12Backend
 
         private void CreateQueues(ReadOnlySpan<DeviceQueueDesc> descriptions)
         {
-            uint nodeIndex = (uint)BitOperations.TrailingZeroCount(EnabledNodeMask);
-            uint nodeMask = 1u << checked((int)nodeIndex);
-
             foreach (ref readonly DeviceQueueDesc description in descriptions)
             {
+                uint nodeMask = 1u << checked((int)description.NodeIndex);
                 for (uint index = 0; index < description.Count; index++)
                 {
                     CommandQueueDesc nativeDescription = new(
@@ -450,7 +457,7 @@ public sealed unsafe partial class D3D12Backend
                                 description.Type,
                                 index,
                                 description.Priority,
-                                nodeIndex,
+                                nodeMask,
                                 nativeQueue,
                                 fence));
                     }
@@ -469,7 +476,7 @@ public sealed unsafe partial class D3D12Backend
         {
             if ((features.AvailableFeatures & DeviceFeatures.SparseResources) != 0)
             {
-                SparseCapability = new SparseResources(
+                SparseResources sparse = new(
                     this,
                     (uint)features.Options.TiledResourcesTier,
                     64 * 1024,
@@ -477,7 +484,7 @@ public sealed unsafe partial class D3D12Backend
                     features.SparseTexture2DFormats,
                     features.SparseTexture3DFormats,
                     maximumMappingsPerCall: uint.MaxValue);
-                Add(SparseCapability);
+                Add(sparse);
             }
 
             if ((features.AvailableFeatures & DeviceFeatures.SamplerFeedback) != 0)
@@ -504,6 +511,7 @@ public sealed unsafe partial class D3D12Backend
                     features.Options5.RaytracingTier >= NativeRayTracingTier.Tier11
                         ? SomeEngine.Graphics.RayTracingTier.Tier1_1
                         : SomeEngine.Graphics.RayTracingTier.Tier1_0,
+                    pipelineRayTracing: true,
                     inlineRayQuery: features.Options5.RaytracingTier >= NativeRayTracingTier.Tier11,
                     indirectDispatch: features.Options5.RaytracingTier >= NativeRayTracingTier.Tier11,
                     accelerationStructureUpdate: true,
@@ -684,7 +692,8 @@ public sealed unsafe partial class D3D12Backend
                     TextureDataPlacementAlignment: 512),
                 supportsBundles: true,
                 supportsPipelineStatistics: true,
-                supportsStreamOutputStatistics: true);
+                supportsStreamOutputStatistics: true,
+                features.Formats);
     }
 
     private sealed partial class D3D12Queue : Queue
@@ -698,17 +707,19 @@ public sealed unsafe partial class D3D12Backend
             QueueType type,
             uint index,
             float priority,
-            uint nodeIndex,
+            uint nodeMask,
             ID3D12CommandQueue* native,
             ID3D12Fence* fence)
-            : base(device, type, index, priority, nodeIndex)
+            : base(device, type, index, priority)
         {
             _device = device;
+            NodeMask = nodeMask;
             Native = native;
             Fence = fence;
         }
 
         internal object Gate { get; } = new();
+        internal uint NodeMask { get; }
         internal ID3D12CommandQueue* Native { get; private set; }
         internal ID3D12Fence* Fence { get; private set; }
 
@@ -782,6 +793,7 @@ public sealed unsafe partial class D3D12Backend
             in FeatureDataD3D12Options7 options7,
             in FeatureDataD3D12Options12 options12,
             in FeatureDataD3D12Options21 options21,
+            FormatSupport[] formats,
             Format[] sparseTexture2DFormats,
             Format[] sparseTexture3DFormats,
             Format[] samplerFeedbackFormats)
@@ -794,6 +806,7 @@ public sealed unsafe partial class D3D12Backend
             Options7 = options7;
             Options12 = options12;
             Options21 = options21;
+            Formats = formats;
             SparseTexture2DFormats = sparseTexture2DFormats;
             SparseTexture3DFormats = sparseTexture3DFormats;
             SamplerFeedbackFormats = samplerFeedbackFormats;
@@ -807,6 +820,7 @@ public sealed unsafe partial class D3D12Backend
         internal FeatureDataD3D12Options7 Options7 { get; }
         internal FeatureDataD3D12Options12 Options12 { get; }
         internal FeatureDataD3D12Options21 Options21 { get; }
+        internal FormatSupport[] Formats { get; }
         internal Format[] SparseTexture2DFormats { get; }
         internal Format[] SparseTexture3DFormats { get; }
         internal Format[] SamplerFeedbackFormats { get; }
@@ -841,24 +855,30 @@ public sealed unsafe partial class D3D12Backend
                 DeviceFeatures.ExternalResources |
                 DeviceFeatures.ExternalTimelines;
 
-            Format[] sparseTexture2DFormats = [];
-            Format[] sparseTexture3DFormats = [];
+            bool samplerFeedbackFormatsAvailable =
+                options7.SamplerFeedbackTier != NativeSamplerFeedbackTier.TierNotSupported &&
+                SupportsSamplerFeedbackOpaqueFormats(device);
+            FormatSupport[] formats = QueryFormatSupport(
+                device,
+                options.TiledResourcesTier,
+                samplerFeedbackFormatsAvailable);
+            Format[] sparseTexture2DFormats = SelectFormats(
+                formats,
+                FormatFeatures.SparseTexture2D);
+            Format[] sparseTexture3DFormats = SelectFormats(
+                formats,
+                FormatFeatures.SparseTexture3D);
             if (options.TiledResourcesTier != TiledResourcesTier.TierNotSupported)
-            {
                 features |= DeviceFeatures.SparseResources;
-                (sparseTexture2DFormats, sparseTexture3DFormats) =
-                    QuerySparseTextureFormats(device, options.TiledResourcesTier);
-            }
             if (options5.RaytracingTier != NativeRayTracingTier.TierNotSupported)
                 features |= DeviceFeatures.RayTracing;
             if (options6.VariableShadingRateTier != VariableShadingRateTier.TierNotSupported)
                 features |= DeviceFeatures.VariableRateShading;
             if (options7.MeshShaderTier != MeshShaderTier.TierNotSupported)
                 features |= DeviceFeatures.MeshShaders;
-            Format[] samplerFeedbackFormats =
-                options7.SamplerFeedbackTier == NativeSamplerFeedbackTier.TierNotSupported
-                    ? []
-                    : QuerySamplerFeedbackFormats(device);
+            Format[] samplerFeedbackFormats = SelectFormats(
+                formats,
+                FormatFeatures.SamplerFeedbackTarget);
             if (samplerFeedbackFormats.Length != 0)
                 features |= DeviceFeatures.SamplerFeedback;
             if (options21.WorkGraphsTier != Silk.NET.Direct3D12.WorkGraphsTier.TierNotSupported)
@@ -877,67 +897,177 @@ public sealed unsafe partial class D3D12Backend
                 options7,
                 options12,
                 options21,
+                formats,
                 sparseTexture2DFormats,
                 sparseTexture3DFormats,
                 samplerFeedbackFormats);
         }
 
-        private static (Format[] Texture2D, Format[] Texture3D)
-            QuerySparseTextureFormats(
-                ID3D12Device10* device,
-                TiledResourcesTier tier)
+        private static FormatSupport[] QueryFormatSupport(
+            ID3D12Device10* device,
+            TiledResourcesTier tiledResourcesTier,
+            bool samplerFeedbackFormatsAvailable)
         {
-            List<Format> texture2D = [];
-            List<Format> texture3D = [];
-            foreach (Format format in Enum.GetValues<Format>())
+            Format[] formats = Enum.GetValues<Format>();
+            FormatSupport[] result = new FormatSupport[formats.Length];
+            for (int index = 0; index < formats.Length; index++)
             {
+                Format format = formats[index];
                 FeatureDataFormatSupport support = new(FormatMappings.ToDxgi(format));
                 int query = device->CheckFeatureSupport(
                     NativeFeature.FormatSupport,
                     &support,
                     (uint)sizeof(FeatureDataFormatSupport));
-                if (query < 0 || (support.Support2 & FormatSupport2.Tiled) == 0)
-                    continue;
-
-                if ((support.Support1 & FormatSupport1.Texture2D) != 0)
-                    texture2D.Add(format);
-                if (tier >= TiledResourcesTier.Tier3 &&
-                    (support.Support1 & FormatSupport1.Texture3D) != 0)
+                if (query < 0)
                 {
-                    texture3D.Add(format);
+                    result[index] = new FormatSupport(
+                        format,
+                        FormatFeatures.None,
+                        SampleCounts.None,
+                        SampleCounts.None);
+                    continue;
                 }
+
+                FormatFeatures features = ToFormatFeatures(
+                    support.Support1,
+                    support.Support2,
+                    tiledResourcesTier,
+                    samplerFeedbackFormatsAvailable);
+                SampleCounts sampleCounts = QuerySampleCounts(
+                    device,
+                    FormatMappings.ToDxgi(format),
+                    MultisampleQualityLevelFlags.None,
+                    (features & FormatFeatures.Texture2D) != 0);
+                SampleCounts sparseSampleCounts = QuerySampleCounts(
+                    device,
+                    FormatMappings.ToDxgi(format),
+                    MultisampleQualityLevelFlags.TiledResource,
+                    (features & FormatFeatures.SparseTexture2D) != 0);
+                result[index] = new FormatSupport(
+                    format,
+                    features,
+                    sampleCounts,
+                    sparseSampleCounts);
             }
-            return ([.. texture2D], [.. texture3D]);
+            return result;
         }
 
-        private static Format[] QuerySamplerFeedbackFormats(ID3D12Device10* device)
+        private static FormatFeatures ToFormatFeatures(
+            FormatSupport1 support1,
+            FormatSupport2 support2,
+            TiledResourcesTier tiledResourcesTier,
+            bool samplerFeedbackFormatsAvailable)
         {
-            if (!SupportsSamplerFeedbackFormat(
-                    device,
-                    Silk.NET.DXGI.Format.FormatSamplerFeedbackMinMipOpaque) ||
-                !SupportsSamplerFeedbackFormat(
-                    device,
-                    Silk.NET.DXGI.Format.FormatSamplerFeedbackMipRegionUsedOpaque))
-            {
-                return [];
-            }
+            FormatFeatures result = FormatFeatures.None;
+            Add(FormatSupport1.Buffer, FormatFeatures.Buffer);
+            Add(FormatSupport1.IAVertexBuffer, FormatFeatures.VertexBuffer);
+            Add(FormatSupport1.IAIndexBuffer, FormatFeatures.IndexBuffer);
+            Add(FormatSupport1.SOBuffer, FormatFeatures.StreamOutput);
+            Add(FormatSupport1.Texture1D, FormatFeatures.Texture1D);
+            Add(FormatSupport1.Texture2D, FormatFeatures.Texture2D);
+            Add(FormatSupport1.Texture3D, FormatFeatures.Texture3D);
+            Add(FormatSupport1.Texturecube, FormatFeatures.TextureCube);
+            Add(FormatSupport1.ShaderLoad, FormatFeatures.ShaderLoad);
+            Add(FormatSupport1.ShaderSample, FormatFeatures.ShaderSample);
+            Add(FormatSupport1.ShaderSampleComparison, FormatFeatures.ShaderSampleComparison);
+            Add(FormatSupport1.Mip, FormatFeatures.Mipmaps);
+            Add(FormatSupport1.RenderTarget, FormatFeatures.ColorAttachment);
+            Add(FormatSupport1.Blendable, FormatFeatures.ColorAttachmentBlend);
+            Add(FormatSupport1.DepthStencil, FormatFeatures.DepthStencilAttachment);
+            Add(
+                FormatSupport1.MultisampleRendertarget,
+                FormatFeatures.MultisampleColorAttachment);
+            Add(FormatSupport1.MultisampleLoad, FormatFeatures.MultisampleLoad);
+            Add(FormatSupport1.MultisampleResolve, FormatFeatures.MultisampleResolve);
+            Add(FormatSupport1.TypedUnorderedAccessView, FormatFeatures.Storage);
+            Add2(FormatSupport2.UavTypedLoad, FormatFeatures.StorageLoad);
+            Add2(FormatSupport2.UavTypedStore, FormatFeatures.StorageStore);
+            Add2(FormatSupport2.OutputMergerLogicOp, FormatFeatures.LogicOperation);
 
-            List<Format> result = [];
-            foreach (Format format in Enum.GetValues<Format>())
+            const FormatSupport2 atomic =
+                FormatSupport2.UavAtomicAdd |
+                FormatSupport2.UavAtomicBitwiseOps |
+                FormatSupport2.UavAtomicCompareStoreOrCompareExchange |
+                FormatSupport2.UavAtomicExchange |
+                FormatSupport2.UavAtomicSignedMinOrMax |
+                FormatSupport2.UavAtomicUnsignedMinOrMax;
+            if ((support2 & atomic) != 0)
+                result |= FormatFeatures.StorageAtomic;
+
+            if ((support2 & FormatSupport2.Tiled) != 0)
             {
-                FeatureDataFormatSupport support = new(FormatMappings.ToDxgi(format));
-                int query = device->CheckFeatureSupport(
-                    NativeFeature.FormatSupport,
-                    &support,
-                    (uint)sizeof(FeatureDataFormatSupport));
-                if (query >= 0 &&
-                    (support.Support1 & FormatSupport1.Texture2D) != 0 &&
-                    (support.Support1 & FormatSupport1.ShaderSample) != 0)
+                if ((support1 & FormatSupport1.Texture2D) != 0)
+                    result |= FormatFeatures.SparseTexture2D;
+                if (tiledResourcesTier >= TiledResourcesTier.Tier3 &&
+                    (support1 & FormatSupport1.Texture3D) != 0)
                 {
-                    result.Add(format);
+                    result |= FormatFeatures.SparseTexture3D;
                 }
             }
+
+            if (samplerFeedbackFormatsAvailable &&
+                (support1 & (FormatSupport1.Texture2D | FormatSupport1.ShaderSample)) ==
+                    (FormatSupport1.Texture2D | FormatSupport1.ShaderSample))
+            {
+                result |= FormatFeatures.SamplerFeedbackTarget;
+            }
+            return result;
+
+            void Add(FormatSupport1 native, FormatFeatures portable)
+            {
+                if ((support1 & native) != 0)
+                    result |= portable;
+            }
+
+            void Add2(FormatSupport2 native, FormatFeatures portable)
+            {
+                if ((support2 & native) != 0)
+                    result |= portable;
+            }
+        }
+
+        private static SampleCounts QuerySampleCounts(
+            ID3D12Device10* device,
+            Silk.NET.DXGI.Format format,
+            MultisampleQualityLevelFlags flags,
+            bool singleSampleSupported)
+        {
+            SampleCounts result = singleSampleSupported ? SampleCounts.One : SampleCounts.None;
+            ReadOnlySpan<uint> counts = [2, 4, 8, 16, 32];
+            foreach (uint count in counts)
+            {
+                FeatureDataMultisampleQualityLevels levels = new(format, count, flags, 0);
+                int query = device->CheckFeatureSupport(
+                    NativeFeature.MultisampleQualityLevels,
+                    &levels,
+                    (uint)sizeof(FeatureDataMultisampleQualityLevels));
+                if (query >= 0 && levels.NumQualityLevels != 0)
+                    result |= (SampleCounts)count;
+            }
+            return result;
+        }
+
+        private static Format[] SelectFormats(
+            ReadOnlySpan<FormatSupport> supports,
+            FormatFeatures required)
+        {
+            List<Format> result = [];
+            foreach (ref readonly FormatSupport support in supports)
+            {
+                if ((support.Features & required) == required)
+                    result.Add(support.Format);
+            }
             return [.. result];
+        }
+
+        private static bool SupportsSamplerFeedbackOpaqueFormats(ID3D12Device10* device)
+        {
+            return SupportsSamplerFeedbackFormat(
+                    device,
+                    Silk.NET.DXGI.Format.FormatSamplerFeedbackMinMipOpaque) &&
+                SupportsSamplerFeedbackFormat(
+                    device,
+                    Silk.NET.DXGI.Format.FormatSamplerFeedbackMipRegionUsedOpaque);
         }
 
         private static bool SupportsSamplerFeedbackFormat(

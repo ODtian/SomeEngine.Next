@@ -144,10 +144,10 @@ public sealed class WarpCopyTests
 
         using CommandContext releaseContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         using CommandContext copyContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
         Queue copyQueue = backend.GetQueue(device, QueueType.Copy);
         TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
@@ -243,7 +243,7 @@ public sealed class WarpCopyTests
                 TextureUsages.CopyDestination));
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
 
         backend.Begin(context);
         InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
@@ -283,7 +283,7 @@ public sealed class WarpCopyTests
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         TextureSubresourceRange barrierRange = new(0, 1, 0, 1, TextureAspects.Color);
         TextureSubresourceRange clearRange = new(0, 1, 0, 4, TextureAspects.Color);

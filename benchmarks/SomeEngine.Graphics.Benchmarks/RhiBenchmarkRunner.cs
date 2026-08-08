@@ -133,24 +133,37 @@ internal static class RhiBenchmarkRunner
             "benchmark persistent tint");
         backend.PublishDescriptors(device);
 
-        WorkloadRun[] workloads =
-        [
-            RunEmptySubmit<TReceiver, TDispatch>(receiver, backend, device, shader.ManifestSha256, configuration),
-            RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.PersistentDraw10000),
-            RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.TransientDraw10000),
-            RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.StateSuppression10000),
-            RunExplicitBarriers<TReceiver, TDispatch>(receiver, backend, device, computePipeline, shader.ManifestSha256, configuration),
-            RunThreeQueuePresent<TReceiver, TDispatch>(receiver, backend, device, graphicsPipeline, computePipeline, persistentBindings, shader.ManifestSha256, configuration),
-        ];
+        WorkloadRun[] workloads = configuration.Profile == BenchmarkProfile.FastDiagnostic
+            ?
+            [
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.PersistentDraw10000),
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.TransientDraw10000),
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.StateSuppression10000),
+            ]
+            :
+            [
+                RunEmptySubmit<TReceiver, TDispatch>(receiver, backend, device, shader.ManifestSha256, configuration),
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.PersistentDraw10000),
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.TransientDraw10000),
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.StateSuppression10000),
+                RunExplicitBarriers<TReceiver, TDispatch>(receiver, backend, device, computePipeline, shader.ManifestSha256, configuration),
+                RunThreeQueuePresent<TReceiver, TDispatch>(receiver, backend, device, graphicsPipeline, computePipeline, persistentBindings, shader.ManifestSha256, configuration),
+            ];
         RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
             ? RunDisposition.Passed
             : RunDisposition.FunctionalOnly;
         return new ProcessRun(
             configuration.Variant,
             disposition,
-            configuration.Profile == BenchmarkProfile.VendorCertification
-                ? "All fixed RHI workloads executed."
-                : "All reduced-count RHI workloads executed on WARP; not performance evidence.",
+            configuration.Profile switch
+            {
+                BenchmarkProfile.WarpFunctional =>
+                    "All reduced-count RHI workloads executed on WARP; not performance evidence.",
+                BenchmarkProfile.FastDiagnostic =>
+                    "The three draw-only RHI diagnostics executed; never vendor-certification evidence.",
+                BenchmarkProfile.VendorCertification => "All fixed RHI workloads executed.",
+                _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
+            },
             environment,
             workloads);
     }
@@ -260,7 +273,7 @@ internal static class RhiBenchmarkRunner
             queryRange);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 2, Label: $"{workload} context"));
+            new CommandContextDesc(QueueType.Graphics, 0, 2, Label: $"{workload} context"));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         ColorAttachmentDesc[] colors =
         [
@@ -534,7 +547,7 @@ internal static class RhiBenchmarkRunner
             queryRange);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 2, Label: "explicit barrier context"));
+            new CommandContextDesc(QueueType.Compute, 0, 2, Label: "explicit barrier context"));
         Queue queue = backend.GetQueue(device, QueueType.Compute);
         MemoryBarrier barrier = new(
             PipelineSync.ComputeShading,
@@ -736,9 +749,9 @@ internal static class RhiBenchmarkRunner
             graphicsTimestamp,
             MapType.Read,
             timestampRange);
-        using CommandContext copyContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Copy, 0, 0, 2));
-        using CommandContext computeContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 0, 2));
-        using CommandContext graphicsContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Graphics, 0, 0, 2));
+        using CommandContext copyContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Copy, 0, 2));
+        using CommandContext computeContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 2));
+        using CommandContext graphicsContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Graphics, 0, 2));
         ColorAttachmentDesc[] colors = [new(targetView, LoadType.Clear, StoreType.Store, new Vector4(0.0625f, 0.125f, 0.25f, 1))];
         Viewport[] viewports = [new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight)];
         ScissorRect[] scissors = [new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight)];
@@ -1057,7 +1070,7 @@ internal static class RhiBenchmarkRunner
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         TDispatch.Begin(receiver, context, default);
         TDispatch.CopyTextureToBuffer(receiver, context, new BufferTextureCopy(
             readback,

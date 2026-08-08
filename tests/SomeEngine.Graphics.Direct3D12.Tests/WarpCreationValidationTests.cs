@@ -35,6 +35,11 @@ public sealed class WarpCreationValidationTests
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
             RetirementType.Automatic,
+            [new DeviceQueueDesc(QueueType.Graphics, NodeIndex: 1)],
+            enabledNodeMask: 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
+            adapter.Id,
+            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: (DeviceFeatures)(1UL << 63))));
 

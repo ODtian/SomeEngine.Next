@@ -1,4 +1,6 @@
+using Silk.NET.Direct3D12;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Validation;
 using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
@@ -116,7 +118,7 @@ public sealed class WarpExternalTests
             MemoryType.Readback))
         using (CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1)))
+            new CommandContextDesc(QueueType.Graphics, 0, 1)))
         {
             backend.Begin(context);
             backend.CopyBuffer(
@@ -217,5 +219,164 @@ public sealed class WarpExternalTests
             imported,
             0,
             new BufferDesc(65_536, BufferUsages.CopyDestination));
+    }
+
+    [Fact]
+    public unsafe void Native_object_import_separates_borrowed_and_transferred_COM_ownership()
+    {
+        using D3D12Backend backend = new();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        ImportedResourceState bufferState = new(
+            PipelineSync.None,
+            ResourceAccess.NoAccess,
+            Layout: null,
+            QueueType.Graphics);
+        BufferDesc bufferDescription = new(
+            65_536,
+            BufferUsages.CopySource | BufferUsages.CopyDestination);
+        using Buffer borrowedSource = backend.CreateBuffer(device, bufferDescription);
+        ID3D12Resource* borrowedPointer = backend.GetNativeResource(borrowedSource);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => backend.ImportBuffer(
+            device,
+            borrowedPointer,
+            (NativeObjectOwnership)byte.MaxValue,
+            bufferDescription,
+            bufferState));
+        Assert.Throws<ArgumentException>(() => backend.ImportBuffer(
+            device,
+            borrowedPointer,
+            NativeObjectOwnership.Borrowed,
+            bufferDescription with { Size = 32_768 },
+            bufferState));
+        using (Buffer borrowed = backend.ImportBuffer(
+            device,
+            borrowedPointer,
+            NativeObjectOwnership.Borrowed,
+            bufferDescription,
+            bufferState))
+        {
+            Assert.Equal((nint)borrowedPointer, (nint)backend.GetNativeResource(borrowed));
+        }
+        Assert.Equal(bufferDescription.Size, borrowedPointer->GetDesc().Width);
+
+        Buffer transferredSource = backend.CreateBuffer(device, bufferDescription);
+        ID3D12Resource* transferredPointer = backend.GetNativeResource(transferredSource);
+        _ = transferredPointer->AddRef();
+        using Buffer transferred = backend.ImportBuffer(
+            device,
+            transferredPointer,
+            NativeObjectOwnership.Transferred,
+            bufferDescription,
+            bufferState);
+        transferredSource.Dispose();
+        Assert.Equal((nint)transferredPointer, (nint)backend.GetNativeResource(transferred));
+        Assert.Equal(bufferDescription.Size, transferredPointer->GetDesc().Width);
+
+        TextureDesc textureDescription = new(
+            TextureDimension.Texture2D,
+            16,
+            8,
+            1,
+            1,
+            1,
+            1,
+            Format.R8G8B8A8UNorm,
+            TextureUsages.Sampled | TextureUsages.CopyDestination);
+        ImportedResourceState textureState = new(
+            PipelineSync.None,
+            ResourceAccess.NoAccess,
+            TextureLayout.Undefined,
+            QueueType.Graphics);
+        using Texture textureSource = backend.CreateTexture(device, textureDescription);
+        ID3D12Resource* texturePointer = backend.GetNativeResource(textureSource);
+        using (Texture borrowedTexture = backend.ImportTexture(
+            device,
+            texturePointer,
+            NativeObjectOwnership.Borrowed,
+            textureDescription,
+            textureState))
+        {
+            Assert.Equal((nint)texturePointer, (nint)backend.GetNativeResource(borrowedTexture));
+        }
+        using TextureSrv sourceView = backend.CreateTextureSrv(
+            device,
+            new TextureSrvDesc(
+                textureSource,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                Format.R8G8B8A8UNorm,
+                TextureViewDimension.Texture2D));
+
+        HeapDesc heapDescription = new(
+            131_072,
+            0,
+            MemoryType.DeviceLocal,
+            HeapFlags.Buffers);
+        Heap transferredHeapSource = backend.CreateHeap(device, heapDescription);
+        ID3D12Heap* heapPointer = backend.GetNativeHeap(transferredHeapSource);
+        _ = heapPointer->AddRef();
+        using Heap transferredHeap = backend.ImportHeap(
+            device,
+            heapPointer,
+            NativeObjectOwnership.Transferred,
+            heapDescription);
+        transferredHeapSource.Dispose();
+        using Buffer placed = backend.CreatePlacedBuffer(
+            device,
+            transferredHeap,
+            0,
+            new BufferDesc(65_536, BufferUsages.CopyDestination));
+    }
+
+    [Fact]
+    public unsafe void Native_object_import_checks_native_device_identity_and_validation_tracks_wrappers()
+    {
+        using D3D12Backend backend = new();
+        using var validation = new ValidationLayer<D3D12Backend>(backend);
+        using Device first = D3D12TestSupport.CreateWarpDevice(backend);
+        using Device second = D3D12TestSupport.CreateWarpDevice(backend);
+        BufferDesc description = new(65_536, BufferUsages.CopyDestination);
+        ImportedResourceState state = new(
+            PipelineSync.None,
+            ResourceAccess.NoAccess,
+            Layout: null,
+            QueueType.Graphics);
+        using Buffer source = backend.CreateBuffer(first, description);
+        ID3D12Resource* pointer = backend.GetNativeResource(source);
+
+        if (backend.GetNativeDevice(first) != backend.GetNativeDevice(second))
+        {
+            Assert.Throws<ArgumentException>(() => backend.ImportBuffer(
+                second,
+                pointer,
+                NativeObjectOwnership.Borrowed,
+                description,
+                state));
+        }
+        else
+        {
+            using Buffer compatibleAlias = backend.ImportBuffer(
+                second,
+                pointer,
+                NativeObjectOwnership.Borrowed,
+                description,
+                state);
+            Assert.Equal((nint)pointer, (nint)backend.GetNativeResource(compatibleAlias));
+        }
+        Assert.Equal(description.Size, pointer->GetDesc().Width);
+
+        using ExternalTimeline timeline = backend.CreateExternalTimeline(first, 3);
+        Assert.NotEqual(0, (nint)backend.GetNativeTimeline(timeline));
+
+        using Device validatedDevice = D3D12TestSupport.CreateWarpDevice(validation);
+        using Buffer validatedSource = validation.CreateBuffer(validatedDevice, description);
+        ID3D12Resource* validatedPointer = validation.GetNativeResource(validatedSource);
+        using Buffer imported = validation.ImportBuffer(
+            validatedDevice,
+            validatedPointer,
+            NativeObjectOwnership.Borrowed,
+            description,
+            state);
+        Assert.Equal((nint)validatedPointer, (nint)validation.GetNativeResource(imported));
     }
 }

@@ -10,6 +10,7 @@ internal static class Program
             return options.Command switch
             {
                 BenchmarkCommand.Warp => BenchmarkController.RunWarp(options),
+                BenchmarkCommand.Diagnose => BenchmarkController.RunDiagnostic(options),
                 BenchmarkCommand.Certify => BenchmarkController.RunCertification(options),
                 BenchmarkCommand.Worker => BenchmarkWorker.Run(options),
                 BenchmarkCommand.Evaluate => BenchmarkController.EvaluateExisting(options),

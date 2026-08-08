@@ -426,7 +426,7 @@ public sealed class WarpSparseGenerationTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(context, default);
         backend.Barrier(context, new BufferBarrier(
             resource,

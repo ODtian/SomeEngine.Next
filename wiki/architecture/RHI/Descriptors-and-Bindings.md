@@ -20,14 +20,23 @@ initializes one concrete, nonvirtual, get-only `uint DescriptorIndex` in its bas
 is no index interface, virtual getter, delegate or separate index-state object. RTV and DSV views are
 not shader-visible and therefore have no Bindless form.
 
-`CreateDescriptorTable(Device, DescriptorTableType, uint count)` creates either a Resource or Sampler
-table and reserves one contiguous stable logical range; count zero is rejected. Slot numbers are
-zero-based within that table, and `GetDescriptorIndex(table, slot)` returns the stable global `uint`
-index used by shaders. Resource slots accept BufferCbv/Srv/Uav, TextureSrv/Uav,
-AccelerationStructureSrv or a Type-correct null; Sampler slots accept Sampler or null.
-`WriteDescriptor(table, slot, value)` changes only pending content. All slots begin pending null and
-become shader-visible only through PublishDescriptors. Table growth is not exposed; the global heaps
-may grow underneath while every table index remains stable.
+Specification correction: the earlier count-only
+`CreateDescriptorTable(Device, DescriptorTableType, uint count)` shape could not determine the native
+kind of an initial Resource null descriptor and therefore could not satisfy its own Type-correct-null
+requirement. The terminal API is
+`CreateDescriptorTable(Device, ReadOnlySpan<ResourceBindingType> slotTypes)`. The nonempty span fixes
+each slot's immutable descriptor Type; `None` is not a table slot Type, and Resource and Sampler Types
+cannot be mixed in one table. `DescriptorTable.Type` is derived from that span, while `Count` is the
+span length. Slot numbers are zero-based, and `GetDescriptorIndex(table, slot)` returns the stable
+global `uint` index used by shaders.
+
+Each Resource slot accepts only the BufferCbv/Srv/Uav, TextureSrv/Uav or
+AccelerationStructureSrv Type declared for that slot, or a Type-correct null of that same Type. A
+Sampler slot accepts Sampler or null. `WriteDescriptor(table, slot, value)` changes only pending
+content and rejects a Type different from the slot declaration without changing that pending
+content. All slots begin pending Type-correct null and become shader-visible only through
+PublishDescriptors. Table growth is not exposed; the global heaps may grow underneath while every
+table index remains stable.
 
 If the backend replaces native storage behind the same public Resource identity, every existing View
 keeps the same Description and, for a Bindless view, the same DescriptorIndex. The backend stages the
@@ -145,6 +154,11 @@ Sampler and AccelerationStructure. One `ResourceBinding` contains that Type and 
 ordinary view/Sampler plus any required array element; it does not contain a backend slot number.
 `ParameterBlockBindings` is a stack-only operation description over caller-owned spans of those
 values and ordinary scalar data. The spans are consumed synchronously.
+
+A sampler carrying S# `ImmutableSamplerReflection` is shader-owned immutable state, not a runtime
+`ResourceBinding`: S# retains its complete binding range and typed state but omits it from the
+canonical bounded `BindingElements` sequence. Consequently the caller span contains no element for
+that sampler. A sampler without that S# fact remains an ordinary runtime Sampler binding.
 
 `PersistentParameterBindings` materializes one complete parameter block for repeated use. Create or
 Update stages a complete replacement; there is no partially updated published version. Each call

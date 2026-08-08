@@ -6,6 +6,15 @@ namespace SomeEngine.Graphics.Validation;
 /// <summary>
 /// Optional validation receiver. Construction transfers ownership of the wrapped backend.
 /// </summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Construction transfers the wrapped backend's only disposal right to this
+/// caller-disposed receiver. The configured message sink is borrowed and is never disposed. Diagnostic
+/// callbacks are synchronous and cannot cancel underlying cleanup.</para>
+/// <para><b>After Dispose:</b> No validation or wrapped-backend operation is available; diagnostics
+/// emitted during teardown remain caller-owned sink output rather than a reopenable store.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public sealed partial class ValidationLayer<TBackend> : IGraphicsBackend
     where TBackend : class, IGraphicsBackend
 {
@@ -18,6 +27,8 @@ public sealed partial class ValidationLayer<TBackend> : IGraphicsBackend
     private readonly ConditionalWeakTable<ExternalTimeline, TimelineValidationState> _timelines = new();
     private readonly ConditionalWeakTable<PersistentParameterBindings, BindingValidationState>
         _persistentBindingStates = new();
+    private readonly ConditionalWeakTable<Pipeline, PipelineBindingValidationState>
+        _pipelineBindingStates = new();
     private readonly ConditionalWeakTable<RecordedBundle, BundleValidationState> _bundleStates = new();
     private readonly ConditionalWeakTable<IndirectCommandLayout, IndirectLayoutValidationState>
         _indirectLayouts = new();
@@ -419,7 +430,7 @@ public sealed partial class ValidationLayer<TBackend> : IGraphicsBackend
     private sealed record RayExportValidationState(
         RayExportValidationType Type,
         SlangShaderSharp.VariableLayoutReflection Layout,
-        ParameterBindingContract? Contract);
+        ValidationParameterBlockLayout? ParameterLayout);
 
     private sealed class RayTracingPipelineValidationState
     {
@@ -512,14 +523,14 @@ public sealed partial class ValidationLayer<TBackend> : IGraphicsBackend
     private sealed class BindingValidationState
     {
         internal BindingValidationState(
-            ParameterBindingContract contract,
+            ValidationParameterBlockLayout layout,
             GraphicsObject[] dependencies)
         {
-            Contract = contract;
+            Layout = layout;
             Dependencies = dependencies;
         }
 
-        internal ParameterBindingContract Contract { get; }
+        internal ValidationParameterBlockLayout Layout { get; }
         internal GraphicsObject[] Dependencies { get; set; }
     }
 

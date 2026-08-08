@@ -72,7 +72,7 @@ public sealed class HardwareSamplerFeedbackTests
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         backend.Begin(context);
         backend.Barrier(context, new TextureBarrier(

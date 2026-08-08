@@ -35,7 +35,7 @@ public sealed class WarpPresentationTests
                 config));
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.Acquire(

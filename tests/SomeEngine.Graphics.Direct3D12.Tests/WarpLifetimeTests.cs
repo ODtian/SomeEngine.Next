@@ -15,7 +15,7 @@ public sealed class WarpLifetimeTests
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
 
         backend.Begin(context);
         RecordedCommands commands = backend.End(context);
@@ -184,8 +184,12 @@ public sealed class WarpLifetimeTests
             AddressType.ClampToEdge);
         _ = Keep(backend.CreateSampler(device, samplerDescription));
         _ = Keep(backend.CreateBindlessSampler(device, samplerDescription));
-        _ = Keep(backend.CreateDescriptorTable(device, DescriptorTableType.Resource, 2));
-        _ = Keep(backend.CreateDescriptorTable(device, DescriptorTableType.Sampler, 2));
+        _ = Keep(backend.CreateDescriptorTable(
+            device,
+            [ResourceBindingType.BufferSrv, ResourceBindingType.TextureSrv]));
+        _ = Keep(backend.CreateDescriptorTable(
+            device,
+            [ResourceBindingType.Sampler, ResourceBindingType.Sampler]));
         _ = Keep(backend.CreatePipelineCache(device, default));
         _ = Keep(backend.CreateQueryPool(
             device,
@@ -203,12 +207,12 @@ public sealed class WarpLifetimeTests
 
         CommandContext context = Keep(backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1)));
+            new CommandContextDesc(QueueType.Graphics, 0, 1)));
         backend.Begin(context);
         RecordedCommands executable = backend.End(context);
         CommandContext bundleContext = Keep(backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1, Bundle: true)));
+            new CommandContextDesc(QueueType.Graphics, 0, 1, Bundle: true)));
         backend.Begin(bundleContext);
         _ = Keep(backend.EndBundle(bundleContext));
 
@@ -518,7 +522,7 @@ public sealed class WarpLifetimeTests
 
         CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, range.Size));
         RecordedCommands recorded = backend.End(context);
@@ -578,7 +582,7 @@ public sealed class WarpLifetimeTests
 
         CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, range.Size));
         RecordedCommands recorded = backend.End(context);
@@ -635,7 +639,7 @@ public sealed class WarpLifetimeTests
             MemoryType.Upload);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         backend.Begin(context);
         backend.SetVertexBuffers(
@@ -675,7 +679,7 @@ public sealed class WarpLifetimeTests
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         var commands = new RecordedCommands[1];
 

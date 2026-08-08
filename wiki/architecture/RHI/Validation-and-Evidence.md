@@ -232,6 +232,13 @@ raw CPU/GPU samples, calibration samples, output hashes and the public/native ba
 required by RHI-EVID-002; summary percentiles are derived from those raw samples. WARP may establish
 functional equivalence but never counts as a vendor-hardware performance pass.
 
+Each process owns one raw JSON result. The controller report records the relative raw path, SHA-256,
+receiver, process index and interleaved position instead of duplicating all samples into another
+monolithic JSON document. Gate evaluation verifies the hash and schedule identity, admits one raw
+file at a time, retains only the numeric samples and validation facts needed for aggregation, then
+releases the full process document. Re-evaluating a report never starts a worker, and missing,
+corrupt, swapped or modified raw evidence fails closed.
+
 Both `GC.GetAllocatedBytesForCurrentThread` and ETW allocation events must report 0 B/events for each
 stable-frame workload. CPU limits are applied as both absolute delta and relative delta:
 
@@ -258,3 +265,13 @@ The concrete closed receiver is inspected on the selected shipping JIT/NativeAOT
 as a representative devirtualization case; the contract promises eligibility, not universal direct
 machine calls. Interface mode remains the intentional indirect-call comparison.
 ^rhi-evid-003
+
+The benchmark executable also exposes a developer-only `diagnose` command for investigating receiver
+position and GPU-frequency bias before the architecture is ready for the expensive fixed protocol.
+It runs only Persistent Draw, Transient Draw and State Suppression, retains 10,000 draws per frame,
+uses 512 warm-up plus 1,024 measured frames, and schedules four sequential interleaved rounds whose
+first four orders are the recorded Latin square. It does not run Empty Submit, Explicit Barrier or
+Three-Queue Present. Its report profile, exact workload inventory and Gate diagnostic identify it as
+non-certification data; a complete diagnostic is `FunctionalOnly` and can never produce a vendor
+performance `Passed` disposition. `evaluate` reads an existing report stream and never launches a
+worker. This tooling mode does not modify or partially satisfy RHI-EVID-003.

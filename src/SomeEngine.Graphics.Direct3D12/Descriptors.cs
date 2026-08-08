@@ -8,19 +8,18 @@ public sealed unsafe partial class D3D12Backend
 {
     public DescriptorTable CreateDescriptorTable(
         Device device,
-        DescriptorTableType type,
-        uint count,
+        ReadOnlySpan<ResourceBindingType> slotTypes,
         string? label = null)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
         nativeDevice.ThrowIfUnavailable();
-        if (count == 0)
-            throw new ArgumentOutOfRangeException(nameof(count));
+        DescriptorTableType type = GetDescriptorTableType(slotTypes);
+        uint count = checked((uint)slotTypes.Length);
         DescriptorRange range = nativeDevice.Descriptors.Reserve(type, count);
         D3D12DescriptorTable? result = null;
         try
         {
-            result = new D3D12DescriptorTable(nativeDevice, range, label);
+            result = new D3D12DescriptorTable(nativeDevice, range, slotTypes, label);
             nativeDevice.Descriptors.InitializeTable(result);
             nativeDevice.RegisterChild(result);
             return result;
@@ -49,7 +48,7 @@ public sealed unsafe partial class D3D12Backend
     {
         D3D12DescriptorTable native = NativeCast.DescriptorTable(table);
         native.CheckSlot(slot);
-        EnsureTableBindingType(native.Type, value);
+        EnsureTableBindingType(native.GetSlotType(slot), value);
         native.NativeDevice.Descriptors.StageBinding(
             native.Type,
             checked(native.FirstIndex + slot),
@@ -92,22 +91,38 @@ public sealed unsafe partial class D3D12Backend
     public void PublishDescriptors(Device device) =>
         NativeCast.Device(device).Descriptors.Publish();
 
+    private static DescriptorTableType GetDescriptorTableType(
+        ReadOnlySpan<ResourceBindingType> slotTypes)
+    {
+        if (slotTypes.IsEmpty)
+            throw new ArgumentException("A DescriptorTable requires at least one typed slot.", nameof(slotTypes));
+        bool samplers = slotTypes[0] == ResourceBindingType.Sampler;
+        foreach (ResourceBindingType type in slotTypes)
+        {
+            if (!Enum.IsDefined(type) || type == ResourceBindingType.None)
+                throw new ArgumentOutOfRangeException(nameof(slotTypes));
+            if ((type == ResourceBindingType.Sampler) != samplers)
+            {
+                throw new ArgumentException(
+                    "A DescriptorTable cannot mix Resource and Sampler slots.",
+                    nameof(slotTypes));
+            }
+        }
+        return samplers ? DescriptorTableType.Sampler : DescriptorTableType.Resource;
+    }
+
     private static void EnsureTableBindingType(
-        DescriptorTableType tableType,
+        ResourceBindingType slotType,
         in ResourceBinding binding)
     {
-        bool sampler = binding.Type == ResourceBindingType.Sampler;
-        if (tableType == DescriptorTableType.Sampler)
-        {
-            if (binding.Type is not (ResourceBindingType.None or ResourceBindingType.Sampler))
-                throw new ArgumentException("A Sampler table accepts only Sampler descriptors.", nameof(binding));
-            return;
-        }
-
-        if (sampler)
-            throw new ArgumentException("A Resource table cannot contain Sampler descriptors.", nameof(binding));
         if (!Enum.IsDefined(binding.Type))
             throw new ArgumentOutOfRangeException(nameof(binding));
+        if (binding.Type != slotType)
+        {
+            throw new ArgumentException(
+                $"Descriptor slot type {slotType} cannot be written as {binding.Type}.",
+                nameof(binding));
+        }
     }
 
     private enum DescriptorRangeState : byte
@@ -137,6 +152,35 @@ public sealed unsafe partial class D3D12Backend
         internal ulong ReusableAfterGeneration { get; set; }
         internal DescriptorRange? Next { get; set; }
         internal DescriptorRange? ActivationNext { get; set; }
+        internal ResourceBindingType[]? SlotTypes { get; set; }
+
+        internal void SetSlotTypes(ReadOnlySpan<ResourceBindingType> slotTypes)
+        {
+            if ((uint)slotTypes.Length != Count)
+                throw new ArgumentException("Descriptor slot-type count does not match its range.", nameof(slotTypes));
+            SlotTypes = slotTypes.ToArray();
+        }
+
+        internal void SetSlotType(uint slot, ResourceBindingType type)
+        {
+            if (slot >= Count || type == ResourceBindingType.None || !Enum.IsDefined(type))
+                throw new ArgumentOutOfRangeException(nameof(slot));
+            SlotTypes ??= new ResourceBindingType[checked((int)Count)];
+            ResourceBindingType current = SlotTypes[checked((int)slot)];
+            if (current != ResourceBindingType.None && current != type)
+                throw new InvalidOperationException("A descriptor range slot changed its declared type.");
+            SlotTypes[checked((int)slot)] = type;
+        }
+
+        internal ResourceBindingType GetSlotType(uint slot)
+        {
+            if (slot >= Count || SlotTypes is null)
+                throw new InvalidOperationException("The descriptor range has no declared slot type.");
+            ResourceBindingType type = SlotTypes[checked((int)slot)];
+            if (type == ResourceBindingType.None)
+                throw new InvalidOperationException("The descriptor range contains an untyped slot.");
+            return type;
+        }
     }
 
     private sealed class DescriptorPublisher : IDisposable
@@ -265,7 +309,8 @@ public sealed unsafe partial class D3D12Backend
         internal void StageDescriptor(
             DescriptorRange range,
             DescriptorLease source,
-            GraphicsObject owner)
+            GraphicsObject owner,
+            ResourceBindingType type)
         {
             lock (_gate)
             {
@@ -276,12 +321,13 @@ public sealed unsafe partial class D3D12Backend
                     _device,
                     source,
                     owner,
-                    ResourceBindingType.None);
+                    type);
                 bool ownerAdded = false;
                 bool recordTransferred = false;
                 try
                 {
                     _owners.EnsureCapacity(checked(_owners.Count + 1));
+                    range.SetSlotType(0, type);
                     _owners.Add(owner, range);
                     ownerAdded = true;
                     ReplacePending(range.Type, range.First, record);
@@ -311,15 +357,13 @@ public sealed unsafe partial class D3D12Backend
                 pending.EnsureCapacity(checked(pending.Count + checked((int)range.Count)));
                 try
                 {
+                    range.SetSlotTypes(table.SlotTypes);
                     for (uint slot = 0; slot < range.Count; slot++)
                     {
                         ReplacePending(
                             range.Type,
                             checked(range.First + slot),
-                            DescriptorRecord.CreateNull(
-                                range.Type == DescriptorTableType.Sampler
-                                    ? ResourceBindingType.Sampler
-                                    : ResourceBindingType.TextureSrv));
+                            DescriptorRecord.CreateNull(table.GetSlotType(slot)));
                     }
                     range.State = DescriptorRangeState.Active;
                     QueueActivation(range);
@@ -397,6 +441,7 @@ public sealed unsafe partial class D3D12Backend
                     _pendingResources.EnsureCapacity(checked(_pendingResources.Count + resourceAdds));
                     _pendingSamplers.EnsureCapacity(checked(_pendingSamplers.Count + samplerAdds));
                     _pendingBindings.EnsureCapacity(checked(_pendingBindings.Count + 1));
+                    SetPersistentRangeSlotTypes(owner);
                 }
                 catch
                 {
@@ -409,6 +454,34 @@ public sealed unsafe partial class D3D12Backend
                 _pendingBindings.Add(owner);
                 Activate(owner.ResourceRange);
                 Activate(owner.SamplerRange);
+            }
+        }
+
+        private static void SetPersistentRangeSlotTypes(
+            D3D12PersistentParameterBindings owner)
+        {
+            foreach (ParameterLeaf leaf in owner.Shape.Leaves)
+            {
+                if (leaf.Unbounded)
+                    continue;
+                DescriptorRange? range = leaf.Heap == ParameterHeap.Sampler
+                    ? owner.SamplerRange
+                    : owner.ResourceRange;
+                if (range is null)
+                    throw new InvalidOperationException("A parameter descriptor range is missing.");
+                for (uint element = 0; element < leaf.DescriptorCount; element++)
+                    range.SetSlotType(checked(leaf.HeapOffset + element), leaf.Type);
+            }
+
+            RequireComplete(owner.ResourceRange);
+            RequireComplete(owner.SamplerRange);
+
+            static void RequireComplete(DescriptorRange? range)
+            {
+                if (range is null)
+                    return;
+                for (uint slot = 0; slot < range.Count; slot++)
+                    _ = range.GetSlotType(slot);
             }
         }
 
@@ -552,6 +625,7 @@ public sealed unsafe partial class D3D12Backend
             range.ReusableAfterGeneration = 0;
             range.Next = null;
             range.ActivationNext = null;
+            range.SlotTypes = null;
         }
 
         private void Activate(DescriptorRange? range)
@@ -644,15 +718,12 @@ public sealed unsafe partial class D3D12Backend
                  range is not null;
                  range = range.Next)
             {
-                ResourceBindingType nullType = range.Type == DescriptorTableType.Sampler
-                    ? ResourceBindingType.Sampler
-                    : ResourceBindingType.TextureSrv;
                 for (uint slot = 0; slot < range.Count; slot++)
                 {
                     ReplacePending(
                         range.Type,
                         checked(range.First + slot),
-                        DescriptorRecord.CreateNull(nullType));
+                        DescriptorRecord.CreateNull(range.GetSlotType(slot)));
                 }
             }
         }
@@ -715,6 +786,7 @@ public sealed unsafe partial class D3D12Backend
             range.ActivationQueued = false;
             range.ReusableAfterGeneration = 0;
             range.ActivationNext = null;
+            range.SlotTypes = null;
             ref DescriptorRange? head = ref range.Type == DescriptorTableType.Resource
                 ? ref _freeResources
                 : ref _freeSamplers;
@@ -1239,8 +1311,9 @@ public sealed unsafe partial class D3D12Backend
         internal D3D12DescriptorTable(
             D3D12Device device,
             DescriptorRange range,
+            ReadOnlySpan<ResourceBindingType> slotTypes,
             string? label)
-            : base(device, range.Type, range.Count, label)
+            : base(device, slotTypes, label)
         {
             _device = device;
             Range = range;
@@ -1339,7 +1412,8 @@ public sealed unsafe partial class D3D12Backend
                         _device,
                         _nextVersion,
                         bindings.Resources,
-                        bindings.OrdinaryData);
+                        bindings.OrdinaryData,
+                        Shape.UsesOrdinaryConstantBuffer);
                 D3D12ParameterMaterialization? previous = _pending;
                 _pending = candidate;
                 try

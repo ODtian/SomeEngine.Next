@@ -1,6 +1,8 @@
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using SlangShaderSharp;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using NativeRange = Silk.NET.Direct3D12.Range;
 using NativeResource = Silk.NET.Direct3D12.ID3D12Resource;
 
@@ -13,7 +15,7 @@ public sealed unsafe partial class D3D12Backend
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
         D3D12Pipeline native = NativeCast.Pipeline(pipeline);
-        if (ReferenceEquals(command.CurrentPipeline, native))
+        if (command.PipelineEqual(native))
             return;
         SetPipelineSlow(context, command, native);
     }
@@ -82,7 +84,7 @@ public sealed unsafe partial class D3D12Backend
         command.Recording.RecordPersistentBindingSetter();
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public void SetTransientParameterBindings(
         CommandContext context,
         in ParameterBlockBindings bindings)
@@ -90,24 +92,57 @@ public sealed unsafe partial class D3D12Backend
         D3D12CommandContext command = NativeCast.CommandContext(context);
         D3D12Pipeline pipeline = command.Pipeline;
         D3D12ParameterBlockLayout layout = command.ResolveParameterBlock(pipeline, bindings.Layout);
+        int ordinaryRootParameter = layout.OrdinaryConstantBuffer16RootParameter;
+        if (ordinaryRootParameter >= 0 &&
+            bindings.Resources.IsEmpty &&
+            bindings.OrdinaryData.Length == 16)
+        {
+            ref byte data = ref MemoryMarshal.GetReference(bindings.OrdinaryData);
+            command.SetTransientOrdinaryConstantBuffer16(
+                bindings.Layout,
+                checked((uint)ordinaryRootParameter),
+                ref data);
+            return;
+        }
+        SetTransientParameterBindingsGeneral(command, layout, bindings);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void SetTransientParameterBindingsGeneral(
+        D3D12CommandContext command,
+        D3D12ParameterBlockLayout layout,
+        in ParameterBlockBindings bindings)
+    {
         layout.Shape.RequireMaterializationShape(bindings.Resources, bindings.OrdinaryData);
+        if (command.ParameterBindingsEqual(
+                bindings.Layout,
+                bindings.Resources,
+                bindings.OrdinaryData,
+                out bool sameTransientShape))
+        {
+            return;
+        }
         if (layout.Shape.Leaves.Length == 0)
         {
             command.ApplyTransientOrdinaryData(layout, bindings.OrdinaryData);
+            command.RememberTransientBindings(bindings, sameTransientShape);
+            command.Recording.RecordTransientBindingSetter();
             return;
         }
-        SetTransientParameterBindingsSlow(command, layout, bindings);
+        SetTransientParameterBindingsSlow(command, layout, sameTransientShape, bindings);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static void SetTransientParameterBindingsSlow(
         D3D12CommandContext command,
         D3D12ParameterBlockLayout layout,
+        bool sameTransientShape,
         in ParameterBlockBindings bindings)
     {
         command.PrepareTransientBindingCaptures(bindings.Resources);
-        D3D12OrdinaryDataReservation ordinary =
-            command.ReserveTransientOrdinaryData(checked((ulong)bindings.OrdinaryData.Length));
+        D3D12OrdinaryDataReservation ordinary = layout.Shape.UsesOrdinaryConstantBuffer
+            ? command.ReserveTransientOrdinaryData(checked((ulong)bindings.OrdinaryData.Length))
+            : default;
 
         (uint resourceBase, uint samplerBase) = command.AllocateTransientDescriptorPair(
             layout.Shape.ResourceDescriptorCount,
@@ -133,12 +168,16 @@ public sealed unsafe partial class D3D12Backend
             }
         }
 
-        ordinary.Commit(bindings.OrdinaryData);
+        if (layout.Shape.UsesOrdinaryConstantBuffer)
+            ordinary.Commit(bindings.OrdinaryData);
         command.ApplyTransientBlock(
             layout,
             resourceBase,
             samplerBase,
+            bindings.OrdinaryData,
             ordinary.Address);
+        command.RememberTransientBindings(bindings, sameTransientShape);
+        command.Recording.RecordTransientBindingSetter();
     }
 
     private sealed class D3D12ParameterMaterialization
@@ -169,15 +208,36 @@ public sealed unsafe partial class D3D12Backend
         internal ulong OrdinaryAddress { get; }
         internal ulong PublishedGeneration { get; set; }
 
+        internal bool ContentEquals(D3D12ParameterMaterialization other)
+            => ContentEquals(other.Resources, other.OrdinaryData);
+
+        internal bool ContentEquals(
+            ReadOnlySpan<ResourceBinding> resources,
+            ReadOnlySpan<byte> ordinaryData)
+        {
+            if (!OrdinaryData.AsSpan().SequenceEqual(ordinaryData) ||
+                Resources.Length != resources.Length)
+            {
+                return false;
+            }
+            for (int index = 0; index < Resources.Length; index++)
+            {
+                if (Resources[index] != resources[index])
+                    return false;
+            }
+            return true;
+        }
+
         internal static D3D12ParameterMaterialization Create(
             D3D12Device device,
             ulong version,
             ReadOnlySpan<ResourceBinding> resources,
-            ReadOnlySpan<byte> ordinaryData)
+            ReadOnlySpan<byte> ordinaryData,
+            bool createOrdinaryBuffer)
         {
             NativeLease? lifetime = null;
             ulong address = 0;
-            if (!ordinaryData.IsEmpty)
+            if (createOrdinaryBuffer && !ordinaryData.IsEmpty)
             {
                 NativeResource* native = CreateOrdinaryDataResource(
                     device,
@@ -189,9 +249,7 @@ public sealed unsafe partial class D3D12Backend
                 CaptureSwapchainBindings(resources);
             return new D3D12ParameterMaterialization(
                 version,
-                device.RetirementType == RetirementType.Automatic
-                    ? resources.ToArray()
-                    : [],
+                resources.ToArray(),
                 swapchainImages,
                 ordinaryData.ToArray(),
                 lifetime,
@@ -376,6 +434,28 @@ public sealed unsafe partial class D3D12Backend
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryWrite16(ref byte data, out ulong address)
+        {
+            const ulong reservedSize = 256;
+            ulong offset = _used;
+            if (reservedSize > Capacity - offset)
+            {
+                address = 0;
+                return false;
+            }
+            byte* destination = _mapped + checked((nint)offset);
+            Unsafe.WriteUnaligned(
+                destination,
+                Unsafe.ReadUnaligned<ulong>(ref data));
+            Unsafe.WriteUnaligned(
+                destination + sizeof(ulong),
+                Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref data, sizeof(ulong))));
+            _used = offset + reservedSize;
+            address = checked(GpuAddress + offset);
+            return true;
+        }
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal void Commit(ulong offset, ulong reservedSize, ReadOnlySpan<byte> data)
         {
@@ -492,15 +572,38 @@ public sealed unsafe partial class D3D12Backend
         private bool[] _rootTableSet = [];
         private ulong[] _rootConstantBuffers = [];
         private bool[] _rootConstantBufferSet = [];
+        private byte[]?[] _rootConstants = [];
+        private bool[] _rootConstantsSet = [];
         private int _rootStateLength;
         private D3D12Pipeline? _pipeline;
         private VariableLayoutReflection _resolvedParameterLayout;
         private D3D12ParameterBlockLayout? _resolvedParameterBlock;
         private D3D12PersistentParameterBindings? _persistentBindings;
         private D3D12ParameterMaterialization? _persistentMaterialization;
+        private VariableLayoutReflection _transientBindingLayout;
+        private ResourceBinding[] _transientBindingResources = [];
+        private byte[] _transientBindingOrdinaryData = [];
+        private int _transientBindingResourceCount;
+        private int _transientBindingOrdinaryDataCount;
+        private bool _hasTransientBindings;
         private bool _computeRootBindings;
 
         internal D3D12Pipeline? CurrentPipeline => _pipeline;
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal bool PipelineEqual(D3D12Pipeline pipeline)
+        {
+            D3D12Pipeline? current = _pipeline;
+            return ReferenceEquals(current, pipeline) ||
+                current is not null && PipelineCompatibleSlow(current, pipeline);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool PipelineCompatibleSlow(
+            D3D12Pipeline current,
+            D3D12Pipeline candidate) =>
+            current.Type == candidate.Type &&
+            current.Signature == candidate.Signature;
 
         internal D3D12Pipeline Pipeline
         {
@@ -526,10 +629,12 @@ public sealed unsafe partial class D3D12Backend
         {
             Array.Clear(_rootTableSet, 0, _rootStateLength);
             Array.Clear(_rootConstantBufferSet, 0, _rootStateLength);
+            Array.Clear(_rootConstantsSet, 0, _rootStateLength);
             _rootStateLength = 0;
             _resolvedParameterBlock = null;
             _persistentBindings = null;
             _persistentMaterialization = null;
+            _hasTransientBindings = false;
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -539,6 +644,14 @@ public sealed unsafe partial class D3D12Backend
         {
             if (_resolvedParameterBlock is not null && _resolvedParameterLayout == layout)
                 return _resolvedParameterBlock;
+            return ResolveParameterBlockSlow(pipeline, layout);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private D3D12ParameterBlockLayout ResolveParameterBlockSlow(
+            D3D12Pipeline pipeline,
+            VariableLayoutReflection layout)
+        {
             D3D12ParameterBlockLayout block = pipeline.RootLayout.GetBlock(layout);
             _resolvedParameterLayout = layout;
             _resolvedParameterBlock = block;
@@ -548,10 +661,107 @@ public sealed unsafe partial class D3D12Backend
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal bool PersistentBindingsEqual(
             D3D12PersistentParameterBindings bindings,
-            D3D12ParameterMaterialization? materialization) =>
-            materialization is not null &&
-            ReferenceEquals(_persistentBindings, bindings) &&
-            ReferenceEquals(_persistentMaterialization, materialization);
+            D3D12ParameterMaterialization? materialization)
+        {
+            if (materialization is null)
+                return false;
+            if (ReferenceEquals(_persistentMaterialization, materialization))
+                return true;
+            return PersistentBindingsEqualSlow(bindings, materialization);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool PersistentBindingsEqualSlow(
+            D3D12PersistentParameterBindings bindings,
+            D3D12ParameterMaterialization materialization)
+        {
+            if (_persistentBindings is D3D12PersistentParameterBindings currentBindings &&
+                _persistentMaterialization is D3D12ParameterMaterialization currentMaterialization)
+            {
+                return currentBindings.Layout == bindings.Layout &&
+                    (ReferenceEquals(currentMaterialization, materialization) ||
+                     currentMaterialization.ContentEquals(materialization));
+            }
+            return _hasTransientBindings &&
+                _transientBindingLayout == bindings.Layout &&
+                materialization.ContentEquals(
+                    _transientBindingResources.AsSpan(0, _transientBindingResourceCount),
+                    _transientBindingOrdinaryData.AsSpan(
+                        0,
+                        _transientBindingOrdinaryDataCount));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool ParameterBindingsEqual(
+            VariableLayoutReflection layout,
+            ReadOnlySpan<ResourceBinding> resources,
+            ReadOnlySpan<byte> ordinaryData,
+            out bool sameTransientShape)
+        {
+            if (_hasTransientBindings)
+            {
+                if (_transientBindingLayout != layout ||
+                    _transientBindingResourceCount != resources.Length ||
+                    _transientBindingOrdinaryDataCount != ordinaryData.Length)
+                {
+                    sameTransientShape = false;
+                    return false;
+                }
+                sameTransientShape = true;
+                if (!resources.IsEmpty && !TransientResourcesEqualSlow(resources))
+                    return false;
+                return TransientOrdinaryDataEqual(ordinaryData);
+            }
+            sameTransientShape = false;
+            return PersistentBindingContentEqualSlow(layout, resources, ordinaryData);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool PersistentBindingContentEqualSlow(
+            VariableLayoutReflection layout,
+            ReadOnlySpan<ResourceBinding> resources,
+            ReadOnlySpan<byte> ordinaryData)
+        {
+            if (_persistentBindings is D3D12PersistentParameterBindings persistent &&
+                _persistentMaterialization is D3D12ParameterMaterialization materialization)
+            {
+                return persistent.Layout == layout &&
+                    materialization.ContentEquals(resources, ordinaryData);
+            }
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool TransientResourcesEqualSlow(ReadOnlySpan<ResourceBinding> resources)
+        {
+            for (int index = 0; index < resources.Length; index++)
+            {
+                if (_transientBindingResources[index] != resources[index])
+                    return false;
+            }
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TransientOrdinaryDataEqual(ReadOnlySpan<byte> ordinaryData)
+        {
+            if (ordinaryData.Length == 16)
+            {
+                ref byte candidate = ref MemoryMarshal.GetReference(ordinaryData);
+                ref byte current = ref MemoryMarshal.GetArrayDataReference(
+                    _transientBindingOrdinaryData);
+                return Unsafe.ReadUnaligned<ulong>(ref candidate) ==
+                       Unsafe.ReadUnaligned<ulong>(ref current) &&
+                       Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref candidate, 8)) ==
+                       Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref current, 8));
+            }
+            return TransientOrdinaryDataEqualSlow(ordinaryData);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool TransientOrdinaryDataEqualSlow(ReadOnlySpan<byte> ordinaryData) =>
+            ordinaryData.SequenceEqual(
+                _transientBindingOrdinaryData.AsSpan(0, _transientBindingOrdinaryDataCount));
 
         internal void RememberPersistentBindings(
             D3D12PersistentParameterBindings bindings,
@@ -559,6 +769,65 @@ public sealed unsafe partial class D3D12Backend
         {
             _persistentBindings = bindings;
             _persistentMaterialization = materialization;
+            _hasTransientBindings = false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void RememberTransientBindings(
+            in ParameterBlockBindings bindings,
+            bool sameTransientShape)
+        {
+            if (!sameTransientShape &&
+                (_transientBindingResources.Length < bindings.Resources.Length ||
+                 _transientBindingOrdinaryData.Length < bindings.OrdinaryData.Length))
+            {
+                EnsureTransientBindingCapacity(
+                    bindings.Resources.Length,
+                    bindings.OrdinaryData.Length);
+            }
+            if (!bindings.Resources.IsEmpty)
+                CopyTransientResourcesSlow(bindings.Resources);
+            if (bindings.OrdinaryData.Length == 16)
+            {
+                ref byte source = ref MemoryMarshal.GetReference(bindings.OrdinaryData);
+                ref byte destination = ref MemoryMarshal.GetArrayDataReference(
+                    _transientBindingOrdinaryData);
+                Unsafe.WriteUnaligned(
+                    ref destination,
+                    Unsafe.ReadUnaligned<ulong>(ref source));
+                Unsafe.WriteUnaligned(
+                    ref Unsafe.Add(ref destination, 8),
+                    Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref source, 8)));
+            }
+            else if (!bindings.OrdinaryData.IsEmpty)
+            {
+                CopyTransientOrdinaryDataSlow(bindings.OrdinaryData);
+            }
+            if (sameTransientShape)
+                return;
+            _transientBindingLayout = bindings.Layout;
+            _transientBindingResourceCount = bindings.Resources.Length;
+            _transientBindingOrdinaryDataCount = bindings.OrdinaryData.Length;
+            _hasTransientBindings = true;
+            _persistentBindings = null;
+            _persistentMaterialization = null;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void CopyTransientResourcesSlow(ReadOnlySpan<ResourceBinding> resources) =>
+            resources.CopyTo(_transientBindingResources);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void CopyTransientOrdinaryDataSlow(ReadOnlySpan<byte> ordinaryData) =>
+            ordinaryData.CopyTo(_transientBindingOrdinaryData);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void EnsureTransientBindingCapacity(int resourceCount, int ordinaryDataCount)
+        {
+            if (_transientBindingResources.Length < resourceCount)
+                Array.Resize(ref _transientBindingResources, resourceCount);
+            if (_transientBindingOrdinaryData.Length < ordinaryDataCount)
+                Array.Resize(ref _transientBindingOrdinaryData, ordinaryDataCount);
         }
 
         internal void ReapplyRootTables()
@@ -606,6 +875,47 @@ public sealed unsafe partial class D3D12Backend
             _rootConstantBufferSet[slot] = true;
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal void SetRootConstants(
+            uint rootParameter,
+            uint constantCount,
+            ReadOnlySpan<byte> data)
+        {
+            if (constantCount == 0 || data.IsEmpty ||
+                data.Length > checked((int)(constantCount * sizeof(uint))))
+            {
+                throw new ArgumentException(
+                    "Root-constant data must fit the non-empty reflected DWORD range.",
+                    nameof(data));
+            }
+
+            int slot = EnsureRootStateCapacity(rootParameter);
+            int nativeSize = checked((int)(constantCount * sizeof(uint)));
+            byte[] values = _rootConstants[slot] is byte[] existing &&
+                existing.Length == nativeSize
+                    ? existing
+                    : new byte[nativeSize];
+            bool equal = _rootConstantsSet[slot] &&
+                data.SequenceEqual(values.AsSpan(0, data.Length)) &&
+                values.AsSpan(data.Length).IndexOfAnyExcept((byte)0) < 0;
+            if (equal)
+                return;
+
+            data.CopyTo(values);
+            values.AsSpan(data.Length).Clear();
+            fixed (byte* pointer = values)
+            {
+                D3D12CommandListFastCalls.SetRoot32BitConstants(
+                    List,
+                    _computeRootBindings,
+                    rootParameter,
+                    constantCount,
+                    pointer);
+            }
+            _rootConstants[slot] = values;
+            _rootConstantsSet[slot] = true;
+        }
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private int EnsureRootStateCapacity(uint rootParameter)
         {
@@ -619,6 +929,8 @@ public sealed unsafe partial class D3D12Backend
                 Array.Resize(ref _rootTableSet, capacity);
                 Array.Resize(ref _rootConstantBuffers, capacity);
                 Array.Resize(ref _rootConstantBufferSet, capacity);
+                Array.Resize(ref _rootConstants, capacity);
+                Array.Resize(ref _rootConstantsSet, capacity);
             }
             if (_rootStateLength < required)
                 _rootStateLength = required;
@@ -642,18 +954,31 @@ public sealed unsafe partial class D3D12Backend
                     leaf.Heap,
                     checked(first + leaf.HeapOffset));
             }
-            if (layout.OrdinaryRootParameter is uint ordinary)
-                SetRootConstantBuffer(ordinary, materialization.OrdinaryAddress);
+            if (layout.OrdinaryRoot is OrdinaryRootBinding ordinary)
+            {
+                if (ordinary.UsesRootConstants)
+                {
+                    SetRootConstants(
+                        ordinary.RootParameterIndex,
+                        ordinary.ConstantCount,
+                        materialization.OrdinaryData);
+                }
+                else
+                {
+                    SetRootConstantBuffer(
+                        ordinary.RootParameterIndex,
+                        materialization.OrdinaryAddress);
+                }
+            }
         }
 
         internal void ApplyTransientBlock(
             D3D12ParameterBlockLayout layout,
             uint resourceBase,
             uint samplerBase,
+            ReadOnlySpan<byte> ordinaryData,
             ulong ordinaryAddress)
         {
-            _persistentBindings = null;
-            _persistentMaterialization = null;
             foreach (BlockLeafBinding leaf in layout.Leaves)
             {
                 if (leaf.Unbounded)
@@ -666,8 +991,20 @@ public sealed unsafe partial class D3D12Backend
                     leaf.Heap,
                     checked(first + leaf.HeapOffset));
             }
-            if (layout.OrdinaryRootParameter is uint ordinary)
-                SetRootConstantBuffer(ordinary, ordinaryAddress);
+            if (layout.OrdinaryRoot is OrdinaryRootBinding ordinary)
+            {
+                if (ordinary.UsesRootConstants)
+                {
+                    SetRootConstants(
+                        ordinary.RootParameterIndex,
+                        ordinary.ConstantCount,
+                        ordinaryData);
+                }
+                else
+                {
+                    SetRootConstantBuffer(ordinary.RootParameterIndex, ordinaryAddress);
+                }
+            }
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -675,15 +1012,104 @@ public sealed unsafe partial class D3D12Backend
             D3D12ParameterBlockLayout layout,
             ReadOnlySpan<byte> ordinaryData)
         {
-            ulong ordinaryAddress = Recording.WriteOrdinaryData(ordinaryData);
-            if (_persistentBindings is not null)
+            if (layout.OrdinaryRoot is not OrdinaryRootBinding ordinary)
+                return;
+            if (ordinary.UsesRootConstants)
             {
+                SetRootConstants(
+                    ordinary.RootParameterIndex,
+                    ordinary.ConstantCount,
+                    ordinaryData);
+                return;
+            }
+
+            ulong ordinaryAddress;
+            if (ordinaryData.Length == 16)
+            {
+                ref byte source = ref MemoryMarshal.GetReference(ordinaryData);
+                ordinaryAddress = Recording.WriteOrdinaryData16(ref source);
+            }
+            else
+            {
+                ordinaryAddress = WriteTransientOrdinaryDataSlow(ordinaryData);
+            }
+            SetTransientRootConstantBuffer(ordinary.RootParameterIndex, ordinaryAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetTransientOrdinaryConstantBuffer16(
+            VariableLayoutReflection layout,
+            uint rootParameter,
+            ref byte data)
+        {
+            bool sameTransientShape =
+                _hasTransientBindings &&
+                _transientBindingLayout == layout &&
+                _transientBindingResourceCount == 0 &&
+                _transientBindingOrdinaryDataCount == 16;
+            if (sameTransientShape)
+            {
+                ref byte current = ref MemoryMarshal.GetArrayDataReference(
+                    _transientBindingOrdinaryData);
+                if (Unsafe.ReadUnaligned<ulong>(ref data) ==
+                        Unsafe.ReadUnaligned<ulong>(ref current) &&
+                    Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref data, 8)) ==
+                        Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref current, 8)))
+                {
+                    return;
+                }
+            }
+            else if (PrepareTransientOrdinaryConstantBuffer16Slow(layout, ref data))
+            {
+                return;
+            }
+
+            ulong address = Recording.WriteOrdinaryData16(ref data);
+            SetTransientRootConstantBuffer(rootParameter, address);
+
+            ref byte destination = ref MemoryMarshal.GetArrayDataReference(
+                _transientBindingOrdinaryData);
+            Unsafe.WriteUnaligned(
+                ref destination,
+                Unsafe.ReadUnaligned<ulong>(ref data));
+            Unsafe.WriteUnaligned(
+                ref Unsafe.Add(ref destination, 8),
+                Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref data, 8)));
+            if (!sameTransientShape)
+            {
+                _transientBindingLayout = layout;
+                _transientBindingResourceCount = 0;
+                _transientBindingOrdinaryDataCount = 16;
+                _hasTransientBindings = true;
                 _persistentBindings = null;
                 _persistentMaterialization = null;
             }
-            if (layout.OrdinaryRootParameter is uint ordinary)
-                SetTransientRootConstantBuffer(ordinary, ordinaryAddress);
+            Recording.RecordTransientBindingSetter();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool PrepareTransientOrdinaryConstantBuffer16Slow(
+            VariableLayoutReflection layout,
+            ref byte data)
+        {
+            if (!_hasTransientBindings &&
+                _persistentBindings is D3D12PersistentParameterBindings persistent &&
+                _persistentMaterialization is D3D12ParameterMaterialization materialization &&
+                persistent.Layout == layout &&
+                materialization.ContentEquals(
+                    ReadOnlySpan<ResourceBinding>.Empty,
+                    MemoryMarshal.CreateReadOnlySpan(ref data, 16)))
+            {
+                return true;
+            }
+            if (_transientBindingOrdinaryData.Length < 16)
+                Array.Resize(ref _transientBindingOrdinaryData, 16);
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private ulong WriteTransientOrdinaryDataSlow(ReadOnlySpan<byte> ordinaryData) =>
+            Recording.WriteOrdinaryData(ordinaryData);
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private void SetTransientRootConstantBuffer(uint rootParameter, ulong address)
@@ -691,7 +1117,7 @@ public sealed unsafe partial class D3D12Backend
             int slot = checked((int)rootParameter);
             if ((uint)slot >= (uint)_rootConstantBuffers.Length)
             {
-                SetRootConstantBuffer(rootParameter, address);
+                SetTransientRootConstantBufferSlow(rootParameter, address);
                 return;
             }
             D3D12CommandListFastCalls.SetRootConstantBufferView(
@@ -704,6 +1130,10 @@ public sealed unsafe partial class D3D12Backend
             if (_rootStateLength <= slot)
                 _rootStateLength = checked(slot + 1);
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void SetTransientRootConstantBufferSlow(uint rootParameter, ulong address) =>
+            SetRootConstantBuffer(rootParameter, address);
 
         internal uint AllocateTransientDescriptors(ParameterHeap heap, uint count) =>
             Recording.AllocateDescriptors(heap, count);
@@ -842,6 +1272,22 @@ public sealed unsafe partial class D3D12Backend
             if (current is not null && current.TryWrite(data, alignedSize, out ulong address))
                 return address;
             return WriteOrdinaryDataSlow(data, alignedSize);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ulong WriteOrdinaryData16(ref byte data)
+        {
+            D3D12OrdinaryDataChunk? current = _ordinaryDataCurrent;
+            if (current is not null && current.TryWrite16(ref data, out ulong address))
+                return address;
+            return WriteOrdinaryData16Slow(ref data);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private ulong WriteOrdinaryData16Slow(ref byte data)
+        {
+            ReadOnlySpan<byte> source = MemoryMarshal.CreateReadOnlySpan(ref data, 16);
+            return WriteOrdinaryDataSlow(source, 256);
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]

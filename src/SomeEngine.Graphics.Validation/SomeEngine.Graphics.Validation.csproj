@@ -3,9 +3,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
     <Description>Optional validation layer for the backend-neutral graphics receiver.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
+    <ProjectReference Include="../SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Direct3D12" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.DXGI" Version="2.23.0" />
   </ItemGroup>
 </Project>

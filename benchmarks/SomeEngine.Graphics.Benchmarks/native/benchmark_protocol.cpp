@@ -20,7 +20,7 @@ namespace
 [[noreturn]] void usage(const std::string& message)
 {
     throw std::invalid_argument(message +
-        " Usage: native-runner --profile <warp|certify> --variant native-cpp "
+        " Usage: native-runner --profile <warp|diagnose|certify> --variant native-cpp "
         "--adapter <low>:<high> --process-index <n> --warmup <n> --samples <n> "
         "--draws <n> --barriers <n> --shader-dir <path> --output <path>");
 }
@@ -47,6 +47,14 @@ int parse_positive(const std::wstring& value)
     const auto result = parse_u64(value);
     if (result == 0 || result > static_cast<std::uint64_t>(INT_MAX))
         usage("A count must be a positive Int32.");
+    return static_cast<int>(result);
+}
+
+int parse_non_negative(const std::wstring& value)
+{
+    const auto result = parse_u64(value);
+    if (result > static_cast<std::uint64_t>(INT_MAX))
+        usage("A count must be a non-negative Int32.");
     return static_cast<int>(result);
 }
 
@@ -179,10 +187,12 @@ configuration parse_arguments(int argc, wchar_t** argv)
     const std::wstring profile_value = require(L"--profile");
     if (profile_value == L"warp")
         result.selected_profile = profile::warp;
+    else if (profile_value == L"diagnose")
+        result.selected_profile = profile::diagnostic;
     else if (profile_value == L"certify")
         result.selected_profile = profile::certification;
     else
-        usage("--profile must be warp or certify.");
+        usage("--profile must be warp, diagnose, or certify.");
     if (require(L"--variant") != L"native-cpp")
         usage("This executable only implements --variant native-cpp.");
     const std::wstring adapter = require(L"--adapter");
@@ -195,7 +205,9 @@ configuration parse_arguments(int argc, wchar_t** argv)
     result.warmup_frames = parse_positive(require(L"--warmup"));
     result.measured_frames = parse_positive(require(L"--samples"));
     result.draw_count = parse_positive(require(L"--draws"));
-    result.barrier_count = parse_positive(require(L"--barriers"));
+    result.barrier_count = result.selected_profile == profile::diagnostic
+        ? parse_non_negative(require(L"--barriers"))
+        : parse_positive(require(L"--barriers"));
     result.shader_directory = std::filesystem::absolute(require(L"--shader-dir"));
     result.output_path = std::filesystem::absolute(require(L"--output"));
     return result;
@@ -341,9 +353,18 @@ workload_run complete_workload(
     result.result = config.selected_profile == profile::certification
         ? disposition::passed
         : disposition::functional_only;
-    result.reason = config.selected_profile == profile::certification
-        ? "Fixed vendor workload executed."
-        : "Reduced-count WARP functional workload executed; not performance evidence.";
+    switch (config.selected_profile)
+    {
+    case profile::warp:
+        result.reason = "Reduced-count WARP functional workload executed; not performance evidence.";
+        break;
+    case profile::diagnostic:
+        result.reason = "Fast hardware diagnostic workload executed; never vendor-certification evidence.";
+        break;
+    case profile::certification:
+        result.reason = "Fixed vendor workload executed.";
+        break;
+    }
     result.warmup_frames = config.warmup_frames;
     result.measured_frames = config.measured_frames;
     result.draw_count = draw_count;

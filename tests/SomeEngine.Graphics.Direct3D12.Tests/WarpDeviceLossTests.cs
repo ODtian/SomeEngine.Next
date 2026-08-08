@@ -39,7 +39,7 @@ public sealed class WarpDeviceLossTests
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         using CommandContext submittedContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(submittedContext, default);
         using RecordedCommands submitted = backend.End(submittedContext);
         QueueCompletion submittedCompletion = backend.Submit(
@@ -49,14 +49,14 @@ public sealed class WarpDeviceLossTests
 
         using CommandContext executableContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(executableContext, default);
         using RecordedCommands executable = backend.End(executableContext);
         Assert.Equal(RecordedCommandsStatus.Executable, executable.Status);
 
         using CommandContext recordingContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(recordingContext, default);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         Assert.NotNull(diagnostics);

@@ -23,15 +23,26 @@ internal static class BenchmarkGate
         ProtocolSnapshot protocol,
         ReadOnlySpan<ProcessRun> runs)
     {
+        var evidence = new ProcessGateEvidence[runs.Length];
+        for (int index = 0; index < runs.Length; index++)
+            evidence[index] = ProcessGateEvidence.Create(runs[index]);
+        return Evaluate(profile, protocol, evidence);
+    }
+
+    internal static GateResult Evaluate(
+        BenchmarkProfile profile,
+        ProtocolSnapshot protocol,
+        ReadOnlySpan<ProcessGateEvidence> runs)
+    {
         var issues = new List<GateIssue>();
         var comparisons = new List<ComparisonResult>();
 
         ValidateRunInventory(profile, protocol, runs, issues);
         ValidateEnvironmentCohort(profile, runs, issues);
-        foreach (ProcessRun run in runs)
+        foreach (ProcessGateEvidence run in runs)
             ValidateRun(profile, protocol, run, issues);
 
-        foreach (GraphicsWorkload workload in FixedGraphicsProtocol.Workloads)
+        foreach (GraphicsWorkload workload in FixedGraphicsProtocol.GetWorkloads(profile))
         {
             WorkloadAggregate? generic = Aggregate(runs, ReceiverVariant.GenericRhi, workload, issues);
             WorkloadAggregate? throughInterface = Aggregate(runs, ReceiverVariant.InterfaceRhi, workload, issues);
@@ -103,6 +114,10 @@ internal static class BenchmarkGate
             }
         }
 
+        DiagnosticBiasResult[] diagnostics = profile == BenchmarkProfile.FastDiagnostic
+            ? AnalyzeDiagnosticBias(runs)
+            : [];
+
         if (profile == BenchmarkProfile.WarpFunctional)
         {
             return new GateResult(
@@ -111,7 +126,24 @@ internal static class BenchmarkGate
                     ? "All four receivers are functionally equivalent on WARP; WARP is not vendor performance evidence."
                     : "WARP functional equivalence failed.",
                 [.. issues],
-                [.. comparisons]);
+                [.. comparisons],
+                diagnostics);
+        }
+
+        if (profile == BenchmarkProfile.FastDiagnostic)
+        {
+            bool validDiagnostic = issues.Count == 0;
+            issues.Add(new GateIssue(
+                "RHI-EVID-DIAGNOSTIC-NONCERTIFICATION",
+                "This draw-only 512/1024-frame diagnostic can reveal ordering or frequency bias, but can never satisfy RHI-EVID-003 vendor certification."));
+            return new GateResult(
+                validDiagnostic ? RunDisposition.FunctionalOnly : RunDisposition.Failed,
+                validDiagnostic
+                    ? "The fast hardware diagnostic completed; it is explicitly not vendor-certification evidence."
+                    : "The fast hardware diagnostic failed and is not vendor-certification evidence.",
+                [.. issues],
+                [.. comparisons],
+                diagnostics);
         }
 
         return new GateResult(
@@ -120,23 +152,22 @@ internal static class BenchmarkGate
                 ? "The fixed vendor-hardware performance protocol passed."
                 : "The fixed vendor-hardware performance protocol did not pass.",
             [.. issues],
-            [.. comparisons]);
+            [.. comparisons],
+            diagnostics);
     }
 
     private static void ValidateRunInventory(
         BenchmarkProfile profile,
         ProtocolSnapshot protocol,
-        ReadOnlySpan<ProcessRun> runs,
+        ReadOnlySpan<ProcessGateEvidence> runs,
         List<GateIssue> issues)
     {
-        int expectedProcesses = profile == BenchmarkProfile.VendorCertification
-            ? FixedGraphicsProtocol.ProcessCount
-            : 1;
+        int expectedProcesses = FixedGraphicsProtocol.GetProcessCount(profile);
         foreach (ReceiverVariant variant in FixedGraphicsProtocol.Variants)
         {
             int count = 0;
             var processIndices = new HashSet<int>();
-            foreach (ProcessRun run in runs)
+            foreach (ProcessGateEvidence run in runs)
             {
                 if (run.Variant == variant)
                 {
@@ -162,12 +193,33 @@ internal static class BenchmarkGate
             }
         }
 
+        foreach (ProcessGateEvidence run in runs)
+        {
+            int processIndex = run.Environment.ProcessIndex;
+            if ((uint)processIndex >= (uint)expectedProcesses ||
+                (uint)run.Position >= (uint)FixedGraphicsProtocol.Variants.Length ||
+                FixedGraphicsProtocol.GetInterleavedRound(processIndex)[run.Position] != run.Variant)
+            {
+                issues.Add(new GateIssue(
+                    "RHI-EVID-PROCESS-POSITION",
+                    $"{run.Variant} process {processIndex} does not occupy its recorded interleaved position.",
+                    run.Variant));
+            }
+        }
+
         if (protocol.ProcessCount != expectedProcesses ||
             !HasExactInterleavedSchedule(protocol.InterleavedRounds, expectedProcesses))
         {
             issues.Add(new GateIssue(
                 "RHI-EVID-PROTOCOL-ORDER",
                 "The report does not record the fixed deterministic interleaved process schedule."));
+        }
+
+        if (!HasExactWorkloadInventory(protocol.Workloads, FixedGraphicsProtocol.GetWorkloads(profile)))
+        {
+            issues.Add(new GateIssue(
+                "RHI-EVID-PROTOCOL-WORKLOADS",
+                "The report protocol does not record the exact workload inventory for its profile."));
         }
 
         if (profile == BenchmarkProfile.VendorCertification &&
@@ -181,21 +233,32 @@ internal static class BenchmarkGate
                 "RHI-EVID-PROTOCOL-SHAPE",
                 "The report does not use the fixed certification counts."));
         }
+        if (profile == BenchmarkProfile.FastDiagnostic &&
+            (protocol.WarmupFrames != FixedGraphicsProtocol.DiagnosticWarmupFrames ||
+             protocol.MeasuredFrames != FixedGraphicsProtocol.DiagnosticMeasuredFrames ||
+             protocol.ProcessCount != FixedGraphicsProtocol.DiagnosticProcessCount ||
+             protocol.DrawCount != FixedGraphicsProtocol.DiagnosticDrawCount ||
+             protocol.BarrierCount != FixedGraphicsProtocol.DiagnosticBarrierCount))
+        {
+            issues.Add(new GateIssue(
+                "RHI-EVID-DIAGNOSTIC-SHAPE",
+                "The report does not use the fixed non-certification diagnostic counts."));
+        }
     }
 
     private static void ValidateEnvironmentCohort(
         BenchmarkProfile profile,
-        ReadOnlySpan<ProcessRun> runs,
+        ReadOnlySpan<ProcessGateEvidence> runs,
         List<GateIssue> issues)
     {
-        ProcessRun[] executed = runs.ToArray()
+        ProcessGateEvidence[] executed = runs.ToArray()
             .Where(static run => run.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly)
             .ToArray();
         if (executed.Length == 0)
             return;
 
         RuntimeEnvironment reference = executed[0].Environment;
-        foreach (ProcessRun run in executed)
+        foreach (ProcessGateEvidence run in executed)
         {
             RuntimeEnvironment environment = run.Environment;
             if (IsUnavailable(environment.OperatingSystem) ||
@@ -272,19 +335,33 @@ internal static class BenchmarkGate
         return true;
     }
 
+    private static bool HasExactWorkloadInventory(
+        ReadOnlySpan<string> recorded,
+        ReadOnlySpan<GraphicsWorkload> expected)
+    {
+        if (recorded.Length != expected.Length)
+            return false;
+        for (int index = 0; index < expected.Length; index++)
+        {
+            if (!string.Equals(recorded[index], expected[index].ToString(), StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
     private static void ValidateVariantBuild(
-        ProcessRun[] runs,
+        ProcessGateEvidence[] runs,
         ReceiverVariant variant,
         List<GateIssue> issues)
     {
-        ProcessRun[] family = runs
+        ProcessGateEvidence[] family = runs
             .Where(run => run.Variant == variant)
             .ToArray();
         if (family.Length == 0)
             return;
 
         BuildIdentity reference = family[0].Environment.Build;
-        foreach (ProcessRun run in family)
+        foreach (ProcessGateEvidence run in family)
         {
             BuildIdentity build = run.Environment.Build;
             if (!string.Equals(reference.ExecutableSha256, build.ExecutableSha256, StringComparison.Ordinal) ||
@@ -303,16 +380,18 @@ internal static class BenchmarkGate
         }
     }
 
-    private static void ValidateManagedExecutable(ProcessRun[] runs, List<GateIssue> issues)
+    private static void ValidateManagedExecutable(
+        ProcessGateEvidence[] runs,
+        List<GateIssue> issues)
     {
-        ProcessRun[] managed = runs
+        ProcessGateEvidence[] managed = runs
             .Where(static run => run.Variant != ReceiverVariant.NativeCpp)
             .ToArray();
         if (managed.Length == 0)
             return;
 
         BuildIdentity reference = managed[0].Environment.Build;
-        foreach (ProcessRun run in managed)
+        foreach (ProcessGateEvidence run in managed)
         {
             BuildIdentity build = run.Environment.Build;
             if (!string.Equals(reference.ExecutableSha256, build.ExecutableSha256, StringComparison.Ordinal) ||
@@ -361,7 +440,7 @@ internal static class BenchmarkGate
     private static void ValidateRun(
         BenchmarkProfile profile,
         ProtocolSnapshot protocol,
-        ProcessRun run,
+        ProcessGateEvidence run,
         List<GateIssue> issues)
     {
         if (run.Disposition is RunDisposition.Unexecuted or RunDisposition.Failed)
@@ -371,6 +450,13 @@ internal static class BenchmarkGate
                 $"{run.Variant} process {run.Environment.ProcessIndex}: {run.Reason}",
                 run.Variant));
             return;
+        }
+        if (profile == BenchmarkProfile.FastDiagnostic && !run.Environment.HardwareAccelerated)
+        {
+            issues.Add(new GateIssue(
+                "RHI-EVID-DIAGNOSTIC-HARDWARE",
+                "The ordering/frequency diagnostic requires the explicitly selected hardware adapter.",
+                run.Variant));
         }
         if (profile == BenchmarkProfile.VendorCertification)
         {
@@ -397,25 +483,31 @@ internal static class BenchmarkGate
             }
         }
 
-        if (run.Workloads.Length != FixedGraphicsProtocol.Workloads.Length)
+        GraphicsWorkload[] expectedWorkloads = FixedGraphicsProtocol.GetWorkloads(profile).ToArray();
+        if (run.Workloads.Length != expectedWorkloads.Length ||
+            run.Workloads.Select(static value => value.Workload).Distinct().Count() != run.Workloads.Length ||
+            run.Workloads.Any(value => !expectedWorkloads.Contains(value.Workload)))
         {
             issues.Add(new GateIssue(
                 "RHI-EVID-WORKLOAD-INVENTORY",
-                $"{run.Variant} did not report all fixed workloads.",
+                $"{run.Variant} did not report exactly the workloads selected by the report profile.",
                 run.Variant));
         }
-        foreach (GraphicsWorkload workload in FixedGraphicsProtocol.Workloads)
+        foreach (GraphicsWorkload workload in expectedWorkloads)
         {
-            WorkloadRun? result = run.Workloads.SingleOrDefault(value => value.Workload == workload);
-            if (result is null)
+            WorkloadGateEvidence[] matches = run.Workloads
+                .Where(value => value.Workload == workload)
+                .ToArray();
+            if (matches.Length != 1)
             {
                 issues.Add(new GateIssue(
                     "RHI-EVID-WORKLOAD-MISSING",
-                    $"{run.Variant} omitted {workload}.",
+                    $"{run.Variant} reported {matches.Length} result(s) for {workload}; exactly one is required.",
                     run.Variant,
                     workload));
                 continue;
             }
+            WorkloadGateEvidence result = matches[0];
             if (result.Disposition is RunDisposition.Unexecuted or RunDisposition.Failed)
             {
                 issues.Add(new GateIssue(
@@ -427,7 +519,7 @@ internal static class BenchmarkGate
             }
             if (result.WarmupFrames != protocol.WarmupFrames ||
                 result.MeasuredFrames != protocol.MeasuredFrames ||
-                result.Samples.Length != protocol.MeasuredFrames)
+                result.SampleCount != protocol.MeasuredFrames)
             {
                 issues.Add(new GateIssue(
                     "RHI-EVID-SAMPLE-COUNT",
@@ -435,21 +527,29 @@ internal static class BenchmarkGate
                     run.Variant,
                     workload));
             }
-            foreach (FrameSample sample in result.Samples)
+            if (workload is GraphicsWorkload.PersistentDraw10000 or
+                GraphicsWorkload.TransientDraw10000 or
+                GraphicsWorkload.StateSuppression10000 &&
+                result.DrawCount != protocol.DrawCount)
             {
-                if (sample.ManagedAllocatedBytes != 0 || sample.EtwAllocationEvents != 0)
-                {
-                    issues.Add(new GateIssue(
-                        "RHI-EVID-ALLOCATION",
-                        $"{run.Variant}/{workload} frame {sample.FrameIndex} allocated " +
-                        $"{sample.ManagedAllocatedBytes} B and observed {sample.EtwAllocationEvents} allocation event(s).",
-                        run.Variant,
-                        workload));
-                    break;
-                }
+                issues.Add(new GateIssue(
+                    "RHI-EVID-DRAW-COUNT",
+                    $"{run.Variant}/{workload} recorded {result.DrawCount} draws; {protocol.DrawCount} are required.",
+                    run.Variant,
+                    workload));
+            }
+            if (result.FirstAllocationFrame is int allocationFrame)
+            {
+                issues.Add(new GateIssue(
+                    "RHI-EVID-ALLOCATION",
+                    $"{run.Variant}/{workload} frame {allocationFrame} allocated " +
+                    $"{result.FirstManagedAllocatedBytes} B and observed " +
+                    $"{result.FirstEtwAllocationEvents} allocation event(s).",
+                    run.Variant,
+                    workload));
             }
             if (workload != GraphicsWorkload.EmptySubmit &&
-                result.Samples.Any(static sample => sample.GpuMicroseconds is null))
+                result.MissingGpuSample)
             {
                 issues.Add(new GateIssue(
                     "RHI-EVID-GPU-SAMPLES",
@@ -494,13 +594,152 @@ internal static class BenchmarkGate
         return true;
     }
 
+    private static DiagnosticBiasResult[] AnalyzeDiagnosticBias(
+        ReadOnlySpan<ProcessGateEvidence> runs)
+    {
+        ProcessGateEvidence[] runArray = runs.ToArray();
+        var results = new List<DiagnosticBiasResult>(
+            FixedGraphicsProtocol.DiagnosticWorkloads.Length * 2);
+        foreach (GraphicsWorkload workload in FixedGraphicsProtocol.DiagnosticWorkloads)
+        {
+            AddMetric(workload, "CPU", gpu: false);
+            AddMetric(workload, "GPU", gpu: true);
+        }
+        return [.. results];
+
+        void AddMetric(GraphicsWorkload workload, string metric, bool gpu)
+        {
+            var cells = new List<DiagnosticCell>(
+                FixedGraphicsProtocol.DiagnosticProcessCount *
+                FixedGraphicsProtocol.Variants.Length);
+            foreach (ProcessGateEvidence run in runArray)
+            {
+                if (run.Disposition is not (RunDisposition.Passed or RunDisposition.FunctionalOnly))
+                    continue;
+                WorkloadGateEvidence? evidence = run.Workloads.FirstOrDefault(
+                    value => value.Workload == workload &&
+                        value.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly);
+                if (evidence is null)
+                    continue;
+                double[] samples = gpu ? evidence.GpuSamples : evidence.CpuSamples;
+                if (samples.Length == 0)
+                    continue;
+                double value = MetricDistribution.From(samples).P50;
+                if (!double.IsFinite(value) || value <= 0)
+                    continue;
+                cells.Add(new DiagnosticCell(
+                    run.Variant,
+                    run.Environment.ProcessIndex,
+                    run.Position,
+                    Math.Log(value)));
+            }
+
+            int requiredCells = checked(
+                FixedGraphicsProtocol.DiagnosticProcessCount *
+                FixedGraphicsProtocol.Variants.Length);
+            if (cells.Count != requiredCells ||
+                cells.Select(static cell => (cell.Round, cell.Position)).Distinct().Count() !=
+                    requiredCells)
+            {
+                return;
+            }
+
+            double grand = cells.Average(static cell => cell.LogMicroseconds);
+            double[] positionEffects = MeansBy(
+                cells,
+                FixedGraphicsProtocol.Variants.Length,
+                static cell => cell.Position,
+                grand);
+            double[] roundEffects = MeansBy(
+                cells,
+                FixedGraphicsProtocol.DiagnosticProcessCount,
+                static cell => cell.Round,
+                grand);
+            double[] variantEffects = MeansBy(
+                cells,
+                FixedGraphicsProtocol.Variants.Length,
+                static cell => (int)cell.Variant,
+                grand);
+            if (positionEffects.Length != FixedGraphicsProtocol.Variants.Length ||
+                roundEffects.Length != FixedGraphicsProtocol.DiagnosticProcessCount ||
+                variantEffects.Length != FixedGraphicsProtocol.Variants.Length)
+            {
+                return;
+            }
+            double residualSquares = 0;
+            foreach (DiagnosticCell cell in cells)
+            {
+                double residual = cell.LogMicroseconds - grand -
+                    positionEffects[cell.Position] -
+                    roundEffects[cell.Round] -
+                    variantEffects[(int)cell.Variant];
+                double residualPercent = PercentEffect(residual);
+                residualSquares += residualPercent * residualPercent;
+            }
+
+            results.Add(new DiagnosticBiasResult(
+                workload,
+                metric,
+                Math.Exp(grand),
+                positionEffects.Select(PercentEffect).ToArray(),
+                SpreadPercent(positionEffects),
+                roundEffects.Select(PercentEffect).ToArray(),
+                SpreadPercent(roundEffects),
+                variantEffects.Select(PercentEffect).ToArray(),
+                SpreadPercent(variantEffects),
+                Math.Sqrt(residualSquares / cells.Count)));
+        }
+    }
+
+    private static double[] MeansBy(
+        List<DiagnosticCell> cells,
+        int count,
+        Func<DiagnosticCell, int> selector,
+        double grand)
+    {
+        var sums = new double[count];
+        var counts = new int[count];
+        foreach (DiagnosticCell cell in cells)
+        {
+            int index = selector(cell);
+            if ((uint)index >= (uint)count)
+                return [];
+            sums[index] += cell.LogMicroseconds;
+            counts[index]++;
+        }
+        for (int index = 0; index < count; index++)
+        {
+            if (counts[index] == 0)
+                return [];
+            sums[index] = sums[index] / counts[index] - grand;
+        }
+        return sums;
+    }
+
+    private static double PercentEffect(double logEffect) =>
+        (Math.Exp(logEffect) - 1) * 100;
+
+    private static double SpreadPercent(ReadOnlySpan<double> logEffects)
+    {
+        if (logEffects.IsEmpty)
+            return double.NaN;
+        double minimum = logEffects[0];
+        double maximum = logEffects[0];
+        foreach (double value in logEffects[1..])
+        {
+            minimum = Math.Min(minimum, value);
+            maximum = Math.Max(maximum, value);
+        }
+        return PercentEffect(maximum - minimum);
+    }
+
     private static WorkloadAggregate? Aggregate(
-        ReadOnlySpan<ProcessRun> runs,
+        ReadOnlySpan<ProcessGateEvidence> runs,
         ReceiverVariant variant,
         GraphicsWorkload workload,
         List<GateIssue> issues)
     {
-        WorkloadRun[] selected = runs.ToArray()
+        WorkloadGateEvidence[] selected = runs.ToArray()
             .Where(run => run.Variant == variant && run.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly)
             .SelectMany(static run => run.Workloads)
             .Where(run => run.Workload == workload && run.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly)
@@ -508,13 +747,17 @@ internal static class BenchmarkGate
         if (selected.Length == 0)
             return null;
 
-        double[] cpu = selected.SelectMany(static run => run.Samples)
-            .Select(static sample => sample.CpuMicroseconds)
-            .ToArray();
-        double[] gpu = selected.SelectMany(static run => run.Samples)
-            .Where(static sample => sample.GpuMicroseconds.HasValue)
-            .Select(static sample => sample.GpuMicroseconds!.Value)
-            .ToArray();
+        double[] cpu = selected.SelectMany(static run => run.CpuSamples).ToArray();
+        double[] gpu = selected.SelectMany(static run => run.GpuSamples).ToArray();
+        if (cpu.Length == 0)
+        {
+            issues.Add(new GateIssue(
+                "RHI-EVID-SAMPLE-COUNT",
+                $"{variant}/{workload} has no CPU samples.",
+                variant,
+                workload));
+            return null;
+        }
         string[] hashes = selected.Select(static run => run.OutputSha256).Distinct(StringComparer.Ordinal).ToArray();
         if (hashes.Length != 1)
         {
@@ -648,4 +891,10 @@ internal static class BenchmarkGate
         string ShaderManifestSha256,
         BarrierEvidence[] Barriers,
         NativeSetterEvidence NativeSetters);
+
+    private readonly record struct DiagnosticCell(
+        ReceiverVariant Variant,
+        int Round,
+        int Position,
+        double LogMicroseconds);
 }

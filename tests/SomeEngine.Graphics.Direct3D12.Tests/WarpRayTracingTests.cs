@@ -81,7 +81,7 @@ public sealed class WarpRayTracingTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(context);
         backend.SetPipeline(context, pipeline);
         backend.UpdateRayTracingShaderTable(
@@ -232,7 +232,7 @@ public sealed class WarpRayTracingTests
 
         using CommandContext buildContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(buildContext);
         backend.Barrier(buildContext, new BufferBarrier(
             storage,
@@ -278,7 +278,7 @@ public sealed class WarpRayTracingTests
 
         using CommandContext updateContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(updateContext);
         backend.Barrier(updateContext, new BufferBarrier(
             storage,
@@ -364,7 +364,7 @@ public sealed class WarpRayTracingTests
             AccelerationStructureType.BottomLevel);
         using CommandContext compactContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(compactContext);
         backend.Barrier(compactContext, new BufferBarrier(
             compactStorage,
@@ -401,7 +401,7 @@ public sealed class WarpRayTracingTests
             AccelerationStructureType.BottomLevel);
         using CommandContext serializationContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(serializationContext);
         backend.Barrier(serializationContext, new BufferBarrier(
             compactStorage,

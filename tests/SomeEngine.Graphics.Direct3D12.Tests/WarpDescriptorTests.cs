@@ -14,7 +14,7 @@ public sealed class WarpDescriptorTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         GraphicsException failure = Assert.Throws<GraphicsException>(() => backend.Begin(
             context,
@@ -37,13 +37,8 @@ public sealed class WarpDescriptorTests
     {
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using DescriptorTable resources = backend.CreateDescriptorTable(
-            device,
-            DescriptorTableType.Resource,
-            7);
         ResourceBindingType[] types =
         [
-            ResourceBindingType.None,
             ResourceBindingType.ConstantBuffer,
             ResourceBindingType.BufferSrv,
             ResourceBindingType.BufferUav,
@@ -51,24 +46,161 @@ public sealed class WarpDescriptorTests
             ResourceBindingType.TextureUav,
             ResourceBindingType.AccelerationStructure,
         ];
-        for (int slot = 0; slot < types.Length; slot++)
-            backend.WriteDescriptor(resources, checked((uint)slot), ResourceBinding.Null(types[slot]));
-
+        using DescriptorTable resources = backend.CreateDescriptorTable(device, types);
         using DescriptorTable samplers = backend.CreateDescriptorTable(
             device,
-            DescriptorTableType.Sampler,
-            1);
+            [ResourceBindingType.Sampler]);
+        Assert.Equal(DescriptorTableType.Resource, resources.Type);
+        Assert.Equal(DescriptorTableType.Sampler, samplers.Type);
+        Assert.Equal(types, resources.SlotTypes.ToArray());
+        Assert.Equal(ResourceBindingType.Sampler, samplers.GetSlotType(0));
+
+        uint resourceFirst = backend.GetDescriptorIndex(resources, 0);
+        uint samplerFirst = backend.GetDescriptorIndex(samplers, 0);
+        AssertDescriptorRecordTypes(device, "_pendingResources", resourceFirst, types);
+        AssertDescriptorRecordTypes(
+            device,
+            "_pendingSamplers",
+            samplerFirst,
+            [ResourceBindingType.Sampler]);
+        backend.PublishDescriptors(device);
+        AssertDescriptorRecordTypes(device, "_resources", resourceFirst, types);
+        AssertDescriptorRecordTypes(
+            device,
+            "_samplers",
+            samplerFirst,
+            [ResourceBindingType.Sampler]);
+
+        using Buffer buffer = backend.CreateBuffer(
+            device,
+            new BufferDesc(
+                1_024,
+                BufferUsages.Constant | BufferUsages.ShaderRead | BufferUsages.ShaderWrite),
+            MemoryType.DeviceLocal);
+        using BufferCbv cbv = backend.CreateBufferCbv(
+            device,
+            new BufferCbvDesc(buffer, new BufferRange(0, 256)));
+        using BufferSrv bufferSrv = backend.CreateBufferSrv(
+            device,
+            new BufferSrvDesc(buffer, BufferRange.Whole, Format.R32UInt));
+        using BufferUav bufferUav = backend.CreateBufferUav(
+            device,
+            new BufferUavDesc(buffer, BufferRange.Whole, Format.R32UInt));
+        using Texture texture = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D,
+                4,
+                4,
+                1,
+                1,
+                1,
+                1,
+                Format.R8G8B8A8UNorm,
+                TextureUsages.Sampled | TextureUsages.Storage));
+        TextureSubresourceRange textureRange = new(
+            0,
+            1,
+            0,
+            1,
+            TextureAspects.Color);
+        using TextureSrv textureSrv = backend.CreateTextureSrv(
+            device,
+            new TextureSrvDesc(
+                texture,
+                textureRange,
+                Format.R8G8B8A8UNorm,
+                TextureViewDimension.Texture2D));
+        using TextureUav textureUav = backend.CreateTextureUav(
+            device,
+            new TextureUavDesc(
+                texture,
+                textureRange,
+                Format.R8G8B8A8UNorm,
+                TextureViewDimension.Texture2D));
+        using Buffer accelerationStorage = backend.CreateBuffer(
+            device,
+            new BufferDesc(1_024, BufferUsages.AccelerationStructure),
+            MemoryType.DeviceLocal);
+        using AccelerationStructure accelerationStructure = backend.CreateAccelerationStructure(
+            device,
+            accelerationStorage,
+            BufferRange.Whole,
+            AccelerationStructureType.BottomLevel);
+        using AccelerationStructureSrv accelerationStructureSrv =
+            backend.CreateAccelerationStructureSrv(
+                device,
+                new AccelerationStructureSrvDesc(accelerationStructure));
+        using Sampler sampler = backend.CreateSampler(
+            device,
+            new SamplerDesc(
+                FilterType.Nearest,
+                FilterType.Nearest,
+                FilterType.Nearest,
+                AddressType.ClampToEdge,
+                AddressType.ClampToEdge,
+                AddressType.ClampToEdge));
+
+        ResourceBinding[] actual =
+        [
+            ResourceBinding.ConstantBuffer(cbv),
+            ResourceBinding.ReadOnlyBuffer(bufferSrv),
+            ResourceBinding.WritableBuffer(bufferUav),
+            ResourceBinding.SampledTexture(textureSrv),
+            ResourceBinding.StorageTexture(textureUav),
+            ResourceBinding.AccelerationStructure(accelerationStructureSrv),
+        ];
+        for (int slot = 0; slot < actual.Length; slot++)
+            backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);
+        backend.WriteDescriptor(samplers, 0, ResourceBinding.SampledWith(sampler));
+        backend.PublishDescriptors(device);
+        AssertDescriptorRecordTypes(device, "_resources", resourceFirst, types, hasOwner: true);
+        AssertDescriptorRecordTypes(
+            device,
+            "_samplers",
+            samplerFirst,
+            [ResourceBindingType.Sampler],
+            hasOwner: true);
+
+        for (int slot = 0; slot < types.Length; slot++)
+        {
+            backend.WriteDescriptor(
+                resources,
+                checked((uint)slot),
+                ResourceBinding.Null(types[slot]));
+        }
         backend.WriteDescriptor(
             samplers,
             0,
             ResourceBinding.Null(ResourceBindingType.Sampler));
         backend.PublishDescriptors(device);
+        AssertDescriptorRecordTypes(device, "_resources", resourceFirst, types);
+        AssertDescriptorRecordTypes(
+            device,
+            "_samplers",
+            samplerFirst,
+            [ResourceBindingType.Sampler]);
+
+        for (int slot = 0; slot < actual.Length; slot++)
+            backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);
+        backend.WriteDescriptor(samplers, 0, ResourceBinding.SampledWith(sampler));
+        backend.PublishDescriptors(device);
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(context);
-        using RecordedCommands recorded = backend.End(context);
+        using RecordedCommands heldGeneration = backend.End(context);
+
+        resources.Dispose();
+        samplers.Dispose();
+        backend.PublishDescriptors(device);
+        AssertDescriptorRecordTypes(device, "_resources", resourceFirst, types);
+        AssertDescriptorRecordTypes(
+            device,
+            "_samplers",
+            samplerFirst,
+            [ResourceBindingType.Sampler]);
     }
 
     [Fact]
@@ -100,7 +232,7 @@ public sealed class WarpDescriptorTests
             new BufferDesc(256, BufferUsages.ShaderRead));
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         BufferSrvDesc description = new(buffer, BufferRange.Whole, Format.R32UInt);
 
         BindlessBufferSrv first = backend.CreateBindlessBufferSrv(device, description);
@@ -129,12 +261,15 @@ public sealed class WarpDescriptorTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
-        DescriptorTable first = backend.CreateDescriptorTable(
-            device,
-            DescriptorTableType.Resource,
-            3);
+        ResourceBindingType[] slotTypes =
+        [
+            ResourceBindingType.ConstantBuffer,
+            ResourceBindingType.BufferSrv,
+            ResourceBindingType.TextureSrv,
+        ];
+        DescriptorTable first = backend.CreateDescriptorTable(device, slotTypes);
         uint firstIndex = backend.GetDescriptorIndex(first, 0);
         Assert.Equal(firstIndex + 1, backend.GetDescriptorIndex(first, 1));
         Assert.Equal(firstIndex + 2, backend.GetDescriptorIndex(first, 2));
@@ -145,17 +280,11 @@ public sealed class WarpDescriptorTests
         first.Dispose();
         backend.PublishDescriptors(device);
 
-        using DescriptorTable whileHeld = backend.CreateDescriptorTable(
-            device,
-            DescriptorTableType.Resource,
-            3);
+        using DescriptorTable whileHeld = backend.CreateDescriptorTable(device, slotTypes);
         Assert.NotEqual(firstIndex, backend.GetDescriptorIndex(whileHeld, 0));
 
         heldGeneration.Dispose();
-        using DescriptorTable afterRetirement = backend.CreateDescriptorTable(
-            device,
-            DescriptorTableType.Resource,
-            3);
+        using DescriptorTable afterRetirement = backend.CreateDescriptorTable(device, slotTypes);
         Assert.Equal(firstIndex, backend.GetDescriptorIndex(afterRetirement, 0));
     }
 
@@ -166,12 +295,10 @@ public sealed class WarpDescriptorTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using DescriptorTable resources = backend.CreateDescriptorTable(
             device,
-            DescriptorTableType.Resource,
-            1);
+            [ResourceBindingType.TextureSrv]);
         using DescriptorTable samplers = backend.CreateDescriptorTable(
             device,
-            DescriptorTableType.Sampler,
-            1);
+            [ResourceBindingType.Sampler]);
 
         Assert.Throws<ArgumentException>(() => backend.WriteDescriptor(
             resources,
@@ -198,7 +325,7 @@ public sealed class WarpDescriptorTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(context);
         using RecordedCommands recorded = backend.End(context);
     }
@@ -210,8 +337,7 @@ public sealed class WarpDescriptorTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using DescriptorTable table = backend.CreateDescriptorTable(
             device,
-            DescriptorTableType.Resource,
-            1);
+            [ResourceBindingType.BufferSrv]);
         backend.WriteDescriptor(
             table,
             0,
@@ -239,9 +365,36 @@ public sealed class WarpDescriptorTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(context);
         using RecordedCommands recorded = backend.End(context);
+    }
+
+    private static void AssertDescriptorRecordTypes(
+        Device device,
+        string storageField,
+        uint firstIndex,
+        ReadOnlySpan<ResourceBindingType> expected,
+        bool hasOwner = false)
+    {
+        object publisher = GetRequiredProperty(device, "Descriptors");
+        object storage = GetRequiredField(publisher, storageField).GetValue(publisher)!;
+        for (int slot = 0; slot < expected.Length; slot++)
+        {
+            uint index = checked(firstIndex + (uint)slot);
+            object? record = storage switch
+            {
+                IDictionary dictionary => dictionary[index],
+                Array array => array.GetValue(checked((int)index)),
+                _ => throw new Xunit.Sdk.XunitException(
+                    $"Unexpected descriptor record storage {storage.GetType().FullName}."),
+            };
+            Assert.NotNull(record);
+            Assert.Equal(
+                expected[slot],
+                (ResourceBindingType)GetRequiredProperty(record!, "Type"));
+            Assert.Equal(hasOwner, GetRequiredProperty(record!, "Owner") is not null);
+        }
     }
 
     private static object GetRequiredProperty(object instance, string name) =>

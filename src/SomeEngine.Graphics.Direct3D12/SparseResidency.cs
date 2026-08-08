@@ -17,6 +17,7 @@ public sealed unsafe partial class D3D12Backend
     public Buffer CreateReservedBuffer(Device device, in BufferDesc desc)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
+        _ = nativeDevice.RequireCapability<SparseResources>(nameof(CreateReservedBuffer));
         if (desc.Size == 0)
             throw new ArgumentOutOfRangeException(nameof(desc), "A reserved Buffer must have a nonzero size.");
 
@@ -69,7 +70,8 @@ public sealed unsafe partial class D3D12Backend
     public Texture CreateReservedTexture(Device device, in TextureDesc desc)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
-        SparseResources capability = nativeDevice.SparseCapability!;
+        SparseResources capability =
+            nativeDevice.RequireCapability<SparseResources>(nameof(CreateReservedTexture));
         ValidateReservedTextureSupport(nativeDevice, capability, desc);
         NativeResourceDesc nativeDescription = CreateTextureDescription(desc);
         nativeDescription.Layout =
@@ -142,19 +144,8 @@ public sealed unsafe partial class D3D12Backend
                 $"D3D12 tiled resources do not support {description.Dimension} {description.Format}.");
         }
 
-        if (description.SampleCount <= 1)
-            return;
-
-        FeatureDataMultisampleQualityLevels levels = new(
-            FormatMappings.ToDxgi(description.Format),
-            description.SampleCount,
-            MultisampleQualityLevelFlags.TiledResource,
-            0);
-        int query = device.Native->CheckFeatureSupport(
-            Silk.NET.Direct3D12.Feature.MultisampleQualityLevels,
-            &levels,
-            (uint)sizeof(FeatureDataMultisampleQualityLevels));
-        if (query < 0 || levels.NumQualityLevels == 0)
+        FormatSupport support = device.Capabilities.GetFormatSupport(description.Format);
+        if (!support.SupportsSparseSampleCount(description.SampleCount))
         {
             throw new NotSupportedException(
                 $"D3D12 tiled resources do not support {description.SampleCount}x " +
@@ -162,8 +153,12 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
-    public SparseResourceInfo GetSparseResourceInfo(Resource resource) =>
-        GetSparseState(resource).Info;
+    public SparseResourceInfo GetSparseResourceInfo(Resource resource)
+    {
+        _ = NativeCast.Device(resource.Device)
+            .RequireCapability<SparseResources>(nameof(GetSparseResourceInfo));
+        return GetSparseState(resource).Info;
+    }
 
     internal ulong CountSparseMappingTiles(
         Resource resource,
@@ -209,8 +204,8 @@ public sealed unsafe partial class D3D12Backend
         ReadOnlySpan<SparseMappingDesc> mappings)
     {
         D3D12Queue nativeQueue = NativeCast.Queue(queue);
-        nativeQueue.Device.ThrowIfUnavailable();
-        SparseResources capability = nativeQueue.NativeDevice.SparseCapability!;
+        SparseResources capability = nativeQueue.NativeDevice.RequireCapability<SparseResources>(
+            nameof(UpdateSparseMappings));
         if ((uint)mappings.Length > capability.MaximumMappingsPerCall)
             throw new ArgumentOutOfRangeException(nameof(mappings));
 
@@ -359,8 +354,8 @@ public sealed unsafe partial class D3D12Backend
         ReadOnlySpan<SparseMappingCopyDesc> copies)
     {
         D3D12Queue nativeQueue = NativeCast.Queue(queue);
-        nativeQueue.Device.ThrowIfUnavailable();
-        SparseResources capability = nativeQueue.NativeDevice.SparseCapability!;
+        SparseResources capability = nativeQueue.NativeDevice.RequireCapability<SparseResources>(
+            nameof(CopySparseMappings));
         if ((uint)copies.Length > capability.MaximumMappingsPerCall)
             throw new ArgumentOutOfRangeException(nameof(copies));
 
@@ -462,6 +457,7 @@ public sealed unsafe partial class D3D12Backend
     public ResidencyInfo GetResidencyInfo(Device device)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
+        _ = nativeDevice.RequireCapability<Residency>(nameof(GetResidencyInfo));
         IDXGIAdapter3* adapter = (IDXGIAdapter3*)nativeDevice.NativeAdapter;
         ulong localBudget = 0;
         ulong localUsage = 0;
@@ -493,6 +489,8 @@ public sealed unsafe partial class D3D12Backend
     public ResidencyResource GetResidencyResource(Heap heap)
     {
         D3D12Heap native = NativeCast.Heap(heap);
+        _ = NativeCast.Device(heap.Device)
+            .RequireCapability<Residency>(nameof(GetResidencyResource));
         native.ThrowIfDisposed();
         return new ResidencyResource(
             native.Device,
@@ -502,6 +500,7 @@ public sealed unsafe partial class D3D12Backend
     public ResidencyResource GetResidencyResource(Resource resource)
     {
         D3D12Device device = NativeCast.Device(resource.Device);
+        _ = device.RequireCapability<Residency>(nameof(GetResidencyResource));
         if (resource.Heap is not null || GetSparseStateOrNull(resource) is not null)
         {
             throw new NotSupportedException(
@@ -519,6 +518,8 @@ public sealed unsafe partial class D3D12Backend
     public ResidencyResource GetResidencyResource(QueryPool pool)
     {
         D3D12QueryPool native = NativeCast.QueryPool(pool);
+        _ = NativeCast.Device(pool.Device)
+            .RequireCapability<Residency>(nameof(GetResidencyResource));
         native.ThrowIfDisposed();
         return new ResidencyResource(
             pool.Device,
@@ -531,6 +532,8 @@ public sealed unsafe partial class D3D12Backend
     public ResidencyResource GetResidencyResource(DescriptorTable table)
     {
         D3D12DescriptorTable native = NativeCast.DescriptorTable(table);
+        _ = NativeCast.Device(table.Device)
+            .RequireCapability<Residency>(nameof(GetResidencyResource));
         native.ThrowIfDisposed();
         return new ResidencyResource(
             table.Device,
@@ -541,9 +544,10 @@ public sealed unsafe partial class D3D12Backend
         Queue queue,
         ReadOnlySpan<ResidencyResource> resources)
     {
+        D3D12Queue nativeQueue = NativeCast.Queue(queue);
+        _ = nativeQueue.NativeDevice.RequireCapability<Residency>(nameof(EnqueueMakeResident));
         if (resources.IsEmpty)
             throw new ArgumentException("At least one residency resource is required.", nameof(resources));
-        D3D12Queue nativeQueue = NativeCast.Queue(queue);
         PreparedResidency prepared = PrepareResidency(
             nativeQueue.NativeDevice,
             resources,
@@ -593,9 +597,10 @@ public sealed unsafe partial class D3D12Backend
 
     public void Evict(Device device, ReadOnlySpan<ResidencyResource> resources)
     {
+        D3D12Device nativeDevice = NativeCast.Device(device);
+        _ = nativeDevice.RequireCapability<Residency>(nameof(Evict));
         if (resources.IsEmpty)
             throw new ArgumentException("At least one residency resource is required.", nameof(resources));
-        D3D12Device nativeDevice = NativeCast.Device(device);
         PreparedResidency prepared = PrepareResidency(
             nativeDevice,
             resources,

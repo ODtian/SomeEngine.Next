@@ -2,6 +2,12 @@ using System.Numerics;
 
 namespace SomeEngine.Graphics;
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum QueueType : byte
 {
     Graphics,
@@ -9,6 +15,12 @@ public enum QueueType : byte
     Copy,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum MemoryType : byte
 {
     DeviceLocal,
@@ -16,6 +28,12 @@ public enum MemoryType : byte
     Readback,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum HeapFlags : byte
 {
@@ -26,6 +44,12 @@ public enum HeapFlags : byte
     Shareable = 1 << 3,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum BufferUsages : uint
 {
@@ -46,6 +70,12 @@ public enum BufferUsages : uint
     Shareable = 1u << 13,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum TextureUsages : uint
 {
@@ -61,6 +91,12 @@ public enum TextureUsages : uint
     Shareable = 1u << 8,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum Format : ushort
 {
     R8UNorm = 1,
@@ -125,6 +161,12 @@ public enum Format : ushort
     BC7UNormSrgb,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum TextureDimension : byte
 {
     Texture1D,
@@ -132,6 +174,12 @@ public enum TextureDimension : byte
     Texture3D,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum TextureViewDimension : byte
 {
     Texture1D,
@@ -145,6 +193,12 @@ public enum TextureViewDimension : byte
     Texture3D,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum TextureAspects : byte
 {
@@ -157,6 +211,12 @@ public enum TextureAspects : byte
     Plane2 = 1 << 5,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct BufferRange(ulong Offset, ulong Size)
 {
     public static BufferRange Whole => new(0, ulong.MaxValue);
@@ -172,8 +232,20 @@ public readonly record struct BufferRange(ulong Offset, ulong Size)
     }
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct BufferRegion(Buffer Buffer, BufferRange Range);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct TextureSubresourceRange(
     uint FirstMipLevel,
     uint MipLevelCount,
@@ -181,6 +253,12 @@ public readonly record struct TextureSubresourceRange(
     uint ArrayLayerCount,
     TextureAspects Aspects);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct HeapDesc(
     ulong Size,
     ulong Alignment,
@@ -190,11 +268,23 @@ public readonly record struct HeapDesc(
     uint VisibleNodeMask = 1,
     string? Label = null);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct BufferDesc(
     ulong Size,
     BufferUsages Usages,
     string? Label = null);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly ref struct TextureDesc
 {
     public TextureDesc(
@@ -236,6 +326,12 @@ public readonly ref struct TextureDesc
     public string? Label { get; }
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct HeapInfo(
     ulong Size,
     ulong Alignment,
@@ -244,6 +340,12 @@ public readonly record struct HeapInfo(
     uint CreationNodeMask,
     uint VisibleNodeMask);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct BufferInfo(
     ulong Size,
     BufferUsages Usages,
@@ -251,6 +353,12 @@ public readonly record struct BufferInfo(
     ulong AllocationOffset,
     ulong AllocationSize);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Borrowed immutable metadata owned by its associated Device or resource; callers never Dispose it.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state and does not revive its disposed owner.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public sealed class TextureInfo
 {
     private readonly Format[] _permittedViewFormats;
@@ -300,11 +408,23 @@ public sealed class TextureInfo
     public ReadOnlySpan<Format> PermittedViewFormats => _permittedViewFormats;
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct MemoryRequirements(
     ulong Size,
     ulong Alignment,
     HeapFlags CompatibleHeapFlags);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct TextureCopyFootprint(
     ulong Offset,
     uint RowPitch,
@@ -312,12 +432,24 @@ public readonly record struct TextureCopyFootprint(
     ulong RowSize,
     ulong TotalSize);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum FilterType : byte
 {
     Nearest,
     Linear,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum AddressType : byte
 {
     Repeat,
@@ -327,6 +459,12 @@ public enum AddressType : byte
     MirrorOnce,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum CompareOperation : byte
 {
     Never,
@@ -339,6 +477,12 @@ public enum CompareOperation : byte
     Always,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct SamplerDesc(
     FilterType MinFilter,
     FilterType MagFilter,

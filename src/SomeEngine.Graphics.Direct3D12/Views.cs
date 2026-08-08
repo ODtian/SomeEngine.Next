@@ -236,7 +236,11 @@ public sealed unsafe partial class D3D12Backend
             result = new D3D12BindlessBufferCbv(
                 nativeDevice, buffer, desc, descriptor, rangeReservation.First);
             RegisterView(nativeDevice, buffer, result);
-            nativeDevice.Descriptors.StageDescriptor(rangeReservation, descriptor, result);
+            nativeDevice.Descriptors.StageDescriptor(
+                rangeReservation,
+                descriptor,
+                result,
+                ResourceBindingType.ConstantBuffer);
             staged = true;
             return result;
         }
@@ -270,7 +274,11 @@ public sealed unsafe partial class D3D12Backend
             result = new D3D12BindlessBufferSrv(
                 nativeDevice, buffer, desc, descriptor, rangeReservation.First);
             RegisterView(nativeDevice, buffer, result);
-            nativeDevice.Descriptors.StageDescriptor(rangeReservation, descriptor, result);
+            nativeDevice.Descriptors.StageDescriptor(
+                rangeReservation,
+                descriptor,
+                result,
+                ResourceBindingType.BufferSrv);
             staged = true;
             return result;
         }
@@ -305,7 +313,11 @@ public sealed unsafe partial class D3D12Backend
             result = new D3D12BindlessBufferUav(
                 nativeDevice, buffer, desc, descriptor, rangeReservation.First);
             RegisterView(nativeDevice, buffer, result);
-            nativeDevice.Descriptors.StageDescriptor(rangeReservation, descriptor, result);
+            nativeDevice.Descriptors.StageDescriptor(
+                rangeReservation,
+                descriptor,
+                result,
+                ResourceBindingType.BufferUav);
             staged = true;
             return result;
         }
@@ -339,7 +351,11 @@ public sealed unsafe partial class D3D12Backend
             result = new D3D12BindlessTextureSrv(
                 nativeDevice, texture, desc, descriptor, rangeReservation.First);
             RegisterView(nativeDevice, texture, result);
-            nativeDevice.Descriptors.StageDescriptor(rangeReservation, descriptor, result);
+            nativeDevice.Descriptors.StageDescriptor(
+                rangeReservation,
+                descriptor,
+                result,
+                ResourceBindingType.TextureSrv);
             staged = true;
             return result;
         }
@@ -373,7 +389,11 @@ public sealed unsafe partial class D3D12Backend
             result = new D3D12BindlessTextureUav(
                 nativeDevice, texture, desc, descriptor, rangeReservation.First);
             RegisterView(nativeDevice, texture, result);
-            nativeDevice.Descriptors.StageDescriptor(rangeReservation, descriptor, result);
+            nativeDevice.Descriptors.StageDescriptor(
+                rangeReservation,
+                descriptor,
+                result,
+                ResourceBindingType.TextureUav);
             staged = true;
             return result;
         }
@@ -403,7 +423,11 @@ public sealed unsafe partial class D3D12Backend
             result = new D3D12BindlessSampler(
                 nativeDevice, desc, descriptor, rangeReservation.First);
             nativeDevice.RegisterChild(result);
-            nativeDevice.Descriptors.StageDescriptor(rangeReservation, descriptor, result);
+            nativeDevice.Descriptors.StageDescriptor(
+                rangeReservation,
+                descriptor,
+                result,
+                ResourceBindingType.Sampler);
             staged = true;
             return result;
         }

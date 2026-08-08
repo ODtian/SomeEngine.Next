@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using Silk.NET.Direct3D12;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
 using Xunit;
@@ -8,7 +9,162 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class WarpValidationLayerTests
 {
     [Fact]
-    public void Inspect_slang_binding_ranges()
+    public void Slang_immutable_sampler_becomes_a_native_static_sampler()
+    {
+        const string source = """
+            [__AttributeUsage(_AttributeTargets.Var)]
+            struct ImmutableSamplerAttribute
+            {
+                int minFilter;
+                int magFilter;
+                int mipFilter;
+                int addressU;
+                int addressV;
+                int addressW;
+                float mipLodBias;
+                int maximumAnisotropy;
+                int comparison;
+                int borderColor;
+                float minimumLod;
+                float maximumLod;
+            };
+
+            Texture2D<float4> inputTexture;
+            [ImmutableSampler(1, 0, 1, 0, 1, 3, -0.5, 1, 0, 2, 1.25, 7.5)]
+            SamplerState immutableSampler;
+            RWStructuredBuffer<float4> outputValues;
+
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
+            {
+                outputValues[id.x] = inputTexture.SampleLevel(
+                    immutableSampler,
+                    float2(0.5, 0.5),
+                    0);
+            }
+            """;
+        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+            "slang_immutable_sampler_root_signature",
+            source,
+            entries);
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        ParameterBlockLayoutReflection reflected =
+            ParameterBlockLayoutReflection.Reflect(layout);
+        ParameterBindingRangeReflection samplerRange = reflected.BindingRanges
+            .ToArray()
+            .Single(static range => range.Field.Name == "immutableSampler");
+
+        Assert.NotNull(samplerRange.ImmutableSampler);
+        Assert.Equal(1u, samplerRange.BindingCount);
+        Assert.Equal(-1, samplerRange.FirstElementOrdinal);
+        Assert.Equal(2, reflected.BoundedResourceCount);
+        Assert.DoesNotContain(
+            reflected.BindingElements.ToArray(),
+            static element => element.Field.Name == "immutableSampler");
+
+        using var backend = new D3D12Backend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Pipeline pipeline = backend.CreateComputePipeline(
+            device,
+            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+        StaticSamplerDesc[] native = D3D12Backend.GetCompiledStaticSamplers(pipeline);
+
+        Assert.Collection(
+            native,
+            sampler => AssertStaticSampler(sampler, samplerRange.BindingIndex));
+        Assert.NotEmpty(D3D12Backend.GetSerializedRootLayout(pipeline));
+
+        ResourceBinding[] bindings = CreateNullBindings(reflected);
+        using PersistentParameterBindings persistent =
+            backend.CreatePersistentParameterBindings(
+                device,
+                new ParameterBlockBindings(layout, bindings, []));
+        backend.PublishDescriptors(device);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Compute, 0, 1));
+        backend.Begin(context, new CommandRecordingDesc(8, 0, 8));
+        backend.SetPipeline(context, pipeline);
+        backend.SetPersistentParameterBindings(context, persistent);
+        backend.Discard(context);
+
+        void AssertStaticSampler(StaticSamplerDesc sampler, uint shaderRegister)
+        {
+            Assert.Equal(Filter.MinLinearMagPointMipLinear, sampler.Filter);
+            Assert.Equal(TextureAddressMode.Wrap, sampler.AddressU);
+            Assert.Equal(TextureAddressMode.Mirror, sampler.AddressV);
+            Assert.Equal(TextureAddressMode.Border, sampler.AddressW);
+            Assert.Equal(-0.5f, sampler.MipLODBias);
+            Assert.Equal(1u, sampler.MaxAnisotropy);
+            Assert.Equal(ComparisonFunc.Always, sampler.ComparisonFunc);
+            Assert.Equal(StaticBorderColor.OpaqueWhite, sampler.BorderColor);
+            Assert.Equal(1.25f, sampler.MinLOD);
+            Assert.Equal(7.5f, sampler.MaxLOD);
+            Assert.Equal(shaderRegister, sampler.ShaderRegister);
+            Assert.Equal(samplerRange.BindingSpace, sampler.RegisterSpace);
+            Assert.Equal(ShaderVisibility.All, sampler.ShaderVisibility);
+        }
+    }
+
+    [Fact]
+    public void Slang_immutable_sampler_array_is_rejected_before_native_creation()
+    {
+        const string source = """
+            [__AttributeUsage(_AttributeTargets.Var)]
+            struct ImmutableSamplerAttribute
+            {
+                int minFilter;
+                int magFilter;
+                int mipFilter;
+                int addressU;
+                int addressV;
+                int addressW;
+                float mipLodBias;
+                int maximumAnisotropy;
+                int comparison;
+                int borderColor;
+                float minimumLod;
+                float maximumLod;
+            };
+
+            Texture2D<float4> inputTexture;
+            [ImmutableSampler(1, 1, 1, 0, 0, 0, 0.0, 1, 0, 0, 0.0, 16.0)]
+            SamplerState immutableSamplers[2];
+            RWStructuredBuffer<float4> outputValues;
+
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
+            {
+                outputValues[id.x] = inputTexture.SampleLevel(
+                    immutableSamplers[0],
+                    float2(0.5, 0.5),
+                    0);
+            }
+            """;
+        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+            "slang_immutable_sampler_array_rejection",
+            source,
+            entries);
+        using var backend = new D3D12Backend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+
+        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
+            backend.CreateComputePipeline(
+                device,
+                new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0))));
+
+        Assert.Equal(GraphicsError.PipelineCreation, failure.Error);
+        Assert.Contains("must be a scalar sampler", failure.Message);
+        Assert.Contains("count 2", failure.Message);
+    }
+
+    [Fact]
+    public void Slang_parameter_layout_exposes_canonical_fields_and_array_ordinals()
     {
         const string source = """
             Texture2D<float4> inputTextures[2];
@@ -26,40 +182,102 @@ public sealed class WarpValidationLayerTests
             """;
         D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
-            "inspect_slang_binding_ranges",
+            "slang_parameter_layout_authority",
             source,
             entries);
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection type = layout.TypeLayout;
-        var lines = new List<string>
-        {
-            $"layout={layout.Name} kind={type.Kind} binding={layout.BindingIndex} space={layout.BindingSpace}",
-            $"ranges={type.BindingRangeCount} sets={type.DescriptorSetCount} subobjects={type.SubObjectRangeCount}",
-            $"uniformSize={type.GetSize(SlangParameterCategory.Uniform)}",
-        };
-        for (nint index = 0; index < type.BindingRangeCount; index++)
-        {
-            TypeLayoutReflection leafType = type.GetBindingRangeLeafTypeLayout(index);
-            VariableReflection leaf = type.GetBindingRangeLeafVariable(index);
-            lines.Add(
-                $"range[{index}] type={type.GetBindingRangeType(index)} count={type.GetBindingRangeBindingCount(index)} " +
-                $"leaf={leaf.Name} leafKind={leafType.Kind} shape={leafType.ResourceShape} access={leafType.ResourceAccess} " +
-                $"set={type.GetBindingRangeDescriptorSetIndex(index)} first={type.GetBindingRangeFirstDescriptorRangeIndex(index)} ranges={type.GetBindingRangeDescriptorRangeCount(index)}");
-        }
-        for (nint set = 0; set < type.DescriptorSetCount; set++)
-        {
-            lines.Add($"set[{set}] space={type.GetDescriptorSetSpaceOffset(set)} ranges={type.GetDescriptorSetDescriptorRangeCount(set)}");
-            for (nint range = 0; range < type.GetDescriptorSetDescriptorRangeCount(set); range++)
+        ParameterBlockLayoutReflection reflected =
+            ParameterBlockLayoutReflection.Reflect(layout);
+        ParameterBindingRangeReflection[] ranges = reflected.BindingRanges.ToArray();
+        ParameterBindingElementReflection[] elements = reflected.BindingElements.ToArray();
+
+        Assert.Equal(4u, reflected.OrdinaryDataSize);
+        Assert.Equal(SlangBindingType.ConstantBuffer, reflected.OrdinaryDataBindingType);
+        Assert.Equal(4, reflected.BoundedResourceCount);
+        Assert.Collection(
+            ranges,
+            range =>
             {
-                lines.Add(
-                    $"  descriptor[{range}] type={type.GetDescriptorSetDescriptorRangeType(set, range)} " +
-                    $"category={type.GetDescriptorSetDescriptorRangeCategory(set, range)} " +
-                    $"offset={type.GetDescriptorSetDescriptorRangeIndexOffset(set, range)} " +
-                    $"count={type.GetDescriptorSetDescriptorRangeDescriptorCount(set, range)}");
+                Assert.Equal("inputTextures", range.Field.Name);
+                Assert.Equal(SlangBindingType.Texture, range.Type);
+                Assert.Equal(2u, range.BindingCount);
+            },
+            range =>
+            {
+                Assert.Equal("inputSampler", range.Field.Name);
+                Assert.Equal(SlangBindingType.Sampler, range.Type);
+                Assert.Equal(1u, range.BindingCount);
+            },
+            range =>
+            {
+                Assert.Equal("outputValues", range.Field.Name);
+                Assert.Equal(SlangBindingType.MutableRawBuffer, range.Type);
+                Assert.Equal(1u, range.BindingCount);
+            });
+        Assert.Equal([0, 1, 2, 3], elements.Select(static element => element.Ordinal));
+        Assert.Equal([0u, 1u, 0u, 0u], elements.Select(static element => element.ArrayElement));
+        Assert.Equal(
+            ["inputTextures", "inputTextures", "inputSampler", "outputValues"],
+            elements.Select(static element => element.Field.Name));
+    }
+
+    [Fact]
+    public void Slang_DXIL_push_constant_without_a_reflected_inline_fact_remains_a_CBV()
+    {
+        const string source = """
+            struct RootValues
+            {
+                uint value;
+            };
+
+            [push_constant]
+            ConstantBuffer<RootValues> constants;
+            RWStructuredBuffer<uint> outputValues;
+
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
+            {
+                outputValues[id.x] = constants.value;
             }
-        }
-        throw new InvalidOperationException(string.Join(Environment.NewLine, lines));
+            """;
+        D3D12TestShaderEntry[] entries = [new("computeMain", SlangStage.Compute)];
+        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
+            "slang_inline_root_constants",
+            source,
+            entries);
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        TypeLayoutReflection globalFields = globals.TypeLayout.Kind is
+            SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock
+                ? globals.TypeLayout.ElementVarLayout.TypeLayout
+                : globals.TypeLayout;
+        VariableLayoutReflection layout = Enumerable.Range(
+                0,
+                checked((int)globalFields.FieldCount))
+            .Select(index => globalFields.GetFieldByIndex(checked((uint)index)))
+            .Single(static field => field.Name == "constants");
+        ParameterBlockLayoutReflection reflected =
+            ParameterBlockLayoutReflection.Reflect(layout);
+        ParameterBlockLayoutReflection reflectedGlobals =
+            ParameterBlockLayoutReflection.Reflect(globals);
+
+        string attributes = string.Join(
+            ",",
+            Enumerable.Range(0, checked((int)layout.Variable.AttributeCount))
+                .Select(index => layout.Variable.GetAttribute(checked((uint)index)).Name));
+        Assert.Equal(4u, reflected.OrdinaryDataSize);
+        Assert.Equal(SlangBindingType.ConstantBuffer, reflected.OrdinaryDataBindingType);
+        Assert.Empty(attributes);
+        Assert.Empty(reflected.BindingRanges.ToArray());
+        Assert.Contains(layout, reflectedGlobals.ChildParameterBlocks.ToArray());
+
+        using IGraphicsBackend backend = new D3D12Backend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Pipeline pipeline = backend.CreateComputePipeline(
+            device,
+            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
     }
 
     [Fact]
@@ -129,7 +347,7 @@ public sealed class WarpValidationLayerTests
             MemoryType.Upload);
         using CommandContext context = validated.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
 
         validated.Begin(context);
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
@@ -162,7 +380,7 @@ public sealed class WarpValidationLayerTests
             MemoryType.Upload);
         using CommandContext context = backend.CreateCommandContext(
             firstDevice,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
 
         backend.Begin(context);
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
@@ -191,7 +409,7 @@ public sealed class WarpValidationLayerTests
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         backend.Begin(context);
         backend.WriteTimestamp(context, pool, 0);
@@ -231,7 +449,7 @@ public sealed class WarpValidationLayerTests
                 "local barrier history"));
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 2));
+            new CommandContextDesc(QueueType.Copy, 0, 2));
 
         backend.Begin(context);
         backend.Barrier(context, new BufferBarrier(
@@ -273,7 +491,7 @@ public sealed class WarpValidationLayerTests
 
         using (CommandContext rejectedContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Copy, 0, 0, 1)))
+                   new CommandContextDesc(QueueType.Copy, 0, 1)))
         {
             backend.Begin(rejectedContext);
             backend.Barrier(rejectedContext, new BufferBarrier(
@@ -292,7 +510,7 @@ public sealed class WarpValidationLayerTests
 
         using (CommandContext firstContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Copy, 0, 0, 2)))
+                   new CommandContextDesc(QueueType.Copy, 0, 2)))
         {
             backend.Begin(firstContext);
             backend.Barrier(firstContext, new BufferBarrier(
@@ -313,7 +531,7 @@ public sealed class WarpValidationLayerTests
 
         using (CommandContext secondContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Copy, 0, 0, 1)))
+                   new CommandContextDesc(QueueType.Copy, 0, 1)))
         {
             backend.Begin(secondContext);
             backend.Barrier(secondContext, new BufferBarrier(
@@ -350,7 +568,7 @@ public sealed class WarpValidationLayerTests
         QueueCompletion releaseCompletion;
         using (CommandContext releaseContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Graphics, 0, 0, 2)))
+                   new CommandContextDesc(QueueType.Graphics, 0, 2)))
         {
             backend.Begin(releaseContext);
             backend.Barrier(releaseContext, new BufferBarrier(
@@ -375,7 +593,7 @@ public sealed class WarpValidationLayerTests
 
         using CommandContext acquireContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(acquireContext);
         backend.Barrier(acquireContext, new QueueAcquire(
             buffer,
@@ -428,7 +646,7 @@ public sealed class WarpValidationLayerTests
 
         using (CommandContext releaseContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Graphics, 0, 0, 2)))
+                   new CommandContextDesc(QueueType.Graphics, 0, 2)))
         {
             backend.Begin(releaseContext);
             backend.Barrier(releaseContext, new BufferBarrier(
@@ -454,7 +672,7 @@ public sealed class WarpValidationLayerTests
 
         using CommandContext acquireContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(acquireContext);
         backend.Barrier(acquireContext, new QueueAcquire(
             buffer,
@@ -494,7 +712,7 @@ public sealed class WarpValidationLayerTests
 
         using (CommandContext graphicsContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Graphics, 0, 0, 1)))
+                   new CommandContextDesc(QueueType.Graphics, 0, 1)))
         {
             backend.Begin(graphicsContext);
             backend.Barrier(graphicsContext, new BufferBarrier(
@@ -509,7 +727,7 @@ public sealed class WarpValidationLayerTests
 
         using CommandContext copyContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(copyContext);
         backend.Barrier(copyContext, new BufferBarrier(
             buffer,
@@ -549,7 +767,7 @@ public sealed class WarpValidationLayerTests
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
 
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(source, 0, destination, 0, 64));
@@ -604,10 +822,10 @@ public sealed class WarpValidationLayerTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using CommandContext copy = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1));
+            new CommandContextDesc(QueueType.Copy, 0, 1));
         using CommandContext graphics = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         backend.Begin(copy);
         Assert.Throws<InvalidOperationException>(() =>
@@ -689,7 +907,7 @@ public sealed class WarpValidationLayerTests
                 TextureUsages.Sampled));
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 0, 1));
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         backend.Begin(context);
         Assert.Throws<InvalidOperationException>(() =>
@@ -738,13 +956,17 @@ public sealed class WarpValidationLayerTests
         VariableLayoutReflection layout =
             bindingShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
         Assert.NotEqual(VariableLayoutReflection.Null, layout);
-        ParameterBindingContract contract = ParameterBindingContract.Compile(layout);
-        Assert.True(contract.BoundedBindingCount >= 4);
-        Assert.True(contract.OrdinaryDataSize > 0);
-        Assert.Contains(contract.Leaves, static leaf => leaf.DescriptorCount >= 2);
+        ParameterBlockLayoutReflection reflectedLayout =
+            ParameterBlockLayoutReflection.Reflect(layout);
+        Assert.True(reflectedLayout.BoundedResourceCount >= 4);
+        Assert.True(reflectedLayout.OrdinaryDataSize > 0);
+        Assert.Contains(
+            reflectedLayout.BindingRanges.ToArray(),
+            static range => range.BindingCount >= 2);
 
-        ResourceBinding[] validResources = CreateNullBindings(contract);
-        byte[] validOrdinaryData = new byte[checked((int)contract.OrdinaryDataSize)];
+        ResourceBinding[] validResources = CreateNullBindings(reflectedLayout);
+        byte[] validOrdinaryData =
+            new byte[checked((int)reflectedLayout.OrdinaryDataSize)];
         var messages = new List<ValidationMessage>();
         using var backend = CreateFastLayer(messages);
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -786,7 +1008,7 @@ public sealed class WarpValidationLayerTests
             validOrdinaryData));
 
         ResourceBinding[] duplicateArrayElement = validResources.ToArray();
-        int arrayOrdinal = FindSecondArrayElementOrdinal(contract);
+        int arrayOrdinal = FindSecondArrayElementOrdinal(reflectedLayout);
         ResourceBinding arrayBinding = duplicateArrayElement[arrayOrdinal];
         duplicateArrayElement[arrayOrdinal] = ResourceBinding.Null(arrayBinding.Type, 0);
         Assert.Throws<InvalidOperationException>(() => CreateAndDisposeBindings(
@@ -804,7 +1026,7 @@ public sealed class WarpValidationLayerTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
         backend.SetPipeline(context, otherPipeline);
         Assert.Throws<InvalidOperationException>(() => SetTransientBindings(
@@ -843,33 +1065,55 @@ public sealed class WarpValidationLayerTests
             new ValidationOptions(new DelegateValidationMessageSink(messages.Add)));
     }
 
-    private static ResourceBinding[] CreateNullBindings(ParameterBindingContract contract)
+    private static ResourceBinding[] CreateNullBindings(
+        ParameterBlockLayoutReflection reflectedLayout)
     {
-        var result = new ResourceBinding[contract.BoundedBindingCount];
-        int ordinal = 0;
-        foreach (ParameterBindingLeaf leaf in contract.Leaves)
+        ReadOnlySpan<ParameterBindingRangeReflection> ranges =
+            reflectedLayout.BindingRanges;
+        ReadOnlySpan<ParameterBindingElementReflection> elements =
+            reflectedLayout.BindingElements;
+        var result = new ResourceBinding[elements.Length];
+        for (int ordinal = 0; ordinal < elements.Length; ordinal++)
         {
-            if (leaf.Unbounded)
-                continue;
-            for (uint element = 0; element < leaf.DescriptorCount; element++)
-                result[ordinal++] = ResourceBinding.Null(leaf.Type, element);
+            ref readonly ParameterBindingElementReflection element = ref elements[ordinal];
+            ref readonly ParameterBindingRangeReflection range =
+                ref ranges[element.RangeIndex];
+            result[ordinal] = ResourceBinding.Null(
+                ToResourceBindingType(range.Type),
+                element.ArrayElement);
         }
-        Assert.Equal(result.Length, ordinal);
         return result;
     }
 
-    private static int FindSecondArrayElementOrdinal(ParameterBindingContract contract)
+    private static int FindSecondArrayElementOrdinal(
+        ParameterBlockLayoutReflection reflectedLayout)
     {
-        int ordinal = 0;
-        foreach (ParameterBindingLeaf leaf in contract.Leaves)
+        foreach (ParameterBindingRangeReflection range in reflectedLayout.BindingRanges)
         {
-            if (leaf.Unbounded)
-                continue;
-            if (leaf.DescriptorCount >= 2)
-                return checked(ordinal + 1);
-            ordinal = checked(ordinal + checked((int)leaf.DescriptorCount));
+            if (!range.IsUnbounded && range.BindingCount >= 2)
+                return checked(range.FirstElementOrdinal + 1);
         }
         throw new InvalidOperationException("The test shader has no bounded resource array.");
+    }
+
+    private static ResourceBindingType ToResourceBindingType(SlangBindingType reflectedType)
+    {
+        SlangBindingType type = reflectedType & SlangBindingType.BaseMask;
+        bool writable = (reflectedType & SlangBindingType.MutableFlag) != 0;
+        return type switch
+        {
+            SlangBindingType.Sampler => ResourceBindingType.Sampler,
+            SlangBindingType.Texture => writable
+                ? ResourceBindingType.TextureUav
+                : ResourceBindingType.TextureSrv,
+            SlangBindingType.TypedBuffer or SlangBindingType.RawBuffer => writable
+                ? ResourceBindingType.BufferUav
+                : ResourceBindingType.BufferSrv,
+            SlangBindingType.RayTracingAccelerationStructure =>
+                ResourceBindingType.AccelerationStructure,
+            _ => throw new InvalidOperationException(
+                $"Unexpected Slang binding type {reflectedType}."),
+        };
     }
 
     private static void CreateAndDisposeBindings(

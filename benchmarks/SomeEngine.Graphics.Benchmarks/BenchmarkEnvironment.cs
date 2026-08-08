@@ -121,7 +121,7 @@ internal static class BenchmarkEnvironment
     internal static string Sha256Bytes(ReadOnlySpan<byte> bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes));
 
-    private static string BuildPayloadSha256(string directory)
+    internal static string BuildPayloadSha256(string directory)
     {
         string[] extensions = [".dll", ".exe", ".json"];
         string[] files = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)

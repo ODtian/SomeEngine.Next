@@ -277,6 +277,8 @@ public sealed partial class ValidationLayer<TBackend>
         PipelineCache? cache = null)
     {
         RayTracing capability = RequireCapability<RayTracing>(device);
+        if (!capability.PipelineRayTracing)
+            throw new NotSupportedException("Pipeline ray tracing is unavailable.");
         if (cache is not null)
             RequireOnDevice(device, cache, "PipelineCache");
         if (desc.MaximumRecursionDepth == 0 ||
@@ -290,6 +292,11 @@ public sealed partial class ValidationLayer<TBackend>
         }
         RayTracingPipelineValidationState validation = ValidateRayTracingPipeline(desc);
         Pipeline result = Track(Backend.CreateRayTracingPipeline(device, desc, cache), device);
+        _pipelineBindingStates.Add(
+            result,
+            ReflectPipelineBindings(
+                desc.Program,
+                ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty));
         _rayTracingPipelines.Add(result, validation);
         return result;
     }
@@ -668,6 +675,11 @@ public sealed partial class ValidationLayer<TBackend>
             }
         }
         Pipeline result = Track(Backend.CreateWorkGraphPipeline(device, desc, cache), device);
+        _pipelineBindingStates.Add(
+            result,
+            ReflectPipelineBindings(
+                desc.Program,
+                ReadOnlySpan<SlangShaderSharp.EntryPointReflection>.Empty));
         _workGraphPipelines.Add(
             result,
             new WorkGraphPipelineValidationState(desc.MaximumInputRecordCount, entryMaximums));
@@ -993,11 +1005,11 @@ public sealed partial class ValidationLayer<TBackend>
         RayExportValidationType type,
         SlangShaderSharp.VariableLayoutReflection layout)
     {
-        ParameterBindingContract? contract = layout ==
+        ValidationParameterBlockLayout? reflectedLayout = layout ==
             SlangShaderSharp.VariableLayoutReflection.Null
                 ? null
-                : ParameterBindingContract.Compile(layout);
-        return new RayExportValidationState(type, layout, contract);
+                : ValidationParameterBlockLayout.Reflect(layout);
+        return new RayExportValidationState(type, layout, reflectedLayout);
     }
 
     private void ValidateRayTracingTableUpdate(
@@ -1101,7 +1113,7 @@ public sealed partial class ValidationLayer<TBackend>
                 ReadOnlySpan<byte> ordinaryData = allOrdinaryData.Slice(
                     checked((int)record.OrdinaryDataOffset),
                     checked((int)record.OrdinaryDataSize));
-                if (export.Contract is null)
+                if (export.ParameterLayout is null)
                 {
                     if (!resources.IsEmpty || !ordinaryData.IsEmpty)
                     {
@@ -1110,7 +1122,9 @@ public sealed partial class ValidationLayer<TBackend>
                             "An export without local parameters requires an empty record payload.");
                     }
                 }
-                else if (export.Contract.Diagnose(resources, ordinaryData) is string diagnostic)
+                else if (export.ParameterLayout.Diagnose(
+                        resources,
+                        ordinaryData) is string diagnostic)
                 {
                     Reject("RayTracing", diagnostic);
                 }

@@ -25,9 +25,10 @@ internal sealed record BenchmarkOptions(
     internal const string Usage = """
         Usage:
           SomeEngine.Graphics.Benchmarks warp [--output <report.json>] [--native-runner <exe>]
+          SomeEngine.Graphics.Benchmarks diagnose --adapter <low>:<high> [--output <report.json>] --native-runner <exe> [--managed-runner <exe>] [--resume <raw-directory>]
           SomeEngine.Graphics.Benchmarks certify --adapter <low>:<high> [--output <report.json>] --native-runner <exe> [--managed-runner <exe>] [--resume <raw-directory>]
           SomeEngine.Graphics.Benchmarks evaluate --input <report.json>
-          SomeEngine.Graphics.Benchmarks worker --profile <warp|certify> --variant <generic-rhi|interface-rhi|direct-silk> --adapter <low>:<high> --process-index <n> --shader-dir <path> --output <path> [internal count options]
+          SomeEngine.Graphics.Benchmarks worker --profile <warp|diagnose|certify> --variant <generic-rhi|interface-rhi|direct-silk> --adapter <low>:<high> --process-index <n> --shader-dir <path> --output <path> [internal count options]
         """;
 
     internal static BenchmarkOptions Parse(string[] args)
@@ -50,7 +51,12 @@ internal sealed record BenchmarkOptions(
                 repositoryRoot,
                 "artifacts",
                 "graphics-benchmarks",
-                command == BenchmarkCommand.Certify ? "vendor-certification.json" : "warp-acceptance.json"));
+                command switch
+                {
+                    BenchmarkCommand.Certify => "vendor-certification.json",
+                    BenchmarkCommand.Diagnose => "fast-diagnostic.json",
+                    _ => "warp-acceptance.json",
+                }));
         string shaderDirectory = FullPath(
             Get(values, "shader-dir") ?? Path.Combine(
                 Path.GetDirectoryName(output)!,
@@ -63,39 +69,64 @@ internal sealed record BenchmarkOptions(
         BenchmarkProfile profile = command switch
         {
             BenchmarkCommand.Certify => BenchmarkProfile.VendorCertification,
+            BenchmarkCommand.Diagnose => BenchmarkProfile.FastDiagnostic,
             BenchmarkCommand.Warp => BenchmarkProfile.WarpFunctional,
-            _ when string.Equals(Get(values, "profile"), "certify", StringComparison.OrdinalIgnoreCase) =>
-                BenchmarkProfile.VendorCertification,
+            BenchmarkCommand.Worker => ParseProfile(
+                Get(values, "profile") ??
+                throw new BenchmarkUsageException("worker requires --profile.")),
             _ => BenchmarkProfile.WarpFunctional,
         };
 
-        int warmup = ParsePositive(values, "warmup", profile == BenchmarkProfile.VendorCertification
-            ? FixedGraphicsProtocol.WarmupFrames
-            : FixedGraphicsProtocol.WarpWarmupFrames);
-        int measured = ParsePositive(values, "samples", profile == BenchmarkProfile.VendorCertification
-            ? FixedGraphicsProtocol.MeasuredFrames
-            : FixedGraphicsProtocol.WarpMeasuredFrames);
-        int draws = ParsePositive(values, "draws", profile == BenchmarkProfile.VendorCertification
-            ? FixedGraphicsProtocol.DrawCount
-            : FixedGraphicsProtocol.WarpDrawCount);
-        int barriers = ParsePositive(values, "barriers", profile == BenchmarkProfile.VendorCertification
-            ? FixedGraphicsProtocol.BarrierCount
-            : FixedGraphicsProtocol.WarpBarrierCount);
+        int warmup = ParsePositive(values, "warmup", profile switch
+        {
+            BenchmarkProfile.WarpFunctional => FixedGraphicsProtocol.WarpWarmupFrames,
+            BenchmarkProfile.FastDiagnostic => FixedGraphicsProtocol.DiagnosticWarmupFrames,
+            BenchmarkProfile.VendorCertification => FixedGraphicsProtocol.WarmupFrames,
+            _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+        });
+        int measured = ParsePositive(values, "samples", profile switch
+        {
+            BenchmarkProfile.WarpFunctional => FixedGraphicsProtocol.WarpMeasuredFrames,
+            BenchmarkProfile.FastDiagnostic => FixedGraphicsProtocol.DiagnosticMeasuredFrames,
+            BenchmarkProfile.VendorCertification => FixedGraphicsProtocol.MeasuredFrames,
+            _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+        });
+        int draws = ParsePositive(values, "draws", profile switch
+        {
+            BenchmarkProfile.WarpFunctional => FixedGraphicsProtocol.WarpDrawCount,
+            BenchmarkProfile.FastDiagnostic => FixedGraphicsProtocol.DiagnosticDrawCount,
+            BenchmarkProfile.VendorCertification => FixedGraphicsProtocol.DrawCount,
+            _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+        });
+        int barriers = profile == BenchmarkProfile.FastDiagnostic
+            ? ParseNonNegative(values, "barriers", FixedGraphicsProtocol.DiagnosticBarrierCount)
+            : ParsePositive(
+                values,
+                "barriers",
+                profile == BenchmarkProfile.VendorCertification
+                    ? FixedGraphicsProtocol.BarrierCount
+                    : FixedGraphicsProtocol.WarpBarrierCount);
         int processIndex = ParseNonNegative(values, "process-index", 0);
 
         ValidateKnown(values);
         if (command == BenchmarkCommand.Worker && (variant is null || adapterText is null))
             throw new BenchmarkUsageException("worker requires --variant and --adapter.");
-        if (command == BenchmarkCommand.Certify && adapterText is null)
-            throw new BenchmarkUsageException("certify requires an explicit hardware --adapter LUID.");
-        if (command == BenchmarkCommand.Certify && Get(values, "native-runner") is null)
-            throw new BenchmarkUsageException("certify requires --native-runner; C++ evidence cannot be omitted.");
+        if (command is BenchmarkCommand.Certify or BenchmarkCommand.Diagnose && adapterText is null)
+            throw new BenchmarkUsageException($"{Normalize(args[0])} requires an explicit hardware --adapter LUID.");
+        if (command is BenchmarkCommand.Certify or BenchmarkCommand.Diagnose && Get(values, "native-runner") is null)
+            throw new BenchmarkUsageException($"{Normalize(args[0])} requires --native-runner; C++ comparison data cannot be omitted.");
         if (command == BenchmarkCommand.Evaluate && Get(values, "input") is null)
             throw new BenchmarkUsageException("evaluate requires --input.");
-        if (Get(values, "resume") is not null && command != BenchmarkCommand.Certify)
-            throw new BenchmarkUsageException("--resume is valid only with certify.");
-        if (Get(values, "managed-runner") is not null && command != BenchmarkCommand.Certify)
-            throw new BenchmarkUsageException("--managed-runner is valid only with certify.");
+        if (Get(values, "resume") is not null &&
+            command is not BenchmarkCommand.Certify and not BenchmarkCommand.Diagnose)
+        {
+            throw new BenchmarkUsageException("--resume is valid only with diagnose or certify.");
+        }
+        if (Get(values, "managed-runner") is not null &&
+            command is not BenchmarkCommand.Certify and not BenchmarkCommand.Diagnose)
+        {
+            throw new BenchmarkUsageException("--managed-runner is valid only with diagnose or certify.");
+        }
         if (command == BenchmarkCommand.Warp && adapterText is not null)
             throw new BenchmarkUsageException("warp selects the D3D12 WARP adapter automatically; --adapter is not valid.");
         if (command == BenchmarkCommand.Certify &&
@@ -105,6 +136,14 @@ internal sealed record BenchmarkOptions(
              barriers != FixedGraphicsProtocol.BarrierCount))
         {
             throw new BenchmarkUsageException("The certification protocol counts are fixed and cannot be overridden.");
+        }
+        if (command == BenchmarkCommand.Diagnose &&
+            (warmup != FixedGraphicsProtocol.DiagnosticWarmupFrames ||
+             measured != FixedGraphicsProtocol.DiagnosticMeasuredFrames ||
+             draws != FixedGraphicsProtocol.DiagnosticDrawCount ||
+             barriers != FixedGraphicsProtocol.DiagnosticBarrierCount))
+        {
+            throw new BenchmarkUsageException("The fast diagnostic counts are fixed and cannot be overridden.");
         }
 
         return new BenchmarkOptions(
@@ -129,10 +168,19 @@ internal sealed record BenchmarkOptions(
     private static BenchmarkCommand ParseCommand(string value) => Normalize(value) switch
     {
         "warp" => BenchmarkCommand.Warp,
+        "diagnose" => BenchmarkCommand.Diagnose,
         "certify" => BenchmarkCommand.Certify,
         "worker" => BenchmarkCommand.Worker,
         "evaluate" => BenchmarkCommand.Evaluate,
         _ => throw new BenchmarkUsageException($"Unknown command '{value}'."),
+    };
+
+    private static BenchmarkProfile ParseProfile(string value) => Normalize(value) switch
+    {
+        "warp" => BenchmarkProfile.WarpFunctional,
+        "diagnose" => BenchmarkProfile.FastDiagnostic,
+        "certify" => BenchmarkProfile.VendorCertification,
+        _ => throw new BenchmarkUsageException($"Unknown worker profile '{value}'."),
     };
 
     private static ReceiverVariant ParseVariant(string value) => Normalize(value) switch

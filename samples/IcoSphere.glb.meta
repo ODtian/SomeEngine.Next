@@ -1,0 +1,9 @@
+﻿{
+  "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
+  "importer": "GltfSourceImporter",
+  "importer_settings": {
+    "lit_material_template": "assets/Materials/DefaultPBR.material.asset",
+    "unlit_material_template": "assets/Materials/TestUnlit_1.material.asset",
+    "generate_tangents": true
+  }
+}

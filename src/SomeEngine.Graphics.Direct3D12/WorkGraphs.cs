@@ -12,6 +12,14 @@ public sealed unsafe partial class D3D12Backend
         PipelineCache? cache = null)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
+        WorkGraphs capability =
+            nativeDevice.RequireCapability<WorkGraphs>(nameof(CreateWorkGraphPipeline));
+        if (desc.MaximumInputRecordCount > capability.MaximumInputRecordCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(desc),
+                "The Work Graph input-record count exceeds the Device limit.");
+        }
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ArgumentNullException.ThrowIfNull(desc.Program);
         ArgumentException.ThrowIfNullOrWhiteSpace(desc.ProgramName);
@@ -30,7 +38,7 @@ public sealed unsafe partial class D3D12Backend
         }
 
         ShaderReflection reflection = GetProgramReflection(desc.Program);
-        CompiledProgramLibrary library = CompileProgramLibrary(desc.Program);
+        CompiledProgramLibrary library = CompileProgramLibrary(desc.Program, reflection);
         WorkGraphEntryPointState[] entryPoints = new WorkGraphEntryPointState[desc.EntryPoints.Length];
         HashSet<(string Name, uint ArrayIndex)> nodeIdentities = [];
         Dictionary<EntryPointReflection, string> shaderNames = [];
@@ -98,6 +106,19 @@ public sealed unsafe partial class D3D12Backend
         D3D12WorkGraphPipeline? result = null;
         try
         {
+            byte[] key = CreateWorkGraphPipelineKey(
+                nativeDevice,
+                global,
+                library,
+                entryPoints,
+                overrides,
+                desc);
+            byte[] replayCode = ResolveStateObjectReplayCode(
+                nativeCache,
+                5,
+                key,
+                library);
+
             using NativeStateObjectArena arena = new();
             StateSubobject* subobjects = arena.Allocate<StateSubobject>(4);
 
@@ -106,10 +127,10 @@ public sealed unsafe partial class D3D12Backend
             foreach (string name in shaderNames.Values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
                 exports[exportIndex++] = new ExportDesc(arena.String(name), null, ExportFlags.None);
             DxilLibraryDesc* libraryDescription = arena.Allocate<DxilLibraryDesc>();
-            fixed (byte* code = library.Code)
+            fixed (byte* code = replayCode)
             {
                 *libraryDescription = new DxilLibraryDesc(
-                    new ShaderBytecode(code, (nuint)library.Code.Length),
+                    new ShaderBytecode(code, (nuint)replayCode.Length),
                     checked((uint)exportIndex),
                     exportIndex == 0 ? null : exports);
                 subobjects[0] = new StateSubobject(
@@ -243,14 +264,7 @@ public sealed unsafe partial class D3D12Backend
                 nativeRequirements.SizeGranularityInBytes);
             ValidateWorkGraphRequirements(requirements);
 
-            byte[] key = CreateWorkGraphPipelineKey(
-                nativeDevice,
-                global,
-                library,
-                entryPoints,
-                overrides,
-                desc);
-            nativeCache?.Store(5, key, library.Hash);
+            StoreStateObjectReplay(nativeCache, 5, key, library);
             result = new D3D12WorkGraphPipeline(
                 nativeDevice,
                 stateObject,
@@ -292,6 +306,8 @@ public sealed unsafe partial class D3D12Backend
     public WorkGraphMemoryRequirements GetWorkGraphMemoryRequirements(Pipeline pipeline)
     {
         D3D12WorkGraphPipeline native = NativeCast.WorkGraphPipeline(pipeline);
+        _ = NativeCast.Device(pipeline.Device)
+            .RequireCapability<WorkGraphs>(nameof(GetWorkGraphMemoryRequirements));
         return native.MemoryRequirements;
     }
 
@@ -303,6 +319,14 @@ public sealed unsafe partial class D3D12Backend
         uint maximumInputRecordCount)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        WorkGraphs capability =
+            command.NativeDevice.RequireCapability<WorkGraphs>(nameof(SetWorkGraphProgram));
+        if (maximumInputRecordCount > capability.MaximumInputRecordCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumInputRecordCount),
+                "The Work Graph input-record count exceeds the Device limit.");
+        }
         D3D12WorkGraphPipeline nativePipeline = NativeCast.WorkGraphPipeline(pipeline);
 
         D3D12Buffer backing = NativeCast.Buffer(backingMemory.Buffer);
@@ -340,6 +364,7 @@ public sealed unsafe partial class D3D12Backend
         };
         command.List->SetComputeRootSignature(nativePipeline.RootLayout.Native);
         command.List->SetProgram(&native);
+        command.Recording.RecordWorkGraphProgramSetter();
         command.RememberPipeline(nativePipeline);
         command.RememberWorkGraphProgram(next);
         command.Capture(backing);
@@ -351,6 +376,15 @@ public sealed unsafe partial class D3D12Backend
     public void DispatchWorkGraph(CommandContext context, in WorkGraphDispatchDesc desc)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        WorkGraphs capability =
+            command.NativeDevice.RequireCapability<WorkGraphs>(nameof(DispatchWorkGraph));
+        if (desc.UsesGpuRecords ? !capability.GpuInput : !capability.CpuInput)
+        {
+            throw new NotSupportedException(
+                desc.UsesGpuRecords
+                    ? "GPU Work Graph input is unavailable."
+                    : "CPU Work Graph input is unavailable.");
+        }
         D3D12WorkGraphProgramState program = command.RequireWorkGraphProgram();
         D3D12WorkGraphPipeline pipeline = program.Pipeline;
         WorkGraphEntryPointState entry = pipeline.GetEntryPoint(desc.EntryPointIndex);
@@ -464,38 +498,50 @@ public sealed unsafe partial class D3D12Backend
         ReadOnlySpan<WorkGraphNodeOverrideState> overrides,
         in WorkGraphPipelineDesc desc)
     {
-        using MemoryStream stream = new();
-        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
-        {
-            writer.Write(RootLayoutSchemaVersion);
-            writer.Write((byte)5);
-            writer.Write(device.EnabledNodeMask);
-            writer.Write(desc.NodeMask);
-            writer.Write(library.Hash);
-            writer.Write(global.Serialized.Length);
-            writer.Write(global.Serialized);
-            writer.Write(desc.ProgramName);
-            writer.Write((byte)desc.Options);
-            writer.Write(desc.MaximumInputRecordCount);
-            writer.Write(entries.Length);
-            foreach (ref readonly WorkGraphEntryPointState entry in entries)
+        WorkGraphEntryPointState[] entrySnapshot = entries.ToArray();
+        WorkGraphNodeOverrideState[] overrideSnapshot = overrides.ToArray();
+        uint nodeMask = desc.NodeMask;
+        string programName = desc.ProgramName;
+        WorkGraphPipelineOptions options = desc.Options;
+        uint maximumInputRecordCount = desc.MaximumInputRecordCount;
+        return CreateCanonicalPipelineKey(
+            device,
+            5,
+            writer =>
             {
-                writer.Write(entry.Name);
-                writer.Write(entry.NodeIndex);
-                writer.Write(entry.MaximumInputRecordCount);
-            }
-            writer.Write(overrides.Length);
-            foreach (ref readonly WorkGraphNodeOverrideState value in overrides)
+                writer.Write(1u);
+                writer.Write(true);
+                WriteCompiledProgramIdentity(writer, library);
+            },
+            writer =>
             {
-                writer.Write(value.Name);
-                writer.Write(value.MaximumDispatchGridX);
-                writer.Write(value.MaximumDispatchGridY);
-                writer.Write(value.MaximumDispatchGridZ);
-                writer.Write(value.MaximumInputRecordCount);
-            }
-        }
-        return System.Security.Cryptography.SHA256.HashData(
-            stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
+                writer.Write(1u);
+                WriteCanonicalBytes(writer, global.Serialized);
+                writer.Write(0u);
+            },
+            writer =>
+            {
+                writer.Write(nodeMask);
+                WriteCanonicalString(writer, programName);
+                writer.Write((byte)options);
+                writer.Write(maximumInputRecordCount);
+                writer.Write(checked((uint)entrySnapshot.Length));
+                foreach (WorkGraphEntryPointState entry in entrySnapshot)
+                {
+                    WriteCanonicalString(writer, entry.Name);
+                    writer.Write(entry.NodeIndex);
+                    writer.Write(entry.MaximumInputRecordCount);
+                }
+                writer.Write(checked((uint)overrideSnapshot.Length));
+                foreach (WorkGraphNodeOverrideState value in overrideSnapshot)
+                {
+                    WriteCanonicalString(writer, value.Name);
+                    writer.Write(value.MaximumDispatchGridX);
+                    writer.Write(value.MaximumDispatchGridY);
+                    writer.Write(value.MaximumDispatchGridZ);
+                    writer.Write(value.MaximumInputRecordCount);
+                }
+            });
     }
 
     private readonly record struct WorkGraphEntryPointState(
@@ -577,7 +623,12 @@ public sealed unsafe partial class D3D12Backend
         private D3D12WorkGraphProgramState? _workGraphProgram;
 
         internal bool WorkGraphProgramEquals(in D3D12WorkGraphProgramState value) =>
-            _workGraphProgram is D3D12WorkGraphProgramState current && current == value;
+            _workGraphProgram is D3D12WorkGraphProgramState current &&
+            current.Pipeline.Type == value.Pipeline.Type &&
+            current.Pipeline.Signature == value.Pipeline.Signature &&
+            ReferenceEquals(current.Backing, value.Backing) &&
+            current.Range == value.Range &&
+            current.MaximumInputRecordCount == value.MaximumInputRecordCount;
 
         internal void RememberWorkGraphProgram(in D3D12WorkGraphProgramState value) =>
             _workGraphProgram = value;

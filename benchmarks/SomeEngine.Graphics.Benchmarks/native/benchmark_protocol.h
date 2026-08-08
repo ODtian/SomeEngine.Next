@@ -11,6 +11,7 @@ namespace someengine::graphics::benchmark
 enum class profile
 {
     warp,
+    diagnostic,
     certification,
 };
 

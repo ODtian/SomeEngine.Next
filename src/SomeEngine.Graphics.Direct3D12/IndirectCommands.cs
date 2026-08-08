@@ -11,9 +11,13 @@ public sealed unsafe partial class D3D12Backend
         in IndirectCommandLayoutDesc desc)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
+        IndirectCommands capability = nativeDevice
+            .RequireCapability<IndirectCommands>(nameof(CreateIndirectCommandLayout));
         if (desc.Arguments.IsEmpty)
             throw new ArgumentException("An indirect command layout requires at least one argument.", nameof(desc));
-        if (desc.Stride == 0 || desc.Stride % 4 != 0)
+        if (desc.Stride == 0 ||
+            desc.Stride % capability.ArgumentBufferAlignment != 0 ||
+            desc.Stride > capability.MaximumStride)
         {
             throw new ArgumentOutOfRangeException(nameof(desc), "The indirect command stride is invalid.");
         }
@@ -33,6 +37,12 @@ public sealed unsafe partial class D3D12Backend
         {
             ref readonly SomeEngine.Graphics.IndirectArgumentDesc argument =
                 ref desc.Arguments[index];
+            IndirectArgumentTypes required = ToCapabilityArgumentType(argument.Type);
+            if ((capability.ArgumentTypes & required) == 0)
+            {
+                throw new NotSupportedException(
+                    $"Indirect argument type {argument.Type} is unavailable.");
+            }
             NativeIndirectArgumentDesc native = default;
             native.Type = ToNativeIndirectArgumentType(argument.Type);
             ulong size;
@@ -184,15 +194,17 @@ public sealed unsafe partial class D3D12Backend
         BufferRegion? count = null)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        IndirectCommands capability = command.NativeDevice
+            .RequireCapability<IndirectCommands>(nameof(ExecuteIndirect));
         D3D12IndirectCommandLayout nativeLayout = NativeCast.IndirectCommandLayout(layout);
-        if (maximumCommandCount == 0)
+        if (maximumCommandCount == 0 || maximumCommandCount > capability.MaximumCommandCount)
             throw new ArgumentOutOfRangeException(nameof(maximumCommandCount));
 
         D3D12Buffer argumentBuffer = NativeCast.Buffer(arguments.Buffer);
         BufferRange argumentRange = arguments.Range.Resolve(argumentBuffer.Info.Size);
         ulong requiredBytes = checked((ulong)nativeLayout.Stride * maximumCommandCount);
         if ((argumentBuffer.Info.Usages & BufferUsages.Indirect) == 0 ||
-            argumentRange.Offset % 4 != 0 ||
+            argumentRange.Offset % capability.ArgumentBufferAlignment != 0 ||
             argumentRange.Size < requiredBytes)
         {
             throw new ArgumentException("The indirect argument Buffer range is invalid.", nameof(arguments));
@@ -205,7 +217,7 @@ public sealed unsafe partial class D3D12Backend
             countBuffer = NativeCast.Buffer(countRegion.Buffer);
             BufferRange countRange = countRegion.Range.Resolve(countBuffer.Info.Size);
             if ((countBuffer.Info.Usages & BufferUsages.Indirect) == 0 ||
-                countRange.Offset % 4 != 0 ||
+                countRange.Offset % capability.CountBufferAlignment != 0 ||
                 countRange.Size < sizeof(uint))
             {
                 throw new ArgumentException("The indirect count Buffer range is invalid.", nameof(count));
@@ -245,6 +257,24 @@ public sealed unsafe partial class D3D12Backend
         SomeEngine.Graphics.IndirectArgumentType.UnorderedAccess => NativeIndirectArgumentType.UnorderedAccessView,
         SomeEngine.Graphics.IndirectArgumentType.WorkGraph =>
             throw new NotSupportedException("Indirect Work Graph dispatch is unavailable."),
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private static IndirectArgumentTypes ToCapabilityArgumentType(
+        SomeEngine.Graphics.IndirectArgumentType value) => value switch
+    {
+        SomeEngine.Graphics.IndirectArgumentType.Draw => IndirectArgumentTypes.Draw,
+        SomeEngine.Graphics.IndirectArgumentType.DrawIndexed => IndirectArgumentTypes.DrawIndexed,
+        SomeEngine.Graphics.IndirectArgumentType.Dispatch => IndirectArgumentTypes.Dispatch,
+        SomeEngine.Graphics.IndirectArgumentType.DispatchMesh => IndirectArgumentTypes.DispatchMesh,
+        SomeEngine.Graphics.IndirectArgumentType.DispatchRays => IndirectArgumentTypes.DispatchRays,
+        SomeEngine.Graphics.IndirectArgumentType.WorkGraph => IndirectArgumentTypes.WorkGraph,
+        SomeEngine.Graphics.IndirectArgumentType.VertexBuffer => IndirectArgumentTypes.VertexBuffer,
+        SomeEngine.Graphics.IndirectArgumentType.IndexBuffer => IndirectArgumentTypes.IndexBuffer,
+        SomeEngine.Graphics.IndirectArgumentType.Constants => IndirectArgumentTypes.Constants,
+        SomeEngine.Graphics.IndirectArgumentType.ConstantBuffer => IndirectArgumentTypes.ConstantBuffer,
+        SomeEngine.Graphics.IndirectArgumentType.ShaderResource => IndirectArgumentTypes.ShaderResource,
+        SomeEngine.Graphics.IndirectArgumentType.UnorderedAccess => IndirectArgumentTypes.UnorderedAccess,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

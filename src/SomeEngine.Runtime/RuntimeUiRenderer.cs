@@ -556,7 +556,6 @@ internal sealed class RuntimeUiRenderer : IDisposable
                 new CommandContextDesc(
                     QueueType.Graphics,
                     0,
-                    0,
                     1,
                     Label: "Upload Runtime ImGui font atlas"));
             _backend.Begin(commands);

@@ -86,6 +86,19 @@ inline constant data uses root constants, and all other CBV/SRV/UAV bindings use
 becomes static only when Slang marks it immutable and supplies its complete state; every runtime
 Sampler uses the sampler descriptor table.
 
+The canonical immutable marker is Slang's user-defined `ImmutableSampler` variable attribute as
+bound by S# `ImmutableSamplerReflection`; the backend never looks up that attribute name. Its exact
+twelve arguments are min/mag/mip filter, U/V/W address mode, mip-LOD bias, maximum anisotropy,
+comparison mode, static border color, minimum LOD and maximum LOD. Integer values use the S#
+`SlangSamplerFilterMode`, `SlangSamplerAddressMode`, `SlangSamplerComparisonMode` and
+`SlangStaticSamplerBorderColor` ordinals; LOD values and bias are finite 32-bit floats. S# retains
+the sampler's register, space, declaration count and field identity in its binding range, attaches
+the typed immutable state there, and omits it from the runtime `BindingElements` sequence. D3D12
+accepts only a scalar immutable sampler because a native static sampler cannot represent an indexed
+sampler range; an attributed Slang sampler array is a root-artifact `PipelineCreation` failure rather
+than silently becoming a runtime sampler. A non-attributed sampler, including every sampler array,
+remains a runtime sampler descriptor range with its exact reflected count.
+
 Root parameters use a canonical order derived from binding role, register space, register class,
 base register and visibility. Visibility is the exact single D3D12 stage only when all consumers fit
 that visibility; otherwise it is ALL. Root Signature 1.1 flags follow the actual native mutation

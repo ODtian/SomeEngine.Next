@@ -254,6 +254,15 @@ caller remains responsible for closing its input handle. Export is permitted onl
 created/imported with the required shareable properties and returns an `ExternalHandle` that the
 caller closes. Import/export never adds a copy, barrier or Queue wait.
 
+The D3D12 native-access surface overloads `ImportBuffer`, `ImportTexture` and `ImportHeap` with the
+corresponding native pointer plus `NativeObjectOwnership`; this is distinct from the backend-neutral
+OS-handle overload. `Borrowed` performs no `AddRef` or `Release`, so the caller keeps the native object
+alive through the wrapper's complete public and physical-use lifetime. For `Transferred`, ownership
+passes after Device/capability/non-null-pointer/ownership-enum preconditions succeed. Every later
+description, state, native-Device or registration failure releases that supplied reference, and a
+successful wrapper releases it during terminal retirement. The native object must report the exact
+native Device used by the target RHI Device. Neither form transfers ownership of an input OS handle.
+
 `ExternalTimelines` owns `CreateExternalTimeline(initialValue)`, `ImportTimeline(handle)`, export and
 user Queue wait/signal operations. Import opens the existing timeline value; it does not accept an
 initial value or rebase the native fence/semaphore. Only `ExternalTimeline` can be exported,

@@ -1,0 +1,21 @@
+{
+  "asset_guid": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
+  "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
+  "sub_asset_key": "material:0:Default",
+  "content_fingerprint": "23a3319ca8087563299625018ca8da3b04119ed0fe8ae505f240c15cd91d0772",
+  "dependencies": [
+    {
+      "path": "assets/Materials/DefaultPBR.material.asset",
+      "hash": "748e662c465b831eb7a23e4b734c2b076121061219f9ca3c217f35732fd7c5e6"
+    },
+    {
+      "path": "assets/Materials/TestUnlit_1.material.asset",
+      "hash": "6935bbe2e6ee7463016acf155f602d6a73e559ebee3fe12b9e16d0f7222a26d7"
+    },
+    {
+      "path": "samples/IcoSphere.glb",
+      "hash": "40523d69e4e2c6fc1316114008b3de26100108a3a5ed2a5601ff1b9ff6c89a83"
+    }
+  ],
+  "importer_version": 3
+}

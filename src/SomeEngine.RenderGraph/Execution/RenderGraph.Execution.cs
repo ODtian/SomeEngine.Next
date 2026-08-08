@@ -547,7 +547,6 @@ public sealed partial class RenderGraph
                 new CommandContextDesc(
                     unit.Queue,
                     QueueIndex: 0,
-                    NodeIndex: 0,
                     InitialSlotCount: 1,
                     Label: $"rg-{unit.Name}-{command}"));
             _commandContexts[command] = context;

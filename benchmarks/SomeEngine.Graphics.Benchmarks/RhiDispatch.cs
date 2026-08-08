@@ -72,35 +72,34 @@ internal readonly struct GenericRhiDispatch : IRhiDispatch<GenericRhiDispatch>
     public static void SetScissors(GenericRhiDispatch receiver, CommandContext context, ReadOnlySpan<ScissorRect> scissors) => receiver._receiver.SetScissors(context, scissors);
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static void Draw(GenericRhiDispatch receiver, CommandContext context, in DrawArguments arguments) => receiver._receiver.Draw(context, arguments);
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static void DrawRepeated(GenericRhiDispatch receiver, CommandContext context, in DrawArguments arguments, int count)
     {
+        DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)
-            receiver._receiver.Draw(context, arguments);
+            receiver._receiver.Draw(context, stableArguments);
     }
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static void DrawTransientPackets(GenericRhiDispatch receiver, CommandContext context, VariableLayoutReflection layout, byte[] packets, in DrawArguments arguments, int count)
     {
+        DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)
         {
             ParameterBlockBindings packet = new(layout, EmptyResources, packets.AsSpan(index * 16, 16));
             receiver._receiver.SetTransientParameterBindings(context, packet);
-            receiver._receiver.Draw(context, arguments);
+            receiver._receiver.Draw(context, stableArguments);
         }
     }
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static void DrawWithRedundantState(GenericRhiDispatch receiver, CommandContext context, Pipeline pipeline, PersistentParameterBindings bindings, Viewport[] viewports, ScissorRect[] scissors, in DrawArguments arguments, int count)
     {
+        DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)
         {
             receiver._receiver.SetPipeline(context, pipeline);
             receiver._receiver.SetPersistentParameterBindings(context, bindings);
             receiver._receiver.SetViewports(context, viewports);
             receiver._receiver.SetScissors(context, scissors);
-            receiver._receiver.Draw(context, arguments);
+            receiver._receiver.Draw(context, stableArguments);
         }
     }
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static void RecordMemoryBarriers(GenericRhiDispatch receiver, CommandContext context, in MemoryBarrier barrier, int count)
     {
         for (int index = 0; index < count; index++)
@@ -145,27 +144,30 @@ internal readonly struct InterfaceRhiDispatch : IRhiDispatch<InterfaceRhiDispatc
     public static void Draw(InterfaceRhiDispatch receiver, CommandContext context, in DrawArguments arguments) => receiver._receiver.Draw(context, arguments);
     public static void DrawRepeated(InterfaceRhiDispatch receiver, CommandContext context, in DrawArguments arguments, int count)
     {
+        DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)
-            receiver._receiver.Draw(context, arguments);
+            receiver._receiver.Draw(context, stableArguments);
     }
     public static void DrawTransientPackets(InterfaceRhiDispatch receiver, CommandContext context, VariableLayoutReflection layout, byte[] packets, in DrawArguments arguments, int count)
     {
+        DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)
         {
             ParameterBlockBindings packet = new(layout, EmptyResources, packets.AsSpan(index * 16, 16));
             receiver._receiver.SetTransientParameterBindings(context, packet);
-            receiver._receiver.Draw(context, arguments);
+            receiver._receiver.Draw(context, stableArguments);
         }
     }
     public static void DrawWithRedundantState(InterfaceRhiDispatch receiver, CommandContext context, Pipeline pipeline, PersistentParameterBindings bindings, Viewport[] viewports, ScissorRect[] scissors, in DrawArguments arguments, int count)
     {
+        DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)
         {
             receiver._receiver.SetPipeline(context, pipeline);
             receiver._receiver.SetPersistentParameterBindings(context, bindings);
             receiver._receiver.SetViewports(context, viewports);
             receiver._receiver.SetScissors(context, scissors);
-            receiver._receiver.Draw(context, arguments);
+            receiver._receiver.Draw(context, stableArguments);
         }
     }
     public static void RecordMemoryBarriers(InterfaceRhiDispatch receiver, CommandContext context, in MemoryBarrier barrier, int count)

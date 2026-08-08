@@ -5,6 +5,7 @@ namespace SomeEngine.Graphics.Benchmarks;
 internal enum BenchmarkCommand : byte
 {
     Warp,
+    Diagnose,
     Certify,
     Worker,
     Evaluate,
@@ -13,6 +14,7 @@ internal enum BenchmarkCommand : byte
 internal enum BenchmarkProfile : byte
 {
     WarpFunctional,
+    FastDiagnostic,
     VendorCertification,
 }
 
@@ -44,7 +46,7 @@ internal enum RunDisposition : byte
 
 internal static class FixedGraphicsProtocol
 {
-    internal const string Schema = "someengine.graphics.performance/v2";
+    internal const string Schema = "someengine.graphics.performance/v3";
     internal const int WarmupFrames = 8_192;
     internal const int MeasuredFrames = 16_384;
     internal const int ProcessCount = 5;
@@ -54,6 +56,11 @@ internal static class FixedGraphicsProtocol
     internal const int WarpMeasuredFrames = 4;
     internal const int WarpDrawCount = 64;
     internal const int WarpBarrierCount = 32;
+    internal const int DiagnosticWarmupFrames = 512;
+    internal const int DiagnosticMeasuredFrames = 1_024;
+    internal const int DiagnosticProcessCount = 4;
+    internal const int DiagnosticDrawCount = 10_000;
+    internal const int DiagnosticBarrierCount = 0;
     internal const int RenderWidth = 64;
     internal const int RenderHeight = 64;
     internal const string PercentileMethod =
@@ -85,6 +92,24 @@ internal static class FixedGraphicsProtocol
 
     internal static readonly GraphicsWorkload[] Workloads = Enum.GetValues<GraphicsWorkload>();
 
+    internal static readonly GraphicsWorkload[] DiagnosticWorkloads =
+    [
+        GraphicsWorkload.PersistentDraw10000,
+        GraphicsWorkload.TransientDraw10000,
+        GraphicsWorkload.StateSuppression10000,
+    ];
+
+    internal static ReadOnlySpan<GraphicsWorkload> GetWorkloads(BenchmarkProfile profile) =>
+        profile == BenchmarkProfile.FastDiagnostic ? DiagnosticWorkloads : Workloads;
+
+    internal static int GetProcessCount(BenchmarkProfile profile) => profile switch
+    {
+        BenchmarkProfile.WarpFunctional => 1,
+        BenchmarkProfile.FastDiagnostic => DiagnosticProcessCount,
+        BenchmarkProfile.VendorCertification => ProcessCount,
+        _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+    };
+
     internal static ReadOnlySpan<ReceiverVariant> GetInterleavedRound(int processIndex)
     {
         if ((uint)processIndex >= (uint)InterleavedRounds.Length)
@@ -98,6 +123,13 @@ internal static class FixedGraphicsProtocol
         value.MeasuredFrames == MeasuredFrames &&
         value.DrawCount == DrawCount &&
         value.BarrierCount == BarrierCount;
+
+    internal static bool IsDiagnosticShape(in WorkerConfiguration value) =>
+        value.Profile == BenchmarkProfile.FastDiagnostic &&
+        value.WarmupFrames == DiagnosticWarmupFrames &&
+        value.MeasuredFrames == DiagnosticMeasuredFrames &&
+        value.DrawCount == DiagnosticDrawCount &&
+        value.BarrierCount == DiagnosticBarrierCount;
 }
 
 internal readonly record struct WorkerConfiguration(
@@ -113,6 +145,8 @@ internal readonly record struct WorkerConfiguration(
     string OutputPath)
 {
     internal bool IsCertificationShape => FixedGraphicsProtocol.IsCertificationShape(this);
+
+    internal bool IsDiagnosticShape => FixedGraphicsProtocol.IsDiagnosticShape(this);
 }
 
 internal readonly record struct MetricDistribution(
@@ -163,6 +197,7 @@ internal readonly record struct ProtocolSnapshot(
     string[] Workloads)
 {
     internal static ProtocolSnapshot Create(
+        BenchmarkProfile profile,
         int warmupFrames,
         int measuredFrames,
         int processCount,
@@ -183,7 +218,10 @@ internal readonly record struct ProtocolSnapshot(
                     .Select(static value => value.ToString())
                     .ToArray())
                 .ToArray(),
-            FixedGraphicsProtocol.Workloads.Select(static value => value.ToString()).ToArray());
+            FixedGraphicsProtocol.GetWorkloads(profile)
+                .ToArray()
+                .Select(static value => value.ToString())
+                .ToArray());
 }
 
 internal static class BenchmarkClock

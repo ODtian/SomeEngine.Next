@@ -396,7 +396,7 @@ public sealed partial class ValidationLayer<TBackend>
                 "PersistentParameterBindings was not created through this Validation Layer.",
                 bindings.Label);
         }
-        RequireParameterBindingContract(state, context, bindingState!.Contract.Layout);
+        RequireParameterBlockLayout(state, context, bindingState!.Layout.Layout);
         Backend.SetPersistentParameterBindings(context, bindings);
         RecordCommandDependency(state, bindings);
         RecordCommandDependencies(state, bindingState.Dependencies);
@@ -408,11 +408,14 @@ public sealed partial class ValidationLayer<TBackend>
     {
         ContextValidationState state = RequireRecording(context);
         RequirePipeline(state, context, "parameter bindings");
-        ParameterBindingContract contract = RequireParameterBindingContract(
+        ValidationParameterBlockLayout reflectedLayout = RequireParameterBlockLayout(
             state,
             context,
             bindings.Layout);
-        GraphicsObject[] dependencies = ValidateBindings(context.Device, bindings, contract);
+        GraphicsObject[] dependencies = ValidateBindings(
+            context.Device,
+            bindings,
+            reflectedLayout);
         Backend.SetTransientParameterBindings(context, bindings);
         RecordCommandDependencies(state, dependencies);
     }
@@ -444,6 +447,8 @@ public sealed partial class ValidationLayer<TBackend>
         ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
         ContextValidationState state = RequireGraphicsRecording(context);
+        if (context.Bundle)
+            Reject("Commands", "Stream-output targets are not legal in a command bundle.", context.Label);
         foreach (StreamOutputBufferBinding binding in bindings)
         {
             RequireOnDevice(context.Device, binding.Buffer, "Stream-output Buffer");
@@ -462,12 +467,16 @@ public sealed partial class ValidationLayer<TBackend>
     public void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports)
     {
         RequireGraphicsRecording(context);
+        if (context.Bundle)
+            Reject("Commands", "Viewports are not legal in a command bundle.", context.Label);
         Backend.SetViewports(context, viewports);
     }
 
     public void SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors)
     {
         RequireGraphicsRecording(context);
+        if (context.Bundle)
+            Reject("Commands", "Scissors are not legal in a command bundle.", context.Label);
         Backend.SetScissors(context, scissors);
     }
 
@@ -1147,7 +1156,7 @@ public sealed partial class ValidationLayer<TBackend>
         }
     }
 
-    private ParameterBindingContract RequireParameterBindingContract(
+    private ValidationParameterBlockLayout RequireParameterBlockLayout(
         ContextValidationState state,
         CommandContext context,
         SlangShaderSharp.VariableLayoutReflection layout)
@@ -1158,14 +1167,18 @@ public sealed partial class ValidationLayer<TBackend>
             pipeline = state.Pipeline ?? throw new InvalidOperationException(
                 "Validation state is missing the selected Pipeline.");
         }
-        if (!pipeline.BindingContracts.TryGet(layout, out ParameterBindingContract contract))
+        ValidationParameterBlockLayout reflectedLayout = null!;
+        if (!_pipelineBindingStates.TryGetValue(
+                pipeline,
+                out PipelineBindingValidationState? bindings) ||
+            !bindings.TryGet(layout, out reflectedLayout))
         {
             Reject(
                 "Bindings",
                 "The Slang parameter layout is not part of the selected Pipeline.",
                 context.Label);
         }
-        return contract;
+        return reflectedLayout;
     }
 
     private void RequirePipeline(

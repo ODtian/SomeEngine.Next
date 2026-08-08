@@ -51,24 +51,38 @@ internal static unsafe class DirectSilkBenchmarkRunner
                     []);
             }
 
-            WorkloadRun[] workloads =
-            [
-                RunEmptySubmit(context, manifest, configuration),
-                RunDraw(context, manifest, configuration, GraphicsWorkload.PersistentDraw10000),
-                RunDraw(context, manifest, configuration, GraphicsWorkload.TransientDraw10000),
-                RunDraw(context, manifest, configuration, GraphicsWorkload.StateSuppression10000),
-                RunExplicitBarriers(context, manifest, configuration),
-                RunThreeQueuePresent(context, manifest, configuration),
-            ];
+            WorkloadRun[] workloads = configuration.Profile == BenchmarkProfile.FastDiagnostic
+                ?
+                [
+                    RunDraw(context, manifest, configuration, GraphicsWorkload.PersistentDraw10000),
+                    RunDraw(context, manifest, configuration, GraphicsWorkload.TransientDraw10000),
+                    RunDraw(context, manifest, configuration, GraphicsWorkload.StateSuppression10000),
+                ]
+                :
+                [
+                    RunEmptySubmit(context, manifest, configuration),
+                    RunDraw(context, manifest, configuration, GraphicsWorkload.PersistentDraw10000),
+                    RunDraw(context, manifest, configuration, GraphicsWorkload.TransientDraw10000),
+                    RunDraw(context, manifest, configuration, GraphicsWorkload.StateSuppression10000),
+                    RunExplicitBarriers(context, manifest, configuration),
+                    RunThreeQueuePresent(context, manifest, configuration),
+                ];
             RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
                 ? RunDisposition.Passed
                 : RunDisposition.FunctionalOnly;
             return new ProcessRun(
                 ReceiverVariant.DirectSilk,
                 disposition,
-                configuration.Profile == BenchmarkProfile.VendorCertification
-                    ? "All fixed direct Silk D3D12 workloads executed."
-                    : "All reduced-count direct Silk D3D12 workloads executed on WARP; not performance evidence.",
+                configuration.Profile switch
+                {
+                    BenchmarkProfile.WarpFunctional =>
+                        "All reduced-count direct Silk D3D12 workloads executed on WARP; not performance evidence.",
+                    BenchmarkProfile.FastDiagnostic =>
+                        "The three draw-only direct Silk D3D12 diagnostics executed; never vendor-certification evidence.",
+                    BenchmarkProfile.VendorCertification =>
+                        "All fixed direct Silk D3D12 workloads executed.",
+                    _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
+                },
                 environment,
                 workloads);
         }

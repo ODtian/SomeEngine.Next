@@ -1,5 +1,11 @@
 namespace SomeEngine.Graphics;
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum PipelineSync : ulong
 {
@@ -27,6 +33,12 @@ public enum PipelineSync : ulong
     All = ulong.MaxValue,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum ResourceAccess : ulong
 {
@@ -52,6 +64,12 @@ public enum ResourceAccess : ulong
     ShadingRateSource = 1UL << 18,
 }
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public enum TextureLayout : byte
 {
     Undefined,

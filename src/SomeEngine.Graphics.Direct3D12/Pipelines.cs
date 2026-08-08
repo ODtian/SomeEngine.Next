@@ -262,7 +262,14 @@ public sealed unsafe partial class D3D12Backend
         PipelineCache? cache = null)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
-        nativeDevice.ThrowIfUnavailable();
+        MeshShaders meshCapability =
+            nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipeline));
+        if (desc.Amplification != EntryPointReflection.Null &&
+            !meshCapability.AmplificationShaders)
+        {
+            throw new NotSupportedException(
+                "The Device does not support amplification shaders.");
+        }
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ValidateMeshDescription(desc);
 
@@ -486,7 +493,11 @@ public sealed unsafe partial class D3D12Backend
             byte[] bytes = new ReadOnlySpan<byte>(
                 (void*)code.GetBufferPointer(),
                 checked((int)code.GetBufferSize())).ToArray();
-            return new CompiledShader(entryPoint, bytes, SHA256.HashData(bytes));
+            return new CompiledShader(
+                entryPoint,
+                bytes,
+                SHA256.HashData(bytes),
+                GetSlangEntryPointIdentity(program, selectedIndex));
         }
         finally
         {
@@ -887,10 +898,17 @@ public sealed unsafe partial class D3D12Backend
         D3D12Device device,
         D3D12RootLayout root,
         CompiledShader compute) =>
-        CreatePipelineKey(device, root, 2, writer =>
-        {
-            writer.Write(compute.Hash);
-        });
+        CreateCanonicalPipelineKey(
+            device,
+            2,
+            writer =>
+            {
+                writer.Write(1u);
+                writer.Write(true);
+                WriteCompiledShaderIdentity(writer, compute);
+            },
+            writer => WriteClassicRootLayouts(writer, root),
+            static _ => { });
 
     private static byte[] CreateGraphicsPipelineKey(
         D3D12Device device,
@@ -900,12 +918,19 @@ public sealed unsafe partial class D3D12Backend
         in GraphicsPipelineDesc desc)
     {
         GraphicsPipelineKeyData data = GraphicsPipelineKeyData.Capture(desc);
-        return CreatePipelineKey(device, root, 1, writer =>
-        {
-            writer.Write(vertex.Hash);
-            writer.Write(pixel.Hash);
-            data.Write(writer);
-        });
+        return CreateCanonicalPipelineKey(
+            device,
+            1,
+            writer =>
+            {
+                writer.Write(2u);
+                writer.Write(true);
+                WriteCompiledShaderIdentity(writer, vertex);
+                writer.Write(true);
+                WriteCompiledShaderIdentity(writer, pixel);
+            },
+            writer => WriteClassicRootLayouts(writer, root),
+            data.Write);
     }
 
     private static byte[] CreateMeshPipelineKey(
@@ -917,36 +942,42 @@ public sealed unsafe partial class D3D12Backend
         in MeshPipelineDesc desc)
     {
         MeshPipelineKeyData data = MeshPipelineKeyData.Capture(desc);
-        return CreatePipelineKey(device, root, 3, writer =>
-        {
-            writer.Write(mesh.Hash);
-            writer.Write(amplification is not null);
-            if (amplification is not null)
-                writer.Write(amplification.Hash);
-            writer.Write(pixel is not null);
-            if (pixel is not null)
-                writer.Write(pixel.Hash);
-            data.Write(writer);
-        });
+        return CreateCanonicalPipelineKey(
+            device,
+            3,
+            writer =>
+            {
+                writer.Write(3u);
+                writer.Write(true);
+                WriteCompiledShaderIdentity(writer, mesh);
+                writer.Write(amplification is not null);
+                if (amplification is not null)
+                    WriteCompiledShaderIdentity(writer, amplification);
+                writer.Write(pixel is not null);
+                if (pixel is not null)
+                    WriteCompiledShaderIdentity(writer, pixel);
+            },
+            writer => WriteClassicRootLayouts(writer, root),
+            data.Write);
     }
 
-    private static byte[] CreatePipelineKey(
-        D3D12Device device,
-        D3D12RootLayout root,
-        byte family,
-        Action<BinaryWriter> writeFamily)
+    private static void WriteCompiledShaderIdentity(
+        BinaryWriter writer,
+        CompiledShader shader)
     {
-        using MemoryStream stream = new();
-        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
-        {
-            writer.Write(RootLayoutSchemaVersion);
-            writer.Write(family);
-            writer.Write(device.EnabledNodeMask);
-            writer.Write(root.Serialized.Length);
-            writer.Write(root.Serialized);
-            writeFamily(writer);
-        }
-        return SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
+        writer.Write((int)shader.EntryPoint.Stage);
+        WriteCanonicalString(writer, GetStableEntryPointName(shader.EntryPoint));
+        WriteCanonicalBytes(writer, shader.ProgramIdentity);
+        WriteCanonicalBytes(writer, shader.CodeHash);
+    }
+
+    private static void WriteClassicRootLayouts(
+        BinaryWriter writer,
+        D3D12RootLayout root)
+    {
+        writer.Write(1u);
+        WriteCanonicalBytes(writer, root.Serialized);
+        writer.Write(0u);
     }
 
     private static byte[]? TryGetCachedData(
@@ -985,16 +1016,19 @@ public sealed unsafe partial class D3D12Backend
         internal CompiledShader(
             EntryPointReflection entryPoint,
             byte[] code,
-            byte[] hash)
+            byte[] codeHash,
+            byte[] programIdentity)
         {
             EntryPoint = entryPoint;
             Code = code;
-            Hash = hash;
+            CodeHash = codeHash;
+            ProgramIdentity = programIdentity;
         }
 
         internal EntryPointReflection EntryPoint { get; }
         internal byte[] Code { get; }
-        internal byte[] Hash { get; }
+        internal byte[] CodeHash { get; }
+        internal byte[] ProgramIdentity { get; }
     }
 
     private abstract class D3D12Pipeline : Pipeline, ID3D12PipelineArtifact
@@ -1013,7 +1047,7 @@ public sealed unsafe partial class D3D12Backend
             PipelineType type,
             in PipelineSignature signature,
             string? label)
-            : base(device, type, signature, root.BindingContracts, label)
+            : base(device, type, signature, label)
         {
             _device = device;
             _root = root;
@@ -1024,7 +1058,7 @@ public sealed unsafe partial class D3D12Backend
                 root.NativeLifetime);
         }
 
-        protected IUnknown* NativeObject => (IUnknown*)_native.Pointer;
+        internal IUnknown* NativeObject => (IUnknown*)_native.Pointer;
         internal D3D12RootLayout RootLayout => _root;
         ID3D12RootSignature* ID3D12PipelineArtifact.RootSignature => _root.Native;
         NativeLease ID3D12PipelineArtifact.NativeLifetime => _native;
@@ -1344,7 +1378,7 @@ public sealed unsafe partial class D3D12Backend
         internal void Write(BinaryWriter writer)
         {
             writer.Write(Gap);
-            writer.Write(Semantic);
+            WriteCanonicalString(writer, Semantic);
             writer.Write(SemanticIndex);
             writer.Write(Stream);
             writer.Write(StartComponent);
@@ -1359,8 +1393,8 @@ public sealed unsafe partial class D3D12Backend
         writer.Write((byte)value.Cull);
         writer.Write((byte)value.FrontFace);
         writer.Write(value.DepthBias);
-        writer.Write(value.DepthBiasClamp);
-        writer.Write(value.SlopeScaledDepthBias);
+        WriteCanonicalSingle(writer, value.DepthBiasClamp);
+        WriteCanonicalSingle(writer, value.SlopeScaledDepthBias);
         writer.Write(value.DepthClip);
         writer.Write(value.ConservativeRasterization);
     }

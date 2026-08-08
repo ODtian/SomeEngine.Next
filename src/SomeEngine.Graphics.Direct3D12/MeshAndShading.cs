@@ -11,12 +11,17 @@ public sealed unsafe partial class D3D12Backend
     public void DispatchMesh(CommandContext context, in DispatchArguments arguments)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        _ = command.NativeDevice.RequireCapability<MeshShaders>(nameof(DispatchMesh));
         command.List->DispatchMesh(arguments.X, arguments.Y, arguments.Z);
     }
 
     public void DispatchMeshIndirect(CommandContext context, in BufferRegion arguments)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        MeshShaders capability =
+            command.NativeDevice.RequireCapability<MeshShaders>(nameof(DispatchMeshIndirect));
+        if (!capability.IndirectDispatch)
+            throw new NotSupportedException("Indirect mesh dispatch is unavailable.");
         D3D12Buffer buffer = NativeCast.Buffer(arguments.Buffer);
         BufferRange range = arguments.Range.Resolve(buffer.Info.Size);
         if ((buffer.Info.Usages & BufferUsages.Indirect) == 0 ||
@@ -44,6 +49,15 @@ public sealed unsafe partial class D3D12Backend
         ShadingRateCombiner imageCombiner)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        VariableRateShading capability =
+            command.NativeDevice.RequireCapability<VariableRateShading>(nameof(SetShadingRate));
+        if (!capability.Rates.Contains(rate) ||
+            !capability.Combiners.Contains(primitiveCombiner) ||
+            !capability.Combiners.Contains(imageCombiner))
+        {
+            throw new NotSupportedException(
+                "The requested shading rate or combiner is not advertised by the Device.");
+        }
         if (command.ShadingRateEquals(rate, primitiveCombiner, imageCombiner))
             return;
 
@@ -53,12 +67,17 @@ public sealed unsafe partial class D3D12Backend
             ToNativeShadingRateCombiner(imageCombiner),
         };
         command.List->RSSetShadingRate(ToNativeShadingRate(rate), combiners);
+        command.Recording.RecordShadingRateSetter();
         command.RememberShadingRate(rate, primitiveCombiner, imageCombiner);
     }
 
     public void SetShadingRateImage(CommandContext context, Texture? texture)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        VariableRateShading capability = command.NativeDevice
+            .RequireCapability<VariableRateShading>(nameof(SetShadingRateImage));
+        if (!capability.ShadingRateImage)
+            throw new NotSupportedException("Shading-rate images are unavailable.");
         if (command.ShadingRateImageEquals(texture))
             return;
 
@@ -71,6 +90,7 @@ public sealed unsafe partial class D3D12Backend
 
         ID3D12Resource* shadingRateImage = native is null ? null : native.Native;
         command.List->RSSetShadingRateImage(shadingRateImage);
+        command.Recording.RecordShadingRateImageSetter();
         command.RememberShadingRateImage(texture);
     }
 

@@ -372,7 +372,7 @@ internal sealed class ClusterMaterialRuntime : IDisposable
 
             using CommandContext commands = _backend.CreateCommandContext(
                 _device,
-                new CommandContextDesc(QueueType.Graphics, 0, 0, 1, Label: "Cluster texture upload"));
+                new CommandContextDesc(QueueType.Graphics, 0, 1, Label: "Cluster texture upload"));
             _backend.Begin(commands);
             bool recording = true;
             RecordedCommands recorded;

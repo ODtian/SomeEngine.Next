@@ -34,12 +34,19 @@ internal static class BenchmarkOutput
         RunDisposition disposition = profile == BenchmarkProfile.VendorCertification
             ? RunDisposition.Passed
             : RunDisposition.FunctionalOnly;
+        string reason = profile switch
+        {
+            BenchmarkProfile.WarpFunctional =>
+                "Reduced-count WARP functional workload executed; not performance evidence.",
+            BenchmarkProfile.FastDiagnostic =>
+                "Fast hardware diagnostic workload executed; never vendor-certification evidence.",
+            BenchmarkProfile.VendorCertification => "Fixed vendor workload executed.",
+            _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+        };
         return new WorkloadRun(
             workload,
             disposition,
-            profile == BenchmarkProfile.VendorCertification
-                ? "Fixed vendor workload executed."
-                : "Reduced-count WARP functional workload executed; not performance evidence.",
+            reason,
             warmupFrames,
             measuredFrames,
             drawCount,

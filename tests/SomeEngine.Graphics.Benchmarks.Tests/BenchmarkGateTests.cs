@@ -25,6 +25,7 @@ public sealed class BenchmarkGateTests
             FixedGraphicsProtocol.InterleavedRounds[^1]);
 
         ProtocolSnapshot snapshot = ProtocolSnapshot.Create(
+            BenchmarkProfile.VendorCertification,
             FixedGraphicsProtocol.WarmupFrames,
             FixedGraphicsProtocol.MeasuredFrames,
             FixedGraphicsProtocol.ProcessCount,
@@ -34,6 +35,28 @@ public sealed class BenchmarkGateTests
         Assert.Equal(
             FixedGraphicsProtocol.InterleavedRounds[2].Select(static value => value.ToString()),
             snapshot.InterleavedRounds[2]);
+    }
+
+    [Fact]
+    public void FastDiagnosticRecordsFourLatinSquareRoundsAndOnlyDrawWorkloads()
+    {
+        ProtocolSnapshot snapshot = GateTestData.DiagnosticProtocol;
+
+        Assert.Equal(FixedGraphicsProtocol.DiagnosticProcessCount, snapshot.InterleavedRounds.Length);
+        for (int position = 0; position < FixedGraphicsProtocol.Variants.Length; position++)
+        {
+            Assert.Equal(
+                FixedGraphicsProtocol.Variants.Order(),
+                snapshot.InterleavedRounds
+                    .Select(round => Enum.Parse<ReceiverVariant>(round[position]))
+                    .Order());
+        }
+        Assert.Equal(
+            FixedGraphicsProtocol.DiagnosticWorkloads.Select(static value => value.ToString()),
+            snapshot.Workloads);
+        Assert.DoesNotContain(GraphicsWorkload.EmptySubmit.ToString(), snapshot.Workloads);
+        Assert.DoesNotContain(GraphicsWorkload.ExplicitBarrier4096.ToString(), snapshot.Workloads);
+        Assert.DoesNotContain(GraphicsWorkload.ThreeQueuePresent.ToString(), snapshot.Workloads);
     }
 
     [Fact]
@@ -81,6 +104,7 @@ public sealed class BenchmarkGateTests
                 DateTimeOffset.UnixEpoch,
                 DateTimeOffset.UnixEpoch,
                 ProtocolSnapshot.Create(
+                    BenchmarkProfile.VendorCertification,
                     FixedGraphicsProtocol.WarmupFrames,
                     FixedGraphicsProtocol.MeasuredFrames,
                     FixedGraphicsProtocol.ProcessCount,
@@ -91,7 +115,8 @@ public sealed class BenchmarkGateTests
                     RunDisposition.Passed,
                     "test",
                     [],
-                    [comparison]));
+                    [comparison],
+                    []));
 
             report.Write(path);
             GraphicsBenchmarkReport roundTripped = GraphicsBenchmarkReport.Read(path);
@@ -103,6 +128,58 @@ public sealed class BenchmarkGateTests
         finally
         {
             File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void EvaluateReadsHashedRawEvidenceAndFailsClosedAfterTampering()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            $"someengine-graphics-evidence-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            ProcessRun[] runs = GateTestData.ValidWarpRuns();
+            var rawEvidence = new RawProcessEvidence[runs.Length];
+            for (int position = 0; position < runs.Length; position++)
+            {
+                ProcessRun run = runs[position];
+                string rawPath = Path.Combine(directory, $"00-{position:D2}.json");
+                GraphicsBenchmarkReport.WriteProcess(rawPath, run);
+                rawEvidence[position] = new RawProcessEvidence(
+                    Path.GetFileName(rawPath),
+                    BenchmarkEnvironment.Sha256File(rawPath),
+                    run.Variant,
+                    0,
+                    position);
+            }
+
+            string reportPath = Path.Combine(directory, "report.json");
+            new GraphicsBenchmarkReport(
+                FixedGraphicsProtocol.Schema,
+                BenchmarkProfile.WarpFunctional,
+                RunDisposition.FunctionalOnly,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                DateTimeOffset.UnixEpoch,
+                GateTestData.WarpProtocol,
+                rawEvidence,
+                new GateResult(RunDisposition.Failed, "stored gate is not trusted", [], [], []))
+                .Write(reportPath);
+            BenchmarkOptions options = BenchmarkOptions.Parse([
+                "evaluate",
+                "--input", reportPath,
+            ]);
+
+            Assert.Equal(0, BenchmarkController.EvaluateExisting(options));
+
+            File.AppendAllText(Path.Combine(directory, "00-00.json"), " ");
+            Assert.Equal(3, BenchmarkController.EvaluateExisting(options));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -123,6 +200,49 @@ public sealed class BenchmarkGateTests
         Assert.Equal(RunDisposition.FunctionalOnly, result.Disposition);
         Assert.Empty(result.Issues);
         Assert.Empty(result.Comparisons);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void CompleteFastDiagnosticIsMarkedNonCertificationAndCanNeverPass()
+    {
+        GateResult result = BenchmarkGate.Evaluate(
+            BenchmarkProfile.FastDiagnostic,
+            GateTestData.DiagnosticProtocol,
+            GateTestData.ValidDiagnosticRuns());
+
+        Assert.Equal(RunDisposition.FunctionalOnly, result.Disposition);
+        Assert.Contains(result.Issues, issue =>
+            issue.Code == "RHI-EVID-DIAGNOSTIC-NONCERTIFICATION");
+        Assert.Empty(result.Comparisons);
+        Assert.Equal(6, result.Diagnostics.Length);
+        Assert.All(result.Diagnostics, diagnostic =>
+        {
+            Assert.Equal(4, diagnostic.PositionEffectsPercent.Length);
+            Assert.Equal(4, diagnostic.RoundEffectsPercent.Length);
+            Assert.Equal(4, diagnostic.VariantEffectsPercent.Length);
+            Assert.True(double.IsFinite(diagnostic.PositionSpreadPercent));
+            Assert.True(double.IsFinite(diagnostic.RoundSpreadPercent));
+            Assert.True(double.IsFinite(diagnostic.VariantSpreadPercent));
+            Assert.True(double.IsFinite(diagnostic.ResidualRmsPercent));
+        });
+    }
+
+    [Fact]
+    public void FastDiagnosticWithAnExcludedOrMissingWorkloadFailsClosed()
+    {
+        ProcessRun[] runs = GateTestData.ValidDiagnosticRuns();
+        runs[0] = runs[0] with { Workloads = runs[0].Workloads[1..] };
+
+        GateResult result = BenchmarkGate.Evaluate(
+            BenchmarkProfile.FastDiagnostic,
+            GateTestData.DiagnosticProtocol,
+            runs);
+
+        Assert.Equal(RunDisposition.Failed, result.Disposition);
+        Assert.Contains(result.Issues, issue => issue.Code == "RHI-EVID-WORKLOAD-INVENTORY");
+        Assert.Contains(result.Issues, issue =>
+            issue.Code == "RHI-EVID-DIAGNOSTIC-NONCERTIFICATION");
     }
 
     [Fact]
@@ -343,14 +463,29 @@ public sealed class BenchmarkGateTests
 internal static class GateTestData
 {
     internal static ProtocolSnapshot WarpProtocol { get; } = ProtocolSnapshot.Create(
+        BenchmarkProfile.WarpFunctional,
         FixedGraphicsProtocol.WarpWarmupFrames,
         FixedGraphicsProtocol.WarpMeasuredFrames,
         1,
         FixedGraphicsProtocol.WarpDrawCount,
         FixedGraphicsProtocol.WarpBarrierCount);
 
+    internal static ProtocolSnapshot DiagnosticProtocol { get; } = ProtocolSnapshot.Create(
+        BenchmarkProfile.FastDiagnostic,
+        FixedGraphicsProtocol.DiagnosticWarmupFrames,
+        FixedGraphicsProtocol.DiagnosticMeasuredFrames,
+        FixedGraphicsProtocol.DiagnosticProcessCount,
+        FixedGraphicsProtocol.DiagnosticDrawCount,
+        FixedGraphicsProtocol.DiagnosticBarrierCount);
+
     internal static ProcessRun[] ValidWarpRuns() =>
         FixedGraphicsProtocol.Variants.Select(CreateRun).ToArray();
+
+    internal static ProcessRun[] ValidDiagnosticRuns() =>
+        Enumerable.Range(0, FixedGraphicsProtocol.DiagnosticProcessCount)
+            .SelectMany(processIndex => FixedGraphicsProtocol.Variants.Select(
+                variant => CreateDiagnosticRun(variant, processIndex)))
+            .ToArray();
 
     internal static ProcessRun WithCpu(ProcessRun run, double microseconds)
     {
@@ -383,6 +518,49 @@ internal static class GateTestData
             "functional",
             CreateEnvironment(),
             workloads);
+    }
+
+    private static ProcessRun CreateDiagnosticRun(ReceiverVariant variant, int processIndex)
+    {
+        WorkloadRun[] workloads = FixedGraphicsProtocol.DiagnosticWorkloads
+            .Select(CreateDiagnosticWorkload)
+            .ToArray();
+        return new ProcessRun(
+            variant,
+            RunDisposition.FunctionalOnly,
+            "diagnostic",
+            CreateEnvironment() with
+            {
+                ProcessIndex = processIndex,
+                AdapterName = "Test Hardware Adapter",
+                VendorId = 1,
+                DeviceId = 2,
+                HardwareAccelerated = true,
+            },
+            workloads);
+    }
+
+    private static WorkloadRun CreateDiagnosticWorkload(GraphicsWorkload workload)
+    {
+        WorkloadRun baseline = CreateWorkload(workload);
+        FrameSample[] samples = Enumerable
+            .Range(0, FixedGraphicsProtocol.DiagnosticMeasuredFrames)
+            .Select(index => new FrameSample(index, 100, 1, 1, 0, 0, checked((ulong)index + 1)))
+            .ToArray();
+        return baseline with
+        {
+            Reason = "diagnostic",
+            WarmupFrames = FixedGraphicsProtocol.DiagnosticWarmupFrames,
+            MeasuredFrames = FixedGraphicsProtocol.DiagnosticMeasuredFrames,
+            DrawCount = FixedGraphicsProtocol.DiagnosticDrawCount,
+            Samples = samples,
+            NativeSetters = baseline.NativeSetters with
+            {
+                DrawCalls = FixedGraphicsProtocol.DiagnosticDrawCount,
+            },
+            Cpu = MetricDistribution.From(samples.Select(static value => value.CpuMicroseconds).ToArray()),
+            Gpu = MetricDistribution.From(samples.Select(static value => value.GpuMicroseconds!.Value).ToArray()),
+        };
     }
 
     private static WorkloadRun CreateWorkload(GraphicsWorkload workload)

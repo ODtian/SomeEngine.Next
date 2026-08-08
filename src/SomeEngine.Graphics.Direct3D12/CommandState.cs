@@ -33,6 +33,7 @@ public sealed unsafe partial class D3D12Backend
             firstSlot,
             checked((uint)bindings.Length),
             native);
+        command.Recording.RecordVertexBufferSetter();
         command.RememberVertexBuffers(firstSlot, bindings);
     }
 
@@ -50,6 +51,7 @@ public sealed unsafe partial class D3D12Backend
                 : DxgiFormat.FormatR32Uint);
         command.Capture(buffer);
         command.List->IASetIndexBuffer(&native);
+        command.Recording.RecordIndexBufferSetter();
         command.RememberIndexBuffer(binding);
     }
 
@@ -58,6 +60,11 @@ public sealed unsafe partial class D3D12Backend
         uint firstSlot,
         ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
+        if (context.Bundle)
+        {
+            throw new InvalidOperationException(
+                "Stream-output targets are not legal in a D3D12 command bundle.");
+        }
         D3D12CommandContext command = NativeCast.CommandContext(context);
         if (command.StreamOutputBuffersEqual(firstSlot, bindings))
             return;
@@ -81,12 +88,15 @@ public sealed unsafe partial class D3D12Backend
             command.Capture(buffer);
         }
         command.List->SOSetTargets(firstSlot, checked((uint)bindings.Length), native);
+        command.Recording.RecordStreamOutputBufferSetter();
         command.RememberStreamOutputBuffers(firstSlot, bindings);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports)
     {
+        if (context.Bundle)
+            throw new InvalidOperationException("Viewports are not legal in a D3D12 command bundle.");
         D3D12CommandContext command = NativeCast.CommandContext(context);
         if (command.ViewportsEqual(viewports))
             return;
@@ -118,6 +128,8 @@ public sealed unsafe partial class D3D12Backend
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public void SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors)
     {
+        if (context.Bundle)
+            throw new InvalidOperationException("Scissors are not legal in a D3D12 command bundle.");
         D3D12CommandContext command = NativeCast.CommandContext(context);
         if (command.ScissorsEqual(scissors))
             return;
@@ -151,6 +163,7 @@ public sealed unsafe partial class D3D12Backend
             return;
         Vector4 copy = value;
         command.List->OMSetBlendFactor((float*)&copy);
+        command.Recording.RecordBlendConstantSetter();
         command.RememberBlendConstants(value);
     }
 
@@ -160,6 +173,7 @@ public sealed unsafe partial class D3D12Backend
         if (command.StencilReferenceEqual(value))
             return;
         command.List->OMSetStencilRef(value);
+        command.Recording.RecordStencilReferenceSetter();
         command.RememberStencilReference(value);
     }
 
@@ -169,6 +183,7 @@ public sealed unsafe partial class D3D12Backend
         if (command.DepthBoundsEqual(minimum, maximum))
             return;
         command.List->OMSetDepthBounds(minimum, maximum);
+        command.Recording.RecordDepthBoundsSetter();
         command.RememberDepthBounds(minimum, maximum);
     }
 
@@ -182,6 +197,7 @@ public sealed unsafe partial class D3D12Backend
         if (command.DepthBiasEqual(bias, clamp, slopeScaledBias))
             return;
         command.List->RSSetDepthBias(bias, clamp, slopeScaledBias);
+        command.Recording.RecordDepthBiasSetter();
         command.RememberDepthBias(bias, clamp, slopeScaledBias);
     }
 
@@ -191,6 +207,7 @@ public sealed unsafe partial class D3D12Backend
         if (command.PrimitiveTopologyEqual(topology))
             return;
         command.List->IASetPrimitiveTopology(ToNativeTopology(topology));
+        command.Recording.RecordPrimitiveTopologySetter();
         command.RememberPrimitiveTopology(topology);
     }
 
@@ -206,6 +223,7 @@ public sealed unsafe partial class D3D12Backend
             StripCut.UInt32 => IndexBufferStripCutValue.Value0xFfffffff,
             _ => throw new ArgumentOutOfRangeException(nameof(stripCut)),
         });
+        command.Recording.RecordStripCutSetter();
         command.RememberStripCut(stripCut);
     }
 
@@ -228,6 +246,7 @@ public sealed unsafe partial class D3D12Backend
             operation == PredicationOperation.EqualZero
                 ? PredicationOp.EqualZero
                 : PredicationOp.NotEqualZero);
+        command.Recording.RecordPredicationSetter();
         command.RememberPredication(buffer, offset, operation);
     }
 
@@ -405,15 +424,9 @@ public sealed unsafe partial class D3D12Backend
                 ref readonly Viewport value = ref values[0];
                 if (ViewportBitsEqual(_singleViewport, value))
                     return true;
-                return
-                    NormalizedFloatEquals(_singleViewport.X, value.X) &&
-                    NormalizedFloatEquals(_singleViewport.Y, value.Y) &&
-                    NormalizedFloatEquals(_singleViewport.Width, value.Width) &&
-                    NormalizedFloatEquals(_singleViewport.Height, value.Height) &&
-                    NormalizedFloatEquals(_singleViewport.MinimumDepth, value.MinimumDepth) &&
-                    NormalizedFloatEquals(_singleViewport.MaximumDepth, value.MaximumDepth);
+                return NormalizedViewportEqualsSlow(_singleViewport, value);
             }
-            return values.SequenceEqual(_viewports.AsSpan(0, _viewportCount));
+            return ViewportSequenceEqualSlow(values);
         }
         internal void RememberViewports(ReadOnlySpan<Viewport> values)
         {
@@ -436,13 +449,9 @@ public sealed unsafe partial class D3D12Backend
             if (values.Length == 1)
             {
                 ref readonly ScissorRect value = ref values[0];
-                return
-                    _singleScissor.X == value.X &&
-                    _singleScissor.Y == value.Y &&
-                    _singleScissor.Width == value.Width &&
-                    _singleScissor.Height == value.Height;
+                return ScissorBitsEqual(_singleScissor, value);
             }
-            return values.SequenceEqual(_scissors.AsSpan(0, _scissorCount));
+            return ScissorSequenceEqualSlow(values);
         }
         internal void RememberScissors(ReadOnlySpan<ScissorRect> values)
         {
@@ -470,6 +479,36 @@ public sealed unsafe partial class D3D12Backend
                    Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref leftBytes, 16)) ==
                    Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref rightBytes, 16));
         }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private static bool ScissorBitsEqual(in ScissorRect left, in ScissorRect right)
+        {
+            ref byte leftBytes = ref Unsafe.As<ScissorRect, byte>(ref Unsafe.AsRef(in left));
+            ref byte rightBytes = ref Unsafe.As<ScissorRect, byte>(ref Unsafe.AsRef(in right));
+            return Unsafe.ReadUnaligned<ulong>(ref leftBytes) ==
+                   Unsafe.ReadUnaligned<ulong>(ref rightBytes) &&
+                   Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref leftBytes, 8)) ==
+                   Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref rightBytes, 8));
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static bool NormalizedViewportEqualsSlow(
+            in Viewport left,
+            in Viewport right) =>
+            NormalizedFloatEquals(left.X, right.X) &&
+            NormalizedFloatEquals(left.Y, right.Y) &&
+            NormalizedFloatEquals(left.Width, right.Width) &&
+            NormalizedFloatEquals(left.Height, right.Height) &&
+            NormalizedFloatEquals(left.MinimumDepth, right.MinimumDepth) &&
+            NormalizedFloatEquals(left.MaximumDepth, right.MaximumDepth);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private bool ViewportSequenceEqualSlow(ReadOnlySpan<Viewport> values) =>
+            values.SequenceEqual(_viewports.AsSpan(0, _viewportCount));
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private bool ScissorSequenceEqualSlow(ReadOnlySpan<ScissorRect> values) =>
+            values.SequenceEqual(_scissors.AsSpan(0, _scissorCount));
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private static bool NormalizedFloatEquals(float left, float right) =>

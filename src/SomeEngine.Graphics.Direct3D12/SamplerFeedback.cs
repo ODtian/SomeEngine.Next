@@ -1,3 +1,4 @@
+using System.Numerics;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using DxgiFormat = Silk.NET.DXGI.Format;
@@ -14,9 +15,35 @@ public sealed unsafe partial class D3D12Backend
         in SamplerFeedbackTextureDesc desc)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
+        SamplerFeedback capability =
+            nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackTexture));
         D3D12TextureResource sampled = NativeCast.Texture(desc.SampledTexture);
 
         TextureInfo sampledInfo = sampled.Info;
+        if (sampledInfo.Dimension != TextureDimension.Texture2D ||
+            sampledInfo.SampleCount != 1 ||
+            (sampledInfo.Usages & TextureUsages.Sampled) == 0)
+        {
+            throw new ArgumentException(
+                "Sampler feedback requires a single-sampled Texture2D with Sampled usage.",
+                nameof(desc));
+        }
+        if (!capability.SupportedFormats.Contains(sampledInfo.Format))
+        {
+            throw new NotSupportedException(
+                $"Format {sampledInfo.Format} does not support sampler feedback.");
+        }
+        if (desc.MipRegionWidth < capability.MinimumMipRegionWidth ||
+            desc.MipRegionHeight < capability.MinimumMipRegionHeight ||
+            desc.MipRegionWidth > sampledInfo.Width / 2 ||
+            desc.MipRegionHeight > sampledInfo.Height / 2 ||
+            !BitOperations.IsPow2(desc.MipRegionWidth) ||
+            !BitOperations.IsPow2(desc.MipRegionHeight))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(desc),
+                "Sampler-feedback mip-region dimensions must be supported powers of two.");
+        }
         DxgiFormat opaqueFormat = desc.Type switch
         {
             SamplerFeedbackType.MinimumMip => DxgiFormat.FormatSamplerFeedbackMinMipOpaque,
@@ -133,7 +160,26 @@ public sealed unsafe partial class D3D12Backend
         in TextureUavDesc desc)
     {
         D3D12Device nativeDevice = NativeCast.Device(device);
+        _ = nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackUav));
         D3D12SamplerFeedbackTexture feedback = NativeCast.SamplerFeedbackTexture(texture);
+        TextureInfo info = feedback.Info;
+        TextureSubresourceRange range = desc.Range;
+        TextureViewDimension expectedDimension = info.ArrayLayerCount == 1
+            ? TextureViewDimension.Texture2D
+            : TextureViewDimension.Texture2DArray;
+        if (!ReferenceEquals(texture, desc.Texture) ||
+            desc.Format != Format.R8UInt ||
+            desc.Dimension != expectedDimension ||
+            range.FirstMipLevel != 0 ||
+            range.MipLevelCount != info.MipLevelCount ||
+            range.FirstArrayLayer != 0 ||
+            range.ArrayLayerCount != info.ArrayLayerCount ||
+            range.Aspects is not (TextureAspects.Color or TextureAspects.Plane0))
+        {
+            throw new ArgumentException(
+                "A sampler-feedback UAV must describe the complete supplied feedback Texture.",
+                nameof(desc));
+        }
         D3D12TextureResource feedbackResource = feedback.NativeResource;
         D3D12TextureResource sampled = NativeCast.Texture(feedback.SampledTexture);
         DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
@@ -170,6 +216,7 @@ public sealed unsafe partial class D3D12Backend
         SamplerFeedbackUav feedback)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ClearSamplerFeedback));
         D3D12SamplerFeedbackUav native = NativeCast.SamplerFeedbackUav(feedback);
 
         (CpuDescriptorHandle cpu, GpuDescriptorHandle gpu) =
@@ -193,6 +240,7 @@ public sealed unsafe partial class D3D12Backend
         in BufferRange destinationRange)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
         D3D12SamplerFeedbackTexture nativeFeedback =
             NativeCast.SamplerFeedbackTexture(feedback);
         D3D12Buffer nativeDestination = NativeCast.Buffer(destination);
@@ -238,6 +286,7 @@ public sealed unsafe partial class D3D12Backend
         in TextureSubresourceRange destinationRange)
     {
         D3D12CommandContext command = NativeCast.CommandContext(context);
+        _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
         D3D12SamplerFeedbackTexture nativeFeedback =
             NativeCast.SamplerFeedbackTexture(feedback);
         D3D12TextureResource nativeDestination = NativeCast.Texture(destination);

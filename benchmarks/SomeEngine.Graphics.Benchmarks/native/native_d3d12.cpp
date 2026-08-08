@@ -1472,13 +1472,17 @@ process_run run_native_d3d12(const configuration& config)
     }
     const std::string shader_manifest = sha256_file(config.shader_directory / "manifest.json");
     std::vector<workload_run> workloads;
-    workloads.reserve(6);
-    workloads.push_back(run_empty_submit(context, config, shader_manifest));
+    workloads.reserve(config.selected_profile == profile::diagnostic ? 3 : 6);
+    if (config.selected_profile != profile::diagnostic)
+        workloads.push_back(run_empty_submit(context, config, shader_manifest));
     workloads.push_back(run_draw(context, config, shader_manifest, workload_kind::persistent_draw));
     workloads.push_back(run_draw(context, config, shader_manifest, workload_kind::transient_draw));
     workloads.push_back(run_draw(context, config, shader_manifest, workload_kind::state_suppression));
-    workloads.push_back(run_explicit_barriers(context, config, shader_manifest));
-    workloads.push_back(run_three_queue_present(context, config, shader_manifest));
+    if (config.selected_profile != profile::diagnostic)
+    {
+        workloads.push_back(run_explicit_barriers(context, config, shader_manifest));
+        workloads.push_back(run_three_queue_present(context, config, shader_manifest));
+    }
     const auto result = config.selected_profile == profile::certification
         ? disposition::passed
         : disposition::functional_only;
@@ -1486,7 +1490,9 @@ process_run run_native_d3d12(const configuration& config)
         result,
         config.selected_profile == profile::certification
             ? "All fixed native C++ D3D12 workloads executed."
-            : "All reduced-count native C++ D3D12 workloads executed on WARP; not performance evidence.",
+            : config.selected_profile == profile::diagnostic
+                ? "The three draw-only native C++ D3D12 diagnostics executed; never vendor-certification evidence."
+                : "All reduced-count native C++ D3D12 workloads executed on WARP; not performance evidence.",
         std::move(environment),
         std::move(workloads)};
 }

@@ -7,17 +7,38 @@ using NativeDxgi = Silk.NET.DXGI.DXGI;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct D3D12ValidationOptions(
     bool DisableGpuBasedValidation = false,
     bool DisableSynchronizedQueueValidation = false,
     bool DisableDred = false);
 
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public readonly record struct D3D12BackendOptions(
     D3D12ValidationOptions Validation = default);
 
 /// <summary>
 /// The one Direct3D 12 receiver. It owns DXGI, D3D12, and every native child created through it.
 /// </summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Caller-disposed backend-runtime root. Construction creates one ownership
+/// right; transferring it to <see cref="Graphics{TBackend}"/> or the Validation Layer does not leave a
+/// second disposal right. It destroys Devices and backend-created Surfaces before releasing DXGI and
+/// D3D12 runtime state.</para>
+/// <para><b>After Dispose:</b> No receiver or native-access operation is valid and the runtime never reopens.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 public sealed unsafe partial class D3D12Backend : IGraphicsBackend, INativeValidationControl
 {
     private const int DxgiErrorNotFound = unchecked((int)0x887A0002);
@@ -188,6 +209,13 @@ public sealed unsafe partial class D3D12Backend : IGraphicsBackend, INativeValid
                 throw new ArgumentOutOfRangeException(nameof(desc), "A Queue count must be nonzero.");
             if (!float.IsFinite(queue.Priority) || queue.Priority is < 0f or > 1f)
                 throw new ArgumentOutOfRangeException(nameof(desc), "A Queue priority must be finite and in [0, 1].");
+            if (queue.NodeIndex >= 32 ||
+                (desc.EnabledNodeMask & (1u << checked((int)queue.NodeIndex))) == 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(desc),
+                    "A Queue NodeIndex must select one enabled linked-adapter node.");
+            }
         }
     }
 

@@ -50,6 +50,8 @@ public sealed class WarpWorkGraphTests
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out WorkGraphs? capability));
         Assert.NotNull(capability);
+        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
+        Assert.NotNull(diagnostics);
         Assert.True(capability.CpuInput);
         Assert.True(capability.GpuInput);
 
@@ -101,7 +103,7 @@ public sealed class WarpWorkGraphTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(context);
         backend.Barrier(context, new BufferBarrier(
             backing,
@@ -143,6 +145,9 @@ public sealed class WarpWorkGraphTests
             context,
             new WorkGraphDispatchDesc(0, cpuRecord, 1, sizeof(uint)));
         using RecordedCommands commands = backend.End(context);
+        D3D12CommandStatistics commandStatistics =
+            diagnostics!.GetCommandStatistics(commands);
+        Assert.Equal(2, commandStatistics.StateSetters.WorkGraphPrograms);
 
         Queue queue = backend.GetQueue(device, QueueType.Compute);
         QueueCompletion completion = backend.Submit(
@@ -154,7 +159,7 @@ public sealed class WarpWorkGraphTests
 
         using CommandContext reuseContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(reuseContext);
         backend.SetWorkGraphProgram(
             reuseContext,
@@ -175,7 +180,7 @@ public sealed class WarpWorkGraphTests
 
         using CommandContext replacementContext = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Compute, 0, 0, 1));
+            new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(replacementContext);
         backend.Barrier(replacementContext, new BufferBarrier(
             backing,

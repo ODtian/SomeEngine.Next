@@ -124,7 +124,7 @@ internal static class D3D12TestSupport
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Copy, 0, 0, 1, Label: "copy context"));
+            new CommandContextDesc(QueueType.Copy, 0, 1, Label: "copy context"));
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, range.Size));
         using RecordedCommands recorded = backend.End(context);
