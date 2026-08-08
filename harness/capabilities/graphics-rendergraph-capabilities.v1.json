@@ -96,6 +96,14 @@
       "allowSilentSkip": true,
       "platform": "windows-tier3-sm66",
       "note": "Warning-only success artifact when suitable hardware exists; capability false and fail-close remain hard elsewhere."
+    },
+    {
+      "id": "optional-d3d12-debug-layer",
+      "testProject": "tests/SomeEngine.Graphics.Direct3D12.Tests/SomeEngine.Graphics.Direct3D12.Tests.csproj",
+      "required": false,
+      "allowSilentSkip": true,
+      "platform": "windows-graphics-tools",
+      "note": "Optional InfoQueue/DRED execution artifact requiring the Windows Graphics Tools debug layer; portable device-loss status and native source closure remain hard elsewhere."
     }
   ],
   "capabilities": [
@@ -163,8 +171,8 @@
         ],
         "renderGraph": [
           {
-            "path": "src/SomeEngine.RenderGraph/Recording/GraphCanonicalData.cs",
-            "symbol": "DeviceCompilationSnapshot device"
+            "path": "src/SomeEngine.RenderGraph/Compilation/Compiler.cs",
+            "symbol": "Compile(FrozenGraph graph, DeviceCompilationSnapshot device"
           }
         ],
         "tests": [
@@ -183,10 +191,10 @@
         ]
       },
       "gaps": [
-        "Advanced profiles remain fail-closed booleans; this run does not claim native MeshShaderTier, VariableRateShadingTier, RayTracingTier, TiledResourcesTier, SamplerFeedbackTier or WorkGraphsTier discovery."
+        "The compact DeviceCapabilities snapshot exposes fail-closed support booleans; detailed native tiers and limits remain available through the feature-specific interfaces instead of being duplicated in this snapshot."
       ],
       "missingSemantics": [
-        "explicit advanced feature tier/limit facts, kept false or absent until queried"
+        "optional aggregation of advanced feature tiers and limits into the compact device snapshot"
       ],
       "documentationClaims": []
     },
@@ -305,7 +313,8 @@
       ],
       "requiredTestIds": [
         "SomeEngine.Graphics.Tests.NullLifetimeAndSubmissionTests.Bind_group_children_block_layout_views_resources_and_samplers",
-        "SomeEngine.Graphics.Direct3D12.Tests.DescriptorPipelineTests.Warp_executes_multi_group_descriptor_arrays_push_constants_and_compute"
+        "SomeEngine.Graphics.Direct3D12.Tests.DescriptorPipelineTests.Warp_executes_multi_group_descriptor_arrays_push_constants_and_compute",
+        "SomeEngine.Graphics.Direct3D12.Tests.CapabilityProfileTests.Warp_traditional_binding_remains_available_independently_of_optional_direct_heap_indexing"
       ],
       "mappings": {
         "public": [
@@ -347,6 +356,12 @@
             "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/DescriptorPipelineTests.cs",
             "symbol": "Warp_executes_multi_group_descriptor_arrays_push_constants_and_compute",
             "testId": "SomeEngine.Graphics.Direct3D12.Tests.DescriptorPipelineTests.Warp_executes_multi_group_descriptor_arrays_push_constants_and_compute",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/CapabilityProfileTests.cs",
+            "symbol": "Warp_traditional_binding_remains_available_independently_of_optional_direct_heap_indexing",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.CapabilityProfileTests.Warp_traditional_binding_remains_available_independently_of_optional_direct_heap_indexing",
             "lane": "windows-warp"
           }
         ]
@@ -443,20 +458,24 @@
           "note": "Checkpoint wrote native descriptors but did not close shader heap/root signature/lifetime execution."
         }
       ],
-      "currentLevel": "null-execution",
-      "requiredLevel": "null-execution",
+      "currentLevel": "native-execution",
+      "requiredLevel": "native-execution",
       "requiredAreas": [
         "public",
         "null",
+        "d3d12",
+        "renderGraph",
         "tests"
       ],
       "requiredLanes": [
         "portable-null",
-        "windows-warp"
+        "windows-warp",
+        "rendergraph-null"
       ],
       "requiredTestIds": [
-        "SomeEngine.Graphics.Tests.CapabilityProfileTests.Bindless_false_rejects_optional_api_without_affecting_traditional_binding",
-        "SomeEngine.Graphics.Direct3D12.Tests.CapabilityProfileTests.Warp_traditional_binding_does_not_require_sm66_tier3_or_direct_heap_indexing"
+        "SomeEngine.Graphics.Tests.BindlessTests.Advertised_bindless_profile_provides_stable_generation_checked_immutable_slots",
+        "SomeEngine.Graphics.Direct3D12.Tests.BindlessNativeTests.Warp_executes_sm66_direct_heap_indexing_with_stable_bindless_slots",
+        "SomeEngine.RenderGraph.Tests.BindlessProjectionTests.Graph_projects_exact_view_access_to_temporary_generation_checked_slot"
       ],
       "mappings": {
         "public": [
@@ -477,23 +496,42 @@
         ],
         "d3d12": [
           {
-            "path": "src/SomeEngine.Graphics.Direct3D12/Device/Capabilities.cs",
+            "path": "src/SomeEngine.Graphics.Direct3D12/Device/Bindless.cs",
             "symbol": "public BindlessTableHandle CreateBindlessTable"
+          },
+          {
+            "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineLayouts.cs",
+            "symbol": "RootSignatureFlags.ConstantBufferViewShaderResourceViewUnorderedAccessViewHeapDirectlyIndexed"
           }
         ],
-        "renderGraph": [],
+        "renderGraph": [
+          {
+            "path": "src/SomeEngine.RenderGraph/Authoring/GraphBuilder.cs",
+            "symbol": "public BindlessBufferAccess WriteBindless"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/GraphInvocation.cs",
+            "symbol": "_device.WriteBindlessBuffer"
+          }
+        ],
         "tests": [
           {
-            "path": "tests/SomeEngine.Graphics.Tests/CapabilityProfileTests.cs",
-            "symbol": "Bindless_false_rejects_optional_api_without_affecting_traditional_binding",
-            "testId": "SomeEngine.Graphics.Tests.CapabilityProfileTests.Bindless_false_rejects_optional_api_without_affecting_traditional_binding",
+            "path": "tests/SomeEngine.Graphics.Tests/BindlessTests.cs",
+            "symbol": "Advertised_bindless_profile_provides_stable_generation_checked_immutable_slots",
+            "testId": "SomeEngine.Graphics.Tests.BindlessTests.Advertised_bindless_profile_provides_stable_generation_checked_immutable_slots",
             "lane": "portable-null"
           },
           {
-            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/CapabilityProfileTests.cs",
-            "symbol": "Warp_traditional_binding_does_not_require_sm66_tier3_or_direct_heap_indexing",
-            "testId": "SomeEngine.Graphics.Direct3D12.Tests.CapabilityProfileTests.Warp_traditional_binding_does_not_require_sm66_tier3_or_direct_heap_indexing",
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/BindlessNativeTests.cs",
+            "symbol": "Warp_executes_sm66_direct_heap_indexing_with_stable_bindless_slots",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.BindlessNativeTests.Warp_executes_sm66_direct_heap_indexing_with_stable_bindless_slots",
             "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/BindlessProjectionTests.cs",
+            "symbol": "Graph_projects_exact_view_access_to_temporary_generation_checked_slot",
+            "testId": "SomeEngine.RenderGraph.Tests.BindlessProjectionTests.Graph_projects_exact_view_access_to_temporary_generation_checked_slot",
+            "lane": "rendergraph-null"
           }
         ]
       },
@@ -501,15 +539,10 @@
         "kind": "truth-correction",
         "run": "0004",
         "reason": "The checkpoint native descriptor writes were not a complete bindless execution path. Bindless is optional by accepted grill and is not a device-admission baseline.",
-        "observableSemantics": "The mandatory traditional path remains complete; unsupported bindless use reports capability false and fails closed. A hardware success artifact is warning-only until suitable hardware is available."
+        "observableSemantics": "The mandatory traditional path remains complete; unsupported bindless use reports capability false and fails closed. Supported adapters execute SM 6.6 direct descriptor-heap indexing with stable generation-checked slots. A raw shader index is obtained only while recording through UseBindlessSlot, which pins the exact slot and descriptor dependencies across pending and submitted command-list lifetime; RenderGraph projects exact declared views into invocation-scoped slots."
       },
-      "gaps": [
-        "No full D3D12 bindless heap/root-signature/shader-index/lifetime native execution closure"
-      ],
-      "missingSemantics": [
-        "native success path",
-        "hardware execution artifact"
-      ],
+      "gaps": [],
+      "missingSemantics": [],
       "documentationClaims": []
     },
     {
@@ -1004,18 +1037,30 @@
           {
             "path": "src/SomeEngine.Graphics/Device/IDevice.cs",
             "symbol": "PipelineHandle CreateRasterPipeline"
+          },
+          {
+            "path": "src/SomeEngine.Graphics/Commands/ICommandContext.cs",
+            "symbol": "public enum RenderingFlags"
           }
         ],
         "null": [
           {
             "path": "src/SomeEngine.Graphics.Null/Device/Device.Pipelines.cs",
             "symbol": "public PipelineHandle CreateRasterPipeline"
+          },
+          {
+            "path": "src/SomeEngine.Graphics.Null/Device/Device.cs",
+            "symbol": "ValidateRenderingContinuations"
           }
         ],
         "d3d12": [
           {
             "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/PipelineSurface.cs",
             "symbol": "public PipelineHandle CreateRasterPipeline"
+          },
+          {
+            "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+            "symbol": "ValidateRenderingContinuationBegin"
           }
         ],
         "renderGraph": [],
@@ -1031,11 +1076,27 @@
             "symbol": "Sm62_triangle_draws_with_a_native_d32_depth_pipeline_and_attachment",
             "testId": "SomeEngine.Graphics.Direct3D12.Tests.RasterPipelineTests.Sm62_triangle_draws_with_a_native_d32_depth_pipeline_and_attachment",
             "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/TextureResolveTests.cs",
+            "symbol": "Rendering_continuation_must_close_within_one_submission_without_consuming_rejected_lists",
+            "testId": "SomeEngine.Graphics.Tests.TextureResolveTests.Rendering_continuation_must_close_within_one_submission_without_consuming_rejected_lists",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/RenderPassContinuationTests.cs",
+            "symbol": "Warp_validates_cross_submission_render_pass_continuation_adjacency_and_signature",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.RenderPassContinuationTests.Warp_validates_cross_submission_render_pass_continuation_adjacency_and_signature",
+            "lane": "windows-warp"
           }
         ]
       },
-      "gaps": [],
-      "missingSemantics": [],
+      "gaps": [
+        "Native render-pass suspend/resume has Null and D3D12 pairing, adjacency and attachment-signature validation within one Submit/ExecuteCommandLists batch. A continuation cannot span two submissions, and there is no WARP observable-pixel continuation test."
+      ],
+      "missingSemantics": [
+        "native observable-output test for suspended and resumed rendering"
+      ],
       "documentationClaims": []
     },
     {
@@ -1977,8 +2038,8 @@
           "note": "Checkpoint contained breadcrumb/device-loss metadata helpers, not a complete DRED native closure."
         }
       ],
-      "currentLevel": "native-execution",
-      "requiredLevel": "native-execution",
+      "currentLevel": "native-call",
+      "requiredLevel": "native-call",
       "requiredAreas": [
         "public",
         "null",
@@ -1991,7 +2052,7 @@
       ],
       "requiredTestIds": [
         "SomeEngine.Graphics.Tests.DiagnosticsTests.Null_reports_failures_and_device_loss_without_native_types",
-        "SomeEngine.Graphics.Direct3D12.Tests.DiagnosticsTests.Warp_drains_infoqueue_and_captures_dred_device_removed_context"
+        "SomeEngine.Graphics.Direct3D12.Tests.NativeRhiMigrationContractTests.Device_loss_reads_the_native_removed_reason"
       ],
       "mappings": {
         "public": [
@@ -2029,42 +2090,38 @@
             "lane": "portable-null"
           },
           {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/NativeRhiMigrationContractTests.cs",
+            "symbol": "Device_loss_reads_the_native_removed_reason",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.NativeRhiMigrationContractTests.Device_loss_reads_the_native_removed_reason",
+            "lane": "windows-warp"
+          },
+          {
             "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/DiagnosticsTests.cs",
             "symbol": "Warp_drains_infoqueue_and_captures_dred_device_removed_context",
             "testId": "SomeEngine.Graphics.Direct3D12.Tests.DiagnosticsTests.Warp_drains_infoqueue_and_captures_dred_device_removed_context",
-            "lane": "windows-warp"
+            "lane": "optional-d3d12-debug-layer"
           }
         ]
       },
-      "gaps": [],
-      "missingSemantics": [],
+      "gaps": [
+        "The required Windows lane proves the native removed-reason path is present, while the destructive RemoveDevice plus InfoQueue/DRED assertion is an optional Windows-Graphics-Tools lane and may skip when the debug layer is unavailable."
+      ],
+      "missingSemantics": [
+        "non-skipping required-lane native DRED device-removal execution artifact"
+      ],
       "documentationClaims": []
     },
     {
-      "id": "rg.immediate-transparent-cache",
+      "id": "rg.immediate-per-invocation-compilation",
       "aliases": [
-        "Template",
-        "Instance",
-        "InstancePool",
-        "Variants"
+        "GraphBuilder",
+        "FrozenGraph",
+        "CompiledGraph"
       ],
-      "family": "Immediate graph semantics with optional transparent compiled-plan cache",
+      "family": "Immediate graph semantics with one freeze and one compilation per invocation",
       "scope": "accepted-replacement",
       "baselineLevel": "null-execution",
-      "baselineEvidence": [
-        {
-          "kind": "source-symbol",
-          "path": "src/RenderGraph.Core/GraphTemplate.cs",
-          "symbol": "GetOrCompile",
-          "note": "Checkpoint exposed retained templates and variant cache."
-        },
-        {
-          "kind": "source-symbol",
-          "path": "src/RenderGraph.Core/VariantValues.cs",
-          "symbol": "public class Variants",
-          "note": "Checkpoint used explicit retained variant values."
-        }
-      ],
+      "baselineEvidence": [],
       "currentLevel": "null-execution",
       "requiredLevel": "null-execution",
       "requiredAreas": [
@@ -2077,8 +2134,8 @@
         "rendergraph-null"
       ],
       "requiredTestIds": [
-        "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Second_equal_immediate_invocation_hits_but_still_records_and_submits",
-        "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Zero_retention_preserves_immediate_outputs_without_exposing_a_lookup_entry"
+        "SomeEngine.RenderGraph.Tests.CaptureReplayTests.Capture_json_and_dot_are_schema_versioned_and_deterministic",
+        "SomeEngine.RenderGraph.Tests.MigrationCapabilityContractTests.LegacyVariantAndCompilationCacheSurfacesAreAbsent"
       ],
       "mappings": {
         "public": [
@@ -2096,21 +2153,21 @@
         "d3d12": [],
         "renderGraph": [
           {
-            "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
-            "symbol": "internal sealed class CompilationCache"
+            "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+            "symbol": "CompiledGraph compiled = Compiler.Compile"
           }
         ],
         "tests": [
           {
-            "path": "tests/SomeEngine.RenderGraph.Tests/New/CompilationCacheTests.cs",
-            "symbol": "Second_equal_immediate_invocation_hits_but_still_records_and_submits",
-            "testId": "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Second_equal_immediate_invocation_hits_but_still_records_and_submits",
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/CaptureReplayTests.cs",
+            "symbol": "Capture_json_and_dot_are_schema_versioned_and_deterministic",
+            "testId": "SomeEngine.RenderGraph.Tests.CaptureReplayTests.Capture_json_and_dot_are_schema_versioned_and_deterministic",
             "lane": "rendergraph-null"
           },
           {
-            "path": "tests/SomeEngine.RenderGraph.Tests/New/CompilationCacheTests.cs",
-            "symbol": "Zero_retention_preserves_immediate_outputs_without_exposing_a_lookup_entry",
-            "testId": "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Zero_retention_preserves_immediate_outputs_without_exposing_a_lookup_entry",
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/MigrationCapabilityContractTests.cs",
+            "symbol": "LegacyVariantAndCompilationCacheSurfacesAreAbsent",
+            "testId": "SomeEngine.RenderGraph.Tests.MigrationCapabilityContractTests.LegacyVariantAndCompilationCacheSurfacesAreAbsent",
             "lane": "rendergraph-null"
           }
         ]
@@ -2118,8 +2175,8 @@
       "acceptedDecision": {
         "kind": "accepted-replacement",
         "run": "0004",
-        "reason": "Run 0004 accepts immediate recording as public correctness semantics and rejects restoration of a second retained compiler.",
-        "observableSemantics": "Equivalent immediate invocations may reuse a transparent plan, but disabling or missing the cache changes only performance and every invocation still records current payload and executes."
+        "reason": "Immediate recording is the public correctness semantics; retained templates, variants and graph compilation caches are rejected.",
+        "observableSemantics": "Every invocation freezes its actual recording, compiles it exactly once, records current callbacks and submits the resulting batches."
       },
       "gaps": [],
       "missingSemantics": [],
@@ -2130,9 +2187,11 @@
       "aliases": [
         "BufferAccess",
         "TextureAccess",
-        "DependencyCompiler"
+        "DependencyCompiler",
+        "PendingSplitBarrier",
+        "D3D12_BARRIER_SYNC_SPLIT"
       ],
-      "family": "Exact buffer-range and texture-subresource liveness, barriers, culling and aliasing",
+      "family": "Exact buffer-range and texture-subresource liveness, barriers, split-transition submission state, culling and aliasing",
       "scope": "retained-regression",
       "baselineLevel": "compiler-lowering",
       "baselineEvidence": [
@@ -2152,6 +2211,7 @@
       "currentLevel": "native-execution",
       "requiredLevel": "native-execution",
       "requiredAreas": [
+        "d3d12",
         "renderGraph",
         "tests"
       ],
@@ -2162,12 +2222,21 @@
       "requiredTestIds": [
         "SomeEngine.RenderGraph.Tests.PassCullingTests.Buffer_liveness_keeps_the_latest_producer_for_each_exact_segment",
         "SomeEngine.RenderGraph.Tests.PassCullingTests.Texture_liveness_partitions_mip_layer_and_aspect",
-        "SomeEngine.Graphics.Direct3D12.Tests.WarpRhiCorrectnessTests.Warp_texture_barrier_ranges_reject_negative_and_out_of_bounds_indices_without_clamping"
+        "SomeEngine.Graphics.Direct3D12.Tests.WarpRhiCorrectnessTests.Warp_texture_barrier_ranges_reject_negative_and_out_of_bounds_indices_without_clamping",
+        "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.Warp_executes_enhanced_and_split_barriers_without_debug_errors",
+        "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.End_only_without_a_submitted_matching_begin_is_rejected_without_consuming_the_list",
+        "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.Mismatched_split_end_is_rejected_and_does_not_consume_the_pending_begin",
+        "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.Resource_access_while_a_split_transition_is_pending_is_rejected_transactionally"
       ],
       "mappings": {
         "public": [],
         "null": [],
-        "d3d12": [],
+        "d3d12": [
+          {
+            "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs",
+            "symbol": "ValidateSplitBarrierTimeline"
+          }
+        ],
         "renderGraph": [
           {
             "path": "src/SomeEngine.RenderGraph/Compilation/AccessNormalizer.cs",
@@ -2195,6 +2264,30 @@
             "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/WarpRhiCorrectnessTests.cs",
             "symbol": "Warp_texture_barrier_ranges_reject_negative_and_out_of_bounds_indices_without_clamping",
             "testId": "SomeEngine.Graphics.Direct3D12.Tests.WarpRhiCorrectnessTests.Warp_texture_barrier_ranges_reject_negative_and_out_of_bounds_indices_without_clamping",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/EnhancedBarrierTests.cs",
+            "symbol": "Warp_executes_enhanced_and_split_barriers_without_debug_errors",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.Warp_executes_enhanced_and_split_barriers_without_debug_errors",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/EnhancedBarrierTests.cs",
+            "symbol": "End_only_without_a_submitted_matching_begin_is_rejected_without_consuming_the_list",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.End_only_without_a_submitted_matching_begin_is_rejected_without_consuming_the_list",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/EnhancedBarrierTests.cs",
+            "symbol": "Mismatched_split_end_is_rejected_and_does_not_consume_the_pending_begin",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.Mismatched_split_end_is_rejected_and_does_not_consume_the_pending_begin",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/EnhancedBarrierTests.cs",
+            "symbol": "Resource_access_while_a_split_transition_is_pending_is_rejected_transactionally",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.EnhancedBarrierTests.Resource_access_while_a_split_transition_is_pending_is_rejected_transactionally",
             "lane": "windows-warp"
           }
         ]
@@ -2439,7 +2532,11 @@
         "public": [
           {
             "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
-            "symbol": "public sealed class Capture"
+            "symbol": "public sealed partial class Capture"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
+            "symbol": "public const int CurrentSchemaVersion = 4"
           },
           {
             "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
@@ -2470,20 +2567,15 @@
         ]
       },
       "gaps": [
-        "Structural replay does not recreate resources, record captured commands, submit queues or compare observable output."
+        "This row covers the deterministic schema-4 structural envelope only; the separately indexed rg.executable-capture-replay row is authoritative for the executable command subset and its fail-closed boundary."
       ],
-      "missingSemantics": [
-        "captured command payloads",
-        "resource reconstruction",
-        "Null command execution",
-        "completion and output equivalence"
-      ],
+      "missingSemantics": [],
       "documentationClaims": [],
       "acceptedDecision": {
         "kind": "truth-correction",
         "run": "0004",
-        "reason": "The checkpoint ReplayExecutor and the current implementation validate and reproduce a compiled structural envelope; neither proves replay of captured RHI commands.",
-        "observableSemantics": "JSON/DOT schema, canonical ordering, topology validation and corruption rejection remain mandatory compiler-lowering evidence. Executable replay is preserved as a separate mandatory red row."
+        "reason": "The checkpoint ReplayExecutor proved only a compiled structural envelope. Current schema-4 structural evidence remains distinct from the executable replay subset so topology diagnostics cannot be mistaken for universal command replay.",
+        "observableSemantics": "JSON/DOT schema, canonical ordering, topology validation and corruption rejection remain mandatory compiler-lowering evidence. Executable commands, resource reconstruction and output comparison are accounted for by the separate executable-capture row."
       }
     },
     {
@@ -2839,34 +2931,33 @@
           "note": "Checkpoint mesh pipeline authoring reused a legacy graphics PSO path and did not prove a valid mesh PSO."
         }
       ],
-      "currentLevel": "absent",
+      "currentLevel": "native-call",
       "requiredLevel": "absent",
       "requiredAreas": [],
       "requiredLanes": [],
       "requiredTestIds": [],
       "mappings": {
-        "public": [],
-        "null": [],
-        "d3d12": [],
-        "renderGraph": [],
-        "tests": []
+        "public": [{ "path": "src/SomeEngine.Graphics/Pipelines/MeshShaders.cs", "symbol": "IMeshShaderDevice" }],
+        "null": [{ "path": "src/SomeEngine.Graphics.Null/Device/Device.AdvancedPipelines.cs", "symbol": "CreateMeshPipeline" }],
+        "d3d12": [{ "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/MeshShaderSurface.cs", "symbol": "CreateMeshPipeline" }],
+        "renderGraph": [{ "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs", "symbol": "DispatchMesh" }],
+        "tests": [{
+          "path": "tests/SomeEngine.Graphics.Tests/RayTracingMeshPipelineTests.cs",
+          "symbol": "Null_creates_mesh_pipeline_and_validates_DispatchMesh_scope",
+          "testId": "SomeEngine.Graphics.Tests.RayTracingMeshPipelineTests.Null_creates_mesh_pipeline_and_validates_DispatchMesh_scope",
+          "lane": "portable-null"
+        }]
       },
       "acceptedDecision": {
         "kind": "record-only-this-run",
         "run": "0004",
-        "reason": "Native mesh execution is explicitly out of scope; the checkpoint had a DispatchMesh call but no tier validation or proven valid mesh PSO/output.",
-        "observableSemantics": "The ledger preserves the partial native call and records every missing closure item without exposing a fake supported capability."
+        "reason": "The current surface closes tier discovery, mesh pipeline authoring and DispatchMesh; this record-only scope remains because no mesh-capable native output lane is available in the repository.",
+        "observableSemantics": "Mesh support is advertised only when the native tier is present, while portable command validation is covered by deterministic tests."
       },
       "gaps": [
-        "No current API",
-        "Checkpoint lacked mesh shader tier discovery and real-output test"
+        "No native observable-output test on mesh-capable hardware"
       ],
       "missingSemantics": [
-        "mesh tier discovery",
-        "task/amplification stage",
-        "valid mesh PSO stream",
-        "Null oracle",
-        "RG access/lowering",
         "native output test",
         "renderer consumer",
         "device snapshot MeshShaderTier and mesh/task threadgroup/output limits"
@@ -2874,8 +2965,8 @@
       "documentationClaims": [
         {
           "path": "docs/D3D12VorticeAdvancedApi.md",
-          "marker": "Mesh shader current level: absent; checkpoint evidence: native-call only.",
-          "claimedLevel": "absent"
+          "marker": "- Mesh shaders:",
+          "claimedLevel": "native-call"
         }
       ]
     },
@@ -2902,39 +2993,53 @@
           "note": "Checkpoint called native VRS methods without full tier/legal-state validation."
         }
       ],
-      "currentLevel": "absent",
+      "currentLevel": "native-call",
       "requiredLevel": "absent",
       "requiredAreas": [],
       "requiredLanes": [],
       "requiredTestIds": [],
       "mappings": {
-        "public": [],
-        "null": [],
-        "d3d12": [],
-        "renderGraph": [],
-        "tests": []
+        "public": [
+          { "path": "src/SomeEngine.Graphics/Pipelines/VariableRateShading.cs", "symbol": "IVariableRateShadingDevice" },
+          { "path": "src/SomeEngine.Graphics/Pipelines/VariableRateShading.cs", "symbol": "internal static class VariableRateShadingContract" }
+        ],
+        "null": [{ "path": "src/SomeEngine.Graphics.Null/Device/Device.AdvancedPipelines.cs", "symbol": "VariableRateShading" }],
+        "d3d12": [{ "path": "src/SomeEngine.Graphics.Direct3D12/Commands/VariableRateShading.cs", "symbol": "RSSetShadingRate" }],
+        "renderGraph": [{ "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs", "symbol": "SetShadingRateImage" }],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Variable_rate_shading_records_rate_and_image_with_exact_state",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Variable_rate_shading_records_rate_and_image_with_exact_state",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/VariableRateShadingValidationTests.cs",
+            "symbol": "Null_vrs_rejects_each_unknown_portable_enum_independently",
+            "testId": "SomeEngine.Graphics.Tests.VariableRateShadingValidationTests.Null_vrs_rejects_each_unknown_portable_enum_independently",
+            "lane": "portable-null"
+          }
+        ]
       },
       "acceptedDecision": {
         "kind": "record-only-this-run",
         "run": "0004",
-        "reason": "VRS native execution is explicitly out of scope; the checkpoint only proved native method calls.",
-        "observableSemantics": "No supported bit is exposed. Native call evidence and all missing semantic layers remain recorded for a future re-grill."
+        "reason": "The current surface closes tier discovery, per-draw rates/combiners, shading-rate images and RenderGraph state validation; no VRS-capable native output lane is available in the repository.",
+        "observableSemantics": "VRS support is advertised only for a queried native tier, and deterministic tests cover command and image-state validation."
       },
       "gaps": [
-        "No current API",
-        "Checkpoint did not verify VRS tier, tile size, combiners or legal image state"
+        "No native observable-output test on VRS-capable hardware"
       ],
       "missingSemantics": [
-        "tier discovery",
-        "supported rates/combiners",
-        "shading-rate image format/tile size",
-        "Null oracle",
-        "RG attachment/hazard",
         "native output test",
         "renderer consumer",
         "device snapshot VariableRateShadingTier, tile size, supported rates and combiners"
       ],
-      "documentationClaims": []
+      "documentationClaims": [{
+        "path": "docs/D3D12VorticeAdvancedApi.md",
+        "marker": "- Variable-rate shading:",
+        "claimedLevel": "native-call"
+      }]
     },
     {
       "id": "advanced.dxr",
@@ -2966,46 +3071,89 @@
           "note": "Checkpoint called native AS build/compact fragments."
         }
       ],
-      "currentLevel": "absent",
+      "currentLevel": "native-call",
       "requiredLevel": "absent",
       "requiredAreas": [],
       "requiredLanes": [],
       "requiredTestIds": [],
       "mappings": {
-        "public": [],
-        "null": [],
-        "d3d12": [],
-        "renderGraph": [],
-        "tests": []
+        "public": [{ "path": "src/SomeEngine.Graphics/Pipelines/RayTracing.cs", "symbol": "IRayTracingDevice" }],
+        "null": [
+          { "path": "src/SomeEngine.Graphics.Null/Device/Device.AdvancedPipelines.cs", "symbol": "CreateRayTracingPipeline" },
+          { "path": "src/SomeEngine.Graphics.Null/Device/Device.AdvancedPipelines.cs", "symbol": "ValidateAccelerationStructureBuild" }
+        ],
+        "d3d12": [
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/RayTracingSurface.cs", "symbol": "CreateRayTracingPipeline" },
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Commands/RayTracingCommands.cs", "symbol": "BuildAccelerationStructure" },
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Resources/Resources.cs", "symbol": "ResourceStates.RaytracingAccelerationStructure" }
+        ],
+        "renderGraph": [{ "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs", "symbol": "DispatchRays" }],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/RayTracingMeshPipelineTests.cs",
+            "symbol": "Portable_DXR_contract_accepts_known_flag_combinations_and_rejects_unknown_bits",
+            "testId": "SomeEngine.Graphics.Tests.RayTracingMeshPipelineTests.Portable_DXR_contract_accepts_known_flag_combinations_and_rejects_unknown_bits",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/RayTracingMeshPipelineTests.cs",
+            "symbol": "Null_DXR_inputs_enforce_typed_storage_alignment_and_triangle_formats",
+            "testId": "SomeEngine.Graphics.Tests.RayTracingMeshPipelineTests.Null_DXR_inputs_enforce_typed_storage_alignment_and_triangle_formats",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/RayTracingMeshPipelineTests.cs",
+            "symbol": "Null_dispatch_rays_applies_global_bindings_and_ray_tracing_push_constants",
+            "testId": "SomeEngine.Graphics.Tests.RayTracingMeshPipelineTests.Null_dispatch_rays_applies_global_bindings_and_ray_tracing_push_constants",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/RayTracingMeshPipelineTests.cs",
+            "symbol": "Null_models_DXR_prebuild_pipeline_identifiers_build_and_dispatch",
+            "testId": "SomeEngine.Graphics.Tests.RayTracingMeshPipelineTests.Null_models_DXR_prebuild_pipeline_identifiers_build_and_dispatch",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/RayTracingResourceContractTests.cs",
+            "symbol": "Null_models_typed_AS_binding_local_roots_and_compaction_commands",
+            "testId": "SomeEngine.Graphics.Tests.RayTracingResourceContractTests.Null_models_typed_AS_binding_local_roots_and_compaction_commands",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/AccelerationStructureStorageTests.cs",
+            "symbol": "Warp_AS_storage_has_a_fixed_native_state_and_distinct_requirements_class",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.AccelerationStructureStorageTests.Warp_AS_storage_has_a_fixed_native_state_and_distinct_requirements_class",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/AccelerationStructureStorageTests.cs",
+            "symbol": "Warp_AS_storage_rejects_ordinary_usage_transitions_and_buffer_copies",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.AccelerationStructureStorageTests.Warp_AS_storage_rejects_ordinary_usage_transitions_and_buffer_copies",
+            "lane": "windows-warp"
+          }
+        ]
       },
       "acceptedDecision": {
         "kind": "record-only-this-run",
         "run": "0004",
-        "reason": "DXR native execution is explicitly out of scope; checkpoint prebuild sizing, capability discovery, SBT/state-object closure and hardware proof were incomplete.",
-        "observableSemantics": "Partial native state-object/build/dispatch evidence is preserved as native-call, never advertised as supported execution."
+        "reason": "The current surface closes capability discovery, state-object authoring, acceleration-structure sizing/build and DispatchRays; no DXR-capable native output lane is available in the repository.",
+        "observableSemantics": "DXR support is advertised only for a queried native tier, while deterministic tests cover the public state-object, build and dispatch contracts."
       },
       "gaps": [
-        "No current API",
-        "Checkpoint used incomplete/estimated prebuild and SBT semantics",
-        "No hardware capability/output closure"
+        "No native observable-output test on DXR-capable hardware",
+        "The D3D12 command recorder validates AS usage, alignment, ranges and BLAS/TLAS type but does not duplicate the Null oracle's built-source provenance, AllowCompaction history, or update-geometry compatibility model."
       ],
       "missingSemantics": [
-        "raytracing tier discovery",
-        "native prebuild info",
-        "AS geometry validation",
-        "state object identity",
-        "shader identifiers/SBT packing",
-        "Null oracle",
-        "RG hazards",
         "native output test",
         "renderer consumer",
-        "device snapshot RayTracingTier, AS alignment and shader-table limits"
+        "device snapshot RayTracingTier, AS alignment and shader-table limits",
+        "native built-AS provenance and update-geometry compatibility validation beyond the D3D12 runtime/debug layer"
       ],
       "documentationClaims": [
         {
           "path": "docs/D3D12VorticeAdvancedApi.md",
-          "marker": "DXR current level: absent; checkpoint evidence: native-call only.",
-          "claimedLevel": "absent"
+          "marker": "- DXR:",
+          "claimedLevel": "native-call"
         }
       ]
     },
@@ -3032,34 +3180,36 @@
           "note": "Checkpoint D3D12 runtime had no tile mapping path."
         }
       ],
-      "currentLevel": "absent",
+      "currentLevel": "native-call",
       "requiredLevel": "absent",
       "requiredAreas": [],
       "requiredLanes": [],
       "requiredTestIds": [],
       "mappings": {
-        "public": [],
-        "null": [],
-        "d3d12": [],
-        "renderGraph": [],
-        "tests": []
+        "public": [{ "path": "src/SomeEngine.Graphics/Resources/SparseResources.cs", "symbol": "ISparseResourceDevice" }],
+        "null": [{ "path": "src/SomeEngine.Graphics.Null/Device/Device.SparseResources.cs", "symbol": "UpdateSparseTextureMappings" }],
+        "d3d12": [{ "path": "src/SomeEngine.Graphics.Direct3D12/Resources/SparseResources.cs", "symbol": "UpdateTileMappings" }],
+        "renderGraph": [{ "path": "src/SomeEngine.RenderGraph/Authoring/GraphBuilder.cs", "symbol": "GpuCompletionSet? readiness" }],
+        "tests": [{
+          "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+          "symbol": "Sparse_texture_maps_tiles_through_queue_completion_and_holds_pool_lifetime",
+          "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Sparse_texture_maps_tiles_through_queue_completion_and_holds_pool_lifetime",
+          "lane": "portable-null"
+        }]
       },
       "gaps": [
-        "Feature genuinely absent in checkpoint and current tree"
+        "No native observable tile-content test"
       ],
       "missingSemantics": [
-        "sparse tier",
-        "reserved resource",
-        "tile shape/heap",
-        "map/unmap/copy tiles",
-        "residency synchronization",
-        "Null oracle",
-        "RG sparse binding",
-        "native test",
+        "native observable tile-content test",
         "renderer consumer",
         "device snapshot TiledResourcesTier, tile shape and sparse residency limits"
       ],
-      "documentationClaims": []
+      "documentationClaims": [{
+        "path": "docs/D3D12VorticeAdvancedApi.md",
+        "marker": "- Sparse/tiled resources:",
+        "claimedLevel": "native-call"
+      }]
     },
     {
       "id": "advanced.sampler-feedback",
@@ -3077,7 +3227,7 @@
           "note": "Checkpoint only carried a state/feature token; no feedback map or resolve pipeline was found."
         }
       ],
-      "currentLevel": "metadata",
+      "currentLevel": "native-call",
       "requiredLevel": "metadata",
       "requiredAreas": [
         "public"
@@ -3085,32 +3235,56 @@
       "requiredLanes": [],
       "requiredTestIds": [],
       "mappings": {
-        "public": [
-          {
-            "path": "src/SomeEngine.Graphics/Pipelines/ShaderArtifacts.cs",
-            "symbol": "Feedback = 1 << 4"
-          }
+        "public": [{ "path": "src/SomeEngine.Graphics/Pipelines/SamplerFeedback.cs", "symbol": "ISamplerFeedbackDevice" }],
+        "null": [
+          { "path": "src/SomeEngine.Graphics.Null/Device/Device.SamplerFeedback.cs", "symbol": "CreateSamplerFeedbackMap" },
+          { "path": "src/SomeEngine.Graphics.Null/Device/Device.Resources.cs", "symbol": "RejectOpaqueSamplerFeedbackCopy" }
         ],
-        "null": [],
-        "d3d12": [],
-        "renderGraph": [],
-        "tests": []
+        "d3d12": [
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/SamplerFeedback.cs", "symbol": "CreateSamplerFeedbackUnorderedAccessView" },
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs", "symbol": "Regional texture copies are not permitted for opaque sampler-feedback maps" }
+        ],
+        "renderGraph": [{ "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs", "symbol": "DecodeSamplerFeedback" }],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Sampler_feedback_preserves_opaque_shape_and_transcodes_every_mip_and_array_slice",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Sampler_feedback_preserves_opaque_shape_and_transcodes_every_mip_and_array_slice",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Sampler_feedback_rejects_invalid_mip_regions_dimensions_and_multisampling",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Sampler_feedback_rejects_invalid_mip_regions_dimensions_and_multisampling",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Sampler_feedback_maps_reject_all_generic_copy_paths",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Sampler_feedback_maps_reject_all_generic_copy_paths",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/ModernGpuGraphTests.cs",
+            "symbol": "Graph_tracks_sampler_feedback_clear_and_decode_with_distinct_opaque_and_transcode_shapes",
+            "testId": "SomeEngine.RenderGraph.Tests.ModernGpuGraphTests.Graph_tracks_sampler_feedback_clear_and_decode_with_distinct_opaque_and_transcode_shapes",
+            "lane": "rendergraph-null"
+          }
+        ]
       },
       "gaps": [
-        "Current and checkpoint tokens are shader-effect metadata only"
+        "No streaming consumer or native feedback-content test"
       ],
       "missingSemantics": [
-        "sampler feedback tier",
-        "feedback texture/map",
-        "write binding",
-        "resolve/decode",
-        "Null oracle",
-        "RG hazard",
         "streaming consumer",
         "native output test",
         "device snapshot SamplerFeedbackTier and feedback-map format/region limits"
       ],
-      "documentationClaims": []
+      "documentationClaims": [{
+        "path": "docs/D3D12VorticeAdvancedApi.md",
+        "marker": "- Sampler feedback:",
+        "claimedLevel": "native-call"
+      }]
     },
     {
       "id": "advanced.work-graphs",
@@ -3141,36 +3315,75 @@
           "note": "Checkpoint native creation explicitly threw; it was not native execution."
         }
       ],
-      "currentLevel": "absent",
+      "currentLevel": "native-call",
       "requiredLevel": "absent",
       "requiredAreas": [],
       "requiredLanes": [],
       "requiredTestIds": [],
       "mappings": {
-        "public": [],
-        "null": [],
-        "d3d12": [],
-        "renderGraph": [],
-        "tests": []
+        "public": [
+          { "path": "src/SomeEngine.Graphics/Pipelines/WorkGraphs.cs", "symbol": "IWorkGraphDevice" },
+          { "path": "src/SomeEngine.Graphics/Pipelines/WorkGraphs.cs", "symbol": "ValidateInputRecords" }
+        ],
+        "null": [
+          { "path": "src/SomeEngine.Graphics.Null/Commands/CommandContext.cs", "symbol": "DispatchWorkGraph" },
+          { "path": "src/SomeEngine.Graphics.Null/Device/Device.WorkGraphs.cs", "symbol": "Work Graph global layouts cannot declare push constants" },
+          { "path": "src/SomeEngine.Graphics.Null/Device/Device.Submission.cs", "symbol": "ValidateWorkGraphInitialization" }
+        ],
+        "d3d12": [
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Commands/WorkGraphs.cs", "symbol": "DispatchGraph" },
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Device/Device.cs", "symbol": "ValidateWorkGraphInitializations" },
+          { "path": "src/SomeEngine.Graphics.Direct3D12/Pipelines/WorkGraphs.cs", "symbol": "Work Graph global layouts cannot declare push constants" }
+        ],
+        "renderGraph": [{ "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs", "symbol": "DispatchWorkGraph" }],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Work_graph_uses_reported_backing_memory_and_cpu_entry_records",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Work_graph_uses_reported_backing_memory_and_cpu_entry_records",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Work_graph_rejects_global_layouts_with_push_constants",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Work_graph_rejects_global_layouts_with_push_constants",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/ModernGpuFeatureTests.cs",
+            "symbol": "Work_graph_lifetime_and_initialization_are_submission_transactional",
+            "testId": "SomeEngine.Graphics.Tests.ModernGpuFeatureTests.Work_graph_lifetime_and_initialization_are_submission_transactional",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/WorkGraphRecordValidationTests.cs",
+            "symbol": "Multiple_input_records_require_a_nonzero_stride",
+            "testId": "SomeEngine.Graphics.Tests.WorkGraphRecordValidationTests.Multiple_input_records_require_a_nonzero_stride",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/ModernGpuGraphTests.cs",
+            "symbol": "Graph_forwards_work_graph_dispatch_only_with_every_bindless_resource_declared",
+            "testId": "SomeEngine.RenderGraph.Tests.ModernGpuGraphTests.Graph_forwards_work_graph_dispatch_only_with_every_bindless_resource_declared",
+            "lane": "rendergraph-null"
+          }
+        ]
       },
       "acceptedDecision": {
         "kind": "record-only-this-run",
         "run": "0004",
-        "reason": "Work Graph native execution is explicitly out of scope and the checkpoint native creation path deliberately threw NotSupportedException.",
-        "observableSemantics": "The previous public/Null surface is recorded, but no current supported API is fabricated until native program creation, backing memory and dispatch are closed."
+        "reason": "The current surface closes native executable-state creation, program identifiers, backing-memory requirements and DispatchGraph; no Work-Graphs-capable native output lane is available in the repository.",
+        "observableSemantics": "Work Graph support is advertised only for a queried native tier, and deterministic tests cover program creation, backing-memory validation and dispatch."
       },
       "gaps": [
-        "No current API",
-        "Checkpoint native program creation threw",
-        "No real capability discovery or hardware output"
+        "Portable surface currently exposes CPU input records only",
+        "The public Work Graph command surface cannot bind global push constants and creation therefore rejects layouts that declare them.",
+        "No native hardware output test"
       ],
       "missingSemantics": [
-        "work-graphs tier",
-        "state object/program identifier",
-        "native memory requirements",
-        "CPU/GPU input records",
-        "dispatch",
-        "RG hazards",
+        "GPU and multi-node input records",
+        "node-local root argument tables",
+        "global push-constant binding surface",
         "native test",
         "renderer consumer",
         "device snapshot WorkGraphsTier, backing-memory alignment and dispatch limits"
@@ -3178,8 +3391,8 @@
       "documentationClaims": [
         {
           "path": "docs/D3D12VorticeAdvancedApi.md",
-          "marker": "Work Graph current level: absent; checkpoint evidence stopped at Null execution.",
-          "claimedLevel": "absent"
+          "marker": "- Work Graphs:",
+          "claimedLevel": "native-call"
         }
       ]
     },
@@ -3985,7 +4198,8 @@
       ],
       "requiredTestIds": [
         "SomeEngine.RenderGraph.Tests.CorrectnessRegressionTests.Transient_resource_and_heap_enter_deferred_retirement_without_wait_idle",
-        "SomeEngine.RenderGraph.Tests.ResourceRealizationTests.Warp_retires_realized_resources_only_after_exact_completion"
+        "SomeEngine.RenderGraph.Tests.ResourceRealizationTests.Warp_retires_realized_resources_only_after_exact_completion",
+        "SomeEngine.RenderGraph.Tests.TransientHeapPoolTests.Warp_render_graph_dispose_retires_pending_transient_heap_without_waiting_for_gpu"
       ],
       "mappings": {
         "public": [],
@@ -3995,6 +4209,10 @@
           {
             "path": "src/SomeEngine.RenderGraph/Execution/GraphInvocation.cs",
             "symbol": "private Exception? DestroyTransients"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/TransientHeapPool.cs",
+            "symbol": "public void Dispose()"
           }
         ],
         "tests": [
@@ -4008,6 +4226,12 @@
             "path": "tests/SomeEngine.RenderGraph.Tests/New/ResourceRealizationTests.cs",
             "symbol": "Warp_retires_realized_resources_only_after_exact_completion",
             "testId": "SomeEngine.RenderGraph.Tests.ResourceRealizationTests.Warp_retires_realized_resources_only_after_exact_completion",
+            "lane": "rendergraph-warp"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/TransientHeapPoolTests.cs",
+            "symbol": "Warp_render_graph_dispose_retires_pending_transient_heap_without_waiting_for_gpu",
+            "testId": "SomeEngine.RenderGraph.Tests.TransientHeapPoolTests.Warp_render_graph_dispose_retires_pending_transient_heap_without_waiting_for_gpu",
             "lane": "rendergraph-warp"
           }
         ]
@@ -4058,7 +4282,7 @@
         "public": [
           {
             "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
-            "symbol": "public sealed class Capture"
+            "symbol": "public sealed partial class Capture"
           }
         ],
         "null": [],
@@ -4116,7 +4340,10 @@
       ],
       "requiredTestIds": [
         "SomeEngine.RenderGraph.Tests.ExecutableCaptureReplayTests.Null_replay_recreates_resources_executes_commands_and_matches_output",
-        "SomeEngine.RenderGraph.Tests.ExecutableCaptureReplayTests.Corrupt_command_payload_or_resource_contract_fails_closed"
+        "SomeEngine.RenderGraph.Tests.ExecutableCaptureReplayTests.Corrupt_command_payload_or_resource_contract_fails_closed",
+        "SomeEngine.RenderGraph.Tests.AdvancedCaptureReplayTests.Vrs_rate_and_image_round_trip_and_replay_with_pass_state_reset",
+        "SomeEngine.RenderGraph.Tests.AdvancedCaptureReplayTests.Sampler_feedback_opaque_metadata_and_all_operations_round_trip_and_replay",
+        "SomeEngine.RenderGraph.Tests.AdvancedCaptureReplayTests.Dxr_build_compaction_query_and_copy_round_trip_and_replay"
       ],
       "mappings": {
         "public": [
@@ -4158,14 +4385,420 @@
             "symbol": "Corrupt_command_payload_or_resource_contract_fails_closed",
             "testId": "SomeEngine.RenderGraph.Tests.ExecutableCaptureReplayTests.Corrupt_command_payload_or_resource_contract_fails_closed",
             "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/AdvancedCaptureReplayTests.cs",
+            "symbol": "Vrs_rate_and_image_round_trip_and_replay_with_pass_state_reset",
+            "testId": "SomeEngine.RenderGraph.Tests.AdvancedCaptureReplayTests.Vrs_rate_and_image_round_trip_and_replay_with_pass_state_reset",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/AdvancedCaptureReplayTests.cs",
+            "symbol": "Sampler_feedback_opaque_metadata_and_all_operations_round_trip_and_replay",
+            "testId": "SomeEngine.RenderGraph.Tests.AdvancedCaptureReplayTests.Sampler_feedback_opaque_metadata_and_all_operations_round_trip_and_replay",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/AdvancedCaptureReplayTests.cs",
+            "symbol": "Dxr_build_compaction_query_and_copy_round_trip_and_replay",
+            "testId": "SomeEngine.RenderGraph.Tests.AdvancedCaptureReplayTests.Dxr_build_compaction_query_and_copy_round_trip_and_replay",
+            "lane": "rendergraph-null"
           }
         ]
       },
       "gaps": [
-        "Executable command-payload replay currently covers CopyBuffer; other GPU command payload families remain topology-only capture data."
+        "Executable capture schema 4 serializes buffer copy, VRS state/image, sampler-feedback clear/encode/decode, and DXR acceleration-structure build/compaction-query/copy payloads. Pipeline/state-object-dependent ray, mesh and Work Graph dispatches, raster scopes, draw/compute state, queries, general texture commands, invocation-local bindless slots, and imported initial contents that cannot be snapshotted fail closed before command forwarding or submission."
       ],
       "missingSemantics": [
-        "portable executable payloads for draw, dispatch, descriptor, query and texture command families"
+        "portable pipeline, shader and binding reconstruction for draw and dispatch",
+        "portable state-object reconstruction for DispatchRays, DispatchMesh and DispatchGraph",
+        "portable raster, query and general texture command payloads",
+        "portable snapshotting for device-local imported initial contents"
+      ],
+      "documentationClaims": []
+    },
+    {
+      "id": "rg.host-upload-readback",
+      "aliases": [
+        "CreateUploadBuffer",
+        "CreateReadbackBuffer",
+        "GraphExecution.Readback"
+      ],
+      "family": "Graph-owned host upload/readback resources and completion-scoped readback export mapping",
+      "scope": "mandatory-core",
+      "baselineLevel": "absent",
+      "baselineEvidence": [
+        {
+          "kind": "negative-audit",
+          "path": "src/RenderGraph.Core/GraphBuilder.cs",
+          "symbol": "CreateReadbackBuffer",
+          "note": "The checkpoint graph builder did not expose graph-owned readback resources or execution-scoped readback mapping."
+        }
+      ],
+      "currentLevel": "native-execution",
+      "requiredLevel": "native-execution",
+      "requiredAreas": [
+        "public",
+        "d3d12",
+        "renderGraph",
+        "tests"
+      ],
+      "requiredLanes": [
+        "rendergraph-null",
+        "rendergraph-warp"
+      ],
+      "requiredTestIds": [
+        "SomeEngine.RenderGraph.Tests.HostInteropTests.Upload_initialization_requires_one_exact_transient_upload_payload",
+        "SomeEngine.RenderGraph.Tests.HostInteropTests.Graph_owned_upload_payload_is_preserved_by_capture_json_and_replay",
+        "SomeEngine.RenderGraph.Tests.HostInteropTests.Warp_graph_owned_upload_round_trips_through_device_local_and_readback_memory"
+      ],
+      "mappings": {
+        "public": [
+          {
+            "path": "src/SomeEngine.RenderGraph/Authoring/GraphBuilder.cs",
+            "symbol": "public BufferId CreateReadbackBuffer"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Authoring/GraphBuilder.cs",
+            "symbol": "public BufferId CreateUploadBuffer"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Authoring/GraphBuilder.cs",
+            "symbol": "public void InitializeUploadBuffer"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/GraphExecution.cs",
+            "symbol": "public byte[] Readback"
+          }
+        ],
+        "null": [],
+        "d3d12": [
+          {
+            "path": "src/SomeEngine.Graphics.Direct3D12/Device/HostAccess.cs",
+            "symbol": "public unsafe BufferMapping MapBuffer"
+          }
+        ],
+        "renderGraph": [
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/GraphExecution.cs",
+            "symbol": "public BufferMapping MapReadback"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/GraphInvocation.cs",
+            "symbol": "private void InitializeUploadBuffer"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/Capture.cs",
+            "symbol": "resource.InitialBufferData.ToArray()"
+          }
+        ],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/ResolveTests.cs",
+            "symbol": "Integrated_resolve_and_graph_owned_readback_complete_without_a_manual_resolve_pass",
+            "testId": "SomeEngine.RenderGraph.Tests.ResolveTests.Integrated_resolve_and_graph_owned_readback_complete_without_a_manual_resolve_pass",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/HostInteropTests.cs",
+            "symbol": "Upload_initialization_requires_one_exact_transient_upload_payload",
+            "testId": "SomeEngine.RenderGraph.Tests.HostInteropTests.Upload_initialization_requires_one_exact_transient_upload_payload",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/HostInteropTests.cs",
+            "symbol": "Graph_owned_upload_payload_is_preserved_by_capture_json_and_replay",
+            "testId": "SomeEngine.RenderGraph.Tests.HostInteropTests.Graph_owned_upload_payload_is_preserved_by_capture_json_and_replay",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/HostInteropTests.cs",
+            "symbol": "Warp_graph_owned_upload_round_trips_through_device_local_and_readback_memory",
+            "testId": "SomeEngine.RenderGraph.Tests.HostInteropTests.Warp_graph_owned_upload_round_trips_through_device_local_and_readback_memory",
+            "lane": "rendergraph-warp"
+          }
+        ]
+      },
+      "gaps": [],
+      "missingSemantics": [],
+      "documentationClaims": [
+        {
+          "path": "docs/D3D12VorticeAdvancedApi.md",
+          "marker": "Scoped Upload/Readback buffer mapping is native-execution tested",
+          "claimedLevel": "native-execution"
+        }
+      ]
+    },
+    {
+      "id": "rg.external-native-command-interop",
+      "aliases": [
+        "AddExternalPass",
+        "INativeCommandContextInterop",
+        "GetNativeCommandList"
+      ],
+      "family": "External side-effect passes, typed native command-list access and explicit native resource lifetime tracking",
+      "scope": "mandatory-core",
+      "baselineLevel": "absent",
+      "baselineEvidence": [
+        {
+          "kind": "negative-audit",
+          "path": "src/RenderGraph.Core/GraphBuilder.cs",
+          "symbol": "GetNativeCommandList",
+          "note": "The checkpoint graph surface did not expose a scoped typed native command-list escape hatch."
+        }
+      ],
+      "currentLevel": "native-execution",
+      "requiredLevel": "native-execution",
+      "requiredAreas": [
+        "public",
+        "d3d12",
+        "renderGraph",
+        "tests"
+      ],
+      "requiredLanes": [
+        "windows-warp",
+        "rendergraph-null",
+        "rendergraph-warp"
+      ],
+      "requiredTestIds": [
+        "SomeEngine.Graphics.Direct3D12.Tests.NativeInteropTests.Warp_exposes_the_active_command_list_and_tracks_explicit_native_resources",
+        "SomeEngine.RenderGraph.Tests.HostInteropTests.Native_command_list_escape_hatch_is_restricted_to_external_passes",
+        "SomeEngine.RenderGraph.Tests.HostInteropTests.External_native_interop_fails_closed_on_backends_without_a_native_surface",
+        "SomeEngine.RenderGraph.Tests.HostInteropTests.Warp_external_pass_records_a_native_copy_with_declared_graph_resources"
+      ],
+      "mappings": {
+        "public": [
+          {
+            "path": "src/SomeEngine.Graphics/Commands/INativeCommandContextInterop.cs",
+            "symbol": "public interface INativeCommandContextInterop"
+          },
+          {
+            "path": "src/SomeEngine.Graphics/Commands/INativeCommandContextInterop.cs",
+            "symbol": "T GetNativeResource<T>(ResourceHandle resource)"
+          },
+          {
+            "path": "src/SomeEngine.Graphics/Commands/INativeCommandContextInterop.cs",
+            "symbol": "void TrackNativeDependency(NativeCommandDependency dependency)"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Authoring/GraphBuilder.cs",
+            "symbol": "public PassBuilder AddExternalPass"
+          }
+        ],
+        "null": [],
+        "d3d12": [
+          {
+            "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+            "symbol": "public T GetNativeCommandList<T>()"
+          },
+          {
+            "path": "src/SomeEngine.Graphics.Direct3D12/Commands/CommandContext.cs",
+            "symbol": "public T GetNativeResource<T>(ResourceHandle resource)"
+          }
+        ],
+        "renderGraph": [
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/GraphCommandContext.cs",
+            "symbol": "private INativeCommandContextInterop RequireNativeInterop"
+          }
+        ],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.Graphics.Direct3D12.Tests/NativeInteropTests.cs",
+            "symbol": "Warp_exposes_the_active_command_list_and_tracks_explicit_native_resources",
+            "testId": "SomeEngine.Graphics.Direct3D12.Tests.NativeInteropTests.Warp_exposes_the_active_command_list_and_tracks_explicit_native_resources",
+            "lane": "windows-warp"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/HostInteropTests.cs",
+            "symbol": "Native_command_list_escape_hatch_is_restricted_to_external_passes",
+            "testId": "SomeEngine.RenderGraph.Tests.HostInteropTests.Native_command_list_escape_hatch_is_restricted_to_external_passes",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/HostInteropTests.cs",
+            "symbol": "External_native_interop_fails_closed_on_backends_without_a_native_surface",
+            "testId": "SomeEngine.RenderGraph.Tests.HostInteropTests.External_native_interop_fails_closed_on_backends_without_a_native_surface",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/HostInteropTests.cs",
+            "symbol": "Warp_external_pass_records_a_native_copy_with_declared_graph_resources",
+            "testId": "SomeEngine.RenderGraph.Tests.HostInteropTests.Warp_external_pass_records_a_native_copy_with_declared_graph_resources",
+            "lane": "rendergraph-warp"
+          }
+        ]
+      },
+      "gaps": [],
+      "missingSemantics": [],
+      "documentationClaims": [
+        {
+          "path": "docs/D3D12VorticeAdvancedApi.md",
+          "marker": "`INativeCommandContextInterop.GetNativeCommandList<T>` exposes the active typed command list",
+          "claimedLevel": "native-execution"
+        }
+      ]
+    },
+    {
+      "id": "rg.execution-insights",
+      "aliases": [
+        "RenderGraphInsight",
+        "InsightSink"
+      ],
+      "family": "Post-execution pass/resource/access/barrier/timeline insights with JSON and self-contained HTML views",
+      "scope": "mandatory-core",
+      "baselineLevel": "compiler-lowering",
+      "baselineEvidence": [
+        {
+          "kind": "source-symbol",
+          "path": "src/RenderGraph.Core/GraphDiagnostics.cs",
+          "symbol": "public sealed partial class Diagnostics",
+          "note": "The checkpoint exposed compiled diagnostics but not the current execution insight snapshot and sink."
+        }
+      ],
+      "currentLevel": "null-execution",
+      "requiredLevel": "null-execution",
+      "requiredAreas": [
+        "public",
+        "renderGraph",
+        "tests"
+      ],
+      "requiredLanes": [
+        "rendergraph-null"
+      ],
+      "requiredTestIds": [
+        "SomeEngine.RenderGraph.Tests.InsightsTests.Sink_receives_structured_insight_json_and_self_contained_html_viewer",
+        "SomeEngine.RenderGraph.Tests.InsightsTests.Insight_sink_failure_does_not_invalidate_a_submitted_frame",
+        "SomeEngine.RenderGraph.Tests.InsightsTests.Insight_queries_expose_accesses_resources_queue_timeline_fork_join_and_fence_waits"
+      ],
+      "mappings": {
+        "public": [
+          {
+            "path": "src/SomeEngine.RenderGraph/Diagnostics/RenderGraphInsight.cs",
+            "symbol": "public sealed record RenderGraphInsight"
+          },
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+            "symbol": "public Action<RenderGraphInsight>? InsightSink"
+          }
+        ],
+        "null": [],
+        "d3d12": [],
+        "renderGraph": [
+          {
+            "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+            "symbol": "public Action<RenderGraphInsight>? InsightSink"
+          }
+        ],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/InsightsTests.cs",
+            "symbol": "Sink_receives_structured_insight_json_and_self_contained_html_viewer",
+            "testId": "SomeEngine.RenderGraph.Tests.InsightsTests.Sink_receives_structured_insight_json_and_self_contained_html_viewer",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/InsightsTests.cs",
+            "symbol": "Insight_sink_failure_does_not_invalidate_a_submitted_frame",
+            "testId": "SomeEngine.RenderGraph.Tests.InsightsTests.Insight_sink_failure_does_not_invalidate_a_submitted_frame",
+            "lane": "rendergraph-null"
+          },
+          {
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/InsightsTests.cs",
+            "symbol": "Insight_queries_expose_accesses_resources_queue_timeline_fork_join_and_fence_waits",
+            "testId": "SomeEngine.RenderGraph.Tests.InsightsTests.Insight_queries_expose_accesses_resources_queue_timeline_fork_join_and_fence_waits",
+            "lane": "rendergraph-null"
+          }
+        ]
+      },
+      "gaps": [
+        "Insights report deterministic compiled and submission-timeline facts; they do not yet ingest native GPU timestamps, hardware counters, or persist/stream frames to an external viewer."
+      ],
+      "missingSemantics": [
+        "native GPU timestamp and hardware-counter attribution",
+        "persistent or streaming external insight transport"
+      ],
+      "documentationClaims": []
+    },
+    {
+      "id": "rhi.device-recovery-orchestration",
+      "aliases": [
+        "DeviceRecoveryManager",
+        "DeviceRecoveryComponent",
+        "DeviceRecoveryAdapterCandidate"
+      ],
+      "family": "Durable device-loss recovery through adapter selection and dependency-ordered resource/pipeline reconstruction",
+      "scope": "mandatory-core",
+      "baselineLevel": "absent",
+      "baselineEvidence": [
+        {
+          "kind": "negative-audit",
+          "path": "src/Graphics/IDevice.cs",
+          "symbol": "DeviceRecoveryManager",
+          "note": "The checkpoint exposed device-loss status but no replacement-device recovery coordinator."
+        }
+      ],
+      "currentLevel": "null-execution",
+      "requiredLevel": "null-execution",
+      "requiredAreas": [
+        "public",
+        "null",
+        "tests"
+      ],
+      "requiredLanes": [
+        "portable-null"
+      ],
+      "requiredTestIds": [
+        "SomeEngine.Graphics.Tests.DiagnosticsTests.Recovery_manager_recreates_device_and_runs_ordered_restore_steps",
+        "SomeEngine.Graphics.Tests.DiagnosticsTests.Recovery_manager_selects_adapter_and_rebuilds_registered_resources_before_pipelines",
+        "SomeEngine.Graphics.Tests.DiagnosticsTests.Recovery_manager_fails_closed_for_missing_dependencies_and_disposes_failed_replacement"
+      ],
+      "mappings": {
+        "public": [
+          {
+            "path": "src/SomeEngine.Graphics/Device/DeviceRecovery.cs",
+            "symbol": "public sealed class DeviceRecoveryManager"
+          },
+          {
+            "path": "src/SomeEngine.Graphics/Device/DeviceRecovery.cs",
+            "symbol": "public interface IDeviceRecoveryComponent"
+          }
+        ],
+        "null": [
+          {
+            "path": "src/SomeEngine.Graphics.Null/Device/Device.Presentation.cs",
+            "symbol": "PresentStatus.DeviceLost"
+          }
+        ],
+        "d3d12": [],
+        "renderGraph": [],
+        "tests": [
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/DiagnosticsTests.cs",
+            "symbol": "Recovery_manager_recreates_device_and_runs_ordered_restore_steps",
+            "testId": "SomeEngine.Graphics.Tests.DiagnosticsTests.Recovery_manager_recreates_device_and_runs_ordered_restore_steps",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/DiagnosticsTests.cs",
+            "symbol": "Recovery_manager_selects_adapter_and_rebuilds_registered_resources_before_pipelines",
+            "testId": "SomeEngine.Graphics.Tests.DiagnosticsTests.Recovery_manager_selects_adapter_and_rebuilds_registered_resources_before_pipelines",
+            "lane": "portable-null"
+          },
+          {
+            "path": "tests/SomeEngine.Graphics.Tests/DiagnosticsTests.cs",
+            "symbol": "Recovery_manager_fails_closed_for_missing_dependencies_and_disposes_failed_replacement",
+            "testId": "SomeEngine.Graphics.Tests.DiagnosticsTests.Recovery_manager_fails_closed_for_missing_dependencies_and_disposes_failed_replacement",
+            "lane": "portable-null"
+          }
+        ]
+      },
+      "gaps": [
+        "Recovery is an explicit application-owned coordinator. Deterministic Null tests cover adapter choice, dependency ordering and failure cleanup; no test forces a real D3D12 device removal and verifies replacement-device output, and renderer/asset systems have not registered production rebuild components."
+      ],
+      "missingSemantics": [
+        "forced native device-loss replacement execution test",
+        "renderer and asset-pipeline recovery component registrations"
       ],
       "documentationClaims": []
     },
@@ -4446,7 +5079,7 @@
         "Instance",
         "InstancePool"
       ],
-      "family": "Retained templates, variants and instance pools mapped to immediate canonical recording plus transparent cache",
+      "family": "Retained templates, variants and instance pools rejected in favor of immediate per-invocation compilation",
       "scope": "accepted-replacement",
       "baselineLevel": "null-execution",
       "baselineEvidence": [
@@ -4480,8 +5113,7 @@
         "rendergraph-null"
       ],
       "requiredTestIds": [
-        "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Second_equal_immediate_invocation_hits_but_still_records_and_submits",
-        "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Zero_retention_preserves_immediate_outputs_without_exposing_a_lookup_entry"
+        "SomeEngine.RenderGraph.Tests.MigrationCapabilityContractTests.LegacyVariantAndCompilationCacheSurfacesAreAbsent"
       ],
       "mappings": {
         "public": [
@@ -4494,21 +5126,15 @@
         "d3d12": [],
         "renderGraph": [
           {
-            "path": "src/SomeEngine.RenderGraph/Compilation/CompilationCache.cs",
-            "symbol": "internal sealed class CompilationCache"
+            "path": "src/SomeEngine.RenderGraph/Execution/RenderGraph.cs",
+            "symbol": "CompiledGraph compiled = Compiler.Compile"
           }
         ],
         "tests": [
           {
-            "path": "tests/SomeEngine.RenderGraph.Tests/New/CompilationCacheTests.cs",
-            "symbol": "Second_equal_immediate_invocation_hits_but_still_records_and_submits",
-            "testId": "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Second_equal_immediate_invocation_hits_but_still_records_and_submits",
-            "lane": "rendergraph-null"
-          },
-          {
-            "path": "tests/SomeEngine.RenderGraph.Tests/New/CompilationCacheTests.cs",
-            "symbol": "Zero_retention_preserves_immediate_outputs_without_exposing_a_lookup_entry",
-            "testId": "SomeEngine.RenderGraph.Tests.CompilationCacheTests.Zero_retention_preserves_immediate_outputs_without_exposing_a_lookup_entry",
+            "path": "tests/SomeEngine.RenderGraph.Tests/New/MigrationCapabilityContractTests.cs",
+            "symbol": "LegacyVariantAndCompilationCacheSurfacesAreAbsent",
+            "testId": "SomeEngine.RenderGraph.Tests.MigrationCapabilityContractTests.LegacyVariantAndCompilationCacheSurfacesAreAbsent",
             "lane": "rendergraph-null"
           }
         ]
@@ -4516,8 +5142,8 @@
       "acceptedDecision": {
         "kind": "accepted-replacement",
         "run": "0004",
-        "reason": "Immediate recording is the only public semantics; canonical bytes and immutable compilation inputs feed an optional transparent cache.",
-        "observableSemantics": "Cache disabled, miss and hit paths produce identical results. No retained mutable template or second compiler is restored."
+        "reason": "Immediate recording and per-invocation compilation are the only graph semantics.",
+        "observableSemantics": "No retained mutable template, variant pool, graph cache or second compiler exists."
       },
       "gaps": [],
       "missingSemantics": [],

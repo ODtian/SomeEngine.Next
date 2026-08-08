@@ -248,6 +248,8 @@ public sealed class DomainBoundaryConfig
 {
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
+    public List<string> AllowedReferences { get; set; } = [];
+    public List<string> AllowedTestReferences { get; set; } = [];
     public List<string> ForbiddenReferences { get; set; } = [];
     public List<string> ForbiddenPathSegments { get; set; } = [];
 }

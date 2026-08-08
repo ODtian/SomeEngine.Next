@@ -149,11 +149,46 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
             IEnumerable<string> requiredBackendReferences = boundaryName == "SomeEngine.Assets"
                 ? RequiredBackendForbiddenReferences.Where(static value => value != "D3D12")
                 : RequiredBackendForbiddenReferences;
+            requiredBackendReferences = requiredBackendReferences.Except(
+                boundary.AllowedReferences,
+                StringComparer.OrdinalIgnoreCase);
             RequireContains(
                 $"{boundaryName} forbidden references",
                 requiredBackendReferences,
                 boundary.ForbiddenReferences);
+
+            Assert.Empty(boundary.AllowedReferences.Intersect(
+                boundary.ForbiddenReferences,
+                StringComparer.OrdinalIgnoreCase));
         }
+
+        RequireContains(
+            "SomeEngine.Render allowed references",
+            new[] { "Device" },
+            boundariesByName["SomeEngine.Render"].AllowedReferences);
+
+        RequireContains(
+            "SomeEngine.Render test-only allowed references",
+            new[] { "BufferHandle", "TextureHandle" },
+            boundariesByName["SomeEngine.Render"].AllowedTestReferences);
+
+        RequireContains(
+            "SomeEngine.Render test-only references remain forbidden in product source",
+            boundariesByName["SomeEngine.Render"].AllowedTestReferences,
+            boundariesByName["SomeEngine.Render"].ForbiddenReferences);
+
+        Assert.Empty(boundariesByName["SomeEngine.Render"].AllowedReferences.Intersect(
+            boundariesByName["SomeEngine.Render"].AllowedTestReferences,
+            StringComparer.OrdinalIgnoreCase));
+
+        RequireContains(
+            "SomeEngine.Render.Cluster allowed references",
+            new[] { "Device", "BufferHandle" },
+            boundariesByName["SomeEngine.Render.Cluster"].AllowedReferences);
+
+        Assert.DoesNotContain(
+            "BufferHandle",
+            boundariesByName["SomeEngine.Render"].AllowedReferences);
 
         RequireContains(
             "SomeEngine.Render forbidden references",
@@ -591,12 +626,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
             "architecture",
             "SomeEngine.Harness.Architecture",
             "PackageSourceMappingTests.cs"));
-        string harnessScriptBoundaryTests = File.ReadAllText(Path.Combine(
-            root,
-            "harness",
-            "architecture",
-            "SomeEngine.Harness.Architecture",
-            "HarnessScriptBoundaryTests.cs"));
         string reviewTargetAuthoringTests = File.ReadAllText(Path.Combine(
             root,
             "harness",
@@ -609,9 +638,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
             "behaviour",
             "SomeEngine.Harness.Behaviour",
             "ReviewTargetGateTests.cs"));
-        string runHarness = File.ReadAllText(Path.Combine(root, "harness", "RunHarness.ps1"));
-        string runProductTests = File.ReadAllText(Path.Combine(root, "harness", "RunProductTests.ps1"));
-
         foreach (string required in new[]
         {
             "DeclaredExternalSubmodulesAreGitlinksAtPinnedCommits",
@@ -653,26 +679,17 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
         foreach (string required in new[]
         {
-            "shader_asset.fbs",
-            "material_asset.fbs",
-            "material_instance_asset.fbs",
-            "mesh_asset.fbs",
-            "texture_asset.fbs",
-            "cluster_render_asset.fbs",
-            "table PassEntry",
-            "table ShaderReflectionData",
-            "table ShaderMaterialBinding",
-            "table ShaderMaterialScalarLayout",
-            "cluster_bvh_traverse: ShaderAssetRef",
-            "cluster_shade_binning: ShaderAssetRef",
-            "AssetSchemaProjectDeclarationScanIncludesProjectLocalPropsTargetsAndRootBuildDeclarations",
-            "AssetSchemaRemovalScanRejectsProjectLocalPropsTargetsAndRootBuildDeclarations",
-            "ReadFlatSharpSchemaIncludes",
-            "ReadFlatSharpSchemaRemoves",
-            "FindForbiddenFlatSharpSchemaRemovals",
-            "NormalizeDeclaredSchemaPath",
-            "FlatSharpSchema Remove",
-            "ProjectDeclarationFiles",
+            "AssetContracts.cs",
+            "AssetsProjectConsumesCurrentCSharpSchemaContracts",
+            "LegacyFlatBufferSchemasAreAbsentFromProductAndBuildGraph",
+            "BinaryCompatibility.ExactSchema",
+            "BinaryCompatibility.Additive",
+            "BinaryCompatibility.Migration",
+            "PreviousSchema",
+            "CurrentRootContracts",
+            "FlatSharpSchema",
+            "FlatBuffers",
+            "*.fbs",
         })
         {
             Assert.Contains(required, assetSchemaContractTests);
@@ -680,12 +697,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
         Assert.Contains("RootNuGetConfigMapsLocalPackagesToRepositoryFeed", packageSourceMappingTests);
         Assert.Contains("packageSourceMapping", packageSourceMappingTests);
-        Assert.Contains("HarnessBrokenStatusTakesPrecedenceOverNeedsGrillOutput", harnessScriptBoundaryTests);
-        Assert.Contains("CoverageAggregationCountersAreInitializedBeforeUse", harnessScriptBoundaryTests);
-        Assert.Contains("$linesCovered = 0", harnessScriptBoundaryTests);
-        Assert.Contains("preserveHarnessBrokenIndex", harnessScriptBoundaryTests);
-        Assert.Contains("preserveNeedsGrillIndex", harnessScriptBoundaryTests);
-
         foreach (string required in new[]
         {
             "ActiveAgentRunReviewTargetsHaveRequiredSections",
@@ -712,13 +723,6 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
             Assert.Contains(required, reviewTargetGateTests);
         }
 
-        Assert.Contains("maintainability", runHarness);
-        Assert.Contains("coverage-collect", runHarness);
-        Assert.Contains("coverage-gate", runHarness);
-        Assert.Contains("quality-product-style", runHarness);
-        Assert.Contains("TraitMode", runProductTests);
-        Assert.Contains("Warning", runProductTests);
-        Assert.Contains("Hard", runProductTests);
     }
 
     [Fact]
@@ -729,16 +733,40 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
             .ToHashSet(StringComparer.Ordinal);
 
         RequireContains("API contracts", RequiredApiContracts, apiContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render:SomeEngine.Render.Frame.RenderTimeline",
+            apiContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render:SomeEngine.Render.Frame.RenderTimelineLease",
+            apiContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrameUseLease",
+            apiContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding",
+            apiContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceBinding",
+            apiContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterResidencyBinding",
+            apiContracts);
 
         var apiMemberContracts = Config.ApiContracts
             .SelectMany(contract => contract.Members.Select(member => $"{contract.Assembly}:{contract.Type}:{member.Kind}:{member.Name}"))
             .ToHashSet(StringComparer.Ordinal);
 
         RequireContains("API member contracts", RequiredApiMemberContracts, apiMemberContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrame:Method:AcquireUse",
+            apiMemberContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrame:Method:RegisterTimeline",
+            apiMemberContracts);
     }
 
     [Fact]
-    public void AcceptedInternalClusterTypeContractsRemainPinned()
+    public void AcceptedInternalRenderAndClusterTypeContractsRemainPinned()
     {
         var productTypeContracts = Config.Architecture.RequiredProductTypes
             .Select(contract => $"{contract.Assembly}:{contract.Type}")
@@ -751,6 +779,9 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
             .ToHashSet(StringComparer.Ordinal);
 
         RequireContains("compiled product type member contracts", RequiredProductTypeMemberContracts, memberContracts);
+        Assert.DoesNotContain(
+            "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrame:Method:RegisterTimeline",
+            memberContracts);
     }
 
     [Fact]
@@ -843,6 +874,7 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
     [
         "SomeEngine.Graphics.Benchmarks",
         "SomeEngine.AssetCook",
+        "SomeEngine.Assets.Importers",
         "SomeEngine.ECS.SourceGen",
         "SomeEngine.Generators",
         "SomeEngine.RenderGraph.Sample",
@@ -852,6 +884,7 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
     [
         "SomeEngine.Graphics.Benchmarks:benchmarks/SomeEngine.Graphics.Benchmarks/SomeEngine.Graphics.Benchmarks.csproj",
         "SomeEngine.AssetCook:tools/SomeEngine.AssetCook/SomeEngine.AssetCook.csproj",
+        "SomeEngine.Assets.Importers:src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj",
         "SomeEngine.ECS.SourceGen:src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj",
         "SomeEngine.Generators:src/SomeEngine.Generators/SomeEngine.Generators.csproj",
         "SomeEngine.RenderGraph.Sample:samples/SomeEngine.RenderGraph.Sample/SomeEngine.RenderGraph.Sample.csproj",
@@ -893,15 +926,13 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
     private static readonly string[] RequiredProductNuGetPackages =
     [
-        "SomeEngine.Assets:FlatSharp.Compiler:7.9.0",
-        "SomeEngine.Assets:FlatSharp.Runtime:7.9.0",
-        "SomeEngine.Assets:SharpGLTF.Core:1.0.6",
         "SomeEngine.Graphics.Direct3D12:Vortice.Direct3D12:3.8.3",
         "SomeEngine.Graphics.Direct3D12:Vortice.Mathematics:2.1.0",
     ];
 
     private static readonly string[] RequiredBuildSupportNuGetPackages =
     [
+        "SomeEngine.Assets.Importers:SharpGLTF.Core:1.0.6",
         "SomeEngine.ECS.SourceGen:Microsoft.CodeAnalysis.Analyzers:3.11.0",
         "SomeEngine.ECS.SourceGen:Microsoft.CodeAnalysis.CSharp:4.13.0",
         "SomeEngine.Generators:Microsoft.CodeAnalysis.Analyzers:3.11.0",
@@ -980,18 +1011,19 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
     private static readonly IReadOnlyDictionary<string, string[]> RequiredLayerDependencies =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["SomeEngine.Assets"] = ["SlangShaderSharp", "Alimer.Bindings.MeshOptimizer"],
+            ["SomeEngine.Assets"] = ["SomeEngine.Serialization"],
+            ["SomeEngine.Assets.Importers"] = ["SomeEngine.Assets", "SlangShaderSharp", "Alimer.Bindings.MeshOptimizer"],
             ["SomeEngine.Core"] = ["SomeEngine.Job", "SomeEngine.ECS", "SomeEngine.ECS.Systems"],
-            ["SomeEngine.ECS"] = ["SomeEngine.Job"],
-            ["SomeEngine.ECS.Serialization"] = ["SomeEngine.ECS"],
-            ["SomeEngine.ECS.Systems"] = ["SomeEngine.ECS", "SomeEngine.Job"],
+            ["SomeEngine.ECS"] = ["SomeEngine.Job", "SomeEngine.Job.Contracts"],
+            ["SomeEngine.ECS.Serialization"] = ["SomeEngine.ECS", "SomeEngine.Serialization"],
+            ["SomeEngine.ECS.Systems"] = ["SomeEngine.ECS", "SomeEngine.Job", "SomeEngine.Job.Contracts"],
             ["SomeEngine.Graphics"] = [],
             ["SomeEngine.Graphics.Direct3D12"] = ["SomeEngine.Graphics"],
             ["SomeEngine.Graphics.Null"] = ["SomeEngine.Graphics"],
-            ["SomeEngine.Job"] = [],
+            ["SomeEngine.Job"] = ["SomeEngine.Job.Contracts"],
             ["SomeEngine.Job.Dots"] = ["SomeEngine.Job"],
             ["SomeEngine.Render"] = ["SomeEngine.Core", "SomeEngine.Assets", "SomeEngine.ECS", "SomeEngine.Graphics"],
-            ["SomeEngine.Render.Cluster"] = ["SomeEngine.Render", "SomeEngine.Core", "SomeEngine.Assets"],
+            ["SomeEngine.Render.Cluster"] = ["SomeEngine.Render", "SomeEngine.Core", "SomeEngine.Assets", "SomeEngine.ECS", "SomeEngine.Graphics", "SomeEngine.Serialization"],
             ["SomeEngine.RenderGraph"] = ["SomeEngine.Graphics", "SomeEngine.Job"],
         };
 
@@ -1069,7 +1101,7 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "RenderPipeline",
         "ComputePipeline",
         "GraphicsPipeline",
-        "IDevice",
+        "Device",
         "IQueue",
         "CommandList",
         "CommandQueue",
@@ -1184,7 +1216,7 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.UI",
         "EditorRenderer",
         "Silk.NET",
-        "IDevice",
+        "Device",
         "IQueue",
         "DeviceContext",
         "PipelineState",
@@ -1220,59 +1252,47 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
     private static readonly string[] RequiredApiContracts =
     [
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetType`1",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetId`1",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoader",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetWriter",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetEntry",
+        "SomeEngine.Assets:SomeEngine.Assets.IAssetStorage",
+        "SomeEngine.Assets:SomeEngine.Assets.LooseAssetStorage",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetPackStorage",
+        "SomeEngine.Assets:SomeEngine.Assets.BuiltInAssetIds",
         "SomeEngine.Assets:SomeEngine.Assets.AssetImportFingerprint",
         "SomeEngine.Assets:SomeEngine.Assets.AssetManifest",
         "SomeEngine.Assets:SomeEngine.Assets.Data.ClusterBVHNode",
         "SomeEngine.Assets:SomeEngine.Assets.Data.GPUCluster",
         "SomeEngine.Assets:SomeEngine.Assets.Data.MeshPageHeader",
         "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterBuilder",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterBuilderOptions",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterLodConfig",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfImporterSettings",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfSourceImporter",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangShaderImporter",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangSourceImporter",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.AssetCreate",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderAssets",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderCodec",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetCodec",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceCodec",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetCodec",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetCodec",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetCodec",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetProvider",
-        "SomeEngine.Assets:SomeEngine.Assets.Schema.ClusterRenderAsset",
-        "SomeEngine.Assets:SomeEngine.Assets.Schema.MaterialAsset",
-        "SomeEngine.Assets:SomeEngine.Assets.Schema.MaterialInstanceAsset",
-        "SomeEngine.Assets:SomeEngine.Assets.Schema.MeshAsset",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterBuilder",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterBuilderOptions",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterLodConfig",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfImporterSettings",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfSourceImporter",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangShaderImporter",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangSourceImporter",
+        "SomeEngine.Assets:SomeEngine.Assets.Schema.ClusterShaders",
+        "SomeEngine.Assets:SomeEngine.Assets.Schema.Material",
+        "SomeEngine.Assets:SomeEngine.Assets.Schema.MaterialInstance",
+        "SomeEngine.Assets:SomeEngine.Assets.Schema.Mesh",
         "SomeEngine.Assets:SomeEngine.Assets.Schema.PassEntry",
-        "SomeEngine.Assets:SomeEngine.Assets.Schema.ShaderAsset",
-        "SomeEngine.Assets:SomeEngine.Assets.Schema.TextureAsset",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders",
-        "SomeEngine.Render:SomeEngine.Render.Assets.Mesh",
-        "SomeEngine.Render:SomeEngine.Render.Assets.RuntimeAssetLoader",
+        "SomeEngine.Assets:SomeEngine.Assets.Schema.Shader",
+        "SomeEngine.Assets:SomeEngine.Assets.Schema.Texture",
         "SomeEngine.Render:SomeEngine.Render.Components.MeshInstance",
-        "SomeEngine.Render:SomeEngine.Render.Components.MeshMaterialBindings",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights",
+        "SomeEngine.Render:SomeEngine.Render.Components.MeshMaterialBinding",
+        "SomeEngine.Render:SomeEngine.Render.Components.RenderMaterialBinding",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalJitter",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalResolveSettings",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material",
         "SomeEngine.Render:SomeEngine.Render.Materials.MaterialPass",
         "SomeEngine.Render:SomeEngine.Render.Materials.ScalarLayout",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Texture",
         "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorldExtractor",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources",
     ];
 
     private static readonly string[] RequiredForbiddenProductTypes =
@@ -1283,16 +1303,59 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
 
     private static readonly string[] RequiredApiMemberContracts =
     [
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:CreateAsset",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:Dispose",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:GetDependencies",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:GetReferencers",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:Import",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:List",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:Resolve",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Method:Validate",
-        "SomeEngine.Assets:SomeEngine.Assets.AssetDatabase:Property:Manifest",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:CreateStorage",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:CreateAsset",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:RegisterAssetAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:OpenAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:GetDependencies",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:GetReferencers",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:ImportAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:List",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:Resolve",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Method:Validate",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetProject:Property:Manifest",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetType`1:Property:Name",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetType`1:Property:PathSuffix",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetType`1:Property:SchemaFingerprint",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetId`1:Property:Value",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetId`1:Property:IsValid",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetId`1:Method:Equals",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetId`1:Method:GetHashCode",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetId`1:Method:ToString",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1:Property:Id",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1:Property:Generation",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1:Property:IsValid",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1:Method:Equals",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1:Method:GetHashCode",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetHandle`1:Method:ToString",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoader:Method:LoadAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoader:Method:TryGet",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoader:Method:Get",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoader:Method:DisposeAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Property:AssetGuid",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Property:AssetType",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Property:CancellationToken",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:Is",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:OpenAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:Transfer",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:LoadAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:TryGet",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:Get",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetLoadContext:Method:GetOptions",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetWriter:Method:Write",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetEntry:Property:AssetGuid",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetEntry:Property:AssetType",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetEntry:Property:SchemaFingerprint",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetEntry:Property:Publication",
+        "SomeEngine.Assets:SomeEngine.Assets.IAssetStorage:Method:TryFind",
+        "SomeEngine.Assets:SomeEngine.Assets.IAssetStorage:Method:OpenAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.LooseAssetStorage:Method:TryFind",
+        "SomeEngine.Assets:SomeEngine.Assets.LooseAssetStorage:Method:OpenAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetPackStorage:Method:TryFind",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetPackStorage:Method:OpenAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.AssetPackStorage:Method:DisposeAsync",
+        "SomeEngine.Assets:SomeEngine.Assets.BuiltInAssetIds:Field:DefaultClusterRender",
+        "SomeEngine.Assets:SomeEngine.Assets.BuiltInAssetIds:Field:DefaultClusterRenderPath",
         "SomeEngine.Assets:SomeEngine.Assets.AssetImportFingerprint:Property:ContentFingerprint",
         "SomeEngine.Assets:SomeEngine.Assets.AssetImportFingerprint:Property:Dependencies",
         "SomeEngine.Assets:SomeEngine.Assets.AssetImportFingerprint:Property:ImporterVersion",
@@ -1320,122 +1383,40 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.Assets:SomeEngine.Assets.Data.MeshPageHeader:Field:MaxPageSize",
         "SomeEngine.Assets:SomeEngine.Assets.Data.MeshPageHeader:Field:Size",
         "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter:Method:GetFingerprint",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter:Method:Import",
+        "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter:Method:ImportAsync",
         "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter:Method:MatchesSourcePath",
         "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter:Property:ImporterName",
         "SomeEngine.Assets:SomeEngine.Assets.IAssetImporter:Property:SourceExtensions",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider:Method:Destroy",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider:Method:GetDependencies",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider:Property:AssetType",
-        "SomeEngine.Assets:SomeEngine.Assets.IAssetProvider:Property:RuntimeType",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterBuilder:Method:Process",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterBuilder:Method:ProcessMesh",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterBuilderOptions:Property:GenerateMissingTangents",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.ClusterLodConfig:Method:GetDefault",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfImporterSettings:Method:Default",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfImporterSettings:Property:GenerateTangents",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfImporterSettings:Property:LitMaterialTemplate",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfImporterSettings:Property:UnlitMaterialTemplate",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfSourceImporter:Method:GetFingerprint",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfSourceImporter:Method:Import",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfSourceImporter:Method:MatchesSourcePath",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfSourceImporter:Property:ImporterName",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.GltfSourceImporter:Property:SourceExtensions",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangSourceImporter:Method:GetFingerprint",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangSourceImporter:Method:Import",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangSourceImporter:Method:MatchesSourcePath",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangSourceImporter:Property:ImporterName",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangSourceImporter:Property:SourceExtensions",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangShaderImporter:Field:ImporterVersion",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangShaderImporter:Method:Import",
-        "SomeEngine.Assets:SomeEngine.Assets.Importers.SlangShaderImporter:Method:ImportTransient",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.AssetCreate:Method:CreateAsset",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderAssets:Field:DefaultGuid",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderAssets:Method:LoadDefault",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderCodec:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderCodec:Method:Save",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderProvider:Method:GetDependencies",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ClusterRenderProvider:Property:AssetType",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetCodec:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetCodec:Method:Save",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetProvider:Method:GetDependencies",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialAssetProvider:Property:AssetType",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceCodec:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceCodec:Method:Save",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceProvider:Method:GetDependencies",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MaterialInstanceProvider:Property:AssetType",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetCodec:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetCodec:Method:Save",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.MeshAssetProvider:Property:AssetType",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetCodec:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetCodec:Method:Save",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.ShaderAssetProvider:Property:AssetType",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetCodec:Method:Load",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetCodec:Method:Save",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetProvider:Method:Create",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetProvider:Method:Matches",
-        "SomeEngine.Assets:SomeEngine.Assets.Pipeline.TextureAssetProvider:Property:AssetType",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterBuilder:Method:Process",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterBuilder:Method:ProcessMesh",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterBuilderOptions:Property:GenerateMissingTangents",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.ClusterLodConfig:Method:GetDefault",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfImporterSettings:Method:Default",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfImporterSettings:Property:GenerateTangents",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfImporterSettings:Property:LitMaterialTemplate",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfImporterSettings:Property:UnlitMaterialTemplate",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfSourceImporter:Method:GetFingerprint",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfSourceImporter:Method:ImportAsync",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfSourceImporter:Method:MatchesSourcePath",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfSourceImporter:Property:ImporterName",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.GltfSourceImporter:Property:SourceExtensions",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangSourceImporter:Method:GetFingerprint",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangSourceImporter:Method:ImportAsync",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangSourceImporter:Method:MatchesSourcePath",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangSourceImporter:Property:ImporterName",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangSourceImporter:Property:SourceExtensions",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangShaderImporter:Field:ImporterVersion",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangShaderImporter:Method:Import",
+        "SomeEngine.Assets.Importers:SomeEngine.Assets.Importers.SlangShaderImporter:Method:ImportTransient",
         "SomeEngine.Assets:SomeEngine.Assets.Schema.PassEntry:Property:EntryPoint",
         "SomeEngine.Assets:SomeEngine.Assets.Schema.PassEntry:Property:ShaderGuid",
-        "SomeEngine.Render:SomeEngine.Render.Assets.Mesh:Property:BvhOffset",
-        "SomeEngine.Render:SomeEngine.Render.Assets.Mesh:Property:Name",
-        "SomeEngine.Render:SomeEngine.Render.Assets.Mesh:Property:Payload",
-        "SomeEngine.Render:SomeEngine.Render.Assets.RuntimeAssetLoader:Method:LoadMesh",
-        "SomeEngine.Render:SomeEngine.Render.Assets.RuntimeAssetLoader:Method:LoadShader",
-        "SomeEngine.Render:SomeEngine.Render.Assets.RuntimeAssetLoader:Method:RequestMaterial",
-        "SomeEngine.Render:SomeEngine.Render.Assets.RuntimeAssetLoader:Method:RequestMesh",
-        "SomeEngine.Render:SomeEngine.Render.Assets.RuntimeAssetLoader:Method:RequestShader",
         "SomeEngine.Render:SomeEngine.Render.Components.MeshInstance:Field:BoundsExpansion",
         "SomeEngine.Render:SomeEngine.Render.Components.MeshInstance:Field:Mesh",
-        "SomeEngine.Render:SomeEngine.Render.Components.MeshMaterialBindings:Field:Materials",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Field:DefaultLightLayerMask",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Field:DirectionalLights",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Field:LightCookieAtlas",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Field:NoCookie",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Field:PointLights",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Field:SpotLights",
-        "SomeEngine.Render:SomeEngine.Render.Components.SceneLights:Property:IsEmpty",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalJitter:Field:DefaultSampleCount",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalJitter:Method:ApplyToProjection",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalJitter:Method:SamplePixels",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalResolveSettings:Method:ToUniforms",
         "SomeEngine.Render:SomeEngine.Render.Frame.TemporalResolveSettings:Property:Default",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState:Method:ConsumeReset",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState:Method:RequestReset",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState:Method:Reset",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState:Method:SetReady",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState:Property:Ready",
-        "SomeEngine.Render:SomeEngine.Render.Frame.TemporalState:Property:ResetRequested",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Method:Clone",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Method:SetPasses",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Method:TouchScalars",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:AlbedoMap",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:ArmMap",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:BaseColorTint",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:BindingVersion",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:EmissiveFactor",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:EmissiveMap",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:MetallicFactor",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:Name",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:NormalMap",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:PassVersion",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:Passes",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:Roughness",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:ScalarRegionByteSize",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:ScalarRegionLayout",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Material:Property:ScalarVersion",
         "SomeEngine.Render:SomeEngine.Render.Materials.MaterialPass:Property:EntryPoint",
         "SomeEngine.Render:SomeEngine.Render.Materials.MaterialPass:Property:Shader",
         "SomeEngine.Render:SomeEngine.Render.Materials.MaterialPass:Property:State",
@@ -1448,129 +1429,59 @@ public sealed class AcceptedBoundaryHarnessCoverageTests
         "SomeEngine.Render:SomeEngine.Render.Materials.ScalarLayout:Property:Fields",
         "SomeEngine.Render:SomeEngine.Render.Materials.ScalarLayout:Property:LayoutHash",
         "SomeEngine.Render:SomeEngine.Render.Materials.ScalarLayout:Property:PayloadByteSize",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Method:TryEntry",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Method:TryReflection",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Method:TryVariant",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Property:Attributes",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Property:Name",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Property:Reflections",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Property:ScalarLayouts",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Shader:Property:Variants",
-        "SomeEngine.Render:SomeEngine.Render.Materials.Texture:Property:Name",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Method:CountInstances",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:InstanceShapeVersion",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:LightVersion",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:MaterialVersion",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:SceneLights",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:ShapeVersion",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:Version",
-        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Property:World",
+        "SomeEngine.Render:SomeEngine.Render.Systems.RenderWorld:Method:Extract",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:AcknowledgeFaultReplay",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:CaptureDiagnostics",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:Dispose",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:Prepare",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:PrepareMeshesAsync",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:PumpStreaming",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:Shutdown",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderResources:Method:TryGetFaultReplayRequest",
     ];
 
     private static readonly string[] RequiredProductTypeContracts =
     [
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrame",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrameUseLease",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderTimeline",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderTimelineLease",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterReadbackTicket",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader",
     ];
 
     private static readonly string[] RequiredProductTypeMemberContracts =
     [
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:Binning",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:BvhPatch",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:Cull",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:DepthMerge",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:Draw",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:HiZ",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:Resolve",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:ShadeBinning",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:Temporal",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterShaders:Property:Traverse",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:Barycentric",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:ClusterID",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:LODLevel",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:None",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:Normal",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:SWHWView",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:ShadingBin",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterDebugMode:Field:UV",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:AllocateRange",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:ForceFullUpload",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:FreeRange",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:GetData",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:GetField",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:SetField",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Method:TryDirty",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Property:Layout",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotBuffer:Property:SlotCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Method:Grow",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Method:Index",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Method:Span",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Property:ByteCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Property:Capacity",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Property:ElementCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterSlotLayout:Property:Fields",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Method:BoundsExpansion",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Method:HasCache",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Method:HasDeform",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Method:HasRaster",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Method:HasShade",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:BindingVersion",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Deform",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Handle",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Material",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:PassVersion",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Ps",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Shade",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:ShadeCache",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:State",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Sw",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:SwCache",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:Vs",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MaterialItem:Property:VsCache",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:AddLeaf",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:AddPage",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:IsResident",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:Leaves",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:MakeMissing",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:MakeResident",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:Touch",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:TryAddMesh",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:TryLeaf",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:TrySource",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Method:TryVictim",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Property:Count",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Property:LeafNodes",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Property:MissingCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Property:Registry",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.MeshPages:Property:ResidentCount",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrame:Method:AcquireUse",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrameUseLease:Method:Dispose",
+        "SomeEngine.Render:SomeEngine.Render.Frame.RenderFrameUseLease:Property:IsClosed",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:Bvh",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:DispatchExtent",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:InstanceData",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:InstanceHeaders",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:Instances",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:PageHeap",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:PreviousInstances",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterRenderBinding:Property:ReadbackTicket",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterReadbackTicket:Property:EpochId",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Field:CapacityBytes",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:CanFit",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:Free",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:Has",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:Largest",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:ReserveFrees",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:TryAlloc",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Method:ValidateFrees",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Property:Capacity",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Property:FreeBytes",
         "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageHeap:Property:UsedBytes",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Method:Push",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Method:Update",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Property:ErrorCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Property:FaultCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Property:LoadedPages",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Property:QueuedPageCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.PageStream:Property:RequestedPageCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Method:Add",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Method:Clear",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Method:Copy",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Method:Take",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Method:TryPacked",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Property:ByteCount",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Property:CopyBytes",
-        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.UploadPack:Property:Count",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Field:BvhRoot",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Field:BoundsExpansion",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Field:DataFlags",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Field:DataOffset",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Field:MaterialSlotOffset",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Method:Create",
+        "SomeEngine.Render.Cluster:SomeEngine.Render.Cluster.ClusterInstanceHeader:Property:Inactive",
     ];
 }

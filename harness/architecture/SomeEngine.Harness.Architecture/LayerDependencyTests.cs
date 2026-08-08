@@ -17,6 +17,9 @@ public sealed class LayerDependencyTests
     public void DeclaredProductProjectsRespectLayerContract()
     {
         var productsByName = Config.Projects.ProductProjects.ToDictionary(project => project.Name, StringComparer.Ordinal);
+        var declaredProjectsByName = Config.Projects.ProductProjects
+            .Concat(Config.Projects.BuildSupportProjects)
+            .ToDictionary(project => project.Name, StringComparer.Ordinal);
         var firstRoundLocalPackageNames = Config.ExternalDependencies.LocalPackages
             .Select(package => package.PackageId)
             .ToHashSet(StringComparer.Ordinal);
@@ -33,15 +36,15 @@ public sealed class LayerDependencyTests
 
         foreach (string contractName in contract.Keys.Order(StringComparer.Ordinal))
         {
-            if (!productsByName.ContainsKey(contractName))
+            if (!declaredProjectsByName.ContainsKey(contractName))
             {
-                failures.Add($"Layer contract declares {contractName}, but no product project fact exists for it");
+                failures.Add($"Layer contract declares {contractName}, but no product or build-support project fact exists for it");
             }
         }
 
         foreach (var entry in contract.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
-            if (!productsByName.TryGetValue(entry.Key, out var project))
+            if (!declaredProjectsByName.TryGetValue(entry.Key, out var project))
             {
                 continue;
             }
@@ -72,18 +75,19 @@ public sealed class LayerDependencyTests
     [Fact]
     public void DeclaredExternalDependencyConsumersArePinnedToLayerContract()
     {
-        var productsByPath = Config.Projects.ProductProjects
+        var declaredProjectsByPath = Config.Projects.ProductProjects
+            .Concat(Config.Projects.BuildSupportProjects)
             .ToDictionary(project => Normalize(project.Path), project => project.Name, StringComparer.OrdinalIgnoreCase);
         var failures = new List<string>();
 
         foreach (SourceProjectDependencyConfig dependency in Config.ExternalDependencies.SourceProjects)
         {
-            RequireLayerDependencyForConsumer(productsByPath, dependency.ConsumerProject, dependency.Name, failures);
+            RequireLayerDependencyForConsumer(declaredProjectsByPath, dependency.ConsumerProject, dependency.Name, failures);
         }
 
         foreach (LocalPackageConfig package in Config.ExternalDependencies.LocalPackages)
         {
-            RequireLayerDependencyForConsumer(productsByPath, package.ConsumerProject, package.PackageId, failures);
+            RequireLayerDependencyForConsumer(declaredProjectsByPath, package.ConsumerProject, package.PackageId, failures);
         }
 
         Assert.True(
@@ -394,14 +398,14 @@ public sealed class LayerDependencyTests
     }
 
     private static void RequireLayerDependencyForConsumer(
-        IReadOnlyDictionary<string, string> productsByPath,
+        IReadOnlyDictionary<string, string> declaredProjectsByPath,
         string consumerProjectPath,
         string dependencyName,
         List<string> failures)
     {
-        if (!productsByPath.TryGetValue(Normalize(consumerProjectPath), out string? consumerName))
+        if (!declaredProjectsByPath.TryGetValue(Normalize(consumerProjectPath), out string? consumerName))
         {
-            failures.Add($"{consumerProjectPath} consumes first-round external dependency {dependencyName}, but is not a first-round product project.");
+            failures.Add($"{consumerProjectPath} consumes first-round external dependency {dependencyName}, but is not a declared product or build-support project.");
             return;
         }
 

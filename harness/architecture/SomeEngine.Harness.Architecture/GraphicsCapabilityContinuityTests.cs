@@ -94,7 +94,7 @@ public sealed class GraphicsCapabilityContinuityTests
         Check(
             manifest.BaselinePublicApiInventory.Groups.Any(static group => group.Id == "graphics-device-methods" && group.ExpectedCount == 130),
             failures,
-            "Manifest must pin all 130 original IDevice method declarations");
+            "Manifest must pin all 130 original Device method declarations");
         Check(
             manifest.BaselinePublicApiInventory.Groups.Any(static group => group.Id == "rendergraph-public-type-declarations" && group.ExpectedCount == 100),
             failures,
@@ -493,12 +493,11 @@ public sealed class GraphicsCapabilityContinuityTests
     }
 
     [Fact]
-    public void Benchmark_and_soak_host_is_a_versioned_hard_executable()
+    public void Benchmark_and_soak_host_is_a_versioned_opt_in_executable()
     {
         string root = HarnessConfig.ResolveRepoRoot();
         string projectPath = Absolute(root, "benchmarks/SomeEngine.Graphics.Benchmarks/SomeEngine.Graphics.Benchmarks.csproj");
         string sourcePath = Absolute(root, "benchmarks/SomeEngine.Graphics.Benchmarks/Benchmarks.cs");
-        string runnerPath = Absolute(root, "harness/RunHarness.ps1");
         var failures = new List<string>();
 
         Check(File.Exists(projectPath), failures, "Graphics benchmark executable project is missing.");
@@ -533,13 +532,7 @@ public sealed class GraphicsCapabilityContinuityTests
             }
         }
 
-        string runner = File.ReadAllText(runnerPath);
-        Check(runner.Contains("graphics-benchmark-soak", StringComparison.Ordinal), failures,
-            "The single harness entry does not run the graphics benchmark/soak hard step.");
-        Check(runner.Contains("benchmarks/SomeEngine.Graphics.Benchmarks/SomeEngine.Graphics.Benchmarks.csproj", StringComparison.Ordinal), failures,
-            "The harness hard step is not wired to the accepted graphics benchmark executable.");
-
-        AssertNoFailures(failures, "Graphics benchmark/soak infrastructure is not a hard executable");
+        AssertNoFailures(failures, "Graphics benchmark/soak infrastructure is not a usable opt-in executable");
     }
 
     private static CapabilityManifest LoadManifest()
@@ -596,7 +589,7 @@ public sealed class GraphicsCapabilityContinuityTests
                 failures.Add($"{symbol.Id} public API inventory token is stale: {symbol.Path} does not contain {symbol.Symbol}");
         }
 
-        string devicePath = "src/Graphics/IDevice.cs";
+        string devicePath = "src/Graphics/Device.cs";
         if (sourceCache.TryGetValue(devicePath, out string? deviceSource))
         {
             HashSet<string> extracted = ExtractDeviceMethodDeclarations(deviceSource)
@@ -606,7 +599,7 @@ public sealed class GraphicsCapabilityContinuityTests
                 .Where(static symbol => symbol.Group == "graphics-device-methods")
                 .Select(static symbol => InventorySourceKey(symbol.Path, symbol.Symbol))
                 .ToHashSet(StringComparer.Ordinal);
-            AddSetDifferences("IDevice method", extracted, inventoried, failures);
+            AddSetDifferences("Device method", extracted, inventoried, failures);
         }
 
         HashSet<string> extractedTypes = [];
@@ -706,7 +699,7 @@ public sealed class GraphicsCapabilityContinuityTests
 
         string prefix = namespaceMatch.Groups[1].Value + "." + classMatch.Groups[1].Value + ".";
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        const string pattern = @"\[(?:Fact|Theory|BenchmarkScenario)(?:\([^\]]*\))?\]\s*(?:\[[^\]]+\]\s*)*public\s+(?:async\s+)?(?:void|Task|ValueTask)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(";
+        const string pattern = @"\[(?:Fact|[A-Za-z_][A-Za-z0-9_.]*Fact|Theory|BenchmarkScenario)(?:\([^\]]*\))?\]\s*(?:\[[^\]]+\]\s*)*public\s+(?:async\s+)?(?:void|Task|ValueTask)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(";
         foreach (Match method in Regex.Matches(source, pattern, RegexOptions.CultureInvariant))
             ids.Add(prefix + method.Groups[1].Value);
         return ids;

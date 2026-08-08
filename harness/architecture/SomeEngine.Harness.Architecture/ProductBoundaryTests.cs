@@ -1529,6 +1529,11 @@ public sealed class ProductBoundaryTests
     {
         foreach (string forbidden in forbiddenReferences)
         {
+            if (IsAllowedDomainBoundaryReference(project.Name, forbidden))
+            {
+                continue;
+            }
+
             if (IsAcceptedGraphicsBoundaryToken(project.Name, forbidden))
             {
                 continue;
@@ -1543,6 +1548,11 @@ public sealed class ProductBoundaryTests
         }
     }
 
+    private static bool IsAllowedDomainBoundaryReference(string projectName, string token)
+        => Config.Architecture.DomainBoundaries.Any(boundary =>
+            string.Equals(boundary.Name, projectName, StringComparison.Ordinal) &&
+            boundary.AllowedReferences.Contains(token, StringComparer.OrdinalIgnoreCase));
+
     private static bool IsCommonIntegrationWord(string token)
         => token is "Present" or "Window";
 
@@ -1551,13 +1561,13 @@ public sealed class ProductBoundaryTests
 
     private static bool IsAcceptedGraphicsBoundaryToken(string projectName, string token)
     {
-        if ((projectName is "SomeEngine.Assets" or "SomeEngine.AssetCook") && token == "D3D12")
+        if ((projectName is "SomeEngine.Assets.Importers" or "SomeEngine.AssetCook") && token == "D3D12")
         {
             return true;
         }
 
         bool portableGraphicsTerm = token is
-            "Swapchain" or "SwapChain" or "IDevice" or "IQueue" or "ISwapchain" or
+            "Swapchain" or "SwapChain" or "Device" or "IQueue" or "ISwapchain" or
             "Present" or "BufferHandle" or "TextureHandle" or "RenderContext" or
             "PipelineCache" or "GpuResource" or "GpuResourceHandle" or "GpuBuffer" or
             "GpuBufferHandle" or "GpuTexture" or "GpuTextureHandle" or "RenderPass" or

@@ -871,6 +871,11 @@ public sealed partial class ProductTestBoundaryTests
     {
         foreach (string forbidden in forbiddenReferences)
         {
+            if (IsAllowedDomainBoundaryTestReference(project.Name, forbidden))
+            {
+                continue;
+            }
+
             if (IsAcceptedGraphicsTestBoundaryToken(project.Name, forbidden))
             {
                 continue;
@@ -883,6 +888,15 @@ public sealed partial class ProductTestBoundaryTests
 
             yield return forbidden;
         }
+    }
+
+    private static bool IsAllowedDomainBoundaryTestReference(string projectName, string token)
+    {
+        string domainName = RemoveTestsSuffix(projectName);
+        return Config.Architecture.DomainBoundaries.Any(boundary =>
+            string.Equals(boundary.Name, domainName, StringComparison.Ordinal) &&
+            (boundary.AllowedReferences.Contains(token, StringComparer.OrdinalIgnoreCase) ||
+             boundary.AllowedTestReferences.Contains(token, StringComparer.OrdinalIgnoreCase)));
     }
 
     private static bool IsCommonIntegrationWord(string token)
@@ -899,7 +913,7 @@ public sealed partial class ProductTestBoundaryTests
         }
 
         bool portableGraphicsTerm = token is
-            "Swapchain" or "SwapChain" or "IDevice" or "IQueue" or "ISwapchain" or
+            "Swapchain" or "SwapChain" or "Device" or "IQueue" or "ISwapchain" or
             "Present" or "BufferHandle" or "TextureHandle" or "RenderContext" or
             "PipelineCache" or "GpuResource" or "GpuResourceHandle" or "GpuBuffer" or
             "GpuBufferHandle" or "GpuTexture" or "GpuTextureHandle" or "RenderPass" or

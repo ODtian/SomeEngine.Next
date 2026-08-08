@@ -28,6 +28,23 @@ public sealed class DomainBoundaryTests
     }
 
     [Fact]
+    public void FriendAssemblyDeclarationsAreLeftToTheDedicatedFriendAssemblyGate()
+    {
+        const string declaration = """
+            using System.Runtime.CompilerServices;
+            [assembly: InternalsVisibleTo("SomeEngine.Render.Cluster")]
+            """;
+        const string dependency = "using SomeEngine.Render.Cluster;";
+
+        Assert.False(ContainsForbiddenReference(
+            WithoutInternalsVisibleToDeclarations(declaration),
+            "SomeEngine.Render.Cluster"));
+        Assert.True(ContainsForbiddenReference(
+            WithoutInternalsVisibleToDeclarations(dependency),
+            "SomeEngine.Render.Cluster"));
+    }
+
+    [Fact]
     public void DomainSourceFilesIncludeTextContractAssets()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "SomeEngineHarnessDomainSourceFiles", Guid.NewGuid().ToString("N"));
@@ -116,7 +133,7 @@ public sealed class DomainBoundaryTests
             foreach (string file in SourceFiles(boundaryRoot))
             {
                 string relative = Path.GetRelativePath(repoRoot, file);
-                string text = File.ReadAllText(file);
+                string text = WithoutInternalsVisibleToDeclarations(File.ReadAllText(file));
                 foreach (string forbidden in boundary.ForbiddenReferences)
                 {
                     if (ContainsForbiddenReference(relative, forbidden) || ContainsForbiddenReference(text, forbidden))
@@ -437,6 +454,14 @@ public sealed class DomainBoundaryTests
 
         return text.Contains(token, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string WithoutInternalsVisibleToDeclarations(string source)
+        => System.Text.RegularExpressions.Regex.Replace(
+            source,
+            @"\[\s*assembly\s*:\s*(?:System\.Runtime\.CompilerServices\.)?InternalsVisibleTo(?:Attribute)?\s*\(\s*""[^""]+""\s*\)\s*\]",
+            "",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant |
+            System.Text.RegularExpressions.RegexOptions.Singleline);
 
     private static bool RequiresExactIdentifierMatch(string token)
         => token is "Present" or "Window" or "Windowing" or "Rhi" or "SharpGen";

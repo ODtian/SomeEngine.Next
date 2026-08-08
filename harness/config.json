@@ -69,6 +69,10 @@
         "path": "tools/SomeEngine.AssetCook/SomeEngine.AssetCook.csproj"
       },
       {
+        "name": "SomeEngine.Assets.Importers",
+        "path": "src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
+      },
+      {
         "name": "SomeEngine.ECS.SourceGen",
         "path": "src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
       },
@@ -199,21 +203,6 @@
   "nugetPackages": {
     "productPackages": [
       {
-        "project": "SomeEngine.Assets",
-        "packageId": "FlatSharp.Compiler",
-        "version": "7.9.0"
-      },
-      {
-        "project": "SomeEngine.Assets",
-        "packageId": "FlatSharp.Runtime",
-        "version": "7.9.0"
-      },
-      {
-        "project": "SomeEngine.Assets",
-        "packageId": "SharpGLTF.Core",
-        "version": "1.0.6"
-      },
-      {
         "project": "SomeEngine.Graphics.Direct3D12",
         "packageId": "Vortice.Direct3D12",
         "version": "3.8.3"
@@ -225,6 +214,11 @@
       }
     ],
     "buildSupportPackages": [
+      {
+        "project": "SomeEngine.Assets.Importers",
+        "packageId": "SharpGLTF.Core",
+        "version": "1.0.6"
+      },
       {
         "project": "SomeEngine.ECS.SourceGen",
         "packageId": "Microsoft.CodeAnalysis.Analyzers",
@@ -551,22 +545,30 @@
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.AssetDatabase",
+      "type": "SomeEngine.Assets.AssetProject",
       "members": [
         {
           "name": "Manifest",
           "kind": "Property"
         },
         {
+          "name": "CreateStorage",
+          "kind": "Method"
+        },
+        {
           "name": "CreateAsset",
           "kind": "Method"
         },
         {
-          "name": "Load",
+          "name": "RegisterAssetAsync",
           "kind": "Method"
         },
         {
-          "name": "Import",
+          "name": "OpenAsync",
+          "kind": "Method"
+        },
+        {
+          "name": "ImportAsync",
           "kind": "Method"
         },
         {
@@ -588,11 +590,115 @@
         {
           "name": "Validate",
           "kind": "Method"
-        },
-        {
-          "name": "Dispose",
-          "kind": "Method"
         }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetType`1",
+      "members": [
+        { "name": "Name", "kind": "Property" },
+        { "name": "PathSuffix", "kind": "Property" },
+        { "name": "SchemaFingerprint", "kind": "Property" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetId`1",
+      "members": [
+        { "name": "Value", "kind": "Property" },
+        { "name": "IsValid", "kind": "Property" },
+        { "name": "Equals", "kind": "Method" },
+        { "name": "GetHashCode", "kind": "Method" },
+        { "name": "ToString", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetHandle`1",
+      "members": [
+        { "name": "Id", "kind": "Property" },
+        { "name": "Generation", "kind": "Property" },
+        { "name": "IsValid", "kind": "Property" },
+        { "name": "Equals", "kind": "Method" },
+        { "name": "GetHashCode", "kind": "Method" },
+        { "name": "ToString", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetLoader",
+      "members": [
+        { "name": "LoadAsync", "kind": "Method" },
+        { "name": "TryGet", "kind": "Method" },
+        { "name": "Get", "kind": "Method" },
+        { "name": "DisposeAsync", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetLoadContext",
+      "members": [
+        { "name": "AssetGuid", "kind": "Property" },
+        { "name": "AssetType", "kind": "Property" },
+        { "name": "CancellationToken", "kind": "Property" },
+        { "name": "Is", "kind": "Method" },
+        { "name": "OpenAsync", "kind": "Method" },
+        { "name": "Transfer", "kind": "Method" },
+        { "name": "LoadAsync", "kind": "Method" },
+        { "name": "TryGet", "kind": "Method" },
+        { "name": "Get", "kind": "Method" },
+        { "name": "GetOptions", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetWriter",
+      "members": [
+        { "name": "Write", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetEntry",
+      "members": [
+        { "name": "AssetGuid", "kind": "Property" },
+        { "name": "AssetType", "kind": "Property" },
+        { "name": "SchemaFingerprint", "kind": "Property" },
+        { "name": "Publication", "kind": "Property" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.IAssetStorage",
+      "members": [
+        { "name": "TryFind", "kind": "Method" },
+        { "name": "OpenAsync", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.LooseAssetStorage",
+      "members": [
+        { "name": "TryFind", "kind": "Method" },
+        { "name": "OpenAsync", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.AssetPackStorage",
+      "members": [
+        { "name": "TryFind", "kind": "Method" },
+        { "name": "OpenAsync", "kind": "Method" },
+        { "name": "DisposeAsync", "kind": "Method" }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Assets",
+      "type": "SomeEngine.Assets.BuiltInAssetIds",
+      "members": [
+        { "name": "DefaultClusterRender", "kind": "Field" },
+        { "name": "DefaultClusterRenderPath", "kind": "Field" }
       ]
     },
     {
@@ -628,7 +734,7 @@
       ]
     },
     {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.ClusterBuilderOptions",
       "members": [
         {
@@ -638,7 +744,7 @@
       ]
     },
     {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.ClusterLodConfig",
       "members": [
         {
@@ -648,7 +754,7 @@
       ]
     },
     {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.GltfImporterSettings",
       "members": [
         {
@@ -670,7 +776,7 @@
       ]
     },
     {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.SlangSourceImporter",
       "members": [
         {
@@ -690,42 +796,18 @@
           "kind": "Method"
         },
         {
-          "name": "Import",
+          "name": "ImportAsync",
           "kind": "Method"
         }
       ]
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.AssetCreate",
-      "members": [
-        {
-          "name": "CreateAsset",
-          "kind": "Method"
-        }
-      ]
+      "type": "SomeEngine.Assets.Schema.Shader"
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.ClusterRenderAssets",
-      "members": [
-        {
-          "name": "DefaultGuid",
-          "kind": "Field"
-        },
-        {
-          "name": "LoadDefault",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Schema.ShaderAsset"
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Schema.MaterialAsset"
+      "type": "SomeEngine.Assets.Schema.Material"
     },
     {
       "assembly": "SomeEngine.Assets",
@@ -743,226 +825,22 @@
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Schema.MaterialInstanceAsset"
+      "type": "SomeEngine.Assets.Schema.MaterialInstance"
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Schema.MeshAsset"
+      "type": "SomeEngine.Assets.Schema.Mesh"
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Schema.TextureAsset"
+      "type": "SomeEngine.Assets.Schema.Texture"
     },
     {
       "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Schema.ClusterRenderAsset"
+      "type": "SomeEngine.Assets.Schema.ClusterShaders"
     },
     {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.ShaderAssetCodec",
-      "members": [
-        {
-          "name": "Save",
-          "kind": "Method"
-        },
-        {
-          "name": "Load",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.ShaderAssetProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.MaterialAssetCodec",
-      "members": [
-        {
-          "name": "Save",
-          "kind": "Method"
-        },
-        {
-          "name": "Load",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.MaterialAssetProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        },
-        {
-          "name": "GetDependencies",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.MaterialInstanceCodec",
-      "members": [
-        {
-          "name": "Save",
-          "kind": "Method"
-        },
-        {
-          "name": "Load",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.MaterialInstanceProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        },
-        {
-          "name": "GetDependencies",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.MeshAssetCodec",
-      "members": [
-        {
-          "name": "Save",
-          "kind": "Method"
-        },
-        {
-          "name": "Load",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.MeshAssetProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.TextureAssetCodec",
-      "members": [
-        {
-          "name": "Save",
-          "kind": "Method"
-        },
-        {
-          "name": "Load",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.TextureAssetProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.ClusterRenderCodec",
-      "members": [
-        {
-          "name": "Save",
-          "kind": "Method"
-        },
-        {
-          "name": "Load",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.Pipeline.ClusterRenderProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        },
-        {
-          "name": "GetDependencies",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.SlangShaderImporter",
       "members": [
         {
@@ -980,7 +858,7 @@
       ]
     },
     {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.GltfSourceImporter",
       "members": [
         {
@@ -1000,13 +878,13 @@
           "kind": "Method"
         },
         {
-          "name": "Import",
+          "name": "ImportAsync",
           "kind": "Method"
         }
       ]
     },
     {
-      "assembly": "SomeEngine.Assets",
+      "assembly": "SomeEngine.Assets.Importers",
       "type": "SomeEngine.Assets.Importers.ClusterBuilder",
       "members": [
         {
@@ -1061,50 +939,6 @@
     },
     {
       "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Assets.Mesh",
-      "members": [
-        {
-          "name": "Name",
-          "kind": "Property"
-        },
-        {
-          "name": "Payload",
-          "kind": "Property"
-        },
-        {
-          "name": "BvhOffset",
-          "kind": "Property"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Assets.RuntimeAssetLoader",
-      "members": [
-        {
-          "name": "LoadMesh",
-          "kind": "Method"
-        },
-        {
-          "name": "LoadShader",
-          "kind": "Method"
-        },
-        {
-          "name": "RequestMesh",
-          "kind": "Method"
-        },
-        {
-          "name": "RequestShader",
-          "kind": "Method"
-        },
-        {
-          "name": "RequestMaterial",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
       "type": "SomeEngine.Render.Components.MeshInstance",
       "members": [
         {
@@ -1119,55 +953,11 @@
     },
     {
       "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Components.MeshMaterialBindings",
-      "members": [
-        {
-          "name": "Materials",
-          "kind": "Field"
-        }
-      ]
+      "type": "SomeEngine.Render.Components.MeshMaterialBinding"
     },
     {
       "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Components.SceneLights",
-      "members": [
-        {
-          "name": "DefaultLightLayerMask",
-          "kind": "Field"
-        },
-        {
-          "name": "NoCookie",
-          "kind": "Field"
-        },
-        {
-          "name": "DirectionalLights",
-          "kind": "Field"
-        },
-        {
-          "name": "PointLights",
-          "kind": "Field"
-        },
-        {
-          "name": "SpotLights",
-          "kind": "Field"
-        },
-        {
-          "name": "LightCookieAtlas",
-          "kind": "Field"
-        },
-        {
-          "name": "IsEmpty",
-          "kind": "Property"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Data.GpuTransform"
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Data.ClusterInfo"
+      "type": "SomeEngine.Render.Components.RenderMaterialBinding"
     },
     {
       "assembly": "SomeEngine.Render",
@@ -1183,36 +973,6 @@
         },
         {
           "name": "ApplyToProjection",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Frame.TemporalState",
-      "members": [
-        {
-          "name": "Ready",
-          "kind": "Property"
-        },
-        {
-          "name": "ResetRequested",
-          "kind": "Property"
-        },
-        {
-          "name": "RequestReset",
-          "kind": "Method"
-        },
-        {
-          "name": "ConsumeReset",
-          "kind": "Method"
-        },
-        {
-          "name": "SetReady",
-          "kind": "Method"
-        },
-        {
-          "name": "Reset",
           "kind": "Method"
         }
       ]
@@ -1249,132 +1009,6 @@
         },
         {
           "name": "State",
-          "kind": "Property"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Materials.Material",
-      "members": [
-        {
-          "name": "Passes",
-          "kind": "Property"
-        },
-        {
-          "name": "PassVersion",
-          "kind": "Property"
-        },
-        {
-          "name": "SetPasses",
-          "kind": "Method"
-        },
-        {
-          "name": "Name",
-          "kind": "Property"
-        },
-        {
-          "name": "ScalarRegionLayout",
-          "kind": "Property"
-        },
-        {
-          "name": "ScalarVersion",
-          "kind": "Property"
-        },
-        {
-          "name": "BindingVersion",
-          "kind": "Property"
-        },
-        {
-          "name": "AlbedoMap",
-          "kind": "Property"
-        },
-        {
-          "name": "NormalMap",
-          "kind": "Property"
-        },
-        {
-          "name": "ArmMap",
-          "kind": "Property"
-        },
-        {
-          "name": "EmissiveMap",
-          "kind": "Property"
-        },
-        {
-          "name": "BaseColorTint",
-          "kind": "Property"
-        },
-        {
-          "name": "MetallicFactor",
-          "kind": "Property"
-        },
-        {
-          "name": "Roughness",
-          "kind": "Property"
-        },
-        {
-          "name": "EmissiveFactor",
-          "kind": "Property"
-        },
-        {
-          "name": "ScalarRegionByteSize",
-          "kind": "Property"
-        },
-        {
-          "name": "Clone",
-          "kind": "Method"
-        },
-        {
-          "name": "TouchScalars",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Materials.Shader",
-      "members": [
-        {
-          "name": "Name",
-          "kind": "Property"
-        },
-        {
-          "name": "Variants",
-          "kind": "Property"
-        },
-        {
-          "name": "Attributes",
-          "kind": "Property"
-        },
-        {
-          "name": "Reflections",
-          "kind": "Property"
-        },
-        {
-          "name": "ScalarLayouts",
-          "kind": "Property"
-        },
-        {
-          "name": "TryVariant",
-          "kind": "Method"
-        },
-        {
-          "name": "TryReflection",
-          "kind": "Method"
-        },
-        {
-          "name": "TryEntry",
-          "kind": "Method"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Materials.Texture",
-      "members": [
-        {
-          "name": "Name",
           "kind": "Property"
         }
       ]
@@ -1422,54 +1056,52 @@
       "type": "SomeEngine.Render.Systems.RenderWorld",
       "members": [
         {
-          "name": "World",
-          "kind": "Property"
+          "name": "Extract",
+          "kind": "Method"
+        }
+      ]
+    },
+    {
+      "assembly": "SomeEngine.Render.Cluster",
+      "type": "SomeEngine.Render.Cluster.ClusterRenderResources",
+      "members": [
+        {
+          "name": "PrepareMeshesAsync",
+          "kind": "Method"
         },
         {
-          "name": "SceneLights",
-          "kind": "Property"
+          "name": "Prepare",
+          "kind": "Method"
         },
         {
-          "name": "Version",
-          "kind": "Property"
+          "name": "PumpStreaming",
+          "kind": "Method"
         },
         {
-          "name": "ShapeVersion",
-          "kind": "Property"
+          "name": "TryGetFaultReplayRequest",
+          "kind": "Method"
         },
         {
-          "name": "InstanceShapeVersion",
-          "kind": "Property"
+          "name": "AcknowledgeFaultReplay",
+          "kind": "Method"
         },
         {
-          "name": "MaterialVersion",
-          "kind": "Property"
+          "name": "CaptureDiagnostics",
+          "kind": "Method"
         },
         {
-          "name": "LightVersion",
-          "kind": "Property"
+          "name": "Shutdown",
+          "kind": "Method"
         },
         {
-          "name": "CountInstances",
+          "name": "Dispose",
           "kind": "Method"
         }
       ]
     },
     {
       "assembly": "SomeEngine.Render",
-      "type": "SomeEngine.Render.Systems.RenderWorldExtractor"
-    },
-    {
-      "assembly": "SomeEngine.Render",
       "type": "SomeEngine.Render.Materials.Opaque"
-    },
-    {
-      "assembly": "SomeEngine.Render.Cluster",
-      "type": "SomeEngine.Render.Cluster.ClusterDebugMode"
-    },
-    {
-      "assembly": "SomeEngine.Render.Cluster",
-      "type": "SomeEngine.Render.Cluster.ClusterShaders"
     },
     {
       "assembly": "SomeEngine.Assets",
@@ -1492,7 +1124,7 @@
           "kind": "Method"
         },
         {
-          "name": "Import",
+          "name": "ImportAsync",
           "kind": "Method"
         }
       ]
@@ -1512,36 +1144,6 @@
         {
           "name": "ImporterVersion",
           "kind": "Property"
-        }
-      ]
-    },
-    {
-      "assembly": "SomeEngine.Assets",
-      "type": "SomeEngine.Assets.IAssetProvider",
-      "members": [
-        {
-          "name": "AssetType",
-          "kind": "Property"
-        },
-        {
-          "name": "RuntimeType",
-          "kind": "Property"
-        },
-        {
-          "name": "Matches",
-          "kind": "Method"
-        },
-        {
-          "name": "Create",
-          "kind": "Method"
-        },
-        {
-          "name": "Destroy",
-          "kind": "Method"
-        },
-        {
-          "name": "GetDependencies",
-          "kind": "Method"
         }
       ]
     },
@@ -1634,12 +1236,12 @@
       {
         "name": "Alimer.Bindings.MeshOptimizer",
         "path": "external/Alimer.Bindings/src/Alimer.Bindings.MeshOptimizer/Alimer.Bindings.MeshOptimizer.csproj",
-        "consumerProject": "src/SomeEngine.Assets/SomeEngine.Assets.csproj"
+        "consumerProject": "src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
       },
       {
         "name": "SlangShaderSharp",
         "path": "external/SlangShaderSharp/src/SlangShaderSharp.csproj",
-        "consumerProject": "src/SomeEngine.Assets/SomeEngine.Assets.csproj"
+        "consumerProject": "src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
       }
     ],
     "binaryAssets": [
@@ -1730,24 +1332,31 @@
   "architecture": {
     "layerContract": {
       "allowedDependencies": {
-        "SomeEngine.Assets": [
-          "SlangShaderSharp",
-          "Alimer.Bindings.MeshOptimizer"
-        ],
+      "SomeEngine.Assets": [
+        "SomeEngine.Serialization"
+      ],
+      "SomeEngine.Assets.Importers": [
+        "SomeEngine.Assets",
+        "SlangShaderSharp",
+        "Alimer.Bindings.MeshOptimizer"
+      ],
         "SomeEngine.Core": [
           "SomeEngine.Job",
           "SomeEngine.ECS",
           "SomeEngine.ECS.Systems"
         ],
         "SomeEngine.ECS": [
-          "SomeEngine.Job"
+          "SomeEngine.Job",
+          "SomeEngine.Job.Contracts"
         ],
         "SomeEngine.ECS.Serialization": [
-          "SomeEngine.ECS"
+          "SomeEngine.ECS",
+          "SomeEngine.Serialization"
         ],
         "SomeEngine.ECS.Systems": [
           "SomeEngine.ECS",
-          "SomeEngine.Job"
+          "SomeEngine.Job",
+          "SomeEngine.Job.Contracts"
         ],
         "SomeEngine.Graphics": [],
         "SomeEngine.Graphics.Direct3D12": [
@@ -1756,7 +1365,9 @@
         "SomeEngine.Graphics.Null": [
           "SomeEngine.Graphics"
         ],
-        "SomeEngine.Job": [],
+        "SomeEngine.Job": [
+          "SomeEngine.Job.Contracts"
+        ],
         "SomeEngine.Job.Dots": [
           "SomeEngine.Job"
         ],
@@ -1769,7 +1380,10 @@
         "SomeEngine.Render.Cluster": [
           "SomeEngine.Render",
           "SomeEngine.Core",
-          "SomeEngine.Assets"
+          "SomeEngine.Assets",
+          "SomeEngine.ECS",
+          "SomeEngine.Graphics",
+          "SomeEngine.Serialization"
         ],
         "SomeEngine.RenderGraph": [
           "SomeEngine.Graphics",
@@ -1878,6 +1492,13 @@
       {
         "name": "SomeEngine.Render",
         "path": "src/SomeEngine.Render",
+        "allowedReferences": [
+          "IDevice"
+        ],
+        "allowedTestReferences": [
+          "BufferHandle",
+          "TextureHandle"
+        ],
         "forbiddenReferences": [
           "SomeEngine.Rhi",
           "Diligent",
@@ -1885,7 +1506,6 @@
           "SomeEngine.Render.Graph",
           "RenderGraph",
           "RenderGraphHandle",
-          "IDevice",
           "IQueue",
           "ISwapchain",
           "Swapchain",
@@ -1955,6 +1575,10 @@
       {
         "name": "SomeEngine.Render.Cluster",
         "path": "src/SomeEngine.Render.Cluster",
+        "allowedReferences": [
+          "IDevice",
+          "BufferHandle"
+        ],
         "forbiddenReferences": [
           "SomeEngine.Rhi",
           "Diligent",
@@ -1962,7 +1586,6 @@
           "SomeEngine.Render.Graph",
           "RenderGraph",
           "RenderGraphHandle",
-          "IDevice",
           "IQueue",
           "ISwapchain",
           "Swapchain",
@@ -1970,7 +1593,6 @@
           "Present",
           "Window",
           "Windowing",
-          "BufferHandle",
           "TextureHandle",
           "RenderContext",
           "PipelineCache",
@@ -2041,80 +1663,88 @@
     ],
     "requiredProductTypes": [
       {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.ClusterSlotBuffer",
-        "reason": "Accepted backend-free Cluster slot model.",
+        "assembly": "SomeEngine.Render",
+        "type": "SomeEngine.Render.Frame.RenderFrame",
+        "reason": "Public frame lifetime whose assembly-internal recording boundary atomically registers one complete timeline use.",
         "members": [
           {
-            "name": "Layout",
-            "kind": "Property"
-          },
-          {
-            "name": "SlotCount",
-            "kind": "Property"
-          },
-          {
-            "name": "ForceFullUpload",
-            "kind": "Method"
-          },
-          {
-            "name": "TryDirty",
-            "kind": "Method"
-          },
-          {
-            "name": "AllocateRange",
-            "kind": "Method"
-          },
-          {
-            "name": "FreeRange",
-            "kind": "Method"
-          },
-          {
-            "name": "SetField",
-            "kind": "Method"
-          },
-          {
-            "name": "GetField",
-            "kind": "Method"
-          },
-          {
-            "name": "GetData",
+            "name": "AcquireUse",
             "kind": "Method"
           }
         ]
       },
       {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.ClusterSlotLayout",
-        "reason": "Accepted backend-free Cluster slot/page layout model.",
+        "assembly": "SomeEngine.Render",
+        "type": "SomeEngine.Render.Frame.RenderFrameUseLease",
+        "reason": "Assembly-internal linear recording ownership that prevents frame completion or disposal while resources remain in use.",
         "members": [
           {
-            "name": "Fields",
+            "name": "IsClosed",
             "kind": "Property"
           },
           {
-            "name": "Capacity",
-            "kind": "Property"
-          },
-          {
-            "name": "ElementCount",
-            "kind": "Property"
-          },
-          {
-            "name": "ByteCount",
-            "kind": "Property"
-          },
-          {
-            "name": "Grow",
+            "name": "Dispose",
             "kind": "Method"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render",
+        "type": "SomeEngine.Render.Frame.RenderTimeline",
+        "reason": "Assembly-internal owner-local frame submission timeline."
+      },
+      {
+        "assembly": "SomeEngine.Render",
+        "type": "SomeEngine.Render.Frame.RenderTimelineLease",
+        "reason": "Assembly-internal linear prepare capability for one owner timeline."
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterRenderBinding",
+        "reason": "Assembly-internal non-cacheable binding that pairs one Cluster epoch and both owner timelines.",
+        "members": [
+          {
+            "name": "PageHeap",
+            "kind": "Property"
           },
           {
-            "name": "Index",
-            "kind": "Method"
+            "name": "Bvh",
+            "kind": "Property"
           },
           {
-            "name": "Span",
-            "kind": "Method"
+            "name": "Instances",
+            "kind": "Property"
+          },
+          {
+            "name": "PreviousInstances",
+            "kind": "Property"
+          },
+          {
+            "name": "InstanceHeaders",
+            "kind": "Property"
+          },
+          {
+            "name": "InstanceData",
+            "kind": "Property"
+          },
+          {
+            "name": "DispatchExtent",
+            "kind": "Property"
+          },
+          {
+            "name": "ReadbackTicket",
+            "kind": "Property"
+          }
+        ]
+      },
+      {
+        "assembly": "SomeEngine.Render.Cluster",
+        "type": "SomeEngine.Render.Cluster.ClusterReadbackTicket",
+        "reason": "Assembly-internal proof that readback data belongs to one exact Cluster resource epoch.",
+        "members": [
+          {
+            "name": "EpochId",
+            "kind": "Property"
           }
         ]
       },
@@ -2136,6 +1766,10 @@
             "kind": "Property"
           },
           {
+            "name": "Capacity",
+            "kind": "Property"
+          },
+          {
             "name": "TryAlloc",
             "kind": "Method"
           },
@@ -2144,7 +1778,15 @@
             "kind": "Method"
           },
           {
-            "name": "Has",
+            "name": "CanFit",
+            "kind": "Method"
+          },
+          {
+            "name": "ReserveFrees",
+            "kind": "Method"
+          },
+          {
+            "name": "ValidateFrees",
             "kind": "Method"
           },
           {
@@ -2155,311 +1797,36 @@
       },
       {
         "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.PageStream",
-        "reason": "Accepted backend-free Cluster page stream model.",
+        "type": "SomeEngine.Render.Cluster.ClusterInstanceHeader",
+        "reason": "Cluster-owned device ABI for one prepared render-world instance.",
         "members": [
           {
-            "name": "FaultCount",
-            "kind": "Property"
+            "name": "BvhRoot",
+            "kind": "Field"
           },
           {
-            "name": "LoadedPages",
-            "kind": "Property"
+            "name": "MaterialSlotOffset",
+            "kind": "Field"
           },
           {
-            "name": "ErrorCount",
-            "kind": "Property"
+            "name": "DataOffset",
+            "kind": "Field"
           },
           {
-            "name": "QueuedPageCount",
-            "kind": "Property"
-          },
-          {
-            "name": "RequestedPageCount",
-            "kind": "Property"
-          },
-          {
-            "name": "Push",
-            "kind": "Method"
-          },
-          {
-            "name": "Update",
-            "kind": "Method"
-          }
-        ]
-      },
-      {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.MeshPages",
-        "reason": "Accepted backend-free Cluster mesh-page model.",
-        "members": [
-          {
-            "name": "Registry",
-            "kind": "Property"
-          },
-          {
-            "name": "LeafNodes",
-            "kind": "Property"
-          },
-          {
-            "name": "Count",
-            "kind": "Property"
-          },
-          {
-            "name": "ResidentCount",
-            "kind": "Property"
-          },
-          {
-            "name": "MissingCount",
-            "kind": "Property"
-          },
-          {
-            "name": "TryAddMesh",
-            "kind": "Method"
-          },
-          {
-            "name": "AddPage",
-            "kind": "Method"
-          },
-          {
-            "name": "AddLeaf",
-            "kind": "Method"
-          },
-          {
-            "name": "Leaves",
-            "kind": "Method"
-          },
-          {
-            "name": "TryLeaf",
-            "kind": "Method"
-          },
-          {
-            "name": "IsResident",
-            "kind": "Method"
-          },
-          {
-            "name": "TrySource",
-            "kind": "Method"
-          },
-          {
-            "name": "MakeResident",
-            "kind": "Method"
-          },
-          {
-            "name": "MakeMissing",
-            "kind": "Method"
-          },
-          {
-            "name": "Touch",
-            "kind": "Method"
-          },
-          {
-            "name": "TryVictim",
-            "kind": "Method"
-          }
-        ]
-      },
-      {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.UploadPack",
-        "reason": "Accepted backend-free upload payload description.",
-        "members": [
-          {
-            "name": "Count",
-            "kind": "Property"
-          },
-          {
-            "name": "ByteCount",
-            "kind": "Property"
-          },
-          {
-            "name": "CopyBytes",
-            "kind": "Property"
-          },
-          {
-            "name": "Add",
-            "kind": "Method"
-          },
-          {
-            "name": "Copy",
-            "kind": "Method"
-          },
-          {
-            "name": "Take",
-            "kind": "Method"
-          },
-          {
-            "name": "TryPacked",
-            "kind": "Method"
-          },
-          {
-            "name": "Clear",
-            "kind": "Method"
-          }
-        ]
-      },
-      {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.MaterialItem",
-        "reason": "Accepted backend-free Cluster material-planning model.",
-        "members": [
-          {
-            "name": "Handle",
-            "kind": "Property"
-          },
-          {
-            "name": "Material",
-            "kind": "Property"
-          },
-          {
-            "name": "PassVersion",
-            "kind": "Property"
-          },
-          {
-            "name": "BindingVersion",
-            "kind": "Property"
-          },
-          {
-            "name": "State",
-            "kind": "Property"
-          },
-          {
-            "name": "Shade",
-            "kind": "Property"
-          },
-          {
-            "name": "ShadeCache",
-            "kind": "Property"
-          },
-          {
-            "name": "Sw",
-            "kind": "Property"
-          },
-          {
-            "name": "SwCache",
-            "kind": "Property"
-          },
-          {
-            "name": "Vs",
-            "kind": "Property"
-          },
-          {
-            "name": "VsCache",
-            "kind": "Property"
-          },
-          {
-            "name": "Ps",
-            "kind": "Property"
-          },
-          {
-            "name": "Deform",
-            "kind": "Property"
-          },
-          {
-            "name": "HasRaster",
-            "kind": "Method"
-          },
-          {
-            "name": "HasShade",
-            "kind": "Method"
-          },
-          {
-            "name": "HasDeform",
-            "kind": "Method"
-          },
-          {
-            "name": "HasCache",
-            "kind": "Method"
+            "name": "DataFlags",
+            "kind": "Field"
           },
           {
             "name": "BoundsExpansion",
+            "kind": "Field"
+          },
+          {
+            "name": "Inactive",
+            "kind": "Property"
+          },
+          {
+            "name": "Create",
             "kind": "Method"
-          }
-        ]
-      },
-      {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.ClusterShaders",
-        "reason": "Accepted backend-free shader-identity set.",
-        "members": [
-          {
-            "name": "BvhPatch",
-            "kind": "Property"
-          },
-          {
-            "name": "Traverse",
-            "kind": "Property"
-          },
-          {
-            "name": "Cull",
-            "kind": "Property"
-          },
-          {
-            "name": "Binning",
-            "kind": "Property"
-          },
-          {
-            "name": "Draw",
-            "kind": "Property"
-          },
-          {
-            "name": "DepthMerge",
-            "kind": "Property"
-          },
-          {
-            "name": "HiZ",
-            "kind": "Property"
-          },
-          {
-            "name": "ShadeBinning",
-            "kind": "Property"
-          },
-          {
-            "name": "Resolve",
-            "kind": "Property"
-          },
-          {
-            "name": "Temporal",
-            "kind": "Property"
-          }
-        ]
-      },
-      {
-        "assembly": "SomeEngine.Render.Cluster",
-        "type": "SomeEngine.Render.Cluster.ClusterDebugMode",
-        "reason": "Accepted backend-free Cluster debug mode contract.",
-        "members": [
-          {
-            "name": "None",
-            "kind": "Field"
-          },
-          {
-            "name": "ClusterID",
-            "kind": "Field"
-          },
-          {
-            "name": "LODLevel",
-            "kind": "Field"
-          },
-          {
-            "name": "SWHWView",
-            "kind": "Field"
-          },
-          {
-            "name": "ShadingBin",
-            "kind": "Field"
-          },
-          {
-            "name": "Barycentric",
-            "kind": "Field"
-          },
-          {
-            "name": "Normal",
-            "kind": "Field"
-          },
-          {
-            "name": "UV",
-            "kind": "Field"
           }
         ]
       }
