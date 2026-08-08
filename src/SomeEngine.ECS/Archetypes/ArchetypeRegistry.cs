@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Runtime.InteropServices;
 using SomeEngine.ECS.Collections;
 using SomeEngine.ECS.Registry;
 
@@ -12,6 +14,7 @@ namespace SomeEngine.ECS.Archetypes;
 /// </remarks>
 internal class ArchetypeRegistry
 {
+    private const int MaximumStackComponentIds = 256;
     private readonly Dictionary<SortedValueKey, Archetype> _archetypesByComponents =
         new(SortedValueComparer.Instance);
     private readonly List<Archetype> _allArchetypes = new();
@@ -21,7 +24,67 @@ internal class ArchetypeRegistry
     internal Action<Archetype>? OnArchetypeCreated;
 
     /// <summary>所有已创建的 Archetype 只读视图。</summary>
-    public IReadOnlyList<Archetype> AllArchetypes => _allArchetypes;
+    public ReadOnlySpan<Archetype> AllArchetypes => CollectionsMarshal.AsSpan(_allArchetypes);
+
+    internal int Count => _allArchetypes.Count;
+
+    internal Archetype At(int index) => _allArchetypes[index];
+
+    /// <summary>
+    /// Clones the complete table image without running archetype-created callbacks. Archetypes are
+    /// emitted in the original list/id order and every transition target is remapped only after all
+    /// candidate shells and chunks exist.
+    /// </summary>
+    internal ArchetypeRegistry CloneExact(out DetachedTableMap tableMap) =>
+        CloneExact(out tableMap, cloneDerivedCaches: true);
+
+    internal ArchetypeRegistry CloneExact(
+        out DetachedTableMap tableMap,
+        bool cloneDerivedCaches)
+    {
+        var candidate = new ArchetypeRegistry
+        {
+            _nextArchetypeId = _nextArchetypeId,
+        };
+        tableMap = new DetachedTableMap();
+
+        candidate._allArchetypes.Capacity = _allArchetypes.Capacity;
+        foreach (var sourceArchetype in _allArchetypes)
+        {
+            var candidateArchetype = new Archetype(sourceArchetype);
+
+            candidate._allArchetypes.Add(candidateArchetype);
+            candidate._archetypesByComponents.Add(
+                new SortedValueKey(candidateArchetype.ComponentIds),
+                candidateArchetype);
+            tableMap.Add(sourceArchetype, candidateArchetype);
+        }
+
+        foreach (var sourceArchetype in _allArchetypes)
+        {
+            var candidateArchetype = tableMap.Remap(sourceArchetype);
+            candidateArchetype.EnsureChunkListCapacity(sourceArchetype.ChunkListCapacity);
+            foreach (var sourceChunk in sourceArchetype.Chunks)
+            {
+                var candidateChunk =
+                    sourceChunk.ForkDetached(candidateArchetype.ColumnOperations);
+                candidateArchetype.AddChunk(candidateChunk);
+                tableMap.Add(sourceChunk, candidateChunk);
+            }
+        }
+
+        foreach (var sourceArchetype in _allArchetypes)
+        {
+            sourceArchetype.CloneRuntimeStateTo(
+                tableMap.Remap(sourceArchetype),
+                tableMap,
+                cloneDerivedCaches);
+        }
+
+        // OnArchetypeCreated intentionally remains null. The owner which installs the candidate
+        // image is responsible for binding its own callback after the clone is complete.
+        return candidate;
+    }
 
     /// <summary>
     /// 查找或创建 Archetype。
@@ -43,22 +106,24 @@ internal class ArchetypeRegistry
     /// <summary>
     /// 获取或创建 Add 边缓存：source + componentId → target archetype。
     /// </summary>
-    public ArchetypeEdge AddEdge(Archetype source, int componentId)
+    public StructuralTransition AddEdge(Archetype source, int componentId)
     {
-        if (source.AddEdges.TryGetValue(componentId, out var existing))
+        if (source.TryGetAddTransition(componentId, out var existing))
             return existing;
 
         var newIds = InsertSorted(source.ComponentIds, componentId);
         var target = GetOrCreate(newIds);
 
         var mapping = SharedMap(source, target);
-        var edge = new ArchetypeEdge(target, mapping);
-        source.AddEdges[componentId] = edge;
+        var edge = new StructuralTransition(target, mapping);
+        source.CacheAddTransition(componentId, edge);
 
-        if (!target.RemoveEdges.ContainsKey(componentId))
+        if (!target.TryGetRemoveTransition(componentId, out _))
         {
             var reverseMapping = SharedMap(target, source);
-            target.RemoveEdges[componentId] = new ArchetypeEdge(source, reverseMapping);
+            target.CacheRemoveTransition(
+                componentId,
+                new StructuralTransition(source, reverseMapping));
         }
 
         return edge;
@@ -69,34 +134,57 @@ internal class ArchetypeRegistry
         if (componentIds.Length == 0)
             return new StructuralTransition(source, Array.Empty<SharedColumnMapping>());
 
-        Span<int> missingComponentIds = stackalloc int[componentIds.Length];
-        int missingCount = 0;
-        for (int i = 0; i < componentIds.Length; i++)
+        int[]? rentedMissing = null;
+        Span<int> missingComponentIds = componentIds.Length <= MaximumStackComponentIds
+            ? stackalloc int[componentIds.Length]
+            : (rentedMissing = ArrayPool<int>.Shared.Rent(componentIds.Length))
+                .AsSpan(0, componentIds.Length);
+        try
         {
-            int componentId = componentIds[i];
-            if (!source.HasComponent(componentId))
-                missingComponentIds[missingCount++] = componentId;
+            int missingCount = 0;
+            for (int i = 0; i < componentIds.Length; i++)
+            {
+                int componentId = componentIds[i];
+                if (!source.HasComponent(componentId))
+                    missingComponentIds[missingCount++] = componentId;
+            }
+
+            if (missingCount == 0)
+                return new StructuralTransition(source, Array.Empty<SharedColumnMapping>());
+
+            if (missingCount == 1)
+                return AddEdge(source, missingComponentIds[0]);
+
+            ReadOnlySpan<int> missingSpan = missingComponentIds[..missingCount];
+            if (source.TryGetIncludeTransition(missingSpan, out var cachedPlan))
+                return cachedPlan;
+
+            int finalCount = checked(source.ComponentIds.Length + missingCount);
+            int[]? rentedFinal = null;
+            Span<int> finalIds = finalCount <= MaximumStackComponentIds
+                ? stackalloc int[finalCount]
+                : (rentedFinal = ArrayPool<int>.Shared.Rent(finalCount)).AsSpan(0, finalCount);
+            try
+            {
+                MergeSorted(source.ComponentIds, missingSpan, finalIds);
+                var target = GetOrCreate(finalIds);
+                var mapping = SharedMap(source, target);
+                var plan = new StructuralTransition(target, mapping);
+
+                source.CacheIncludeTransition(missingSpan, plan);
+                return plan;
+            }
+            finally
+            {
+                if (rentedFinal is not null)
+                    ArrayPool<int>.Shared.Return(rentedFinal);
+            }
         }
-
-        if (missingCount == 0)
-            return new StructuralTransition(source, Array.Empty<SharedColumnMapping>());
-
-        if (missingCount == 1)
-            return AddEdge(source, missingComponentIds[0]).AsTransition();
-
-        var missingSpan = missingComponentIds[..missingCount];
-        var cacheLookup = source.IncludeTransitionCache.GetAlternateLookup<ReadOnlySpan<int>>();
-        if (cacheLookup.TryGetValue(missingSpan, out var cachedPlan))
-            return cachedPlan;
-
-        Span<int> finalIds = stackalloc int[source.ComponentIds.Length + missingCount];
-        MergeSorted(source.ComponentIds, missingSpan, finalIds);
-        var target = GetOrCreate(finalIds[..(source.ComponentIds.Length + missingCount)]);
-        var mapping = SharedMap(source, target);
-        var plan = new StructuralTransition(target, mapping);
-
-        source.IncludeTransitionCache.Add(SortedValueKey.CreateOwnedCopy(missingSpan), plan);
-        return plan;
+        finally
+        {
+            if (rentedMissing is not null)
+                ArrayPool<int>.Shared.Return(rentedMissing);
+        }
     }
 
     public StructuralTransition CleanupTransition(Archetype source)
@@ -118,22 +206,24 @@ internal class ArchetypeRegistry
     /// <summary>
     /// 获取或创建 Remove 边缓存：source - componentId → target archetype。
     /// </summary>
-    public ArchetypeEdge RemoveEdge(Archetype source, int componentId)
+    public StructuralTransition RemoveEdge(Archetype source, int componentId)
     {
-        if (source.RemoveEdges.TryGetValue(componentId, out var existing))
+        if (source.TryGetRemoveTransition(componentId, out var existing))
             return existing;
 
         var newIds = RemoveSorted(source.ComponentIds, componentId);
         var target = GetOrCreate(newIds);
 
         var mapping = SharedMap(source, target);
-        var edge = new ArchetypeEdge(target, mapping);
-        source.RemoveEdges[componentId] = edge;
+        var edge = new StructuralTransition(target, mapping);
+        source.CacheRemoveTransition(componentId, edge);
 
-        if (!target.AddEdges.ContainsKey(componentId))
+        if (!target.TryGetAddTransition(componentId, out _))
         {
             var reverseMapping = SharedMap(target, source);
-            target.AddEdges[componentId] = new ArchetypeEdge(source, reverseMapping);
+            target.CacheAddTransition(
+                componentId,
+                new StructuralTransition(source, reverseMapping));
         }
 
         return edge;
@@ -145,9 +235,9 @@ internal class ArchetypeRegistry
     internal static SharedColumnMapping[] SharedMap(Archetype source, Archetype destination)
     {
         int sharedCount = 0;
-        for (int sourceColumn = 0; sourceColumn < source.ColumnMetas.Length; sourceColumn++)
+        for (int sourceColumn = 0; sourceColumn < source.TableComponentIds.Length; sourceColumn++)
         {
-            int componentId = source.ColumnMetas[sourceColumn].ComponentId;
+            int componentId = source.TableComponentIds[sourceColumn];
             if (destination.TryColumn(componentId, out int destinationColumn))
                 sharedCount++;
         }
@@ -157,14 +247,15 @@ internal class ArchetypeRegistry
 
         var result = new SharedColumnMapping[sharedCount];
         int resultIndex = 0;
-        for (int sourceColumn = 0; sourceColumn < source.ColumnMetas.Length; sourceColumn++)
+        for (int sourceColumn = 0; sourceColumn < source.TableComponentIds.Length; sourceColumn++)
         {
-            int componentId = source.ColumnMetas[sourceColumn].ComponentId;
+            int componentId = source.TableComponentIds[sourceColumn];
             if (destination.TryColumn(componentId, out int destinationColumn))
             {
-                ref readonly var meta = ref source.ColumnMetas[sourceColumn];
+                ref readonly ComponentOperations operations =
+                    ref source.ColumnOperations[sourceColumn];
                 result[resultIndex++] = new SharedColumnMapping(
-                    sourceColumn, destinationColumn, meta.Operations);
+                    sourceColumn, destinationColumn, operations);
             }
         }
 
@@ -172,26 +263,26 @@ internal class ArchetypeRegistry
     }
 
     /// <summary>在有序数组中插入一个值，返回新数组。</summary>
-    internal static int[] InsertSorted(int[] sorted, int value)
+    internal static int[] InsertSorted(ReadOnlySpan<int> sorted, int value)
     {
         var result = new int[sorted.Length + 1];
-        int insertIndex = Array.BinarySearch(sorted, value);
+        int insertIndex = sorted.BinarySearch(value);
         if (insertIndex < 0) insertIndex = ~insertIndex;
-        Array.Copy(sorted, 0, result, 0, insertIndex);
+        sorted[..insertIndex].CopyTo(result);
         result[insertIndex] = value;
-        Array.Copy(sorted, insertIndex, result, insertIndex + 1, sorted.Length - insertIndex);
+        sorted[insertIndex..].CopyTo(result.AsSpan(insertIndex + 1));
         return result;
     }
 
     /// <summary>从有序数组中移除一个值，返回新数组。</summary>
-    internal static int[] RemoveSorted(int[] sorted, int value)
+    internal static int[] RemoveSorted(ReadOnlySpan<int> sorted, int value)
     {
-        int index = Array.BinarySearch(sorted, value);
+        int index = sorted.BinarySearch(value);
         if (index < 0)
             throw new InvalidOperationException($"Cannot remove component ID {value}: not found in archetype.");
         var result = new int[sorted.Length - 1];
-        Array.Copy(sorted, 0, result, 0, index);
-        Array.Copy(sorted, index + 1, result, index, sorted.Length - index - 1);
+        sorted[..index].CopyTo(result);
+        sorted[(index + 1)..].CopyTo(result.AsSpan(index));
         return result;
     }
 
@@ -215,5 +306,6 @@ internal class ArchetypeRegistry
         while (additionIndex < additions.Length)
             destination[destinationIndex++] = additions[additionIndex++];
     }
+
 }
 

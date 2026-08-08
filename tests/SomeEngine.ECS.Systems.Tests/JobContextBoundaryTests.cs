@@ -216,7 +216,7 @@ public class JobContextBoundaryTests
 
         public uint AcquireSystemVersion(ref SystemSlot slot)
         {
-            return _world.AcquireSystemTick();
+            return _world.AcquireSystemVersion();
         }
 
         public FakeJobSystemContext CreateContext(ref SystemSlot slot)

@@ -3,27 +3,6 @@ using SomeEngine.ECS.Registry;
 namespace SomeEngine.ECS.Archetypes;
 
 /// <summary>
-/// Archetype 迁移边缓存条目。记录目标 Archetype 和预计算的列映射。
-/// </summary>
-/// <remarks>
-/// 设计引用：docs/DESIGN.md §4.1, §5.2
-/// </remarks>
-internal readonly struct ArchetypeEdge
-{
-    private readonly StructuralTransition _plan;
-
-    public Archetype Target => _plan.Target;
-    public SharedColumnMapping[] SharedColumns => _plan.SharedColumns;
-
-    public ArchetypeEdge(Archetype target, SharedColumnMapping[] sharedColumns)
-    {
-        _plan = new StructuralTransition(target, sharedColumns);
-    }
-
-    public StructuralTransition AsTransition() => _plan;
-}
-
-/// <summary>
 /// 预计算的列映射：source 和 destination archetype 之间共享列的对应关系。
 /// </summary>
 internal readonly struct SharedColumnMapping
@@ -46,13 +25,15 @@ internal readonly struct SharedColumnMapping
 internal readonly struct StructuralTransition
 {
     public readonly Archetype Target;
-    public readonly SharedColumnMapping[] SharedColumns;
+    private readonly SharedColumnMapping[] _sharedColumns;
 
-    public StructuralTransition(Archetype target, SharedColumnMapping[] sharedColumns)
+    public StructuralTransition(Archetype target, SharedColumnMapping[] ownedSharedColumns)
     {
         Target = target;
-        SharedColumns = sharedColumns;
+        _sharedColumns = ownedSharedColumns;
     }
+
+    public ReadOnlySpan<SharedColumnMapping> SharedColumns => _sharedColumns;
 
     public bool IsIdentityFor(Archetype archetype) => ReferenceEquals(Target, archetype);
 }

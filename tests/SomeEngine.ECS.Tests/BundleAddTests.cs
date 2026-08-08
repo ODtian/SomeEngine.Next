@@ -22,8 +22,8 @@ public class BundleAddTests
 
         Assert.True(world.Has<Position>(entity));
         Assert.True(world.Has<Velocity>(entity));
-        Assert.Equal(1f, world.Get<Position>(entity).X);
-        Assert.Equal(3f, world.Get<Velocity>(entity).X);
+        Assert.Equal(1f, world.Read<Position>(entity).X);
+        Assert.Equal(3f, world.Read<Velocity>(entity).X);
         Assert.Equal(2, world.ArchetypeCount);
     }
 
@@ -55,7 +55,7 @@ public class BundleAddTests
         });
 
         Assert.Equal(2, world.ArchetypeCount);
-        Assert.Equal(9, world.Get<Health>(entity).Value);
+        Assert.Equal(9, world.Read<Health>(entity).Value);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class BundleAddTests
         world.Add(entity, new Position { X = 5, Y = 6 });
 
         Assert.True(world.Has<Position>(entity));
-        Assert.Equal(5f, world.Get<Position>(entity).X);
+        Assert.Equal(5f, world.Read<Position>(entity).X);
         Assert.Equal(2, world.ArchetypeCount);
     }
 }

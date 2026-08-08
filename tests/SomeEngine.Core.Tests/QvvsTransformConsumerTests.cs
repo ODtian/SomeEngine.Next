@@ -19,7 +19,7 @@ public sealed class QvvsTransformConsumerTests
         world.World.Add(root, new WorldTransform());
         world.World.Add(child, new LocalTransform { Value = new TransformQvvs(new Vector3(2, 0, 0), Quaternion.Identity) });
         world.World.Add(child, new WorldTransform());
-        OrderedHierarchy.Attach(world.World, child, root);
+        Hierarchy.SetParent(world.World, child, root);
 
         world.Update(0);
 

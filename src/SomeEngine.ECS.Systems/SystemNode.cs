@@ -1,6 +1,7 @@
 namespace SomeEngine.ECS.Systems;
 
 internal abstract class SystemNode<TContext>
+    where TContext : allows ref struct
 {
     public abstract void OnCreate(ref TContext context);
 
@@ -11,6 +12,7 @@ internal abstract class SystemNode<TContext>
 
 internal sealed class SystemNode<TSystem, TContext> : SystemNode<TContext>
     where TSystem : ISystem<TContext>
+    where TContext : allows ref struct
 {
     private TSystem _system;
 

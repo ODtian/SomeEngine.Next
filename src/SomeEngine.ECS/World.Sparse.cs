@@ -1,54 +1,152 @@
-using SomeEngine.ECS.Collections;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Sparse;
-using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS;
 
 public partial class World
 {
-    /// <summary>添加 Sparse 组件。不触发 archetype 迁移。</summary>
+    /// <summary>Adds a sparse component without changing archetype identity.</summary>
     public void AddSparse<T>(Entity entity, in T value)
         where T : struct, ISparseComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
         _sparse.Add(entity, value);
     }
 
-    /// <summary>替换 Sparse 组件。不触发 archetype 迁移。</summary>
+    /// <summary>Replaces an existing sparse component without changing archetype identity.</summary>
     public void ReplaceSparse<T>(Entity entity, in T value)
         where T : struct, ISparseComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
         _sparse.Replace(entity, value);
     }
 
-    /// <summary>移除 Sparse 组件。</summary>
+    /// <summary>Removes a sparse component.</summary>
     public void RemoveSparse<T>(Entity entity)
         where T : struct, ISparseComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
         _sparse.Remove<T>(entity);
     }
 
-    /// <summary>获取 Sparse 组件 ref 引用。</summary>
-    public ref T GetSparse<T>(Entity entity)
+    /// <summary>Reads a sparse component by value.</summary>
+    public T ReadSparse<T>(Entity entity)
         where T : struct, ISparseComponent
     {
-        return ref _sparse.Get<T>(entity);
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Read);
+        return _sparse.Read<T>(entity);
     }
 
-    /// <summary>检查 entity 是否拥有 Sparse 组件。</summary>
+    /// <summary>Checks whether an entity has a sparse component.</summary>
     public bool HasSparse<T>(Entity entity)
         where T : struct, ISparseComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Read);
         return _sparse.Has<T>(entity);
     }
 
-    /// <summary>获取 SparseSet 引用（用于直接迭代 dense 数组）。</summary>
-    public SparseSet<T> GetSparseSet<T>()
+    /// <summary>
+    /// Borrows the compact entity and value arrays for exactly the duration of
+    /// <paramref name="execution"/>.
+    /// </summary>
+    public void ExecuteSparseRead<T>(SparseReadExecution<T> execution)
         where T : struct, ISparseComponent
     {
-        return _sparse.Set<T>();
+        ArgumentNullException.ThrowIfNull(execution);
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Read);
+        BeginStorageBorrow();
+        try
+        {
+            if (_sparse.TrySet<T>(out SparseSet<T> sparseSet))
+                execution(sparseSet.DenseEntities, sparseSet.DenseData);
+            else
+                execution(ReadOnlySpan<Entity>.Empty, ReadOnlySpan<T>.Empty);
+        }
+        finally
+        {
+            EndStorageBorrow();
+        }
+    }
+
+    /// <summary>
+    /// Borrows compact sparse arrays with caller-owned state passed by reference, allowing a
+    /// static callback on allocation-sensitive paths.
+    /// </summary>
+    public void ExecuteSparseRead<T, TState>(
+        ref TState state,
+        SparseReadExecution<T, TState> execution)
+        where T : struct, ISparseComponent
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Read);
+        BeginStorageBorrow();
+        try
+        {
+            if (_sparse.TrySet<T>(out SparseSet<T> sparseSet))
+                execution(sparseSet.DenseEntities, sparseSet.DenseData, ref state);
+            else
+                execution(ReadOnlySpan<Entity>.Empty, ReadOnlySpan<T>.Empty, ref state);
+        }
+        finally
+        {
+            EndStorageBorrow();
+        }
+    }
+
+    /// <summary>
+    /// Borrows compact sparse arrays for mutation. Value writes are intentionally not rolled back
+    /// if the callback faults, matching writable table-query semantics.
+    /// </summary>
+    public void ExecuteSparseWrite<T>(SparseWriteExecution<T> execution)
+        where T : struct, ISparseComponent
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
+        BeginStorageBorrow();
+        try
+        {
+            if (_sparse.TrySet<T>(out SparseSet<T> sparseSet))
+            {
+                execution(sparseSet.DenseEntities, sparseSet.BorrowDenseWrite());
+            }
+            else
+            {
+                execution(ReadOnlySpan<Entity>.Empty, Span<T>.Empty);
+            }
+        }
+        finally
+        {
+            EndStorageBorrow();
+        }
+    }
+
+    /// <summary>
+    /// Borrows writable compact sparse arrays with caller-owned state passed by reference.
+    /// See <see cref="ExecuteSparseWrite{T}(SparseWriteExecution{T})"/> for fault semantics.
+    /// </summary>
+    public void ExecuteSparseWrite<T, TState>(
+        ref TState state,
+        SparseWriteExecution<T, TState> execution)
+        where T : struct, ISparseComponent
+    {
+        ArgumentNullException.ThrowIfNull(execution);
+        using WorldJobAdmissionScope admission = EnterJobSparse<T>(WorldStorageAccess.Write);
+        BeginStorageBorrow();
+        try
+        {
+            if (_sparse.TrySet<T>(out SparseSet<T> sparseSet))
+            {
+                execution(sparseSet.DenseEntities, sparseSet.BorrowDenseWrite(), ref state);
+            }
+            else
+            {
+                execution(ReadOnlySpan<Entity>.Empty, Span<T>.Empty, ref state);
+            }
+        }
+        finally
+        {
+            EndStorageBorrow();
+        }
     }
 }
-

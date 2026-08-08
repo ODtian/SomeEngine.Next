@@ -7,15 +7,15 @@ namespace SomeEngine.ECS.Tests;
 
 public class ChunkTests
 {
-    private static ColumnMetadata[] CreateColumnMetas(params int[] componentIds)
+    private static ComponentOperations[] CreateColumnOperations(params int[] componentIds)
     {
-        var metas = new ColumnMetadata[componentIds.Length];
+        var operations = new ComponentOperations[componentIds.Length];
         for (int i = 0; i < componentIds.Length; i++)
         {
-            ref var info = ref ComponentRegistry.Get(componentIds[i]);
-            metas[i] = new ColumnMetadata(info.Id, info.Operations);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentIds[i]);
+            operations[i] = info.Operations;
         }
-        return metas;
+        return operations;
     }
 
     // ——————————————————————————————————————————————————
@@ -23,7 +23,7 @@ public class ChunkTests
     // ——————————————————————————————————————————————————
 
     [Fact]
-    public void Capacity_PositionVelocity_Is87381()
+    public void Capacity_PositionVelocity_IncludesRowVersions()
     {
         int idPos = ComponentMetadata<Position>.Id;
         int idVel = ComponentMetadata<Velocity>.Id;
@@ -31,19 +31,23 @@ public class ChunkTests
         Array.Sort(ids);
         var arch = new Archetype(0, ids);
 
-        // 2097152 / (8 + 8 + 8) = 87381
-        Assert.Equal(87381, arch.MaxChunkRows);
+        // (65536 - two change-version uints) /
+        // (Entity + Position + Velocity + Add/Write uints for both columns) = 1638.
+        Assert.Equal(1638, arch.MaxChunkRows);
 
-        var chunk = new Chunk(arch.MaxChunkRows, arch.ColumnMetas);
-        Assert.Equal(87381, chunk.Capacity);
+        var chunk = new Chunk(arch.MaxChunkRows, arch.ColumnOperations);
+        Assert.Equal(1638, chunk.Capacity);
+        Assert.True(
+            arch.ChunkFixedPayloadBytes +
+            ((long)chunk.Capacity * arch.ChunkRowPayloadBytes) <= 64 * 1024);
     }
 
     [Fact]
     public void Capacity_Minimum_IsOne()
     {
         // 创建一个 chunk 容量至少为 1
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(1, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(1, operations);
         Assert.Equal(1, chunk.Capacity);
     }
 
@@ -54,8 +58,8 @@ public class ChunkTests
     [Fact]
     public void AllocateRow_IncreasesCount()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(10, operations);
 
         Assert.Equal(0, chunk.Count);
         var e1 = TestEntity.Create(1);
@@ -69,8 +73,8 @@ public class ChunkTests
     [Fact]
     public void AllocateRow_SequentialRows()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(10, operations);
 
         for (int i = 0; i < 5; i++)
         {
@@ -87,8 +91,8 @@ public class ChunkTests
     [Fact]
     public void WriteRead_Unmanaged_Roundtrip()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(10, operations);
         chunk.AllocateRow(TestEntity.Create(1));
 
         var pos = new Position { X = 1.5f, Y = 2.5f };
@@ -102,8 +106,8 @@ public class ChunkTests
     [Fact]
     public void WriteRead_Managed_Roundtrip()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<NamedComponent>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<NamedComponent>.Id);
+        var chunk = new Chunk(10, operations);
         chunk.AllocateRow(TestEntity.Create(1));
 
         var named = new NamedComponent { Name = "test", Id = 42 };
@@ -117,8 +121,8 @@ public class ChunkTests
     [Fact]
     public void GetComponentRef_ModifiesInPlace()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(10, operations);
         chunk.AllocateRow(TestEntity.Create(1));
         chunk.WriteComponent(0, 0, new Position { X = 1.0f, Y = 2.0f });
 
@@ -142,7 +146,7 @@ public class ChunkTests
         var ids = new[] { idPos, idVel };
         Array.Sort(ids);
         var arch = new Archetype(0, ids);
-        var chunk = new Chunk(arch.MaxChunkRows, arch.ColumnMetas);
+        var chunk = new Chunk(arch.MaxChunkRows, arch.ColumnOperations);
 
         // 添加 3 个 entity
         var e1 = TestEntity.Create(1);
@@ -164,7 +168,7 @@ public class ChunkTests
         chunk.WriteComponent(velCol, 2, new Velocity { X = 300, Y = 3000 });
 
         // 删除 row 0（e1）→ e3 的数据应移到 row 0
-        var movedEntity = chunk.RemoveRow(0, arch.ColumnMetas);
+        var movedEntity = chunk.RemoveRow(0, arch.ColumnOperations);
 
         Assert.Equal(2, chunk.Count);
         Assert.Equal(e3, movedEntity); // e3 被移到 row 0
@@ -186,8 +190,8 @@ public class ChunkTests
     [Fact]
     public void RemoveRow_LastRow_ReturnsNull()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(10, operations);
 
         chunk.AllocateRow(TestEntity.Create(1));
         chunk.AllocateRow(TestEntity.Create(2));
@@ -195,7 +199,7 @@ public class ChunkTests
         chunk.WriteComponent(0, 1, new Position { X = 2 });
 
         // 删除最后一行
-        var moved = chunk.RemoveRow(1, new[] { metas[0] });
+        var moved = chunk.RemoveRow(1, new[] { operations[0] });
         Assert.Equal(Entity.Null, moved);
         Assert.Equal(1, chunk.Count);
 
@@ -207,13 +211,13 @@ public class ChunkTests
     [Fact]
     public void RemoveRow_OnlyRow_CountBecomesZero()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(10, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(10, operations);
 
         chunk.AllocateRow(TestEntity.Create(1));
         chunk.WriteComponent(0, 0, new Position { X = 42 });
 
-        var moved = chunk.RemoveRow(0, metas);
+        var moved = chunk.RemoveRow(0, operations);
         Assert.Equal(Entity.Null, moved);
         Assert.Equal(0, chunk.Count);
     }
@@ -225,8 +229,8 @@ public class ChunkTests
     [Fact]
     public void IsFull_WhenCountEqualsCapacity()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<Position>.Id);
-        var chunk = new Chunk(3, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<Position>.Id);
+        var chunk = new Chunk(3, operations);
 
         Assert.False(chunk.IsFull);
         chunk.AllocateRow(TestEntity.Create(1));
@@ -249,7 +253,7 @@ public class ChunkTests
         var ids = new[] { idPos, idHealth };
         Array.Sort(ids);
         var arch = new Archetype(0, ids);
-        var chunk = new Chunk(10, arch.ColumnMetas);
+        var chunk = new Chunk(10, arch.ColumnOperations);
 
         // 填充 4 个 entity
         for (int i = 0; i < 4; i++)
@@ -262,7 +266,7 @@ public class ChunkTests
         }
 
         // 删除 row 1 → row 3 数据应移到 row 1
-        var moved = chunk.RemoveRow(1, arch.ColumnMetas);
+        var moved = chunk.RemoveRow(1, arch.ColumnOperations);
         Assert.Equal(3, chunk.Count);
         Assert.Equal(TestEntity.Create(4), moved);
 
@@ -279,8 +283,8 @@ public class ChunkTests
     [Fact]
     public void RemoveRow_ManagedComponent_ClearsTrailingSlot()
     {
-        var metas = CreateColumnMetas(ComponentMetadata<NamedComponent>.Id);
-        var chunk = new Chunk(4, metas);
+        var operations = CreateColumnOperations(ComponentMetadata<NamedComponent>.Id);
+        var chunk = new Chunk(4, operations);
 
         chunk.AllocateRow(TestEntity.Create(1));
         chunk.AllocateRow(TestEntity.Create(2));
@@ -290,7 +294,7 @@ public class ChunkTests
         chunk.WriteComponent(0, 1, new NamedComponent { Name = "second", Id = 2 });
         chunk.WriteComponent(0, 2, new NamedComponent { Name = "third", Id = 3 });
 
-        var moved = chunk.RemoveRow(0, metas);
+        var moved = chunk.RemoveRow(0, operations);
 
         Assert.Equal(TestEntity.Create(3), moved);
         Assert.Equal(2, chunk.Count);
@@ -299,7 +303,7 @@ public class ChunkTests
         Assert.Equal("third", movedData.Name);
         Assert.Equal(3, movedData.Id);
 
-        var trailing = ((NamedComponent[])chunk.Columns[0])[2];
+        NamedComponent trailing = chunk.ComponentRows<NamedComponent>(0)[2];
         Assert.Null(trailing.Name);
         Assert.Equal(0, trailing.Id);
     }

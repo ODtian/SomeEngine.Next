@@ -1,10 +1,9 @@
 using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Relations;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct MaterialPassTemplate : SomeEngine.ECS.Components.IComponent
+public struct MaterialPassTemplate : SomeEngine.ECS.IComponent
 {
     public int ShaderId;
     public EntityReferenceLike Reference;
@@ -45,13 +44,13 @@ public class EntityCopyTests
         world.AddTag<PlayerTag>(source);
         world.AddShared(source, new SceneId { Value = 7 });
         world.AddBuffer<IntElement>(source);
-        world.GetBuffer<IntElement>(source).Add(new IntElement { Value = 1 });
+        AddBufferValue(world, source, new IntElement { Value = 1 });
 
         var target = world.CreateEntity(new Health { Value = 5 });
         world.AddTag<EnemyTag>(target);
         world.AddShared(target, new RenderGroup { GroupId = 3, Material = "old" });
         world.AddBuffer<FloatElement>(target);
-        world.GetBuffer<FloatElement>(target).Add(new FloatElement { X = 9, Y = 9 });
+        AddBufferValue(world, target, new FloatElement { X = 9, Y = 9 });
         world.AddSparse(target, new Damage { Amount = 99 });
 
         world.CopyEntity(source, target);
@@ -67,7 +66,7 @@ public class EntityCopyTests
         Assert.False(world.HasSparse<Damage>(target));
         Assert.Equal(10, world.Read<Position>(target).X);
         Assert.Equal(7, world.GetShared<SceneId>(target).Value);
-        Assert.Equal(1, world.GetBuffer<IntElement>(target).Read(0).Value);
+        Assert.Equal(1, SnapshotBuffer<IntElement>(world, target)[0].Value);
     }
 
     [Fact]
@@ -81,7 +80,36 @@ public class EntityCopyTests
 
         Assert.True(world.IsAlive(target));
         Assert.False(world.Has<Position>(target));
-        Assert.Equal(0, CountRows(world.RunQuery(world.Query(world.QueryDefinition().Removed<Position>()))));
+        Assert.Equal(
+            0,
+            CountRows(world, world.Query(world.QueryDefinition().Removed<Position>())));
+    }
+
+    [Fact]
+    public void DetachedCopyInPlace_NoSelectedColumnsKeepsChunkSharedUntilRealCopy()
+    {
+        var world = new World();
+        var source = world.CreateEntity(new Position { X = 1, Y = 10 });
+        var target = world.CreateEntity(new Position { X = 2, Y = 20 });
+
+        var published = world.PublishedStructureRoot;
+        var candidate = published.CloneDetached(world, world.HookStore);
+        var publishedChunk = published.Entities.Store.GetRecordReadOnly(target).Chunk!;
+        var candidateChunk = candidate.Entities.Store.GetRecordReadOnly(target).Chunk!;
+        long sharedStorageIdentity = publishedChunk.StorageIdentity;
+
+        candidate.Copy.CopyInto(source, target, EntityCopyOptions.Tags);
+
+        Assert.True(publishedChunk.SharesStorageWith(candidateChunk));
+        Assert.Equal(sharedStorageIdentity, candidateChunk.StorageIdentity);
+        Assert.Equal(2, candidate.Components.Read<Position>(target).X);
+
+        candidate.Copy.CopyInto(source, target, EntityCopyOptions.TableComponents);
+
+        Assert.False(publishedChunk.SharesStorageWith(candidateChunk));
+        Assert.NotEqual(sharedStorageIdentity, candidateChunk.StorageIdentity);
+        Assert.Equal(1, candidate.Components.Read<Position>(target).X);
+        Assert.Equal(2, published.Components.Read<Position>(target).X);
     }
 
     [Fact]
@@ -125,19 +153,23 @@ public class EntityCopyTests
         var world = new World();
         var source = world.CreateEntity();
         world.AddBuffer<SmallInlineElement>(source);
-        var sourceBuffer = world.GetBuffer<SmallInlineElement>(source);
-        sourceBuffer.Add(new SmallInlineElement { Value = 1 });
-        sourceBuffer.Add(new SmallInlineElement { Value = 2 });
-        sourceBuffer.Add(new SmallInlineElement { Value = 3 });
-        sourceBuffer.Add(new SmallInlineElement { Value = 4 });
+        world.ExecuteBufferWrite<SmallInlineElement>(source, static buffer =>
+        {
+            buffer.Add(new SmallInlineElement { Value = 1 });
+            buffer.Add(new SmallInlineElement { Value = 2 });
+            buffer.Add(new SmallInlineElement { Value = 3 });
+            buffer.Add(new SmallInlineElement { Value = 4 });
+        });
 
         var clone = world.CloneEntity(source);
-        var cloneBuffer = world.GetBuffer<SmallInlineElement>(clone);
-        cloneBuffer[0] = new SmallInlineElement { Value = 99 };
-        cloneBuffer.Add(new SmallInlineElement { Value = 5 });
+        world.ExecuteBufferWrite<SmallInlineElement>(clone, static buffer =>
+        {
+            buffer[0] = new SmallInlineElement { Value = 99 };
+            buffer.Add(new SmallInlineElement { Value = 5 });
+        });
 
-        Assert.Equal([1, 2, 3, 4], world.GetBuffer<SmallInlineElement>(source).AsSpan().ToArray().Select(x => x.Value).ToArray());
-        Assert.Equal([99, 2, 3, 4, 5], world.GetBuffer<SmallInlineElement>(clone).AsSpan().ToArray().Select(x => x.Value).ToArray());
+        Assert.Equal([1, 2, 3, 4], SnapshotBuffer<SmallInlineElement>(world, source).Select(x => x.Value));
+        Assert.Equal([99, 2, 3, 4, 5], SnapshotBuffer<SmallInlineElement>(world, clone).Select(x => x.Value));
     }
 
     [Fact]
@@ -152,7 +184,7 @@ public class EntityCopyTests
         world.CopyEntity(source, target);
 
         Assert.True(world.HasSparse<Damage>(target));
-        Assert.Equal(12, world.GetSparse<Damage>(target).Amount);
+        Assert.Equal(12, world.ReadSparse<Damage>(target).Amount);
 
         world.RemoveSparse<Damage>(source);
         world.CopyEntity(source, target);
@@ -175,33 +207,6 @@ public class EntityCopyTests
         Assert.True(world.Has<Position>(cleanupClone));
         Assert.True(world.Has<CleanupMarker>(cleanupClone));
         Assert.Equal(8, world.Read<CleanupMarker>(cleanupClone).Value);
-    }
-
-    [Fact]
-    public void CopyEntity_RelationsExcludedByDefaultAndOutgoingOnlyWhenRequested()
-    {
-        var world = new World();
-        var source = world.CreateEntity(new Position { X = 1 });
-        var target = world.CreateEntity(new Position { X = 2 });
-        var sourceRelationTarget = world.CreateEntity();
-        var oldTargetRelationTarget = world.CreateEntity();
-        var incomingSource = world.CreateEntity();
-
-        world.AddRelation(source, sourceRelationTarget, new Likes { Strength = 4 });
-        world.AddRelation(target, oldTargetRelationTarget, new Likes { Strength = 9 });
-        world.AddRelation(incomingSource, source, new Likes { Strength = 7 });
-
-        var defaultClone = world.CloneEntity(source);
-
-        Assert.False(world.HasRelation<Likes>(defaultClone, sourceRelationTarget));
-        Assert.False(world.Has<RelationTag<Likes>>(defaultClone));
-
-        world.CopyEntity(source, target, EntityCopyOptions.Standard | EntityCopyOptions.OutgoingRelations);
-
-        Assert.True(world.HasRelation<Likes>(target, sourceRelationTarget));
-        Assert.False(world.HasRelation<Likes>(target, oldTargetRelationTarget));
-        Assert.Empty(world.GetRelationSources<Likes>(target).ToArray());
-        Assert.True(world.Has<RelationTag<Likes>>(target));
     }
 
     [Fact]
@@ -233,8 +238,11 @@ public class EntityCopyTests
 
         Assert.Throws<InvalidOperationException>(() =>
         {
-            foreach (var _ in world.RunQuery(query).Rows)
-                world.CopyEntity(source, target);
+            world.ExecuteQuery(query, cursor =>
+            {
+                foreach (var _ in cursor.Rows)
+                    world.CopyEntity(source, target);
+            });
         });
     }
 
@@ -254,9 +262,12 @@ public class EntityCopyTests
         });
         world.AddShared(source, new SceneId { Value = 100 });
         world.AddBuffer<SmallInlineElement>(source);
-        world.GetBuffer<SmallInlineElement>(source).Add(new SmallInlineElement { Value = 3 });
-        world.GetBuffer<SmallInlineElement>(source).Add(new SmallInlineElement { Value = 4 });
-        world.GetBuffer<SmallInlineElement>(source).Add(new SmallInlineElement { Value = 5 });
+        world.ExecuteBufferWrite<SmallInlineElement>(source, static buffer =>
+        {
+            buffer.Add(new SmallInlineElement { Value = 3 });
+            buffer.Add(new SmallInlineElement { Value = 4 });
+            buffer.Add(new SmallInlineElement { Value = 5 });
+        });
         world.AddSparse(source, new Damage { Amount = 6 });
 
         var clone = world.CloneEntity(source);
@@ -266,27 +277,61 @@ public class EntityCopyTests
             Reference = world.Read<MaterialPassTemplate>(clone).Reference,
         });
         world.ReplaceShared(clone, new SceneId { Value = 200 });
-        world.GetBuffer<SmallInlineElement>(clone)[0] = new SmallInlineElement { Value = 99 };
-        world.GetSparse<Damage>(clone).Amount = 60;
+        world.ExecuteBufferWrite<SmallInlineElement>(
+            clone,
+            static buffer => buffer[0] = new SmallInlineElement { Value = 99 });
+        world.ReplaceSparse(clone, new Damage { Amount = 60 });
 
         Assert.Equal(1, world.Read<MaterialPassTemplate>(source).ShaderId);
         Assert.Equal(referenced.Index, world.Read<MaterialPassTemplate>(source).Reference.Index);
         Assert.Equal(100, world.GetShared<SceneId>(source).Value);
-        Assert.Equal([3, 4, 5], world.GetBuffer<SmallInlineElement>(source).AsSpan().ToArray().Select(x => x.Value).ToArray());
-        Assert.Equal(6, world.GetSparse<Damage>(source).Amount);
+        Assert.Equal([3, 4, 5], SnapshotBuffer<SmallInlineElement>(world, source).Select(x => x.Value));
+        Assert.Equal(6, world.ReadSparse<Damage>(source).Amount);
 
         Assert.Equal(2, world.Read<MaterialPassTemplate>(clone).ShaderId);
         Assert.Equal(200, world.GetShared<SceneId>(clone).Value);
-        Assert.Equal([99, 4, 5], world.GetBuffer<SmallInlineElement>(clone).AsSpan().ToArray().Select(x => x.Value).ToArray());
-        Assert.Equal(60, world.GetSparse<Damage>(clone).Amount);
+        Assert.Equal([99, 4, 5], SnapshotBuffer<SmallInlineElement>(world, clone).Select(x => x.Value));
+        Assert.Equal(60, world.ReadSparse<Damage>(clone).Amount);
     }
 
-    private static int CountRows(SomeEngine.ECS.Queries.QueryCursor run)
+    private static int CountRows(World world, SomeEngine.ECS.Queries.QueryHandle query)
     {
         int count = 0;
-        foreach (var _ in run.Rows)
-            count++;
+        world.ExecuteQuery(
+            query,
+            ref count,
+            static (SomeEngine.ECS.Queries.QueryCursor cursor, ref int state) =>
+            {
+                foreach (var _ in cursor.Rows)
+                    state++;
+            });
 
         return count;
+    }
+
+    private static void AddBufferValue<T>(
+        World world,
+        SomeEngine.ECS.Entities.Entity entity,
+        T value)
+        where T : struct, IBufferElement
+    {
+        world.ExecuteBufferWrite<T, T>(
+            entity,
+            ref value,
+            static (DynamicBuffer<T> buffer, ref T item) => buffer.Add(item));
+    }
+
+    private static T[] SnapshotBuffer<T>(
+        World world,
+        SomeEngine.ECS.Entities.Entity entity)
+        where T : struct, IBufferElement
+    {
+        T[] values = null!;
+        world.ExecuteBufferRead<T, T[]>(
+            entity,
+            ref values,
+            static (BufferView<T> buffer, ref T[] destination) =>
+                destination = buffer.AsSpan().ToArray());
+        return values;
     }
 }

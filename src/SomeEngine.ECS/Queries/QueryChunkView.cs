@@ -6,7 +6,7 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Queries;
 
-public readonly struct QueryChunkView
+public readonly ref struct QueryChunkView
 {
     private readonly World _world;
     private readonly QueryArchetypeMatch _match;
@@ -46,7 +46,7 @@ public readonly struct QueryChunkView
         get
         {
             RequireChunkAccess();
-            return _chunk.Entities.AsSpan(0, _chunk.Count);
+            return _chunk.Entities[.._chunk.Count];
         }
     }
 
@@ -59,6 +59,10 @@ public readonly struct QueryChunkView
     public bool Has<T>() where T : struct =>
         _match.Archetype.HasComponent(ComponentMetadata<T>.Id);
 
+    public bool HasBuffer<T>() where T : struct, IBufferElement =>
+        _match.Archetype.HasComponent(BufferComponents.Header<T>()) &&
+        _match.Archetype.HasComponent(BufferComponents.Inline<T>());
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public uint GetChangeVersion<T>() where T : struct
     {
@@ -70,7 +74,57 @@ public readonly struct QueryChunkView
     public ReadOnlySpan<uint> ReadWriteVersions<T>() where T : struct
     {
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
-        return _chunk.WriteVersions[column].AsSpan(0, _chunk.Count);
+        return _chunk.WriteVersionRows(column)[.._chunk.Count];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool HasChangedSinceLastSystemVersion<T>() where T : struct
+    {
+        int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return SomeEngine.ECS.VersionClock.IsNewer(
+            _chunk.ChangeVersions[column],
+            LastSystemVersion);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool RowChangedSinceLastSystemVersion<T>(int row) where T : struct
+    {
+        RequireRow(row);
+        int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return SomeEngine.ECS.VersionClock.IsNewer(
+            _chunk.WriteVersionRows(column)[row],
+            LastSystemVersion);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool HasBufferChangedSinceLastSystemVersion<T>()
+        where T : struct, IBufferElement
+    {
+        QueryAccessGuards.RequireBufferAccess<T>(
+            _match,
+            read: true,
+            write: false,
+            out int headerColumn,
+            out _);
+        return SomeEngine.ECS.VersionClock.IsNewer(
+            _chunk.ChangeVersions[headerColumn],
+            LastSystemVersion);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool RowBufferChangedSinceLastSystemVersion<T>(int row)
+        where T : struct, IBufferElement
+    {
+        RequireRow(row);
+        QueryAccessGuards.RequireBufferAccess<T>(
+            _match,
+            read: true,
+            write: false,
+            out int headerColumn,
+            out _);
+        return SomeEngine.ECS.VersionClock.IsNewer(
+            _chunk.WriteVersionRows(headerColumn)[row],
+            LastSystemVersion);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -78,7 +132,7 @@ public readonly struct QueryChunkView
     {
         RequireChunkAccess();
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
-        return Unsafe.As<T[]>(_chunk.Columns[column]).AsSpan(0, _chunk.Count);
+        return _chunk.ComponentRows<T>(column)[.._chunk.Count];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -94,7 +148,7 @@ public readonly struct QueryChunkView
     {
         RequireChunkAccess();
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: false, write: true);
-        return _world.Components.WriteChunk<T>(_chunk, column);
+        return _world.Components.WriteChunk<T>(_chunk, column, CurrentSystemVersion);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -102,7 +156,12 @@ public readonly struct QueryChunkView
     {
         RequireRow(row);
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: false, write: true);
-        return ref _world.Components.WriteRef<T>(_chunk.Entities[row], _chunk, row, column);
+        return ref _world.Components.WriteRef<T>(
+            _chunk.Entities[row],
+            _chunk,
+            row,
+            column,
+            CurrentSystemVersion);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -110,7 +169,7 @@ public readonly struct QueryChunkView
     {
         RequireChunkAccess();
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: true);
-        return _world.Components.WriteChunk<T>(_chunk, column);
+        return _world.Components.WriteChunk<T>(_chunk, column, CurrentSystemVersion);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -118,7 +177,12 @@ public readonly struct QueryChunkView
     {
         RequireRow(row);
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: true);
-        return ref _world.Components.WriteRef<T>(_chunk.Entities[row], _chunk, row, column);
+        return ref _world.Components.WriteRef<T>(
+            _chunk.Entities[row],
+            _chunk,
+            row,
+            column,
+            CurrentSystemVersion);
     }
 
     public bool TryRead<T>(out ReadOnlySpan<T> span) where T : struct
@@ -187,7 +251,8 @@ public readonly struct QueryChunkView
             _chunk,
             row,
             headerColumn,
-            inlineColumn);
+            inlineColumn,
+            CurrentSystemVersion);
     }
 
     public BufferView<T> ReadBuffer<T>(int row)

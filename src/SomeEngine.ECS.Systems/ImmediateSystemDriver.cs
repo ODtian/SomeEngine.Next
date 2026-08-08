@@ -18,7 +18,7 @@ public sealed class ImmediateSystemDriver : ISystemDriver<ImmediateSystemContext
 
     public uint AcquireSystemVersion(ref SystemSlot slot)
     {
-        return _world.AcquireSystemTick();
+        return _world.AcquireSystemVersion();
     }
 
     public ImmediateSystemContext CreateContext(ref SystemSlot slot)

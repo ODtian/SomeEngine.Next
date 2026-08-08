@@ -12,6 +12,8 @@ internal interface ISparseSet
     void ReplaceCopy(Entity source, Entity target);
 
     bool RemoveOptional(Entity entity);
+
+    ISparseSet CloneDetached();
 }
 
 /// <summary>
@@ -30,28 +32,41 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     private const int PageMask = PageSize - 1;
     private const int SentinelValue = -1;
 
-    private int[][] _sparsePages;
-    private Entity[] _denseEntities;
-    private T[] _denseData;
-    private int _count;
+    private Storage _storage;
+    private int _detachCount;
 
     public SparseSet(int initialDenseCapacity = 16)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(initialDenseCapacity);
 
-        _sparsePages = new int[4][];
-        _denseEntities = new Entity[initialDenseCapacity];
-        _denseData = new T[initialDenseCapacity];
-        _count = 0;
+        _storage = new Storage(
+            new int[4][],
+            new Entity[initialDenseCapacity],
+            new T[initialDenseCapacity],
+            count: 0);
+    }
+
+    private SparseSet(Storage storage)
+    {
+        _storage = storage;
     }
 
     /// <summary>当前元素数。</summary>
-    public int Count => _count;
+    public int Count => _storage.Count;
+
+    /// <summary>
+    /// Identifies the immutable-or-exclusively-owned storage generation. Detached transaction
+    /// candidates initially retain this identity and replace it only before their first write.
+    /// </summary>
+    internal object BackingIdentity => _storage;
+
+    /// <summary>Number of shared generations this wrapper detached before exposing a write.</summary>
+    internal int DetachCount => _detachCount;
 
     /// <summary>检查 entity 是否存在。</summary>
     public bool Has(Entity entity)
     {
-        return TryDenseIndex(entity, out _, out _);
+        return TryDenseIndex(_storage, entity, out _, out _);
     }
 
     /// <summary>添加组件。重复添加抛异常。</summary>
@@ -59,18 +74,20 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         ThrowInvalidEntity(entity);
 
-        if (Has(entity))
+        Storage storage = _storage;
+        if (TryDenseIndex(storage, entity, out _, out _))
             throw new InvalidOperationException($"Entity {entity} already has this sparse component.");
 
-        EnsureDenseCapacity(_count + 1);
+        storage = WritableStorage();
+        EnsureDenseCapacity(storage, storage.Count + 1);
         int page = entity.Index >> PageShift;
-        EnsurePage(page);
+        EnsurePage(storage, page);
 
-        int denseIndex = _count;
-        _denseEntities[denseIndex] = entity;
-        _denseData[denseIndex] = value;
-        _sparsePages[page][entity.Index & PageMask] = denseIndex;
-        _count++;
+        int denseIndex = storage.Count;
+        storage.DenseEntities[denseIndex] = entity;
+        storage.DenseData[denseIndex] = value;
+        storage.SparsePages[page][entity.Index & PageMask] = denseIndex;
+        storage.Count++;
     }
 
     /// <summary>替换组件。不存在时抛异常。</summary>
@@ -78,10 +95,12 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         ThrowInvalidEntity(entity);
 
-        if (!TryDenseIndex(entity, out _, out int denseIndex))
+        Storage storage = _storage;
+        if (!TryDenseIndex(storage, entity, out _, out int denseIndex))
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
-        _denseData[denseIndex] = value;
+        storage = WritableStorage();
+        storage.DenseData[denseIndex] = value;
     }
 
     /// <summary>移除组件。不存在时抛异常。</summary>
@@ -89,21 +108,36 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         ThrowInvalidEntity(entity);
 
-        if (!TryDenseIndex(entity, out int page, out int denseIndex))
+        Storage storage = _storage;
+        if (!TryDenseIndex(storage, entity, out int page, out int denseIndex))
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
-        RemoveDense(entity, page, denseIndex);
+        RemoveDense(WritableStorage(), entity, page, denseIndex);
     }
 
     bool ISparseSet.RemoveOptional(Entity entity)
     {
         ThrowInvalidEntity(entity);
 
-        if (!TryDenseIndex(entity, out int page, out int denseIndex))
+        Storage storage = _storage;
+        if (!TryDenseIndex(storage, entity, out int page, out int denseIndex))
             return false;
 
-        RemoveDense(entity, page, denseIndex);
+        RemoveDense(WritableStorage(), entity, page, denseIndex);
         return true;
+    }
+
+    ISparseSet ISparseSet.CloneDetached() => CloneDetached();
+
+    /// <summary>
+    /// Creates an exact logical image that shares its read-only generation until either wrapper
+    /// requests mutable storage. The first write then copies dense storage and sparse pages once.
+    /// </summary>
+    internal SparseSet<T> CloneDetached()
+    {
+        Storage storage = _storage;
+        storage.MarkShared();
+        return new SparseSet<T>(storage);
     }
 
     void ISparseSet.AddCopy(Entity source, Entity target)
@@ -118,27 +152,31 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
         Replace(target, in value);
     }
 
-    private void RemoveDense(Entity entity, int page, int denseIndex)
+    private static void RemoveDense(
+        Storage storage,
+        Entity entity,
+        int page,
+        int denseIndex)
     {
-        int lastDenseIndex = _count - 1;
+        int lastDenseIndex = storage.Count - 1;
 
         if (denseIndex != lastDenseIndex)
         {
             // swap-remove: 把最后一个元素移到被删位置
-            _denseEntities[denseIndex] = _denseEntities[lastDenseIndex];
-            _denseData[denseIndex] = _denseData[lastDenseIndex];
+            storage.DenseEntities[denseIndex] = storage.DenseEntities[lastDenseIndex];
+            storage.DenseData[denseIndex] = storage.DenseData[lastDenseIndex];
 
             // 更新被交换 entity 的 sparse 映射
-            var movedEntity = _denseEntities[denseIndex];
+            var movedEntity = storage.DenseEntities[denseIndex];
             int movedPage = movedEntity.Index >> PageShift;
-            _sparsePages[movedPage][movedEntity.Index & PageMask] = denseIndex;
+            storage.SparsePages[movedPage][movedEntity.Index & PageMask] = denseIndex;
         }
 
         // 清除旧映射和末尾数据
-        _sparsePages[page][entity.Index & PageMask] = SentinelValue;
-        _denseEntities[lastDenseIndex] = default;
-        _denseData[lastDenseIndex] = default;
-        _count--;
+        storage.SparsePages[page][entity.Index & PageMask] = SentinelValue;
+        storage.DenseEntities[lastDenseIndex] = default;
+        storage.DenseData[lastDenseIndex] = default;
+        storage.Count--;
     }
 
     /// <summary>获取组件的 ref 引用。</summary>
@@ -146,42 +184,76 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
     {
         ThrowInvalidEntity(entity);
 
-        if (!TryDenseIndex(entity, out _, out int denseIndex))
+        Storage storage = _storage;
+        if (!TryDenseIndex(storage, entity, out _, out int denseIndex))
             throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
 
-        return ref _denseData[denseIndex];
+        storage = WritableStorage();
+        return ref storage.DenseData[denseIndex];
     }
 
     /// <summary>读取组件值（返回拷贝）。</summary>
     public T Read(Entity entity)
     {
-        return Get(entity);
+        ThrowInvalidEntity(entity);
+
+        Storage storage = _storage;
+        if (!TryDenseIndex(storage, entity, out _, out int denseIndex))
+            throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
+
+        return storage.DenseData[denseIndex];
+    }
+
+    internal ref readonly T ReadRef(Entity entity)
+    {
+        ThrowInvalidEntity(entity);
+
+        Storage storage = _storage;
+        if (!TryDenseIndex(storage, entity, out _, out int denseIndex))
+            throw new InvalidOperationException($"Entity {entity} does not have this sparse component.");
+
+        return ref storage.DenseData[denseIndex];
     }
 
     /// <summary>紧凑排列的 entity 列表。</summary>
-    public ReadOnlySpan<Entity> DenseEntities => _denseEntities.AsSpan(0, _count);
+    public ReadOnlySpan<Entity> DenseEntities =>
+        _storage.DenseEntities.AsSpan(0, _storage.Count);
 
     /// <summary>紧凑排列的组件数据。</summary>
-    public ReadOnlySpan<T> DenseData => _denseData.AsSpan(0, _count);
+    public ReadOnlySpan<T> DenseData => _storage.DenseData.AsSpan(0, _storage.Count);
 
-    private void EnsureDenseCapacity(int required)
+    /// <summary>
+    /// Returns the dense writable storage to the World owner. Public World callers receive this
+    /// span only through a runtime-scoped callback, so it cannot outlive structural protection.
+    /// </summary>
+    internal Span<T> BorrowDenseWrite()
     {
-        ArrayGrowthExtensions.EnsureCapacity(ref _denseEntities, required, 16);
-        ArrayGrowthExtensions.EnsureCapacity(ref _denseData, required, 16);
+        Storage storage = WritableStorage();
+        return storage.DenseData.AsSpan(0, storage.Count);
     }
 
-    private void EnsurePage(int pageIndex)
+    private static void EnsureDenseCapacity(Storage storage, int required)
     {
-        ArrayGrowthExtensions.EnsureCapacity(ref _sparsePages, pageIndex + 1, 4);
+        ArrayGrowthExtensions.EnsureCapacity(ref storage.DenseEntities, required, 16);
+        ArrayGrowthExtensions.EnsureCapacity(ref storage.DenseData, required, 16);
+    }
 
-        if (_sparsePages[pageIndex] == null)
+    private static void EnsurePage(Storage storage, int pageIndex)
+    {
+        ArrayGrowthExtensions.EnsureCapacity(ref storage.SparsePages, pageIndex + 1, 4);
+
+        if (storage.SparsePages[pageIndex] == null)
         {
-            _sparsePages[pageIndex] = new int[PageSize];
-            Array.Fill(_sparsePages[pageIndex], SentinelValue);
+            storage.SparsePages[pageIndex] = new int[PageSize];
+            Array.Fill(storage.SparsePages[pageIndex], SentinelValue);
         }
     }
 
-    private bool TryDenseIndex(Entity entity, out int page, out int denseIndex)
+    private static bool TryDenseIndex(
+        Storage storage,
+        Entity entity,
+        out int page,
+        out int denseIndex)
     {
         page = 0;
         denseIndex = SentinelValue;
@@ -190,17 +262,77 @@ public sealed class SparseSet<T> : ISparseSet where T : struct
             return false;
 
         page = entity.Index >> PageShift;
-        if (page >= _sparsePages.Length || _sparsePages[page] == null)
+        if (page >= storage.SparsePages.Length || storage.SparsePages[page] == null)
             return false;
 
-        denseIndex = _sparsePages[page][entity.Index & PageMask];
-        return denseIndex >= 0 && denseIndex < _count && _denseEntities[denseIndex] == entity;
+        denseIndex = storage.SparsePages[page][entity.Index & PageMask];
+        return denseIndex >= 0 &&
+            denseIndex < storage.Count &&
+            storage.DenseEntities[denseIndex] == entity;
+    }
+
+    private Storage WritableStorage()
+    {
+        Storage storage = _storage;
+        if (!storage.IsShared)
+            return storage;
+
+        storage = storage.CloneWritable();
+        _storage = storage;
+        _detachCount++;
+        return storage;
     }
 
     private static void ThrowInvalidEntity(Entity entity)
     {
         if (entity.Index <= 0)
             throw new InvalidOperationException($"Entity {entity} is not valid for sparse storage.");
+    }
+
+    private sealed class Storage
+    {
+        private int _shared;
+
+        internal Storage(
+            int[][] sparsePages,
+            Entity[] denseEntities,
+            T[] denseData,
+            int count)
+        {
+            SparsePages = sparsePages;
+            DenseEntities = denseEntities;
+            DenseData = denseData;
+            Count = count;
+        }
+
+        internal int[][] SparsePages;
+
+        internal Entity[] DenseEntities;
+
+        internal T[] DenseData;
+
+        internal int Count;
+
+        internal bool IsShared => Volatile.Read(ref _shared) != 0;
+
+        internal void MarkShared() => Volatile.Write(ref _shared, 1);
+
+        internal Storage CloneWritable()
+        {
+            var sparsePages = new int[SparsePages.Length][];
+            for (int i = 0; i < SparsePages.Length; i++)
+            {
+                int[]? page = SparsePages[i];
+                if (page is not null)
+                    sparsePages[i] = (int[])page.Clone();
+            }
+
+            return new Storage(
+                sparsePages,
+                (Entity[])DenseEntities.Clone(),
+                (T[])DenseData.Clone(),
+                Count);
+        }
     }
 }
 

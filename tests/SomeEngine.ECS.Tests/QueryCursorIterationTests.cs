@@ -21,11 +21,14 @@ public class QueryCursorIterationTests
 
         int count = 0;
         float sumX = 0;
-        foreach (var row in world.RunQuery(query).Rows)
+        world.ExecuteQuery(query, cursor =>
         {
-            count++;
-            sumX += row.Read<Position>().X;
-        }
+            foreach (var row in cursor.Rows)
+            {
+                count++;
+                sumX += row.Read<Position>().X;
+            }
+        });
 
         Assert.Equal(2, count);
         Assert.Equal(4f, sumX);
@@ -39,10 +42,13 @@ public class QueryCursorIterationTests
 
         var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
 
-        foreach (var chunk in world.RunQuery(query).Chunks)
-            chunk.ReadWrite<Position>()[0].X = 99;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var chunk in cursor.Chunks)
+                chunk.ReadWrite<Position>()[0].X = 99;
+        });
 
-        Assert.Equal(99f, world.Get<Position>(entity).X);
+        Assert.Equal(99f, world.Read<Position>(entity).X);
     }
 
     [Fact]
@@ -55,14 +61,17 @@ public class QueryCursorIterationTests
         const uint last = 7;
         const uint current = 11;
 
-        foreach (var chunk in world.RunQuery(query, last, current).Chunks)
+        world.ExecuteQuery(query, last, current, cursor =>
         {
-            foreach (var row in chunk.Rows)
+            foreach (var chunk in cursor.Chunks)
             {
-                Assert.Equal(last, row.LastSystemVersion);
-                Assert.Equal(current, row.CurrentSystemVersion);
+                foreach (var row in chunk.Rows)
+                {
+                    Assert.Equal(last, row.LastSystemVersion);
+                    Assert.Equal(current, row.CurrentSystemVersion);
+                }
             }
-        }
+        });
     }
 
     [Fact]
@@ -72,8 +81,11 @@ public class QueryCursorIterationTests
         world.CreateEntity(new Position { X = 1, Y = 2 });
 
         var query = world.Query(world.QueryDefinition().Read<Position>());
-        foreach (var _ in world.RunQuery(query).Chunks)
-            break;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var _ in cursor.Chunks)
+                break;
+        });
 
         world.Add(world.CreateEntity(), new Velocity { X = 1, Y = 2 });
     }
@@ -91,8 +103,11 @@ public class QueryCursorIterationTests
                 .Read<Velocity>());
 
         float sumVx = 0;
-        foreach (var row in world.RunQuery(query).Rows)
-            sumVx += row.Read<Velocity>().X;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                sumVx += row.Read<Velocity>().X;
+        });
 
         Assert.Equal(12f, sumVx);
     }
@@ -104,13 +119,18 @@ public class QueryCursorIterationTests
         world.CreateEntity(new Position { X = 1, Y = 2 });
 
         var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        var archetype = world.GetQueryState(query).Archetypes[0];
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate => candidate.HasComponent(ComponentMetadata<Position>.Id));
         var chunk = archetype.Chunks[0];
         int column = archetype.Column(ComponentMetadata<Position>.Id);
 
         uint before = chunk.ChangeVersions[column];
-        foreach (var row in world.RunQuery(query).Rows)
-            row.ReadWrite<Position>().X += 1;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                row.ReadWrite<Position>().X += 1;
+        });
 
         Assert.True(chunk.ChangeVersions[column] > before);
     }
@@ -122,13 +142,18 @@ public class QueryCursorIterationTests
         world.CreateEntity(new Position { X = 1, Y = 2 });
 
         var query = world.Query(world.QueryDefinition().Read<Position>());
-        var archetype = world.GetQueryState(query).Archetypes[0];
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate => candidate.HasComponent(ComponentMetadata<Position>.Id));
         var chunk = archetype.Chunks[0];
         int column = archetype.Column(ComponentMetadata<Position>.Id);
 
         uint before = chunk.ChangeVersions[column];
-        foreach (var row in world.RunQuery(query).Rows)
-            _ = row.Read<Position>();
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                _ = row.Read<Position>();
+        });
 
         Assert.Equal(before, chunk.ChangeVersions[column]);
     }
@@ -144,7 +169,11 @@ public class QueryCursorIterationTests
                 .ReadWrite<Position>()
                 .Read<Velocity>());
 
-        var archetype = world.GetQueryState(query).Archetypes[0];
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<Velocity>.Id));
         var chunk = archetype.Chunks[0];
         int posColumn = archetype.Column(ComponentMetadata<Position>.Id);
         int velColumn = archetype.Column(ComponentMetadata<Velocity>.Id);
@@ -152,8 +181,11 @@ public class QueryCursorIterationTests
         uint posBefore = chunk.ChangeVersions[posColumn];
         uint velBefore = chunk.ChangeVersions[velColumn];
 
-        foreach (var row in world.RunQuery(query).Rows)
-            row.ReadWrite<Position>().X += row.Read<Velocity>().X;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                row.ReadWrite<Position>().X += row.Read<Velocity>().X;
+        });
 
         Assert.True(chunk.ChangeVersions[posColumn] > posBefore);
         Assert.Equal(velBefore, chunk.ChangeVersions[velColumn]);
@@ -172,7 +204,7 @@ public class QueryCursorIterationTests
                 .Any<Position>()
                 .Any<Velocity>());
 
-        Assert.Equal(2, world.GetQueryState(query).Archetypes.Count);
+        Assert.Equal(2, CountRows(world, query));
     }
 
     [Fact]
@@ -210,17 +242,20 @@ public class QueryCursorIterationTests
                 .Enabled<VisibilityState>());
 
         int count = 0;
-        foreach (QueryChunkView chunk in world.RunQuery(query).Chunks)
+        world.ExecuteQuery(query, cursor =>
         {
-            foreach (int row in chunk.RowIndices)
+            foreach (QueryChunkView chunk in cursor.Chunks)
             {
-                Assert.Equal(enabledEntity, chunk.GetEntity(row));
-                ref VisibilityState state = ref chunk.ReadWrite<VisibilityState>(row);
-                state.Value = 9;
-                chunk.SetComponentEnabled<VisibilityState>(row, enabled: false);
-                count++;
+                foreach (int row in chunk.RowIndices)
+                {
+                    Assert.Equal(enabledEntity, chunk.GetEntity(row));
+                    ref VisibilityState state = ref chunk.ReadWrite<VisibilityState>(row);
+                    state.Value = 9;
+                    chunk.SetComponentEnabled<VisibilityState>(row, enabled: false);
+                    count++;
+                }
             }
-        }
+        });
 
         Assert.Equal(1, count);
         Assert.Equal(9, world.Read<VisibilityState>(enabledEntity).Value);
@@ -241,7 +276,7 @@ public class QueryCursorIterationTests
     }
 
     [Fact]
-    public void RunQueryReadWrite_UsesUpdatedTypedPlanAfterNewMatchingArchetype()
+    public void ExecuteReadWrite_UsesUpdatedTypedPlanAfterNewMatchingArchetype()
     {
         var world = new World();
         var query = world.Query(
@@ -257,12 +292,12 @@ public class QueryCursorIterationTests
         world.AddTag<PlayerTag>(second);
 
         Assert.Equal(2, AddVelocityToPosition(world, query));
-        Assert.Equal(21f, world.Get<Position>(first).X);
-        Assert.Equal(22f, world.Get<Position>(second).X);
+        Assert.Equal(21f, world.Read<Position>(first).X);
+        Assert.Equal(22f, world.Read<Position>(second).X);
     }
 
     [Fact]
-    public void RunQueryReadWrite_SingleChunkFastPathFallsBackWhenChunkCountChanges()
+    public void ExecuteReadWrite_MultiChunkPlanVisitsEveryRow()
     {
         var world = new World();
         CreatePositionVelocity(world, 1, 10);
@@ -271,34 +306,45 @@ public class QueryCursorIterationTests
             world.QueryDefinition()
                 .ReadWrite<Position>()
                 .Read<Velocity>());
-        var run = world.RunReadWrite<Position, Velocity>(query);
 
         for (int i = 0; i < 1000; i++)
             CreatePositionVelocity(world, i + 2, i + 20);
 
         int count = 0;
-        foreach (var chunk in run)
-            count += chunk.Count;
+        world.ExecuteReadWrite<Position, Velocity, int>(
+            query,
+            ref count,
+            static (QueryPairEnumerator<Position, Velocity> chunks, ref int state) =>
+            {
+                foreach (var chunk in chunks)
+                    state += chunk.Count;
+            });
 
         Assert.Equal(1001, count);
     }
 
     [Fact]
-    public void QueryBuilder_CompatibilityReturnsCacheOnly()
+    public void QueryDefinitionBuilder_ProducesReusableRuntimeHandle()
     {
         var world = new World();
         world.CreateEntity(new Position { X = 1, Y = 2 });
 
-        var cache = world.CreateQuery().With<Position>().Without<Velocity>().Build();
+        var query = world.Query(
+            world.QueryDefinition()
+                .All<Position>()
+                .None<Velocity>());
 
-        Assert.Single(cache.Archetypes);
+        Assert.Equal(1, CountRows(world, query));
     }
 
     private static int CountRows(World world, QueryHandle query)
     {
         int count = 0;
-        foreach (var _ in world.RunQuery(query).Rows)
-            count++;
+        world.ExecuteQuery(query, ref count, static (QueryCursor cursor, ref int state) =>
+        {
+            foreach (var _ in cursor.Rows)
+                state++;
+        });
         return count;
     }
 
@@ -312,16 +358,22 @@ public class QueryCursorIterationTests
     private static int AddVelocityToPosition(World world, QueryHandle query)
     {
         int count = 0;
-        foreach (var chunk in world.RunReadWrite<Position, Velocity>(query))
-        {
-            var positions = chunk.Write;
-            var velocities = chunk.Read;
-            for (int i = 0; i < positions.Length; i++)
+        world.ExecuteReadWrite<Position, Velocity, int>(
+            query,
+            ref count,
+            static (QueryPairEnumerator<Position, Velocity> chunks, ref int state) =>
             {
-                positions[i].X += velocities[i].X;
-                count++;
-            }
-        }
+                foreach (var chunk in chunks)
+                {
+                    var positions = chunk.Write;
+                    var velocities = chunk.Read;
+                    for (int i = 0; i < positions.Length; i++)
+                    {
+                        positions[i].X += velocities[i].X;
+                        state++;
+                    }
+                }
+            });
 
         return count;
     }
@@ -329,8 +381,11 @@ public class QueryCursorIterationTests
     private static Entity[] CollectEntities(World world, QueryHandle query)
     {
         var entities = new List<Entity>();
-        foreach (var row in world.RunQuery(query).Rows)
-            entities.Add(row.Entity);
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                entities.Add(row.Entity);
+        });
         return entities.ToArray();
     }
 }

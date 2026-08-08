@@ -51,16 +51,12 @@ public readonly struct QueryableTypeInfo
         StoragePath storage = ComponentMetadata<T>.Storage;
         QueryableCapabilities capabilities = storage switch
         {
-            StoragePath.Table => QueryableCapabilities.Match |
-                                 QueryableCapabilities.DataRead |
-                                 QueryableCapabilities.DataWrite |
-                                 QueryableCapabilities.ChangeFilter |
-                                 (ComponentMetadata<T>.IsEnableable ? QueryableCapabilities.EnableFilter : QueryableCapabilities.None),
+            StoragePath.Table => TableCapabilities(
+                ComponentMetadata<T>.IsEnableable,
+                ComponentMetadata<T>.IsRelationshipTarget),
             StoragePath.Tag => QueryableCapabilities.Match,
             StoragePath.Shared => QueryableCapabilities.Match | QueryableCapabilities.SharedFilter,
             StoragePath.Sparse => QueryableCapabilities.None,
-            StoragePath.Relation => QueryableCapabilities.None,
-            StoragePath.ExclusiveRelation => QueryableCapabilities.None,
             _ => QueryableCapabilities.None,
         };
 
@@ -69,20 +65,33 @@ public readonly struct QueryableTypeInfo
 
     internal static QueryableTypeInfo ForComponentId(int componentId)
     {
-        ref var info = ref ComponentRegistry.Get(componentId);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
         QueryableCapabilities capabilities = info.Storage switch
         {
-            StoragePath.Table => QueryableCapabilities.Match |
-                                 QueryableCapabilities.DataRead |
-                                 QueryableCapabilities.DataWrite |
-                                 QueryableCapabilities.ChangeFilter |
-                                 (info.IsEnableable ? QueryableCapabilities.EnableFilter : QueryableCapabilities.None),
+            StoragePath.Table => TableCapabilities(
+                info.IsEnableable,
+                info.IsRelationshipTarget),
             StoragePath.Tag => QueryableCapabilities.Match,
             StoragePath.Shared => QueryableCapabilities.Match | QueryableCapabilities.SharedFilter,
             _ => QueryableCapabilities.None,
         };
 
         return new QueryableTypeInfo(typeof(object), componentId, info.Storage, capabilities);
+    }
+
+    private static QueryableCapabilities TableCapabilities(
+        bool isEnableable,
+        bool isRelationshipTarget)
+    {
+        var capabilities = QueryableCapabilities.Match |
+                           QueryableCapabilities.DataRead |
+                           QueryableCapabilities.ChangeFilter;
+        if (!isRelationshipTarget)
+            capabilities |= QueryableCapabilities.DataWrite;
+        if (isEnableable)
+            capabilities |= QueryableCapabilities.EnableFilter;
+
+        return capabilities;
     }
 
     internal void Validate(QueryTermKind kind, QueryAccess access, QueryTermFilter filters)

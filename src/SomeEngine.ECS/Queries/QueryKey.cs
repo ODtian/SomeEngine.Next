@@ -5,12 +5,12 @@ public readonly struct QueryKey : IEquatable<QueryKey>
     private readonly QueryTerm[] _terms;
     private readonly int _hash;
 
-    internal QueryKey(QueryTerm[] terms)
+    internal QueryKey(QueryTerm[] ownedTerms)
     {
-        _terms = terms;
+        _terms = ownedTerms;
         var hash = new HashCode();
-        for (int i = 0; i < terms.Length; i++)
-            hash.Add(terms[i]);
+        for (int i = 0; i < ownedTerms.Length; i++)
+            hash.Add(ownedTerms[i]);
         _hash = hash.ToHashCode();
     }
 

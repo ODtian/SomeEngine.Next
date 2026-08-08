@@ -6,12 +6,12 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct SortLow : SomeEngine.ECS.Components.IComponent
+public struct SortLow : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
 
-public struct SortHigh : SomeEngine.ECS.Components.IComponent
+public struct SortHigh : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
@@ -31,14 +31,14 @@ public class WorldTests
     }
 
     [Fact]
-    public void CreateEntity_WithOneComponent_HasAndGet()
+    public void CreateEntity_WithOneComponent_HasAndRead()
     {
         var world = new World();
         var pos = new Position { X = 1.5f, Y = 2.5f };
         var e = world.CreateEntity(pos);
         Assert.True(world.Has<Position>(e));
-        Assert.Equal(1.5f, world.Get<Position>(e).X);
-        Assert.Equal(2.5f, world.Get<Position>(e).Y);
+        Assert.Equal(1.5f, world.Read<Position>(e).X);
+        Assert.Equal(2.5f, world.Read<Position>(e).Y);
     }
 
     [Fact]
@@ -50,8 +50,8 @@ public class WorldTests
         var e = world.Spawn(new PhysicsBundle { Position = pos, Velocity = vel });
         Assert.True(world.Has<Position>(e));
         Assert.True(world.Has<Velocity>(e));
-        Assert.Equal(10f, world.Get<Position>(e).X);
-        Assert.Equal(3f, world.Get<Velocity>(e).X);
+        Assert.Equal(10f, world.Read<Position>(e).X);
+        Assert.Equal(3f, world.Read<Velocity>(e).X);
     }
 
     [Fact]
@@ -65,8 +65,11 @@ public class WorldTests
         world.Spawn(new SortBundle { Low = new SortLow { Value = 1 }, High = new SortHigh { Value = 2 } });
         world.Spawn(new SortBundle { Low = new SortLow { Value = 4 }, High = new SortHigh { Value = 3 } });
 
-        var query = world.CreateQuery().With<SortLow>().With<SortHigh>().Build();
-        var archetype = Assert.Single(query.Archetypes);
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<SortLow>.Id) &&
+                candidate.HasComponent(ComponentMetadata<SortHigh>.Id));
 
         int entityCount = 0;
         foreach (var chunk in archetype.Chunks)
@@ -88,7 +91,7 @@ public class WorldTests
         Assert.True(world.Has<Position>(e));
         Assert.True(world.Has<Velocity>(e));
         Assert.True(world.Has<Health>(e));
-        Assert.Equal(100, world.Get<Health>(e).Value);
+        Assert.Equal(100, world.Read<Health>(e).Value);
     }
 
     [Fact]
@@ -149,7 +152,7 @@ public class WorldTests
         var e = world.CreateEntity();
         world.Add(e, new Position { X = 5, Y = 10 });
         Assert.True(world.Has<Position>(e));
-        Assert.Equal(5f, world.Get<Position>(e).X);
+        Assert.Equal(5f, world.Read<Position>(e).X);
     }
 
     [Fact]
@@ -159,8 +162,8 @@ public class WorldTests
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
         Assert.Throws<InvalidOperationException>(() =>
             world.Add(e, new Position { X = 3, Y = 4 }));
-        Assert.Equal(1f, world.Get<Position>(e).X);
-        Assert.Equal(2f, world.Get<Position>(e).Y);
+        Assert.Equal(1f, world.Read<Position>(e).X);
+        Assert.Equal(2f, world.Read<Position>(e).Y);
     }
 
     [Fact]
@@ -188,7 +191,7 @@ public class WorldTests
         world.Add(e, new Position { X = 1, Y = 2 });
         world.Remove<Position>(e);
         world.Add(e, new Position { X = 3, Y = 4 });
-        Assert.Equal(3f, world.Get<Position>(e).X);
+        Assert.Equal(3f, world.Read<Position>(e).X);
     }
 
     [Fact]
@@ -221,17 +224,21 @@ public class WorldTests
     }
 
     // ════════════════════════════════════════════════
-    // Get / Set / Read
+    // Read / Replace / runtime-owned write
     // ════════════════════════════════════════════════
 
     [Fact]
-    public void Get_Ref_ModifiesInPlace()
+    public void ExecuteQuery_WriteRef_ModifiesInPlace()
     {
         var world = new World();
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        ref var p = ref world.Get<Position>(e);
-        p.X = 99;
-        Assert.Equal(99f, world.Get<Position>(e).X);
+        var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                row.ReadWrite<Position>().X = 99;
+        });
+        Assert.Equal(99f, world.Read<Position>(e).X);
     }
 
     [Fact]
@@ -240,8 +247,8 @@ public class WorldTests
         var world = new World();
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
         world.Replace(e, new Position { X = 50, Y = 60 });
-        Assert.Equal(50f, world.Get<Position>(e).X);
-        Assert.Equal(60f, world.Get<Position>(e).Y);
+        Assert.Equal(50f, world.Read<Position>(e).X);
+        Assert.Equal(60f, world.Read<Position>(e).Y);
     }
 
     [Fact]
@@ -251,15 +258,15 @@ public class WorldTests
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
         var copy = world.Read<Position>(e);
         copy.X = 999;
-        Assert.Equal(1f, world.Get<Position>(e).X); // 不受影响
+        Assert.Equal(1f, world.Read<Position>(e).X); // 不受影响
     }
 
     [Fact]
-    public void Get_NonExistent_Throws()
+    public void Read_NonExistent_Throws()
     {
         var world = new World();
         var e = world.CreateEntity();
-        Assert.Throws<InvalidOperationException>(() => world.Get<Position>(e));
+        Assert.Throws<InvalidOperationException>(() => world.Read<Position>(e));
     }
 
     // ════════════════════════════════════════════════
@@ -272,9 +279,9 @@ public class WorldTests
         var world = new World();
         var e = world.CreateEntity(new Position { X = 42, Y = 84 });
         world.Add(e, new Velocity { X = 5, Y = 6 });
-        Assert.Equal(42f, world.Get<Position>(e).X);
-        Assert.Equal(84f, world.Get<Position>(e).Y);
-        Assert.Equal(5f, world.Get<Velocity>(e).X);
+        Assert.Equal(42f, world.Read<Position>(e).X);
+        Assert.Equal(84f, world.Read<Position>(e).Y);
+        Assert.Equal(5f, world.Read<Velocity>(e).X);
     }
 
     [Fact]
@@ -288,7 +295,7 @@ public class WorldTests
         });
         world.Remove<Position>(e);
         Assert.False(world.Has<Position>(e));
-        Assert.Equal(7f, world.Get<Velocity>(e).X);
+        Assert.Equal(7f, world.Read<Velocity>(e).X);
     }
 
     [Fact]
@@ -298,9 +305,9 @@ public class WorldTests
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
         world.Add(e, new Velocity { X = 3, Y = 4 });
         world.Add(e, new Health { Value = 100 });
-        Assert.Equal(1f, world.Get<Position>(e).X);
-        Assert.Equal(3f, world.Get<Velocity>(e).X);
-        Assert.Equal(100, world.Get<Health>(e).Value);
+        Assert.Equal(1f, world.Read<Position>(e).X);
+        Assert.Equal(3f, world.Read<Velocity>(e).X);
+        Assert.Equal(100, world.Read<Health>(e).Value);
     }
 
     [Fact]
@@ -311,8 +318,8 @@ public class WorldTests
         var e2 = world.CreateEntity(new Position { X = 2, Y = 2 });
         var e3 = world.CreateEntity(new Position { X = 3, Y = 3 });
         world.DestroyEntity(e2);
-        Assert.Equal(1f, world.Get<Position>(e1).X);
-        Assert.Equal(3f, world.Get<Position>(e3).X);
+        Assert.Equal(1f, world.Read<Position>(e1).X);
+        Assert.Equal(3f, world.Read<Position>(e3).X);
     }
 
     // ════════════════════════════════════════════════
@@ -325,7 +332,7 @@ public class WorldTests
         var world = new World();
         var e = world.CreateEntity(new Position { X = 10, Y = 20 });
         world.AddTag<PlayerTag>(e);
-        Assert.Equal(10f, world.Get<Position>(e).X);
+        Assert.Equal(10f, world.Read<Position>(e).X);
         Assert.True(world.Has<PlayerTag>(e));
     }
 
@@ -347,7 +354,7 @@ public class WorldTests
         }
         Assert.Equal(entityCount, world.EntityCount);
         // 验证最后一个的数据
-        Assert.Equal(capacity, world.Get<Position>(entities[capacity]).X);
+        Assert.Equal(capacity, world.Read<Position>(entities[capacity]).X);
     }
 
     [Fact]
@@ -364,7 +371,7 @@ public class WorldTests
         Assert.Equal(0, world.EntityCount);
         // 不崩溃，能继续创建
         var e = world.CreateEntity(new Position { X = 99, Y = 99 });
-        Assert.Equal(99f, world.Get<Position>(e).X);
+        Assert.Equal(99f, world.Read<Position>(e).X);
     }
 
     [Fact]
@@ -375,22 +382,23 @@ public class WorldTests
 
         entities.Add(world.CreateEntity(new Position { X = 0, Y = 0 }));
 
-        var query = world.CreateQuery().With<Position>().Build();
-        var archetype = Assert.Single(query.Archetypes);
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate => candidate.HasComponent(ComponentMetadata<Position>.Id));
         int maxChunkCapacity = archetype.MaxChunkRows;
 
         for (int i = 1; i <= maxChunkCapacity; i++)
             entities.Add(world.CreateEntity(new Position { X = i, Y = i * 2 }));
 
-        Assert.Equal(2, archetype.Chunks.Count);
+        Assert.Equal(2, archetype.Chunks.Length);
 
         world.DestroyEntity(entities[maxChunkCapacity]);
-        Assert.Single(archetype.Chunks);
+        Assert.Equal(1, archetype.Chunks.Length);
 
         var recreated = world.CreateEntity(new Position { X = 2048, Y = 4096 });
         Assert.True(world.IsAlive(recreated));
-        Assert.Equal(2048f, world.Get<Position>(recreated).X);
-        Assert.Equal(2, archetype.Chunks.Count);
+        Assert.Equal(2048f, world.Read<Position>(recreated).X);
+        Assert.Equal(2, archetype.Chunks.Length);
     }
 
     // ════════════════════════════════════════════════
@@ -401,11 +409,13 @@ public class WorldTests
     public void IterationGuard_Add_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.BeginIteration();
-        Assert.Throws<InvalidOperationException>(() =>
-            world.Add(e, new Position { X = 1, Y = 2 }));
-        world.EndIteration();
+        var e = world.CreateEntity(new Velocity());
+        var query = world.Query(world.QueryDefinition().Read<Velocity>());
+        world.ExecuteQuery(query, _ =>
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                world.Add(e, new Position { X = 1, Y = 2 }));
+        });
     }
 
     [Fact]
@@ -413,31 +423,37 @@ public class WorldTests
     {
         var world = new World();
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        world.BeginIteration();
-        Assert.Throws<InvalidOperationException>(() => world.Remove<Position>(e));
-        world.EndIteration();
+        var query = world.Query(world.QueryDefinition().Read<Position>());
+        world.ExecuteQuery(query, _ =>
+        {
+            Assert.Throws<InvalidOperationException>(() => world.Remove<Position>(e));
+        });
     }
 
     [Fact]
     public void IterationGuard_Destroy_Throws()
     {
         var world = new World();
-        var e = world.CreateEntity();
-        world.BeginIteration();
-        Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(e));
-        world.EndIteration();
+        var e = world.CreateEntity(new Position());
+        var query = world.Query(world.QueryDefinition().Read<Position>());
+        world.ExecuteQuery(query, _ =>
+        {
+            Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(e));
+        });
     }
 
     [Fact]
-    public void IterationGuard_AfterEndIteration_StructuralChangesWorkAgain()
+    public void IterationGuard_AfterExecuteQuery_StructuralChangesWorkAgain()
     {
         var world = new World();
-        var e = world.CreateEntity();
+        var e = world.CreateEntity(new Velocity());
+        var query = world.Query(world.QueryDefinition().Read<Velocity>());
 
-        world.BeginIteration();
-        Assert.Throws<InvalidOperationException>(() =>
-            world.Add(e, new Position { X = 1, Y = 2 }));
-        world.EndIteration();
+        world.ExecuteQuery(query, _ =>
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                world.Add(e, new Position { X = 1, Y = 2 }));
+        });
 
         world.Add(e, new Position { X = 3, Y = 4 });
         Assert.True(world.Has<Position>(e));
@@ -476,7 +492,7 @@ public class WorldTests
         for (int i = 1; i < 1000; i += 2)
         {
             Assert.True(world.IsAlive(entities[i]));
-            Assert.Equal((float)i, world.Get<Position>(entities[i]).X);
+            Assert.Equal((float)i, world.Read<Position>(entities[i]).X);
         }
     }
 
@@ -492,8 +508,8 @@ public class WorldTests
         world.DestroyEntity(e1);
 
         // e2 和 e3 仍然可以访问
-        Assert.Equal(30f, world.Get<Position>(e2).X);
-        Assert.Equal(50f, world.Get<Position>(e3).X);
+        Assert.Equal(30f, world.Read<Position>(e2).X);
+        Assert.Equal(50f, world.Read<Position>(e3).X);
     }
 
     [Fact]
@@ -520,9 +536,9 @@ public class WorldTests
         Assert.True(world.Has<Velocity>(e));
         Assert.True(world.Has<Health>(e));
         Assert.True(world.Has<PureUnmanaged>(e));
-        Assert.Equal(1f, world.Get<Position>(e).X);
-        Assert.Equal(50, world.Get<Health>(e).Value);
-        Assert.Equal(7, world.Get<PureUnmanaged>(e).A);
+        Assert.Equal(1f, world.Read<Position>(e).X);
+        Assert.Equal(50, world.Read<Health>(e).Value);
+        Assert.Equal(7, world.Read<PureUnmanaged>(e).A);
     }
 
     [Fact]
@@ -532,7 +548,7 @@ public class WorldTests
         var w2 = new World();
         var e1 = w1.CreateEntity(new Position { X = 1, Y = 2 });
         var e2 = w2.CreateEntity(new Position { X = 3, Y = 4 });
-        Assert.Equal(1f, w1.Get<Position>(e1).X);
-        Assert.Equal(3f, w2.Get<Position>(e2).X);
+        Assert.Equal(1f, w1.Read<Position>(e1).X);
+        Assert.Equal(3f, w2.Read<Position>(e2).X);
     }
 }

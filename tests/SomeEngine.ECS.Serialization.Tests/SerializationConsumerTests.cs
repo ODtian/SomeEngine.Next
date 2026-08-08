@@ -9,9 +9,12 @@ public sealed class SerializationConsumerTests
     public void SerializationContextCanRoundTripEmptyWorld()
     {
         var world = new World();
-        var bytes = WorldSerializer.Serialize(world);
+        var registry = new SerializationRegistry();
+        using var stream = new MemoryStream();
+        WorldSerializer.WriteWorld(stream, world, registry);
 
-        var restored = WorldSerializer.Deserialize(bytes);
+        stream.Position = 0;
+        using World restored = WorldSerializer.ReadWorld(stream, registry);
 
         Assert.Equal(world.EntityCount, restored.EntityCount);
     }

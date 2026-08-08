@@ -29,16 +29,13 @@ public class SystemGroupTests
                 "system:create:A:0:1",
                 "system:update:A:0:1",
                 "driver:after:0",
-                "driver:complete:0:1",
                 "driver:acquire:0:1",
                 "driver:create:0:1:2",
                 "driver:before:0",
                 "system:update:A:1:2",
                 "driver:after:0",
-                "driver:complete:0:2",
                 "driver:create:0:2:2",
                 "system:destroy:A:2:2",
-                "driver:complete:0:2",
             },
             log.Events);
     }
@@ -130,7 +127,7 @@ public class SystemGroupTests
     }
 
     [Fact]
-    public void ImmediateSystemDriver_UsesWorldAcquireSystemTick()
+    public void ImmediateSystemDriver_UsesNewlyAdvancedWorldSystemVersion()
     {
         var world = new World();
         var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -142,7 +139,7 @@ public class SystemGroupTests
         group.Update();
 
         Assert.Equal(3u, world.CurrentTick);
-        Assert.Equal(2u, group.GetSlot(0).LastSystemVersion);
+        Assert.Equal(3u, group.GetSlot(0).LastSystemVersion);
     }
 
     [Fact]
@@ -164,7 +161,6 @@ public class SystemGroupTests
                 "system:create",
                 "system:update",
                 "driver:after:0",
-                "driver:complete:0:1",
             },
             log.Events);
     }
@@ -267,11 +263,6 @@ public class SystemGroupTests
                 _log.Add($"driver:after:{slot.Index}");
         }
 
-        public void Complete(ref SystemSlot slot, ref TestSystemContext context)
-        {
-            if (_recordDriverEvents)
-                _log.Add($"driver:complete:{slot.Index}:{slot.LastSystemVersion}");
-        }
     }
 
     private struct LifecycleSystem : ISystem<TestSystemContext>

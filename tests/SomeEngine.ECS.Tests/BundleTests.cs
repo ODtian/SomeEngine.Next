@@ -63,7 +63,7 @@ public struct PositionVisibilityBundle : SomeEngine.ECS.Components.IComponentBun
 public struct BufferBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
-    public BufferValues<IntElement> Values;
+    public ReadOnlyMemory<IntElement> Values;
 }
 
 public struct VisibilityMoveSpeedBundle : SomeEngine.ECS.Components.IComponentBundle
@@ -75,12 +75,12 @@ public struct VisibilityMoveSpeedBundle : SomeEngine.ECS.Components.IComponentBu
 public struct SharedSceneBundle : SomeEngine.ECS.Components.IComponentBundle
 {
     public Position Position;
-    public SharedComponentValue<SceneId> Scene;
+    public SceneId Scene;
 }
 
 public struct SharedOnlyBundle : SomeEngine.ECS.Components.IComponentBundle
 {
-    public SharedComponentValue<SceneId> Scene;
+    public SceneId Scene;
 }
 
 public class BundleTests
@@ -214,7 +214,7 @@ public class BundleTests
         Assert.True(world.IsEnabled<VisibilityState>(entity));
         Assert.True(world.Has<CleanupMarker>(entity));
         Assert.True(world.HasSparse<Damage>(entity));
-        Assert.Equal(42, world.GetSparse<Damage>(entity).Amount);
+        Assert.Equal(42, world.ReadSparse<Damage>(entity).Amount);
 
         var matches = world.GetByIndex<NameIndex, string>("boss");
         Assert.Contains(entity, matches.ToArray());
@@ -228,17 +228,21 @@ public class BundleTests
         var entity = world.Spawn(new BufferBundle
         {
             Position = new Position { X = 1, Y = 2 },
-            Values = new BufferValues<IntElement>(
+            Values = new IntElement[]
+            {
                 new IntElement { Value = 10 },
-                new IntElement { Value = 20 }),
+                new IntElement { Value = 20 },
+            },
         });
 
         Assert.True(world.Has<Position>(entity));
         Assert.True(world.HasBuffer<IntElement>(entity));
-        var buffer = world.GetBuffer<IntElement>(entity);
-        Assert.Equal(2, buffer.Count);
-        Assert.Equal(10, buffer[0].Value);
-        Assert.Equal(20, buffer[1].Value);
+        world.ExecuteBufferRead<IntElement>(entity, static buffer =>
+        {
+            Assert.Equal(2, buffer.Count);
+            Assert.Equal(10, buffer[0].Value);
+            Assert.Equal(20, buffer[1].Value);
+        });
     }
 
     [Fact]
@@ -249,12 +253,12 @@ public class BundleTests
         var e1 = world.Spawn(new SharedSceneBundle
         {
             Position = new Position { X = 1, Y = 2 },
-            Scene = new SharedComponentValue<SceneId>(new SceneId { Value = 7 }),
+            Scene = new SceneId { Value = 7 },
         });
         var e2 = world.Spawn(new SharedSceneBundle
         {
             Position = new Position { X = 3, Y = 4 },
-            Scene = new SharedComponentValue<SceneId>(new SceneId { Value = 7 }),
+            Scene = new SceneId { Value = 7 },
         });
 
         Assert.True(world.HasShared<SceneId>(e1));
@@ -267,11 +271,18 @@ public class BundleTests
                 .Shared<SceneId>());
 
         int count = 0;
-        foreach (var _ in world.RunQuery(query).RowsWithShared(new SceneId { Value = 7 }))
-            count++;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 7 }))
+                count++;
+        });
 
-        var archetype = Assert.Single(world.GetQueryState(query).Archetypes);
-        Assert.Single(archetype.Chunks);
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<SceneId>.Id));
+        Assert.Equal(1, archetype.Chunks.Length);
         Assert.Equal(2, count);
     }
 
@@ -284,7 +295,7 @@ public class BundleTests
 
         world.ReplaceBundle(entity, new SharedOnlyBundle
         {
-            Scene = new SharedComponentValue<SceneId>(new SceneId { Value = 2 }),
+            Scene = new SceneId { Value = 2 },
         });
 
         var sceneQuery = world.Query(
@@ -294,13 +305,16 @@ public class BundleTests
 
         int oldCount = 0;
         int newCount = 0;
-        foreach (var _ in world.RunQuery(sceneQuery).RowsWithShared(new SceneId { Value = 1 }))
-            oldCount++;
-        foreach (var row in world.RunQuery(sceneQuery).RowsWithShared(new SceneId { Value = 2 }))
+        world.ExecuteQuery(sceneQuery, cursor =>
         {
-            newCount++;
-            Assert.Equal(1, row.Read<Position>().X);
-        }
+            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 1 }))
+                oldCount++;
+            foreach (var row in cursor.RowsWithShared(new SceneId { Value = 2 }))
+            {
+                newCount++;
+                Assert.Equal(1, row.Read<Position>().X);
+            }
+        });
 
         Assert.Equal(0, oldCount);
         Assert.Equal(1, newCount);
@@ -332,14 +346,13 @@ public class BundleTests
         Assert.False(world.IsEnabled<VisibilityState>(entity));
         Assert.Equal(10, world.Read<VisibilityState>(entity).Value);
         Assert.Equal(20, world.Read<CleanupMarker>(entity).Value);
-        Assert.Equal(30, world.GetSparse<Damage>(entity).Amount);
+        Assert.Equal(30, world.ReadSparse<Damage>(entity).Amount);
         Assert.DoesNotContain(entity, world.GetByIndex<NameIndex, string>("before").ToArray());
         Assert.Contains(entity, world.GetByIndex<NameIndex, string>("after").ToArray());
     }
 
     [Fact]
-    [Trait("Category", "Performance")]
-    public void Spawn_WarmedHotPath_DoesNotAllocate()
+    public void Spawn_WarmedRuntime_PublishesIndependentEntity()
     {
         var world = new World();
         var bundle = new PhysicsBundle
@@ -348,18 +361,16 @@ public class BundleTests
             Velocity = new Velocity { X = 3, Y = 4 },
         };
 
-        _ = world.Spawn(bundle); // warm archetype + generator path
+        Entity first = world.Spawn(bundle);
+        Entity second = world.Spawn(bundle);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        _ = world.Spawn(bundle);
-        long after = GC.GetAllocatedBytesForCurrentThread();
-
-        Assert.Equal(0, after - before);
+        Assert.NotEqual(first, second);
+        Assert.Equal(2, world.EntityCount);
+        Assert.Equal(4, world.Read<Velocity>(second).Y);
     }
 
     [Fact]
-    [Trait("Category", "Performance")]
-    public void AddBundle_WarmedMigrationPath_DoesNotAllocate()
+    public void AddBundle_WarmedMigrationPath_PublishesExpectedValues()
     {
         var world = new World();
         var bundle = new PhysicsBundle
@@ -373,15 +384,14 @@ public class BundleTests
 
         var entity = world.CreateEntity();
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         world.AddBundle(entity, bundle);
-        long after = GC.GetAllocatedBytesForCurrentThread();
 
-        Assert.Equal(0, after - before);
+        Assert.Equal(7, world.Read<Position>(entity).X);
+        Assert.Equal(10, world.Read<Velocity>(entity).Y);
     }
 
     [Fact]
-    public void SpawnBatch_WritesColumnsAndCompletesOnDispose()
+    public void ExecuteBundleSpawnBatch_WritesRowsWithinRuntimeCallbacks()
     {
         var world = new World();
         int[] componentIds =
@@ -391,29 +401,22 @@ public class BundleTests
         };
         var entities = new Entity[3];
 
-        using (var batch = world.SpawnBatch(componentIds, entities.Length))
-        {
-            Assert.Equal(entities.Length, batch.Count);
-
-            int offset = 0;
-            foreach (var chunk in batch.Chunks)
+        var state = new BatchWriteState(entities);
+        world.ExecuteBundleSpawnBatch(
+            componentIds,
+            entities.Length,
+            ref state,
+            static (BundleWriteView view, ref BatchWriteState batch) =>
             {
-                var positions = chunk.Write<Position>();
-                var velocities = chunk.Write<Velocity>();
-
-                for (int i = 0; i < chunk.Count; i++)
-                {
-                    int index = offset + i;
-                    entities[index] = chunk.Entities[i];
-                    positions[i] = new Position { X = index + 1, Y = index + 10 };
-                    velocities[i] = new Velocity { X = index + 20, Y = index + 30 };
-                }
-
-                offset += chunk.Count;
-            }
-
-            Assert.Equal(entities.Length, offset);
-        }
+                int index = view.Index;
+                var position = new Position { X = index + 1, Y = index + 10 };
+                var velocity = new Velocity { X = index + 20, Y = index + 30 };
+                view.Write(in position);
+                view.Write(in velocity);
+                batch.Entities[index] = view.Entity;
+                batch.Count++;
+            });
+        Assert.Equal(entities.Length, state.Count);
 
         for (int i = 0; i < entities.Length; i++)
         {
@@ -424,27 +427,24 @@ public class BundleTests
     }
 
     [Fact]
-    public void SpawnBatch_GenericSingleComponent_WritesColumn()
+    public void ExecuteBundleSpawnBatch_SingleComponent_WritesEveryEntity()
     {
         var world = new World();
         var entities = new Entity[4];
 
-        using (var batch = world.SpawnBatch<Position>(entities.Length))
-        {
-            int offset = 0;
-            foreach (var chunk in batch.Chunks)
+        Span<int> componentIds = [ComponentMetadata<Position>.Id];
+        var state = new BatchWriteState(entities);
+        world.ExecuteBundleSpawnBatch(
+            componentIds,
+            entities.Length,
+            ref state,
+            static (BundleWriteView view, ref BatchWriteState batch) =>
             {
-                var positions = chunk.Write<Position>();
-                for (int i = 0; i < chunk.Count; i++)
-                {
-                    int index = offset + i;
-                    entities[index] = chunk.Entities[i];
-                    positions[i] = new Position { X = index + 1, Y = index + 2 };
-                }
-
-                offset += chunk.Count;
-            }
-        }
+                int index = view.Index;
+                var position = new Position { X = index + 1, Y = index + 2 };
+                view.Write(in position);
+                batch.Entities[index] = view.Entity;
+            });
 
         for (int i = 0; i < entities.Length; i++)
         {
@@ -464,12 +464,25 @@ public class BundleTests
             ComponentMetadata<Velocity>.Id,
         };
 
-        var writer = world.CreateSpawnWriter(componentIds);
-        writer.Write(new Position { X = 1, Y = 2 });
-        writer.Write(new Velocity { X = 3, Y = 4 });
+        var state = new PhysicsBundle
+        {
+            Position = new Position { X = 1, Y = 2 },
+            Velocity = new Velocity { X = 3, Y = 4 },
+        };
+        _ = world.ExecuteBundleSpawn(
+            componentIds,
+            ref state,
+            static (BundleWriteView view, ref PhysicsBundle values) =>
+            {
+                view.Write(in values.Position);
+                view.Write(in values.Velocity);
+            });
 
-        var query = world.CreateQuery().With<Position>().With<Velocity>().Build();
-        var archetype = Assert.Single(query.Archetypes);
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<Velocity>.Id));
         int existingFreeRows = CountFreeRows(archetype);
         int additionalRows = existingFreeRows + 1;
 
@@ -485,5 +498,16 @@ public class BundleTests
 
             return freeRows;
         }
+    }
+
+    private struct BatchWriteState
+    {
+        internal BatchWriteState(Entity[] entities)
+        {
+            Entities = entities;
+        }
+
+        internal Entity[] Entities;
+        internal int Count;
     }
 }

@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Serialization;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
@@ -198,16 +197,15 @@ public class EntityStoreTests
     }
 
     [Fact]
-    public void GetRecord_ReturnsRef_AndCanModify()
+    public void GetRecord_ReturnsWriter_AndCanModify()
     {
         var store = new EntityStore();
         var id = store.Allocate();
 
-        ref var record = ref store.GetRecord(id);
+        EntityRecordWriter record = store.GetRecord(id);
         record.RowInChunk = 42;
 
-        // 验证修改生效（同一 ref）
-        ref var record2 = ref store.GetRecord(id);
+        EntityRecordWriter record2 = store.GetRecord(id);
         Assert.Equal(42, record2.RowInChunk);
     }
 
@@ -222,16 +220,14 @@ public class EntityStoreTests
     }
 
     [Fact]
-    public void ResetForSerialization_ReservesLiveSlotsAndRejectsDeadPreservedAllocation()
+    public void SerializationRestore_ReservesLiveSlotsAndRejectsDeadPreservedAllocation()
     {
         var store = new EntityStore();
-        store.ResetForSerialization(
-            3,
-            [
-                new EntitySlotSnapshot(1, 2, false),
-                new EntitySlotSnapshot(2, 4, true),
-                new EntitySlotSnapshot(3, 6, false),
-            ]);
+        store.BeginSerializationRestore(3);
+        store.AppendSerializationSlot(1, 2, isAlive: false);
+        store.AppendSerializationSlot(2, 4, isAlive: true);
+        store.AppendSerializationSlot(3, 6, isAlive: false);
+        store.CompleteSerializationRestore();
 
         _ = store.AllocatePreserved(new Entity(2, 4));
 
@@ -242,10 +238,37 @@ public class EntityStoreTests
         Assert.Equal(new Entity(3, 6), secondReused);
 
         var deadStore = new EntityStore();
-        deadStore.ResetForSerialization(1, [new EntitySlotSnapshot(1, 2, false)]);
+        deadStore.BeginSerializationRestore(1);
+        deadStore.AppendSerializationSlot(1, 2, isAlive: false);
+        deadStore.CompleteSerializationRestore();
 
         Assert.Throws<InvalidOperationException>(() =>
             deadStore.AllocatePreserved(new Entity(1, 2)));
+    }
+
+    [Fact]
+    public void SerializationRestore_InvalidStateTransitionsFailClosed()
+    {
+        var store = new EntityStore();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => store.BeginSerializationRestore(-1));
+        Assert.Throws<InvalidOperationException>(() => store.AppendSerializationSlot(1, 0, isAlive: false));
+        Assert.Throws<InvalidOperationException>(store.CompleteSerializationRestore);
+
+        store.BeginSerializationRestore(2);
+        Assert.Throws<InvalidOperationException>(() => store.BeginSerializationRestore(2));
+        Assert.Throws<InvalidOperationException>(() => store.AppendSerializationSlot(2, 0, isAlive: false));
+        Assert.Throws<InvalidOperationException>(() => store.AppendSerializationSlot(1, -1, isAlive: false));
+        Assert.Throws<InvalidOperationException>(store.CompleteSerializationRestore);
+
+        store.AppendSerializationSlot(1, 3, isAlive: false);
+        store.AppendSerializationSlot(2, 5, isAlive: true);
+        store.CompleteSerializationRestore();
+
+        Assert.Throws<InvalidOperationException>(() => store.AppendSerializationSlot(3, 0, isAlive: false));
+        Assert.Throws<InvalidOperationException>(store.CompleteSerializationRestore);
+        _ = store.AllocatePreserved(new Entity(2, 5));
+        Assert.Equal(new Entity(1, 3), store.Allocate());
     }
 
     // ——————————————————————————————————————————————————

@@ -8,12 +8,12 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct VisibilityState : SomeEngine.ECS.Components.IEnableableComponent
+public struct VisibilityState : SomeEngine.ECS.IEnableableComponent
 {
     public int Value;
 }
 
-public struct MoveSpeed : SomeEngine.ECS.Components.IComponent
+public struct MoveSpeed : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
@@ -30,7 +30,7 @@ public class EnableableComponentTests
 
         Assert.True(world.Has<VisibilityState>(entity));
         Assert.True(world.IsEnabled<VisibilityState>(entity));
-        Assert.Equal(7, world.Get<VisibilityState>(entity).Value);
+        Assert.Equal(7, world.Read<VisibilityState>(entity).Value);
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class EnableableComponentTests
         world.Disable<VisibilityState>(entity);
         Assert.True(world.Has<VisibilityState>(entity));
         Assert.False(world.IsEnabled<VisibilityState>(entity));
-        Assert.Equal(3, world.Get<VisibilityState>(entity).Value);
+        Assert.Equal(3, world.Read<VisibilityState>(entity).Value);
 
         world.Enable<VisibilityState>(entity);
         Assert.True(world.IsEnabled<VisibilityState>(entity));
@@ -71,11 +71,12 @@ public class EnableableComponentTests
         var world = new World();
         world.CreateEntity(new VisibilityState { Value = 1 });
 
-        var query = world.CreateQuery().With<VisibilityState>().Build();
-        var archetype = Assert.Single(query.Archetypes);
+        var archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate => candidate.HasComponent(ComponentMetadata<VisibilityState>.Id));
 
         Assert.Equal(128, archetype.MaxChunkRows);
-        Assert.Single(archetype.EnableableComponentIds);
+        Assert.Equal(1, archetype.EnableableComponentIds.Length);
         Assert.Equal(ComponentMetadata<VisibilityState>.Id, archetype.EnableableComponentIds[0]);
     }
 
@@ -87,22 +88,31 @@ public class EnableableComponentTests
         var disabledEntity = world.CreateEntity(new VisibilityState { Value = 20 });
         world.Disable<VisibilityState>(disabledEntity);
 
-        var enabledQuery = world.CreateQuery().WithEnabled<VisibilityState>().Build();
-        var disabledQuery = world.CreateQuery().WithDisabled<VisibilityState>().Build();
-        var archetype = Assert.Single(enabledQuery.Archetypes);
-        var chunk = Assert.Single(archetype.Chunks);
+        var enabledQuery = world.Query(
+            world.QueryDefinition()
+                .All<VisibilityState>()
+                .Enabled<VisibilityState>());
+        var disabledQuery = world.Query(
+            world.QueryDefinition()
+                .All<VisibilityState>()
+                .Disabled<VisibilityState>());
 
-        int enabledRow = FindRow(chunk, enabledEntity);
-        int disabledRow = FindRow(chunk, disabledEntity);
+        var enabledMatches = new List<Entity>();
+        world.ExecuteQuery(enabledQuery, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                enabledMatches.Add(row.Entity);
+        });
 
-        Assert.True(enabledQuery.Matches(archetype));
-        Assert.True(disabledQuery.Matches(archetype));
+        var disabledMatches = new List<Entity>();
+        world.ExecuteQuery(disabledQuery, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                disabledMatches.Add(row.Entity);
+        });
 
-        Assert.True(enabledQuery.MatchesRow(archetype, chunk, enabledRow));
-        Assert.False(enabledQuery.MatchesRow(archetype, chunk, disabledRow));
-
-        Assert.False(disabledQuery.MatchesRow(archetype, chunk, enabledRow));
-        Assert.True(disabledQuery.MatchesRow(archetype, chunk, disabledRow));
+        Assert.Equal([enabledEntity], enabledMatches);
+        Assert.Equal([disabledEntity], disabledMatches);
     }
 
     [Fact]
@@ -122,10 +132,13 @@ public class EnableableComponentTests
 
         int chunks = 0;
         int rows = 0;
-        foreach (QueryChunkView _ in world.RunQuery(query).Chunks)
-            chunks++;
-        foreach (QueryRow _ in world.RunQuery(query).Rows)
-            rows++;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (QueryChunkView _ in cursor.Chunks)
+                chunks++;
+            foreach (QueryRow _ in cursor.Rows)
+                rows++;
+        });
 
         Assert.Equal(0, chunks);
         Assert.Equal(0, rows);
@@ -145,10 +158,13 @@ public class EnableableComponentTests
 
         int chunks = 0;
         int rows = 0;
-        foreach (QueryChunkView _ in world.RunQuery(query).Chunks)
-            chunks++;
-        foreach (QueryRow _ in world.RunQuery(query).Rows)
-            rows++;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (QueryChunkView _ in cursor.Chunks)
+                chunks++;
+            foreach (QueryRow _ in cursor.Rows)
+                rows++;
+        });
 
         Assert.Equal(0, chunks);
         Assert.Equal(0, rows);
@@ -169,8 +185,8 @@ public class EnableableComponentTests
         world.Remove<MoveSpeed>(entity);
 
         Assert.False(world.IsEnabled<VisibilityState>(entity));
-        Assert.Equal(1, world.Get<VisibilityState>(entity).Value);
-        Assert.Equal(100, world.Get<Health>(entity).Value);
+        Assert.Equal(1, world.Read<VisibilityState>(entity).Value);
+        Assert.Equal(100, world.Read<Health>(entity).Value);
     }
 
     private static int FindRow(Chunk chunk, Entity entity)

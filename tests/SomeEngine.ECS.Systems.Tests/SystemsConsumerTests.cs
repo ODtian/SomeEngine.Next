@@ -1,20 +1,27 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
-using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
 public sealed class SystemsConsumerTests
 {
     [Fact]
-    public void SystemGroupCanRunAgainstWorldAndJobContext()
+    public void SystemGroupCanRunAgainstImmediateWorldContext()
     {
         var world = new World();
-        var context = new SystemContext();
-        using var group = new SystemGroup<SystemContext>(new EngineDriver(world, context));
+        using var group = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        group.Add<NoOpSystem>();
 
         group.Update();
 
-        context.GlobalDependency.Complete();
+        Assert.Equal(2u, world.CurrentTick);
+    }
+
+    private readonly struct NoOpSystem : ISystem<ImmediateSystemContext>
+    {
+        public void OnUpdate(ref ImmediateSystemContext context)
+        {
+            Assert.NotNull(context.World);
+        }
     }
 }

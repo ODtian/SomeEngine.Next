@@ -18,17 +18,19 @@ namespace SomeEngine.ECS.Owners;
 
 internal sealed class Clock
 {
-    internal uint Tick = 1;
+    private int _tick = 1;
+
+    internal uint Tick => unchecked((uint)Volatile.Read(ref _tick));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal uint Acquire()
     {
-        return Tick++;
+        return unchecked((uint)(Interlocked.Increment(ref _tick) - 1));
     }
 
     internal void Write(uint tick)
     {
-        Tick = tick;
+        Volatile.Write(ref _tick, unchecked((int)tick));
     }
 }
 

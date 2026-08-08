@@ -1,16 +1,15 @@
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.ECS.Owners;
 
 internal sealed class Entities
 {
+    private World _world = null!;
     private Tables _tables = null!;
-    private Relations _relations = null!;
+    private RelationGraph _relationGraph = null!;
     private Components _components = null!;
-    private Journal _journal = null!;
-    private Clock _clock = null!;
+    private Sparse _sparse = null!;
     private Iteration _iteration = null!;
     private Hierarchy _hierarchy = null!;
 
@@ -19,22 +18,27 @@ internal sealed class Entities
         Store = new EntityStore(capacity);
     }
 
+    internal Entities(EntityStore store)
+    {
+        Store = store ?? throw new ArgumentNullException(nameof(store));
+    }
+
     internal EntityStore Store { get; }
 
     internal void Bind(
+        World world,
         Tables tables,
-        Relations relations,
+        RelationGraph relationGraph,
         Components components,
-        Journal journal,
-        Clock clock,
+        Sparse sparse,
         Iteration iteration,
         Hierarchy hierarchy)
     {
+        _world = world;
         _tables = tables;
-        _relations = relations;
+        _relationGraph = relationGraph;
         _components = components;
-        _journal = journal;
-        _clock = clock;
+        _sparse = sparse;
         _iteration = iteration;
         _hierarchy = hierarchy;
     }
@@ -43,69 +47,110 @@ internal sealed class Entities
     {
         var entity = Store.Allocate();
         var (chunk, row) = _tables.AllocateInChunk(_tables.Empty, entity);
-        ref var record = ref Store.GetRecord(entity);
+        EntityRecordWriter record = Store.GetRecord(entity);
         record.Archetype = _tables.Empty;
         record.Chunk = chunk;
         record.RowInChunk = row;
-        Write(SerializationChangeKind.EntityCreated, entity);
         return entity;
-    }
-
-    internal Entity Reserve()
-    {
-        return Store.Allocate();
-    }
-
-    internal void Spawn(Entity entity)
-    {
-        if (!Store.IsAlive(entity))
-            throw new InvalidOperationException($"Cannot spawn {entity}: reserved entity is not alive.");
-
-        ref var record = ref Store.GetRecord(entity);
-        if (record.Archetype is not null)
-            throw new InvalidOperationException($"Cannot spawn {entity}: reserved entity was already spawned.");
-
-        var (chunk, row) = _tables.AllocateInChunk(_tables.Empty, entity);
-        record.Archetype = _tables.Empty;
-        record.Chunk = chunk;
-        record.RowInChunk = row;
-        Write(SerializationChangeKind.EntityCreated, entity);
-    }
-
-    internal bool Release(Entity entity)
-    {
-        if (!Store.IsAlive(entity))
-            return false;
-
-        ref var record = ref Store.GetRecord(entity);
-        if (record.Archetype is not null)
-            return false;
-
-        Store.Free(entity);
-        return true;
     }
 
     internal void DestroyNow(Entity entity)
     {
         _iteration.Throw();
-        ref var record = ref Row(entity);
+        if (!_relationGraph.Any && !_hierarchy.Any && !_components.HasHooks)
+        {
+            EntityRecordWriter fastRecord = Row(entity);
+            FreeLiveFast(entity, fastRecord, fastRecord.Archetype!);
+            return;
+        }
+
+        var faults = new ExceptionAccumulator();
+        try
+        {
+            _relationGraph.CleanupEntity(_world, entity);
+        }
+        catch (Exception exception)
+        {
+            faults.Add(exception);
+        }
+        try
+        {
+            _hierarchy.OnEntityDestroying(entity);
+        }
+        catch (Exception exception)
+        {
+            faults.Add(exception);
+        }
+        EntityRecordWriter record = Row(entity);
         var archetype = record.Archetype!;
-        FreeLive(entity, ref record, archetype, _relations.Any);
+        try
+        {
+            FreeLive(entity, record, archetype);
+        }
+        catch (Exception exception)
+        {
+            faults.Add(exception);
+        }
+        faults.ThrowIfAny();
     }
 
     internal void Destroy(Entity entity)
     {
         _iteration.Throw();
-        ref var record = ref Row(entity);
-        var archetype = record.Archetype!;
-
-        if (archetype.HasCleanupComponents)
+        if (!_relationGraph.Any && !_hierarchy.Any && !_components.HasHooks)
         {
-            SoftDestroy(entity, ref record, archetype);
+            EntityRecordWriter fastRecord = Row(entity);
+            var fastArchetype = fastRecord.Archetype!;
+            if (HasLifecycleCleanup(fastArchetype))
+                SoftDestroyFast(entity, fastRecord, fastArchetype);
+            else
+                FreeLiveFast(entity, fastRecord, fastArchetype);
             return;
         }
 
-        FreeLive(entity, ref record, archetype, _relations.Any);
+        var faults = new ExceptionAccumulator();
+        try
+        {
+            _relationGraph.CleanupEntity(_world, entity);
+        }
+        catch (Exception exception)
+        {
+            faults.Add(exception);
+        }
+        try
+        {
+            _hierarchy.OnEntityDestroying(entity);
+        }
+        catch (Exception exception)
+        {
+            faults.Add(exception);
+        }
+        EntityRecordWriter record = Row(entity);
+        var archetype = record.Archetype!;
+
+        if (HasLifecycleCleanup(archetype))
+        {
+            try
+            {
+                SoftDestroy(entity, record, archetype);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
+            }
+            faults.ThrowIfAny();
+            return;
+        }
+
+        try
+        {
+            FreeLive(entity, record, archetype);
+        }
+        catch (Exception exception)
+        {
+            faults.Add(exception);
+        }
+        faults.ThrowIfAny();
     }
 
     internal bool Alive(Entity entity)
@@ -120,99 +165,106 @@ internal sealed class Entities
         if (!Store.IsAlive(entity))
             return false;
 
-        ref var record = ref Store.GetRecord(entity);
+        EntityRecord record = Store.GetRecordReadOnly(entity);
         if (record.Archetype is null)
             return false;
 
-        var archetype = record.Archetype!;
-        return archetype.HasCleanupComponents && archetype.CleanupComponentIds.Length == archetype.ComponentIds.Length;
+        return record.PendingDestroy;
     }
 
     internal void FinishCleanup(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetype sourceArchetype)
     {
-        if (!sourceArchetype.HasCleanupComponents || record.Archetype != _tables.Empty)
+        if (!record.PendingDestroy || record.Archetype != _tables.Empty)
             return;
 
-        FreeLive(entity, ref record, _tables.Empty, false);
+        FreeLive(entity, record, _tables.Empty);
     }
 
-    internal ref EntityRecord Row(Entity entity)
+    internal EntityRecordWriter Row(Entity entity)
     {
-        ref var record = ref Store.GetRecord(entity);
+        EntityRecordWriter record = Store.GetRecord(entity);
         if (record.Archetype is null)
             throw new InvalidOperationException($"Entity {entity} is not alive.");
 
-        return ref record;
+        return record;
+    }
+
+    internal EntityRecord ReadRow(Entity entity)
+    {
+        EntityRecord record = Store.GetRecordReadOnly(entity);
+        if (record.Archetype is null)
+            throw new InvalidOperationException($"Entity {entity} is not alive.");
+
+        return record;
     }
 
     internal void ThrowDead(Entity entity)
     {
-        _ = Row(entity);
-    }
-
-    internal EntitySlotSnapshot[] Slots()
-    {
-        var slots = new EntitySlotSnapshot[Store.Count];
-        for (int index = 1; index <= Store.Count; index++)
-        {
-            int generation = Store.GetGeneration(index);
-            slots[index - 1] = new EntitySlotSnapshot(
-                index,
-                generation,
-                Store.IsAliveIndex(index));
-        }
-
-        return slots;
-    }
-
-    internal void Prepare(int maxIndex, IReadOnlyList<EntitySlotSnapshot> slots)
-    {
-        if (Store.AliveCount != 0)
-            throw new InvalidOperationException("Serialization load requires an empty World target.");
-
-        Store.ResetForSerialization(maxIndex, slots);
+        _ = ReadRow(entity);
     }
 
     private void SoftDestroy(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetype archetype)
     {
-        if (_relations.Any)
-            _relations.Cleanup(entity);
+        record.PendingDestroy = true;
+        _sparse.RemoveAll(entity);
 
-        if (archetype.CleanupComponentIds.Length == archetype.ComponentIds.Length)
+        NotifySoft(entity, archetype);
+        Exception? componentFault = null;
+        try
         {
-            FreeLive(entity, ref record, archetype, false);
-            return;
+            _components.RemoveLive(entity, archetype, record.Chunk!, record.RowInChunk);
         }
+        catch (Exception exception)
+        {
+            componentFault = exception;
+        }
+        var plan = _tables.Registry.CleanupTransition(archetype);
+        _tables.MoveEntity(entity, record, plan);
+        if (componentFault is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(componentFault).Throw();
+    }
 
+    private void SoftDestroyFast(
+        Entity entity,
+        EntityRecordWriter record,
+        Archetype archetype)
+    {
+        record.PendingDestroy = true;
+        _sparse.RemoveAll(entity);
         NotifySoft(entity, archetype);
         _components.RemoveLive(entity, archetype, record.Chunk!, record.RowInChunk);
         var plan = _tables.Registry.CleanupTransition(archetype);
-        _tables.MoveEntity(entity, ref record, plan);
+        _tables.MoveEntity(entity, record, plan);
     }
 
     private void FreeLive(
         Entity entity,
-        ref EntityRecord record,
-        Archetype archetype,
-        bool hasRelations)
+        EntityRecordWriter record,
+        Archetype archetype)
     {
-        if (hasRelations)
-            _relations.Cleanup(entity);
-
+        _sparse.RemoveAll(entity);
         var currentChunk = record.Chunk!;
         NotifyDestroy(entity, archetype);
-        _components.RemoveAll(entity, archetype, currentChunk, record.RowInChunk);
+        Exception? componentFault = null;
+        try
+        {
+            _components.RemoveAll(entity, archetype, currentChunk, record.RowInChunk);
+        }
+        catch (Exception exception)
+        {
+            componentFault = exception;
+        }
 
-        var movedEntity = currentChunk.RemoveRow(record.RowInChunk, archetype.ColumnMetas);
+        var movedEntity = currentChunk.RemoveRow(record.RowInChunk, archetype.ColumnOperations);
         if (movedEntity != Entity.Null)
         {
-            ref var movedRecord = ref Store.GetRecord(movedEntity);
+            EntityRecordWriter movedRecord = Store.GetRecord(movedEntity);
             movedRecord.RowInChunk = record.RowInChunk;
         }
 
@@ -223,15 +275,46 @@ internal sealed class Entities
         record.RowInChunk = 0;
 
         Store.Free(entity);
-        Write(SerializationChangeKind.EntityDestroyed, entity);
+        if (componentFault is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(componentFault).Throw();
+    }
+
+    private void FreeLiveFast(
+        Entity entity,
+        EntityRecordWriter record,
+        Archetype archetype)
+    {
+        _sparse.RemoveAll(entity);
+        var currentChunk = record.Chunk!;
+        NotifyDestroy(entity, archetype);
+        _components.RemoveAll(entity, archetype, currentChunk, record.RowInChunk);
+
+        var movedEntity = currentChunk.RemoveRow(record.RowInChunk, archetype.ColumnOperations);
+        if (movedEntity != Entity.Null)
+        {
+            EntityRecordWriter movedRecord = Store.GetRecord(movedEntity);
+            movedRecord.RowInChunk = record.RowInChunk;
+        }
+
+        _tables.TryRecycleChunk(archetype, currentChunk);
+        record.Archetype = null;
+        record.Chunk = null;
+        record.RowInChunk = 0;
+        Store.Free(entity);
     }
 
     private void NotifySoft(Entity entity, Archetype archetype)
     {
-        for (int columnIndex = 0; columnIndex < archetype.ColumnMetas.Length; columnIndex++)
+        // A Parent<TDomain> component registers its domain when it enters the World, so an
+        // empty registry proves that none of this archetype's columns can participate in a
+        // hierarchy. Avoid the component-registration fallback on the ordinary cleanup hot path.
+        if (!_hierarchy.Any)
+            return;
+
+        for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
         {
-            int componentId = archetype.ColumnMetas[columnIndex].ComponentId;
-            if (Array.BinarySearch(archetype.CleanupComponentIds, componentId) >= 0)
+            int componentId = archetype.TableComponentIds[columnIndex];
+            if (archetype.CleanupComponentIds.BinarySearch(componentId) >= 0)
                 continue;
 
             _hierarchy.TrackParent(entity, componentId);
@@ -240,13 +323,23 @@ internal sealed class Entities
 
     private void NotifyDestroy(Entity entity, Archetype archetype)
     {
-        for (int columnIndex = 0; columnIndex < archetype.ColumnMetas.Length; columnIndex++)
-            _hierarchy.TrackParent(entity, archetype.ColumnMetas[columnIndex].ComponentId);
+        if (!_hierarchy.Any)
+            return;
+
+        for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
+            _hierarchy.TrackParent(entity, archetype.TableComponentIds[columnIndex]);
     }
 
-    private void Write(SerializationChangeKind kind, Entity entity)
+    private static bool HasLifecycleCleanup(Archetype archetype)
     {
-        _journal.Write(kind, entity, 0, default, _clock.Tick);
+        var cleanupIds = archetype.CleanupComponentIds;
+        for (int i = 0; i < cleanupIds.Length; i++)
+        {
+            if (!Registry.ComponentRegistry.Get(cleanupIds[i]).IsRemovedFact)
+                return true;
+        }
+
+        return false;
     }
 }
 

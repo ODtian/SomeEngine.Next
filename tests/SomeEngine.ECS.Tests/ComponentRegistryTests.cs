@@ -14,7 +14,7 @@ public class ComponentRegistryTests
     {
         // 触发注册
         int id = ComponentMetadata<Position>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         Assert.Equal(id, info.Id);
         Assert.Equal(ComponentMetadata<Position>.Size, info.Size);
@@ -26,7 +26,7 @@ public class ComponentRegistryTests
     public void Get_ReturnsCorrectInfo_ForTag()
     {
         int id = ComponentMetadata<PlayerTag>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         Assert.Equal(id, info.Id);
         Assert.Equal(StoragePath.Tag, info.Storage);
@@ -51,49 +51,55 @@ public class ComponentRegistryTests
     }
 
     // ——————————————————————————————————————————————————
-    // ComponentOperations.CopyElement
+    // ComponentOperations ref copy
     // ——————————————————————————————————————————————————
 
     [Fact]
-    public unsafe void CopyElement_UnmanagedPosition_CopiesCorrectly()
+    public unsafe void RefCopy_UnmanagedPosition_CopiesCorrectly()
     {
         int id = ComponentMetadata<Position>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var src = new Position[] { new() { X = 1.0f, Y = 2.0f }, new() { X = 3.0f, Y = 4.0f } };
         var dst = new Position[2];
 
-        info.Operations.CopyElement(src, 0, dst, 1);
+        ref byte source = ref info.Operations.GetReference(src, 0);
+        ref byte destination = ref info.Operations.GetReference(dst, 1);
+        info.Operations.CopyValue(ref source, ref destination);
 
         Assert.Equal(1.0f, dst[1].X);
         Assert.Equal(2.0f, dst[1].Y);
     }
 
     [Fact]
-    public unsafe void CopyElement_ManagedWithString_CopiesCorrectly()
+    public unsafe void RefCopy_ManagedWithString_CopiesCorrectly()
     {
         int id = ComponentMetadata<NamedComponent>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var src = new NamedComponent[] { new() { Name = "hello", Id = 42 } };
         var dst = new NamedComponent[1];
 
-        info.Operations.CopyElement(src, 0, dst, 0);
+        ref byte source = ref info.Operations.GetReference(src, 0);
+        ref byte destination = ref info.Operations.GetReference(dst, 0);
+        info.Operations.CopyValue(ref source, ref destination);
 
         Assert.Equal("hello", dst[0].Name);
         Assert.Equal(42, dst[0].Id);
     }
 
     [Fact]
-    public unsafe void CopyElement_ManagedWithNullString_CopiesCorrectly()
+    public unsafe void RefCopy_ManagedWithNullString_CopiesCorrectly()
     {
         int id = ComponentMetadata<NamedComponent>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var src = new NamedComponent[] { new() { Name = null!, Id = 7 } };
         var dst = new NamedComponent[] { new() { Name = "old", Id = 0 } };
 
-        info.Operations.CopyElement(src, 0, dst, 0);
+        ref byte source = ref info.Operations.GetReference(src, 0);
+        ref byte destination = ref info.Operations.GetReference(dst, 0);
+        info.Operations.CopyValue(ref source, ref destination);
 
         Assert.Null(dst[0].Name);
         Assert.Equal(7, dst[0].Id);
@@ -107,7 +113,7 @@ public class ComponentRegistryTests
     public unsafe void SwapRemove_UnmanagedPosition_MovesLastToRemoved()
     {
         int id = ComponentMetadata<Position>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var arr = new Position[]
         {
@@ -129,7 +135,7 @@ public class ComponentRegistryTests
     public unsafe void SwapRemove_ManagedComponent_ClearsLastSlot()
     {
         int id = ComponentMetadata<NamedComponent>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var arr = new NamedComponent[]
         {
@@ -150,7 +156,7 @@ public class ComponentRegistryTests
     public unsafe void SwapRemove_SameIndex_NoMove()
     {
         int id = ComponentMetadata<Position>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var arr = new Position[]
         {
@@ -171,7 +177,7 @@ public class ComponentRegistryTests
     public unsafe void CreateArray_ReturnsCorrectTypeAndLength()
     {
         int id = ComponentMetadata<Position>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var arr = Assert.IsType<Position[]>(info.Operations.CreateArray(64));
 
@@ -182,7 +188,7 @@ public class ComponentRegistryTests
     public unsafe void CreateArray_ManagedType_ReturnsCorrectType()
     {
         int id = ComponentMetadata<NamedComponent>.Id;
-        ref var info = ref ComponentRegistry.Get(id);
+        ref readonly ComponentInfo info = ref ComponentRegistry.Get(id);
 
         var arr = Assert.IsType<NamedComponent[]>(info.Operations.CreateArray(32));
 

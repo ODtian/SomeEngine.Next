@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS;
 
@@ -9,6 +10,8 @@ public partial class World
     public void Add<T>(Entity entity, in T value)
         where T : struct, IComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.Structural<T>("World.Add");
         _components.Add(entity, in value);
     }
 
@@ -16,6 +19,7 @@ public partial class World
     public void AddTag<T>(Entity entity)
         where T : struct, ITag
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         _components.AddTag<T>(entity);
     }
 
@@ -23,6 +27,8 @@ public partial class World
     public void Remove<T>(Entity entity)
         where T : struct, IComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.Structural<T>("World.Remove");
         _components.Remove<T>(entity);
     }
 
@@ -30,34 +36,43 @@ public partial class World
     public void RemoveTag<T>(Entity entity)
         where T : struct, ITag
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         _components.RemoveTag<T>(entity);
-    }
-
-    /// <summary>获取组件的 ref 引用（可原地修改）。</summary>
-    public ref T Get<T>(Entity entity)
-        where T : struct, IComponent
-    {
-        return ref _components.Get<T>(entity);
     }
 
     /// <summary>读取组件值（返回拷贝）。</summary>
     public T Read<T>(Entity entity)
         where T : struct, IComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
         return _components.Read<T>(entity);
-    }
-
-    /// <summary>读取组件只读引用。</summary>
-    public ref readonly T ReadRef<T>(Entity entity)
-        where T : struct, IComponent
-    {
-        return ref _components.ReadRef<T>(entity);
     }
 
     /// <summary>整值替换组件（不触发迁移）。</summary>
     public void Replace<T>(Entity entity, in T value)
         where T : struct, IComponent
     {
+        int componentId = ComponentMetadata<T>.Id;
+        // OnReplace can observe the old value and OnInsert can observe the new value. Those are
+        // the only callbacks CommitReplace executes, so hooks for another component or for an
+        // irrelevant event must not upgrade this component-local write to a topology writer.
+        if (!HasValueReplaceHookCallbacks(componentId))
+        {
+            using WorldJobAdmissionScope componentAdmission =
+                EnterJobComponent<T>(WorldStorageAccess.Write);
+            // Hook registration is a topology writer. Rechecking after this topology-read owner
+            // is admitted closes the false-fast-path TOCTOU without charging hook-free writes for
+            // the global writer.
+            if (!HasValueReplaceHookCallbacks(componentId))
+            {
+                PublicComponentMutationGuard.Value<T>("World.Replace");
+                _components.Replace(entity, in value);
+                return;
+            }
+        }
+
+        using WorldJobAdmissionScope topologyAdmission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.Value<T>("World.Replace");
         _components.Replace(entity, in value);
     }
 
@@ -65,6 +80,7 @@ public partial class World
     public bool Has<T>(Entity entity)
         where T : struct
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyRead();
         return _components.Has<T>(entity);
     }
 
@@ -72,6 +88,7 @@ public partial class World
     public void Enable<T>(Entity entity)
         where T : struct, IEnableableComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Write);
         _components.WriteEnabled<T>(entity, true);
     }
 
@@ -79,6 +96,7 @@ public partial class World
     public void Disable<T>(Entity entity)
         where T : struct, IEnableableComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Write);
         _components.WriteEnabled<T>(entity, false);
     }
 
@@ -86,6 +104,7 @@ public partial class World
     public bool IsEnabled<T>(Entity entity)
         where T : struct, IEnableableComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobComponent<T>(WorldStorageAccess.Read);
         return _components.IsEnabled<T>(entity);
     }
 
@@ -102,7 +121,43 @@ public partial class World
     public void ClearRemoved<T>(uint throughVersion)
         where T : struct, IComponent
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         _components.ClearRemoved<T>(throughVersion);
+    }
+
+    internal void AddRelationshipComponent<T>(Entity entity, in T value)
+        where T : struct, IComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.RelationshipRole<T>(nameof(AddRelationshipComponent));
+        _components.Add(entity, in value);
+    }
+
+    internal void ReplaceRelationshipComponent<T>(Entity entity, in T value)
+        where T : struct, IComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.RelationshipRole<T>(nameof(ReplaceRelationshipComponent));
+        _components.Replace(entity, in value);
+    }
+
+    internal void ReplaceRelationshipComponent<T>(
+        Entity entity,
+        in T value,
+        uint version)
+        where T : struct, IComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.RelationshipRole<T>(nameof(ReplaceRelationshipComponent));
+        _components.Replace(entity, in value, version);
+    }
+
+    internal void RemoveRelationshipComponent<T>(Entity entity)
+        where T : struct, IComponent
+    {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        PublicComponentMutationGuard.RelationshipRole<T>(nameof(RemoveRelationshipComponent));
+        _components.Remove<T>(entity);
     }
 }
 

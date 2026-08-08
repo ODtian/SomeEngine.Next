@@ -1,8 +1,6 @@
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Relations;
-using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
 
@@ -15,9 +13,7 @@ internal sealed class Copy
     private Components _components = null!;
     private Buffers _buffers = null!;
     private Sparse _sparse = null!;
-    private Relations _relations = null!;
     private Indices _indices = null!;
-    private Journal _journal = null!;
     private Clock _clock = null!;
     private Iteration _iteration = null!;
     private Hierarchy _hierarchy = null!;
@@ -28,9 +24,7 @@ internal sealed class Copy
         Components components,
         Buffers buffers,
         Sparse sparse,
-        Relations relations,
         Indices indices,
-        Journal journal,
         Clock clock,
         Iteration iteration,
         Hierarchy hierarchy)
@@ -40,9 +34,7 @@ internal sealed class Copy
         _components = components;
         _buffers = buffers;
         _sparse = sparse;
-        _relations = relations;
         _indices = indices;
-        _journal = journal;
         _clock = clock;
         _iteration = iteration;
         _hierarchy = hierarchy;
@@ -66,7 +58,9 @@ internal sealed class Copy
         _iteration.Throw();
         CopyGuard.ThrowIfCandidate(this, source, nameof(source));
 
-        return CloneDirect(source, NormalizeCopyOptions(options));
+        var surface = NormalizeCopyOptions(options);
+        ValidatePublicRelationshipSurface(source, surface, "World.CloneEntity");
+        return CloneDirect(source, surface);
     }
 
     /// <summary>
@@ -92,10 +86,10 @@ internal sealed class Copy
             return;
 
         var surface = NormalizeCopyOptions(options);
-        PrepareRelationTarget(target, surface);
-
-        ref var sourceRecord = ref _entities.Store.GetRecord(source);
-        ref var targetRecord = ref _entities.Store.GetRecord(target);
+        ValidatePublicRelationshipSurface(source, surface, "World.CopyEntity(source)");
+        ValidatePublicRelationshipSurface(target, surface, "World.CopyEntity(target)");
+        EntityRecord sourceRecord = _entities.Store.GetRecordReadOnly(source);
+        EntityRecord targetRecord = _entities.Store.GetRecordReadOnly(target);
         var sourceArchetype = sourceRecord.Archetype!;
         var targetArchetype = targetRecord.Archetype!;
         var sourceChunk = sourceRecord.Chunk!;
@@ -119,7 +113,6 @@ internal sealed class Copy
             sourceArchetype,
             sourceChunk,
             sourceRow,
-            ref targetRecord,
             targetArchetype,
             targetChunk,
             targetRow,
@@ -132,14 +125,14 @@ internal sealed class Copy
 
     private Entity CloneDirect(Entity source, EntityCopyOptions surface)
     {
-        ref var sourceRecord = ref _entities.Store.GetRecord(source);
+        EntityRecord sourceRecord = _entities.Store.GetRecordReadOnly(source);
         var sourceArchetype = sourceRecord.Archetype!;
         var sourceChunk = sourceRecord.Chunk!;
         int sourceRow = sourceRecord.RowInChunk;
 
         var destinationArchetype = ResolveCloneArchetype(source, sourceArchetype, surface);
 
-        ref var targetRecord = ref _entities.Store.Allocate(out var target);
+        EntityRecordWriter targetRecord = _entities.Store.Allocate(out var target);
         var (destinationChunk, destinationRow) = AllocateCloneDestination(
             target,
             sourceArchetype,
@@ -149,7 +142,6 @@ internal sealed class Copy
         targetRecord.Archetype = destinationArchetype;
         targetRecord.Chunk = destinationChunk;
         targetRecord.RowInChunk = destinationRow;
-        Write(SerializationChangeKind.EntityCreated, target);
         CopyCloneColumns(
             target,
             sourceArchetype,
@@ -164,27 +156,16 @@ internal sealed class Copy
         return target;
     }
 
-    private void PrepareRelationTarget(Entity target, EntityCopyOptions surface)
-    {
-        if (surface.HasFlag(EntityCopyOptions.OutgoingRelations))
-            _relations.RemoveOutgoing(target);
-    }
-
     private Archetype ResolveCloneArchetype(
         Entity source,
         Archetype sourceArchetype,
         EntityCopyOptions surface)
     {
         int sourceComponentCount = sourceArchetype.ComponentIds.Length;
-        int destinationComponentCapacity = surface.HasFlag(EntityCopyOptions.OutgoingRelations)
-            ? sourceComponentCount + _relations.All.Count
-            : sourceComponentCount;
-        Span<int> destinationComponentIds = destinationComponentCapacity <= 64
-            ? stackalloc int[destinationComponentCapacity]
-            : new int[destinationComponentCapacity];
+        Span<int> destinationComponentIds = sourceComponentCount <= 64
+            ? stackalloc int[sourceComponentCount]
+            : new int[sourceComponentCount];
         int destinationComponentCount = CopyShape.CloneIds(
-            _relations,
-            source,
             sourceArchetype,
             surface,
             destinationComponentIds);
@@ -249,7 +230,6 @@ internal sealed class Copy
             destinationChunk,
             destinationRow,
             surface);
-        CopyJournal.LogCloneAdded(this, target, destinationArchetype);
     }
 
     private void CopyExtraSurfaces(
@@ -272,8 +252,6 @@ internal sealed class Copy
         if (surface.HasFlag(EntityCopyOptions.SparseComponents))
             _sparse.Copy(source, target);
 
-        if (surface.HasFlag(EntityCopyOptions.OutgoingRelations))
-            _relations.CopyOutgoing(source, target);
     }
 
     private static EntityCopyOptions NormalizeCopyOptions(EntityCopyOptions options)
@@ -288,19 +266,27 @@ internal sealed class Copy
             if (!copy._entities.Store.IsAlive(entity))
                 throw new InvalidOperationException($"{paramName} entity {entity} is not alive in this World.");
 
-            if (copy._entities.Store.GetRecord(entity).Archetype is null)
-                throw new InvalidOperationException($"{paramName} entity {entity} is reserved and has not been spawned.");
-
             if (copy._entities.Pending(entity))
                 throw new InvalidOperationException($"{paramName} entity {entity} is pending cleanup and cannot be copied.");
         }
     }
 
+    private void ValidatePublicRelationshipSurface(
+        Entity entity,
+        EntityCopyOptions surface,
+        string operation)
+    {
+        EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
+        PublicComponentMutationGuard.CopySurface(
+            record.Archetype!.ComponentIds,
+            surface.HasFlag(EntityCopyOptions.TableComponents),
+            surface.HasFlag(EntityCopyOptions.CleanupComponents),
+            operation);
+    }
+
     private static class CopyShape
     {
         public static int CloneIds(
-            Relations relations,
-            Entity source,
             Archetype sourceArchetype,
             EntityCopyOptions surface,
             Span<int> destinationIds)
@@ -310,16 +296,6 @@ internal sealed class Copy
             {
                 if (CopyRules.CopySource(componentId, surface))
                     destinationIds[count++] = componentId;
-            }
-
-            if (surface.HasFlag(EntityCopyOptions.OutgoingRelations))
-            {
-                for (int i = 0; i < relations.All.Count; i++)
-                {
-                    var store = relations.All[i];
-                    if (store.HasOutgoing(source))
-                        destinationIds[count++] = store.RelationTagId;
-                }
             }
 
             destinationIds[..count].Sort();
@@ -407,7 +383,6 @@ internal sealed class Copy
             Archetype sourceArchetype,
             Chunk sourceChunk,
             int sourceRow,
-            ref EntityRecord targetRecord,
             Archetype targetArchetype,
             Chunk targetChunk,
             int targetRow,
@@ -447,7 +422,6 @@ internal sealed class Copy
                 sourceArchetype,
                 sourceChunk,
                 sourceRow,
-                ref targetRecord,
                 targetArchetype,
                 targetChunk,
                 targetRow,
@@ -462,7 +436,6 @@ internal sealed class Copy
             Archetype sourceArchetype,
             Chunk sourceChunk,
             int sourceRow,
-            ref EntityRecord targetRecord,
             Archetype targetArchetype,
             Chunk targetChunk,
             int targetRow,
@@ -470,8 +443,8 @@ internal sealed class Copy
             int[]? destinationSharedValues,
             EntityCopyOptions surface)
         {
-            var removed = CopyJournal.CaptureRemoved(copy, target, targetArchetype, targetChunk, targetRow, destinationArchetype);
-            var replaced = CopyJournal.CaptureReplaced(
+            var removed = ComponentChanges.CaptureRemoved(copy, target, targetArchetype, targetChunk, targetRow, destinationArchetype);
+            var replaced = ComponentChanges.CaptureReplaced(
                 copy,
                 target,
                 sourceArchetype,
@@ -480,8 +453,6 @@ internal sealed class Copy
                 targetRow,
                 destinationArchetype,
                 surface);
-            CopyJournal.LogRemoved(copy, target, targetArchetype, destinationArchetype);
-
             var (destinationChunk, destinationRow) = AllocateDestination(
                 copy,
                 target,
@@ -503,6 +474,7 @@ internal sealed class Copy
 
             RemoveTargetRow(copy, targetArchetype, targetChunk, targetRow);
 
+            EntityRecordWriter targetRecord = copy._entities.Store.GetRecord(target);
             targetRecord.Archetype = destinationArchetype;
             targetRecord.Chunk = destinationChunk;
             targetRecord.RowInChunk = destinationRow;
@@ -512,11 +484,9 @@ internal sealed class Copy
                 target,
                 sourceArchetype,
                 targetArchetype,
-                targetChunk,
                 destinationArchetype,
                 destinationChunk,
                 destinationRow,
-                destinationSharedValues,
                 surface,
                 removed,
                 replaced);
@@ -576,10 +546,11 @@ internal sealed class Copy
             Chunk targetChunk,
             int targetRow)
         {
-            var movedEntity = targetChunk.RemoveRow(targetRow, targetArchetype.ColumnMetas);
+            var movedEntity =
+                targetChunk.RemoveRow(targetRow, targetArchetype.ColumnOperations);
             if (movedEntity != Entity.Null)
             {
-                ref var movedRecord = ref copy._entities.Store.GetRecord(movedEntity);
+                EntityRecordWriter movedRecord = copy._entities.Store.GetRecord(movedEntity);
                 movedRecord.RowInChunk = targetRow;
             }
 
@@ -591,14 +562,12 @@ internal sealed class Copy
             Entity target,
             Archetype sourceArchetype,
             Archetype targetArchetype,
-            Chunk targetChunk,
             Archetype destinationArchetype,
             Chunk destinationChunk,
             int destinationRow,
-            int[]? destinationSharedValues,
             EntityCopyOptions surface,
-            List<CopyJournal.OldComponent>? removed,
-            List<CopyJournal.OldComponent>? replaced)
+            List<ComponentChanges.OldComponent>? removed,
+            List<ComponentChanges.OldComponent>? replaced)
         {
             copy.FinalizeCopiedColumns(
                 target,
@@ -608,15 +577,14 @@ internal sealed class Copy
                 destinationChunk,
                 destinationRow,
                 surface);
-            CopyJournal.CommitReplaced(copy, target, replaced, destinationArchetype, destinationChunk, destinationRow);
-            CopyJournal.CommitRemoved(copy, target, removed);
-            CopyJournal.LogAdded(
+            ComponentChanges.CommitReplaced(
                 copy,
                 target,
-                targetArchetype,
-                targetChunk,
+                replaced,
                 destinationArchetype,
-                destinationSharedValues);
+                destinationChunk,
+                destinationRow);
+            ComponentChanges.CommitRemoved(copy, target, removed);
         }
 
         private static bool CanReuse(
@@ -646,30 +614,51 @@ internal sealed class Copy
             int targetRow,
             EntityCopyOptions surface)
         {
-            for (int destinationColumn = 0; destinationColumn < targetArchetype.ColumnMetas.Length; destinationColumn++)
+            bool writePrepared = false;
+            for (int destinationColumn = 0; destinationColumn < targetArchetype.TableComponentIds.Length; destinationColumn++)
             {
-                int componentId = targetArchetype.ColumnMetas[destinationColumn].ComponentId;
+                int componentId = targetArchetype.TableComponentIds[destinationColumn];
                 if (!CopyRules.CopyColumn(componentId, sourceArchetype, surface))
                     continue;
 
-                int sourceColumn = sourceArchetype.Column(componentId);
-                var targetColumn = (Array)targetChunk.Columns[destinationColumn];
-                var oldColumn = CaptureValue(
-                    targetArchetype.ColumnMetas[destinationColumn],
-                    targetColumn,
-                    targetRow);
-                copy._indices.Drop(target, componentId, targetColumn, targetRow);
-                unsafe
+                // The erased ref copy writes directly into the selected row. Detach immediately
+                // before the first selected column, while a surface with no selected columns can
+                // remain shared and let equal enable-bit writes stay no-ops as well.
+                if (!writePrepared)
                 {
-                    targetArchetype.ColumnMetas[destinationColumn].Operations.CopyElement(
-                        sourceChunk.Columns[sourceColumn],
-                        sourceRow,
-                        targetChunk.Columns[destinationColumn],
-                        targetRow);
+                    targetChunk.EnsureWritable();
+                    writePrepared = true;
                 }
 
+                int sourceColumn = sourceArchetype.Column(componentId);
+                ref readonly ComponentOperations operations =
+                    ref targetArchetype.ColumnOperations[destinationColumn];
+                Array oldValueSnapshot = targetChunk.CaptureComponentValue(
+                    destinationColumn,
+                    targetRow,
+                    in operations);
+                copy._indices.Drop(
+                    target,
+                    componentId,
+                    targetChunk,
+                    destinationColumn,
+                    targetRow);
+                sourceChunk.CopyComponentTo(
+                    sourceColumn,
+                    sourceRow,
+                    targetChunk,
+                    destinationColumn,
+                    targetRow,
+                    in operations);
+
                 copy.MarkWrite(targetChunk, destinationColumn, targetRow);
-                copy._components.CommitReplace(componentId, target, oldColumn, targetColumn, targetRow);
+                copy._components.CommitReplace(
+                    componentId,
+                    target,
+                    oldValueSnapshot,
+                    targetChunk,
+                    destinationColumn,
+                    targetRow);
             }
         }
     }
@@ -686,20 +675,21 @@ internal sealed class Copy
         int destinationRow,
         EntityCopyOptions surface)
     {
-        for (int destinationColumn = 0; destinationColumn < destinationArchetype.ColumnMetas.Length; destinationColumn++)
+        for (int destinationColumn = 0; destinationColumn < destinationArchetype.TableComponentIds.Length; destinationColumn++)
         {
-            int componentId = destinationArchetype.ColumnMetas[destinationColumn].ComponentId;
+            int componentId = destinationArchetype.TableComponentIds[destinationColumn];
             if (CopyRules.CopyColumn(componentId, sourceArchetype, surface))
             {
                 int sourceColumn = sourceArchetype.Column(componentId);
-                unsafe
-                {
-                    destinationArchetype.ColumnMetas[destinationColumn].Operations.CopyElement(
-                        sourceChunk.Columns[sourceColumn],
-                        sourceRow,
-                        destinationChunk.Columns[destinationColumn],
-                        destinationRow);
-                }
+                ref readonly ComponentOperations operations =
+                    ref destinationArchetype.ColumnOperations[destinationColumn];
+                sourceChunk.CopyComponentTo(
+                    sourceColumn,
+                    sourceRow,
+                    destinationChunk,
+                    destinationColumn,
+                    destinationRow,
+                    in operations);
 
                 if (targetArchetype.HasComponent(componentId))
                     MarkWrite(destinationChunk, destinationColumn, destinationRow);
@@ -711,14 +701,15 @@ internal sealed class Copy
             if (!targetArchetype.TryColumn(componentId, out int targetColumn))
                 continue;
 
-            unsafe
-            {
-                destinationArchetype.ColumnMetas[destinationColumn].Operations.CopyElement(
-                    targetChunk.Columns[targetColumn],
-                    targetRow,
-                    destinationChunk.Columns[destinationColumn],
-                    destinationRow);
-            }
+            ref readonly ComponentOperations destinationOperations =
+                ref destinationArchetype.ColumnOperations[destinationColumn];
+            targetChunk.CopyComponentTo(
+                targetColumn,
+                targetRow,
+                destinationChunk,
+                destinationColumn,
+                destinationRow,
+                in destinationOperations);
 
             targetChunk.CopyVersions(
                 targetColumn,
@@ -770,9 +761,9 @@ internal sealed class Copy
         int destinationRow,
         EntityCopyOptions surface)
     {
-        for (int column = 0; column < destinationArchetype.ColumnMetas.Length; column++)
+        for (int column = 0; column < destinationArchetype.TableComponentIds.Length; column++)
         {
-            int componentId = destinationArchetype.ColumnMetas[column].ComponentId;
+            int componentId = destinationArchetype.TableComponentIds[column];
             if (!CopyRules.CopyColumn(componentId, sourceArchetype, surface))
                 continue;
 
@@ -780,17 +771,12 @@ internal sealed class Copy
             if (alreadyHadComponent)
                 continue;
 
-            _components.CommitAdd(target, componentId, (Array)destinationChunk.Columns[column], destinationRow);
-        }
-    }
-
-    private static Array CaptureValue(ColumnMetadata meta, Array column, int row)
-    {
-        unsafe
-        {
-            var valueColumn = (Array)meta.Operations.CreateArray(1);
-            meta.Operations.CopyElement(column, row, valueColumn, 0);
-            return valueColumn;
+            _components.CommitAdd(
+                target,
+                componentId,
+                destinationChunk,
+                column,
+                destinationRow);
         }
     }
 
@@ -804,16 +790,7 @@ internal sealed class Copy
         chunk.MarkWrite(columnIndex, row, _clock.Tick);
     }
 
-    private void Write(
-        SerializationChangeKind kind,
-        Entity entity,
-        int componentId = 0,
-        Entity target = default)
-    {
-        _journal.Write(kind, entity, componentId, target, _clock.Tick);
-    }
-
-    private static class CopyJournal
+    private static class ComponentChanges
     {
         public static List<OldComponent>? CaptureRemoved(
             Copy copy,
@@ -824,19 +801,17 @@ internal sealed class Copy
             Archetype destinationArchetype)
         {
             List<OldComponent>? removed = null;
-            for (int column = 0; column < targetArchetype.ColumnMetas.Length; column++)
+            for (int column = 0; column < targetArchetype.TableComponentIds.Length; column++)
             {
-                int componentId = targetArchetype.ColumnMetas[column].ComponentId;
+                int componentId = targetArchetype.TableComponentIds[column];
                 if (destinationArchetype.HasComponent(componentId))
                     continue;
 
                 copy._hierarchy.TrackParent(target, componentId);
-                var targetColumn = (Array)targetChunk.Columns[column];
-                copy._indices.Drop(target, componentId, targetColumn, targetRow);
+                copy._indices.Drop(target, componentId, targetChunk, column, targetRow);
 
                 if (CopyRules.TryBufferCopier(componentId, out _))
                 {
-                    copy.Write(SerializationChangeKind.BufferRemoved, target, componentId);
                     continue;
                 }
                 else if (!CopyRules.IsBufferPart(componentId))
@@ -844,7 +819,10 @@ internal sealed class Copy
                     removed ??= new List<OldComponent>();
                     removed.Add(new OldComponent(
                         componentId,
-                        CaptureValue(targetArchetype.ColumnMetas[column], targetColumn, targetRow)));
+                        targetChunk.CaptureComponentValue(
+                            column,
+                            targetRow,
+                            in targetArchetype.ColumnOperations[column])));
                 }
             }
 
@@ -871,9 +849,9 @@ internal sealed class Copy
             EntityCopyOptions surface)
         {
             List<OldComponent>? replaced = null;
-            for (int column = 0; column < targetArchetype.ColumnMetas.Length; column++)
+            for (int column = 0; column < targetArchetype.TableComponentIds.Length; column++)
             {
-                int componentId = targetArchetype.ColumnMetas[column].ComponentId;
+                int componentId = targetArchetype.TableComponentIds[column];
                 if (!destinationArchetype.HasComponent(componentId) ||
                     !CopyRules.CopyColumn(componentId, sourceArchetype, surface) ||
                     CopyRules.IsBufferPart(componentId))
@@ -882,12 +860,14 @@ internal sealed class Copy
                 }
 
                 copy._hierarchy.TrackParent(target, componentId);
-                var targetColumn = (Array)targetChunk.Columns[column];
-                copy._indices.Drop(target, componentId, targetColumn, targetRow);
+                copy._indices.Drop(target, componentId, targetChunk, column, targetRow);
                 replaced ??= new List<OldComponent>();
                 replaced.Add(new OldComponent(
                     componentId,
-                    CaptureValue(targetArchetype.ColumnMetas[column], targetColumn, targetRow)));
+                    targetChunk.CaptureComponentValue(
+                        column,
+                        targetRow,
+                        in targetArchetype.ColumnOperations[column])));
             }
 
             return replaced;
@@ -911,77 +891,9 @@ internal sealed class Copy
                     replaced[i].ComponentId,
                     target,
                     replaced[i].Column,
-                    (Array)destinationChunk.Columns[column],
+                    destinationChunk,
+                    column,
                     destinationRow);
-            }
-        }
-
-        public static void LogRemoved(
-            Copy copy,
-            Entity target,
-            Archetype targetArchetype,
-            Archetype destinationArchetype)
-        {
-            foreach (int componentId in targetArchetype.ComponentIds)
-            {
-                if (destinationArchetype.HasComponent(componentId))
-                    continue;
-
-                ref var info = ref ComponentRegistry.Get(componentId);
-                if (info.Storage == StoragePath.Tag && !CopyRules.IsRelationTag(componentId))
-                    copy.Write(SerializationChangeKind.TagRemoved, target, componentId);
-                else if (info.Storage == StoragePath.Shared)
-                    copy.Write(SerializationChangeKind.SharedRemoved, target, componentId);
-            }
-        }
-
-        public static void LogAdded(
-            Copy copy,
-            Entity target,
-            Archetype targetArchetype,
-            Chunk targetChunk,
-            Archetype destinationArchetype,
-            int[]? destinationSharedValues)
-        {
-            foreach (int componentId in destinationArchetype.ComponentIds)
-            {
-                ref var info = ref ComponentRegistry.Get(componentId);
-                if (info.Storage == StoragePath.Tag && !CopyRules.IsRelationTag(componentId))
-                {
-                    if (!targetArchetype.HasComponent(componentId))
-                        copy.Write(SerializationChangeKind.TagAdded, target, componentId);
-                    continue;
-                }
-
-                if (info.Storage != StoragePath.Shared)
-                    continue;
-
-                if (!targetArchetype.HasComponent(componentId))
-                {
-                    copy.Write(SerializationChangeKind.SharedAdded, target, componentId);
-                    continue;
-                }
-
-                int oldIndex = Shared.EntityIndex(targetArchetype, targetChunk, componentId);
-                int destinationSlot = Shared.Slot(destinationArchetype, componentId);
-                if (destinationSharedValues is not null && oldIndex != destinationSharedValues[destinationSlot])
-                    copy.Write(SerializationChangeKind.SharedChanged, target, componentId);
-            }
-        }
-
-        public static void LogCloneAdded(Copy copy, Entity target, Archetype destinationArchetype)
-        {
-            foreach (int componentId in destinationArchetype.ComponentIds)
-            {
-                ref var info = ref ComponentRegistry.Get(componentId);
-                if (info.Storage == StoragePath.Tag && !CopyRules.IsRelationTag(componentId))
-                {
-                    copy.Write(SerializationChangeKind.TagAdded, target, componentId);
-                    continue;
-                }
-
-                if (info.Storage == StoragePath.Shared)
-                    copy.Write(SerializationChangeKind.SharedAdded, target, componentId);
             }
         }
 
@@ -1024,7 +936,7 @@ internal sealed class Copy
     {
         public static bool PreserveTarget(int componentId, EntityCopyOptions surface)
         {
-            ref var info = ref ComponentRegistry.Get(componentId);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
             return info.Storage switch
             {
                 StoragePath.Table => IsBufferPart(componentId)
@@ -1032,7 +944,7 @@ internal sealed class Copy
                     : info.IsCleanup
                         ? !surface.HasFlag(EntityCopyOptions.CleanupComponents)
                         : !surface.HasFlag(EntityCopyOptions.TableComponents),
-                StoragePath.Tag => IsRelationTag(componentId) || !surface.HasFlag(EntityCopyOptions.Tags),
+                StoragePath.Tag => !surface.HasFlag(EntityCopyOptions.Tags),
                 StoragePath.Shared => !surface.HasFlag(EntityCopyOptions.SharedComponents),
                 _ => false,
             };
@@ -1040,7 +952,7 @@ internal sealed class Copy
 
         public static bool CopySource(int componentId, EntityCopyOptions surface)
         {
-            ref var info = ref ComponentRegistry.Get(componentId);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
             return info.Storage switch
             {
                 StoragePath.Table => IsBufferPart(componentId)
@@ -1048,7 +960,7 @@ internal sealed class Copy
                     : info.IsCleanup
                         ? surface.HasFlag(EntityCopyOptions.CleanupComponents)
                         : surface.HasFlag(EntityCopyOptions.TableComponents),
-                StoragePath.Tag => !IsRelationTag(componentId) && surface.HasFlag(EntityCopyOptions.Tags),
+                StoragePath.Tag => surface.HasFlag(EntityCopyOptions.Tags),
                 StoragePath.Shared => surface.HasFlag(EntityCopyOptions.SharedComponents),
                 _ => false,
             };
@@ -1064,14 +976,9 @@ internal sealed class Copy
                    !IsBufferPart(componentId);
         }
 
-        public static bool IsRelationTag(int componentId)
-        {
-            return ComponentRegistry.Get(componentId).IsRelationTag;
-        }
-
         public static bool IsBufferPart(int componentId)
         {
-            return BufferRegistry.IsBufferId(componentId);
+            return BufferRegistry.IsGraphId(componentId);
         }
 
         public static bool TryBufferCopier(

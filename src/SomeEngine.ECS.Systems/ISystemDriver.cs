@@ -4,16 +4,28 @@ namespace SomeEngine.ECS.Systems;
 /// Creates concrete system contexts and receives lifecycle hooks around each enabled update.
 /// </summary>
 public interface ISystemDriver<TContext>
+    where TContext : allows ref struct
 {
     /// <summary>
-    /// Acquires the version baseline for the current system update.
+    /// Acquires the newly advanced execution version for the current system update. The returned
+    /// version must be newer than the pre-update baseline stored in <see cref="SystemSlot"/>.
     /// </summary>
     uint AcquireSystemVersion(ref SystemSlot slot);
 
     /// <summary>
     /// Creates the context passed to system lifecycle methods.
     /// </summary>
-    TContext CreateContext(ref SystemSlot slot);
+    TContext CreateContext(scoped ref SystemSlot slot);
+
+    /// <summary>
+    /// Refreshes an externally owned context template for one system invocation. Drivers whose
+    /// contexts contain scoped capabilities can preserve those capabilities while replacing the
+    /// per-system execution version. Ordinary drivers use a newly created context.
+    /// </summary>
+    void CreateContext(scoped ref SystemSlot slot, ref TContext context)
+    {
+        context = CreateContext(ref slot);
+    }
 
     /// <summary>
     /// Runs after context creation and before system lifecycle calls.
@@ -29,11 +41,5 @@ public interface ISystemDriver<TContext>
     {
     }
 
-    /// <summary>
-    /// Runs after version write-back for a successful update, and after destroy context use.
-    /// </summary>
-    void Complete(ref SystemSlot slot, ref TContext context)
-    {
-    }
 }
 

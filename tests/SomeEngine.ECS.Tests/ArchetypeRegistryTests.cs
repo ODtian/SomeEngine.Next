@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Registry;
 using Xunit;
@@ -77,7 +78,7 @@ public class ArchetypeRegistryTests
         registry.GetOrCreate(new[] { ComponentMetadata<Velocity>.Id });
         registry.GetOrCreate(new[] { ComponentMetadata<Health>.Id });
 
-        Assert.Equal(3, registry.AllArchetypes.Count);
+        Assert.Equal(3, registry.AllArchetypes.Length);
     }
 
     // ——————————————————————————————————————————————————
@@ -162,7 +163,7 @@ public class ArchetypeRegistryTests
         var plan = registry.IncludeTransition(srcArch, new[] { idVel });
 
         Assert.Same(edge.Target, plan.Target);
-        Assert.Same(edge.SharedColumns, plan.SharedColumns);
+        AssertSameBacking(edge.SharedColumns, plan.SharedColumns);
     }
 
     [Fact]
@@ -185,8 +186,21 @@ public class ArchetypeRegistryTests
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         Assert.Same(first.Target, second.Target);
-        Assert.Same(first.SharedColumns, second.SharedColumns);
+        AssertSameBacking(first.SharedColumns, second.SharedColumns);
         Assert.Equal(0, after - before);
+    }
+
+    [Fact]
+    public void ResolveStructuralTransitionToInclude_LargeDescriptorUsesBoundedScratchStorage()
+    {
+        var registry = new ArchetypeRegistry();
+        int componentId = ComponentMetadata<Position>.Id;
+        var source = registry.GetOrCreate(new[] { componentId });
+        int[] repeatedDescriptor = Enumerable.Repeat(componentId, 4_096).ToArray();
+
+        StructuralTransition transition = registry.IncludeTransition(source, repeatedDescriptor);
+
+        Assert.Same(source, transition.Target);
     }
 
     // ——————————————————————————————————————————————————
@@ -212,8 +226,13 @@ public class ArchetypeRegistryTests
         Assert.Equal(2, edge.SharedColumns.Length);
 
         // 验证映射的 src 列和 dst 列都是有效的
-        var srcCols = new HashSet<int>(edge.SharedColumns.Select(m => m.SourceColumnIndex));
-        var dstCols = new HashSet<int>(edge.SharedColumns.Select(m => m.DestinationColumnIndex));
+        var srcCols = new HashSet<int>();
+        var dstCols = new HashSet<int>();
+        for (int index = 0; index < edge.SharedColumns.Length; index++)
+        {
+            srcCols.Add(edge.SharedColumns[index].SourceColumnIndex);
+            dstCols.Add(edge.SharedColumns[index].DestinationColumnIndex);
+        }
         Assert.Equal(2, srcCols.Count);
         Assert.Equal(2, dstCols.Count);
     }
@@ -234,8 +253,8 @@ public class ArchetypeRegistryTests
         var archAB = addEdge.Target;
 
         // archAB 的 removeEdges 中应该自动有 idVel → archA
-        Assert.True(archAB.RemoveEdges.ContainsKey(idVel));
-        Assert.Same(archA, archAB.RemoveEdges[idVel].Target);
+        Assert.True(archAB.TryGetRemoveTransition(idVel, out StructuralTransition reverse));
+        Assert.Same(archA, reverse.Target);
     }
 
     [Fact]
@@ -252,8 +271,8 @@ public class ArchetypeRegistryTests
         var archA = removeEdge.Target;
 
         // archA 的 addEdges 中应该自动有 idVel → archAB
-        Assert.True(archA.AddEdges.ContainsKey(idVel));
-        Assert.Same(archAB, archA.AddEdges[idVel].Target);
+        Assert.True(archA.TryGetAddTransition(idVel, out StructuralTransition reverse));
+        Assert.Same(archAB, reverse.Target);
     }
 
     // ——————————————————————————————————————————————————
@@ -293,5 +312,16 @@ public class ArchetypeRegistryTests
     {
         Assert.Throws<InvalidOperationException>(() =>
             ArchetypeRegistry.RemoveSorted(new[] { 1, 3 }, 2));
+    }
+
+    private static void AssertSameBacking<T>(ReadOnlySpan<T> first, ReadOnlySpan<T> second)
+    {
+        Assert.Equal(first.Length, second.Length);
+        if (first.IsEmpty)
+            return;
+
+        Assert.True(Unsafe.AreSame(
+            ref Unsafe.AsRef(in first[0]),
+            ref Unsafe.AsRef(in second[0])));
     }
 }

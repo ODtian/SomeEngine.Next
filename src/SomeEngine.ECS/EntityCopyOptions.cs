@@ -9,14 +9,14 @@ public enum EntityCopyOptions
 {
     /// <summary>
     /// Standard shallow copy surface: table components, tags, enableable state, shared components,
-    /// dynamic buffers, and sparse components. Cleanup components and relations are excluded.
+    /// dynamic buffers, and sparse components. Cleanup and protected relationship components are excluded.
     /// </summary>
     Default = 0,
 
     /// <summary>Copy non-cleanup table components.</summary>
     TableComponents = 1 << 0,
 
-    /// <summary>Copy normal tags. Relation tags are managed by relation copy options.</summary>
+    /// <summary>Copy tags.</summary>
     Tags = 1 << 1,
 
     /// <summary>Copy enableable component enabled/disabled bits for copied table components.</summary>
@@ -33,12 +33,6 @@ public enum EntityCopyOptions
 
     /// <summary>Copy cleanup components. Cleanup components are excluded from <see cref="Standard"/>.</summary>
     CleanupComponents = 1 << 6,
-
-    /// <summary>
-    /// Replace the target's outgoing relation edges with the source's outgoing relation edges.
-    /// Incoming relation edges are never copied.
-    /// </summary>
-    OutgoingRelations = 1 << 7,
 
     /// <summary>
     /// Standard shallow copy surface used when callers pass <see cref="Default"/>.

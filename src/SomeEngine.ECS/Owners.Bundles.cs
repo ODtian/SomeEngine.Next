@@ -1,23 +1,19 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Collections;
-using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hooks;
 using SomeEngine.ECS.Indexing;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Relations;
-using SomeEngine.ECS.Serialization;
-using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
+using SomeEngine.ECS.Sparse;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed partial class Bundles
+internal sealed class Bundles
 {
+    private const int MaximumStackSharedValues = 256;
     private Entities _entities = null!;
     private Tables _tables = null!;
     private Components _components = null!;
@@ -26,14 +22,16 @@ internal sealed partial class Bundles
     private Sparse _sparse = null!;
     private Indices _indices = null!;
     private Hooks _hooks = null!;
-    private Journal _journal = null!;
     private Clock _clock = null!;
     private Iteration _iteration = null!;
     private Hierarchy _hierarchy = null!;
     private readonly Dictionary<SortedValueKey, BundleSpawnMap> _plans =
         new(SortedValueComparer.Instance);
-    private int[]? _key;
     private BundleSpawnMap? _plan;
+    private long _nextExecutionToken;
+    private long _activeExecutionToken;
+    private int _activeExecutionThread;
+    private BundleWriteRuntime? _activeRuntime;
 
     internal void Bind(
         Entities entities,
@@ -44,7 +42,6 @@ internal sealed partial class Bundles
         Sparse sparse,
         Indices indices,
         Hooks hooks,
-        Journal journal,
         Clock clock,
         Iteration iteration,
         Hierarchy hierarchy)
@@ -57,235 +54,209 @@ internal sealed partial class Bundles
         _sparse = sparse;
         _indices = indices;
         _hooks = hooks;
-        _journal = journal;
         _clock = clock;
         _iteration = iteration;
         _hierarchy = hierarchy;
     }
 
-    internal BundleWriter CreateSpawnWriter(Span<int> componentIds)
+    internal Entity ExecuteSpawn(
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        BundleWriteAction action)
     {
-        return SpawnWriter(componentIds, ReadOnlySpan<SharedValueSlot>.Empty);
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        return ExecuteSpawn(plan, sparseComponentIds, action, index: 0);
     }
 
-    internal BundleWriter CreateSpawnWriter(
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
+    internal Entity ExecuteSpawn<TState>(
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        ref TState state,
+        BundleWriteAction<TState> action)
     {
-        return SpawnWriter(componentIds, sharedValues);
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        return ExecuteSpawn(plan, sparseComponentIds, ref state, action, index: 0);
     }
 
-    internal BundleWriter CreateAddWriter(
+    internal void ExecuteSpawnBatch(
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        int count,
+        BundleWriteAction action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        if (count == 0)
+            return;
+        if (!plan.HasSharedComponents)
+        {
+            ExecuteReusableSpawnBatch(plan, sparseComponentIds, count, action);
+            return;
+        }
+
+        long token = ClaimExecution();
+        try
+        {
+            for (int index = 0; index < count; index++)
+            {
+                _ = ExecuteCoreClaimed(
+                    plan,
+                    sparseComponentIds,
+                    Entity.Null,
+                    BundleWriteMode.Spawn,
+                    preserveEntity: false,
+                    index,
+                    token,
+                    action);
+            }
+        }
+        finally
+        {
+            ReleaseExecution(token);
+        }
+    }
+
+    internal void ExecuteSpawnBatch<TState>(
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        int count,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        if (count == 0)
+            return;
+        if (!plan.HasSharedComponents)
+        {
+            ExecuteReusableSpawnBatch(
+                plan,
+                sparseComponentIds,
+                count,
+                ref state,
+                action);
+            return;
+        }
+
+        long token = ClaimExecution();
+        try
+        {
+            for (int index = 0; index < count; index++)
+            {
+                _ = ExecuteCoreClaimed(
+                    plan,
+                    sparseComponentIds,
+                    Entity.Null,
+                    BundleWriteMode.Spawn,
+                    preserveEntity: false,
+                    index,
+                    token,
+                    ref state,
+                    action);
+            }
+        }
+        finally
+        {
+            ReleaseExecution(token);
+        }
+    }
+
+    internal void ExecuteAdd(
         Entity entity,
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues,
-        ReadOnlySpan<int> sparseComponentIds)
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        BundleWriteAction action)
     {
-        ValidateAdd(entity, componentIds, sparseComponentIds);
-        return Prepare(entity, componentIds, sharedValues, BundleWriteMode.Add);
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        ExecuteExisting(entity, plan, sparseComponentIds, BundleWriteMode.Add, action);
     }
 
-    internal BundleWriter CreateReplaceWriter(
+    internal void ExecuteAdd<TState>(
         Entity entity,
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues,
-        ReadOnlySpan<int> sparseComponentIds)
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        ref TState state,
+        BundleWriteAction<TState> action)
     {
-        ValidateReplace(entity, componentIds, sparseComponentIds);
-        return Prepare(entity, componentIds, sharedValues, BundleWriteMode.Replace);
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        ExecuteExisting(entity, plan, sparseComponentIds, BundleWriteMode.Add, ref state, action);
     }
 
-    internal SharedValueSlot SharedValue<T>(in SharedComponentValue<T> value)
-        where T : struct, ISharedComponent
+    internal void ExecuteReplace(
+        Entity entity,
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        BundleWriteAction action)
     {
-        int componentId = ComponentMetadata<T>.Id;
-        int sharedIndex = _shared.AddIndex(componentId, value.Value);
-        return new SharedValueSlot(componentId, sharedIndex);
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        ExecuteExisting(entity, plan, sparseComponentIds, BundleWriteMode.Replace, action);
+    }
+
+    internal void ExecuteReplace<TState>(
+        Entity entity,
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        ExecuteExisting(entity, plan, sparseComponentIds, BundleWriteMode.Replace, ref state, action);
+    }
+
+    internal void ExecuteLoad<TState>(
+        Entity entity,
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<int> sparseComponentIds,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        BundleSpawnMap plan = ResolveMap(componentIds);
+        ExecuteCore(
+            plan,
+            sparseComponentIds,
+            entity,
+            BundleWriteMode.Add,
+            preserveEntity: false,
+            index: 0,
+            ref state,
+            action);
     }
 
     internal void Reserve(ReadOnlySpan<int> componentIds, int entityCapacity)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(entityCapacity);
         _iteration.Throw();
-
-        var plan = ResolveMap(componentIds);
+        BundleSpawnMap plan = ResolveMap(componentIds);
         _entities.Store.EnsureAdditionalCapacity(entityCapacity);
         _tables.EnsureCapacity(plan.Archetype, entityCapacity);
     }
 
-    internal BundleWriter CreateLoadWriter(
-        Entity entity,
-        ReadOnlySpan<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        _iteration.Throw();
-
-        var plan = ResolveMap(componentIds);
-        var archetype = plan.Archetype;
-        if (sharedValues.Length > 0 || plan.HasSharedComponents)
-            SharedValues.Validate(plan.ComponentIds, sharedValues);
-
-        ref var record = ref _entities.Store.AllocatePreserved(entity);
-        var (chunk, row) = AllocateRow(archetype, entity, sharedValues);
-        record.Archetype = archetype;
-        record.Chunk = chunk;
-        record.RowInChunk = row;
-
-        return new BundleWriter(
-            this,
-            entity,
-            null,
-            archetype,
-            plan,
-            chunk,
-            row,
-            BundleWriteMode.Spawn
-        );
-    }
-
-    internal BundleBatch SpawnBatch<T>(int count)
-        where T : struct, IComponent
-    {
-        if (count < 0)
-            throw new ArgumentOutOfRangeException(nameof(count));
-
-        _iteration.Throw();
-
-        Span<int> componentIds = [ComponentMetadata<T>.Id];
-        var plan = ResolveSortedMap(componentIds);
-        return SpawnRows(plan, count);
-    }
-
-    internal BundleBatch SpawnBatch(ReadOnlySpan<int> componentIds, int count)
-    {
-        if (count < 0)
-            throw new ArgumentOutOfRangeException(nameof(count));
-
-        _iteration.Throw();
-
-        var plan = ResolveMap(componentIds);
-        return SpawnRows(plan, count);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void WriteEntity<T>(
-        Entity entity,
-        Archetype? sourceArchetype,
-        Archetype archetype,
-        Chunk chunk,
-        int row,
-        in T value,
-        BundleWriteMode mode)
-        where T : struct, IComponent
-    {
-        int componentId = ComponentMetadata<T>.Id;
-        bool isAdded = sourceArchetype is null || !sourceArchetype.HasComponent(componentId);
-        if (mode == BundleWriteMode.Replace)
-        {
-            if (isAdded)
-                throw new InvalidOperationException(
-                    $"Entity {entity} does not have component ID {componentId}.");
-
-            _components.Replace(entity, value);
-            return;
-        }
-
-        if (mode == BundleWriteMode.Add && !isAdded)
-            throw new InvalidOperationException(
-                $"Entity {entity} already has component ID {componentId}.");
-
-        int columnIndex = archetype.Column(componentId);
-        _components.WriteAdded(entity, archetype, chunk, row, columnIndex, in value);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void WriteSpawn<T>(
-        Entity entity,
-        BundleSpawnMap plan,
-        Chunk chunk,
-        int row,
-        in T value)
-        where T : struct, IComponent
-    {
-        int componentId = ComponentMetadata<T>.Id;
-        int columnIndex = plan.Column(componentId);
-        if (columnIndex < 0)
-            ThrowMissing<T>();
-
-        var archetype = plan.Archetype;
-        _components.WriteAdded(entity, archetype, chunk, row, columnIndex, in value);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void WriteSparse<T>(Entity entity, in T value, BundleWriteMode mode)
-        where T : struct, ISparseComponent
-    {
-        if (mode == BundleWriteMode.Replace)
-        {
-            _sparse.Replace(entity, value);
-            return;
-        }
-
-        _sparse.Add(entity, value);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void WriteBuffer<T>(
-        Entity entity,
-        ReadOnlySpan<T> values,
-        BundleWriteMode mode)
-        where T : struct, IBufferElement
-    {
-        var buffer = _buffers.Get<T>(entity);
-        var kind = mode == BundleWriteMode.Replace
-            ? SerializationChangeKind.BufferChanged
-            : SerializationChangeKind.BufferAdded;
-        buffer.ReplaceWith(values, kind);
-    }
-
-    internal void CompleteBatch(BundleSpawnMap plan, ReadOnlySpan<BundleBatchChunk> chunks)
-    {
-        bool recordJournal = !_journal.Suppressed;
-        bool fixIndex = _indices.Any;
-        bool runHooks = _hooks.Any;
-        if ((chunks.Length == 0 || (!fixIndex && !runHooks)) && !recordJournal)
-            return;
-
-        var archetype = plan.Archetype;
-        var columns = archetype.ColumnMetas;
-
-        for (int chunkIndex = 0; chunkIndex < chunks.Length; chunkIndex++)
-        {
-            var batchChunk = chunks[chunkIndex];
-            var entities = batchChunk.Entities;
-
-            for (int column = 0; column < columns.Length; column++)
-            {
-                int componentId = columns[column].ComponentId;
-                var storage = batchChunk.GetColumnStorage(column);
-
-                for (int row = 0; row < entities.Length; row++)
-                    _components.CommitAdd(entities[row], componentId, storage, batchChunk.StartRow + row);
-            }
-        }
-    }
-
     internal BundleSpawnMap ResolveSortedMap(ReadOnlySpan<int> sortedComponentIds)
     {
-        if (_key is { } lastComponentIds &&
-            sortedComponentIds.SequenceEqual(lastComponentIds) &&
-            _plan is { } cached)
+        if (_plan is { } cached &&
+            sortedComponentIds.SequenceEqual(cached.ComponentIds))
         {
             return cached;
         }
 
         var lookup = _plans.GetAlternateLookup<ReadOnlySpan<int>>();
-        if (lookup.TryGetValue(sortedComponentIds, out var plan))
+        if (lookup.TryGetValue(sortedComponentIds, out BundleSpawnMap? plan))
         {
             Cache(plan);
             return plan;
         }
 
-        var archetype = _tables.Registry.GetOrCreate(sortedComponentIds);
+        ValidateTableDescriptor(sortedComponentIds);
+        Archetype archetype = _tables.Registry.GetOrCreate(sortedComponentIds);
         plan = new BundleSpawnMap(sortedComponentIds, archetype);
         _plans.Add(new SortedValueKey(plan.ComponentIds), plan);
         Cache(plan);
@@ -302,421 +273,625 @@ internal sealed partial class Bundles
             return ResolveSortedMap(sortedComponentIds);
         }
 
-        var sortedArray = componentIds.ToArray();
-        BundleComponents.SortAndValidate(sortedArray);
-        return ResolveSortedMap(sortedArray);
+        int[] rented = ArrayPool<int>.Shared.Rent(componentIds.Length);
+        Span<int> pooledSortedComponentIds = rented.AsSpan(0, componentIds.Length);
+        try
+        {
+            componentIds.CopyTo(pooledSortedComponentIds);
+            BundleComponents.SortAndValidate(pooledSortedComponentIds);
+            return ResolveSortedMap(pooledSortedComponentIds);
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(rented);
+        }
     }
-}
 
-internal sealed partial class Bundles
-{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void ValidateExecution(long token, int currentThreadId)
+    {
+        if (Volatile.Read(ref _activeExecutionToken) != token)
+            throw new InvalidOperationException("Bundle callback root epoch is no longer active.");
+        if (Volatile.Read(ref _activeExecutionThread) != currentThreadId)
+        {
+            throw new InvalidOperationException("Bundle callback is not owned by the current thread.");
+        }
+    }
+
+    internal void AttachRuntime(BundleWriteRuntime runtime, long token)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        if (Volatile.Read(ref _activeExecutionToken) != token ||
+            _activeRuntime is not null)
+        {
+            throw new InvalidOperationException("Bundle runtime attachment is unbalanced.");
+        }
+        _activeRuntime = runtime;
+    }
+
+    internal void DetachRuntime(BundleWriteRuntime runtime)
+    {
+        if (!ReferenceEquals(_activeRuntime, runtime))
+            throw new InvalidOperationException("Bundle runtime detachment is unbalanced.");
+        _activeRuntime = null;
+    }
+
+    internal void ThrowIfReentrantWorldMutation(bool writeAccess)
+    {
+        if (!writeAccess ||
+            Volatile.Read(ref _activeExecutionToken) == 0 ||
+            Volatile.Read(ref _activeExecutionThread) != Environment.CurrentManagedThreadId)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Bundle callbacks cannot mutate World storage directly. Write through BundleWriteView " +
+            "or record next-wave structural work through World.Commands().");
+    }
+
+    internal void ThrowIfPendingIndexBackfill(int componentId, bool requiresBackfill)
+    {
+        if (!requiresBackfill ||
+            Volatile.Read(ref _activeExecutionToken) == 0 ||
+            Volatile.Read(ref _activeExecutionThread) != Environment.CurrentManagedThreadId)
+        {
+            return;
+        }
+
+        _activeRuntime?.ThrowIfPendingIndexBackfill(componentId);
+    }
+
+    internal int AddSharedIndex<T>(int componentId, in T value)
+        where T : struct, ISharedComponent =>
+        _shared.AddIndex(componentId, in value);
+
+    internal BundleMaterializedRow Materialize(BundleWriteRuntime runtime)
+    {
+        if (runtime.IsPreparedBatch)
+            return MaterializePreparedSpawn(runtime);
+
+        return runtime.Mode == BundleWriteMode.Spawn
+            ? MaterializeSpawn(runtime)
+            : MaterializeExisting(runtime);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void WriteComponent<T>(
+        in BundleMaterializedRow row,
+        in T value,
+        BundleWriteMode mode)
+        where T : struct, IComponent
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        int columnIndex = row.Archetype.Column(componentId);
+        if (mode == BundleWriteMode.Replace)
+        {
+            _components.WriteExisting(row.Entity, row.Chunk, row.Row, columnIndex, in value);
+            return;
+        }
+
+        _components.WriteAdded(
+            row.Entity,
+            row.Archetype,
+            row.Chunk,
+            row.Row,
+            columnIndex,
+            in value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void WritePreparedComponent<T>(
+        in BundleMaterializedRow row,
+        in T value)
+        where T : struct, IComponent
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        int columnIndex = row.Plan.Column(componentId);
+        int enableMaskIndex = ComponentMetadata<T>.IsEnableable
+            ? row.Archetype.EnableMask(componentId)
+            : -1;
+        row.Chunk.WritePreparedComponent(
+            columnIndex,
+            row.Row,
+            in value,
+            _clock.Tick,
+            enableMaskIndex);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void WriteSparse<T>(Entity entity, in T value, BundleWriteMode mode)
+        where T : struct, ISparseComponent
+    {
+        if (mode == BundleWriteMode.Replace)
+            _sparse.Replace(entity, in value);
+        else
+            _sparse.Add(entity, in value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void WriteBuffer<T>(
+        in BundleMaterializedRow row,
+        scoped ReadOnlySpan<T> values,
+        BundleWriteMode mode)
+        where T : struct, IBufferElement
+    {
+        if (mode != BundleWriteMode.Replace)
+        {
+            int headerColumn = row.Archetype.Column(BufferComponents.Header<T>());
+            int inlineColumn = row.Archetype.Column(BufferComponents.Inline<T>());
+            row.Chunk.GetComponentRef<DynamicBufferHeader<T>>(headerColumn, row.Row) =
+                DynamicBufferHeader<T>.Create();
+            row.Chunk.GetComponentRef<DynamicBufferInline<T>>(inlineColumn, row.Row) = default;
+        }
+
+        DynamicBuffer<T> buffer = _buffers.BorrowWrite<T>(row.Entity);
+        if (mode == BundleWriteMode.Replace)
+            buffer.ReplaceWith(values);
+        else
+            buffer.InitializeWith(values);
+    }
+
+    internal void Reset()
+    {
+        if (Volatile.Read(ref _activeExecutionToken) != 0)
+            throw new InvalidOperationException("Cannot reset bundle runtime during an active callback.");
+
+        _plans.Clear();
+        _plan = null;
+    }
+
+    private Entity ExecuteSpawn(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        BundleWriteAction action,
+        int index)
+    {
+        return ExecuteCore(
+            plan,
+            sparseComponentIds,
+            Entity.Null,
+            BundleWriteMode.Spawn,
+            preserveEntity: false,
+            index,
+            action);
+    }
+
+    private Entity ExecuteSpawn<TState>(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        ref TState state,
+        BundleWriteAction<TState> action,
+        int index)
+    {
+        return ExecuteCore(
+            plan,
+            sparseComponentIds,
+            Entity.Null,
+            BundleWriteMode.Spawn,
+            preserveEntity: false,
+            index,
+            ref state,
+            action);
+    }
+
+    private void ExecuteExisting(
+        Entity entity,
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        BundleWriteMode mode,
+        BundleWriteAction action)
+    {
+        _ = ExecuteCore(
+            plan,
+            sparseComponentIds,
+            entity,
+            mode,
+            preserveEntity: false,
+            index: 0,
+            action);
+    }
+
+    private void ExecuteExisting<TState>(
+        Entity entity,
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        BundleWriteMode mode,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        _ = ExecuteCore(
+            plan,
+            sparseComponentIds,
+            entity,
+            mode,
+            preserveEntity: false,
+            index: 0,
+            ref state,
+            action);
+    }
+
+    private Entity ExecuteCore(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        Entity target,
+        BundleWriteMode mode,
+        bool preserveEntity,
+        int index,
+        BundleWriteAction action)
+    {
+        long token = ClaimExecution();
+        try
+        {
+            return ExecuteCoreClaimed(
+                plan,
+                sparseComponentIds,
+                target,
+                mode,
+                preserveEntity,
+                index,
+                token,
+                action);
+        }
+        finally
+        {
+            ReleaseExecution(token);
+        }
+    }
+
+    private Entity ExecuteCore<TState>(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        Entity target,
+        BundleWriteMode mode,
+        bool preserveEntity,
+        int index,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        long token = ClaimExecution();
+        try
+        {
+            return ExecuteCoreClaimed(
+                plan,
+                sparseComponentIds,
+                target,
+                mode,
+                preserveEntity,
+                index,
+                token,
+                ref state,
+                action);
+        }
+        finally
+        {
+            ReleaseExecution(token);
+        }
+    }
+
+    private Entity ExecuteCoreClaimed(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        Entity target,
+        BundleWriteMode mode,
+        bool preserveEntity,
+        int index,
+        long token,
+        BundleWriteAction action)
+    {
+        BundleWriteRuntime runtime = BundleWriteRuntime.Rent();
+        try
+        {
+            runtime.Begin(
+                this,
+                plan,
+                sparseComponentIds,
+                target,
+                mode,
+                preserveEntity,
+                token,
+                index);
+            ValidateMode(runtime);
+            action(new BundleWriteView(runtime, token));
+            return runtime.Complete(token);
+        }
+        finally
+        {
+            runtime.Return();
+        }
+    }
+
+    private Entity ExecuteCoreClaimed<TState>(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        Entity target,
+        BundleWriteMode mode,
+        bool preserveEntity,
+        int index,
+        long token,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        BundleWriteRuntime runtime = BundleWriteRuntime.Rent();
+        try
+        {
+            runtime.Begin(
+                this,
+                plan,
+                sparseComponentIds,
+                target,
+                mode,
+                preserveEntity,
+                token,
+                index);
+            ValidateMode(runtime);
+            action(new BundleWriteView(runtime, token), ref state);
+            return runtime.Complete(token);
+        }
+        finally
+        {
+            runtime.Return();
+        }
+    }
+
+    private void ExecuteReusableSpawnBatch(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        int count,
+        BundleWriteAction action)
+    {
+        PrepareReusableSpawnBatch(plan, count);
+        BundleWriteRuntime runtime = BundleWriteRuntime.Rent();
+        long token = 0;
+        try
+        {
+            token = ClaimExecution();
+            runtime.BeginPreparedBatch(
+                this,
+                plan,
+                sparseComponentIds,
+                token);
+            for (int index = 0; index < count; index++)
+            {
+                runtime.BeginPreparedRow(index);
+                action(new BundleWriteView(runtime, token));
+                runtime.CompletePreparedRow();
+            }
+        }
+        finally
+        {
+            runtime.Return();
+            if (token != 0)
+                ReleaseExecution(token);
+        }
+    }
+
+    private void ExecuteReusableSpawnBatch<TState>(
+        BundleSpawnMap plan,
+        ReadOnlySpan<int> sparseComponentIds,
+        int count,
+        ref TState state,
+        BundleWriteAction<TState> action)
+    {
+        PrepareReusableSpawnBatch(plan, count);
+        BundleWriteRuntime runtime = BundleWriteRuntime.Rent();
+        long token = 0;
+        try
+        {
+            token = ClaimExecution();
+            runtime.BeginPreparedBatch(
+                this,
+                plan,
+                sparseComponentIds,
+                token);
+            for (int index = 0; index < count; index++)
+            {
+                runtime.BeginPreparedRow(index);
+                action(new BundleWriteView(runtime, token), ref state);
+                runtime.CompletePreparedRow();
+            }
+        }
+        finally
+        {
+            runtime.Return();
+            if (token != 0)
+                ReleaseExecution(token);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool CanUsePreparedRawComponentWrites() =>
+        !_hooks.Any &&
+        !_indices.Any &&
+        !_hierarchy.Any;
+
+    private void PrepareReusableSpawnBatch(BundleSpawnMap plan, int count)
+    {
+        _entities.Store.EnsureAdditionalCapacity(count);
+        _tables.EnsureCapacity(plan.Archetype, count);
+    }
+
+    private long ClaimExecution()
+    {
+        _iteration.Throw();
+        long token = Interlocked.Increment(ref _nextExecutionToken);
+        if (token <= 0)
+            throw new InvalidOperationException("Bundle callback token space was exhausted.");
+        if (Interlocked.CompareExchange(ref _activeExecutionToken, token, comparand: 0) != 0)
+        {
+            throw new InvalidOperationException(
+                "A bundle callback is already active for this World; nested bundle execution is not allowed.");
+        }
+
+        Volatile.Write(ref _activeExecutionThread, Environment.CurrentManagedThreadId);
+        return token;
+    }
+
+    private void ReleaseExecution(long token)
+    {
+        Volatile.Write(ref _activeExecutionThread, 0);
+        if (Interlocked.CompareExchange(ref _activeExecutionToken, 0, token) != token)
+            throw new InvalidOperationException("Bundle callback token release is unbalanced.");
+    }
+
+    private void ValidateMode(BundleWriteRuntime runtime)
+    {
+        if (runtime.Mode == BundleWriteMode.Spawn)
+            return;
+
+        _entities.ThrowDead(runtime.Target);
+        EntityRecord record = _entities.Store.GetRecordReadOnly(runtime.Target);
+        Archetype source = record.Archetype!;
+        if (runtime.Mode == BundleWriteMode.Add)
+        {
+            ValidateAdd(source, runtime.Target, runtime.Plan.ComponentIds);
+            ValidateSparseAdd(runtime.Target, runtime.SparseIds);
+        }
+        else
+        {
+            ValidateReplace(source, runtime.Target, runtime.Plan.ComponentIds);
+            ValidateSparseReplace(runtime.Target, runtime.SparseIds);
+        }
+    }
+
+    private BundleMaterializedRow MaterializeSpawn(BundleWriteRuntime runtime)
+    {
+        BundleSpawnMap plan = runtime.Plan;
+        ReadOnlySpan<BundleSharedAssignment> sharedValues = runtime.SharedAssignments;
+        ValidateSharedAssignments(plan.ComponentIds, sharedValues);
+
+        if (runtime.PreserveEntity)
+        {
+            EntityRecordWriter preserved = _entities.Store.AllocatePreserved(runtime.Target);
+            return FinishSpawn(
+                preserved,
+                runtime.Target,
+                plan,
+                sharedValues);
+        }
+
+        EntityRecordWriter record = _entities.Store.Allocate(out Entity entity);
+        return FinishSpawn(record, entity, plan, sharedValues);
+    }
+
+    private BundleMaterializedRow MaterializePreparedSpawn(BundleWriteRuntime runtime)
+    {
+        BundleSpawnMap plan = runtime.Plan;
+        EntityRecordWriter record = _entities.Store.AllocatePrepared(out Entity entity);
+        (Chunk chunk, int row) = _tables.AllocatePrepared(
+            plan.Archetype,
+            entity,
+            runtime.PreparedChunk);
+        runtime.PreparedChunk = chunk;
+        record.Archetype = plan.Archetype;
+        record.Chunk = chunk;
+        record.RowInChunk = row;
+        return new BundleMaterializedRow(
+            entity,
+            sourceArchetype: null,
+            plan.Archetype,
+            plan,
+            chunk,
+            row);
+    }
+
+    private BundleMaterializedRow FinishSpawn(
+        EntityRecordWriter record,
+        Entity entity,
+        BundleSpawnMap plan,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues)
+    {
+        (Chunk chunk, int row) = AllocateRow(plan.Archetype, entity, sharedValues);
+        record.Archetype = plan.Archetype;
+        record.Chunk = chunk;
+        record.RowInChunk = row;
+        return new BundleMaterializedRow(
+            entity,
+            sourceArchetype: null,
+            plan.Archetype,
+            plan,
+            chunk,
+            row);
+    }
+
+    private BundleMaterializedRow MaterializeExisting(BundleWriteRuntime runtime)
+    {
+        Entity entity = runtime.Target;
+        _entities.ThrowDead(entity);
+        EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
+        Archetype sourceArchetype = record.Archetype!;
+        Chunk sourceChunk = record.Chunk!;
+        if (runtime.Mode == BundleWriteMode.Add)
+            ValidateAdd(sourceArchetype, entity, runtime.Plan.ComponentIds);
+        else
+            ValidateReplace(sourceArchetype, entity, runtime.Plan.ComponentIds);
+
+        ReadOnlySpan<BundleSharedAssignment> sharedValues = runtime.SharedAssignments;
+        ValidateSharedAssignments(runtime.Plan.ComponentIds, sharedValues);
+        StructuralTransition transition = _tables.Registry.IncludeTransition(
+            sourceArchetype,
+            runtime.Plan.ComponentIds);
+        MoveForWrite(
+            entity,
+            sourceArchetype,
+            sourceChunk,
+            transition,
+            sharedValues);
+        EntityRecord destination = _entities.Store.GetRecordReadOnly(entity);
+        Archetype archetype = destination.Archetype!;
+        return new BundleMaterializedRow(
+            entity,
+            sourceArchetype,
+            archetype,
+            runtime.Plan,
+            destination.Chunk!,
+            destination.RowInChunk);
+    }
+
     private void Cache(BundleSpawnMap plan)
     {
-        _key = plan.ComponentIds;
         _plan = plan;
     }
 
-    private void ValidateAdd(
-        Entity entity,
-        ReadOnlySpan<int> componentIds,
-        ReadOnlySpan<int> sparseComponentIds)
-    {
-        _iteration.Throw();
-        _entities.ThrowDead(entity);
-
-        ref var record = ref _entities.Store.GetRecord(entity);
-        ValidateAdd(record.Archetype!, entity, componentIds);
-        ValidateSparseAdd(entity, sparseComponentIds);
-    }
-
-    private void ValidateReplace(
-        Entity entity,
-        ReadOnlySpan<int> componentIds,
-        ReadOnlySpan<int> sparseComponentIds)
-    {
-        _iteration.Throw();
-        _entities.ThrowDead(entity);
-
-        ref var record = ref _entities.Store.GetRecord(entity);
-        ValidateReplace(record.Archetype!, entity, componentIds);
-        ValidateSparseReplace(entity, sparseComponentIds);
-    }
-
-    private BundleWriter Prepare(
-        Entity entity,
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues,
-        BundleWriteMode mode)
-    {
-        ValidateWrite(entity, componentIds, sharedValues);
-
-        ref var record = ref _entities.Store.GetRecord(entity);
-        var sourceArchetype = record.Archetype!;
-        var sourceChunk = record.Chunk!;
-        var plan = _tables.Registry.IncludeTransition(sourceArchetype, componentIds);
-
-        bool moved = MoveForWrite(
-            entity,
-            ref record,
-            sourceArchetype,
-            sourceChunk,
-            plan,
-            sharedValues);
-        WriteSharedChanges(entity, sourceArchetype, sourceChunk, sharedValues, moved);
-
-        var archetype = record.Archetype!;
-        return CreatePreparedWriter(entity, sourceArchetype, archetype, record.Chunk!, record.RowInChunk, mode);
-    }
-
-    private BundleWriter SpawnWriter(
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        _iteration.Throw();
-
-        var plan = ResolveSpawnMap(componentIds, sharedValues);
-        var archetype = plan.Archetype;
-
-        ref var record = ref _entities.Store.Allocate(out var entity);
-        var (chunk, row) = AllocateRow(archetype, entity, sharedValues);
-        record.Archetype = archetype;
-        record.Chunk = chunk;
-        record.RowInChunk = row;
-        WriteSpawnJournal(entity, sharedValues);
-
-        return CreateSpawnResult(entity, plan, archetype, chunk, row);
-    }
-
-    private void ValidateWrite(
-        Entity entity,
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        _iteration.Throw();
-        _entities.ThrowDead(entity);
-        BundleComponents.SortAndValidate(componentIds);
-        SharedValues.Validate(componentIds, sharedValues);
-    }
-
-    private BundleWriter CreatePreparedWriter(
-        Entity entity,
-        Archetype sourceArchetype,
-        Archetype archetype,
-        Chunk chunk,
-        int row,
-        BundleWriteMode mode)
-    {
-        return new BundleWriter(
-            this,
-            entity,
-            sourceArchetype,
-            archetype,
-            spawnMap: null,
-            chunk,
-            row,
-            mode
-        );
-    }
-
-    private BundleSpawnMap ResolveSpawnMap(
-        Span<int> componentIds,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        BundleComponents.SortAndValidate(componentIds);
-        var plan = ResolveSortedMap(componentIds);
-        ValidateSpawnShared(plan, sharedValues);
-        return plan;
-    }
-
-    private BundleWriter CreateSpawnResult(
-        Entity entity,
-        BundleSpawnMap plan,
-        Archetype archetype,
-        Chunk chunk,
-        int row)
-    {
-        return new BundleWriter(
-            this,
-            entity,
-            null,
-            archetype,
-            plan,
-            chunk,
-            row,
-            BundleWriteMode.Spawn
-        );
-    }
-
-    private bool MoveForWrite(
-        Entity entity,
-        ref EntityRecord record,
-        Archetype sourceArchetype,
-        Chunk sourceChunk,
-        StructuralTransition plan,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        if (plan.Target.SharedComponentIds.Length > 0)
-            return MoveForSharedWrite(entity, ref record, sourceArchetype, sourceChunk, plan, sharedValues);
-
-        if (plan.IsIdentityFor(sourceArchetype))
-            return false;
-
-        _tables.MoveEntity(entity, ref record, plan);
-        return true;
-    }
-
-    private bool MoveForSharedWrite(
-        Entity entity,
-        ref EntityRecord record,
-        Archetype sourceArchetype,
-        Chunk sourceChunk,
-        StructuralTransition plan,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        Span<int> destinationSharedValues = stackalloc int[plan.Target.SharedComponentIds.Length];
-        bool sharedChanged = SharedValues.FillTarget(
-            sourceArchetype,
-            sourceChunk,
-            plan.Target,
-            sharedValues,
-            destinationSharedValues);
-
-        if (!plan.IsIdentityFor(sourceArchetype))
-        {
-            _tables.MoveRow(entity, ref record, plan.Target, plan.SharedColumns, destinationSharedValues);
-            return true;
-        }
-
-        if (!sharedChanged)
-            return false;
-
-        _shared.MoveTo(entity, ref record, destinationSharedValues);
-        return true;
-    }
-
-    private void WriteSharedChanges(
-        Entity entity,
-        Archetype sourceArchetype,
-        Chunk sourceChunk,
-        ReadOnlySpan<SharedValueSlot> sharedValues,
-        bool moved)
-    {
-        if (_journal.Suppressed || (!moved && sharedValues.Length == 0))
-            return;
-
-        for (int i = 0; i < sharedValues.Length; i++)
-        {
-            if (SharedValues.Changed(sourceArchetype, sourceChunk, sharedValues[i]))
-                WriteSharedChange(entity, sourceArchetype, sharedValues[i]);
-        }
-    }
-
-    private void WriteSharedChange(
-        Entity entity,
-        Archetype sourceArchetype,
-        SharedValueSlot sharedValue)
-    {
-        Write(
-            sourceArchetype.HasComponent(sharedValue.ComponentId)
-                ? SerializationChangeKind.SharedChanged
-                : SerializationChangeKind.SharedAdded,
-            entity,
-            sharedValue.ComponentId);
-    }
-
-    private static void ValidateSpawnShared(
-        BundleSpawnMap plan,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        if (sharedValues.Length > 0 || plan.HasSharedComponents)
-            SharedValues.Validate(plan.ComponentIds, sharedValues);
-    }
-
-    private void WriteSpawnJournal(Entity entity, ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        if (_journal.Suppressed)
-            return;
-
-        Write(SerializationChangeKind.EntityCreated, entity);
-        for (int i = 0; i < sharedValues.Length; i++)
-            Write(
-                SerializationChangeKind.SharedAdded,
-                entity,
-                sharedValues[i].ComponentId);
-    }
-}
-
-internal sealed partial class Bundles
-{
-    private BundleBatch SpawnRows(BundleSpawnMap plan, int count)
-    {
-        if (plan.HasSharedComponents)
-            throw new NotSupportedException("Bundle batch creation with shared components is not supported yet.");
-
-        if (count == 0)
-            return new BundleBatch(this, plan, chunks: null, chunkCount: 0, count: 0);
-
-        bool hasContiguousEntities = _entities.Store.TryAllocateContiguous(count, out int nextEntityIndex);
-        if (!hasContiguousEntities)
-            _entities.Store.EnsureAdditionalCapacity(count);
-
-        var chunks = ArrayPool<BundleBatchChunk>.Shared.Rent(EstimateChunks(plan.Archetype, count));
-        int chunkCount = 0;
-        AllocateRows(plan, count, hasContiguousEntities, ref nextEntityIndex, ref chunks, ref chunkCount);
-        return new BundleBatch(this, plan, chunks, chunkCount, count);
-    }
-
-    private void AllocateRows(
-        BundleSpawnMap plan,
-        int count,
-        bool hasContiguousEntities,
-        ref int nextEntityIndex,
-        ref BundleBatchChunk[] chunks,
-        ref int chunkCount)
-    {
-        var archetype = plan.Archetype;
-        int remaining = count;
-
-        while (remaining > 0)
-        {
-            var chunk = GetChunk(archetype, remaining);
-            int startRow = chunk.Count;
-            int take = Math.Min(remaining, chunk.Capacity - startRow);
-
-            if (hasContiguousEntities)
-                AllocateContiguous(archetype, chunk, startRow, take, ref nextEntityIndex);
-            else
-                AllocateEntities(archetype, chunk, startRow, take);
-
-            chunk.Count = startRow + take;
-            if (chunk.IsFull)
-                archetype.FirstOpenChunk = chunk.IndexInArchetype + 1;
-
-            MarkColumns(archetype, chunk, startRow, take);
-            AddChunk(plan, chunk, startRow, take, ref chunks, ref chunkCount);
-            remaining -= take;
-        }
-    }
-
-    private void AllocateContiguous(
-        Archetype archetype,
-        Chunk chunk,
-        int startRow,
-        int count,
-        ref int nextEntityIndex)
-    {
-        int firstEntityIndex = nextEntityIndex;
-        _entities.Store.InitializeContiguousRecords(archetype, chunk, startRow, count, firstEntityIndex);
-        nextEntityIndex += count;
-
-        if (_journal.Suppressed)
-            return;
-
-        for (int i = 0; i < count; i++)
-        {
-            var entity = new Entity(firstEntityIndex + i, generation: 0);
-            Write(SerializationChangeKind.EntityCreated, entity);
-        }
-    }
-
-    private void AllocateEntities(Archetype archetype, Chunk chunk, int startRow, int count)
-    {
-        bool recordJournal = !_journal.Suppressed;
-        for (int i = 0; i < count; i++)
-        {
-            ref var record = ref _entities.Store.Allocate(out var entity);
-            int row = startRow + i;
-            chunk.Entities[row] = entity;
-            record.Archetype = archetype;
-            record.Chunk = chunk;
-            record.RowInChunk = row;
-
-            if (recordJournal)
-                Write(SerializationChangeKind.EntityCreated, entity);
-        }
-    }
-
-    private void MarkColumns(Archetype archetype, Chunk chunk, int startRow, int count)
-    {
-        uint version = _clock.Tick;
-        for (int column = 0; column < chunk.ChangeVersions.Length; column++)
-            chunk.MarkAddRange(column, startRow, count, version);
-
-        _hierarchy.RequireScan(archetype);
-
-        if (archetype.EnableableComponentIds.Length == 0)
-            return;
-
-        var masks = chunk.EnableMasks!;
-        UInt128 rowMask = CreateRowMask(startRow, count);
-        for (int i = 0; i < masks.Length; i++)
-            masks[i] |= rowMask;
-    }
-
-    private Chunk GetChunk(Archetype archetype, int remainingRows)
-    {
-        int hint = archetype.FirstOpenChunk;
-        while (hint < archetype.Chunks.Count)
-        {
-            var chunk = archetype.Chunks[hint];
-            if (!chunk.IsFull)
-            {
-                archetype.FirstOpenChunk = hint;
-                return chunk;
-            }
-
-            hint++;
-        }
-
-        int capacity = Tables.ChunkCapacity.Reserved(archetype, remainingRows);
-        var newChunk = new Chunk(
-            capacity,
-            archetype.ColumnMetas,
-            archetype.EnableableComponentIds.Length);
-        newChunk.IndexInArchetype = archetype.Chunks.Count;
-        archetype.Chunks.Add(newChunk);
-        archetype.FirstOpenChunk = newChunk.IndexInArchetype;
-        archetype.NextChunkRows = archetype.MaxChunkRows;
-        return newChunk;
-    }
-
-    private (Chunk chunk, int row) AllocateRow(
-        Archetype archetype,
-        Entity entity,
-        ReadOnlySpan<SharedValueSlot> sharedValues)
-    {
-        if (archetype.SharedComponentIds.Length == 0)
-            return _tables.AllocateInChunk(archetype, entity);
-
-        Span<int> destinationSharedValues = stackalloc int[archetype.SharedComponentIds.Length];
-        SharedValues.FillSpawn(archetype, sharedValues, destinationSharedValues);
-        return _tables.AllocateShared(archetype, entity, destinationSharedValues);
-    }
-
-    private static void ValidateAdd(Archetype source, Entity entity, ReadOnlySpan<int> componentIds)
+    private static void ValidateTableDescriptor(ReadOnlySpan<int> componentIds)
     {
         for (int i = 0; i < componentIds.Length; i++)
         {
-            int componentId = componentIds[i];
-            if (source.HasComponent(componentId))
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentIds[i]);
+            if (info.Storage == StoragePath.Sparse)
             {
                 throw new InvalidOperationException(
-                    $"Entity {entity} already has component ID {componentId}."
-                );
+                    $"Sparse component {info.Type.Name} must be declared through sparseComponentIds.");
             }
         }
     }
 
-    private static void ValidateReplace(Archetype source, Entity entity, ReadOnlySpan<int> componentIds)
+    private static void ValidateAdd(
+        Archetype source,
+        Entity entity,
+        ReadOnlySpan<int> componentIds)
     {
         for (int i = 0; i < componentIds.Length; i++)
         {
-            int componentId = componentIds[i];
-            if (!source.HasComponent(componentId))
+            if (source.HasComponent(componentIds[i]))
             {
                 throw new InvalidOperationException(
-                    $"Entity {entity} does not have component ID {componentId}."
-                );
+                    $"Entity {entity} already has component ID {componentIds[i]}.");
+            }
+        }
+    }
+
+    private static void ValidateReplace(
+        Archetype source,
+        Entity entity,
+        ReadOnlySpan<int> componentIds)
+    {
+        for (int i = 0; i < componentIds.Length; i++)
+        {
+            if (!source.HasComponent(componentIds[i]))
+            {
+                throw new InvalidOperationException(
+                    $"Entity {entity} does not have component ID {componentIds[i]}.");
             }
         }
     }
@@ -726,13 +901,10 @@ internal sealed partial class Bundles
         for (int i = 0; i < componentIds.Length; i++)
         {
             int componentId = componentIds[i];
-            if (componentId < _sparse.Stores.Length &&
-                _sparse.Stores[componentId] is ISparseSet sparseSet &&
-                sparseSet.Has(entity))
+            if (_sparse.HasValue(componentId, entity))
             {
                 throw new InvalidOperationException(
-                    $"Entity {entity} already has sparse component ID {componentId}."
-                );
+                    $"Entity {entity} already has sparse component ID {componentId}.");
             }
         }
     }
@@ -742,198 +914,204 @@ internal sealed partial class Bundles
         for (int i = 0; i < componentIds.Length; i++)
         {
             int componentId = componentIds[i];
-            if (componentId >= _sparse.Stores.Length ||
-                _sparse.Stores[componentId] is not ISparseSet sparseSet ||
-                !sparseSet.Has(entity))
+            if (!_sparse.HasValue(componentId, entity))
             {
                 throw new InvalidOperationException(
-                    $"Entity {entity} does not have sparse component ID {componentId}."
-                );
+                    $"Entity {entity} does not have sparse component ID {componentId}.");
             }
         }
     }
 
-    private static void AddChunk(
-        BundleSpawnMap plan,
-        Chunk chunk,
-        int startRow,
-        int count,
-        ref BundleBatchChunk[] chunks,
-        ref int chunkCount)
-    {
-        if (chunkCount == chunks.Length)
-            GrowChunks(ref chunks);
-
-        chunks[chunkCount++] = new BundleBatchChunk(plan, chunk, startRow, count);
-    }
-
-    private static void GrowChunks(ref BundleBatchChunk[] chunks)
-    {
-        var old = chunks;
-        var grown = ArrayPool<BundleBatchChunk>.Shared.Rent(old.Length * 2);
-        old.AsSpan().CopyTo(grown);
-        old.AsSpan().Clear();
-        ArrayPool<BundleBatchChunk>.Shared.Return(old);
-        chunks = grown;
-    }
-
-    private void Write(
-        SerializationChangeKind kind,
+    private bool MoveForWrite(
         Entity entity,
-        int componentId = 0,
-        Entity target = default)
+        Archetype sourceArchetype,
+        Chunk sourceChunk,
+        StructuralTransition transition,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues)
     {
-        _journal.Write(kind, entity, componentId, target, _clock.Tick);
-    }
-
-    private static int EstimateChunks(Archetype archetype, int count)
-    {
-        int estimate = (count + archetype.MaxChunkRows - 1) / archetype.MaxChunkRows + 2;
-        return Math.Max(1, Math.Min(count, estimate));
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static UInt128 CreateRowMask(int startRow, int count)
-    {
-        if (count == 0)
-            return 0;
-
-        if (count == 128)
-            return UInt128.MaxValue;
-
-        return (((UInt128)1 << count) - 1) << startRow;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ThrowMissing<T>()
-    {
-        throw new InvalidOperationException(
-            $"Component {typeof(T).Name} is not part of the prepared bundle archetype.");
-    }
-
-    private static class SharedValues
-    {
-        public static void Validate(
-            ReadOnlySpan<int> componentIds,
-            ReadOnlySpan<SharedValueSlot> sharedValues)
+        if (transition.Target.SharedComponentIds.Length > 0)
         {
-            for (int i = 0; i < sharedValues.Length; i++)
-            {
-                int componentId = sharedValues[i].ComponentId;
-                ref var info = ref ComponentRegistry.Get(componentId);
-                if (info.Storage != StoragePath.Shared)
-                    throw new InvalidOperationException(
-                        $"Bundle shared assignment component ID {componentId} is not a SharedComponent.");
-
-                if (componentIds.BinarySearch(componentId) < 0)
-                    throw new InvalidOperationException(
-                        $"Bundle shared assignment component ID {componentId} is missing from the bundle component ID collection.");
-
-                for (int j = i + 1; j < sharedValues.Length; j++)
-                {
-                    if (sharedValues[j].ComponentId == componentId)
-                        throw new InvalidOperationException(
-                            $"Duplicate shared component ID {componentId} is not allowed in bundle operations.");
-                }
-            }
-
-            for (int i = 0; i < componentIds.Length; i++)
-            {
-                ref var info = ref ComponentRegistry.Get(componentIds[i]);
-                if (info.Storage != StoragePath.Shared)
-                    continue;
-
-                if (!TryFind(sharedValues, componentIds[i], out _))
-                    throw new InvalidOperationException(
-                        $"Shared component ID {componentIds[i]} requires a SharedComponentValue<T> value in bundle operations.");
-            }
+            return MoveForSharedWrite(
+                entity,
+                sourceArchetype,
+                sourceChunk,
+                transition,
+                sharedValues);
         }
 
-        public static void FillSpawn(
-            Archetype archetype,
-            ReadOnlySpan<SharedValueSlot> sharedValues,
-            Span<int> destinationSharedValues)
-        {
-            for (int i = 0; i < archetype.SharedComponentIds.Length; i++)
-            {
-                int componentId = archetype.SharedComponentIds[i];
-                if (!TryFind(sharedValues, componentId, out int sharedIndex))
-                    throw new InvalidOperationException(
-                        $"Shared component ID {componentId} requires a SharedComponentValue<T> value in bundle operations.");
-
-                destinationSharedValues[i] = sharedIndex;
-            }
-        }
-
-        public static bool FillTarget(
-            Archetype sourceArchetype,
-            Chunk sourceChunk,
-            Archetype destinationArchetype,
-            ReadOnlySpan<SharedValueSlot> sharedValues,
-            Span<int> destinationSharedValues)
-        {
-            bool changed = false;
-            for (int i = 0; i < destinationArchetype.SharedComponentIds.Length; i++)
-            {
-                int componentId = destinationArchetype.SharedComponentIds[i];
-                if (TryFind(sharedValues, componentId, out int sharedIndex))
-                {
-                    destinationSharedValues[i] = sharedIndex;
-                    int oldSlot = Array.BinarySearch(sourceArchetype.SharedComponentIds, componentId);
-                    changed |= oldSlot < 0 ||
-                        sourceChunk.SharedValues is null ||
-                        sourceChunk.SharedValues[oldSlot] != sharedIndex;
-                    continue;
-                }
-
-                int sourceSlot = Array.BinarySearch(sourceArchetype.SharedComponentIds, componentId);
-                if (sourceSlot < 0 || sourceChunk.SharedValues is null)
-                    throw new InvalidOperationException(
-                        $"Shared component ID {componentId} is missing a value for destination archetype {destinationArchetype.ArchetypeId}.");
-
-                destinationSharedValues[i] = sourceChunk.SharedValues[sourceSlot];
-            }
-
-            return changed;
-        }
-
-        public static bool Changed(
-            Archetype sourceArchetype,
-            Chunk sourceChunk,
-            SharedValueSlot sharedValue)
-        {
-            int oldSlot = Array.BinarySearch(sourceArchetype.SharedComponentIds, sharedValue.ComponentId);
-            return oldSlot < 0 ||
-                   sourceChunk.SharedValues is null ||
-                   sourceChunk.SharedValues[oldSlot] != sharedValue.SharedIndex;
-        }
-
-        private static bool TryFind(
-            ReadOnlySpan<SharedValueSlot> sharedValues,
-            int componentId,
-            out int sharedIndex)
-        {
-            for (int i = 0; i < sharedValues.Length; i++)
-            {
-                if (sharedValues[i].ComponentId == componentId)
-                {
-                    sharedIndex = sharedValues[i].SharedIndex;
-                    return true;
-                }
-            }
-
-            sharedIndex = default;
+        if (transition.IsIdentityFor(sourceArchetype))
             return false;
+
+        EntityRecordWriter record = _entities.Store.GetRecord(entity);
+        _tables.MoveEntity(entity, record, transition);
+        return true;
+    }
+
+    private bool MoveForSharedWrite(
+        Entity entity,
+        Archetype sourceArchetype,
+        Chunk sourceChunk,
+        StructuralTransition transition,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues)
+    {
+        int count = transition.Target.SharedComponentIds.Length;
+        int[]? rented = null;
+        Span<int> destinationSharedValues = count <= MaximumStackSharedValues
+            ? stackalloc int[count]
+            : (rented = ArrayPool<int>.Shared.Rent(count)).AsSpan(0, count);
+        try
+        {
+            bool sharedChanged = FillTargetShared(
+                sourceArchetype,
+                sourceChunk,
+                transition.Target,
+                sharedValues,
+                destinationSharedValues);
+            if (!transition.IsIdentityFor(sourceArchetype))
+            {
+                EntityRecordWriter movedRecord = _entities.Store.GetRecord(entity);
+                _tables.MoveRow(
+                    entity,
+                    movedRecord,
+                    transition.Target,
+                    transition.SharedColumns,
+                    destinationSharedValues);
+                return true;
+            }
+
+            if (!sharedChanged)
+                return false;
+
+            EntityRecordWriter record = _entities.Store.GetRecord(entity);
+            _shared.MoveTo(entity, record, destinationSharedValues);
+            return true;
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<int>.Shared.Return(rented);
         }
     }
 
-    internal void Reset()
+    private (Chunk Chunk, int Row) AllocateRow(
+        Archetype archetype,
+        Entity entity,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues)
     {
-        _plans.Clear();
-        _key = null;
-        _plan = null;
+        if (archetype.SharedComponentIds.Length == 0)
+            return _tables.AllocateInChunk(archetype, entity);
+
+        int count = archetype.SharedComponentIds.Length;
+        int[]? rented = null;
+        Span<int> destinationSharedValues = count <= MaximumStackSharedValues
+            ? stackalloc int[count]
+            : (rented = ArrayPool<int>.Shared.Rent(count)).AsSpan(0, count);
+        try
+        {
+            FillSpawnShared(archetype, sharedValues, destinationSharedValues);
+            return _tables.AllocateShared(archetype, entity, destinationSharedValues);
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<int>.Shared.Return(rented);
+        }
     }
+
+    private static void ValidateSharedAssignments(
+        ReadOnlySpan<int> componentIds,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues)
+    {
+        for (int i = 0; i < sharedValues.Length; i++)
+        {
+            int componentId = sharedValues[i].ComponentId;
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
+            if (info.Storage != StoragePath.Shared)
+                throw new InvalidOperationException($"Component ID {componentId} is not shared storage.");
+            if (componentIds.BinarySearch(componentId) < 0)
+                throw new InvalidOperationException($"Shared component ID {componentId} is undeclared.");
+            for (int j = i + 1; j < sharedValues.Length; j++)
+            {
+                if (sharedValues[j].ComponentId == componentId)
+                    throw new InvalidOperationException($"Duplicate shared component ID {componentId}.");
+            }
+        }
+
+        for (int i = 0; i < componentIds.Length; i++)
+        {
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentIds[i]);
+            if (info.Storage == StoragePath.Shared &&
+                !TryFindShared(sharedValues, componentIds[i], out _))
+            {
+                throw new InvalidOperationException(
+                    $"Shared component {info.Type.Name} was not supplied by the bundle callback.");
+            }
+        }
+    }
+
+    private static void FillSpawnShared(
+        Archetype archetype,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues,
+        Span<int> destination)
+    {
+        for (int i = 0; i < archetype.SharedComponentIds.Length; i++)
+        {
+            int componentId = archetype.SharedComponentIds[i];
+            if (!TryFindShared(sharedValues, componentId, out int sharedIndex))
+                throw new InvalidOperationException($"Shared component ID {componentId} is missing.");
+            destination[i] = sharedIndex;
+        }
+    }
+
+    private static bool FillTargetShared(
+        Archetype sourceArchetype,
+        Chunk sourceChunk,
+        Archetype destinationArchetype,
+        ReadOnlySpan<BundleSharedAssignment> sharedValues,
+        Span<int> destination)
+    {
+        bool changed = false;
+        for (int i = 0; i < destinationArchetype.SharedComponentIds.Length; i++)
+        {
+            int componentId = destinationArchetype.SharedComponentIds[i];
+            if (TryFindShared(sharedValues, componentId, out int sharedIndex))
+            {
+                destination[i] = sharedIndex;
+                int oldSlot = sourceArchetype.SharedComponentIds.BinarySearch(componentId);
+                changed |= oldSlot < 0 ||
+                    sourceChunk.SharedValues is null ||
+                    sourceChunk.SharedValues[oldSlot] != sharedIndex;
+                continue;
+            }
+
+            int sourceSlot = sourceArchetype.SharedComponentIds.BinarySearch(componentId);
+            if (sourceSlot < 0 || sourceChunk.SharedValues is null)
+            {
+                throw new InvalidOperationException(
+                    $"Shared component ID {componentId} is missing for the destination archetype.");
+            }
+            destination[i] = sourceChunk.SharedValues[sourceSlot];
+        }
+
+        return changed;
+    }
+
+    private static bool TryFindShared(
+        ReadOnlySpan<BundleSharedAssignment> sharedValues,
+        int componentId,
+        out int sharedIndex)
+    {
+        for (int i = 0; i < sharedValues.Length; i++)
+        {
+            if (sharedValues[i].ComponentId == componentId)
+            {
+                sharedIndex = sharedValues[i].SharedIndex;
+                return true;
+            }
+        }
+
+        sharedIndex = default;
+        return false;
+    }
+
 }
-
-
-

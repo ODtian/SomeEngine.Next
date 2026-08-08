@@ -51,40 +51,46 @@ public class QueryHandleSystemTests
 
         public void OnUpdate(ref ImmediateSystemContext context)
         {
-            foreach (var chunk in context.World
-                         .RunQuery(_movement, context.LastSystemVersion, context.CurrentSystemVersion)
-                         .Chunks)
-            {
-                var positions = chunk.ReadWrite<SystemPosition>();
-                var velocities = chunk.Read<SystemVelocity>();
-                for (int i = 0; i < chunk.Count; i++)
-                    positions[i].Value += velocities[i].Value;
-            }
+            context.World.ExecuteQuery(
+                _movement,
+                context.LastSystemVersion,
+                cursor =>
+                {
+                    foreach (var chunk in cursor.Chunks)
+                    {
+                        var positions = chunk.ReadWrite<SystemPosition>();
+                        var velocities = chunk.Read<SystemVelocity>();
+                        for (int i = 0; i < chunk.Count; i++)
+                            positions[i].Value += velocities[i].Value;
+                    }
+                });
 
             int dirtyCount = 0;
-            foreach (var _ in context.World
-                         .RunQuery(_dirty, context.LastSystemVersion, context.CurrentSystemVersion)
-                         .Rows)
-            {
-                dirtyCount++;
-            }
+            context.World.ExecuteQuery(
+                _dirty,
+                context.LastSystemVersion,
+                cursor =>
+                {
+                    foreach (var _ in cursor.Rows)
+                        dirtyCount++;
+                });
 
             LastDirtyCount = dirtyCount;
         }
     }
 }
 
-public struct SystemPosition : SomeEngine.ECS.Components.IComponent
+public struct SystemPosition : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
 
-public struct SystemVelocity : SomeEngine.ECS.Components.IComponent
+public struct SystemVelocity : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
 
-public struct SystemDirty : SomeEngine.ECS.Components.IComponent
+public struct SystemDirty : SomeEngine.ECS.IComponent
 {
     public int Value;
 }

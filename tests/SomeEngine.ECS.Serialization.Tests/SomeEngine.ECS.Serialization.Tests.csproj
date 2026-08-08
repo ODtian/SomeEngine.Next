@@ -19,8 +19,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\PublicApiContract\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

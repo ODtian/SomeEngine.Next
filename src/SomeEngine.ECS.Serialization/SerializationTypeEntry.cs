@@ -7,6 +7,8 @@ public enum ComponentCodecKind : byte
     Missing,
     Raw,
     Custom,
+    Canonical,
+    RawCanonical,
 }
 
 public enum SerializationValueKind : byte
@@ -16,7 +18,12 @@ public enum SerializationValueKind : byte
     Shared,
     Buffer,
     Sparse,
-    Relation,
+}
+
+public enum SerializationSchemaSource : byte
+{
+    RuntimeDerived,
+    Explicit,
 }
 
 public readonly struct SerializationTypeEntry
@@ -26,6 +33,7 @@ public readonly struct SerializationTypeEntry
     public StoragePath Storage { get; }
     public SerializationValueKind Kind { get; }
     public ComponentCodecKind CodecKind { get; }
+    public SerializationSchemaSource SchemaSource { get; }
     public bool ContainsReferences { get; }
     public bool ContainsEntityReferences { get; }
 
@@ -35,6 +43,7 @@ public readonly struct SerializationTypeEntry
         StoragePath storage,
         SerializationValueKind kind,
         ComponentCodecKind codecKind,
+        SerializationSchemaSource schemaSource,
         bool containsReferences,
         bool containsEntityReferences)
     {
@@ -43,6 +52,7 @@ public readonly struct SerializationTypeEntry
         Storage = storage;
         Kind = kind;
         CodecKind = codecKind;
+        SchemaSource = schemaSource;
         ContainsReferences = containsReferences;
         ContainsEntityReferences = containsEntityReferences;
     }

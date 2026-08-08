@@ -6,11 +6,17 @@ namespace SomeEngine.ECS.Hooks;
 
 internal interface IHookStore
 {
-    void RunAdd(DeferredWorld world, Entity entity, Array column, int row);
-    void RunInsert(DeferredWorld world, Entity entity, Array column, int row);
-    void RunReplace(DeferredWorld world, Entity entity, Array column, int row);
-    void RunRemove(DeferredWorld world, Entity entity, Array column, int row);
-    void RunDespawn(DeferredWorld world, Entity entity, Array column, int row);
+    bool HasAddCallbacks { get; }
+    bool HasInsertCallbacks { get; }
+    bool HasReplaceCallbacks { get; }
+    bool HasRemoveCallbacks { get; }
+    bool HasDespawnCallbacks { get; }
+
+    void RunAdd(DeferredWorld world, Entity entity, ref byte value);
+    void RunInsert(DeferredWorld world, Entity entity, ref byte value);
+    void RunReplace(DeferredWorld world, Entity entity, ref byte value);
+    void RunRemove(DeferredWorld world, Entity entity, ref byte value);
+    void RunDespawn(DeferredWorld world, Entity entity, ref byte value);
 }
 
 internal sealed class HookStore<T> : IHookStore
@@ -21,6 +27,16 @@ internal sealed class HookStore<T> : IHookStore
     private HookAction<T>? _replace;
     private HookAction<T>? _remove;
     private HookAction<T>? _despawn;
+
+    public bool HasAddCallbacks => _add is not null;
+
+    public bool HasInsertCallbacks => _insert is not null;
+
+    public bool HasReplaceCallbacks => _replace is not null;
+
+    public bool HasRemoveCallbacks => _remove is not null;
+
+    public bool HasDespawnCallbacks => _despawn is not null;
 
     public void BindAdd(HookAction<T> hook)
     {
@@ -52,10 +68,9 @@ internal sealed class HookStore<T> : IHookStore
         _add?.Invoke(world, entity, in value);
     }
 
-    public void RunAdd(DeferredWorld world, Entity entity, Array column, int row)
+    public void RunAdd(DeferredWorld world, Entity entity, ref byte value)
     {
-        ref var value = ref Value(column, row);
-        RunAdd(world, entity, in value);
+        RunAdd(world, entity, in Value(ref value));
     }
 
     public void RunInsert(DeferredWorld world, Entity entity, in T value)
@@ -63,10 +78,9 @@ internal sealed class HookStore<T> : IHookStore
         _insert?.Invoke(world, entity, in value);
     }
 
-    public void RunInsert(DeferredWorld world, Entity entity, Array column, int row)
+    public void RunInsert(DeferredWorld world, Entity entity, ref byte value)
     {
-        ref var value = ref Value(column, row);
-        RunInsert(world, entity, in value);
+        RunInsert(world, entity, in Value(ref value));
     }
 
     public void RunReplace(DeferredWorld world, Entity entity, in T value)
@@ -74,10 +88,9 @@ internal sealed class HookStore<T> : IHookStore
         _replace?.Invoke(world, entity, in value);
     }
 
-    public void RunReplace(DeferredWorld world, Entity entity, Array column, int row)
+    public void RunReplace(DeferredWorld world, Entity entity, ref byte value)
     {
-        ref var value = ref Value(column, row);
-        RunReplace(world, entity, in value);
+        RunReplace(world, entity, in Value(ref value));
     }
 
     public void RunRemove(DeferredWorld world, Entity entity, in T value)
@@ -85,10 +98,9 @@ internal sealed class HookStore<T> : IHookStore
         _remove?.Invoke(world, entity, in value);
     }
 
-    public void RunRemove(DeferredWorld world, Entity entity, Array column, int row)
+    public void RunRemove(DeferredWorld world, Entity entity, ref byte value)
     {
-        ref var value = ref Value(column, row);
-        RunRemove(world, entity, in value);
+        RunRemove(world, entity, in Value(ref value));
     }
 
     public void RunDespawn(DeferredWorld world, Entity entity, in T value)
@@ -96,10 +108,9 @@ internal sealed class HookStore<T> : IHookStore
         _despawn?.Invoke(world, entity, in value);
     }
 
-    public void RunDespawn(DeferredWorld world, Entity entity, Array column, int row)
+    public void RunDespawn(DeferredWorld world, Entity entity, ref byte value)
     {
-        ref var value = ref Value(column, row);
-        RunDespawn(world, entity, in value);
+        RunDespawn(world, entity, in Value(ref value));
     }
 
     private static void Bind(ref HookAction<T>? slot, HookAction<T> hook, string name)
@@ -110,9 +121,7 @@ internal sealed class HookStore<T> : IHookStore
         slot = hook ?? throw new ArgumentNullException(nameof(hook));
     }
 
-    private static ref T Value(Array column, int row)
-    {
-        return ref Unsafe.As<T[]>(column)[row];
-    }
+    private static ref T Value(ref byte value) =>
+        ref Unsafe.As<byte, T>(ref value);
 }
 

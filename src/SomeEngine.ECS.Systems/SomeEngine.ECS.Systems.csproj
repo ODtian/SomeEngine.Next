@@ -4,6 +4,11 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />
     <ProjectReference Include="..\SomeEngine.Job\SomeEngine.Job.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.ECS.Systems.Tests" />
+    <InternalsVisibleTo Include="SomeEngine.Core" />
   </ItemGroup>
 </Project>

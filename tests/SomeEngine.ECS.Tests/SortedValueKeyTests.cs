@@ -57,12 +57,15 @@ public class SortedValueKeyTests
     }
 
     [Fact]
-    public void SortedValueKey_CreateOwnedCopy_EqualsFromArray()
+    public void SortedValueKey_ConstructorOwnsStableCopy()
     {
         var arr = new[] { 5, 10 };
-        var fromArr = new SortedValueKey(arr);
-        var fromSpan = SortedValueKey.CreateOwnedCopy(arr.AsSpan());
-        Assert.True(fromArr == fromSpan);
+        var key = new SortedValueKey(arr);
+
+        arr[0] = 50;
+
+        Assert.True(key.Ids.SequenceEqual(new[] { 5, 10 }));
+        Assert.Equal(new SortedValueKey(new[] { 5, 10 }), key);
     }
 
     [Fact]

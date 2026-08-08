@@ -19,11 +19,11 @@ public sealed partial class SourceGenConsumerTests
         var world = new World();
         var entity = world.Spawn(new GeneratedConsumerBundle { Value = new GeneratedConsumerComponent { Value = 9 } });
 
-        Assert.Equal(9, world.Get<GeneratedConsumerComponent>(entity).Value);
+        Assert.Equal(9, world.Read<GeneratedConsumerComponent>(entity).Value);
     }
 }
 
-public struct GeneratedConsumerComponent : SomeEngine.ECS.Components.IComponent
+public struct GeneratedConsumerComponent : SomeEngine.ECS.IComponent
 {
     public int Value;
 }

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct CleanupMarker : SomeEngine.ECS.Components.ICleanupComponent
+public struct CleanupMarker : SomeEngine.ECS.ICleanupComponent
 {
     public int Value;
 }
@@ -50,11 +50,21 @@ public class CleanupComponentTests
         });
         world.DestroyEntity(warm); // warm cleanup transition plan
 
-        var entity = world.Spawn(new CleanupPositionBundle
+        var first = world.Spawn(new CleanupPositionBundle
         {
             Cleanup = new CleanupMarker { Value = 2 },
             Position = new Position { X = 3, Y = 4 },
         });
+        var entity = world.Spawn(new CleanupPositionBundle
+        {
+            Cleanup = new CleanupMarker { Value = 3 },
+            Position = new Position { X = 5, Y = 6 },
+        });
+
+        // The last structural publication intentionally shares untouched chunks with the old
+        // root. Warm the bounded first-write detach as well as the transition cache; subsequent
+        // moves within the same published root retain the allocation-free hot path.
+        world.DestroyEntity(first);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         world.DestroyEntity(entity);
@@ -83,13 +93,31 @@ public class CleanupComponentTests
     }
 
     [Fact]
-    public void PendingCleanup_Destroy()
+    public void CleanupOnlyEntity_RemainsPendingUntilCleanupIsRemoved()
+    {
+        var world = new World();
+        var entity = world.CreateEntity(new CleanupMarker { Value = 9 });
+
+        world.DestroyEntity(entity);
+
+        Assert.True(world.IsAlive(entity));
+        Assert.True(world.IsPendingCleanup(entity));
+        Assert.True(world.Has<CleanupMarker>(entity));
+
+        world.Remove<CleanupMarker>(entity);
+        Assert.False(world.IsAlive(entity));
+    }
+
+    [Fact]
+    public void RemovedFactAlone_DoesNotRequestDestroy()
     {
         var world = new World();
         var entity = world.CreateEntity(new Position { X = 5, Y = 6 });
 
         world.Remove<Position>(entity);
-        Assert.True(world.IsPendingCleanup(entity));
+        Assert.True(world.IsAlive(entity));
+        Assert.False(world.IsPendingCleanup(entity));
+        Assert.True(world.Has<Removed<Position>>(entity));
 
         world.DestroyEntity(entity);
 

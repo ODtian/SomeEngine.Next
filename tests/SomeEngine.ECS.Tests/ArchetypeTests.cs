@@ -37,15 +37,15 @@ public class ArchetypeTests
 
         // componentIds 包含两者
         Assert.Equal(2, arch.ComponentIds.Length);
-        Assert.Contains(idPos, arch.ComponentIds);
-        Assert.Contains(idTag, arch.ComponentIds);
+        Assert.True(arch.ComponentIds.Contains(idPos));
+        Assert.True(arch.ComponentIds.Contains(idTag));
 
         // tableComponentIds 只包含 Position
-        Assert.Single(arch.TableComponentIds);
+        Assert.Equal(1, arch.TableComponentIds.Length);
         Assert.Equal(idPos, arch.TableComponentIds[0]);
 
         // tagIds 只包含 PlayerTag
-        Assert.Single(arch.TagIds);
+        Assert.Equal(1, arch.TagIds.Length);
         Assert.Equal(idTag, arch.TagIds[0]);
     }
 
@@ -59,9 +59,9 @@ public class ArchetypeTests
         var arch = new Archetype(0, ids);
 
         Assert.Equal(2, arch.ComponentIds.Length);
-        Assert.Empty(arch.TableComponentIds);
+        Assert.Equal(0, arch.TableComponentIds.Length);
         Assert.Equal(2, arch.TagIds.Length);
-        Assert.Empty(arch.ColumnMetas);
+        Assert.Equal(0, arch.ColumnOperations.Length);
     }
 
     // ——————————————————————————————————————————————————
@@ -132,11 +132,11 @@ public class ArchetypeTests
     }
 
     // ——————————————————————————————————————————————————
-    // ColumnMetadata 映射
+    // 列操作与表列平行
     // ——————————————————————————————————————————————————
 
     [Fact]
-    public void ColumnMetas_CorrectMapping()
+    public void ColumnOperations_ParallelTableColumns()
     {
         int idPos = ComponentMetadata<Position>.Id;
         int idVel = ComponentMetadata<Velocity>.Id;
@@ -144,10 +144,7 @@ public class ArchetypeTests
         Array.Sort(ids);
         var arch = new Archetype(0, ids);
 
-        Assert.Equal(2, arch.ColumnMetas.Length);
-        // ColumnMetas 按 sorted tableComponentIds 顺序
-        Assert.Equal(arch.TableComponentIds[0], arch.ColumnMetas[0].ComponentId);
-        Assert.Equal(arch.TableComponentIds[1], arch.ColumnMetas[1].ComponentId);
+        Assert.Equal(arch.TableComponentIds.Length, arch.ColumnOperations.Length);
     }
 
     // ——————————————————————————————————————————————————
@@ -246,29 +243,31 @@ public class ArchetypeTests
     [Fact]
     public void EntityCapacityPerChunk_TwoFloat2Components()
     {
-        // Position(8B) + Velocity(8B) + Entity(8B) = 24B per row
-        // 2097152 / 24 = 87381
+        // Position(8B) + Velocity(8B) + Entity(8B) + two uint versions per column
+        // = 40B per row; fixed change versions = 8B; (65536 - 8) / 40 = 1638.
         int idPos = ComponentMetadata<Position>.Id;
         int idVel = ComponentMetadata<Velocity>.Id;
         var ids = new[] { idPos, idVel };
         Array.Sort(ids);
         var arch = new Archetype(0, ids);
 
-        Assert.Equal(87381, arch.MaxChunkRows);
+        Assert.Equal(1638, arch.MaxChunkRows);
+        Assert.Equal(40, arch.ChunkRowPayloadBytes);
+        Assert.Equal(8, arch.ChunkFixedPayloadBytes);
     }
 
     [Fact]
-    public void EntityCapacityPerChunk_TagOnly_UsesDefault128()
+    public void EntityCapacityPerChunk_TagOnly_UsesEntityRowSize()
     {
         // Tag-only archetype: rowSize = Entity(8) + 0 = 8
-        // 2097152 / 8 = 262144
+        // 65536 / 8 = 8192
         int idTag = ComponentMetadata<PlayerTag>.Id;
         var arch = new Archetype(0, new[] { idTag });
 
         // Tag 不占列，但 Entity 占 8B
         // rowSize = 8 + 0 = 8 (but totalComponentSize = 0, check code)
-        // 实际: 2097152 / 8 = 262144
-        Assert.Equal(262144, arch.MaxChunkRows);
+        // 实际: 65536 / 8 = 8192
+        Assert.Equal(8192, arch.MaxChunkRows);
     }
 
     [Fact]

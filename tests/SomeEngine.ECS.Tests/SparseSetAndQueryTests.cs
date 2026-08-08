@@ -1,8 +1,10 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
+using SomeEngine.ECS.Serialization;
 using Xunit;
 
 namespace SomeEngine.ECS.Tests;
@@ -219,18 +221,18 @@ public class SparseSetTests
 public class WorldSparseTests
 {
     [Fact]
-    public void AddSparse_HasSparse_GetSparse()
+    public void AddSparse_HasSparse_ReadSparse()
     {
         var world = new World();
         var e = world.CreateEntity();
         world.AddSparse(e, new Damage { Amount = 25 });
         Assert.True(world.HasSparse<Damage>(e));
-        Assert.Equal(25, world.GetSparse<Damage>(e).Amount);
+        Assert.Equal(25, world.ReadSparse<Damage>(e).Amount);
         Assert.Throws<InvalidOperationException>(
             () => world.AddSparse(e, new Damage { Amount = 30 }));
 
         world.ReplaceSparse(e, new Damage { Amount = 30 });
-        Assert.Equal(30, world.GetSparse<Damage>(e).Amount);
+        Assert.Equal(30, world.ReadSparse<Damage>(e).Amount);
     }
 
     [Fact]
@@ -261,7 +263,7 @@ public class WorldSparseTests
         world.AddSparse(e, new Damage { Amount = 50 });
         // Archetype 不变：仍有 Position
         Assert.True(world.Has<Position>(e));
-        Assert.Equal(1f, world.Get<Position>(e).X);
+        Assert.Equal(1f, world.Read<Position>(e).X);
         // Sparse 独立
         Assert.True(world.HasSparse<Damage>(e));
         world.RemoveSparse<Damage>(e);
@@ -279,7 +281,7 @@ public class WorldSparseTests
     }
 
     [Fact]
-    public void GetSparseSet_DirectIteration()
+    public void ExecuteSparseRead_DenseIteration()
     {
         var world = new World();
         var e1 = world.CreateEntity();
@@ -287,13 +289,158 @@ public class WorldSparseTests
         world.AddSparse(e1, new Damage { Amount = 10 });
         world.AddSparse(e2, new Damage { Amount = 20 });
 
-        var sparseSet = world.GetSparseSet<Damage>();
-        Assert.Equal(2, sparseSet.Count);
         int sum = 0;
-        foreach (var d in sparseSet.DenseData)
-            sum += d.Amount;
+        int count = 0;
+        world.ExecuteSparseRead<Damage, int>(
+            ref sum,
+            static (ReadOnlySpan<Entity> entities, ReadOnlySpan<Damage> values, ref int total) =>
+            {
+                Assert.Equal(entities.Length, values.Length);
+                foreach (Damage damage in values)
+                    total += damage.Amount;
+            });
+        world.ExecuteSparseRead<Damage>((entities, _) => count = entities.Length);
+
+        Assert.Equal(2, count);
         Assert.Equal(30, sum);
     }
+
+    [Fact]
+    public void ExecuteSparseWrite_PreservesEntityValueAlignmentAndBlocksStructuralMutation()
+    {
+        var world = new World();
+        Entity first = world.CreateEntity();
+        Entity second = world.CreateEntity();
+        Entity third = world.CreateEntity();
+        world.AddSparse(first, new Damage { Amount = 10 });
+        world.AddSparse(second, new Damage { Amount = 20 });
+
+        world.ExecuteSparseWrite<Damage>((entities, values) =>
+        {
+            Assert.Equal(entities.Length, values.Length);
+            for (int i = 0; i < entities.Length; i++)
+                values[i].Amount += entities[i] == first ? 1 : 2;
+
+            Assert.Throws<InvalidOperationException>(
+                () => world.AddSparse(third, new Damage { Amount = 30 }));
+            Assert.Throws<InvalidOperationException>(() => world.RemoveSparse<Damage>(first));
+        });
+
+        Assert.Equal(11, world.ReadSparse<Damage>(first).Amount);
+        Assert.Equal(22, world.ReadSparse<Damage>(second).Amount);
+        Assert.False(world.HasSparse<Damage>(third));
+    }
+
+    [Fact]
+    public void FaultedSparseWrite_KeepsPartialValuesAndReleasesBorrow()
+    {
+        var world = new World();
+        Entity first = world.CreateEntity();
+        Entity second = world.CreateEntity();
+        Entity later = world.CreateEntity();
+        world.AddSparse(first, new Damage { Amount = 10 });
+        world.AddSparse(second, new Damage { Amount = 20 });
+
+        Assert.Throws<ProbeException>(() =>
+            world.ExecuteSparseWrite<Damage>((_, values) =>
+            {
+                values[0].Amount = 99;
+                throw new ProbeException();
+            }));
+
+        Assert.Equal(99, world.ReadSparse<Damage>(first).Amount);
+
+        world.AddSparse(later, new Damage { Amount = 30 });
+        Assert.Equal(30, world.ReadSparse<Damage>(later).Amount);
+    }
+
+    [Fact]
+    public void Destroy_RemovesDenseSparseRowAndReusedIndexCanBeAddedAgain()
+    {
+        var world = new World();
+        Entity original = world.CreateEntity();
+        world.AddSparse(original, new Damage { Amount = 10 });
+
+        world.DestroyEntity(original);
+
+        int count = -1;
+        world.ExecuteSparseRead<Damage>((entities, values) =>
+        {
+            count = entities.Length;
+            Assert.Empty(values.ToArray());
+        });
+        Assert.Equal(0, count);
+
+        Entity reused = world.CreateEntity();
+        Assert.Equal(original.Index, reused.Index);
+        Assert.NotEqual(original, reused);
+        world.AddSparse(reused, new Damage { Amount = 20 });
+
+        world.ExecuteSparseRead<Damage>((entities, values) =>
+        {
+            Assert.Equal([reused], entities.ToArray());
+            Assert.Equal([20], values.ToArray().Select(static value => value.Amount));
+        });
+    }
+
+    [Fact]
+    public void DetachedSparseOwnerClone_WritesDoNotAffectSourceStorage()
+    {
+        var world = new World();
+        Entity sourceEntity = world.CreateEntity();
+        world.AddSparse(sourceEntity, new Damage { Amount = 10 });
+
+        SomeEngine.ECS.Owners.Sparse candidate = world.Sparse.CloneDetached();
+        SparseSet<Damage> sourceSet = world.Sparse.Set<Damage>();
+        SparseSet<Damage> candidateSet = candidate.Set<Damage>();
+        Assert.NotSame(sourceSet, candidateSet);
+        Assert.Same(sourceSet.BackingIdentity, candidateSet.BackingIdentity);
+        Assert.Equal(0, candidateSet.DetachCount);
+
+        candidateSet.Replace(sourceEntity, new Damage { Amount = 99 });
+        Assert.NotSame(sourceSet.BackingIdentity, candidateSet.BackingIdentity);
+        Assert.Equal(1, candidateSet.DetachCount);
+        Entity candidateOnly = TestEntity.Create(sourceEntity.Index + 10_000, generation: 7);
+        candidateSet.Add(candidateOnly, new Damage { Amount = 20 });
+
+        Assert.Equal(10, world.ReadSparse<Damage>(sourceEntity).Amount);
+        Assert.Equal(1, world.Sparse.Set<Damage>().Count);
+        Assert.Equal(99, candidateSet.Read(sourceEntity).Amount);
+        Assert.Equal(20, candidateSet.Read(candidateOnly).Amount);
+        Assert.Equal(2, candidateSet.Count);
+    }
+
+    [Fact]
+    [Trait("Category", "Performance")]
+    public void ExecuteSparseRead_WarmedStaticStateCallbackAllocatesZeroBytes()
+    {
+        var world = new World();
+        Entity entity = world.CreateEntity();
+        world.AddSparse(entity, new Damage { Amount = 10 });
+        int visits = 0;
+        for (int i = 0; i < 128; i++)
+            CountSparse(world, ref visits);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1_000; i++)
+            CountSparse(world, ref visits);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(1_128, visits);
+        Assert.Equal(0, allocated);
+    }
+
+    private static void CountSparse(World world, ref int visits)
+    {
+        world.ExecuteSparseRead<Damage, int>(
+            ref visits,
+            static (
+                ReadOnlySpan<Entity> entities,
+                ReadOnlySpan<Damage> _,
+                ref int count) => count += entities.Length);
+    }
+
+    private sealed class ProbeException : Exception;
 }
 
 // ════════════════════════════════════════════════════
@@ -307,52 +454,47 @@ public class QueryCacheTests
     {
         var world = new World();
         var e = world.CreateEntity(new Position { X = 1, Y = 2 });
-        var query = world.CreateQuery().With<Position>().Build();
-        Assert.True(query.Archetypes.Count >= 1);
-        // 该 archetype 应包含 Position
-        Assert.Contains(query.Archetypes, a => a.HasComponent(ComponentMetadata<Position>.Id));
+        var query = world.Query(world.QueryDefinition().All<Position>());
+
+        Assert.Equal([e], CollectEntities(world, query));
     }
 
     [Fact]
     public void Without_ExcludesArchetype()
     {
         var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-        world.Spawn(new PhysicsBundle
+        var positionOnly = world.CreateEntity(new Position { X = 1, Y = 2 });
+        _ = world.Spawn(new PhysicsBundle
         {
             Position = new Position { X = 3, Y = 4 },
             Velocity = new Velocity { X = 5, Y = 6 },
         });
 
-        var query = world.CreateQuery().With<Position>().Without<Velocity>().Build();
+        var query = world.Query(
+            world.QueryDefinition()
+                .All<Position>()
+                .None<Velocity>());
 
-        // 只匹配 [Position] 不匹配 [Position, Velocity]
-        foreach (var arch in query.Archetypes)
-        {
-            Assert.True(arch.HasComponent(ComponentMetadata<Position>.Id));
-            Assert.False(arch.HasComponent(ComponentMetadata<Velocity>.Id));
-        }
+        Assert.Equal([positionOnly], CollectEntities(world, query));
     }
 
     [Fact]
     public void MultipleWith_ANDSemantics()
     {
         var world = new World();
-        world.CreateEntity(new Position { X = 1, Y = 2 });
-        world.Spawn(new PhysicsBundle
+        _ = world.CreateEntity(new Position { X = 1, Y = 2 });
+        var both = world.Spawn(new PhysicsBundle
         {
             Position = new Position { X = 3, Y = 4 },
             Velocity = new Velocity { X = 5, Y = 6 },
         });
 
-        var query = world.CreateQuery().With<Position>().With<Velocity>().Build();
+        var query = world.Query(
+            world.QueryDefinition()
+                .All<Position>()
+                .All<Velocity>());
 
-        foreach (var arch in query.Archetypes)
-        {
-            Assert.True(arch.HasComponent(ComponentMetadata<Position>.Id));
-            Assert.True(arch.HasComponent(ComponentMetadata<Velocity>.Id));
-        }
-        Assert.Single(query.Archetypes);
+        Assert.Equal([both], CollectEntities(world, query));
     }
 
     [Fact]
@@ -362,10 +504,9 @@ public class QueryCacheTests
         world.CreateEntity(new Position { X = 1, Y = 2 });
         world.CreateEntity(new Velocity { X = 3, Y = 4 });
 
-        var query = world.CreateQuery().Build();
+        var query = world.Query(world.QueryDefinition());
 
-        // 应匹配所有 archetype（含空 archetype）
-        Assert.True(query.Archetypes.Count >= 3); // empty + [Position] + [Velocity]
+        Assert.Equal(2, CountRows(world, query));
     }
 
     [Fact]
@@ -373,21 +514,20 @@ public class QueryCacheTests
     {
         var world = new World();
         world.CreateEntity(new Health { Value = 100 });
-        var query = world.CreateQuery().With<Position>().Build();
+        var query = world.Query(world.QueryDefinition().All<Position>());
 
-        foreach (var arch in query.Archetypes)
-            Assert.True(arch.HasComponent(ComponentMetadata<Position>.Id));
+        Assert.Equal(0, CountRows(world, query));
     }
 
     [Fact]
     public void DynamicUpdate_NewArchetypeAfterBuild()
     {
         var world = new World();
-        var query = world.CreateQuery().With<Position>().Build();
-        Assert.Empty(query.Archetypes); // 还没有 Position archetype
+        var query = world.Query(world.QueryDefinition().All<Position>());
+        Assert.Equal(0, CountRows(world, query));
 
         world.CreateEntity(new Position { X = 1, Y = 2 });
-        Assert.Single(query.Archetypes); // 自动包含
+        Assert.Equal(1, CountRows(world, query));
     }
 
     [Fact]
@@ -395,8 +535,8 @@ public class QueryCacheTests
     {
         var world = new World();
         world.CreateEntity(new Position { X = 1, Y = 2 });
-        var query = world.CreateQuery().With<Position>().Build();
-        Assert.True(query.Archetypes.Count >= 1);
+        var query = world.Query(world.QueryDefinition().All<Position>());
+        Assert.Equal(1, CountRows(world, query));
     }
 
     [Fact]
@@ -406,23 +546,18 @@ public class QueryCacheTests
         world.CreateEntity(new Position { X = 10, Y = 20 });
         world.CreateEntity(new Position { X = 30, Y = 40 });
 
-        var query = world.CreateQuery().With<Position>().Build();
+        var query = world.Query(world.QueryDefinition().Read<Position>());
 
         int entityCount = 0;
         float sumX = 0;
-        foreach (var arch in query.Archetypes)
+        world.ExecuteQuery(query, cursor =>
         {
-            int colIdx = arch.Column(ComponentMetadata<Position>.Id);
-            foreach (var chunk in arch.Chunks)
+            foreach (var row in cursor.Rows)
             {
-                for (int i = 0; i < chunk.Count; i++)
-                {
-                    var pos = chunk.ReadComponent<Position>(colIdx, i);
-                    sumX += pos.X;
-                    entityCount++;
-                }
+                sumX += row.Read<Position>().X;
+                entityCount++;
             }
-        }
+        });
         Assert.Equal(2, entityCount);
         Assert.Equal(40f, sumX);
     }
@@ -436,8 +571,12 @@ public class QueryCacheTests
 
         var e2 = world.CreateEntity(new Position { X = 3, Y = 4 });
 
-        var query = world.CreateQuery().With<Position>().With<PlayerTag>().Build();
-        Assert.Single(query.Archetypes);
+        var query = world.Query(
+            world.QueryDefinition()
+                .All<Position>()
+                .All<PlayerTag>());
+
+        Assert.Equal([e1], CollectEntities(world, query));
     }
 
     [Fact]
@@ -451,11 +590,14 @@ public class QueryCacheTests
             Velocity = new Velocity { X = 5, Y = 6 },
         });
 
-        var q1 = world.CreateQuery().With<Position>().Build();
-        var q2 = world.CreateQuery().With<Position>().With<Velocity>().Build();
+        var q1 = world.Query(world.QueryDefinition().All<Position>());
+        var q2 = world.Query(
+            world.QueryDefinition()
+                .All<Position>()
+                .All<Velocity>());
 
-        Assert.Equal(2, q1.Archetypes.Count); // [Pos] + [Pos,Vel]
-        Assert.Single(q2.Archetypes); // [Pos,Vel]
+        Assert.Equal(2, CountRows(world, q1));
+        Assert.Equal(1, CountRows(world, q2));
     }
 
     [Fact]
@@ -464,8 +606,11 @@ public class QueryCacheTests
         var world = new World();
         world.CreateEntity(new Position { X = 1, Y = 2 });
 
-        var query = world.CreateQuery().With<Position>().Without<Velocity>().Build();
-        Assert.Single(query.Archetypes);
+        var query = world.Query(
+            world.QueryDefinition()
+                .All<Position>()
+                .None<Velocity>());
+        Assert.Equal(1, CountRows(world, query));
 
         world.Spawn(new PhysicsBundle
         {
@@ -473,11 +618,28 @@ public class QueryCacheTests
             Velocity = new Velocity { X = 5, Y = 6 },
         });
 
-        Assert.Single(query.Archetypes);
-        foreach (var arch in query.Archetypes)
+        Assert.Equal(1, CountRows(world, query));
+    }
+
+    private static int CountRows(World world, QueryHandle query)
+    {
+        int count = 0;
+        world.ExecuteQuery(query, ref count, static (QueryCursor cursor, ref int state) =>
         {
-            Assert.True(arch.HasComponent(ComponentMetadata<Position>.Id));
-            Assert.False(arch.HasComponent(ComponentMetadata<Velocity>.Id));
-        }
+            foreach (var _ in cursor.Rows)
+                state++;
+        });
+        return count;
+    }
+
+    private static Entity[] CollectEntities(World world, QueryHandle query)
+    {
+        var entities = new List<Entity>();
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                entities.Add(row.Entity);
+        });
+        return entities.ToArray();
     }
 }

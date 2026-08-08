@@ -8,7 +8,7 @@ namespace SomeEngine.Core.ECS;
 public static class WorldExtensions
 {
     public static bool TryRead<T>(this World world, EntityId entity, out T component)
-        where T : struct, SomeEngine.ECS.Components.IComponent
+        where T : struct, global::SomeEngine.ECS.IComponent
     {
         ArgumentNullException.ThrowIfNull(world);
         if (entity != EntityId.Null && world.IsAlive(entity) && world.Has<T>(entity))
@@ -22,11 +22,11 @@ public static class WorldExtensions
     }
 
     public static void AddOrSet<T>(this World world, EntityId entity, in T component)
-        where T : struct, SomeEngine.ECS.Components.IComponent
+        where T : struct, global::SomeEngine.ECS.IComponent
     {
         ArgumentNullException.ThrowIfNull(world);
         if (world.Has<T>(entity))
-            world.Get<T>(entity) = component;
+            world.Replace(entity, component);
         else
             world.Add(entity, component);
     }
@@ -51,12 +51,15 @@ public static class WorldExtensions
         ArgumentNullException.ThrowIfNull(destination);
 
         destination.Clear();
-        foreach (QueryChunkView chunk in world.RunQuery(query).Chunks)
+        world.ExecuteQuery(query, cursor =>
         {
-            ReadOnlySpan<EntityId> entities = chunk.Entities;
-            for (int i = 0; i < entities.Length; i++)
-                destination.Add(entities[i]);
-        }
+            foreach (QueryChunkView chunk in cursor.Chunks)
+            {
+                ReadOnlySpan<EntityId> entities = chunk.Entities;
+                for (int i = 0; i < entities.Length; i++)
+                    destination.Add(entities[i]);
+            }
+        });
     }
 }
 

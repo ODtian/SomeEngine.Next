@@ -1,4 +1,6 @@
+using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 using Xunit;
@@ -199,11 +201,13 @@ public class SharedComponentTests
         world.AddShared(e2, new SceneId { Value = 1 });
 
         // 同 shared value → 应在同一 chunk
-        var query = world.CreateQuery().With<Position>().With<SceneId>().Build();
-        var archetypes = query.Archetypes;
+        var archetypes = world.AllArchetypes.ToArray().Where(
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<SceneId>.Id)).ToArray();
         Assert.Single(archetypes);
         // 同 chunk 意味着只有 1 个 chunk
-        Assert.Single(archetypes[0].Chunks);
+        Assert.Equal(1, archetypes[0].Chunks.Length);
     }
 
     [Fact]
@@ -217,10 +221,12 @@ public class SharedComponentTests
         world.AddShared(e2, new SceneId { Value = 2 });
 
         // 不同 shared value → 不同 chunk
-        var query = world.CreateQuery().With<Position>().With<SceneId>().Build();
-        var archetypes = query.Archetypes;
+        var archetypes = world.AllArchetypes.ToArray().Where(
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<SceneId>.Id)).ToArray();
         Assert.Single(archetypes);
-        Assert.Equal(2, archetypes[0].Chunks.Count);
+        Assert.Equal(2, archetypes[0].Chunks.Length);
     }
 
     [Fact]
@@ -236,11 +242,13 @@ public class SharedComponentTests
         // 改 e2 到 value=1，应迁移到 e1 的 chunk
         world.ReplaceShared(e2, new SceneId { Value = 1 });
 
-        var query = world.CreateQuery().With<Position>().With<SceneId>().Build();
-        var archetypes = query.Archetypes;
+        var archetypes = world.AllArchetypes.ToArray().Where(
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<SceneId>.Id)).ToArray();
         Assert.Single(archetypes);
         // 空 chunk 应被回收，只剩 1 个
-        Assert.Single(archetypes[0].Chunks);
+        Assert.Equal(1, archetypes[0].Chunks.Length);
         Assert.Equal(2, archetypes[0].Chunks[0].Count);
 
         // 数据应保留
@@ -269,8 +277,11 @@ public class SharedComponentTests
                 .Shared<SceneId>());
 
         var results = new List<float>();
-        foreach (var row in world.RunQuery(query).RowsWithShared(new SceneId { Value = 10 }))
-            results.Add(row.Read<Position>().X);
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var row in cursor.RowsWithShared(new SceneId { Value = 10 }))
+                results.Add(row.Read<Position>().X);
+        });
 
         Assert.Equal(2, results.Count);
         Assert.Contains(1f, results);
@@ -291,8 +302,11 @@ public class SharedComponentTests
                 .Shared<SceneId>());
 
         int count = 0;
-        foreach (var _ in world.RunQuery(query).RowsWithShared(new SceneId { Value = 999 }))
-            count++;
+        world.ExecuteQuery(query, cursor =>
+        {
+            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 999 }))
+                count++;
+        });
 
         Assert.Equal(0, count);
     }
@@ -312,15 +326,11 @@ public class SharedComponentTests
                 .Read<Position>()
                 .Shared<SceneId>());
 
-        int warmCount = 0;
-        foreach (var _ in world.RunQuery(query).RowsWithShared(new SceneId { Value = 10 }))
-            warmCount++;
+        int warmCount = CountSceneRows(world, query);
         Assert.Equal(1, warmCount);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
-        int count = 0;
-        foreach (var _ in world.RunQuery(query).RowsWithShared(new SceneId { Value = 10 }))
-            count++;
+        int count = CountSceneRows(world, query);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         Assert.Equal(1, count);
@@ -329,7 +339,7 @@ public class SharedComponentTests
 
     [Fact]
     [Trait("Category", "Performance")]
-    public void QueryRowsWithSharedSpan_Warmed_DoesNotAllocate()
+    public void QueryRowsWithWorldBoundSharedFilter_Warmed_DoesNotAllocate()
     {
         var world = new World();
         var e1 = world.CreateEntity<Position>(new Position { X = 1 });
@@ -347,21 +357,123 @@ public class SharedComponentTests
             new SceneId { Value = 10 },
             out int sharedIndex));
 
-        Span<QuerySharedFilter> filters = stackalloc QuerySharedFilter[1];
-        filters[0] = new QuerySharedFilter(ComponentMetadata<SceneId>.Id, sharedIndex);
-
-        int warmCount = 0;
-        foreach (var _ in world.RunQuery(query).RowsWithShared(filters))
-            warmCount++;
+        var filter = new QuerySharedFilter(
+            world,
+            ComponentMetadata<SceneId>.Id,
+            sharedIndex);
+        int warmCount = CountSceneRows(world, query, filter);
         Assert.Equal(1, warmCount);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
-        int count = 0;
-        foreach (var _ in world.RunQuery(query).RowsWithShared(filters))
-            count++;
+        int count = CountSceneRows(world, query, filter);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         Assert.Equal(1, count);
         Assert.Equal(0, after - before);
+    }
+
+    [Fact]
+    public void PrecomputedSharedFilter_RejectsAnotherWorld()
+    {
+        var owner = new World();
+        Entity ownerEntity = owner.CreateEntity();
+        owner.AddShared(ownerEntity, new SceneId { Value = 10 });
+        Assert.True(owner.Shared.TryIndex(
+            ComponentMetadata<SceneId>.Id,
+            new SceneId { Value = 10 },
+            out int sharedIndex));
+        var filter = new QuerySharedFilter(
+            owner,
+            ComponentMetadata<SceneId>.Id,
+            sharedIndex);
+
+        var other = new World();
+        Entity otherEntity = other.CreateEntity();
+        other.AddShared(otherEntity, new SceneId { Value = 10 });
+        QueryHandle query = other.Query(
+            other.QueryDefinition().Shared<SceneId>());
+
+        Assert.Throws<InvalidOperationException>(() =>
+            other.ExecuteQuery(query, cursor =>
+            {
+                foreach (var _ in cursor.RowsWithShared(filter))
+                {
+                }
+            }));
+    }
+
+    [Fact]
+    public void SharedBucket_IndexesOnlyOpenChunksAndReusesAReopenedChunk()
+    {
+        var world = new World();
+
+        Entity firstEntity = world.CreateEntity<Position>(new Position { X = 0 });
+        world.AddShared(firstEntity, new SceneId { Value = 7 });
+
+        Archetype archetype = Assert.Single(
+            world.AllArchetypes.ToArray(),
+            static candidate =>
+                candidate.HasComponent(ComponentMetadata<Position>.Id) &&
+                candidate.HasComponent(ComponentMetadata<SceneId>.Id));
+        Assert.Equal(1, archetype.Chunks.Length);
+        Chunk firstChunk = archetype.Chunks[0];
+
+        for (int index = 1; index < firstChunk.Capacity; index++)
+        {
+            Entity entity = world.CreateEntity<Position>(new Position { X = index });
+            world.AddShared(entity, new SceneId { Value = 7 });
+        }
+
+        SharedChunkBucket bucket = archetype.GetOnlySharedChunkBucket();
+        Assert.Equal(1, bucket.ChunkCount);
+        Assert.Equal(0, bucket.OpenChunkCount);
+
+        Entity spill = world.CreateEntity<Position>(new Position { X = -1 });
+        world.AddShared(spill, new SceneId { Value = 7 });
+        Assert.Equal(1, bucket.OpenChunkCount);
+        Chunk spillChunk = bucket.OpenChunkAt(0);
+        Assert.NotSame(firstChunk, spillChunk);
+        Assert.Equal(2, bucket.ChunkCount);
+
+        world.DestroyEntity(firstEntity);
+        Assert.Equal(2, bucket.OpenChunkCount);
+        Assert.Contains(firstChunk, bucket.OpenChunkSpan.ToArray());
+
+        int reopenedCount = firstChunk.Count;
+        Entity replacement = world.CreateEntity<Position>(new Position { X = -2 });
+        world.AddShared(replacement, new SceneId { Value = 7 });
+
+        Assert.Equal(reopenedCount + 1, firstChunk.Count);
+        Assert.True(firstChunk.IsFull);
+        Assert.DoesNotContain(firstChunk, bucket.OpenChunkSpan.ToArray());
+        Assert.Equal(1, bucket.OpenChunkCount);
+    }
+
+    private static int CountSceneRows(World world, QueryHandle query)
+    {
+        int count = 0;
+        world.ExecuteQuery(query, ref count, static (QueryCursor cursor, ref int state) =>
+        {
+            foreach (var _ in cursor.RowsWithShared(new SceneId { Value = 10 }))
+                state++;
+        });
+        return count;
+    }
+
+    private static int CountSceneRows(
+        World world,
+        QueryHandle query,
+        QuerySharedFilter filter)
+    {
+        var state = (Filter: filter, Count: 0);
+        world.ExecuteQuery(
+            query,
+            ref state,
+            static (QueryCursor cursor, ref (QuerySharedFilter Filter, int Count) state) =>
+            {
+                foreach (var _ in cursor.RowsWithShared(state.Filter))
+                    state.Count++;
+            });
+        return state.Count;
     }
 }

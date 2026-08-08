@@ -6,8 +6,13 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SomeEngine.ECS.Tests" />
     <InternalsVisibleTo Include="SomeEngine.ECS.Serialization" />
+    <InternalsVisibleTo Include="SomeEngine.ECS.Systems" />
+    <InternalsVisibleTo Include="SomeEngine.ECS.Systems.Tests" />
+    <InternalsVisibleTo Include="SomeEngine.ECS.Serialization.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />
+    <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
     <ProjectReference Include="../SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />

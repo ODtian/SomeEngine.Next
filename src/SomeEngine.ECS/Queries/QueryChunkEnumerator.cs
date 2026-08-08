@@ -14,10 +14,12 @@ public readonly struct NoSharedFilter : IChunkFilter
     public bool Matches(QueryArchetypeMatch match, Chunk chunk) => true;
 }
 
-public readonly struct SingleSharedFilter : IChunkFilter
+public struct SingleSharedFilter : IChunkFilter
 {
     private readonly QuerySharedFilter _filter;
     private readonly bool _canMatch;
+    private QueryArchetypeMatch? _match;
+    private int _sharedSlot;
 
     internal static SingleSharedFilter NoMatch => default;
 
@@ -25,23 +27,26 @@ public readonly struct SingleSharedFilter : IChunkFilter
     {
         _filter = filter;
         _canMatch = true;
+        _match = null;
+        _sharedSlot = -1;
     }
 
-    public bool Matches(QueryArchetypeMatch match, Chunk chunk) =>
-        _canMatch && match.MatchesShared(chunk, _filter);
-}
-
-public readonly ref struct SpanSharedFilter : IChunkFilter
-{
-    private readonly ReadOnlySpan<QuerySharedFilter> _filters;
-
-    internal SpanSharedFilter(ReadOnlySpan<QuerySharedFilter> filters)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Matches(QueryArchetypeMatch match, Chunk chunk)
     {
-        _filters = filters;
-    }
+        if (!_canMatch)
+            return false;
 
-    public bool Matches(QueryArchetypeMatch match, Chunk chunk) =>
-        match.MatchesShared(chunk, _filters);
+        if (!ReferenceEquals(_match, match))
+        {
+            _match = match;
+            _sharedSlot = match.SharedSlot(_filter.ComponentId);
+        }
+
+        return _sharedSlot >= 0 &&
+               chunk.SharedValues is { } values &&
+               values[_sharedSlot] == _filter.SharedIndex;
+    }
 }
 
 public ref struct QueryChunkEnumerator<TFilter>
@@ -58,19 +63,17 @@ public ref struct QueryChunkEnumerator<TFilter>
     private QueryArchetypeMatch? _currentMatch;
     private Chunk? _currentChunk;
     private QueryChunkView _current;
-    private bool _started;
-    private bool _disposed;
 
     internal QueryChunkEnumerator(
         World world,
-        QueryHandle handle,
+        QueryState plan,
         uint last,
         uint current,
         TFilter filter,
         bool matchRowFilters)
     {
         _world = world;
-        _plan = world.GetQueryState(handle);
+        _plan = plan;
         _lastSystemVersion = last;
         _currentSystemVersion = current;
         _matchRowFilters = matchRowFilters;
@@ -80,8 +83,6 @@ public ref struct QueryChunkEnumerator<TFilter>
         _currentMatch = null;
         _currentChunk = null;
         _current = default;
-        _started = false;
-        _disposed = false;
     }
 
     public QueryChunkView Current
@@ -99,16 +100,15 @@ public ref struct QueryChunkEnumerator<TFilter>
 
     public bool MoveNext()
     {
-        EnsureStarted();
-
         var matches = _plan.Matches;
-        while (_matchIndex < matches.Count)
+        while (_matchIndex < matches.Length)
         {
             var match = matches[_matchIndex];
             _chunkIndex++;
-            if (_chunkIndex < match.Archetype.Chunks.Count)
+            ReadOnlySpan<Chunk> chunks = match.Archetype.Chunks;
+            if (_chunkIndex < chunks.Length)
             {
-                var chunk = match.Archetype.Chunks[_chunkIndex];
+                var chunk = chunks[_chunkIndex];
                 if (chunk.Count > 0 &&
                     MatchesChanged(match, chunk) &&
                     _filter.Matches(match, chunk))
@@ -144,25 +144,6 @@ public ref struct QueryChunkEnumerator<TFilter>
             chunk,
             _lastSystemVersion,
             _currentSystemVersion);
-    }
-
-    private void EnsureStarted()
-    {
-        if (_started)
-            return;
-
-        _started = true;
-        _world.BeginIteration();
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        if (_started)
-            _world.EndIteration();
     }
 }
 

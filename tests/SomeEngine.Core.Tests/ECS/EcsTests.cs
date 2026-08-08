@@ -29,7 +29,7 @@ public class EcsTests
         });
         gameWorld.World.Add(child, new WorldTransform());
 
-        OrderedHierarchy.Attach(gameWorld.World, child, root);
+        Hierarchy.SetParent(gameWorld.World, child, root);
         gameWorld.Update(0);
 
         var rootWorld = gameWorld.World.Read<WorldTransform>(root);
@@ -59,7 +59,7 @@ public class EcsTests
         });
         gameWorld.World.Add(child, new WorldTransform());
 
-        OrderedHierarchy.Attach(gameWorld.World, child, root);
+        Hierarchy.SetParent(gameWorld.World, child, root);
         gameWorld.Update(0);
 
         var childWorld = gameWorld.World.Read<WorldTransform>(child);

@@ -22,5 +22,6 @@ public readonly struct ImmediateSystemContext
     public uint LastSystemVersion { get; }
 
     public uint CurrentSystemVersion { get; }
+
 }
 

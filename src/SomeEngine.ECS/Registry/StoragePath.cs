@@ -13,9 +13,5 @@ public enum StoragePath : byte
     Sparse,
     /// <summary>Shared Component——World 级中心存储，参与 Archetype identity。</summary>
     Shared,
-    /// <summary>关系侧存储。</summary>
-    Relation,
-    /// <summary>排他关系侧存储。</summary>
-    ExclusiveRelation,
 }
 

@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Registry;
 using Xunit;
 
@@ -8,19 +9,19 @@ namespace SomeEngine.ECS.Tests;
 // 测试用组件类型
 // ——————————————————————————————————————————————————
 
-public struct Position : SomeEngine.ECS.Components.IComponent
+public struct Position : SomeEngine.ECS.IComponent
 {
     public float X;
     public float Y;
 }
 
-public struct Velocity : SomeEngine.ECS.Components.IComponent
+public struct Velocity : SomeEngine.ECS.IComponent
 {
     public float X;
     public float Y;
 }
 
-public struct Health : SomeEngine.ECS.Components.IComponent
+public struct Health : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
@@ -29,7 +30,7 @@ public struct PlayerTag : SomeEngine.ECS.Components.ITag { }
 
 public struct EnemyTag : SomeEngine.ECS.Components.ITag { }
 
-public struct Stunned : SomeEngine.ECS.Components.IEnableableComponent
+public struct Stunned : SomeEngine.ECS.IEnableableComponent
 {
     public float Duration;
 }
@@ -39,23 +40,25 @@ public struct Damage : SomeEngine.ECS.Components.ISparseComponent
     public int Amount;
 }
 
-public struct Likes : SomeEngine.ECS.Components.IRelation
+[RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
+public struct Likes : SomeEngine.ECS.IComponent
 {
     public float Strength;
 }
 
-public struct Owns : SomeEngine.ECS.Components.IExclusiveRelation
+[RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueSource)]
+public struct Owns : SomeEngine.ECS.IComponent
 {
     public int Slot;
 }
 
-public struct NamedComponent : SomeEngine.ECS.Components.IComponent
+public struct NamedComponent : SomeEngine.ECS.IComponent
 {
     public string Name;   // managed 引用字段
     public int Id;
 }
 
-public struct PureUnmanaged : SomeEngine.ECS.Components.IComponent
+public struct PureUnmanaged : SomeEngine.ECS.IComponent
 {
     public int A;
     public float B;
@@ -133,15 +136,14 @@ public class ComponentMetadataTests
     }
 
     [Fact]
-    public void RelationStorage()
+    public void RelationPayloadUsesOrdinaryTableStorage()
     {
-        Assert.Equal(StoragePath.Relation, ComponentMetadata<Likes>.Storage);
-    }
-
-    [Fact]
-    public void ExclusiveStorage()
-    {
-        Assert.Equal(StoragePath.ExclusiveRelation, ComponentMetadata<Owns>.Storage);
+        Assert.Equal(StoragePath.Table, ComponentMetadata<Likes>.Storage);
+        Assert.Equal(StoragePath.Table, ComponentMetadata<Owns>.Storage);
+        Assert.False(ComponentMetadata<Likes>.IsRelationshipSource);
+        Assert.False(ComponentMetadata<Owns>.IsRelationshipTarget);
+        Assert.Equal(RelationCardinality.Parallel, RelationSchema.For<Likes>().Cardinality);
+        Assert.Equal(RelationCardinality.UniqueSource, RelationSchema.For<Owns>().Cardinality);
     }
 
     [Fact]

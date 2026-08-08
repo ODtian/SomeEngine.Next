@@ -1,15 +1,16 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Archetypes;
 
 namespace SomeEngine.ECS.Queries;
 
-public sealed class QueryState
+internal sealed class QueryState
 {
     private readonly List<QueryArchetypeMatch> _matches = new();
     private readonly List<Archetype> _archetypes = new();
-    private Dictionary<(int WriteComponentId, int ReadComponentId), ReadWriteMatches>? _pairMatches;
-    private ReadWriteMatches? _lastPairMatches;
+    private Dictionary<(int WriteComponentId, int ReadComponentId), ReadWriteMatch[]>? _pairMatches;
+    private ReadWriteMatch[]? _lastPairMatches;
     private int _lastWriteComponent;
     private int _lastReadComponent;
 
@@ -20,18 +21,40 @@ public sealed class QueryState
 
     public QueryDefinition Definition { get; }
 
-    public IReadOnlyList<QueryArchetypeMatch> Matches => _matches;
+    public ReadOnlySpan<QueryArchetypeMatch> Matches => CollectionsMarshal.AsSpan(_matches);
 
-    public IReadOnlyList<Archetype> Archetypes => _archetypes;
+    public ReadOnlySpan<Archetype> Archetypes => CollectionsMarshal.AsSpan(_archetypes);
 
-    internal List<QueryArchetypeMatch> MatchList => _matches;
+    internal ReadOnlySpan<QueryArchetypeMatch> MatchList => CollectionsMarshal.AsSpan(_matches);
 
-    internal static QueryState Create(QueryDefinition definition, IReadOnlyList<Archetype> archetypes)
+    internal static QueryState Create(QueryDefinition definition, ReadOnlySpan<Archetype> archetypes)
     {
         var state = new QueryState(definition);
-        for (int i = 0; i < archetypes.Count; i++)
+        for (int i = 0; i < archetypes.Length; i++)
             state.TryAddArchetype(archetypes[i]);
         return state;
+    }
+
+    /// <summary>
+    /// Clones the already-compiled query image by remapping its matched archetypes. This avoids
+    /// re-evaluating every query definition against every archetype while a structural candidate
+    /// is prepared; derivable read/write pair caches deliberately remain cold in the clone.
+    /// </summary>
+    internal QueryState CloneExact(DetachedTableMap tableMap)
+    {
+        ArgumentNullException.ThrowIfNull(tableMap);
+
+        var clone = new QueryState(Definition);
+        clone._matches.Capacity = _matches.Capacity;
+        clone._archetypes.Capacity = _archetypes.Capacity;
+        for (int i = 0; i < _matches.Count; i++)
+        {
+            QueryArchetypeMatch match = _matches[i].CloneFor(tableMap.Remap(_matches[i].Archetype));
+            clone._matches.Add(match);
+            clone._archetypes.Add(match.Archetype);
+        }
+
+        return clone;
     }
 
     internal bool TryAddArchetype(Archetype archetype)
@@ -46,7 +69,7 @@ public sealed class QueryState
         return true;
     }
 
-    internal ReadWriteMatches AccessMatches<TWrite, TRead>(
+    internal ReadOnlySpan<ReadWriteMatch> AccessMatches<TWrite, TRead>(
         int writeComponentId,
         int readComponentId)
     {
@@ -57,7 +80,7 @@ public sealed class QueryState
             return _lastPairMatches;
         }
 
-        _pairMatches ??= new Dictionary<(int WriteComponentId, int ReadComponentId), ReadWriteMatches>();
+        _pairMatches ??= new Dictionary<(int WriteComponentId, int ReadComponentId), ReadWriteMatch[]>();
         var key = (writeComponentId, readComponentId);
         if (_pairMatches.TryGetValue(key, out var existing))
         {
@@ -65,7 +88,10 @@ public sealed class QueryState
             return existing;
         }
 
-        var matches = ReadWriteMatches.Create<TWrite, TRead>(this, writeComponentId, readComponentId);
+        var matches = CreateReadWriteMatches<TWrite, TRead>(
+            this,
+            writeComponentId,
+            readComponentId);
         _pairMatches.Add(key, matches);
         CacheMatches(writeComponentId, readComponentId, matches);
         return matches;
@@ -75,11 +101,47 @@ public sealed class QueryState
     private void CacheMatches(
         int writeComponentId,
         int readComponentId,
-        ReadWriteMatches matches)
+        ReadWriteMatch[] matches)
     {
         _lastWriteComponent = writeComponentId;
         _lastReadComponent = readComponentId;
         _lastPairMatches = matches;
+    }
+
+    private static ReadWriteMatch[] CreateReadWriteMatches<TWrite, TRead>(
+        QueryState plan,
+        int writeComponentId,
+        int readComponentId)
+    {
+        ReadOnlySpan<QueryArchetypeMatch> source = plan.MatchList;
+        var matches = new ReadWriteMatch[source.Length];
+        for (int i = 0; i < source.Length; i++)
+        {
+            QueryArchetypeMatch match = source[i];
+            if (!match.TryGetAccess(writeComponentId, out var writeAccess) ||
+                !writeAccess.Access.CanRead() ||
+                !writeAccess.Access.CanWrite())
+            {
+                throw new InvalidOperationException(
+                    $"{typeof(TWrite).Name} was not declared for query read-write access.");
+            }
+
+            if (!match.TryGetAccess(readComponentId, out var readAccess) ||
+                !readAccess.Access.CanRead())
+            {
+                throw new InvalidOperationException(
+                    $"{typeof(TRead).Name} was not declared for query read access.");
+            }
+
+            matches[i] = new ReadWriteMatch(
+                match.Archetype,
+                writeAccess.ColumnIndex,
+                readAccess.ColumnIndex,
+                match.HasChangedFilter,
+                match);
+        }
+
+        return matches;
     }
 
     internal bool TryGetMatch(Archetype archetype, out QueryArchetypeMatch match)
@@ -103,7 +165,7 @@ public sealed class QueryState
         out QueryArchetypeMatch match)
     {
         var builder = new QueryMatchBuilder(archetype);
-        var terms = spec.TermsArray;
+        ReadOnlySpan<QueryTerm> terms = spec.Terms;
         for (int i = 0; i < terms.Length; i++)
         {
             if (!builder.TryAdd(terms[i]))
@@ -253,52 +315,6 @@ public sealed class QueryState
     }
 }
 
-internal sealed class ReadWriteMatches
-{
-    private ReadWriteMatches(ReadWriteMatch[] matches)
-    {
-        Matches = matches;
-    }
-
-    internal ReadWriteMatch[] Matches { get; }
-
-    internal static ReadWriteMatches Create<TWrite, TRead>(
-        QueryState plan,
-        int writeComponentId,
-        int readComponentId)
-    {
-        var source = plan.MatchList;
-        var matches = new ReadWriteMatch[source.Count];
-        for (int i = 0; i < source.Count; i++)
-        {
-            var match = source[i];
-            if (!match.TryGetAccess(writeComponentId, out var writeAccess) ||
-                !writeAccess.Access.CanRead() ||
-                !writeAccess.Access.CanWrite())
-            {
-                throw new InvalidOperationException(
-                    $"{typeof(TWrite).Name} was not declared for query read-write access.");
-            }
-
-            if (!match.TryGetAccess(readComponentId, out var readAccess) ||
-                !readAccess.Access.CanRead())
-            {
-                throw new InvalidOperationException(
-                    $"{typeof(TRead).Name} was not declared for query read access.");
-            }
-
-            matches[i] = new ReadWriteMatch(
-                match.Archetype,
-                writeAccess.ColumnIndex,
-                readAccess.ColumnIndex,
-                match.HasChangedFilter,
-                match);
-        }
-
-        return new ReadWriteMatches(matches);
-    }
-}
-
 internal readonly struct ReadWriteMatch
 {
     internal readonly Archetype Archetype;
@@ -324,33 +340,39 @@ internal readonly struct ReadWriteMatch
 
 public sealed class QueryArchetypeMatch
 {
+    private readonly ChangeTerm[] _exactTerms;
+    private readonly int[] _chunkColumns;
+    private readonly int[] _enabledMasks;
+    private readonly int[] _disabledMasks;
+    private readonly QueryColumnAccess[] _accessColumns;
+
     internal QueryArchetypeMatch(
         Archetype archetype,
-        ChangeTerm[] exactTerms,
-        int[] chunkColumns,
-        int[] enabledMasks,
-        int[] disabledMasks,
-        QueryColumnAccess[] accessColumns)
+        ChangeTerm[] ownedExactTerms,
+        int[] ownedChunkColumns,
+        int[] ownedEnabledMasks,
+        int[] ownedDisabledMasks,
+        QueryColumnAccess[] ownedAccessColumns)
     {
         Archetype = archetype;
-        ExactTerms = exactTerms;
-        ChunkColumns = chunkColumns;
-        EnabledMasks = enabledMasks;
-        DisabledMasks = disabledMasks;
-        AccessColumns = accessColumns;
+        _exactTerms = ownedExactTerms;
+        _chunkColumns = ownedChunkColumns;
+        _enabledMasks = ownedEnabledMasks;
+        _disabledMasks = ownedDisabledMasks;
+        _accessColumns = ownedAccessColumns;
     }
 
     public Archetype Archetype { get; }
 
-    internal ChangeTerm[] ExactTerms { get; }
+    internal ReadOnlySpan<ChangeTerm> ExactTerms => _exactTerms;
 
-    internal int[] ChunkColumns { get; }
+    internal ReadOnlySpan<int> ChunkColumns => _chunkColumns;
 
-    internal int[] EnabledMasks { get; }
+    internal ReadOnlySpan<int> EnabledMasks => _enabledMasks;
 
-    internal int[] DisabledMasks { get; }
+    internal ReadOnlySpan<int> DisabledMasks => _disabledMasks;
 
-    internal QueryColumnAccess[] AccessColumns { get; }
+    internal ReadOnlySpan<QueryColumnAccess> AccessColumns => _accessColumns;
 
     public bool HasChangedFilter => HasChangeFilter;
 
@@ -384,6 +406,22 @@ public sealed class QueryArchetypeMatch
         return TryGetAccess(componentId, out var access)
             ? access.Access
             : QueryAccess.None;
+    }
+
+    internal QueryArchetypeMatch CloneFor(Archetype archetype) =>
+        new(
+            archetype,
+            CloneOwned(ExactTerms),
+            CloneOwned(ChunkColumns),
+            CloneOwned(EnabledMasks),
+            CloneOwned(DisabledMasks),
+            CloneOwned(AccessColumns));
+
+    private static T[] CloneOwned<T>(ReadOnlySpan<T> source)
+    {
+        var clone = new T[source.Length];
+        source.CopyTo(clone);
+        return clone;
     }
 
     internal bool MatchesRow(Chunk chunk, int row, uint lastVersion)
@@ -487,17 +525,17 @@ public sealed class QueryArchetypeMatch
         if (rows == 0)
             return 0;
 
-        UInt128[]? masks = chunk.EnableMasks;
+        ReadOnlySpan<UInt128> masks = chunk.EnableMasks;
         for (int i = 0; i < EnabledMasks.Length; i++)
         {
-            rows &= masks![EnabledMasks[i]];
+            rows &= masks[EnabledMasks[i]];
             if (rows == 0)
                 return 0;
         }
 
         for (int i = 0; i < DisabledMasks.Length; i++)
         {
-            rows &= ~masks![DisabledMasks[i]];
+            rows &= ~masks[DisabledMasks[i]];
             if (rows == 0)
                 return 0;
         }
@@ -518,38 +556,14 @@ public sealed class QueryArchetypeMatch
     private static bool MatchesTerm(Chunk chunk, ChangeTerm term, int row, uint lastVersion)
     {
         var version = term.Filter == QueryTermFilter.Added
-            ? chunk.AddVersions[term.Column][row]
-            : chunk.WriteVersions[term.Column][row];
+            ? chunk.AddVersionRows(term.Column)[row]
+            : chunk.WriteVersionRows(term.Column)[row];
         return VersionClock.IsNewer(version, lastVersion);
     }
 
-    internal bool MatchesShared(Chunk chunk, ReadOnlySpan<QuerySharedFilter> filters)
-    {
-        if (filters.Length == 0)
-            return true;
-
-        if (chunk.SharedValues is null)
-            return false;
-
-        var sharedIds = Archetype.SharedComponentIds;
-        for (int i = 0; i < filters.Length; i++)
-        {
-            int position = Array.BinarySearch(sharedIds, filters[i].ComponentId);
-            if (position < 0 || chunk.SharedValues[position] != filters[i].SharedIndex)
-                return false;
-        }
-
-        return true;
-    }
-
-    internal bool MatchesShared(Chunk chunk, QuerySharedFilter filter)
-    {
-        if (chunk.SharedValues is null)
-            return false;
-
-        int position = Array.BinarySearch(Archetype.SharedComponentIds, filter.ComponentId);
-        return position >= 0 && chunk.SharedValues[position] == filter.SharedIndex;
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int SharedSlot(int componentId) =>
+        Archetype.SharedComponentIds.BinarySearch(componentId);
 
 }
 

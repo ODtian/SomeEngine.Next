@@ -10,7 +10,6 @@ using SomeEngine.ECS.Hooks;
 using SomeEngine.ECS.Indexing;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
-using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
 
@@ -18,25 +17,54 @@ namespace SomeEngine.ECS.Owners;
 
 internal sealed class Shared
 {
+    private const int MaximumStackSharedValues = 256;
     private Entities _entities = null!;
     private Tables _tables = null!;
-    private Journal _journal = null!;
-    private Clock _clock = null!;
     private Iteration _iteration = null!;
 
-    internal SharedStores Stores { get; } = new();
+    internal Shared()
+        : this(new SharedStores())
+    {
+    }
+
+    internal Shared(SharedStores stores)
+    {
+        _stores = stores ?? throw new ArgumentNullException(nameof(stores));
+    }
+
+    private readonly SharedStores _stores;
+
+    internal Shared CloneDetached() => new(_stores.CloneExact());
+
+    internal int StoreDetachCount<T>(int componentId)
+        where T : struct =>
+        _stores.Store<T>(componentId).DetachCount;
+
+    internal bool SharesStoreObjectWith<T>(Shared other, int componentId)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return ReferenceEquals(
+            _stores.Store<T>(componentId),
+            other._stores.Store<T>(componentId));
+    }
+
+    internal bool SharesStoreBackingWith<T>(Shared other, int componentId)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return ReferenceEquals(
+            _stores.Store<T>(componentId).BackingIdentity,
+            other._stores.Store<T>(componentId).BackingIdentity);
+    }
 
     internal void Bind(
         Entities entities,
         Tables tables,
-        Journal journal,
-        Clock clock,
         Iteration iteration)
     {
         _entities = entities;
         _tables = tables;
-        _journal = journal;
-        _clock = clock;
         _iteration = iteration;
     }
 
@@ -46,14 +74,14 @@ internal sealed class Shared
         _iteration.Throw();
 
         int componentId = ComponentMetadata<T>.Id;
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var archetype = record.Archetype!;
         if (archetype.HasComponent(componentId))
             throw new InvalidOperationException(
                 $"Entity {entity} already has shared component {typeof(T).Name}.");
 
         int sharedIndex = AddIndex(componentId, in value);
-        Attach(entity, ref record, archetype, componentId, sharedIndex);
+        Attach(entity, record, archetype, componentId, sharedIndex);
     }
 
     internal void Replace<T>(Entity entity, in T value)
@@ -62,7 +90,7 @@ internal sealed class Shared
         _iteration.Throw();
 
         int componentId = ComponentMetadata<T>.Id;
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var archetype = record.Archetype!;
 
         if (!archetype.HasComponent(componentId))
@@ -70,35 +98,49 @@ internal sealed class Shared
                 $"Entity {entity} does not have shared component {typeof(T).Name}.");
 
         int sharedIndex = AddIndex(componentId, in value);
-        Move(entity, ref record, archetype, componentId, sharedIndex);
+        Move(entity, record, archetype, componentId, sharedIndex);
     }
 
     internal void Merge<T>(Entity entity, in T value)
         where T : struct, ISharedComponent
     {
         int componentId = ComponentMetadata<T>.Id;
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var archetype = record.Archetype!;
         int sharedIndex = AddIndex(componentId, in value);
 
         if (archetype.HasComponent(componentId))
-            Move(entity, ref record, archetype, componentId, sharedIndex);
+            Move(entity, record, archetype, componentId, sharedIndex);
         else
-            Attach(entity, ref record, archetype, componentId, sharedIndex);
+            Attach(entity, record, archetype, componentId, sharedIndex);
     }
 
     internal T Get<T>(Entity entity)
         where T : struct, ISharedComponent
     {
         int componentId = ComponentMetadata<T>.Id;
-        ref var record = ref _entities.Row(entity);
+        EntityRecord record = _entities.ReadRow(entity);
 
         if (!record.Archetype!.HasComponent(componentId))
             throw new InvalidOperationException(
                 $"Entity {entity} does not have shared component {typeof(T).Name}.");
 
         int sharedIndex = EntityIndex(record.Archetype, record.Chunk!, componentId);
-        return Stores.Store<T>(componentId).GetValue(sharedIndex);
+        return _stores.Store<T>(componentId).GetValue(sharedIndex);
+    }
+
+    internal ref readonly T GetRef<T>(Entity entity)
+        where T : struct, ISharedComponent
+    {
+        int componentId = ComponentMetadata<T>.Id;
+        EntityRecord record = _entities.ReadRow(entity);
+
+        if (!record.Archetype!.HasComponent(componentId))
+            throw new InvalidOperationException(
+                $"Entity {entity} does not have shared component {typeof(T).Name}.");
+
+        int sharedIndex = EntityIndex(record.Archetype, record.Chunk!, componentId);
+        return ref _stores.Store<T>(componentId).GetValueRef(sharedIndex);
     }
 
     internal void Remove<T>(Entity entity)
@@ -111,7 +153,7 @@ internal sealed class Shared
     {
         _iteration.Throw();
 
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var archetype = record.Archetype!;
 
         if (!archetype.HasComponent(componentId))
@@ -119,8 +161,7 @@ internal sealed class Shared
                 $"Entity {entity} does not have shared component {name}.");
 
         var edge = _tables.Registry.RemoveEdge(archetype, componentId);
-        _tables.MoveEntity(entity, ref record, edge);
-        Write(SerializationChangeKind.SharedRemoved, entity, componentId);
+        _tables.MoveEntity(entity, record, edge);
     }
 
     internal bool Has<T>(Entity entity)
@@ -129,27 +170,27 @@ internal sealed class Shared
         if (!_entities.Alive(entity))
             return false;
 
-        ref var record = ref _entities.Store.GetRecord(entity);
+        EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
         return record.Archetype is not null && record.Archetype.HasComponent(ComponentMetadata<T>.Id);
     }
 
     internal int AddIndex<T>(int componentId, in T value)
         where T : struct
     {
-        return Stores.Store<T>(componentId).GetOrAdd(value);
+        return _stores.Store<T>(componentId).GetOrAdd(value);
     }
 
     internal bool TryIndex<T>(int componentId, in T value, out int sharedIndex)
         where T : struct
     {
         sharedIndex = default;
-        return Stores.TryGetStore<T>(componentId, out var store) &&
+        return _stores.TryGetStore<T>(componentId, out var store) &&
             store.TryGetIndex(value, out sharedIndex);
     }
 
     internal void MoveTo(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         ReadOnlySpan<int> expectedValues)
     {
         var archetype = record.Archetype!;
@@ -163,21 +204,27 @@ internal sealed class Shared
         int sourceRow = record.RowInChunk;
 
         var (destinationChunk, destinationRow) = _tables.AllocateShared(archetype, entity, expectedValues);
-
-        for (int columnIndex = 0; columnIndex < archetype.ColumnMetas.Length; columnIndex++)
+        // ValuesMatch above ruled out the source bucket. Keep the source backing read-only during
+        // the copy and let RemoveRow perform its single required detach afterward.
+        if (ReferenceEquals(sourceChunk, destinationChunk))
         {
-            unsafe
-            {
-                archetype.ColumnMetas[columnIndex].Operations.CopyElement(
-                    sourceChunk.Columns[columnIndex],
-                    sourceRow,
-                    destinationChunk.Columns[columnIndex],
-                    destinationRow);
-            }
+            throw new InvalidOperationException(
+                "A shared-value row move cannot allocate into its source chunk.");
+        }
+
+        for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
+        {
+            sourceChunk.CopyComponentTo(
+                columnIndex,
+                sourceRow,
+                destinationChunk,
+                columnIndex,
+                destinationRow,
+                in archetype.ColumnOperations[columnIndex]);
 
             sourceChunk.CopyVersions(columnIndex, sourceRow, columnIndex, destinationRow, destinationChunk);
 
-            int componentId = archetype.ColumnMetas[columnIndex].ComponentId;
+            int componentId = archetype.TableComponentIds[columnIndex];
             if (archetype.TryMask(componentId, out int maskIndex))
             {
                 bool enabled = sourceChunk.IsEnabled(maskIndex, sourceRow);
@@ -185,10 +232,10 @@ internal sealed class Shared
             }
         }
 
-        var movedEntity = sourceChunk.RemoveRow(sourceRow, archetype.ColumnMetas);
+        var movedEntity = sourceChunk.RemoveRow(sourceRow, archetype.ColumnOperations);
         if (movedEntity != Entity.Null)
         {
-            ref var movedRecord = ref _entities.Store.GetRecord(movedEntity);
+            EntityRecordWriter movedRecord = _entities.Store.GetRecord(movedEntity);
             movedRecord.RowInChunk = sourceRow;
         }
 
@@ -200,12 +247,12 @@ internal sealed class Shared
 
     internal void Reset()
     {
-        Stores.Clear();
+        _stores.Clear();
     }
 
     internal static int Slot(Archetype archetype, int componentId)
     {
-        int slot = Array.BinarySearch(archetype.SharedComponentIds, componentId);
+        int slot = archetype.SharedComponentIds.BinarySearch(componentId);
         if (slot < 0)
             throw new InvalidOperationException(
                 $"Component ID {componentId} is not a shared component of Archetype {archetype.ArchetypeId}.");
@@ -223,26 +270,27 @@ internal sealed class Shared
         return chunk.SharedValues[slot];
     }
 
-    internal static bool ValuesMatch(int[]? chunkValues, ReadOnlySpan<int> entityValues)
+    internal static bool ValuesMatch(
+        SharedComponentTuple? chunkValues,
+        ReadOnlySpan<int> entityValues)
     {
         return chunkValues is not null && chunkValues.AsSpan().SequenceEqual(entityValues);
     }
 
     private void Attach(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetype archetype,
         int componentId,
         int sharedIndex)
     {
         var edge = _tables.Registry.AddEdge(archetype, componentId);
-        _tables.MoveWithShared(entity, ref record, edge.AsTransition(), componentId, sharedIndex);
-        Write(SerializationChangeKind.SharedAdded, entity, componentId);
+        _tables.MoveWithShared(entity, record, edge, componentId, sharedIndex);
     }
 
     private void Move(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetype archetype,
         int componentId,
         int sharedIndex)
@@ -251,11 +299,22 @@ internal sealed class Shared
         if (oldSharedIndex == sharedIndex)
             return;
 
-        Span<int> sharedValues = stackalloc int[archetype.SharedComponentIds.Length];
-        FillChunk(archetype, record.Chunk!, sharedValues);
-        sharedValues[Slot(archetype, componentId)] = sharedIndex;
-        MoveTo(entity, ref record, sharedValues);
-        Write(SerializationChangeKind.SharedChanged, entity, componentId);
+        int count = archetype.SharedComponentIds.Length;
+        int[]? rented = null;
+        Span<int> sharedValues = count <= MaximumStackSharedValues
+            ? stackalloc int[count]
+            : (rented = ArrayPool<int>.Shared.Rent(count)).AsSpan(0, count);
+        try
+        {
+            FillChunk(archetype, record.Chunk!, sharedValues);
+            sharedValues[Slot(archetype, componentId)] = sharedIndex;
+            MoveTo(entity, record, sharedValues);
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<int>.Shared.Return(rented);
+        }
     }
 
     private static void FillChunk(Archetype archetype, Chunk chunk, Span<int> values)
@@ -275,10 +334,6 @@ internal sealed class Shared
         chunk.SharedValues.AsSpan().CopyTo(values);
     }
 
-    private void Write(SerializationChangeKind kind, Entity entity, int componentId)
-    {
-        _journal.Write(kind, entity, componentId, default, _clock.Tick);
-    }
 }
 
 

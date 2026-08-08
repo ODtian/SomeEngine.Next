@@ -9,21 +9,27 @@ namespace SomeEngine.ECS.Registry;
 /// 设计引用：docs/DESIGN.md §2.3
 /// Table-backed columns are represented as T[].
 /// </remarks>
-public unsafe struct ComponentOperations
+internal unsafe struct ComponentOperations
 {
     /// <summary>
-    /// 将 source[sourceIndex] 拷贝到 destination[destinationIndex]。用于 archetype 迁移时的列拷贝。
+    /// Returns a managed interior reference to one row without exposing the owning column array.
     /// </summary>
-    public delegate*<object, int, object, int, void> CopyElement;
+    internal delegate*<object, int, ref byte> GetReference;
+
+    /// <summary>
+    /// Copies one component value between managed interior references. The generic implementation
+    /// performs a typed assignment so reference-bearing component fields remain GC-correct.
+    /// </summary>
+    internal delegate*<ref byte, ref byte, void> CopyValue;
 
     /// <summary>
     /// 将 array[lastIndex] 覆盖到 array[removeIndex]。用于 chunk 内 swap-remove。
     /// </summary>
-    public delegate*<object, int, int, void> SwapRemove;
+    internal delegate*<object, int, int, void> SwapRemove;
 
     /// <summary>
     /// 创建列存储对象。返回 T[capacity]。
     /// </summary>
-    public delegate*<int, object> CreateArray;
+    internal delegate*<int, object> CreateArray;
 }
 

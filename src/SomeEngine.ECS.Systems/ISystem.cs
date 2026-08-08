@@ -5,6 +5,7 @@ namespace SomeEngine.ECS.Systems;
 /// </summary>
 /// <typeparam name="TContext">The domain-specific context exposed to systems in a group.</typeparam>
 public interface ISystem<TContext>
+    where TContext : allows ref struct
 {
     /// <summary>Runs once before the first update of this system.</summary>
     void OnCreate(ref TContext context) { }

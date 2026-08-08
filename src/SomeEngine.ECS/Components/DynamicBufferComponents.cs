@@ -3,24 +3,6 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Components;
 
-public readonly struct BufferValues<T>
-    where T : struct, IBufferElement
-{
-    private readonly ReadOnlyMemory<T> _items;
-
-    public BufferValues(params T[] items)
-    {
-        _items = items;
-    }
-
-    public BufferValues(ReadOnlyMemory<T> items)
-    {
-        _items = items;
-    }
-
-    public ReadOnlySpan<T> AsSpan() => _items.Span;
-}
-
 public static class BufferComponents
 {
     public static int Header<T>() where T : struct, IBufferElement
@@ -63,12 +45,39 @@ internal static class DynamicBufferLayout<T>
     }
 }
 
-internal struct DynamicBufferHeader<T> : IComponent
+internal interface IBufferStorageComponent;
+
+internal struct DynamicBufferHeader<T> : global::SomeEngine.ECS.IComponent, IBufferStorageComponent
     where T : struct, IBufferElement
 {
-    public int Count;
-    public int InlineCapacity;
-    public T[]? Overflow;
+    private T[]? _overflow;
+
+    internal int Count;
+    internal int InlineCapacity;
+
+    internal bool HasOverflow => _overflow is not null;
+
+    internal int OverflowCapacity => _overflow?.Length ?? 0;
+
+    internal ReadOnlySpan<T> OverflowReadSpan => _overflow;
+
+    internal Span<T> OverflowWriteSpan => _overflow;
+
+    internal object? OverflowBackingIdentity => _overflow;
+
+    internal void SetOwnedOverflow(T[]? ownedOverflow, long ownerIdentity)
+    {
+        _overflow = ownedOverflow;
+        OverflowOwnerIdentity = ownedOverflow is null ? 0 : ownerIdentity;
+    }
+
+    // An overflow array is mutable only through the Chunk whose unique ownership identity is
+    // recorded here. Forking or structurally copying a header intentionally preserves this token:
+    // the destination can read the same immutable backing, but its first content write must
+    // detach the single row before mutation. The token is deliberately not a reference count;
+    // conservative extra detaches are safe, while a stale token can never grant a new Chunk write
+    // ownership.
+    internal long OverflowOwnerIdentity;
 
     public static DynamicBufferHeader<T> Create()
     {
@@ -80,15 +89,9 @@ internal struct DynamicBufferHeader<T> : IComponent
 }
 
 [InlineArray(DynamicBufferConstants.MaxInlineCapacity)]
-internal struct BufferInlineStorage<T>
+internal struct DynamicBufferInline<T> : global::SomeEngine.ECS.IComponent, IBufferStorageComponent
     where T : struct, IBufferElement
 {
     private T _element0;
-}
-
-internal struct DynamicBufferInline<T> : IComponent
-    where T : struct, IBufferElement
-{
-    public BufferInlineStorage<T> Elements;
 }
 

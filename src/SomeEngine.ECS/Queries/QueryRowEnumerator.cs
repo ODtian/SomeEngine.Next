@@ -10,14 +10,14 @@ public ref struct QueryRowEnumerator<TFilter>
 
     internal QueryRowEnumerator(
         World world,
-        QueryHandle handle,
+        QueryState plan,
         uint last,
         uint current,
         TFilter filter)
     {
         _chunks = new QueryChunkEnumerator<TFilter>(
             world,
-            handle,
+            plan,
             last,
             current,
             filter,
@@ -55,10 +55,9 @@ public ref struct QueryRowEnumerator<TFilter>
         }
     }
 
-    public void Dispose() => _chunks.Dispose();
 }
 
-internal struct QueryRowCursor
+internal ref struct QueryRowCursor
 {
     private readonly World _world;
     private readonly uint _lastVersion;
@@ -128,7 +127,7 @@ internal struct QueryRowCursor
     }
 }
 
-public struct ChunkRowEnumerator
+public ref struct ChunkRowEnumerator
 {
     private QueryRowCursor _rows;
 

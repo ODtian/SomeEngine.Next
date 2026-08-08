@@ -6,15 +6,26 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Queries;
 
+public delegate void QueryPairExecution<TWrite, TRead>(
+    QueryPairEnumerator<TWrite, TRead> chunks)
+    where TWrite : struct, IComponent
+    where TRead : struct, IComponent;
+
+public delegate void QueryPairExecution<TWrite, TRead, TState>(
+    QueryPairEnumerator<TWrite, TRead> chunks,
+    ref TState state)
+    where TWrite : struct, IComponent
+    where TRead : struct, IComponent;
+
 public readonly ref struct QueryChunkPair<TWrite, TRead>
     where TWrite : struct, IComponent
     where TRead : struct, IComponent
 {
-    private readonly TWrite[] _write;
-    private readonly TRead[] _read;
+    private readonly Span<TWrite> _write;
+    private readonly ReadOnlySpan<TRead> _read;
     private readonly int _count;
 
-    internal QueryChunkPair(TWrite[] write, TRead[] read, int count)
+    internal QueryChunkPair(Span<TWrite> write, ReadOnlySpan<TRead> read, int count)
     {
         _write = write;
         _read = read;
@@ -30,25 +41,25 @@ public readonly ref struct QueryChunkPair<TWrite, TRead>
     public Span<TWrite> Write
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _write.AsSpan(0, _count);
+        get => _write[.._count];
     }
 
     public ReadOnlySpan<TRead> Read
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _read.AsSpan(0, _count);
+        get => _read[.._count];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref TWrite DangerousWriteRef()
     {
-        return ref MemoryMarshal.GetArrayDataReference(_write);
+        return ref MemoryMarshal.GetReference(_write);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref TRead DangerousReadRef()
+    public ref readonly TRead DangerousReadRef()
     {
-        return ref MemoryMarshal.GetArrayDataReference(_read);
+        return ref MemoryMarshal.GetReference(_read);
     }
 }
 
@@ -57,7 +68,7 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
     where TRead : struct, IComponent
 {
     private readonly World _world;
-    private readonly ReadWriteMatches _plan;
+    private readonly ReadOnlySpan<ReadWriteMatch> _matches;
     private readonly uint _lastSystemVersion;
     private readonly int _writeComponentId;
     private int _matchIndex;
@@ -71,8 +82,6 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
     private bool _singleFastPath;
     private bool _singleMatchReturned;
     private QueryChunkPair<TWrite, TRead> _current;
-    private bool _started;
-    private bool _disposed;
 
     internal QueryPairEnumerator(
         World world,
@@ -82,7 +91,7 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
         _world = world;
         _writeComponentId = ComponentMetadata<TWrite>.Id;
         var readComponentId = ComponentMetadata<TRead>.Id;
-        _plan = world.AccessMatches<TWrite, TRead>(
+        _matches = world.AccessMatches<TWrite, TRead>(
             handle,
             _writeComponentId,
             readComponentId);
@@ -92,7 +101,7 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
         _writeColumn = -1;
         _readColumn = -1;
         _currentMatch = default;
-        var matches = _plan.Matches;
+        ReadOnlySpan<ReadWriteMatch> matches = _matches;
         if (matches.Length == 1 && !matches[0].HasChangedFilter)
         {
             _singleMatch = matches[0];
@@ -108,8 +117,6 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
         _hasCurrentMatch = false;
         _currentHasFilter = false;
         _current = default;
-        _started = false;
-        _disposed = false;
     }
 
     public QueryChunkPair<TWrite, TRead> Current
@@ -124,12 +131,10 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MoveNext()
     {
-        EnsureStarted();
-
-        if (_singleFastPath)
-            return MoveSingle();
-
-        return MoveNextSlow();
+        bool moved = _singleFastPath
+            ? MoveSingle()
+            : MoveNextSlow();
+        return moved;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -138,8 +143,8 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
         if (_singleMatchReturned)
             return false;
 
-        var chunks = _singleMatch.Archetype.Chunks;
-        if (chunks.Count != 1)
+        ReadOnlySpan<Chunk> chunks = _singleMatch.Archetype.Chunks;
+        if (chunks.Length != 1)
         {
             _singleFastPath = false;
             return MoveNextSlow();
@@ -159,7 +164,7 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool MoveNextSlow()
     {
-        var matches = _plan.Matches;
+        ReadOnlySpan<ReadWriteMatch> matches = _matches;
         while (true)
         {
             if (!_hasCurrentMatch)
@@ -171,9 +176,9 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
                 LoadMatch(match);
             }
 
-            var chunks = _currentMatch.Archetype.Chunks;
+            ReadOnlySpan<Chunk> chunks = _currentMatch.Archetype.Chunks;
             _chunkIndex++;
-            if (_chunkIndex < chunks.Count)
+            if (_chunkIndex < chunks.Length)
             {
                 var chunk = chunks[_chunkIndex];
                 if (chunk.Count > 0 &&
@@ -208,30 +213,9 @@ public ref struct QueryPairEnumerator<TWrite, TRead>
     {
         _world.Components.WriteChunk(chunk, _writeColumn, _writeComponentId);
         _current = new QueryChunkPair<TWrite, TRead>(
-            Unsafe.As<TWrite[]>(chunk.Columns[_writeColumn]),
-            Unsafe.As<TRead[]>(chunk.Columns[_readColumn]),
+            chunk.ComponentRows<TWrite>(_writeColumn),
+            chunk.ComponentRows<TRead>(_readColumn),
             chunk.Count);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void EnsureStarted()
-    {
-        if (_started)
-            return;
-
-        _started = true;
-        _world.BeginIteration();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        if (_started)
-            _world.EndIteration();
     }
 }
 

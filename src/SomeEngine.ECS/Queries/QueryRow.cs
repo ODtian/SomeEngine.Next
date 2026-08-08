@@ -5,7 +5,7 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Queries;
 
-public readonly struct QueryRow
+public readonly ref struct QueryRow
 {
     private readonly World _world;
     private readonly QueryArchetypeMatch _match;
@@ -46,13 +46,23 @@ public readonly struct QueryRow
     public ref T Write<T>() where T : struct
     {
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: false, write: true);
-        return ref _world.Components.WriteRef<T>(Entity, _chunk, _row, column);
+        return ref _world.Components.WriteRef<T>(
+            Entity,
+            _chunk,
+            _row,
+            column,
+            CurrentSystemVersion);
     }
 
     public ref T ReadWrite<T>() where T : struct
     {
         int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: true);
-        return ref _world.Components.WriteRef<T>(Entity, _chunk, _row, column);
+        return ref _world.Components.WriteRef<T>(
+            Entity,
+            _chunk,
+            _row,
+            column,
+            CurrentSystemVersion);
     }
 
     public void SetComponentEnabled<T>(bool enabled)
@@ -96,7 +106,8 @@ public readonly struct QueryRow
             _chunk,
             _row,
             headerColumn,
-            inlineColumn);
+            inlineColumn,
+            CurrentSystemVersion);
     }
 
     public BufferView<T> ReadBuffer<T>()

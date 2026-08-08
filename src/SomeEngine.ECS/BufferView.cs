@@ -38,7 +38,7 @@ public ref struct BufferView<T>
         get
         {
             var header = Header;
-            return header.Overflow?.Length ?? header.InlineCapacity;
+            return header.HasOverflow ? header.OverflowCapacity : header.InlineCapacity;
         }
     }
 
@@ -53,18 +53,18 @@ public ref struct BufferView<T>
         var header = Header;
         ThrowRange(index, header.Count);
 
-        if (header.Overflow is not null)
-            return header.Overflow[index];
+        if (header.HasOverflow)
+            return header.OverflowReadSpan[index];
 
-        return Inline.Elements[index];
+        return Inline[index];
     }
 
     public ReadOnlySpan<T> AsSpan()
     {
         var header = Header;
 
-        if (header.Overflow is not null)
-            return header.Overflow.AsSpan(0, header.Count);
+        if (header.HasOverflow)
+            return header.OverflowReadSpan[..header.Count];
 
         return InlineSpan(header.Count);
     }
@@ -75,10 +75,10 @@ public ref struct BufferView<T>
         get => _chunk.ReadComponent<DynamicBufferHeader<T>>(_headerColumn, _row);
     }
 
-    private ref DynamicBufferInline<T> Inline
+    private ref readonly DynamicBufferInline<T> Inline
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _chunk.GetComponentRef<DynamicBufferInline<T>>(_inlineColumn, _row);
+        get => ref _chunk.GetComponentReadOnlyRef<DynamicBufferInline<T>>(_inlineColumn, _row);
     }
 
     private ReadOnlySpan<T> InlineSpan(int count)
@@ -86,8 +86,10 @@ public ref struct BufferView<T>
         if (count == 0)
             return ReadOnlySpan<T>.Empty;
 
-        ref var inline = ref Inline;
-        return MemoryMarshal.CreateReadOnlySpan(ref inline.Elements[0], count);
+        ref readonly var inline = ref Inline;
+        return MemoryMarshal.CreateReadOnlySpan(
+            ref Unsafe.AsRef(in inline[0]),
+            count);
     }
 
     private static void ThrowRange(int index, int count)

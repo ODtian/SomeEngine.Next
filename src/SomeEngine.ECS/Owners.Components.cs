@@ -1,6 +1,6 @@
+using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Registry;
 using System.Runtime.CompilerServices;
 
@@ -8,30 +8,35 @@ namespace SomeEngine.ECS.Owners;
 
 internal sealed partial class Components
 {
+    private World _world = null!;
     private Entities _entities = null!;
     private Tables _tables = null!;
     private Indices _indices = null!;
     private Hooks _hooks = null!;
-    private Journal _journal = null!;
     private Clock _clock = null!;
     private Iteration _iteration = null!;
     private Hierarchy _hierarchy = null!;
+    private RelationGraph _relationGraph = null!;
+
+    internal bool HasHooks => _hooks.Any;
 
     internal void Bind(
+        World world,
         Entities entities,
         Tables tables,
         Indices indices,
+        RelationGraph relationGraph,
         Hooks hooks,
-        Journal journal,
         Clock clock,
         Iteration iteration,
         Hierarchy hierarchy)
     {
+        _world = world;
         _entities = entities;
         _tables = tables;
         _indices = indices;
+        _relationGraph = relationGraph;
         _hooks = hooks;
-        _journal = journal;
         _clock = clock;
         _iteration = iteration;
         _hierarchy = hierarchy;
@@ -57,7 +62,7 @@ internal sealed partial class Components
     private void AddTag(Entity entity, int componentId, string name)
     {
         _iteration.Throw();
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var sourceArchetype = record.Archetype!;
 
         if (sourceArchetype.HasComponent(componentId))
@@ -65,8 +70,7 @@ internal sealed partial class Components
                 $"Entity {entity} already has tag {name}.");
 
         var edge = _tables.Registry.AddEdge(sourceArchetype, componentId);
-        _tables.MoveEntity(entity, ref record, edge);
-        Write(SerializationChangeKind.TagAdded, entity, componentId);
+        _tables.MoveEntity(entity, record, edge);
     }
 
     internal void Remove<T>(Entity entity)
@@ -89,7 +93,7 @@ internal sealed partial class Components
     private void RemoveTag(Entity entity, int componentId, string name)
     {
         _iteration.Throw();
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var sourceArchetype = record.Archetype!;
 
         if (!sourceArchetype.HasComponent(componentId))
@@ -97,35 +101,14 @@ internal sealed partial class Components
                 $"Entity {entity} does not have tag {name}.");
 
         var edge = _tables.Registry.RemoveEdge(sourceArchetype, componentId);
-        _tables.MoveEntity(entity, ref record, edge);
-        _entities.FinishCleanup(entity, ref record, sourceArchetype);
-        Write(SerializationChangeKind.TagRemoved, entity, componentId);
-    }
-
-    internal ref T Get<T>(Entity entity)
-        where T : struct, IComponent
-    {
-        ref var record = ref _entities.Row(entity);
-        var archetype = record.Archetype!;
-        int componentId = ComponentMetadata<T>.Id;
-
-        if (!archetype.TryColumn(componentId, out int columnIndex))
-            throw new InvalidOperationException(
-                $"Entity {entity} does not have component {typeof(T).Name}.");
-
-        _hierarchy.TrackParent<T>(entity);
-        MarkWrite(record.Chunk!, columnIndex, record.RowInChunk);
-        _indices.Dirty<T>();
-        if (!_hierarchy.IsEditing)
-            Write(SerializationChangeKind.ComponentChanged, entity, componentId);
-
-        return ref record.Chunk!.GetComponentRef<T>(columnIndex, record.RowInChunk);
+        _tables.MoveEntity(entity, record, edge);
+        _entities.FinishCleanup(entity, record, sourceArchetype);
     }
 
     internal T Read<T>(Entity entity)
         where T : struct, IComponent
     {
-        ref var record = ref _entities.Row(entity);
+        EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
         int componentId = ComponentMetadata<T>.Id;
 
@@ -139,7 +122,7 @@ internal sealed partial class Components
     internal ref readonly T ReadRef<T>(Entity entity)
         where T : struct, IComponent
     {
-        ref var record = ref _entities.Row(entity);
+        EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
         int componentId = ComponentMetadata<T>.Id;
 
@@ -147,13 +130,19 @@ internal sealed partial class Components
             throw new InvalidOperationException(
                 $"Entity {entity} does not have component {typeof(T).Name}.");
 
-        return ref record.Chunk!.GetComponentRef<T>(columnIndex, record.RowInChunk);
+        return ref record.Chunk!.GetComponentReadOnlyRef<T>(columnIndex, record.RowInChunk);
     }
 
     internal void Replace<T>(Entity entity, in T value)
         where T : struct, IComponent
     {
-        ref var record = ref _entities.Row(entity);
+        Replace(entity, in value, _clock.Tick);
+    }
+
+    internal void Replace<T>(Entity entity, in T value, uint version)
+        where T : struct, IComponent
+    {
+        EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
         int componentId = ComponentMetadata<T>.Id;
 
@@ -163,7 +152,14 @@ internal sealed partial class Components
 
         var chunk = record.Chunk!;
         var currentValue = chunk.ReadComponent<T>(columnIndex, record.RowInChunk);
-        WriteExisting(entity, chunk, record.RowInChunk, columnIndex, in currentValue, in value);
+        WriteExisting(
+            entity,
+            chunk,
+            record.RowInChunk,
+            columnIndex,
+            in currentValue,
+            in value,
+            version);
     }
 
     internal bool Has<T>(Entity entity)
@@ -172,7 +168,7 @@ internal sealed partial class Components
         if (!_entities.Store.IsAlive(entity))
             return false;
 
-        ref var record = ref _entities.Store.GetRecord(entity);
+        EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
         return record.Archetype is not null && record.Archetype.HasComponent(ComponentMetadata<T>.Id);
     }
 
@@ -180,7 +176,7 @@ internal sealed partial class Components
         where T : struct, IComponent
     {
         _iteration.Throw();
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var sourceArchetype = record.Archetype!;
 
         if (sourceArchetype.HasComponent(componentId))
@@ -189,22 +185,19 @@ internal sealed partial class Components
 
         _hierarchy.TrackParent<T>(entity);
 
-        if (_hierarchy.TryParent(entity, in value))
-            return;
-
-        MoveAndWriteAdded(entity, ref record, sourceArchetype, componentId, in value);
+        MoveAndWriteAdded(entity, record, sourceArchetype, componentId, in value);
     }
 
     private void MoveAndWriteAdded<T>(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetypes.Archetype sourceArchetype,
         int componentId,
         in T value)
         where T : struct, IComponent
     {
         var edge = _tables.Registry.AddEdge(sourceArchetype, componentId);
-        _tables.MoveEntity(entity, ref record, edge);
+        _tables.MoveEntity(entity, record, edge);
 
         var destinationArchetype = record.Archetype!;
         var destinationChunk = record.Chunk!;
@@ -219,7 +212,7 @@ internal sealed partial class Components
         where T : struct, IComponent
     {
         _iteration.Throw();
-        ref var record = ref _entities.Row(entity);
+        EntityRecordWriter record = _entities.Row(entity);
         var sourceArchetype = record.Archetype!;
 
         if (!sourceArchetype.HasComponent(componentId))
@@ -230,22 +223,22 @@ internal sealed partial class Components
         var removedValue = record.Chunk!.ReadComponent<T>(columnIndex, record.RowInChunk);
         _hierarchy.TrackParent<T>(entity);
         _indices.Drop(entity, in removedValue);
-        MoveAndCommitRemoved(entity, ref record, sourceArchetype, componentId, in removedValue);
+        MoveAndCommitRemoved(entity, record, sourceArchetype, componentId, in removedValue);
     }
 
     private void MoveAndCommitRemoved<T>(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetypes.Archetype sourceArchetype,
         int componentId,
         in T removedValue)
         where T : struct, IComponent
     {
         var edge = _tables.Registry.RemoveEdge(sourceArchetype, componentId);
-        _tables.MoveEntity(entity, ref record, edge);
+        _tables.MoveEntity(entity, record, edge);
         CommitRemove(entity, in removedValue);
         WriteRemoved(entity, in removedValue);
-        _entities.FinishCleanup(entity, ref record, sourceArchetype);
+        _entities.FinishCleanup(entity, record, sourceArchetype);
     }
 }
 
@@ -261,39 +254,60 @@ internal sealed partial class Components
         where T : struct, IComponent
     {
         int componentId = ComponentMetadata<T>.Id;
-        var column = (Array)chunk.Columns[columnIndex];
         if (ComponentMetadata<T>.IsEnableable)
         {
             int maskIndex = archetype.EnableMask(componentId);
             chunk.WriteEnabled(maskIndex, row, true);
         }
 
-        _indices.Fix(entity, componentId, column, row);
-        Write(SerializationChangeKind.ComponentAdded, entity, componentId);
+        _indices.Fix(entity, componentId, chunk, columnIndex, row);
         if (_hooks.Any)
         {
-            _hooks.Add(componentId, entity, column, row);
-            _hooks.Insert(componentId, entity, column, row);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
+            ref byte value = ref chunk.ComponentRowReference(
+                columnIndex,
+                row,
+                in info.Operations);
+            _hooks.Add(componentId, entity, ref value);
+            _hooks.Insert(componentId, entity, ref value);
         }
     }
 
-    internal void CommitAdd(Entity entity, int componentId, Array column, int row)
+    internal void CommitAdd(
+        Entity entity,
+        int componentId,
+        Chunk chunk,
+        int column,
+        int row)
     {
-        _indices.Fix(entity, componentId, column, row);
-        Write(SerializationChangeKind.ComponentAdded, entity, componentId);
+        _indices.Fix(entity, componentId, chunk, column, row);
         if (_hooks.Any)
         {
-            _hooks.Add(componentId, entity, column, row);
-            _hooks.Insert(componentId, entity, column, row);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
+            ref byte value = ref chunk.ComponentRowReference(
+                column,
+                row,
+                in info.Operations);
+            _hooks.Add(componentId, entity, ref value);
+            _hooks.Insert(componentId, entity, ref value);
         }
     }
 
     internal void CommitReplace<T>(Entity entity, in T oldValue, in T newValue)
         where T : struct, IComponent
     {
+        CommitReplace(entity, in oldValue, in newValue, _clock.Tick);
+    }
+
+    internal void CommitReplace<T>(
+        Entity entity,
+        in T oldValue,
+        in T newValue,
+        uint version)
+        where T : struct, IComponent
+    {
         int componentId = ComponentMetadata<T>.Id;
         _indices.Fix(entity, in oldValue, in newValue);
-        Write(SerializationChangeKind.ComponentChanged, entity, componentId);
         if (_hooks.Any)
         {
             _hooks.Replace(entity, in oldValue);
@@ -301,14 +315,26 @@ internal sealed partial class Components
         }
     }
 
-    internal void CommitReplace(int componentId, Entity entity, Array oldColumn, Array column, int row)
+    internal unsafe void CommitReplace(
+        int componentId,
+        Entity entity,
+        Array ownedOldValueSnapshot,
+        Chunk chunk,
+        int column,
+        int row)
     {
-        _indices.Fix(entity, componentId, column, row);
-        Write(SerializationChangeKind.ComponentChanged, entity, componentId);
+        _indices.Fix(entity, componentId, chunk, column, row);
         if (_hooks.Any)
         {
-            _hooks.Replace(componentId, entity, oldColumn, 0);
-            _hooks.Insert(componentId, entity, column, row);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
+            ref byte oldValue =
+                ref info.Operations.GetReference(ownedOldValueSnapshot, 0);
+            ref byte newValue = ref chunk.ComponentRowReference(
+                column,
+                row,
+                in info.Operations);
+            _hooks.Replace(componentId, entity, ref oldValue);
+            _hooks.Insert(componentId, entity, ref newValue);
         }
     }
 
@@ -316,7 +342,6 @@ internal sealed partial class Components
         where T : struct, IComponent
     {
         int componentId = ComponentMetadata<T>.Id;
-        Write(SerializationChangeKind.ComponentRemoved, entity, componentId);
         if (_hooks.Any)
         {
             _hooks.Replace(entity, in oldValue);
@@ -324,13 +349,18 @@ internal sealed partial class Components
         }
     }
 
-    internal void CommitRemove(int componentId, Entity entity, Array oldColumn)
+    internal unsafe void CommitRemove(
+        int componentId,
+        Entity entity,
+        Array ownedOldValueSnapshot)
     {
-        Write(SerializationChangeKind.ComponentRemoved, entity, componentId);
         if (_hooks.Any)
         {
-            _hooks.Replace(componentId, entity, oldColumn, 0);
-            _hooks.Remove(componentId, entity, oldColumn, 0);
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(componentId);
+            ref byte oldValue =
+                ref info.Operations.GetReference(ownedOldValueSnapshot, 0);
+            _hooks.Replace(componentId, entity, ref oldValue);
+            _hooks.Remove(componentId, entity, ref oldValue);
         }
     }
 
@@ -370,10 +400,30 @@ internal sealed partial class Components
         in T newValue)
         where T : struct, IComponent
     {
+        WriteExisting(
+            entity,
+            chunk,
+            row,
+            columnIndex,
+            in oldValue,
+            in newValue,
+            _clock.Tick);
+    }
+
+    internal void WriteExisting<T>(
+        Entity entity,
+        Archetypes.Chunk chunk,
+        int row,
+        int columnIndex,
+        in T oldValue,
+        in T newValue,
+        uint version)
+        where T : struct, IComponent
+    {
         _hierarchy.TrackParent<T>(entity);
         chunk.WriteComponent(columnIndex, row, newValue);
-        MarkWrite(chunk, columnIndex, row);
-        CommitReplace(entity, in oldValue, in newValue);
+        MarkWrite(chunk, columnIndex, row, version);
+        CommitReplace(entity, in oldValue, in newValue, version);
     }
 
     internal ref T WriteRef<T>(
@@ -383,10 +433,27 @@ internal sealed partial class Components
         int columnIndex)
         where T : struct
     {
-        MarkWrite(chunk, columnIndex, row);
+        return ref WriteRef<T>(entity, chunk, row, columnIndex, _clock.Tick);
+    }
+
+    internal ref T WriteRef<T>(
+        Entity entity,
+        Archetypes.Chunk chunk,
+        int row,
+        int columnIndex,
+        uint version)
+        where T : struct
+    {
+        if (ComponentMetadata<T>.IsRelationshipSource ||
+            ComponentMetadata<T>.IsRelationshipTarget)
+        {
+            _world.RequireRelationshipWriteOwner();
+        }
+
+        MarkWrite(chunk, columnIndex, row, version);
         _hierarchy.TrackParent<T>(entity);
+        _relationGraph.TrackEndpoint<T>(_world, entity);
         _indices.Dirty<T>();
-        Write(SerializationChangeKind.ComponentChanged, entity, ComponentMetadata<T>.Id);
         return ref chunk.GetComponentRef<T>(columnIndex, row);
     }
 
@@ -395,8 +462,18 @@ internal sealed partial class Components
         int columnIndex)
         where T : struct
     {
-        WriteChunk(chunk, columnIndex, ComponentMetadata<T>.Id);
-        return Unsafe.As<T[]>(chunk.Columns[columnIndex]).AsSpan(0, chunk.Count);
+        WriteChunk(chunk, columnIndex, ComponentMetadata<T>.Id, _clock.Tick);
+        return chunk.ComponentRows<T>(columnIndex)[..chunk.Count];
+    }
+
+    internal Span<T> WriteChunk<T>(
+        Archetypes.Chunk chunk,
+        int columnIndex,
+        uint version)
+        where T : struct
+    {
+        WriteChunk(chunk, columnIndex, ComponentMetadata<T>.Id, version);
+        return chunk.ComponentRows<T>(columnIndex)[..chunk.Count];
     }
 
     internal void WriteChunk(
@@ -404,19 +481,26 @@ internal sealed partial class Components
         int columnIndex,
         int componentId)
     {
-        chunk.MarkWriteRange(columnIndex, 0, chunk.Count, _clock.Tick);
-        _hierarchy.RequireScan(componentId);
-        _indices.Dirty(componentId);
-        if (_journal.Suppressed)
-            return;
+        WriteChunk(chunk, columnIndex, componentId, _clock.Tick);
+    }
 
-        for (int row = 0; row < chunk.Count; row++)
-        {
-            Write(
-                SerializationChangeKind.ComponentChanged,
-                chunk.Entities[row],
-                componentId);
-        }
+    internal void WriteChunk(
+        Archetypes.Chunk chunk,
+        int columnIndex,
+        int componentId,
+        uint version)
+    {
+        ref readonly var info = ref ComponentRegistry.Get(componentId);
+        if (info.IsRelationshipSource || info.IsRelationshipTarget)
+            _world.RequireRelationshipWriteOwner();
+
+        chunk.MarkWriteRange(columnIndex, 0, chunk.Count, version);
+        _hierarchy.RequireScan(componentId);
+        _relationGraph.TrackEndpointRange(
+            _world,
+            chunk.Entities[..chunk.Count],
+            componentId);
+        _indices.Dirty(componentId);
     }
 
     internal bool IsEnabled<T>(Entity entity)
@@ -485,18 +569,72 @@ internal sealed partial class Components
         Archetypes.Chunk chunk,
         int row)
     {
-        for (int columnIndex = 0; columnIndex < archetype.ColumnMetas.Length; columnIndex++)
+        if (!_hooks.Any)
         {
-            int componentId = archetype.ColumnMetas[columnIndex].ComponentId;
-            var column = (Array)chunk.Columns[columnIndex];
-            _indices.Drop(entity, componentId, column, row);
-            if (_hooks.Any)
+            for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
             {
-                _hooks.Replace(componentId, entity, column, row);
-                _hooks.Remove(componentId, entity, column, row);
-                _hooks.Despawn(componentId, entity, column, row);
+                int componentId = archetype.TableComponentIds[columnIndex];
+                _indices.Drop(entity, componentId, chunk, columnIndex, row);
+            }
+            return;
+        }
+
+        var faults = new ExceptionAccumulator();
+        for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
+        {
+            int componentId = archetype.TableComponentIds[columnIndex];
+            try
+            {
+                _indices.Drop(entity, componentId, chunk, columnIndex, row);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
+            }
+            try
+            {
+                ref readonly ComponentOperations operations =
+                    ref archetype.ColumnOperations[columnIndex];
+                ref byte value = ref chunk.ComponentRowReference(
+                    columnIndex,
+                    row,
+                    in operations);
+                _hooks.Replace(componentId, entity, ref value);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
+            }
+            try
+            {
+                ref readonly ComponentOperations operations =
+                    ref archetype.ColumnOperations[columnIndex];
+                ref byte value = ref chunk.ComponentRowReference(
+                    columnIndex,
+                    row,
+                    in operations);
+                _hooks.Remove(componentId, entity, ref value);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
+            }
+            try
+            {
+                ref readonly ComponentOperations operations =
+                    ref archetype.ColumnOperations[columnIndex];
+                ref byte value = ref chunk.ComponentRowReference(
+                    columnIndex,
+                    row,
+                    in operations);
+                _hooks.Despawn(componentId, entity, ref value);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
             }
         }
+        faults.ThrowIfAny();
     }
 
     internal void RemoveLive(
@@ -505,25 +643,68 @@ internal sealed partial class Components
         Archetypes.Chunk chunk,
         int row)
     {
-        for (int columnIndex = 0; columnIndex < archetype.ColumnMetas.Length; columnIndex++)
+        if (!_hooks.Any)
         {
-            int componentId = archetype.ColumnMetas[columnIndex].ComponentId;
-            if (Array.BinarySearch(archetype.CleanupComponentIds, componentId) >= 0)
+            for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
+            {
+                int componentId = archetype.TableComponentIds[columnIndex];
+                if (archetype.CleanupComponentIds.BinarySearch(componentId) >= 0)
+                    continue;
+                _indices.Drop(entity, componentId, chunk, columnIndex, row);
+            }
+            return;
+        }
+
+        var faults = new ExceptionAccumulator();
+        for (int columnIndex = 0; columnIndex < archetype.TableComponentIds.Length; columnIndex++)
+        {
+            int componentId = archetype.TableComponentIds[columnIndex];
+            if (archetype.CleanupComponentIds.BinarySearch(componentId) >= 0)
                 continue;
 
-            var column = (Array)chunk.Columns[columnIndex];
-            _indices.Drop(entity, componentId, column, row);
-            if (_hooks.Any)
+            try
             {
-                _hooks.Replace(componentId, entity, column, row);
-                _hooks.Remove(componentId, entity, column, row);
+                _indices.Drop(entity, componentId, chunk, columnIndex, row);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
+            }
+            try
+            {
+                ref readonly ComponentOperations operations =
+                    ref archetype.ColumnOperations[columnIndex];
+                ref byte value = ref chunk.ComponentRowReference(
+                    columnIndex,
+                    row,
+                    in operations);
+                _hooks.Replace(componentId, entity, ref value);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
+            }
+            try
+            {
+                ref readonly ComponentOperations operations =
+                    ref archetype.ColumnOperations[columnIndex];
+                ref byte value = ref chunk.ComponentRowReference(
+                    columnIndex,
+                    row,
+                    in operations);
+                _hooks.Remove(componentId, entity, ref value);
+            }
+            catch (Exception exception)
+            {
+                faults.Add(exception);
             }
         }
+        faults.ThrowIfAny();
     }
 
     private bool IsEnabled(Entity entity, int componentId, string name)
     {
-        ref var record = ref _entities.Row(entity);
+        EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
 
         if (!archetype.HasComponent(componentId))
@@ -536,7 +717,7 @@ internal sealed partial class Components
 
     private void WriteEnabled(Entity entity, int componentId, bool enabled, string name)
     {
-        ref var record = ref _entities.Row(entity);
+        EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
 
         if (!archetype.HasComponent(componentId))
@@ -545,7 +726,6 @@ internal sealed partial class Components
 
         int maskIndex = archetype.EnableMask(componentId);
         record.Chunk!.WriteEnabled(maskIndex, record.RowInChunk, enabled);
-        Write(SerializationChangeKind.EnabledChanged, entity, componentId);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -561,18 +741,13 @@ internal sealed partial class Components
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void MarkChunk(Archetypes.Chunk chunk, int columnIndex)
+    private static void MarkWrite(
+        Archetypes.Chunk chunk,
+        int columnIndex,
+        int row,
+        uint version)
     {
-        chunk.MarkChunk(columnIndex, _clock.Tick);
-    }
-
-    private void Write(
-        SerializationChangeKind kind,
-        Entity entity,
-        int componentId,
-        Entity target = default)
-    {
-        _journal.Write(kind, entity, componentId, target, _clock.Tick);
+        chunk.MarkWrite(columnIndex, row, version);
     }
 
     private void WriteRemoved<T>(Entity entity, in T value)
@@ -581,11 +756,19 @@ internal sealed partial class Components
         if (ComponentMetadata<T>.IsCleanup)
             return;
 
-        Add(entity, new Removed<T>
+        var removed = new Removed<T>
         {
             Value = value,
             Version = _clock.Tick,
-        });
+        };
+
+        // Removed<T> is a retained, coalesced ECS fact. A component can be removed, re-added,
+        // and removed again before consumers clear the earlier fact; refresh that fact instead
+        // of trying to add a duplicate cleanup component.
+        if (Has<Removed<T>>(entity))
+            Replace(entity, in removed);
+        else
+            Add(entity, in removed);
     }
 }
 

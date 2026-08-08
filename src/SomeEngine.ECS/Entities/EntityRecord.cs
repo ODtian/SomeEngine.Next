@@ -3,23 +3,21 @@ using SomeEngine.ECS.Archetypes;
 namespace SomeEngine.ECS.Entities;
 
 /// <summary>
-/// 实体记录——存储 entity 在 archetype/chunk 中的位置 + 代数。
+/// Root-local materialized entity record returned by read operations.
 /// </summary>
 /// <remarks>
-/// 设计引用：docs/DESIGN.md §3.2
-/// - 活着的 entity 通过 Chunk 引用直接定位，消除 list 索引查找
-/// - Free-list 嵌入：死亡后 Archetype = null，FreeListNext = nextFreeIndex
-/// - Generation 与位置在同一 struct 里，减少 cache miss
+/// Archetype and Chunk are resolved snapshots, never the payload of a shared persistent page.
+/// Free-list and generation facts are copied from that page at the same time.
 /// </remarks>
 internal struct EntityRecord
 {
     /// <summary>
-    /// entity 所在的 Archetype。null = 未归位（CommandBuffer 预分配态或 free-list 中）。
+    /// Root-local archetype shell. Null means unplaced or free.
     /// </summary>
     public Archetype? Archetype;
 
     /// <summary>
-    /// entity 所在的 Chunk 引用。活着的 entity 通过此字段直接访问 chunk。
+    /// Root-local chunk shell. Null means unplaced or free.
     /// </summary>
     public Chunk? Chunk;
 
@@ -39,8 +37,79 @@ internal struct EntityRecord
     public int Generation;
 
     /// <summary>
-    /// Hierarchy Parent dirty queue generation. 0 means not queued.
+    /// True only after World.DestroyEntity requested cleanup teardown. Merely retaining a
+    /// Removed&lt;T&gt; fact must not make an otherwise live entity look pending-destroy.
     /// </summary>
-    public uint ParentDirtyVersion;
+    public bool PendingDestroy;
+}
+
+/// <summary>
+/// Root-neutral facts stored in persistent record pages. Table object references are deliberately
+/// excluded: a shared page may outlive the root which created it, so retaining an Archetype or
+/// Chunk here would pin that ancestor's complete table graph and chunk backing.
+/// </summary>
+internal struct PersistentEntityRecord
+{
+    public long ArchetypeIdentity;
+    public long ChunkIdentity;
+    public int FreeListNext;
+    public int RowInChunk;
+    public int Generation;
+    public bool PendingDestroy;
+}
+
+/// <summary>
+/// Writable root-local view over one persistent record. Object-valued reads resolve through the
+/// owning store's current table image; writes persist only stable identities and scalar facts.
+/// </summary>
+internal readonly struct EntityRecordWriter
+{
+    private readonly EntityStore _store;
+    private readonly int _index;
+
+    internal EntityRecordWriter(EntityStore store, int index)
+    {
+        _store = store ?? throw new ArgumentNullException(nameof(store));
+        _index = index;
+    }
+
+    public Archetype? Archetype
+    {
+        get => _store.ResolveArchetypeIdentity(_store.StoredRecordSnapshot(_index).ArchetypeIdentity);
+        set => _store.WritableRecord(_index).ArchetypeIdentity = value?.PersistentIdentity ?? 0;
+    }
+
+    public Chunk? Chunk
+    {
+        get => _store.ResolveChunkIdentity(_store.StoredRecordSnapshot(_index).ChunkIdentity);
+        set => _store.WritableRecord(_index).ChunkIdentity = value?.PersistentIdentity ?? 0;
+    }
+
+    public int FreeListNext
+    {
+        get => _store.StoredRecordSnapshot(_index).FreeListNext;
+        set => _store.WritableRecord(_index).FreeListNext = value;
+    }
+
+    public int RowInChunk
+    {
+        get => _store.StoredRecordSnapshot(_index).RowInChunk;
+        set => _store.WritableRecord(_index).RowInChunk = value;
+    }
+
+    public int Generation
+    {
+        get => _store.StoredRecordSnapshot(_index).Generation;
+        set => _store.WritableRecord(_index).Generation = value;
+    }
+
+    public bool PendingDestroy
+    {
+        get => _store.StoredRecordSnapshot(_index).PendingDestroy;
+        set => _store.WritableRecord(_index).PendingDestroy = value;
+    }
+
+    public static implicit operator EntityRecord(EntityRecordWriter writer) =>
+        writer._store.RecordSnapshot(writer._index);
 }
 

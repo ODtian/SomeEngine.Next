@@ -8,6 +8,7 @@ namespace SomeEngine.ECS.SourceGen;
 [Generator]
 public sealed class BundleGenerator : IIncrementalGenerator
 {
+    private const string EcsNamespace = "SomeEngine.ECS";
     private const string ComponentsNamespace = "SomeEngine.ECS.Components";
 
     private static readonly DiagnosticDescriptor InvalidFieldDiagnostic = new(
@@ -18,10 +19,10 @@ public sealed class BundleGenerator : IIncrementalGenerator
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor RelationFieldDiagnostic = new(
+    private static readonly DiagnosticDescriptor RelationshipFieldDiagnostic = new(
         id: "SECSSG002",
-        title: "Relations are not supported in bundles",
-        messageFormat: "Field '{0}' in bundle '{1}' uses relation type '{2}', which is not supported in component bundles",
+        title: "Relationship topology cannot be authored in bundles",
+        messageFormat: "Field '{0}' in bundle '{1}' uses protected relationship component '{2}'; use its typed relationship API",
         category: "SomeEngine.ECS.SourceGen",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -52,16 +53,8 @@ public sealed class BundleGenerator : IIncrementalGenerator
 
     private static readonly DiagnosticDescriptor BufferElementRule = new(
         id: "SECSSG006",
-        title: "Bundle must initialize buffers through BufferValues",
-        messageFormat: "Field '{0}' in bundle '{1}' uses buffer element type '{2}' directly; use BufferValues<{2}>",
-        category: "SomeEngine.ECS.SourceGen",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
-
-    private static readonly DiagnosticDescriptor SharedComponentRule = new(
-        id: "SECSSG007",
-        title: "Bundle must initialize shared components through SharedComponentValue",
-        messageFormat: "Field '{0}' in bundle '{1}' uses shared component type '{2}' directly; use SharedComponentValue<{2}>",
+        title: "Bundle buffer fields must be zero-copy memory",
+        messageFormat: "Field '{0}' in bundle '{1}' uses buffer element type '{2}' directly; use ReadOnlyMemory<{2}>",
         category: "SomeEngine.ECS.SourceGen",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -203,34 +196,33 @@ public sealed class BundleGenerator : IIncrementalGenerator
                 continue;
             }
 
-            ITypeSymbol? sharedComponentType = TryShared(fieldType);
-            if (sharedComponentType is not null)
+            if (ImplementsInterface(fieldType, ComponentsNamespace, "ISharedComponent"))
             {
-                if (!seenComponentTypes.Add(sharedComponentType))
+                if (!seenComponentTypes.Add(fieldType))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         DuplicateFieldDiagnostic,
                         field.Locations.FirstOrDefault(),
                         field.Name,
                         rootBundle.ToDisplayString(),
-                        sharedComponentType.ToDisplayString()));
+                        fieldType.ToDisplayString()));
                     ok = false;
                     continue;
                 }
 
                 members.Add(new BundleMember(
-                    sharedComponentType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    fieldType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     $"{accessPath}.{field.Name}",
                     BundleMemberKind.Shared,
                     bufferElementTypeName: null));
                 continue;
             }
 
-            if (ImplementsInterface(fieldType, ComponentsNamespace, "IRelation") ||
-                ImplementsInterface(fieldType, ComponentsNamespace, "IExclusiveRelation"))
+            if (ImplementsInterface(fieldType, ComponentsNamespace, "IRelationshipSource") ||
+                ImplementsInterface(fieldType, ComponentsNamespace, "IRelationshipTarget"))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
-                    RelationFieldDiagnostic,
+                    RelationshipFieldDiagnostic,
                     field.Locations.FirstOrDefault(),
                     field.Name,
                     rootBundle.ToDisplayString(),
@@ -243,18 +235,6 @@ public sealed class BundleGenerator : IIncrementalGenerator
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     BufferElementRule,
-                    field.Locations.FirstOrDefault(),
-                    field.Name,
-                    rootBundle.ToDisplayString(),
-                    fieldType.ToDisplayString()));
-                ok = false;
-                continue;
-            }
-
-            if (ImplementsInterface(fieldType, ComponentsNamespace, "ISharedComponent"))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    SharedComponentRule,
                     field.Locations.FirstOrDefault(),
                     field.Name,
                     rootBundle.ToDisplayString(),
@@ -306,7 +286,7 @@ public sealed class BundleGenerator : IIncrementalGenerator
         if (ImplementsInterface(type, ComponentsNamespace, "ITag"))
             return BundleMemberKind.Tag;
 
-        if (ImplementsInterface(type, ComponentsNamespace, "IComponent"))
+        if (ImplementsInterface(type, EcsNamespace, "IComponent"))
             return BundleMemberKind.Table;
 
         return null;
@@ -315,8 +295,8 @@ public sealed class BundleGenerator : IIncrementalGenerator
     private static ITypeSymbol? TryBufferElement(INamedTypeSymbol type)
     {
         if (!type.IsGenericType ||
-            type.Name != "BufferValues" ||
-            type.ContainingNamespace.ToDisplayString() != ComponentsNamespace ||
+            type.Name != "ReadOnlyMemory" ||
+            type.ContainingNamespace.ToDisplayString() != "System" ||
             type.TypeArguments.Length != 1)
         {
             return null;
@@ -325,22 +305,6 @@ public sealed class BundleGenerator : IIncrementalGenerator
         return type.TypeArguments[0] is INamedTypeSymbol elementType &&
                ImplementsInterface(elementType, ComponentsNamespace, "IBufferElement")
             ? elementType
-            : null;
-    }
-
-    private static ITypeSymbol? TryShared(INamedTypeSymbol type)
-    {
-        if (!type.IsGenericType ||
-            type.Name != "SharedComponentValue" ||
-            type.ContainingNamespace.ToDisplayString() != ComponentsNamespace ||
-            type.TypeArguments.Length != 1)
-        {
-            return null;
-        }
-
-        return type.TypeArguments[0] is INamedTypeSymbol sharedType &&
-               ImplementsInterface(sharedType, ComponentsNamespace, "ISharedComponent")
-            ? sharedType
             : null;
     }
 
@@ -368,9 +332,10 @@ public sealed class BundleGenerator : IIncrementalGenerator
             .SelectMany(ComponentIds)
             .ToArray();
 
-        string[] sharedValueLines = model.Members
+        string[] sharedWriteLines = model.Members
             .Where(member => member.Kind == BundleMemberKind.Shared)
-            .Select(member => $"            world.SharedValue({member.AccessPath}),")
+            .Select((member, index) =>
+                $"                view.WriteShared(in {StateAccess(member)});")
             .ToArray();
 
         string[] writeLines = model.Members
@@ -390,29 +355,11 @@ public sealed class BundleGenerator : IIncrementalGenerator
               string.Join("\n", sparseComponentIdLines.Select(line => $"            {line},")) +
               "\n        };";
 
-        string writerBlock = writeLines.Length == 0
-            ? string.Empty
-            : string.Join("\n", writeLines) + "\n";
-
-        string sharedValueBlock = sharedValueLines.Length == 0
-            ? string.Empty
-            : "        global::System.Span<global::SomeEngine.ECS.Components.SharedValueSlot> sharedValues = stackalloc global::SomeEngine.ECS.Components.SharedValueSlot[]\n        {\n" +
-              string.Join("\n", sharedValueLines) +
-              "\n        };\n";
-
-        string sharedArgument = sharedValueLines.Length == 0 ? string.Empty : ", sharedValues";
-        string addWriter = sharedValueLines.Length == 0
-            ? "world.CreateAddWriter(entity, componentIds, sparseComponentIds)"
-            : "world.CreateAddWriter(entity, componentIds, sharedValues, sparseComponentIds)";
-        string replaceWriter = sharedValueLines.Length == 0
-            ? "world.CreateReplaceWriter(entity, componentIds, sparseComponentIds)"
-            : "world.CreateReplaceWriter(entity, componentIds, sharedValues, sparseComponentIds)";
-        string addBlock = writeLines.Length == 0
-            ? $"        {addWriter};\n"
-            : $"        var context = {addWriter};\n{writerBlock}";
-        string replaceBlock = writeLines.Length == 0
-            ? $"        {replaceWriter};\n"
-            : $"        var context = {replaceWriter};\n{writerBlock}";
+        string callbackWrites = string.Join(
+            "\n",
+            sharedWriteLines.Concat(writeLines));
+        if (callbackWrites.Length > 0)
+            callbackWrites += "\n";
 
         string body = $$"""
 internal static partial class BundleExtensions
@@ -420,21 +367,46 @@ internal static partial class BundleExtensions
     internal static global::SomeEngine.ECS.Entities.Entity Spawn(this global::SomeEngine.ECS.World world, in {{model.BundleTypeName}} bundle)
     {
 {{componentIdBlock}}
-{{sharedValueBlock}}        var context = world.CreateSpawnWriter(componentIds{{sharedArgument}});
-{{writerBlock}}        return context.Entity;
+{{sparseComponentIdBlock}}
+        var state = bundle;
+        return world.ExecuteBundleSpawn(
+            componentIds,
+            sparseComponentIds,
+            ref state,
+            static (global::SomeEngine.ECS.BundleWriteView view, ref {{model.BundleTypeName}} state) =>
+            {
+{{callbackWrites}}            });
     }
 
     internal static void AddBundle(this global::SomeEngine.ECS.World world, global::SomeEngine.ECS.Entities.Entity entity, in {{model.BundleTypeName}} bundle)
     {
 {{componentIdBlock}}
 {{sparseComponentIdBlock}}
-{{sharedValueBlock}}{{addBlock}}    }
+        var state = bundle;
+        world.ExecuteBundleAdd(
+            entity,
+            componentIds,
+            sparseComponentIds,
+            ref state,
+            static (global::SomeEngine.ECS.BundleWriteView view, ref {{model.BundleTypeName}} state) =>
+            {
+{{callbackWrites}}            });
+    }
 
     internal static void ReplaceBundle(this global::SomeEngine.ECS.World world, global::SomeEngine.ECS.Entities.Entity entity, in {{model.BundleTypeName}} bundle)
     {
 {{componentIdBlock}}
 {{sparseComponentIdBlock}}
-{{sharedValueBlock}}{{replaceBlock}}    }
+        var state = bundle;
+        world.ExecuteBundleReplace(
+            entity,
+            componentIds,
+            sparseComponentIds,
+            ref state,
+            static (global::SomeEngine.ECS.BundleWriteView view, ref {{model.BundleTypeName}} state) =>
+            {
+{{callbackWrites}}            });
+    }
 }
 """;
 
@@ -472,12 +444,15 @@ namespace {{model.Namespace}}
     {
         return member.Kind switch
         {
-            BundleMemberKind.Sparse => $"        context.WriteSparse({member.AccessPath});",
-            BundleMemberKind.Buffer => $"        context.WriteBuffer({member.AccessPath});",
+            BundleMemberKind.Sparse => $"                view.WriteSparse(in {StateAccess(member)});",
+            BundleMemberKind.Buffer => $"                view.WriteBuffer(in {StateAccess(member)});",
             BundleMemberKind.Shared => string.Empty,
-            _ => $"        context.Write({member.AccessPath});",
+            _ => $"                view.Write(in {StateAccess(member)});",
         };
     }
+
+    private static string StateAccess(BundleMember member) =>
+        "state" + member.AccessPath.Substring("bundle".Length);
 
     private static string GetHintName(INamedTypeSymbol bundle)
     {

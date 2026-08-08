@@ -13,11 +13,11 @@ public sealed class EcsConsumerTests
         world.Add(entity, new Position { X = 3, Y = 7 });
 
         Assert.True(world.Has<Position>(entity));
-        Assert.Equal(3, world.Get<Position>(entity).X);
-        Assert.Equal(7, world.Get<Position>(entity).Y);
+        Assert.Equal(3, world.Read<Position>(entity).X);
+        Assert.Equal(7, world.Read<Position>(entity).Y);
     }
 
-    private struct Position : SomeEngine.ECS.Components.IComponent
+    private struct Position : SomeEngine.ECS.IComponent
     {
         public int X;
         public int Y;

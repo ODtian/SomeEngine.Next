@@ -3,7 +3,11 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.ECS.Serialization.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../SomeEngine.Serialization/SomeEngine.Serialization.csproj" />
   </ItemGroup>
 </Project>
 

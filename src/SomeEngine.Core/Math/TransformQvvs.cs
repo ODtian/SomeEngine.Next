@@ -118,50 +118,138 @@ public struct TransformQvvs(Vector3 position, Quaternion rotation, float scale =
     /// <summary>
     /// Returns the inverse of this transform.
     /// </summary>
-    public TransformQvvs Inverse()
+    public readonly bool TryInverse(out TransformQvvs inverse)
     {
-        // Inverse operation needs to reverse the order:
-        // World = Parent * Local
-        // Local = Parent^-1 * World
-
-        // Scale/Stretch inversion
-        // Safety: Avoid divide by zero
-        float invScale = Scale != 0.0f ? 1.0f / Scale : 1.0f;
-        Vector3 invStretch = new(
-            Stretch.X != 0.0f ? 1.0f / Stretch.X : 1.0f,
-            Stretch.Y != 0.0f ? 1.0f / Stretch.Y : 1.0f,
-            Stretch.Z != 0.0f ? 1.0f / Stretch.Z : 1.0f
-        );
-
-        Quaternion invRotation = Quaternion.Inverse(Rotation);
-
-        // Position:
-        // P_world = P_parent + R_parent * (S_parent * V_parent * P_local)
-        // P_local = (S_parent * V_parent)^-1 * R_parent^-1 * (P_world - P_parent)
-
-        Vector3 relPos = -Position; // (0 - P_parent) if we are inverting relative to origin
-        // Actually, Inverse() is the transform that maps World -> Local.
-        // T(x) = P + R(S*V*x)
-        // y = P + R(S*V*x)
-        // y - P = R(S*V*x)
-        // R^-1(y - P) = S*V*x
-        // (S*V)^-1 * R^-1(y - P) = x
-
-        // So new Translation T' = (S*V)^-1 * R^-1 * (-P)
-        // New Rotation R' = R^-1
-        // New Scale S' = 1/S
-        // New Stretch V' = 1/V
-
-        Vector3 unrotated = Vector3.Transform(relPos, invRotation);
-        Vector3 invPos = unrotated * (invStretch * invScale);
-
-        return new TransformQvvs
+        if (!IsFinite() ||
+            !Matrix4x4.Invert(ToMatrix(), out Matrix4x4 inverseMatrix) ||
+            !TryCreateFromMatrix(inverseMatrix, out inverse))
         {
-            Position = invPos,
-            Rotation = invRotation,
-            Scale = invScale,
-            Stretch = invStretch,
+            inverse = default;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the inverse transform, or throws when scale, stretch, rotation, or
+    /// input values make the transform non-invertible.
+    /// </summary>
+    public readonly TransformQvvs Inverse()
+    {
+        if (TryInverse(out TransformQvvs inverse))
+            return inverse;
+
+        throw new InvalidOperationException(
+            "Cannot invert a degenerate or non-finite QVVS transform, or its inverse " +
+            "cannot be represented without shear.");
+    }
+
+    /// <summary>
+    /// Reconstructs a QVVS only when the affine matrix contains no shear or other
+    /// information that the QVVS representation would discard.
+    /// </summary>
+    internal static bool TryCreateFromMatrix(
+        in Matrix4x4 matrix,
+        out TransformQvvs transform)
+    {
+        if (!IsFinite(matrix) ||
+            !ApproximatelyEqual(matrix.M14, 0.0f) ||
+            !ApproximatelyEqual(matrix.M24, 0.0f) ||
+            !ApproximatelyEqual(matrix.M34, 0.0f) ||
+            !ApproximatelyEqual(matrix.M44, 1.0f) ||
+            !Matrix4x4.Decompose(matrix, out Vector3 stretch, out Quaternion rotation, out Vector3 position))
+        {
+            transform = default;
+            return false;
+        }
+
+        float rotationLengthSquared = rotation.LengthSquared();
+        if (!float.IsFinite(rotationLengthSquared) || rotationLengthSquared == 0.0f)
+        {
+            transform = default;
+            return false;
+        }
+
+        transform = new TransformQvvs
+        {
+            Position = position,
+            Rotation = Quaternion.Normalize(rotation),
+            Stretch = stretch,
+            Scale = 1.0f,
         };
+
+        if (!transform.IsFinite() || !MatrixApproximatelyEquals(transform.ToMatrix(), matrix))
+        {
+            transform = default;
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static bool MatrixApproximatelyEquals(in Matrix4x4 left, in Matrix4x4 right)
+    {
+        return ApproximatelyEqual(left.M11, right.M11) &&
+               ApproximatelyEqual(left.M12, right.M12) &&
+               ApproximatelyEqual(left.M13, right.M13) &&
+               ApproximatelyEqual(left.M14, right.M14) &&
+               ApproximatelyEqual(left.M21, right.M21) &&
+               ApproximatelyEqual(left.M22, right.M22) &&
+               ApproximatelyEqual(left.M23, right.M23) &&
+               ApproximatelyEqual(left.M24, right.M24) &&
+               ApproximatelyEqual(left.M31, right.M31) &&
+               ApproximatelyEqual(left.M32, right.M32) &&
+               ApproximatelyEqual(left.M33, right.M33) &&
+               ApproximatelyEqual(left.M34, right.M34) &&
+               ApproximatelyEqual(left.M41, right.M41) &&
+               ApproximatelyEqual(left.M42, right.M42) &&
+               ApproximatelyEqual(left.M43, right.M43) &&
+               ApproximatelyEqual(left.M44, right.M44);
+    }
+
+    private static bool ApproximatelyEqual(float left, float right)
+    {
+        const float absoluteTolerance = 1.0e-5f;
+        const float relativeTolerance = 1.0e-5f;
+        float difference = MathF.Abs(left - right);
+        float scale = MathF.Max(MathF.Abs(left), MathF.Abs(right));
+        return difference <= absoluteTolerance + (relativeTolerance * scale);
+    }
+
+    private static bool IsFinite(in Matrix4x4 matrix)
+    {
+        return float.IsFinite(matrix.M11) &&
+               float.IsFinite(matrix.M12) &&
+               float.IsFinite(matrix.M13) &&
+               float.IsFinite(matrix.M14) &&
+               float.IsFinite(matrix.M21) &&
+               float.IsFinite(matrix.M22) &&
+               float.IsFinite(matrix.M23) &&
+               float.IsFinite(matrix.M24) &&
+               float.IsFinite(matrix.M31) &&
+               float.IsFinite(matrix.M32) &&
+               float.IsFinite(matrix.M33) &&
+               float.IsFinite(matrix.M34) &&
+               float.IsFinite(matrix.M41) &&
+               float.IsFinite(matrix.M42) &&
+               float.IsFinite(matrix.M43) &&
+               float.IsFinite(matrix.M44);
+    }
+
+    public readonly bool IsFinite()
+    {
+        return float.IsFinite(Position.X) &&
+               float.IsFinite(Position.Y) &&
+               float.IsFinite(Position.Z) &&
+               float.IsFinite(Rotation.X) &&
+               float.IsFinite(Rotation.Y) &&
+               float.IsFinite(Rotation.Z) &&
+               float.IsFinite(Rotation.W) &&
+               float.IsFinite(Stretch.X) &&
+               float.IsFinite(Stretch.Y) &&
+               float.IsFinite(Stretch.Z) &&
+               float.IsFinite(Scale);
     }
 }
 

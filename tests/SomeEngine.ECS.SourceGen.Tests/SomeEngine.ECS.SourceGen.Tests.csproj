@@ -20,9 +20,11 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.Serialization\SomeEngine.ECS.Serialization.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <Reference Include="SomeEngine.ECS.SourceGen" HintPath="..\..\src\SomeEngine.ECS.SourceGen\bin\Debug\netstandard2.0\SomeEngine.ECS.SourceGen.dll" />
+    <Reference Include="SomeEngine.ECS.SourceGen" HintPath="..\..\src\SomeEngine.ECS.SourceGen\bin\$(Configuration)\netstandard2.0\SomeEngine.ECS.SourceGen.dll" />
     <Reference Include="Microsoft.CodeAnalysis" HintPath="C:\Users\boqi\.nuget\packages\microsoft.codeanalysis.common\4.13.0\lib\netstandard2.0\Microsoft.CodeAnalysis.dll" />
     <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="C:\Users\boqi\.nuget\packages\microsoft.codeanalysis.csharp\4.13.0\lib\netstandard2.0\Microsoft.CodeAnalysis.CSharp.dll" />
   </ItemGroup>

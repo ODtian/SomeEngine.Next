@@ -1,18 +1,37 @@
+using System.Buffers;
+using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Archetypes;
-using SomeEngine.ECS.Collections;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Owners;
 
 internal sealed class Tables
 {
+    private const int MaximumStackSharedValues = 256;
     private readonly Entities _entities;
 
     internal Tables(Entities entities, Action<Archetype> onArchetype)
+        : this(entities, new ArchetypeRegistry(), onArchetype)
     {
-        _entities = entities;
-        Registry = new ArchetypeRegistry();
-        Registry.OnArchetypeCreated = onArchetype;
+    }
+
+    internal Tables(
+        Entities entities,
+        ArchetypeRegistry registry,
+        Action<Archetype> onArchetype)
+    {
+        _entities = entities ?? throw new ArgumentNullException(nameof(entities));
+        Registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        ArgumentNullException.ThrowIfNull(onArchetype);
+        _entities.Store.InstallTableImage(Registry);
+        Registry.OnArchetypeCreated = archetype =>
+        {
+            // The registry owns archetype lifetime; EntityStore owns the root-local persistent-id
+            // resolver used by shared record pages. Register before invoking secondary observers
+            // so a throwing query/cache callback cannot leave the resolver stale.
+            _entities.Store.RegisterArchetype(archetype);
+            onArchetype(archetype);
+        };
         Empty = Registry.GetOrCreate(ReadOnlySpan<int>.Empty);
     }
 
@@ -20,52 +39,56 @@ internal sealed class Tables
 
     internal Archetype Empty { get; }
 
-    internal IReadOnlyList<Archetype> All => Registry.AllArchetypes;
+    internal ReadOnlySpan<Archetype> All => Registry.AllArchetypes;
 
-    internal int Count => Registry.AllArchetypes.Count;
-
-    internal void MoveEntity(
-        Entity entity,
-        ref EntityRecord record,
-        ArchetypeEdge edge)
-    {
-        MoveEntity(entity, ref record, edge.AsTransition());
-    }
+    internal int Count => Registry.AllArchetypes.Length;
 
     internal void MoveEntity(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         StructuralTransition plan)
     {
-        MoveRow(entity, ref record, plan.Target, plan.SharedColumns);
+        MoveRow(entity, record, plan.Target, plan.SharedColumns);
     }
 
     internal void MoveWithShared(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         StructuralTransition plan,
         int sharedComponentId,
         int sharedIndex)
     {
         var destination = plan.Target;
-        Span<int> sharedValues = stackalloc int[destination.SharedComponentIds.Length];
-        FillEntityShared(entity, destination, sharedValues);
-        sharedValues[Shared.Slot(destination, sharedComponentId)] = sharedIndex;
-        MoveRow(entity, ref record, destination, plan.SharedColumns, sharedValues);
+        int count = destination.SharedComponentIds.Length;
+        int[]? rented = null;
+        Span<int> sharedValues = count <= MaximumStackSharedValues
+            ? stackalloc int[count]
+            : (rented = ArrayPool<int>.Shared.Rent(count)).AsSpan(0, count);
+        try
+        {
+            FillEntityShared(entity, destination, sharedValues);
+            sharedValues[Shared.Slot(destination, sharedComponentId)] = sharedIndex;
+            MoveRow(entity, record, destination, plan.SharedColumns, sharedValues);
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<int>.Shared.Return(rented);
+        }
     }
 
     internal void MoveRow(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetype destination,
         ReadOnlySpan<SharedColumnMapping> mappings)
     {
-        MoveRow(entity, ref record, destination, mappings, ReadOnlySpan<int>.Empty);
+        MoveRow(entity, record, destination, mappings, ReadOnlySpan<int>.Empty);
     }
 
     internal void MoveRow(
         Entity entity,
-        ref EntityRecord record,
+        EntityRecordWriter record,
         Archetype destination,
         ReadOnlySpan<SharedColumnMapping> mappings,
         ReadOnlySpan<int> destinationSharedValues)
@@ -74,21 +97,37 @@ internal sealed class Tables
         var sourceChunk = record.Chunk!;
         int sourceRow = record.RowInChunk;
 
+        if (ReferenceEquals(sourceArchetype, destination))
+        {
+            if (mappings.Length != 0 || destinationSharedValues.Length != 0)
+            {
+                throw new InvalidOperationException(
+                    "A same-archetype structural transition cannot contain row mappings.");
+            }
+
+            return;
+        }
+
         var (destinationChunk, destinationRow) = destinationSharedValues.Length > 0
             ? AllocateShared(destination, entity, destinationSharedValues)
             : AllocateInChunk(destination, entity);
+        // Distinct archetypes own disjoint chunk shells. Keep the source backing read-only during
+        // the copy and let RemoveRow perform its single required detach afterward.
+        if (ReferenceEquals(sourceChunk, destinationChunk))
+        {
+            throw new InvalidOperationException(
+                "A structural row move cannot allocate into its source chunk.");
+        }
 
         foreach (var mapping in mappings)
         {
-            unsafe
-            {
-                mapping.Operations.CopyElement(
-                    sourceChunk.Columns[mapping.SourceColumnIndex],
-                    sourceRow,
-                    destinationChunk.Columns[mapping.DestinationColumnIndex],
-                    destinationRow
-                );
-            }
+            sourceChunk.CopyComponentTo(
+                mapping.SourceColumnIndex,
+                sourceRow,
+                destinationChunk,
+                mapping.DestinationColumnIndex,
+                destinationRow,
+                in mapping.Operations);
 
             sourceChunk.CopyVersions(
                 mapping.SourceColumnIndex,
@@ -97,7 +136,7 @@ internal sealed class Tables
                 destinationRow,
                 destinationChunk);
 
-            int componentId = sourceArchetype.ColumnMetas[mapping.SourceColumnIndex].ComponentId;
+            int componentId = sourceArchetype.TableComponentIds[mapping.SourceColumnIndex];
             if (sourceArchetype.TryMask(componentId, out int sourceMaskIndex))
             {
                 int destinationMaskIndex = destination.EnableMask(componentId);
@@ -106,10 +145,10 @@ internal sealed class Tables
             }
         }
 
-        var movedEntity = sourceChunk.RemoveRow(sourceRow, sourceArchetype.ColumnMetas);
+        var movedEntity = sourceChunk.RemoveRow(sourceRow, sourceArchetype.ColumnOperations);
         if (movedEntity != Entity.Null)
         {
-            ref var movedRecord = ref _entities.Store.GetRecord(movedEntity);
+            EntityRecordWriter movedRecord = _entities.Store.GetRecord(movedEntity);
             movedRecord.RowInChunk = sourceRow;
         }
 
@@ -126,9 +165,39 @@ internal sealed class Tables
     {
         if (archetype.SharedComponentIds.Length > 0)
         {
-            Span<int> sharedValues = stackalloc int[archetype.SharedComponentIds.Length];
-            FillEntityShared(entityId, archetype, sharedValues);
-            return AllocateShared(archetype, entityId, sharedValues);
+            int count = archetype.SharedComponentIds.Length;
+            int[]? rented = null;
+            Span<int> sharedValues = count <= MaximumStackSharedValues
+                ? stackalloc int[count]
+                : (rented = ArrayPool<int>.Shared.Rent(count)).AsSpan(0, count);
+            try
+            {
+                FillEntityShared(entityId, archetype, sharedValues);
+                return AllocateShared(archetype, entityId, sharedValues);
+            }
+            finally
+            {
+                if (rented is not null)
+                    ArrayPool<int>.Shared.Return(rented);
+            }
+        }
+
+        return AllocateFast(archetype, entityId);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal (Chunk chunk, int row) AllocatePrepared(
+        Archetype archetype,
+        Entity entityId,
+        Chunk? preferred)
+    {
+        if (preferred is not null && !preferred.IsFull)
+        {
+            // PreferredChunk is retained only after AllocateFast/AllocateRow has detached it.
+            int row = preferred.AllocateOwnedRow(entityId);
+            if (preferred.IsFull)
+                archetype.FirstOpenChunk = preferred.IndexInArchetype + 1;
+            return (preferred, row);
         }
 
         return AllocateFast(archetype, entityId);
@@ -139,22 +208,29 @@ internal sealed class Tables
         Entity entityId,
         ReadOnlySpan<int> sharedValues)
     {
-        var lookup = archetype.SharedChunkBuckets.GetAlternateLookup<ReadOnlySpan<int>>();
-        if (lookup.TryGetValue(sharedValues, out var bucket))
+        SharedComponentTuple? canonicalTuple = null;
+        if (archetype.TryGetSharedChunkBucket(sharedValues, out var bucket))
         {
-            for (int i = 0; i < bucket.Count; i++)
+            if (bucket.ChunkCount <= 0)
             {
-                var chunk = bucket[i];
-                if (!chunk.IsFull)
-                {
-                    int row = chunk.AllocateRow(entityId);
-                    return (chunk, row);
-                }
+                throw new InvalidOperationException(
+                    "A registered shared-component bucket must own at least one physical chunk.");
+            }
+
+            canonicalTuple = bucket.Values;
+            if (bucket.OpenChunkCount > 0)
+            {
+                Chunk chunk = bucket.NextOpenChunk;
+                int row = chunk.AllocateRow(entityId);
+                if (chunk.IsFull)
+                    bucket.MarkFull(chunk);
+                return (chunk, row);
             }
         }
 
         int capacity = ChunkCapacity.Shared(archetype, bucket);
-        return AllocateNewChunk(archetype, entityId, sharedValues.ToArray(), capacity);
+        canonicalTuple ??= new SharedComponentTuple(sharedValues);
+        return AllocateNewChunk(archetype, entityId, canonicalTuple, capacity);
     }
 
     internal void EnsureCapacity(Archetype archetype, int additionalEntityCapacity)
@@ -166,16 +242,18 @@ internal sealed class Tables
             return;
 
         int freeCapacity = 0;
-        for (int i = 0; i < archetype.Chunks.Count; i++)
-            freeCapacity += archetype.Chunks[i].Capacity - archetype.Chunks[i].Count;
+        for (int i = 0; i < archetype.ChunkCount; i++)
+        {
+            Chunk chunk = archetype.ChunkAt(i);
+            freeCapacity += chunk.Capacity - chunk.Count;
+        }
 
         if (freeCapacity >= additionalEntityCapacity)
             return;
 
         int additionalRows = additionalEntityCapacity - freeCapacity;
-        archetype.Chunks.Capacity = Math.Max(
-            archetype.Chunks.Capacity,
-            archetype.Chunks.Count +
+        archetype.EnsureChunkListCapacity(
+            archetype.ChunkCount +
             (additionalRows + archetype.MaxChunkRows - 1) / archetype.MaxChunkRows);
 
         while (additionalRows > 0)
@@ -183,10 +261,11 @@ internal sealed class Tables
             int capacity = ChunkCapacity.Reserved(archetype, additionalRows);
             var chunk = new Chunk(
                 capacity,
-                archetype.ColumnMetas,
+                archetype.ColumnOperations,
                 archetype.EnableableComponentIds.Length);
-            chunk.IndexInArchetype = archetype.Chunks.Count;
-            archetype.Chunks.Add(chunk);
+            chunk.IndexInArchetype = archetype.ChunkCount;
+            archetype.AddChunk(chunk);
+            _entities.Store.RegisterChunk(chunk);
             additionalRows -= capacity;
         }
 
@@ -196,44 +275,38 @@ internal sealed class Tables
     internal void TryRecycleChunk(Archetype archetype, Chunk chunk)
     {
         int chunkIndex = chunk.IndexInArchetype;
+        if ((uint)chunkIndex >= (uint)archetype.ChunkCount ||
+            !ReferenceEquals(archetype.ChunkAt(chunkIndex), chunk))
+        {
+            throw new InvalidOperationException(
+                "Cannot recycle a chunk which is not at its current archetype index.");
+        }
 
         if (chunkIndex < archetype.FirstOpenChunk)
             archetype.FirstOpenChunk = chunkIndex;
 
+        MarkSharedChunkOpen(archetype, chunk);
+
         if (
-            chunkIndex < archetype.Chunks.Count
+            chunkIndex < archetype.ChunkCount
             && chunk.Count == 0
-            && archetype.Chunks.Count > 1
+            && archetype.ChunkCount > 1
         )
         {
-            int lastIndex = archetype.Chunks.Count - 1;
+            int lastIndex = archetype.ChunkCount - 1;
             UnregisterSharedChunk(archetype, chunk);
             if (chunkIndex != lastIndex)
             {
-                var movedChunk = archetype.Chunks[lastIndex];
-                archetype.Chunks[chunkIndex] = movedChunk;
+                var movedChunk = archetype.ChunkAt(lastIndex);
+                archetype.ReplaceChunk(chunkIndex, movedChunk);
                 movedChunk.IndexInArchetype = chunkIndex;
             }
-            archetype.Chunks.RemoveAt(lastIndex);
+            _ = archetype.RemoveLastChunk();
+            _entities.Store.UnregisterChunk(chunk);
 
-            if (archetype.FirstOpenChunk >= archetype.Chunks.Count)
-                archetype.FirstOpenChunk = Math.Max(0, archetype.Chunks.Count - 1);
+            if (archetype.FirstOpenChunk >= archetype.ChunkCount)
+                archetype.FirstOpenChunk = Math.Max(0, archetype.ChunkCount - 1);
         }
-    }
-
-    internal Entity[] LiveEntities(int capacity)
-    {
-        var entities = new List<Entity>(capacity);
-        foreach (var archetype in All)
-        {
-            foreach (var chunk in archetype.Chunks)
-            {
-                for (int row = 0; row < chunk.Count; row++)
-                    entities.Add(chunk.Entities[row]);
-            }
-        }
-
-        return entities.ToArray();
     }
 
     private (Chunk chunk, int row) AllocateFast(
@@ -241,9 +314,9 @@ internal sealed class Tables
         Entity entityId)
     {
         int hint = archetype.FirstOpenChunk;
-        if (hint < archetype.Chunks.Count && !archetype.Chunks[hint].IsFull)
+        if (hint < archetype.ChunkCount && !archetype.ChunkAt(hint).IsFull)
         {
-            var chunk = archetype.Chunks[hint];
+            var chunk = archetype.ChunkAt(hint);
             int row = chunk.AllocateRow(entityId);
             if (chunk.IsFull)
                 archetype.FirstOpenChunk = hint + 1;
@@ -268,23 +341,27 @@ internal sealed class Tables
     private (Chunk chunk, int row) AllocateNewChunk(
         Archetype archetype,
         Entity entityId,
-        int[]? sharedValues,
+        SharedComponentTuple? sharedValues,
         int capacity)
     {
         var newChunk = new Chunk(
             capacity,
-            archetype.ColumnMetas,
-            archetype.EnableableComponentIds.Length
+            archetype.ColumnOperations,
+            archetype.EnableableComponentIds.Length,
+            sharedValues
         );
-        newChunk.SharedValues = sharedValues;
-        archetype.Chunks.Add(newChunk);
-        RegisterSharedChunk(archetype, newChunk);
-        int newIndex = archetype.Chunks.Count - 1;
+        int newIndex = archetype.ChunkCount;
         newChunk.IndexInArchetype = newIndex;
+        archetype.AddChunk(newChunk);
+        _entities.Store.RegisterChunk(newChunk);
+        RegisterSharedChunk(archetype, newChunk);
         archetype.FirstOpenChunk = newIndex;
         int newRow = newChunk.AllocateRow(entityId);
         if (newChunk.IsFull)
+        {
+            MarkSharedChunkFull(archetype, newChunk);
             archetype.FirstOpenChunk = newIndex + 1;
+        }
         return (newChunk, newRow);
     }
 
@@ -292,12 +369,12 @@ internal sealed class Tables
     {
         promotedChunk = null!;
         if (archetype.SharedComponentIds.Length != 0 ||
-            archetype.Chunks.Count != 1)
+            archetype.ChunkCount != 1)
         {
             return false;
         }
 
-        var source = archetype.Chunks[0];
+        var source = archetype.ChunkAt(0);
         if (!source.IsFull || source.Capacity >= archetype.MaxChunkRows)
             return false;
 
@@ -307,7 +384,7 @@ internal sealed class Tables
 
         promotedChunk = new Chunk(
             promotedCapacity,
-            archetype.ColumnMetas,
+            archetype.ColumnOperations,
             archetype.EnableableComponentIds.Length)
         {
             Count = source.Count,
@@ -315,29 +392,32 @@ internal sealed class Tables
             IndexInArchetype = 0,
         };
 
-        Array.Copy(source.Entities, promotedChunk.Entities, source.Count);
-        for (int column = 0; column < source.Columns.Length; column++)
-            Array.Copy((Array)source.Columns[column], (Array)promotedChunk.Columns[column], source.Count);
+        source.Entities[..source.Count].CopyTo(promotedChunk.Entities);
+        for (int column = 0; column < source.ColumnCount; column++)
+            source.CopyColumnPrefixTo(column, promotedChunk, source.Count);
 
-        Array.Copy(source.ChangeVersions, promotedChunk.ChangeVersions, source.ChangeVersions.Length);
+        source.ChangeVersions.CopyTo(promotedChunk.ChangeVersions);
         for (int column = 0; column < source.ChangeVersions.Length; column++)
         {
-            Array.Copy(source.AddVersions[column], promotedChunk.AddVersions[column], source.Count);
-            Array.Copy(source.WriteVersions[column], promotedChunk.WriteVersions[column], source.Count);
+            source.AddVersionRows(column)[..source.Count]
+                .CopyTo(promotedChunk.AddVersionRows(column));
+            source.WriteVersionRows(column)[..source.Count]
+                .CopyTo(promotedChunk.WriteVersionRows(column));
         }
 
-        if (source.EnableMasks is not null)
-            Array.Copy(source.EnableMasks, promotedChunk.EnableMasks!, source.EnableMasks.Length);
+        if (!source.EnableMasks.IsEmpty)
+            source.EnableMasks.CopyTo(promotedChunk.EnableMasks);
 
         for (int row = 0; row < source.Count; row++)
         {
-            ref var record = ref _entities.Store.GetRecord(source.Entities[row]);
+            EntityRecordWriter record = _entities.Store.GetRecord(source.Entities[row]);
             record.Archetype = archetype;
             record.Chunk = promotedChunk;
             record.RowInChunk = row;
         }
 
-        archetype.Chunks[0] = promotedChunk;
+        archetype.ReplaceChunk(0, promotedChunk);
+        _entities.Store.ReplaceChunk(source, promotedChunk);
         archetype.FirstOpenChunk = 0;
         archetype.NextChunkRows = ChunkCapacity.Grow(archetype, promotedCapacity);
         return true;
@@ -355,13 +435,13 @@ internal sealed class Tables
         if (sharedIds.Length == 0)
             return;
 
-        ref var record = ref _entities.Store.GetRecord(entity);
+        EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
         var sourceArchetype = record.Archetype!;
         var sourceSharedValues = record.Chunk!.SharedValues;
 
         for (int i = 0; i < sharedIds.Length; i++)
         {
-            int sourceSlot = Array.BinarySearch(sourceArchetype.SharedComponentIds, sharedIds[i]);
+            int sourceSlot = sourceArchetype.SharedComponentIds.BinarySearch(sharedIds[i]);
             if (sourceSlot < 0)
             {
                 values[i] = -1;
@@ -381,14 +461,37 @@ internal sealed class Tables
         if (chunk.SharedValues is null)
             return;
 
-        var key = new SortedValueKey(chunk.SharedValues);
-        if (!archetype.SharedChunkBuckets.TryGetValue(key, out var bucket))
+        SharedComponentTuple key = chunk.SharedValues;
+        SharedChunkBucket bucket = archetype.GetOrAddSharedChunkBucket(key);
+        if (!ReferenceEquals(bucket.Values, key))
         {
-            bucket = new List<Chunk>(1);
-            archetype.SharedChunkBuckets.Add(key, bucket);
+            throw new InvalidOperationException(
+                "A shared-component bucket cannot register a non-canonical tuple.");
         }
 
-        bucket.Add(chunk);
+        bucket.Register(chunk);
+    }
+
+    private static void MarkSharedChunkFull(Archetype archetype, Chunk chunk)
+    {
+        if (chunk.SharedValues is null)
+            return;
+
+        if (!archetype.TryGetSharedChunkBucket(chunk.SharedValues, out var bucket))
+            throw new InvalidOperationException("A shared chunk must be registered before it becomes full.");
+
+        bucket.MarkFull(chunk);
+    }
+
+    private static void MarkSharedChunkOpen(Archetype archetype, Chunk chunk)
+    {
+        if (chunk.SharedValues is null || chunk.IsFull)
+            return;
+
+        if (!archetype.TryGetSharedChunkBucket(chunk.SharedValues, out var bucket))
+            throw new InvalidOperationException("A shared chunk must be registered before it becomes open.");
+
+        bucket.MarkOpen(chunk);
     }
 
     private static void UnregisterSharedChunk(Archetype archetype, Chunk chunk)
@@ -396,13 +499,13 @@ internal sealed class Tables
         if (chunk.SharedValues is null)
             return;
 
-        var key = new SortedValueKey(chunk.SharedValues);
-        if (!archetype.SharedChunkBuckets.TryGetValue(key, out var bucket))
+        SharedComponentTuple key = chunk.SharedValues;
+        if (!archetype.TryGetSharedChunkBucket(key, out var bucket))
             return;
 
-        bucket.Remove(chunk);
-        if (bucket.Count == 0)
-            archetype.SharedChunkBuckets.Remove(key);
+        bucket.Unregister(chunk);
+        if (bucket.ChunkCount == 0)
+            archetype.RemoveSharedChunkBucket(key);
     }
 
     internal static class ChunkCapacity
@@ -414,12 +517,12 @@ internal sealed class Tables
             return capacity;
         }
 
-        internal static int Shared(Archetype archetype, List<Chunk>? bucket)
+        internal static int Shared(Archetype archetype, SharedChunkBucket? bucket)
         {
-            if (bucket is null || bucket.Count == 0)
+            if (bucket is null)
                 return archetype.InitialChunkRows;
 
-            return Grow(archetype, bucket[^1].Capacity);
+            return Grow(archetype, bucket.LastCapacity);
         }
 
         internal static int Reserved(Archetype archetype, int remainingRows)

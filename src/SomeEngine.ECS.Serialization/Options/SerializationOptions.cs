@@ -7,23 +7,12 @@ public enum SnapshotPayloadKind : byte
     EntitySet,
     QueryResult,
     World,
-    Delta,
-}
-
-public enum SerializationPurpose : byte
-{
-    Snapshot,
-    Patch,
-    Scene,
-    Prefab,
-    Delta,
 }
 
 public enum EntityIdentityMode : byte
 {
     Preserve,
     Remap,
-    Omit,
 }
 
 public enum MissingReferenceMode : byte
@@ -33,86 +22,57 @@ public enum MissingReferenceMode : byte
     Throw,
 }
 
-public enum EntityApplyMode : byte
+/// <summary>
+/// Defines the persistence contract carried by a serialized payload.
+/// </summary>
+public enum SerializationContract : byte
 {
-    MergeIncluded,
-    ReplaceIncluded,
-    ReplaceEntity,
+    /// <summary>
+    /// A fast, ABI-bound checkpoint. It is accepted only by the exact build/runtime identity
+    /// that produced it and may use native in-memory component layouts.
+    /// </summary>
+    RawCheckpoint,
+
+    /// <summary>
+    /// A durable, canonical payload. Every value must use a generated or explicitly registered
+    /// canonical/custom codec; implicit native-layout codecs are rejected.
+    /// </summary>
+    DurableSave,
 }
 
-public enum UnknownTypeMode : byte
-{
-    Throw,
-    Skip,
-}
-
-public enum MissingComponentMode : byte
-{
-    Throw,
-    Skip,
-}
-
-public enum SchemaMismatchMode : byte
-{
-    Throw,
-    UseRegisteredMigration,
-    BestEffortAdditive,
-}
-
-public enum DeltaEventKind : byte
-{
-    EntityCreated,
-    EntityDestroyed,
-    ComponentAdded,
-    ComponentRemoved,
-    ComponentChanged,
-    TagAdded,
-    TagRemoved,
-    EnabledChanged,
-    SharedChanged,
-    BufferChanged,
-    SparseAdded,
-    SparseRemoved,
-    SparseChanged,
-    RelationAdded,
-    RelationRemoved,
-    RelationChanged,
-    BufferAdded,
-    BufferRemoved,
-    SharedAdded,
-    SharedRemoved,
-}
-
+/// <summary>Controls serialization identity, persistence contract, and bounded write-side indexing.</summary>
+/// <remarks>
+/// Whole-World v4 item and topology payloads are encoded exactly once directly to the destination,
+/// followed by their measured byte-count footer. Non-seekable output does not retain an encoded
+/// item or topology payload backing.
+/// </remarks>
+/// <param name="Contract">The ABI-bound or durable wire contract.</param>
+/// <param name="MaximumSparseMemberships">
+/// Maximum total sparse component memberships that whole-World v4 serialization may index for
+/// its canonical per-entity merge. Zero (the default) imposes no explicit limit;
+/// memory-sensitive callers should set an application-appropriate positive bound.
+/// </param>
+/// <param name="MaximumTopologyRecords">
+/// Maximum total hierarchy/relation records retained across topology capture. Zero (the default)
+/// imposes no explicit limit.
+/// </param>
+/// <param name="MaximumTopologyPayloadBytes">
+/// Maximum total topology bytes admitted while encoding caller-owned output. Zero (the default)
+/// imposes no explicit limit.
+/// </param>
 public readonly record struct SerializeOptions(
-    SerializationPurpose Purpose = SerializationPurpose.Snapshot,
-    EntityIdentityMode IdentityMode = EntityIdentityMode.Preserve);
-
-public readonly record struct EntityApplyOptions(
-    EntityApplyMode ApplyMode = EntityApplyMode.MergeIncluded,
-    EntityIdentityMode IdentityMode = EntityIdentityMode.Preserve,
-    UnknownTypeMode UnknownTypeMode = UnknownTypeMode.Throw,
-    SchemaMismatchMode SchemaMismatchMode = SchemaMismatchMode.Throw,
-    MissingReferenceMode MissingReferenceMode = MissingReferenceMode.Throw);
-
-public readonly record struct EntityCreateOptions(
-    EntityIdentityMode IdentityMode = EntityIdentityMode.Omit,
-    UnknownTypeMode UnknownTypeMode = UnknownTypeMode.Throw,
-    SchemaMismatchMode SchemaMismatchMode = SchemaMismatchMode.Throw,
-    MissingReferenceMode MissingReferenceMode = MissingReferenceMode.Throw);
+    SerializationContract Contract = SerializationContract.RawCheckpoint,
+    int MaximumSparseMemberships = 0,
+    long MaximumTopologyRecords = 0,
+    long MaximumTopologyPayloadBytes = 0);
 
 public readonly record struct WorldLoadOptions(
     EntityIdentityMode IdentityMode = EntityIdentityMode.Preserve,
-    UnknownTypeMode UnknownTypeMode = UnknownTypeMode.Throw,
-    SchemaMismatchMode SchemaMismatchMode = SchemaMismatchMode.Throw,
-    MissingReferenceMode MissingReferenceMode = MissingReferenceMode.Throw);
+    MissingReferenceMode MissingReferenceMode = MissingReferenceMode.Throw,
+    SerializationReadLimits? ReadLimits = null,
+    SerializationContract? RequiredContract = null);
 
-public readonly record struct DeltaSerializeOptions(
-    bool ClearJournal = false);
-
-public readonly record struct DeltaEvent(
-    DeltaEventKind Kind,
-    global::SomeEngine.ECS.Entities.Entity Entity,
-    int ComponentId,
-    global::SomeEngine.ECS.Entities.Entity Target,
-    uint Version);
+public readonly record struct SerializationReadOptions(
+    SerializationReadLimits? ReadLimits = null,
+    SerializationContract? RequiredContract = null);
 

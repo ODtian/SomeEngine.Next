@@ -10,6 +10,7 @@ public partial class World
     /// </summary>
     public Entity CloneEntity(Entity source)
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         return Copy.Clone(source);
     }
 
@@ -19,6 +20,7 @@ public partial class World
     /// </summary>
     public Entity CloneEntity(Entity source, EntityCopyOptions options)
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         return Copy.Clone(source, options);
     }
 
@@ -28,6 +30,7 @@ public partial class World
     /// </summary>
     public void CopyEntity(Entity source, Entity target)
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         Copy.CopyInto(source, target);
     }
 
@@ -37,6 +40,7 @@ public partial class World
     /// </summary>
     public void CopyEntity(Entity source, Entity target, EntityCopyOptions options)
     {
+        using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
         Copy.CopyInto(source, target, options);
     }
 }

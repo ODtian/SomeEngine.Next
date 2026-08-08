@@ -9,7 +9,7 @@ using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Core.ECS.Systems;
 
-public sealed class TransformSystem : ISystem<EngineSystemContext>
+public sealed class TransformSystem : ISystem<ImmediateSystemContext>
 {
     private readonly List<EntityId> _rootsScratch = [];
     private readonly List<EntityId> _stackScratch = [];
@@ -20,51 +20,47 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
     private readonly HashSet<EntityId> _updatedSet = [];
     private readonly Dictionary<EntityId, EntityId> _knownParents = [];
     private QueryHandle _transformQuery;
-    private QueryHandle _parentedTransformQuery;
+    private QueryHandle _parentedTopologyQuery;
     private QueryHandle _changedFlatLeafLocalQuery;
     private QueryHandle _changedLocalQuery;
     private QueryHandle _changedParentQuery;
     private bool _forceFullUpdate = true;
 
-    public void OnCreate(ref EngineSystemContext context)
+    public void OnCreate(ref ImmediateSystemContext context)
     {
         World world = context.World;
         _transformQuery = world.Query(
             new QueryDefinitionBuilder()
                 .Read<LocalTransform>()
                 .Read<WorldTransform>());
-        _parentedTransformQuery = world.Query(
+        _parentedTopologyQuery = world.Query(
             new QueryDefinitionBuilder()
-                .Read<LocalTransform>()
-                .Read<WorldTransform>()
-                .Read<Parent>());
+                .Read<Parent<DefaultHierarchyDomain>>());
         _changedFlatLeafLocalQuery = world.Query(
             new QueryDefinitionBuilder()
                 .Read<LocalTransform>()
                 .ReadWrite<WorldTransform>()
                 .ChunkChanged<LocalTransform>()
-                .None<Parent>()
-                .None<ChildBuffer>());
+                .None<Parent<DefaultHierarchyDomain>>()
+                .None<Children<DefaultHierarchyDomain>>());
         _changedLocalQuery = world.Query(
             new QueryDefinitionBuilder()
                 .Read<LocalTransform>()
                 .Read<WorldTransform>()
                 .Changed<LocalTransform>()
-                .Any<Parent>()
-                .Any<ChildBuffer>());
+                .Any<Parent<DefaultHierarchyDomain>>()
+                .Any<Children<DefaultHierarchyDomain>>());
         _changedParentQuery = world.Query(
             new QueryDefinitionBuilder()
-                .Read<LocalTransform>()
-                .Read<WorldTransform>()
-                .Read<Parent>()
-                .Changed<Parent>());
+                .Read<Parent<DefaultHierarchyDomain>>()
+                .Changed<Parent<DefaultHierarchyDomain>>());
     }
 
-    public void OnUpdate(ref EngineSystemContext context)
+    public void OnUpdate(ref ImmediateSystemContext context)
     {
         using var scope = Profiler.BeginScope("TransformSystem.OnUpdate");
         World world = context.World;
-        OrderedHierarchy.Update(world);
+        Hierarchy.Maintain(world);
 
         using (Profiler.BeginScope("TransformSystem.UpdateHierarchy"))
         {
@@ -73,13 +69,13 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
             {
                 using (Profiler.BeginScope("TransformSystem.UpdateFlatLeafTransforms"))
                 {
-                    UpdateFlatLeafTransforms(world, context.LastSystemVersion, context.CurrentSystemVersion);
+                    UpdateFlatLeafTransforms(world, context.LastSystemVersion);
                 }
             }
 
             using (Profiler.BeginScope("TransformSystem.CollectDirtyRoots"))
             {
-                if (!CollectDirtyRoots(world, context.LastSystemVersion, context.CurrentSystemVersion))
+                if (!CollectDirtyRoots(world, context.LastSystemVersion))
                     return;
             }
 
@@ -100,48 +96,54 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
         }
     }
 
-    private void UpdateFlatLeafTransforms(World world, uint lastSystemVersion, uint currentSystemVersion)
+    private void UpdateFlatLeafTransforms(World world, uint lastSystemVersion)
     {
-        foreach (QueryChunkView chunk in world.RunQuery(_changedFlatLeafLocalQuery, lastSystemVersion, currentSystemVersion).Chunks)
+        world.ExecuteQuery(
+            _changedFlatLeafLocalQuery,
+            lastSystemVersion,
+            cursor =>
         {
-            ReadOnlySpan<LocalTransform> locals = chunk.Read<LocalTransform>();
-            ReadOnlySpan<uint> localVersions = chunk.ReadWriteVersions<LocalTransform>();
-
-            int firstUnchanged = -1;
-            for (int i = 0; i < locals.Length; i++)
+            foreach (QueryChunkView chunk in cursor.Chunks)
             {
-                if ((int)(localVersions[i] - lastSystemVersion) <= 0)
-                {
-                    firstUnchanged = i;
-                    break;
-                }
-            }
+                ReadOnlySpan<LocalTransform> locals = chunk.Read<LocalTransform>();
+                ReadOnlySpan<uint> localVersions = chunk.ReadWriteVersions<LocalTransform>();
 
-            if (firstUnchanged < 0)
-            {
-                Span<WorldTransform> worlds = chunk.ReadWrite<WorldTransform>();
+                int firstUnchanged = -1;
                 for (int i = 0; i < locals.Length; i++)
                 {
-                    TransformQvvs local = locals[i].Value;
-                    worlds[i].Qvvs = local;
+                    if ((int)(localVersions[i] - lastSystemVersion) <= 0)
+                    {
+                        firstUnchanged = i;
+                        break;
+                    }
                 }
 
-                continue;
-            }
+                if (firstUnchanged < 0)
+                {
+                    Span<WorldTransform> worlds = chunk.ReadWrite<WorldTransform>();
+                    for (int i = 0; i < locals.Length; i++)
+                    {
+                        TransformQvvs local = locals[i].Value;
+                        worlds[i].Qvvs = local;
+                    }
 
-            for (int i = 0; i < locals.Length; i++)
-            {
-                if ((int)(localVersions[i] - lastSystemVersion) <= 0)
                     continue;
+                }
 
-                TransformQvvs local = locals[i].Value;
-                ref WorldTransform worldTransform = ref chunk.ReadWrite<WorldTransform>(i);
-                worldTransform.Qvvs = local;
+                for (int i = 0; i < locals.Length; i++)
+                {
+                    if ((int)(localVersions[i] - lastSystemVersion) <= 0)
+                        continue;
+
+                    TransformQvvs local = locals[i].Value;
+                    ref WorldTransform worldTransform = ref chunk.ReadWrite<WorldTransform>(i);
+                    worldTransform.Qvvs = local;
+                }
             }
-        }
+        });
     }
 
-    private bool CollectDirtyRoots(World world, uint lastSystemVersion, uint currentSystemVersion)
+    private bool CollectDirtyRoots(World world, uint lastSystemVersion)
     {
         _dirtyRootsScratch.Clear();
         _dirtySet.Clear();
@@ -155,8 +157,8 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
             return _dirtyRootsScratch.Count != 0;
         }
 
-        CollectChanged(world, lastSystemVersion, currentSystemVersion);
-        CollectChangedParents(world, lastSystemVersion, currentSystemVersion);
+        CollectChanged(world, lastSystemVersion);
+        CollectChangedParents(world, lastSystemVersion);
         RefreshKnownParents(world, markChangesDirty: true);
         return _dirtyRootsScratch.Count != 0;
     }
@@ -164,35 +166,20 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
     private void CollectTraversalRoots(World world)
     {
         _rootsScratch.Clear();
-        foreach (QueryChunkView chunk in world.RunQuery(_transformQuery).Chunks)
+        world.ExecuteQuery(_transformQuery, cursor =>
         {
-            ReadOnlySpan<EntityId> entities = chunk.Entities;
-
-            for (int i = 0; i < entities.Length; i++)
+            foreach (QueryChunkView chunk in cursor.Chunks)
             {
-                EntityId entity = entities[i];
-                if (IsTraversalRoot(world, entity))
-                    _rootsScratch.Add(entity);
+                ReadOnlySpan<EntityId> entities = chunk.Entities;
+
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    EntityId entity = entities[i];
+                    if (IsTraversalRoot(world, entity))
+                        _rootsScratch.Add(entity);
+                }
             }
-        }
-    }
-
-    private void UpdateTransformChildren(World world, EntityId root)
-    {
-        _stackScratch.Clear();
-        PushTransformChildren(world, root);
-
-        while (_stackScratch.Count != 0)
-        {
-            int index = _stackScratch.Count - 1;
-            EntityId entity = _stackScratch[index];
-            _stackScratch.RemoveAt(index);
-
-            if (!TryUpdateEntity(world, entity))
-                continue;
-
-            PushTransformChildren(world, entity);
-        }
+        });
     }
 
     private void UpdateTransformSubtree(World world, EntityId root, bool forceChildren)
@@ -211,45 +198,60 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
 
             bool explicitlyDirty = _dirtySet.Remove(entity);
             if (!TryUpdateEntity(world, entity, out bool worldChanged))
+            {
+                // Organization entities participate in the Transform workload as
+                // identity/pass-through nodes. Once an affected branch reaches one,
+                // traversal must continue to its transform-bearing descendants.
+                PushHierarchyChildren(world, entity);
                 continue;
+            }
 
             if (forceChildren || explicitlyDirty || worldChanged)
-                PushTransformChildren(world, entity);
+                PushHierarchyChildren(world, entity);
         }
     }
 
-    private void CollectChanged(World world, uint lastSystemVersion, uint currentSystemVersion)
+    private void CollectChanged(World world, uint lastSystemVersion)
     {
-        foreach (QueryChunkView chunk in world.RunQuery(_changedLocalQuery, lastSystemVersion, currentSystemVersion).Chunks)
+        world.ExecuteQuery(_changedLocalQuery, lastSystemVersion, cursor =>
         {
-            foreach (int row in chunk.RowIndices)
-                AddDirtyRoot(chunk.GetEntity(row));
-        }
+            foreach (QueryChunkView chunk in cursor.Chunks)
+            {
+                foreach (int row in chunk.RowIndices)
+                    AddDirtyRoot(chunk.GetEntity(row));
+            }
+        });
     }
 
-    private void CollectChangedParents(World world, uint lastSystemVersion, uint currentSystemVersion)
+    private void CollectChangedParents(World world, uint lastSystemVersion)
     {
-        foreach (QueryChunkView chunk in world.RunQuery(_changedParentQuery, lastSystemVersion, currentSystemVersion).Chunks)
+        world.ExecuteQuery(_changedParentQuery, lastSystemVersion, cursor =>
         {
-            foreach (int row in chunk.RowIndices)
-                AddDirtyRoot(chunk.GetEntity(row));
-        }
+            foreach (QueryChunkView chunk in cursor.Chunks)
+            {
+                foreach (int row in chunk.RowIndices)
+                    AddDirtyRoot(chunk.GetEntity(row));
+            }
+        });
     }
 
     private void RefreshKnownParents(World world, bool markChangesDirty)
     {
         _seenParentSet.Clear();
-        foreach (QueryChunkView chunk in world.RunQuery(_parentedTransformQuery).Chunks)
+        world.ExecuteQuery(_parentedTopologyQuery, cursor =>
         {
-            ReadOnlySpan<EntityId> entities = chunk.Entities;
-            for (int i = 0; i < entities.Length; i++)
+            foreach (QueryChunkView chunk in cursor.Chunks)
             {
-                EntityId entity = entities[i];
-                EntityId parent = OrderedHierarchy.GetParent(world, entity);
-                _seenParentSet.Add(entity);
-                RefreshKnownParent(entity, parent, markChangesDirty);
+                ReadOnlySpan<EntityId> entities = chunk.Entities;
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    EntityId entity = entities[i];
+                    EntityId parent = Hierarchy.GetParent(world, entity);
+                    _seenParentSet.Add(entity);
+                    RefreshKnownParent(entity, parent, markChangesDirty);
+                }
             }
-        }
+        });
 
         RemoveStaleKnownParents(markChangesDirty);
     }
@@ -311,39 +313,44 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
 
     private bool HasDirtyAncestor(World world, EntityId entity)
     {
-        EntityId parent = OrderedHierarchy.GetParent(world, entity);
-        while (parent != EntityId.Null && IsTransformNode(world, parent))
+        EntityId parent = Hierarchy.GetParent(world, entity);
+        while (parent != EntityId.Null && world.IsAlive(parent))
         {
             if (_dirtySet.Contains(parent))
                 return true;
-            parent = OrderedHierarchy.GetParent(world, parent);
+            parent = Hierarchy.GetParent(world, parent);
         }
 
         return false;
     }
 
-    private void PushTransformChildren(World world, EntityId parent)
+    private void PushHierarchyChildren(World world, EntityId parent)
     {
-        ReadOnlySpan<EntityId> children = OrderedHierarchy.GetChildren(world, parent);
+        ReadOnlySpan<EntityId> children = Hierarchy.GetChildren(world, parent).Span;
         for (int i = children.Length - 1; i >= 0; i--)
         {
             EntityId child = children[i];
-            if (IsTransformNode(world, child))
+            if (world.IsAlive(child))
                 _stackScratch.Add(child);
         }
     }
 
     private static bool IsTraversalRoot(World world, EntityId entity)
     {
-        EntityId parent = OrderedHierarchy.GetParent(world, entity);
-        return parent == EntityId.Null || !world.IsAlive(parent) || !IsTransformNode(world, parent);
+        EntityId parent = Hierarchy.GetParent(world, entity);
+        while (parent != EntityId.Null && world.IsAlive(parent))
+        {
+            if (IsTransformNode(world, parent))
+                return false;
+
+            parent = Hierarchy.GetParent(world, parent);
+        }
+
+        return true;
     }
 
     private static bool IsTransformNode(World world, EntityId entity)
         => world.IsAlive(entity) && world.Has<LocalTransform>(entity) && world.Has<WorldTransform>(entity);
-
-    private static bool TryUpdateEntity(World world, EntityId entity)
-        => TryUpdateEntity(world, entity, out _);
 
     private static bool TryUpdateEntity(World world, EntityId entity, out bool changed)
     {
@@ -354,19 +361,26 @@ public sealed class TransformSystem : ISystem<EngineSystemContext>
         TransformQvvs local = world.Read<LocalTransform>(entity).Value;
         TransformQvvs worldValue = local;
 
-        EntityId parent = OrderedHierarchy.GetParent(world, entity);
-        if (parent != EntityId.Null && world.IsAlive(parent) && world.Has<WorldTransform>(parent))
+        EntityId parent = Hierarchy.GetParent(world, entity);
+        while (parent != EntityId.Null && world.IsAlive(parent))
         {
-            WorldTransform parentWorld = world.Read<WorldTransform>(parent);
-            worldValue = TransformQvvs.Combine(parentWorld.Qvvs, local);
+            if (world.Has<WorldTransform>(parent))
+            {
+                WorldTransform parentWorld = world.Read<WorldTransform>(parent);
+                worldValue = TransformQvvs.Combine(parentWorld.Qvvs, local);
+                break;
+            }
+
+            parent = Hierarchy.GetParent(world, parent);
         }
 
         WorldTransform current = world.Read<WorldTransform>(entity);
         if (TransformEquals(current.Qvvs, worldValue))
             return true;
 
-        ref WorldTransform worldTransform = ref world.Get<WorldTransform>(entity);
+        WorldTransform worldTransform = current;
         worldTransform.Qvvs = worldValue;
+        world.Replace(entity, worldTransform);
         changed = true;
         return true;
     }

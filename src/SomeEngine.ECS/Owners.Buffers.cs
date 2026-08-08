@@ -10,7 +10,6 @@ using SomeEngine.ECS.Hooks;
 using SomeEngine.ECS.Indexing;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
-using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Sparse;
 using SomeEngine.ECS.Registry;
 
@@ -21,7 +20,6 @@ internal sealed class Buffers
     private Entities _entities = null!;
     private Components _components = null!;
     private Bundles _bundles = null!;
-    private Journal _journal = null!;
     private Clock _clock = null!;
     private Iteration _iteration = null!;
 
@@ -29,103 +27,100 @@ internal sealed class Buffers
         Entities entities,
         Components components,
         Bundles bundles,
-        Journal journal,
         Clock clock,
         Iteration iteration)
     {
         _entities = entities;
         _components = components;
         _bundles = bundles;
-        _journal = journal;
         _clock = clock;
         _iteration = iteration;
     }
 
-    internal DynamicBuffer<T> Get<T>(Entity entity)
+    internal DynamicBuffer<T> BorrowWrite<T>(Entity entity)
         where T : struct, IBufferElement
     {
-        ref var record = ref _entities.Row(entity);
+        return BorrowWrite<T>(entity, _clock.Tick);
+    }
+
+    internal DynamicBuffer<T> BorrowWrite<T>(Entity entity, uint writeVersion)
+        where T : struct, IBufferElement
+    {
+        Resolve<T>(
+            entity,
+            out Chunk chunk,
+            out int row,
+            out int headerColumn,
+            out int inlineColumn);
+
+        return new DynamicBuffer<T>(
+            this,
+            chunk,
+            row,
+            headerColumn,
+            inlineColumn,
+            writeVersion);
+    }
+
+    internal BufferView<T> BorrowRead<T>(Entity entity)
+        where T : struct, IBufferElement
+    {
+        Resolve<T>(
+            entity,
+            out Chunk chunk,
+            out int row,
+            out int headerColumn,
+            out int inlineColumn);
+
+        return new BufferView<T>(chunk, row, headerColumn, inlineColumn);
+    }
+
+    private void Resolve<T>(
+        Entity entity,
+        out Chunk chunk,
+        out int row,
+        out int headerColumn,
+        out int inlineColumn)
+        where T : struct, IBufferElement
+    {
+        EntityRecord record = _entities.ReadRow(entity);
         var archetype = record.Archetype!;
         int headerId = BufferComponents.Header<T>();
         int inlineId = BufferComponents.Inline<T>();
 
-        if (!archetype.TryColumn(headerId, out int headerColumn) ||
-            !archetype.TryColumn(inlineId, out int inlineColumn))
+        if (!archetype.TryColumn(headerId, out headerColumn) ||
+            !archetype.TryColumn(inlineId, out inlineColumn))
         {
             throw new InvalidOperationException(
                 $"Entity {entity} does not have buffer component {typeof(T).Name}.");
         }
 
-        ref var header = ref record.Chunk!.GetComponentRef<DynamicBufferHeader<T>>(
-            headerColumn,
-            record.RowInChunk);
-        if (header.InlineCapacity != DynamicBufferLayout<T>.InlineCapacity)
-            header.InlineCapacity = DynamicBufferLayout<T>.InlineCapacity;
-
-        return new DynamicBuffer<T>(
-            this,
-            record.Chunk!,
-            record.RowInChunk,
-            headerColumn,
-            inlineColumn);
+        chunk = record.Chunk!;
+        row = record.RowInChunk;
     }
 
     internal void Add<T>(Entity entity)
         where T : struct, IBufferElement
+        => Add(entity, ReadOnlyMemory<T>.Empty);
+
+    internal void Add<T>(Entity entity, ReadOnlyMemory<T> values)
+        where T : struct, IBufferElement
     {
         _ = DynamicBufferLayout<T>.InlineCapacity;
-        Add(
-            entity,
+        _iteration.Throw();
+        Span<int> componentIds =
+        [
             BufferComponents.Header<T>(),
             BufferComponents.Inline<T>(),
-            typeof(T).Name,
-            DynamicBufferHeader<T>.Create(),
-            default(DynamicBufferInline<T>));
-    }
-
-    private void Add<T>(
-        Entity entity,
-        int headerId,
-        int inlineId,
-        string name,
-        DynamicBufferHeader<T> header,
-        DynamicBufferInline<T> inline)
-        where T : struct, IBufferElement
-    {
-        _iteration.Throw();
-        var context = CreateBufferAddWriter<T>(entity, headerId, inlineId, name);
-        context.Write(header);
-        context.Write(inline);
-        Write(SerializationChangeKind.BufferAdded, entity, headerId);
-    }
-
-    private BundleWriter CreateBufferAddWriter<T>(
-        Entity entity,
-        int headerId,
-        int inlineId,
-        string name)
-        where T : struct, IBufferElement
-    {
-        ref var record = ref _entities.Row(entity);
-        var sourceArchetype = record.Archetype!;
-        bool hadHeader = sourceArchetype.HasComponent(headerId);
-        bool hadInline = sourceArchetype.HasComponent(inlineId);
-        if (hadHeader || hadInline)
-            throw new InvalidOperationException(
-                $"Entity {entity} already has buffer component {name}.");
-
-        Span<int> componentIds = stackalloc int[(hadHeader ? 0 : 1) + (hadInline ? 0 : 1)];
-        int index = 0;
-        if (!hadHeader)
-            componentIds[index++] = headerId;
-        if (!hadInline)
-            componentIds[index++] = inlineId;
-
-        return _bundles.CreateAddWriter(
+        ];
+        ReadOnlyMemory<T> initial = values;
+        _bundles.ExecuteAdd(
             entity,
             componentIds,
-            ReadOnlySpan<SharedValueSlot>.Empty,
-            ReadOnlySpan<int>.Empty);
+            ReadOnlySpan<int>.Empty,
+            ref initial,
+            static (BundleWriteView view, ref ReadOnlyMemory<T> state) =>
+                view.WriteBuffer(in state));
     }
 
     internal bool Has<T>(Entity entity)
@@ -134,7 +129,7 @@ internal sealed class Buffers
         if (!_entities.Store.IsAlive(entity))
             return false;
 
-        ref var record = ref _entities.Store.GetRecord(entity);
+        EntityRecord record = _entities.Store.GetRecordReadOnly(entity);
         if (record.Archetype is null)
             return false;
 
@@ -154,24 +149,23 @@ internal sealed class Buffers
 
         _components.Remove<DynamicBufferHeader<T>>(entity);
         _components.Remove<DynamicBufferInline<T>>(entity);
-        Write(SerializationChangeKind.BufferRemoved, entity, BufferComponents.Header<T>());
     }
 
     internal void CopyStorage<T>(
         Entity source,
         Entity target,
-        SerializationChangeKind kind)
+        bool added)
         where T : struct, IBufferElement
     {
-        ref var sourceRecord = ref _entities.Row(source);
-        ref var targetRecord = ref _entities.Row(target);
+        EntityRecord sourceRecord = _entities.ReadRow(source);
+        EntityRecord targetRecord = _entities.ReadRow(target);
 
         int headerId = BufferComponents.Header<T>();
         int inlineId = BufferComponents.Inline<T>();
 
         var sourceChunk = RequireStorage<T>(
             source,
-            ref sourceRecord,
+            in sourceRecord,
             headerId,
             inlineId,
             out int sourceHeaderColumn,
@@ -179,7 +173,7 @@ internal sealed class Buffers
             out int sourceRow);
         var targetChunk = RequireStorage<T>(
             target,
-            ref targetRecord,
+            in targetRecord,
             headerId,
             inlineId,
             out int targetHeaderColumn,
@@ -196,14 +190,12 @@ internal sealed class Buffers
             targetHeaderColumn,
             targetInlineColumn);
 
-        MarkStorage(kind, targetChunk, targetHeaderColumn, targetInlineColumn, targetRow);
-
-        Write(kind, target, headerId);
+        MarkStorage(added, targetChunk, targetHeaderColumn, targetInlineColumn, targetRow);
     }
 
     private static Chunk RequireStorage<T>(
         Entity entity,
-        ref EntityRecord record,
+        in EntityRecord record,
         int headerId,
         int inlineId,
         out int headerColumn,
@@ -234,62 +226,89 @@ internal sealed class Buffers
         where T : struct, IBufferElement
     {
         var sourceHeader = sourceChunk.ReadComponent<DynamicBufferHeader<T>>(sourceHeaderColumn, sourceRow);
-        ref var sourceInline = ref sourceChunk.GetComponentRef<DynamicBufferInline<T>>(sourceInlineColumn, sourceRow);
+        ref readonly var sourceInline = ref sourceChunk.GetComponentReadOnlyRef<DynamicBufferInline<T>>(
+            sourceInlineColumn,
+            sourceRow);
         ref var targetHeader = ref targetChunk.GetComponentRef<DynamicBufferHeader<T>>(targetHeaderColumn, targetRow);
         ref var targetInline = ref targetChunk.GetComponentRef<DynamicBufferInline<T>>(targetInlineColumn, targetRow);
 
         int count = sourceHeader.Count;
         int inlineCapacity = DynamicBufferLayout<T>.InlineCapacity;
         bool containsReferences = RuntimeHelpers.IsReferenceOrContainsReferences<T>();
-        ClearTargetOverflow(ref targetHeader, sourceHeader.Overflow, containsReferences);
+        ClearTargetOverflow(
+            targetChunk,
+            ref targetHeader,
+            sourceHeader.OverflowBackingIdentity,
+            containsReferences);
 
         targetHeader.InlineCapacity = inlineCapacity;
         targetHeader.Count = count;
 
         if (count <= inlineCapacity)
-            CopyInlineStorage(sourceHeader, ref sourceInline, ref targetHeader, ref targetInline, count, inlineCapacity);
+            CopyInlineStorage(
+                targetChunk,
+                sourceHeader,
+                in sourceInline,
+                ref targetHeader,
+                ref targetInline,
+                count,
+                inlineCapacity);
         else
-            CopyOverflowStorage(sourceHeader, ref sourceInline, ref targetHeader, ref targetInline, count, inlineCapacity, containsReferences);
+            CopyOverflowStorage(
+                targetChunk,
+                sourceHeader,
+                in sourceInline,
+                ref targetHeader,
+                ref targetInline,
+                count,
+                inlineCapacity,
+                containsReferences);
     }
 
     private static void ClearTargetOverflow<T>(
+        Chunk targetChunk,
         ref DynamicBufferHeader<T> targetHeader,
-        T[]? sourceOverflow,
+        object? sourceOverflowIdentity,
         bool containsReferences)
         where T : struct, IBufferElement
     {
-        var oldTargetOverflow = targetHeader.Overflow;
         if (containsReferences &&
-            oldTargetOverflow is not null &&
-            !ReferenceEquals(oldTargetOverflow, sourceOverflow))
+            targetHeader.HasOverflow &&
+            targetChunk.OwnsBufferOverflow(in targetHeader) &&
+            !ReferenceEquals(
+                targetHeader.OverflowBackingIdentity,
+                sourceOverflowIdentity))
         {
-            oldTargetOverflow.AsSpan(0, Math.Min(targetHeader.Count, oldTargetOverflow.Length)).Clear();
+            targetHeader.OverflowWriteSpan[
+                ..Math.Min(targetHeader.Count, targetHeader.OverflowCapacity)].Clear();
         }
     }
 
     private static void CopyInlineStorage<T>(
+        Chunk targetChunk,
         DynamicBufferHeader<T> sourceHeader,
-        ref DynamicBufferInline<T> sourceInline,
+        in DynamicBufferInline<T> sourceInline,
         ref DynamicBufferHeader<T> targetHeader,
         ref DynamicBufferInline<T> targetInline,
         int count,
         int inlineCapacity)
         where T : struct, IBufferElement
     {
-        targetHeader.Overflow = null;
+        targetChunk.SetOwnedBufferOverflow(ref targetHeader, null);
         for (int i = 0; i < inlineCapacity; i++)
-            targetInline.Elements[i] = default;
+            targetInline[i] = default;
 
         CopyElements(
             sourceHeader,
-            ref sourceInline,
+            in sourceInline,
             ref targetInline,
             count);
     }
 
     private static void CopyOverflowStorage<T>(
+        Chunk targetChunk,
         DynamicBufferHeader<T> sourceHeader,
-        ref DynamicBufferInline<T> sourceInline,
+        in DynamicBufferInline<T> sourceInline,
         ref DynamicBufferHeader<T> targetHeader,
         ref DynamicBufferInline<T> targetInline,
         int count,
@@ -300,81 +319,96 @@ internal sealed class Buffers
         var overflow = new T[Math.Max(count, Math.Max(1, inlineCapacity * 2))];
         CopyElements(
             sourceHeader,
-            ref sourceInline,
+            in sourceInline,
             overflow.AsSpan(0, count));
 
-        targetHeader.Overflow = overflow;
+        targetChunk.SetOwnedBufferOverflow(ref targetHeader, overflow);
         if (!containsReferences)
             return;
 
         for (int i = 0; i < inlineCapacity; i++)
-            targetInline.Elements[i] = default;
+            targetInline[i] = default;
     }
 
     private void MarkStorage(
-        SerializationChangeKind kind,
+        bool added,
         Chunk targetChunk,
         int targetHeaderColumn,
         int targetInlineColumn,
         int targetRow)
     {
-        if (kind == SerializationChangeKind.BufferAdded)
+        if (added)
         {
             MarkAdd(targetChunk, targetHeaderColumn, targetRow);
             MarkAdd(targetChunk, targetInlineColumn, targetRow);
             return;
         }
 
-        MarkChunk(targetChunk, targetHeaderColumn);
-        MarkChunk(targetChunk, targetInlineColumn);
+        MarkWrite(targetChunk, targetHeaderColumn, targetRow);
+        MarkWrite(targetChunk, targetInlineColumn, targetRow);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void MarkAdd(Chunk chunk, int columnIndex, int row)
     {
-        chunk.MarkAdd(columnIndex, row, _clock.Tick);
+        MarkAdd(chunk, columnIndex, row, _clock.Tick);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void MarkChunk(Chunk chunk, int columnIndex)
+    internal void MarkAdd(
+        Chunk chunk,
+        int columnIndex,
+        int row,
+        uint writeVersion)
     {
-        chunk.MarkChunk(columnIndex, _clock.Tick);
+        chunk.MarkAdd(columnIndex, row, writeVersion);
     }
 
-    internal void Write(SerializationChangeKind kind, Entity entity, int componentId)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void MarkWrite(Chunk chunk, int columnIndex, int row)
     {
-        _journal.Write(kind, entity, componentId, default, _clock.Tick);
+        MarkWrite(chunk, columnIndex, row, _clock.Tick);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void MarkWrite(
+        Chunk chunk,
+        int columnIndex,
+        int row,
+        uint writeVersion)
+    {
+        chunk.MarkWrite(columnIndex, row, writeVersion);
     }
 
     private static void CopyElements<T>(
         DynamicBufferHeader<T> sourceHeader,
-        ref DynamicBufferInline<T> sourceInline,
+        in DynamicBufferInline<T> sourceInline,
         ref DynamicBufferInline<T> targetInline,
         int count)
         where T : struct, IBufferElement
     {
         for (int i = 0; i < count; i++)
         {
-            targetInline.Elements[i] = sourceHeader.Overflow is not null
-                ? sourceHeader.Overflow[i]
-                : sourceInline.Elements[i];
+            targetInline[i] = sourceHeader.HasOverflow
+                ? sourceHeader.OverflowReadSpan[i]
+                : sourceInline[i];
         }
     }
 
     private static void CopyElements<T>(
         DynamicBufferHeader<T> sourceHeader,
-        ref DynamicBufferInline<T> sourceInline,
+        in DynamicBufferInline<T> sourceInline,
         Span<T> destination)
         where T : struct, IBufferElement
     {
-        if (sourceHeader.Overflow is not null)
+        if (sourceHeader.HasOverflow)
         {
-            sourceHeader.Overflow.AsSpan(0, destination.Length).CopyTo(destination);
+            sourceHeader.OverflowReadSpan[..destination.Length].CopyTo(destination);
             return;
         }
 
         for (int i = 0; i < destination.Length; i++)
-            destination[i] = sourceInline.Elements[i];
+            destination[i] = sourceInline[i];
     }
 }
 

@@ -1,5 +1,5 @@
 using SomeEngine.Core.Math;
-using SomeEngine.ECS.Components;
+using SomeEngine.ECS;
 
 namespace SomeEngine.Core.ECS.Components;
 

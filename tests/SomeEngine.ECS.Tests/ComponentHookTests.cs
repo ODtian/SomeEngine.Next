@@ -1,4 +1,5 @@
 using SomeEngine.ECS;
+using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hooks;
@@ -7,12 +8,12 @@ using Xunit;
 
 namespace SomeEngine.ECS.Tests;
 
-public struct HookProbe : SomeEngine.ECS.Components.IComponent
+public struct HookProbe : SomeEngine.ECS.IComponent
 {
     public int Value;
 }
 
-public struct HookStatus : SomeEngine.ECS.Components.IEnableableComponent
+public struct HookStatus : SomeEngine.ECS.IEnableableComponent
 {
     public int Value;
 }
@@ -54,6 +55,50 @@ public class ComponentHookTests
         world.Add(entity, new HookProbe { Value = 43 });
 
         Assert.Equal(43, observed);
+    }
+
+    [Fact]
+    public void SingleComponentCreateFastPathIgnoresUnrelatedAndNonCreationHooks()
+    {
+        var world = new World();
+        world.Hooks<HookStatus>().OnReplace(
+            static (DeferredWorld _, Entity _, in HookStatus _) => { });
+        world.Hooks<HookProbe>()
+            .OnReplace(static (DeferredWorld _, Entity _, in HookProbe _) => { })
+            .OnRemove(static (DeferredWorld _, Entity _, in HookProbe _) => { });
+        object publishedRoot = world.ActiveStructureRoot;
+
+        Entity entity = world.CreateEntity(new HookProbe { Value = 44 });
+
+        Assert.Same(publishedRoot, world.ActiveStructureRoot);
+        Assert.Equal(44, world.Read<HookProbe>(entity).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SingleComponentCreateUsesTransactionalPathForCreationHook(bool insertHook)
+    {
+        var world = new World();
+        int callbackCount = 0;
+        ComponentHooks<HookProbe> hooks = world.Hooks<HookProbe>();
+        if (insertHook)
+        {
+            hooks.OnInsert(
+                (DeferredWorld _, Entity _, in HookProbe _) => callbackCount++);
+        }
+        else
+        {
+            hooks.OnAdd(
+                (DeferredWorld _, Entity _, in HookProbe _) => callbackCount++);
+        }
+        object publishedRoot = world.ActiveStructureRoot;
+
+        Entity entity = world.CreateEntity(new HookProbe { Value = 45 });
+
+        Assert.NotSame(publishedRoot, world.ActiveStructureRoot);
+        Assert.Equal(1, callbackCount);
+        Assert.Equal(45, world.Read<HookProbe>(entity).Value);
     }
 
     [Fact]
@@ -99,8 +144,12 @@ public class ComponentHookTests
                 Assert.Equal(20, worldArg.Read<HookProbe>(entityArg).Value);
             });
 
-        ref var component = ref world.Get<HookProbe>(entity);
-        component.Value = 10;
+        var writeQuery = world.Query(world.QueryDefinition().ReadWrite<HookProbe>());
+        world.ExecuteQuery(writeQuery, cursor =>
+        {
+            foreach (var row in cursor.Rows)
+                row.ReadWrite<HookProbe>().Value = 10;
+        });
 
         Assert.Equal(0, replaceCount);
         Assert.Equal(0, insertCount);
@@ -251,6 +300,59 @@ public class ComponentHookTests
         world.Flush();
 
         Assert.Equal(99, world.Read<HookProbe>(entity).Value);
+    }
+
+    [Fact]
+    public void ConsecutiveImmediateCallbacksShareOneNextWaveWithoutFlushInterleaving()
+    {
+        var world = new World();
+        Entity trigger = world.CreateEntity();
+        Entity addDestination = world.CreateEntity();
+        Entity insertDestination = world.CreateEntity();
+        world.Hooks<HookProbe>()
+            .OnAdd((DeferredWorld hookWorld, Entity _, in HookProbe _) =>
+                hookWorld.Commands().Add(
+                    addDestination,
+                    new HookStatus { Value = 1 }))
+            .OnInsert((DeferredWorld hookWorld, Entity _, in HookProbe _) =>
+                hookWorld.Commands().Add(
+                    insertDestination,
+                    new HookStatus { Value = 2 }));
+
+        world.Add(trigger, new HookProbe { Value = 7 });
+        Assert.False(world.Has<HookStatus>(addDestination));
+        Assert.False(world.Has<HookStatus>(insertDestination));
+
+        world.Flush();
+
+        Assert.Equal(1, world.Read<HookStatus>(addDestination).Value);
+        Assert.Equal(2, world.Read<HookStatus>(insertDestination).Value);
+    }
+
+    [Fact]
+    public void SynchronousHookRejectsCapturedWorldMutation()
+    {
+        var world = new World();
+        Entity entity = world.CreateEntity();
+        CommandBuffer rawCommands = world.Commands();
+
+        world.Hooks<HookProbe>().OnAdd(
+            (DeferredWorld _, Entity entityArg, in HookProbe _) =>
+            {
+                Assert.Throws<InvalidOperationException>(() => world.CreateEntity());
+                Assert.Throws<InvalidOperationException>(() => world.DestroyEntity(entityArg));
+                Assert.Throws<InvalidOperationException>(
+                    () => world.Replace(entityArg, new HookProbe { Value = 99 }));
+                Assert.Throws<InvalidOperationException>(() => world.Flush());
+                Assert.Throws<InvalidOperationException>(
+                    () => rawCommands.Replace(entityArg, new HookProbe { Value = 100 }));
+            });
+
+        world.Add(entity, new HookProbe { Value = 7 });
+
+        Assert.True(world.IsAlive(entity));
+        Assert.Equal(1, world.EntityCount);
+        Assert.Equal(7, world.Read<HookProbe>(entity).Value);
     }
 
     [Fact]

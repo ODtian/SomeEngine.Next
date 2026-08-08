@@ -54,17 +54,29 @@ public readonly struct QueryTerm : IEquatable<QueryTerm>
     public override string ToString() => $"{Kind}:{ComponentId}:{Access}:{Filters}";
 }
 
-public readonly struct QuerySharedFilter
+internal readonly struct QuerySharedFilter
 {
-    public QuerySharedFilter(int componentId, int sharedIndex)
+    internal QuerySharedFilter(World world, int componentId, int sharedIndex)
     {
+        World = world ?? throw new ArgumentNullException(nameof(world));
         ComponentId = componentId;
         SharedIndex = sharedIndex;
     }
 
-    public int ComponentId { get; }
+    private World World { get; }
 
-    public int SharedIndex { get; }
+    internal int ComponentId { get; }
+
+    internal int SharedIndex { get; }
+
+    internal void RequireWorld(World world)
+    {
+        if (!ReferenceEquals(World, world))
+        {
+            throw new InvalidOperationException(
+                "A precomputed shared-component filter can only execute in its owning World.");
+        }
+    }
 }
 
 public readonly struct QueryAccessEntry

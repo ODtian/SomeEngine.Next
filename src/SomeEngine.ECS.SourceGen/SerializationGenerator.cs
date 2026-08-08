@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -8,8 +9,10 @@ namespace SomeEngine.ECS.SourceGen;
 [Generator]
 public sealed class SerializationGenerator : IIncrementalGenerator
 {
+    private const string EcsNamespace = "SomeEngine.ECS";
     private const string ComponentsNamespace = "SomeEngine.ECS.Components";
     private const string SerializationAttributeName = "SomeEngine.ECS.Serialization.SerializableComponentAttribute";
+    private const string SerializedFieldAttributeName = "SomeEngine.ECS.Serialization.SerializedFieldAttribute";
 
     private static readonly DiagnosticDescriptor BadStableRule = new(
         id: "SECSSER001",
@@ -47,6 +50,14 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         id: "SECSSER005",
         title: "Dynamic buffer backing components are not serializable values",
         messageFormat: "Serializable type '{0}' must not directly use dynamic-buffer backing type '{1}'",
+        category: "SomeEngine.ECS.SourceGen.Serialization",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor DuplicateFieldIdentityDiagnostic = new(
+        id: "SECSSER006",
+        title: "Serialized field identity must be unique within its type",
+        messageFormat: "Field '{0}' in serializable type '{1}' uses duplicate serialized identity '{2}'",
         category: "SomeEngine.ECS.SourceGen.Serialization",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -92,7 +103,12 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             if (!TryStableId(symbol, context, out var stableId, out var stableIdText))
                 continue;
 
-            var model = new SerializableModel(symbol, stableId, stableIdText);
+            var model = new SerializableModel(
+                symbol,
+                stableId,
+                stableIdText,
+                GetNamedUInt(symbol, "SchemaVersion", 1),
+                GetNamedUInt(symbol, "CodecVersion", 1));
             if (byStableId.TryGetValue(stableId, out var existing))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -120,6 +136,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             return;
 
         RefreshReferenceFlags(models);
+        ComputeSchemaFingerprints(models);
 
         if (models.Count == 0)
             return;
@@ -145,10 +162,19 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         }
 
         bool ok = true;
-        IOrderedEnumerable<IFieldSymbol> fields = model.Symbol.GetMembers()
+        var fieldIdentities = new HashSet<string>(StringComparer.Ordinal);
+        IEnumerable<IFieldSymbol> instanceFields = model.Symbol.GetMembers()
             .OfType<IFieldSymbol>()
-            .Where(static field => !field.IsStatic)
-            .OrderBy(static field => field.Locations.FirstOrDefault()?.SourceSpan.Start ?? int.MaxValue);
+            .Where(static field => !field.IsStatic);
+        IOrderedEnumerable<IFieldSymbol> fields =
+            model.Symbol.DeclaringSyntaxReferences.Length == 1
+                ? instanceFields
+                    .OrderBy(static field =>
+                        field.Locations.FirstOrDefault()?.SourceSpan.Start ?? int.MaxValue)
+                    .ThenBy(static field => field.Name, StringComparer.Ordinal)
+                : instanceFields
+                    .OrderBy(static field => GetStableFieldId(field), StringComparer.Ordinal)
+                    .ThenBy(static field => field.Name, StringComparer.Ordinal);
 
         foreach (var field in fields)
         {
@@ -187,10 +213,25 @@ public sealed class SerializationGenerator : IIncrementalGenerator
                 continue;
             }
 
+            if (!fieldIdentities.Add(fieldModel.StableId))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DuplicateFieldIdentityDiagnostic,
+                    field.Locations.FirstOrDefault(),
+                    field.Name,
+                    model.Symbol.ToDisplayString(),
+                    fieldModel.StableId));
+                ok = false;
+                continue;
+            }
+
             model.Fields.Add(fieldModel);
         }
 
-        model.SchemaHash = ComputeSchemaHash(model);
+        model.RawCanonicalSize = GetRawCanonicalSize(
+            model,
+            out ulong rawCanonicalLayoutFingerprint);
+        model.RawCanonicalLayoutFingerprint = rawCanonicalLayoutFingerprint;
         return ok;
     }
 
@@ -222,12 +263,22 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             return new FieldModel(field, FieldKind.Boolean);
         if (type.SpecialType == SpecialType.System_Byte)
             return new FieldModel(field, FieldKind.Byte);
+        if (type.SpecialType == SpecialType.System_SByte)
+            return new FieldModel(field, FieldKind.SByte);
+        if (type.SpecialType == SpecialType.System_Int16)
+            return new FieldModel(field, FieldKind.Int16);
+        if (type.SpecialType == SpecialType.System_UInt16)
+            return new FieldModel(field, FieldKind.UInt16);
         if (type.SpecialType == SpecialType.System_Int32)
             return new FieldModel(field, FieldKind.Int32);
         if (type.SpecialType == SpecialType.System_UInt32)
             return new FieldModel(field, FieldKind.UInt32);
         if (type.SpecialType == SpecialType.System_Int64)
             return new FieldModel(field, FieldKind.Int64);
+        if (type.SpecialType == SpecialType.System_UInt64)
+            return new FieldModel(field, FieldKind.UInt64);
+        if (type.SpecialType == SpecialType.System_Char)
+            return new FieldModel(field, FieldKind.Char);
         if (type.SpecialType == SpecialType.System_Single)
             return new FieldModel(field, FieldKind.Single);
         if (type.SpecialType == SpecialType.System_Double)
@@ -280,42 +331,40 @@ public sealed class SerializationGenerator : IIncrementalGenerator
 
     private static string GetRegistrationLine(SerializableModel model)
     {
-        string typeKey = $"new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"{model.StableIdText}\"), \"{model.Symbol.ToDisplayString()}\", 0x{model.SchemaHash:X8}u)";
+        string typeKey = $"new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"{model.StableIdText}\"), \"{model.Symbol.ToDisplayString()}\", 0x{model.SchemaFingerprint:X16}ul)";
         string typeName = model.TypeName;
         string codec = GetCodecName(model);
         string patcher = GetPatcherName(model);
+        string rawSize = model.RawCanonicalSize >= 0 ? model.RawCanonicalSize.ToString() : "-1";
+        string rawLayoutFingerprint = $"0x{model.RawCanonicalLayoutFingerprint:X16}ul";
 
         return model.Kind switch
         {
             SerializableKind.Component when model.ContainsEntityReferences =>
                 $"registry.Register<{typeName}, {codec}, {patcher}>({typeKey});",
             SerializableKind.Component =>
-                $"registry.Register<{typeName}, {codec}>({typeKey});",
+                $"registry.RegisterCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
             SerializableKind.Tag =>
                 $"registry.RegisterTag<{typeName}>({typeKey});",
             SerializableKind.Shared when model.ContainsEntityReferences =>
                 $"registry.RegisterShared<{typeName}, {codec}, {patcher}>({typeKey});",
             SerializableKind.Shared =>
-                $"registry.RegisterShared<{typeName}, {codec}>({typeKey});",
+                $"registry.RegisterSharedCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
             SerializableKind.Buffer when model.ContainsEntityReferences =>
                 $"registry.RegisterBuffer<{typeName}, {codec}, {patcher}>({typeKey});",
             SerializableKind.Buffer =>
-                $"registry.RegisterBuffer<{typeName}, {codec}>({typeKey});",
+                $"registry.RegisterBufferCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
             SerializableKind.Sparse when model.ContainsEntityReferences =>
                 $"registry.RegisterSparse<{typeName}, {codec}, {patcher}>({typeKey});",
             SerializableKind.Sparse =>
-                $"registry.RegisterSparse<{typeName}, {codec}>({typeKey});",
-            SerializableKind.Relation when model.ContainsEntityReferences =>
-                $"registry.RegisterRelation<{typeName}, {codec}, {patcher}>({typeKey});",
-            SerializableKind.Relation =>
-                $"registry.RegisterRelation<{typeName}, {codec}>({typeKey});",
+                $"registry.RegisterSparseCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
             _ => throw new InvalidOperationException("Unsupported serializable kind."),
         };
     }
 
     private static void GenerateCodec(StringBuilder builder, SerializableModel model)
     {
-        builder.AppendLine($"internal struct {GetCodecName(model)} : global::SomeEngine.ECS.Serialization.IComponentCodec<{model.TypeName}>");
+        builder.AppendLine($"internal struct {GetCodecName(model)} : global::SomeEngine.ECS.Serialization.ICanonicalComponentCodec<{model.TypeName}>");
         builder.AppendLine("{");
         builder.AppendLine($"    public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in {model.TypeName} value)");
         builder.AppendLine("    {");
@@ -369,15 +418,23 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         {
             FieldKind.Boolean => $"writer.WriteBoolean({access});",
             FieldKind.Byte => $"writer.WriteByte({access});",
+            FieldKind.SByte => $"writer.WriteSByte({access});",
+            FieldKind.Int16 => $"writer.WriteInt16({access});",
+            FieldKind.UInt16 => $"writer.WriteUInt16({access});",
             FieldKind.Int32 => $"writer.WriteInt32({access});",
             FieldKind.UInt32 => $"writer.WriteUInt32({access});",
             FieldKind.Int64 => $"writer.WriteInt64({access});",
+            FieldKind.UInt64 => $"writer.WriteUInt64({access});",
+            FieldKind.Char => $"writer.WriteChar({access});",
             FieldKind.Single => $"writer.WriteSingle({access});",
             FieldKind.Double => $"writer.WriteDouble({access});",
             FieldKind.Guid => $"writer.WriteGuid({access});",
             FieldKind.String => $"writer.WriteString({access});",
             FieldKind.Entity => $"writer.WriteEntity({access});",
-            FieldKind.Enum => $"writer.WriteInt64(global::System.Convert.ToInt64({access}));",
+            FieldKind.Enum when field.EnumIsUnsigned =>
+                $"writer.WriteUInt64(global::System.Convert.ToUInt64({access}, global::System.Globalization.CultureInfo.InvariantCulture));",
+            FieldKind.Enum =>
+                $"writer.WriteInt64(global::System.Convert.ToInt64({access}, global::System.Globalization.CultureInfo.InvariantCulture));",
             FieldKind.Nested => $"new {GetCodecName(field.Nested!)}().Write(ref writer, in {access});",
             _ => throw new InvalidOperationException("Unsupported field kind."),
         };
@@ -394,6 +451,15 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             case FieldKind.Byte:
                 yield return $"{access} = reader.ReadByte();";
                 break;
+            case FieldKind.SByte:
+                yield return $"{access} = reader.ReadSByte();";
+                break;
+            case FieldKind.Int16:
+                yield return $"{access} = reader.ReadInt16();";
+                break;
+            case FieldKind.UInt16:
+                yield return $"{access} = reader.ReadUInt16();";
+                break;
             case FieldKind.Int32:
                 yield return $"{access} = reader.ReadInt32();";
                 break;
@@ -402,6 +468,12 @@ public sealed class SerializationGenerator : IIncrementalGenerator
                 break;
             case FieldKind.Int64:
                 yield return $"{access} = reader.ReadInt64();";
+                break;
+            case FieldKind.UInt64:
+                yield return $"{access} = reader.ReadUInt64();";
+                break;
+            case FieldKind.Char:
+                yield return $"{access} = reader.ReadChar();";
                 break;
             case FieldKind.Single:
                 yield return $"{access} = reader.ReadSingle();";
@@ -419,7 +491,9 @@ public sealed class SerializationGenerator : IIncrementalGenerator
                 yield return $"{access} = reader.ReadEntity();";
                 break;
             case FieldKind.Enum:
-                yield return $"{access} = ({field.TypeName})reader.ReadInt64();";
+                yield return field.EnumIsUnsigned
+                    ? $"{access} = ({field.TypeName})reader.ReadUInt64();"
+                    : $"{access} = ({field.TypeName})reader.ReadInt64();";
                 break;
             case FieldKind.Nested:
                 yield return $"new {GetCodecName(field.Nested!)}().Read(ref reader, out var __nested_{field.Symbol.Name});";
@@ -465,10 +539,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             return SerializableKind.Buffer;
         if (ImplementsInterface(symbol, ComponentsNamespace, "ISparseComponent"))
             return SerializableKind.Sparse;
-        if (ImplementsInterface(symbol, ComponentsNamespace, "IRelation") ||
-            ImplementsInterface(symbol, ComponentsNamespace, "IExclusiveRelation"))
-            return SerializableKind.Relation;
-        if (ImplementsInterface(symbol, ComponentsNamespace, "IComponent"))
+        if (ImplementsInterface(symbol, EcsNamespace, "IComponent"))
             return SerializableKind.Component;
 
         return SerializableKind.Unsupported;
@@ -504,25 +575,191 @@ public sealed class SerializationGenerator : IIncrementalGenerator
                (named.Name == "DynamicBufferHeader" || named.Name == "DynamicBufferInline");
     }
 
-    private static uint ComputeSchemaHash(SerializableModel model)
+    private static string GetStableFieldId(IFieldSymbol symbol)
     {
-        uint hash = 2166136261u;
-        AddString(ref hash, model.Symbol.ToDisplayString());
-        AddString(ref hash, model.Kind.ToString());
-        foreach (var field in model.Fields)
-        {
-            AddString(ref hash, field.Symbol.Name);
-            AddString(ref hash, field.TypeName);
-            hash = (hash ^ (uint)field.Kind) * 16777619u;
-        }
-
-        return hash == 0 ? 1u : hash;
+        AttributeData? attribute = symbol.GetAttributes().FirstOrDefault(static attribute =>
+            attribute.AttributeClass?.ToDisplayString() == SerializedFieldAttributeName);
+        return attribute?.ConstructorArguments.Length > 0 &&
+               attribute.ConstructorArguments[0].Value is string value
+            ? value
+            : symbol.Name;
     }
 
-    private static void AddString(ref uint hash, string value)
+    private static uint GetNamedUInt(INamedTypeSymbol symbol, string name, uint fallback)
     {
-        foreach (byte b in Encoding.UTF8.GetBytes(value))
-            hash = (hash ^ b) * 16777619u;
+        AttributeData? attribute = symbol.GetAttributes().FirstOrDefault(static attribute =>
+            attribute.AttributeClass?.ToDisplayString() == SerializationAttributeName);
+        foreach (KeyValuePair<string, TypedConstant> argument in attribute?.NamedArguments ?? default)
+        {
+            if (argument.Key == name && argument.Value.Value is uint value)
+                return value;
+        }
+        return fallback;
+    }
+
+    private static void ComputeSchemaFingerprints(IReadOnlyList<SerializableModel> models)
+    {
+        foreach (SerializableModel model in models)
+            _ = ComputeSchemaFingerprint(model, new HashSet<SerializableModel>());
+    }
+
+    private static ulong ComputeSchemaFingerprint(
+        SerializableModel model,
+        HashSet<SerializableModel> visiting)
+    {
+        if (model.SchemaFingerprint != 0)
+            return model.SchemaFingerprint;
+        if (!visiting.Add(model))
+            throw new InvalidOperationException("Recursive serializable value types are unsupported.");
+
+        ulong hash = 14695981039346656037ul;
+        AddString(ref hash, "SomeEngine.ECS.DurableSchema.v1");
+        AddBytes(ref hash, model.StableId.ToByteArray());
+        AddUInt(ref hash, model.SchemaVersion);
+        AddUInt(ref hash, model.CodecVersion);
+        AddUInt(ref hash, (uint)model.Kind);
+        AddUInt(ref hash, (uint)model.Fields.Count);
+        for (int i = 0; i < model.Fields.Count; i++)
+        {
+            FieldModel field = model.Fields[i];
+            AddUInt(ref hash, (uint)i);
+            AddString(ref hash, field.StableId);
+            AddUInt(ref hash, (uint)field.Kind);
+            if (field.Kind == FieldKind.Enum)
+                AddEnumSchema(ref hash, field);
+            if (field.Nested is not null)
+            {
+                AddBytes(ref hash, field.Nested.StableId.ToByteArray());
+                AddUlong(ref hash, ComputeSchemaFingerprint(field.Nested, visiting));
+            }
+        }
+
+        visiting.Remove(model);
+        model.SchemaFingerprint = hash == 0 ? 1ul : hash;
+        return model.SchemaFingerprint;
+    }
+
+    private static int GetRawCanonicalSize(
+        SerializableModel model,
+        out ulong layoutFingerprint)
+    {
+        layoutFingerprint = 0;
+        // Sequential metadata field order is only provable from one declaration. Partial type
+        // declarations are canonical-codec safe, but their emitted CLR field order can depend on
+        // syntax-tree ordering and therefore must never receive the memcpy proof.
+        if (model.Symbol.DeclaringSyntaxReferences.Length != 1)
+            return -1;
+
+        AttributeData? layout = model.Symbol.GetAttributes().FirstOrDefault(static attribute =>
+            attribute.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.StructLayoutAttribute");
+        if (layout is null ||
+            layout.ConstructorArguments.Length != 1 ||
+            Convert.ToInt32(layout.ConstructorArguments[0].Value) != 0)
+        {
+            return -1;
+        }
+
+        int pack = 0;
+        foreach (KeyValuePair<string, TypedConstant> argument in layout.NamedArguments)
+        {
+            if (argument.Key == "Pack" && argument.Value.Value is int value)
+                pack = value;
+        }
+        if (pack != 1)
+            return -1;
+
+        int size = 0;
+        foreach (FieldModel field in model.Fields)
+        {
+            if (!TryGetRawCanonicalFieldShape(field.Kind, out _, out int fieldSize))
+                return -1;
+            size = checked(size + fieldSize);
+        }
+
+        ulong hash = 14695981039346656037ul;
+        AddString(ref hash, "SomeEngine.ECS.RawCanonicalLayout.v1");
+        AddRawLayoutUInt32(ref hash, unchecked((uint)size));
+        AddRawLayoutUInt32(ref hash, unchecked((uint)model.Fields.Count));
+        int offset = 0;
+        foreach (FieldModel field in model.Fields)
+        {
+            _ = TryGetRawCanonicalFieldShape(field.Kind, out uint kind, out int fieldSize);
+            AddRawLayoutUInt32(ref hash, kind);
+            AddRawLayoutUInt32(ref hash, unchecked((uint)offset));
+            AddRawLayoutUInt32(ref hash, unchecked((uint)fieldSize));
+            offset = checked(offset + fieldSize);
+        }
+
+        layoutFingerprint = hash == 0 ? 1ul : hash;
+        return size;
+    }
+
+    private static bool TryGetRawCanonicalFieldShape(
+        FieldKind fieldKind,
+        out uint kind,
+        out int size)
+    {
+        (kind, size) = fieldKind switch
+        {
+            FieldKind.Byte => (1u, 1),
+            FieldKind.SByte => (2u, 1),
+            FieldKind.Int16 => (3u, 2),
+            FieldKind.UInt16 => (4u, 2),
+            FieldKind.Char => (5u, 2),
+            FieldKind.Int32 => (6u, 4),
+            FieldKind.UInt32 => (7u, 4),
+            FieldKind.Single => (8u, 4),
+            FieldKind.Int64 => (9u, 8),
+            FieldKind.UInt64 => (10u, 8),
+            FieldKind.Double => (11u, 8),
+            _ => (0u, 0),
+        };
+        return kind != 0;
+    }
+
+    private static void AddRawLayoutUInt32(ref ulong hash, uint value)
+    {
+        for (int shift = 0; shift < 32; shift += 8)
+            hash = (hash ^ (byte)(value >> shift)) * 1099511628211ul;
+    }
+
+    private static void AddEnumSchema(ref ulong hash, FieldModel field)
+    {
+        AddString(ref hash, field.TypeName);
+        if (field.Symbol.Type is not INamedTypeSymbol enumType || enumType.EnumUnderlyingType is null)
+            return;
+
+        AddUInt(ref hash, (uint)enumType.EnumUnderlyingType.SpecialType);
+        AddUInt(ref hash, field.EnumIsUnsigned ? 1u : 0u);
+        IFieldSymbol[] members = enumType.GetMembers()
+            .OfType<IFieldSymbol>()
+            .Where(static member => member.HasConstantValue)
+            .OrderBy(static member => member.Name, StringComparer.Ordinal)
+            .ToArray();
+        AddUInt(ref hash, (uint)members.Length);
+        foreach (IFieldSymbol member in members)
+        {
+            AddString(ref hash, member.Name);
+            string value = Convert.ToString(member.ConstantValue, CultureInfo.InvariantCulture) ?? string.Empty;
+            AddString(ref hash, value);
+        }
+    }
+
+    private static void AddString(ref ulong hash, string value) =>
+        AddBytes(ref hash, Encoding.UTF8.GetBytes(value));
+
+    private static void AddBytes(ref ulong hash, ReadOnlySpan<byte> bytes)
+    {
+        foreach (byte value in bytes)
+            hash = (hash ^ value) * 1099511628211ul;
+    }
+
+    private static void AddUInt(ref ulong hash, uint value) => AddUlong(ref hash, value);
+
+    private static void AddUlong(ref ulong hash, ulong value)
+    {
+        for (int shift = 0; shift < 64; shift += 8)
+            hash = (hash ^ (byte)(value >> shift)) * 1099511628211ul;
     }
 
     private static string GetCodecName(SerializableModel model) => "__SomeEngine_ECSSerializationCodec_" + Sanitize(model.Symbol);
@@ -542,21 +779,32 @@ public sealed class SerializationGenerator : IIncrementalGenerator
 
     private sealed class SerializableModel
     {
-        public SerializableModel(INamedTypeSymbol symbol, Guid stableId, string stableIdText)
+        public SerializableModel(
+            INamedTypeSymbol symbol,
+            Guid stableId,
+            string stableIdText,
+            uint schemaVersion,
+            uint codecVersion)
         {
             Symbol = symbol;
             StableId = stableId;
             StableIdText = stableIdText;
+            SchemaVersion = schemaVersion;
+            CodecVersion = codecVersion;
         }
 
         public INamedTypeSymbol Symbol { get; }
         public Guid StableId { get; }
         public string StableIdText { get; }
+        public uint SchemaVersion { get; }
+        public uint CodecVersion { get; }
         public string TypeName => Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         public SerializableKind Kind { get; set; }
         public List<FieldModel> Fields { get; } = new();
         public bool ContainsEntityReferences { get; set; }
-        public uint SchemaHash { get; set; }
+        public ulong SchemaFingerprint { get; set; }
+        public int RawCanonicalSize { get; set; } = -1;
+        public ulong RawCanonicalLayoutFingerprint { get; set; }
     }
 
     private sealed class FieldModel
@@ -569,14 +817,19 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             Symbol = symbol;
             Kind = kind;
             Nested = nested;
+            StableId = GetStableFieldId(symbol);
         }
 
         public IFieldSymbol Symbol { get; }
         public FieldKind Kind { get; }
+        public string StableId { get; }
         public bool ContainsEntityReferences => Kind == FieldKind.Entity ||
                                                 (Kind == FieldKind.Nested && Nested is { ContainsEntityReferences: true });
         public SerializableModel? Nested { get; }
         public string TypeName => Symbol.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        public bool EnumIsUnsigned =>
+            Symbol.Type is INamedTypeSymbol { EnumUnderlyingType.SpecialType: SpecialType.System_Byte or
+                SpecialType.System_UInt16 or SpecialType.System_UInt32 or SpecialType.System_UInt64 };
     }
 
     private enum SerializableKind
@@ -587,16 +840,20 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         Shared,
         Buffer,
         Sparse,
-        Relation,
     }
 
     private enum FieldKind
     {
         Boolean,
         Byte,
+        SByte,
+        Int16,
+        UInt16,
         Int32,
         UInt32,
         Int64,
+        UInt64,
+        Char,
         Single,
         Double,
         Guid,
