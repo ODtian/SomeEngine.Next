@@ -1,0 +1,599 @@
+ordinal	assembly	fullName	name	action	target	basis
+1	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureBuild	AccelerationStructureBuild	合并	AccelerationStructureBuildGeometryInfo	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+2	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureBuildCapabilities	AccelerationStructureBuildCapabilities	改名	BuildAccelerationStructureFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+3	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureBuildPreference	AccelerationStructureBuildPreference	合并	BuildAccelerationStructureFlags	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+4	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureCompactionQuery	AccelerationStructureCompactionQuery	合并	RaytracingAccelerationStructurePostbuildInfoDesc	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+5	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureCopyMode	AccelerationStructureCopyMode	改名	CopyAccelerationStructureMode	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+6	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureDescriptor	AccelerationStructureDescriptor	合并	WriteDescriptorSet	descriptor write 使用 Vulkan 的一个 flat WriteDescriptorSet；不保留每资源一种 subclass。
+7	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureInputs	AccelerationStructureInputs	合并	AccelerationStructureBuildGeometryInfo	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+8	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureRequirements	AccelerationStructureRequirements	改名	AccelerationStructureBuildSizesInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+9	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureType	AccelerationStructureType	保留	AccelerationStructureType	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+10	SomeEngine.Graphics	SomeEngine.Graphics.AccelerationStructureView	AccelerationStructureView	改名	AccelerationStructure	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+11	SomeEngine.Graphics	SomeEngine.Graphics.AccessEffect	AccessEffect	改名	AccessFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+12	SomeEngine.Graphics	SomeEngine.Graphics.AcquiredSwapchainImage	AcquiredSwapchainImage	删除	—	AcquireNextImage 返回 image index/Texture 与 GraphicsFence；不创建第二个 swapchain-image owner。
+13	SomeEngine.Graphics	SomeEngine.Graphics.AddressMode	AddressMode	保留	AddressMode	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+14	SomeEngine.Graphics	SomeEngine.Graphics.AliasingBarrier	AliasingBarrier	合并	BarrierGroup	删除 barrier 基类、Kind 判别器和每变体一类的继承树；只保留标准 flat barrier 数据。
+15	SomeEngine.Graphics	SomeEngine.Graphics.BarrierKind	BarrierKind	删除	—	Kind 与具体 barrier 类型重复；flat barrier 不需要第二个判别真相。
+16	SomeEngine.Graphics	SomeEngine.Graphics.BarrierPhase	BarrierPhase	改名	BarrierFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+17	SomeEngine.Graphics	SomeEngine.Graphics.BindGroup	BindGroup	改名	DescriptorSet	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+18	SomeEngine.Graphics	SomeEngine.Graphics.BindGroupBinding	BindGroupBinding	改名	DescriptorSetLayoutBinding	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+19	SomeEngine.Graphics	SomeEngine.Graphics.BindGroupLayout	BindGroupLayout	改名	DescriptorSetLayout	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+20	SomeEngine.Graphics	SomeEngine.Graphics.BindlessSlot	BindlessSlot	改名	DescriptorHandle	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+21	SomeEngine.Graphics	SomeEngine.Graphics.BindlessTable	BindlessTable	改名	DescriptorHeap	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+22	SomeEngine.Graphics	SomeEngine.Graphics.BindlessTableDesc	BindlessTableDesc	改名	DescriptorHeapDesc	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+23	SomeEngine.Graphics	SomeEngine.Graphics.BlendAttachment	BlendAttachment	保留	BlendAttachment	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+24	SomeEngine.Graphics	SomeEngine.Graphics.BlendFactor	BlendFactor	保留	BlendFactor	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+25	SomeEngine.Graphics	SomeEngine.Graphics.BlendOperation	BlendOperation	保留	BlendOperation	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+26	SomeEngine.Graphics	SomeEngine.Graphics.BottomLevelAccelerationStructureInputs	BottomLevelAccelerationStructureInputs	合并	AccelerationStructureBuildGeometryInfo	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+27	SomeEngine.Graphics	SomeEngine.Graphics.Buffer	Buffer	保留	Buffer	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+28	SomeEngine.Graphics	SomeEngine.Graphics.BufferDesc	BufferDesc	保留	BufferDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+29	SomeEngine.Graphics	SomeEngine.Graphics.BufferDescriptor	BufferDescriptor	合并	WriteDescriptorSet	descriptor write 使用 Vulkan 的一个 flat WriteDescriptorSet；不保留每资源一种 subclass。
+30	SomeEngine.Graphics	SomeEngine.Graphics.BufferMapMode	BufferMapMode	改名	MapMode	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+31	SomeEngine.Graphics	SomeEngine.Graphics.BufferMapping	BufferMapping	保留	BufferMapping	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+32	SomeEngine.Graphics	SomeEngine.Graphics.BufferRange	BufferRange	保留	BufferRange	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+33	SomeEngine.Graphics	SomeEngine.Graphics.BufferTextureCopy	BufferTextureCopy	合并	BufferImageCopy	方向相反但字段同构的复制参数只保留 Vulkan 的一个标准结构。
+34	SomeEngine.Graphics	SomeEngine.Graphics.BufferTransitionBarrier	BufferTransitionBarrier	合并	BufferBarrier	删除 barrier 基类、Kind 判别器和每变体一类的继承树；只保留标准 flat barrier 数据。
+35	SomeEngine.Graphics	SomeEngine.Graphics.BufferUnorderedAccessBarrier	BufferUnorderedAccessBarrier	合并	BufferBarrier	删除 barrier 基类、Kind 判别器和每变体一类的继承树；只保留标准 flat barrier 数据。
+36	SomeEngine.Graphics	SomeEngine.Graphics.BufferUsage	BufferUsage	保留	BufferUsage	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+37	SomeEngine.Graphics	SomeEngine.Graphics.BufferView	BufferView	保留	BufferView	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+38	SomeEngine.Graphics	SomeEngine.Graphics.BufferViewDesc	BufferViewDesc	保留	BufferViewDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+39	SomeEngine.Graphics	SomeEngine.Graphics.ColorAttachmentResolve	ColorAttachmentResolve	合并	RenderingAttachmentInfo	颜色、深度、模板和 resolve 都是同一 attachment info，不再各包一层。
+40	SomeEngine.Graphics	SomeEngine.Graphics.ColorWriteMask	ColorWriteMask	保留	ColorWriteMask	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+41	SomeEngine.Graphics	SomeEngine.Graphics.CommandList	CommandList	保留	CommandList	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+42	SomeEngine.Graphics	SomeEngine.Graphics.CompareOperation	CompareOperation	保留	CompareOperation	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+43	SomeEngine.Graphics	SomeEngine.Graphics.ComputePipelineDesc	ComputePipelineDesc	保留	ComputePipelineDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+44	SomeEngine.Graphics	SomeEngine.Graphics.CullMode	CullMode	保留	CullMode	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+45	SomeEngine.Graphics	SomeEngine.Graphics.DepthAttachmentPayload	DepthAttachmentPayload	合并	RenderingAttachmentInfo	颜色、深度、模板和 resolve 都是同一 attachment info，不再各包一层。
+46	SomeEngine.Graphics	SomeEngine.Graphics.DepthStencil	DepthStencil	改名	DepthStencilState	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+47	SomeEngine.Graphics	SomeEngine.Graphics.DescriptorWrite	DescriptorWrite	合并	WriteDescriptorSet	descriptor write 使用 Vulkan 的一个 flat WriteDescriptorSet；不保留每资源一种 subclass。
+48	SomeEngine.Graphics	SomeEngine.Graphics.DeviceCapabilities	DeviceCapabilities	保留	DeviceCapabilities	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+49	SomeEngine.Graphics	SomeEngine.Graphics.DeviceDomain	DeviceDomain	删除	—	generation/domain 仅为 wrapper 与 backend owner 双层模型服务；owner 合并后全部消失。
+50	SomeEngine.Graphics	SomeEngine.Graphics.DeviceDomainAccess	DeviceDomainAccess	删除	—	generation/domain 仅为 wrapper 与 backend owner 双层模型服务；owner 合并后全部消失。
+51	SomeEngine.Graphics	SomeEngine.Graphics.DeviceError	DeviceError	删除	—	DeviceError 与 DebugMessage 保存同一错误两遍；统一为 DebugMessage/异常与 native result。
+52	SomeEngine.Graphics	SomeEngine.Graphics.DeviceErrorKind	DeviceErrorKind	删除	—	DeviceError 与 DebugMessage 保存同一错误两遍；统一为 DebugMessage/异常与 native result。
+53	SomeEngine.Graphics	SomeEngine.Graphics.DeviceLimits	DeviceLimits	保留	DeviceLimits	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+54	SomeEngine.Graphics	SomeEngine.Graphics.DevicePosition	DevicePosition	删除	—	多个 queue completion 直接使用 GraphicsFence span；不再把集合升级成 DevicePosition/Wait owner。
+55	SomeEngine.Graphics	SomeEngine.Graphics.DevicePosition.Enumerator	Enumerator	删除	—	多个 queue completion 直接使用 GraphicsFence span；不再把集合升级成 DevicePosition/Wait owner。
+56	SomeEngine.Graphics	SomeEngine.Graphics.DevicePositionWait	DevicePositionWait	删除	—	多个 queue completion 直接使用 GraphicsFence span；不再把集合升级成 DevicePosition/Wait owner。
+57	SomeEngine.Graphics	SomeEngine.Graphics.DispatchArguments	DispatchArguments	保留	DispatchArguments	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+58	SomeEngine.Graphics	SomeEngine.Graphics.DrawIndexedIndirectArguments	DrawIndexedIndirectArguments	改名	DrawIndexedArguments	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+59	SomeEngine.Graphics	SomeEngine.Graphics.DrawIndirectArguments	DrawIndirectArguments	改名	DrawArguments	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+60	SomeEngine.Graphics	SomeEngine.Graphics.FillMode	FillMode	保留	FillMode	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+61	SomeEngine.Graphics	SomeEngine.Graphics.FilterMode	FilterMode	保留	FilterMode	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+62	SomeEngine.Graphics	SomeEngine.Graphics.Format	Format	保留	Format	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+63	SomeEngine.Graphics	SomeEngine.Graphics.FormatBlockLayout	FormatBlockLayout	保留	FormatBlockLayout	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+64	SomeEngine.Graphics	SomeEngine.Graphics.FormatExtensions	FormatExtensions	保留	FormatExtensions	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+65	SomeEngine.Graphics	SomeEngine.Graphics.FormatSupport	FormatSupport	保留	FormatSupport	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+66	SomeEngine.Graphics	SomeEngine.Graphics.FrontFace	FrontFace	保留	FrontFace	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+67	SomeEngine.Graphics	SomeEngine.Graphics.GraphicsDiagnostic	GraphicsDiagnostic	改名	DebugMessage	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+68	SomeEngine.Graphics	SomeEngine.Graphics.GraphicsDiagnosticSeverity	GraphicsDiagnosticSeverity	改名	DebugMessageSeverity	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+69	SomeEngine.Graphics	SomeEngine.Graphics.Heap	Heap	保留	Heap	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+70	SomeEngine.Graphics	SomeEngine.Graphics.HeapDesc	HeapDesc	保留	HeapDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+71	SomeEngine.Graphics	SomeEngine.Graphics.IBindGroupLayoutOwner	IBindGroupLayoutOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+72	SomeEngine.Graphics	SomeEngine.Graphics.IBindGroupOwner	IBindGroupOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+73	SomeEngine.Graphics	SomeEngine.Graphics.IBindlessSlotOwner	IBindlessSlotOwner	删除	—	DescriptorHandle 由 DescriptorHeap 直接分配和回收，不保留 slot-owner 接口。
+74	SomeEngine.Graphics	SomeEngine.Graphics.IBindlessTableOwner	IBindlessTableOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+75	SomeEngine.Graphics	SomeEngine.Graphics.IBufferOwner	IBufferOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+76	SomeEngine.Graphics	SomeEngine.Graphics.IBufferViewOwner	IBufferViewOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+77	SomeEngine.Graphics	SomeEngine.Graphics.ICommandRecorder	ICommandRecorder	删除	—	唯一 CommandList 同时承担 recording 与 Close；删除 recorder/finished/native capability 纵向接口。
+78	SomeEngine.Graphics	SomeEngine.Graphics.IDevice	IDevice	合并	Device	public Device 改为唯一抽象 owner；现有接口不再形成额外层。
+79	SomeEngine.Graphics	SomeEngine.Graphics.IDeviceDomainSource	IDeviceDomainSource	删除	—	generation/domain 仅为 wrapper 与 backend owner 双层模型服务；owner 合并后全部消失。
+80	SomeEngine.Graphics	SomeEngine.Graphics.IFinishedCommandList	IFinishedCommandList	删除	—	唯一 CommandList 同时承担 recording 与 Close；删除 recorder/finished/native capability 纵向接口。
+81	SomeEngine.Graphics	SomeEngine.Graphics.IHeapOwner	IHeapOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+82	SomeEngine.Graphics	SomeEngine.Graphics.INativeCommandRecorder	INativeCommandRecorder	删除	—	唯一 CommandList 同时承担 recording 与 Close；删除 recorder/finished/native capability 纵向接口。
+83	SomeEngine.Graphics	SomeEngine.Graphics.IndexFormat	IndexFormat	保留	IndexFormat	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+84	SomeEngine.Graphics	SomeEngine.Graphics.InitialAccelerationStructureBuild	InitialAccelerationStructureBuild	合并	AccelerationStructureBuildGeometryInfo	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+85	SomeEngine.Graphics	SomeEngine.Graphics.IPipelineLayoutOwner	IPipelineLayoutOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+86	SomeEngine.Graphics	SomeEngine.Graphics.IPipelineOwner	IPipelineOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+87	SomeEngine.Graphics	SomeEngine.Graphics.IQueryPoolOwner	IQueryPoolOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+88	SomeEngine.Graphics	SomeEngine.Graphics.IQueueBackend	IQueueBackend	删除	—	Queue 直接由 backend subclass 实现；IQueueBackend 转发层删除。
+89	SomeEngine.Graphics	SomeEngine.Graphics.ISamplerOwner	ISamplerOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+90	SomeEngine.Graphics	SomeEngine.Graphics.ISwapchainImageOwner	ISwapchainImageOwner	删除	—	AcquireNextImage 返回 image index/Texture 与 GraphicsFence；不创建第二个 swapchain-image owner。
+91	SomeEngine.Graphics	SomeEngine.Graphics.ISwapchainOwner	ISwapchainOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+92	SomeEngine.Graphics	SomeEngine.Graphics.ITextureOwner	ITextureOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+93	SomeEngine.Graphics	SomeEngine.Graphics.ITextureViewOwner	ITextureViewOwner	删除	—	backend 实体直接继承这些 public owner；全部 I*Owner 转发接口删除。
+94	SomeEngine.Graphics	SomeEngine.Graphics.ITransientResourceAllocator	ITransientResourceAllocator	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+95	SomeEngine.Graphics	SomeEngine.Graphics.ITransientResourceSource	ITransientResourceSource	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+96	SomeEngine.Graphics	SomeEngine.Graphics.IWorkGraphOwner	IWorkGraphOwner	删除	—	backend owner 直接继承 WorkGraph；不再由 IWorkGraphOwner 回调释放。
+97	SomeEngine.Graphics	SomeEngine.Graphics.LoadAction	LoadAction	保留	LoadAction	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+98	SomeEngine.Graphics	SomeEngine.Graphics.MemoryBudget	MemoryBudget	保留	MemoryBudget	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+99	SomeEngine.Graphics	SomeEngine.Graphics.MemoryType	MemoryType	保留	MemoryType	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+100	SomeEngine.Graphics	SomeEngine.Graphics.MeshPipelineDesc	MeshPipelineDesc	保留	MeshPipelineDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+101	SomeEngine.Graphics	SomeEngine.Graphics.MeshShaderTier	MeshShaderTier	保留	MeshShaderTier	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+102	SomeEngine.Graphics	SomeEngine.Graphics.PhysicalAllocationId	PhysicalAllocationId	删除	—	真实 placement 直接引用 Heap、offset、size；不再发明 allocation id/placement 中间身份。
+103	SomeEngine.Graphics	SomeEngine.Graphics.PhysicalPlacement	PhysicalPlacement	删除	—	真实 placement 直接引用 Heap、offset、size；不再发明 allocation id/placement 中间身份。
+104	SomeEngine.Graphics	SomeEngine.Graphics.Pipeline	Pipeline	保留	Pipeline	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+105	SomeEngine.Graphics	SomeEngine.Graphics.PipelineBindingPolicy	PipelineBindingPolicy	删除	—	pipeline ready/pending/fallback 是 cache 决策，不是 command binding 的类层级。
+106	SomeEngine.Graphics	SomeEngine.Graphics.PipelineBindingResult	PipelineBindingResult	删除	—	pipeline ready/pending/fallback 是 cache 决策，不是 command binding 的类层级。
+107	SomeEngine.Graphics	SomeEngine.Graphics.PipelineCacheKey	PipelineCacheKey	保留	PipelineCacheKey	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+108	SomeEngine.Graphics	SomeEngine.Graphics.PipelineCacheStatistics	PipelineCacheStatistics	保留	PipelineCacheStatistics	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+109	SomeEngine.Graphics	SomeEngine.Graphics.PipelineCompilationStatistics	PipelineCompilationStatistics	保留	PipelineCompilationStatistics	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+110	SomeEngine.Graphics	SomeEngine.Graphics.PipelineDescriptorKey	PipelineDescriptorKey	合并	PipelineCacheKey	两个 pipeline key 系统合为一个 cache key；静态转发容器内联。
+111	SomeEngine.Graphics	SomeEngine.Graphics.PipelineDescriptorKeys	PipelineDescriptorKeys	合并	PipelineCacheKey	两个 pipeline key 系统合为一个 cache key；静态转发容器内联。
+112	SomeEngine.Graphics	SomeEngine.Graphics.PipelineLayout	PipelineLayout	保留	PipelineLayout	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+113	SomeEngine.Graphics	SomeEngine.Graphics.PipelineLayout.OccupiedRange	OccupiedRange	改名	DescriptorRange	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+114	SomeEngine.Graphics	SomeEngine.Graphics.PipelineLayout.ShaderRegisterClass	ShaderRegisterClass	改名	DescriptorRangeType	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+115	SomeEngine.Graphics	SomeEngine.Graphics.PipelineLayoutDesc	PipelineLayoutDesc	改名	PipelineLayoutCreateInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+116	SomeEngine.Graphics	SomeEngine.Graphics.PipelineStatistics	PipelineStatistics	保留	PipelineStatistics	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+117	SomeEngine.Graphics	SomeEngine.Graphics.PipelineStatus	PipelineStatus	保留	PipelineStatus	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+118	SomeEngine.Graphics	SomeEngine.Graphics.PipelineType	PipelineType	删除	—	Pipeline 的实际 owner/创建入口已经区分类型，不再维护可漂移的 PipelineType。
+119	SomeEngine.Graphics	SomeEngine.Graphics.PipelineWarmupResult	PipelineWarmupResult	保留	PipelineWarmupResult	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+120	SomeEngine.Graphics	SomeEngine.Graphics.PresentOptions	PresentOptions	改名	PresentInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+121	SomeEngine.Graphics	SomeEngine.Graphics.PresentResult	PresentResult	保留	PresentResult	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+122	SomeEngine.Graphics	SomeEngine.Graphics.PrimitiveTopology	PrimitiveTopology	保留	PrimitiveTopology	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+123	SomeEngine.Graphics	SomeEngine.Graphics.PushConstantBinding	PushConstantBinding	改名	PushConstantRange	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+124	SomeEngine.Graphics	SomeEngine.Graphics.QueryPool	QueryPool	保留	QueryPool	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+125	SomeEngine.Graphics	SomeEngine.Graphics.QueryPoolDesc	QueryPoolDesc	改名	QueryPoolCreateInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+126	SomeEngine.Graphics	SomeEngine.Graphics.QueryType	QueryType	保留	QueryType	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+127	SomeEngine.Graphics	SomeEngine.Graphics.Queue	Queue	保留	Queue	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+128	SomeEngine.Graphics	SomeEngine.Graphics.QueuePosition	QueuePosition	改名	GraphicsFence	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+129	SomeEngine.Graphics	SomeEngine.Graphics.QueueSupport	QueueSupport	改名	QueueFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+130	SomeEngine.Graphics	SomeEngine.Graphics.QueueType	QueueType	保留	QueueType	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+131	SomeEngine.Graphics	SomeEngine.Graphics.Rasterizer	Rasterizer	改名	RasterizerState	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+132	SomeEngine.Graphics	SomeEngine.Graphics.RasterPipelineDesc	RasterPipelineDesc	保留	RasterPipelineDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+133	SomeEngine.Graphics	SomeEngine.Graphics.RayDispatch	RayDispatch	改名	DispatchRaysDesc	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+134	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingAabbGeometry	RayTracingAabbGeometry	改名	AccelerationStructureGeometryAabbsData	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+135	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingGeometryFlags	RayTracingGeometryFlags	改名	GeometryFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+136	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingHitGroup	RayTracingHitGroup	改名	HitGroupDesc	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+137	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingHitGroupType	RayTracingHitGroupType	改名	HitGroupType	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+138	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingLibrary	RayTracingLibrary	改名	DxilLibrary	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+139	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingLocalRootAssociation	RayTracingLocalRootAssociation	改名	SubobjectToExportsAssociation	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+140	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingPipelineDesc	RayTracingPipelineDesc	改名	RayTracingPipelineCreateInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+141	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingShaderRecord	RayTracingShaderRecord	改名	ShaderRecord	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+142	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingShaderTable	RayTracingShaderTable	改名	ShaderBindingTable	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+143	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingTier	RayTracingTier	保留	RayTracingTier	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+144	SomeEngine.Graphics	SomeEngine.Graphics.RayTracingTriangleGeometry	RayTracingTriangleGeometry	改名	AccelerationStructureGeometryTrianglesData	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+145	SomeEngine.Graphics	SomeEngine.Graphics.RenderingColorAttachment	RenderingColorAttachment	合并	RenderingAttachmentInfo	颜色、深度、模板和 resolve 都是同一 attachment info，不再各包一层。
+146	SomeEngine.Graphics	SomeEngine.Graphics.RenderingContinuationKey	RenderingContinuationKey	合并	RenderingInfo	跨 command list 的 rendering continuation 直接保存规范化 RenderingInfo；不再另建 Key。
+147	SomeEngine.Graphics	SomeEngine.Graphics.RenderingDepthStencilAttachment	RenderingDepthStencilAttachment	合并	RenderingAttachmentInfo	颜色、深度、模板和 resolve 都是同一 attachment info，不再各包一层。
+148	SomeEngine.Graphics	SomeEngine.Graphics.RenderingFlags	RenderingFlags	保留	RenderingFlags	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+149	SomeEngine.Graphics	SomeEngine.Graphics.RenderingSetup	RenderingSetup	改名	RenderingInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+150	SomeEngine.Graphics	SomeEngine.Graphics.RequireReadyPipelineBinding	RequireReadyPipelineBinding	删除	—	pipeline ready/pending/fallback 是 cache 决策，不是 command binding 的类层级。
+151	SomeEngine.Graphics	SomeEngine.Graphics.ResidencyPriority	ResidencyPriority	保留	ResidencyPriority	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+152	SomeEngine.Graphics	SomeEngine.Graphics.ResidencyTrimResult	ResidencyTrimResult	删除	—	结果只包装一个数字/状态；直接返回被回收字节数及完成 fence。
+153	SomeEngine.Graphics	SomeEngine.Graphics.ResolveMode	ResolveMode	保留	ResolveMode	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+154	SomeEngine.Graphics	SomeEngine.Graphics.Resource	Resource	保留	Resource	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+155	SomeEngine.Graphics	SomeEngine.Graphics.ResourceBarrier	ResourceBarrier	合并	BarrierGroup	删除 barrier 基类、Kind 判别器和每变体一类的继承树；只保留标准 flat barrier 数据。
+156	SomeEngine.Graphics	SomeEngine.Graphics.ResourceHeapClass	ResourceHeapClass	删除	—	heap compatibility 由 MemoryRequirements/HeapFlags 给出；不再复制资源种类判别器。
+157	SomeEngine.Graphics	SomeEngine.Graphics.ResourceHeapTier	ResourceHeapTier	保留	ResourceHeapTier	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+158	SomeEngine.Graphics	SomeEngine.Graphics.ResourceKind	ResourceKind	删除	—	静态/运行时 owner 类型已经区分 Buffer 与 Texture，不再保存 ResourceKind。
+159	SomeEngine.Graphics	SomeEngine.Graphics.ResourceRequirements	ResourceRequirements	改名	MemoryRequirements	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+160	SomeEngine.Graphics	SomeEngine.Graphics.ResourceState	ResourceState	保留	ResourceState	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+161	SomeEngine.Graphics	SomeEngine.Graphics.Sampler	Sampler	保留	Sampler	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+162	SomeEngine.Graphics	SomeEngine.Graphics.SamplerBorderColor	SamplerBorderColor	改名	BorderColor	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+163	SomeEngine.Graphics	SomeEngine.Graphics.SamplerDesc	SamplerDesc	保留	SamplerDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+164	SomeEngine.Graphics	SomeEngine.Graphics.SamplerDescriptor	SamplerDescriptor	合并	WriteDescriptorSet	descriptor write 使用 Vulkan 的一个 flat WriteDescriptorSet；不保留每资源一种 subclass。
+165	SomeEngine.Graphics	SomeEngine.Graphics.SamplerFeedbackMapDesc	SamplerFeedbackMapDesc	删除	—	Sampler Feedback 是 D3D12 backend 扩展；portable command surface 不保留自造 map/mode/layout 包装。
+166	SomeEngine.Graphics	SomeEngine.Graphics.SamplerFeedbackMapLayout	SamplerFeedbackMapLayout	删除	—	Sampler Feedback 是 D3D12 backend 扩展；portable command surface 不保留自造 map/mode/layout 包装。
+167	SomeEngine.Graphics	SomeEngine.Graphics.SamplerFeedbackMode	SamplerFeedbackMode	删除	—	Sampler Feedback 是 D3D12 backend 扩展；portable command surface 不保留自造 map/mode/layout 包装。
+168	SomeEngine.Graphics	SomeEngine.Graphics.SamplerFeedbackTier	SamplerFeedbackTier	保留	SamplerFeedbackTier	D3D12 已有同名 capability tier；仅作为 capability fact 保留。
+169	SomeEngine.Graphics	SomeEngine.Graphics.ScissorRect	ScissorRect	改名	Rect2D	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+170	SomeEngine.Graphics	SomeEngine.Graphics.ShaderArtifact	ShaderArtifact	改名	ShaderModule	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+171	SomeEngine.Graphics	SomeEngine.Graphics.ShaderArtifactKey	ShaderArtifactKey	合并	ShaderModuleIdentifier	shader reflection 与 descriptor layout 只保留一份 binding 真相。
+172	SomeEngine.Graphics	SomeEngine.Graphics.ShaderBinaryFormat	ShaderBinaryFormat	保留	ShaderBinaryFormat	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+173	SomeEngine.Graphics	SomeEngine.Graphics.ShaderInterface	ShaderInterface	合并	ShaderReflection	shader reflection 与 descriptor layout 只保留一份 binding 真相。
+174	SomeEngine.Graphics	SomeEngine.Graphics.ShaderQualifiers	ShaderQualifiers	合并	ShaderReflection	shader reflection 与 descriptor layout 只保留一份 binding 真相。
+175	SomeEngine.Graphics	SomeEngine.Graphics.ShaderRegisterAddress	ShaderRegisterAddress	合并	ShaderReflection	shader reflection 与 descriptor layout 只保留一份 binding 真相。
+176	SomeEngine.Graphics	SomeEngine.Graphics.ShaderSlot	ShaderSlot	合并	DescriptorSetLayoutBinding	shader reflection 与 descriptor layout 只保留一份 binding 真相。
+177	SomeEngine.Graphics	SomeEngine.Graphics.ShaderSlotKind	ShaderSlotKind	改名	DescriptorType	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+178	SomeEngine.Graphics	SomeEngine.Graphics.ShaderStage	ShaderStage	保留	ShaderStage	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+179	SomeEngine.Graphics	SomeEngine.Graphics.ShaderStages	ShaderStages	改名	ShaderStageFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+180	SomeEngine.Graphics	SomeEngine.Graphics.ShaderTableRegion	ShaderTableRegion	改名	StridedDeviceAddressRegion	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+181	SomeEngine.Graphics	SomeEngine.Graphics.ShadingRate	ShadingRate	保留	ShadingRate	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+182	SomeEngine.Graphics	SomeEngine.Graphics.ShadingRateCombiner	ShadingRateCombiner	保留	ShadingRateCombiner	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+183	SomeEngine.Graphics	SomeEngine.Graphics.SkipPendingPipelineBinding	SkipPendingPipelineBinding	删除	—	pipeline ready/pending/fallback 是 cache 决策，不是 command binding 的类层级。
+184	SomeEngine.Graphics	SomeEngine.Graphics.SparseBoxTileRegion	SparseBoxTileRegion	合并	TileRegionSize	D3D12 的一个 TileRegionSize 同时表示线性数量和 box。
+185	SomeEngine.Graphics	SomeEngine.Graphics.SparseLinearTileRegion	SparseLinearTileRegion	合并	TileRegionSize	D3D12 的一个 TileRegionSize 同时表示线性数量和 box。
+186	SomeEngine.Graphics	SomeEngine.Graphics.SparseMappedTileMapping	SparseMappedTileMapping	合并	TileMapping	映射/取消映射由一个 TileMapping + TileRangeFlags 表达，不保留继承树。
+187	SomeEngine.Graphics	SomeEngine.Graphics.SparsePackedMips	SparsePackedMips	改名	PackedMipInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+188	SomeEngine.Graphics	SomeEngine.Graphics.SparseResourceTier	SparseResourceTier	保留	SparseResourceTier	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+189	SomeEngine.Graphics	SomeEngine.Graphics.SparseSubresourceTiling	SparseSubresourceTiling	改名	SubresourceTiling	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+190	SomeEngine.Graphics	SomeEngine.Graphics.SparseTileCoordinate	SparseTileCoordinate	改名	TiledResourceCoordinate	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+191	SomeEngine.Graphics	SomeEngine.Graphics.SparseTileMapping	SparseTileMapping	合并	TileMapping	映射/取消映射由一个 TileMapping + TileRangeFlags 表达，不保留继承树。
+192	SomeEngine.Graphics	SomeEngine.Graphics.SparseTileRegion	SparseTileRegion	合并	TileRegionSize	D3D12 的一个 TileRegionSize 同时表示线性数量和 box。
+193	SomeEngine.Graphics	SomeEngine.Graphics.SparseTileShape	SparseTileShape	改名	TileShape	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+194	SomeEngine.Graphics	SomeEngine.Graphics.SparseUnmappedTileMapping	SparseUnmappedTileMapping	合并	TileMapping	映射/取消映射由一个 TileMapping + TileRangeFlags 表达，不保留继承树。
+195	SomeEngine.Graphics	SomeEngine.Graphics.StencilAttachmentPayload	StencilAttachmentPayload	合并	RenderingAttachmentInfo	颜色、深度、模板和 resolve 都是同一 attachment info，不再各包一层。
+196	SomeEngine.Graphics	SomeEngine.Graphics.StencilFace	StencilFace	保留	StencilFace	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+197	SomeEngine.Graphics	SomeEngine.Graphics.StencilOperation	StencilOperation	保留	StencilOperation	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+198	SomeEngine.Graphics	SomeEngine.Graphics.StoreAction	StoreAction	保留	StoreAction	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+199	SomeEngine.Graphics	SomeEngine.Graphics.Swapchain	Swapchain	保留	Swapchain	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+200	SomeEngine.Graphics	SomeEngine.Graphics.SwapchainColorSpace	SwapchainColorSpace	改名	ColorSpace	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+201	SomeEngine.Graphics	SomeEngine.Graphics.SwapchainDesc	SwapchainDesc	改名	SwapchainCreateInfo	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+202	SomeEngine.Graphics	SomeEngine.Graphics.SwapchainPresentMode	SwapchainPresentMode	改名	PresentMode	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+203	SomeEngine.Graphics	SomeEngine.Graphics.Texture	Texture	保留	Texture	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+204	SomeEngine.Graphics	SomeEngine.Graphics.TextureBufferCopy	TextureBufferCopy	合并	BufferImageCopy	方向相反但字段同构的复制参数只保留 Vulkan 的一个标准结构。
+205	SomeEngine.Graphics	SomeEngine.Graphics.TextureBufferLayout	TextureBufferLayout	合并	BufferImageCopy	方向相反但字段同构的复制参数只保留 Vulkan 的一个标准结构。
+206	SomeEngine.Graphics	SomeEngine.Graphics.TextureCopyFootprint	TextureCopyFootprint	改名	PlacedSubresourceFootprint	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+207	SomeEngine.Graphics	SomeEngine.Graphics.TextureCopyRegion	TextureCopyRegion	合并	BufferImageCopy / ImageCopy	方向相反但字段同构的复制参数只保留 Vulkan 的一个标准结构。
+208	SomeEngine.Graphics	SomeEngine.Graphics.TextureDesc	TextureDesc	保留	TextureDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+209	SomeEngine.Graphics	SomeEngine.Graphics.TextureDescriptor	TextureDescriptor	合并	WriteDescriptorSet	descriptor write 使用 Vulkan 的一个 flat WriteDescriptorSet；不保留每资源一种 subclass。
+210	SomeEngine.Graphics	SomeEngine.Graphics.TextureDimension	TextureDimension	保留	TextureDimension	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+211	SomeEngine.Graphics	SomeEngine.Graphics.TexturePlane	TexturePlane	改名	ImageAspect	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+212	SomeEngine.Graphics	SomeEngine.Graphics.TexturePlanes	TexturePlanes	改名	ImageAspectFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+213	SomeEngine.Graphics	SomeEngine.Graphics.TextureResolveRegion	TextureResolveRegion	合并	ImageResolve	方向相反但字段同构的复制参数只保留 Vulkan 的一个标准结构。
+214	SomeEngine.Graphics	SomeEngine.Graphics.TextureSampleType	TextureSampleType	保留	TextureSampleType	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+215	SomeEngine.Graphics	SomeEngine.Graphics.TextureSubresourceRange	TextureSubresourceRange	改名	SubresourceRange	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+216	SomeEngine.Graphics	SomeEngine.Graphics.TextureToTextureCopy	TextureToTextureCopy	合并	ImageCopy	方向相反但字段同构的复制参数只保留 Vulkan 的一个标准结构。
+217	SomeEngine.Graphics	SomeEngine.Graphics.TextureTransitionBarrier	TextureTransitionBarrier	合并	TextureBarrier	删除 barrier 基类、Kind 判别器和每变体一类的继承树；只保留标准 flat barrier 数据。
+218	SomeEngine.Graphics	SomeEngine.Graphics.TextureUnorderedAccessBarrier	TextureUnorderedAccessBarrier	合并	TextureBarrier	删除 barrier 基类、Kind 判别器和每变体一类的继承树；只保留标准 flat barrier 数据。
+219	SomeEngine.Graphics	SomeEngine.Graphics.TextureUsage	TextureUsage	保留	TextureUsage	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+220	SomeEngine.Graphics	SomeEngine.Graphics.TextureView	TextureView	保留	TextureView	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+221	SomeEngine.Graphics	SomeEngine.Graphics.TextureViewDesc	TextureViewDesc	保留	TextureViewDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+222	SomeEngine.Graphics	SomeEngine.Graphics.TextureViewDimension	TextureViewDimension	保留	TextureViewDimension	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+223	SomeEngine.Graphics	SomeEngine.Graphics.TextureViewFormats	TextureViewFormats	删除	—	允许 view format 直接是 create-info 中的 span/immutable array；删除自造集合及 Enumerator。
+224	SomeEngine.Graphics	SomeEngine.Graphics.TextureViewFormats.Enumerator	Enumerator	删除	—	允许 view format 直接是 create-info 中的 span/immutable array；删除自造集合及 Enumerator。
+225	SomeEngine.Graphics	SomeEngine.Graphics.TextureViewUsage	TextureViewUsage	保留	TextureViewUsage	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+226	SomeEngine.Graphics	SomeEngine.Graphics.TimestampCalibration	TimestampCalibration	改名	ClockCalibration	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+227	SomeEngine.Graphics	SomeEngine.Graphics.TopLevelAccelerationStructureInputs	TopLevelAccelerationStructureInputs	合并	AccelerationStructureBuildGeometryInfo	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+228	SomeEngine.Graphics	SomeEngine.Graphics.TransientBufferClaim	TransientBufferClaim	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+229	SomeEngine.Graphics	SomeEngine.Graphics.TransientClaimState	TransientClaimState	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+230	SomeEngine.Graphics	SomeEngine.Graphics.TransientHeapClaim	TransientHeapClaim	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+231	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator	TransientResourceAllocator	保留	TransientResourceAllocator	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+232	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.BufferEntry	BufferEntry	保留	TransientResourceAllocator.BufferEntry	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+233	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.BufferKey	BufferKey	保留	TransientResourceAllocator.BufferKey	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+234	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.BufferViewEntry	BufferViewEntry	保留	TransientResourceAllocator.BufferViewEntry	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+235	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.BufferViewKey	BufferViewKey	保留	TransientResourceAllocator.BufferViewKey	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+236	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.HeapEntry	HeapEntry	保留	TransientResourceAllocator.HeapEntry	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+237	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.TextureEntry	TextureEntry	保留	TransientResourceAllocator.TextureEntry	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+238	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.TextureKey	TextureKey	保留	TransientResourceAllocator.TextureKey	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+239	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.TextureViewEntry	TextureViewEntry	保留	TransientResourceAllocator.TextureViewEntry	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+240	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceAllocator.TextureViewKey	TextureViewKey	保留	TransientResourceAllocator.TextureViewKey	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+241	SomeEngine.Graphics	SomeEngine.Graphics.TransientResourceSource	TransientResourceSource	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+242	SomeEngine.Graphics	SomeEngine.Graphics.TransientTextureClaim	TransientTextureClaim	删除	—	TransientResourceAllocator 是唯一 pool；source/allocator 接口和 claim generation 协议都是重复纵向层。
+243	SomeEngine.Graphics	SomeEngine.Graphics.UpdateAccelerationStructureBuild	UpdateAccelerationStructureBuild	合并	AccelerationStructureBuildGeometryInfo	Vulkan 的一个 AccelerationStructureBuildGeometryInfo 已包含 mode/src/dst/scratch/geometry。
+244	SomeEngine.Graphics	SomeEngine.Graphics.UseFallbackPipelineBinding	UseFallbackPipelineBinding	删除	—	pipeline ready/pending/fallback 是 cache 决策，不是 command binding 的类层级。
+245	SomeEngine.Graphics	SomeEngine.Graphics.VariableRateShadingTier	VariableRateShadingTier	保留	VariableRateShadingTier	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+246	SomeEngine.Graphics	SomeEngine.Graphics.VertexAttribute	VertexAttribute	保留	VertexAttribute	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+247	SomeEngine.Graphics	SomeEngine.Graphics.VertexBufferLayout	VertexBufferLayout	保留	VertexBufferLayout	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+248	SomeEngine.Graphics	SomeEngine.Graphics.Viewport	Viewport	保留	Viewport	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+249	SomeEngine.Graphics	SomeEngine.Graphics.WaitForPendingPipelineBinding	WaitForPendingPipelineBinding	删除	—	pipeline ready/pending/fallback 是 cache 决策，不是 command binding 的类层级。
+250	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraph	WorkGraph	保留	WorkGraph	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+251	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphBackingOperation	WorkGraphBackingOperation	改名	SetWorkGraphFlags	改用 Vulkan/D3D12/UE/Unity/Filament 中已出现的精确术语。
+252	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphBufferAccess	WorkGraphBufferAccess	合并	AccessFlags + BufferHandle	Work Graph 资源访问由普通 RG access/barrier 声明承担，不是 DispatchGraph 的额外参数。
+253	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphDesc	WorkGraphDesc	保留	WorkGraphDesc	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+254	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphEntrypointLayout	WorkGraphEntrypointLayout	合并	WorkGraph	Work Graph 资源访问由普通 RG access/barrier 声明承担，不是 DispatchGraph 的额外参数。
+255	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphMemoryRequirements	WorkGraphMemoryRequirements	保留	WorkGraphMemoryRequirements	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+256	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphTextureAccess	WorkGraphTextureAccess	合并	AccessFlags + TextureHandle	Work Graph 资源访问由普通 RG access/barrier 声明承担，不是 DispatchGraph 的额外参数。
+257	SomeEngine.Graphics	SomeEngine.Graphics.WorkGraphTier	WorkGraphTier	保留	WorkGraphTier	外部图形 API/引擎已有同名概念；当前节点承担唯一事实或 owner。
+258	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.BindingLookupRow	BindingLookupRow	合并	DescriptorRange	layout lookup 与 D3D12 descriptor range 是同一事实。
+259	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.BufferCommandResourceRegion	BufferCommandResourceRegion	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+260	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.BufferIntervalKey	BufferIntervalKey	合并	BufferRange	buffer interval key 与已有 BufferRange 同义。
+261	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandAllocation	CommandAllocation	删除	—	CommandRecorder、CommandAllocation、NativeCommandList 原为同一 command list 的三层 owner；只留 D3D12CommandList。
+262	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandDescriptorArena	CommandDescriptorArena	删除	—	descriptor arena 是 command-list 私有分配细节；字段内联，不升级成额外 owner。
+263	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandDescriptorArena.HeapPair	HeapPair	删除	—	descriptor arena 是 command-list 私有分配细节；字段内联，不升级成额外 owner。
+264	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder	CommandRecorder	删除	—	CommandRecorder、CommandAllocation、NativeCommandList 原为同一 command list 的三层 owner；只留 D3D12CommandList。
+265	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.BoundColorAttachment	BoundColorAttachment	合并	RenderingAttachmentInfo	bound attachment 与 native barrier 临时结构直接使用标准 RenderingAttachmentInfo/BarrierGroup。
+266	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.BoundDepthStencilAttachment	BoundDepthStencilAttachment	合并	RenderingAttachmentInfo	bound attachment 与 native barrier 临时结构直接使用标准 RenderingAttachmentInfo/BarrierGroup。
+267	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.DescriptorGroupBorrow	DescriptorGroupBorrow	删除	—	descriptor arena 是 command-list 私有分配细节；字段内联，不升级成额外 owner。
+268	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.NativeBarrierGroup	NativeBarrierGroup	合并	BarrierGroup	bound attachment 与 native barrier 临时结构直接使用标准 RenderingAttachmentInfo/BarrierGroup。
+269	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.NativeBufferBarrier	NativeBufferBarrier	合并	BufferBarrier	bound attachment 与 native barrier 临时结构直接使用标准 RenderingAttachmentInfo/BarrierGroup。
+270	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.NativeTextureBarrier	NativeTextureBarrier	合并	TextureBarrier	bound attachment 与 native barrier 临时结构直接使用标准 RenderingAttachmentInfo/BarrierGroup。
+271	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandRecorder.RayTracingRootConstantWrite	RayTracingRootConstantWrite	删除	—	ray tracing descriptor/root-constant staging 移到 ShaderBindingTable 构建；不是独立 command state 类型。
+272	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandResourceMutation	CommandResourceMutation	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+273	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CommandResourceRegion	CommandResourceRegion	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+274	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CpuDescriptorPool	CpuDescriptorPool	保留	CpuDescriptorPool	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+275	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CpuDescriptorPool.Bucket	Bucket	保留	CpuDescriptorPool.Bucket	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+276	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.CpuDescriptorPool.Page	Page	保留	CpuDescriptorPool.Page	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+277	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.DescriptorBlock	DescriptorBlock	删除	—	descriptor arena 是 command-list 私有分配细节；字段内联，不升级成额外 owner。
+278	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device	Device	改名	D3D12Device	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+279	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.BufferRequirementKey	BufferRequirementKey	删除	—	requirement cache 直接以规范化 BufferDesc/TextureDesc 为 key。
+280	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.DxilLibraryDescriptionNative	DxilLibraryDescriptionNative	删除	—	这些 private *Native struct 是对 D3D12 interop struct 的第二次手写镜像。
+281	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.IndirectSignatureKey	IndirectSignatureKey	保留	Device.IndirectSignatureKey	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+282	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.MeshPipelineStream	MeshPipelineStream	改名	PipelineStateStream	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+283	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.NativeBufferMapping	NativeBufferMapping	合并	BufferMapping	public BufferMapping 已经是唯一 mapping lifetime；backend 对象并入它。
+284	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.PipelineCacheEntry	PipelineCacheEntry	保留	Device.PipelineCacheEntry	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+285	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.PipelineCacheEntryKey	PipelineCacheEntryKey	保留	Device.PipelineCacheEntryKey	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+286	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.RetiredAllocation	RetiredAllocation	保留	Device.RetiredAllocation	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+287	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.StateObjectDescriptionNative	StateObjectDescriptionNative	删除	—	这些 private *Native struct 是对 D3D12 interop struct 的第二次手写镜像。
+288	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.StateSubObjectNative	StateSubObjectNative	删除	—	这些 private *Native struct 是对 D3D12 interop struct 的第二次手写镜像。
+289	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.TextureRequirementKey	TextureRequirementKey	删除	—	requirement cache 直接以规范化 BufferDesc/TextureDesc 为 key。
+290	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.Device.WorkGraphDescriptionNative	WorkGraphDescriptionNative	删除	—	这些 private *Native struct 是对 D3D12 interop struct 的第二次手写镜像。
+291	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.DeviceConfiguration	DeviceConfiguration	保留	DeviceConfiguration	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+292	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.DxilProgramHeader	DxilProgramHeader	保留	DxilProgramHeader	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+293	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.EntityKey	EntityKey	删除	—	wrapper/generation owner 删除后不再需要 slot+generation EntityTable。
+294	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.EntityTable<T>	EntityTable	删除	—	wrapper/generation owner 删除后不再需要 slot+generation EntityTable。
+295	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.EntityTable<T>.Entry	Entry	删除	—	wrapper/generation owner 删除后不再需要 slot+generation EntityTable。
+296	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeAccelerationStructureBinding	NativeAccelerationStructureBinding	删除	—	NativeBinding/Payload 及资源 subclass 重复 WriteDescriptorSet；使用 flat descriptor write。
+297	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeAccelerationStructureBindlessValue	NativeAccelerationStructureBindlessValue	删除	—	bindless value subclass 只是在 DescriptorHandle 外再包资源引用；合并进 DescriptorHeap entry。
+298	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBindGroup	NativeBindGroup	改名	D3D12DescriptorSet	BindGroup vocabulary 统一为 DescriptorSet vocabulary。
+299	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBindGroupLayout	NativeBindGroupLayout	改名	D3D12DescriptorSetLayout	BindGroup vocabulary 统一为 DescriptorSet vocabulary。
+300	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBinding	NativeBinding	删除	—	NativeBinding/Payload 及资源 subclass 重复 WriteDescriptorSet；使用 flat descriptor write。
+301	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBindingPayload	NativeBindingPayload	删除	—	NativeBinding/Payload 及资源 subclass 重复 WriteDescriptorSet；使用 flat descriptor write。
+302	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBindlessEntry	NativeBindlessEntry	改名	D3D12DescriptorHeap.Entry	bindless 公共概念已统一为 DescriptorHeap/DescriptorHandle。
+303	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBindlessTable	NativeBindlessTable	改名	D3D12DescriptorHeap	bindless 公共概念已统一为 DescriptorHeap/DescriptorHandle。
+304	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBindlessValue	NativeBindlessValue	删除	—	bindless value subclass 只是在 DescriptorHandle 外再包资源引用；合并进 DescriptorHeap entry。
+305	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBuffer	NativeBuffer	改名	D3D12Buffer	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+306	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBuffer.ClearDescriptor	ClearDescriptor	删除	—	clear descriptor 是 D3D12Buffer 的一个字段，不是独立概念。
+307	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBufferBinding	NativeBufferBinding	删除	—	NativeBinding/Payload 及资源 subclass 重复 WriteDescriptorSet；使用 flat descriptor write。
+308	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBufferBindlessValue	NativeBufferBindlessValue	删除	—	bindless value subclass 只是在 DescriptorHandle 外再包资源引用；合并进 DescriptorHeap entry。
+309	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeBufferView	NativeBufferView	改名	D3D12BufferView	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+310	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeCommandList	NativeCommandList	改名	D3D12CommandList	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+311	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeComputePipeline	NativeComputePipeline	改名	D3D12ComputePipeline	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+312	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeCpuDescriptor	NativeCpuDescriptor	改名	DescriptorAllocation	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+313	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeDevice	NativeDevice	合并	D3D12Device	public/backend Device 两层合成一个 D3D12Device。
+314	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeDiagnosticDrain	NativeDiagnosticDrain	改名	D3D12InfoQueue	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+315	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeFormat	NativeFormat	删除	—	转换函数内联到 D3D12Device/D3D12CommandList；Native* 静态容器不是领域类型。
+316	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeHeap	NativeHeap	改名	D3D12Heap	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+317	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeLifetime	NativeLifetime	删除	—	public owner 自己承担 lifetime；generic NativeLifetime 基类不再形成第二个 owner 层。
+318	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeMeshPipeline	NativeMeshPipeline	改名	D3D12MeshPipeline	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+319	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativePipeline	NativePipeline	删除	—	public Pipeline 已是 backend pipeline 的共同 owner；额外 NativePipeline root 删除。
+320	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativePipelineLayout	NativePipelineLayout	改名	D3D12PipelineLayout	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+321	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativePipelineLibrary	NativePipelineLibrary	改名	D3D12PipelineLibrary	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+322	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativePipelineShader	NativePipelineShader	合并	ShaderBytecode	shader bytecode/root binding 直接用 D3D12 标准结构。
+323	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeQueryPool	NativeQueryPool	改名	D3D12QueryPool	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+324	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeQueue	NativeQueue	改名	D3D12Queue	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+325	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeQueueType	NativeQueueType	删除	—	转换函数内联到 D3D12Device/D3D12CommandList；Native* 静态容器不是领域类型。
+326	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeRasterization	NativeRasterization	删除	—	转换函数内联到 D3D12Device/D3D12CommandList；Native* 静态容器不是领域类型。
+327	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeRasterPipeline	NativeRasterPipeline	改名	D3D12RasterPipeline	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+328	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeRayTracingPipeline	NativeRayTracingPipeline	改名	D3D12RayTracingPipeline	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+329	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeResourceSynchronization	NativeResourceSynchronization	删除	—	转换函数内联到 D3D12Device/D3D12CommandList；Native* 静态容器不是领域类型。
+330	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeRootBinding	NativeRootBinding	合并	RootDescriptorTable	shader bytecode/root binding 直接用 D3D12 标准结构。
+331	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeRootConstant	NativeRootConstant	合并	RootConstants	shader bytecode/root binding 直接用 D3D12 标准结构。
+332	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeSampler	NativeSampler	改名	D3D12Sampler	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+333	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeSamplerBinding	NativeSamplerBinding	删除	—	NativeBinding/Payload 及资源 subclass 重复 WriteDescriptorSet；使用 flat descriptor write。
+334	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeSamplerBindlessValue	NativeSamplerBindlessValue	删除	—	bindless value subclass 只是在 DescriptorHandle 外再包资源引用；合并进 DescriptorHeap entry。
+335	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeSwapchain	NativeSwapchain	改名	D3D12Swapchain	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+336	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeTexture	NativeTexture	改名	D3D12Texture	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+337	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeTextureBinding	NativeTextureBinding	删除	—	NativeBinding/Payload 及资源 subclass 重复 WriteDescriptorSet；使用 flat descriptor write。
+338	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeTextureBindlessValue	NativeTextureBindlessValue	删除	—	bindless value subclass 只是在 DescriptorHandle 外再包资源引用；合并进 DescriptorHeap entry。
+339	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeTextureView	NativeTextureView	改名	D3D12TextureView	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+340	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.NativeWorkGraph	NativeWorkGraph	改名	D3D12WorkGraph	backend 类型用显式 D3D12 owner 名；它们直接实现/继承 public owner。
+341	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.OpaqueNativeAccessMutation	OpaqueNativeAccessMutation	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+342	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.QueryAvailabilityMutation	QueryAvailabilityMutation	删除	—	query availability 是 QueryPool 状态，不是 command mutation 层。
+343	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.ResourceAccessMutation	ResourceAccessMutation	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+344	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.ShaderVisibleDescriptorPool	ShaderVisibleDescriptorPool	保留	ShaderVisibleDescriptorPool	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+345	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.ShaderVisibleDescriptorPool.DescriptorAllocation	DescriptorAllocation	保留	ShaderVisibleDescriptorPool.DescriptorAllocation	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+346	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.ShaderVisibleDescriptorPool.RangeAllocator	RangeAllocator	保留	ShaderVisibleDescriptorPool.RangeAllocator	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+347	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.ShaderVisibleDescriptorPool.RangeAllocator.FreeRange	FreeRange	保留	ShaderVisibleDescriptorPool.RangeAllocator.FreeRange	private cache/allocator/transaction helper 有独立算法职责，且名字是普通实现术语。
+348	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.SplitBarrierBeginMutation	SplitBarrierBeginMutation	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+349	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.SplitBarrierEndMutation	SplitBarrierEndMutation	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+350	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.TextureCommandResourceRegion	TextureCommandResourceRegion	删除	—	一组 Mutation/Region subclass 只是 ResourceStateTracker 的事件表示；合并为一个 tracker。
+351	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.WorkGraphDispatchUse	WorkGraphDispatchUse	删除	—	Work Graph 使用/初始化状态由 D3D12WorkGraph 与 D3D12CommandList 直接持有。
+352	SomeEngine.Graphics.Direct3D12	SomeEngine.Graphics.Direct3D12.WorkGraphInitialization	WorkGraphInitialization	删除	—	Work Graph 使用/初始化状态由 D3D12WorkGraph 与 D3D12CommandList 直接持有。
+353	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.AccelerationStructureKey	AccelerationStructureKey	删除	—	AS key/update-row 复制了标准 build geometry；状态并入 NullAccelerationStructure。
+354	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.AccelerationStructureUpdateKey	AccelerationStructureUpdateKey	删除	—	AS key/update-row 复制了标准 build geometry；状态并入 NullAccelerationStructure。
+355	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.AccelerationStructureUpdateKey.AabbUpdateRow	AabbUpdateRow	删除	—	AS key/update-row 复制了标准 build geometry；状态并入 NullAccelerationStructure。
+356	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.AccelerationStructureUpdateKey.TriangleUpdateRow	TriangleUpdateRow	删除	—	AS key/update-row 复制了标准 build geometry；状态并入 NullAccelerationStructure。
+357	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.BarrierPayload	BarrierPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+358	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.BeginQueryPayload	BeginQueryPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+359	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.BeginRenderingPayload	BeginRenderingPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+360	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.BindlessEntry	BindlessEntry	改名	NullDescriptorHeap.Entry	Null backend owner 用显式且常见的 Null* 名，并直接继承 public owner。
+361	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.BuildAccelerationStructurePayload	BuildAccelerationStructurePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+362	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.BuiltAccelerationStructure	BuiltAccelerationStructure	改名	NullAccelerationStructure	Null backend owner 用显式且常见的 Null* 名，并直接继承 public owner。
+363	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ClearBufferPayload	ClearBufferPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+364	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ClearDepthStencilTexturePayload	ClearDepthStencilTexturePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+365	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ClearSamplerFeedbackPayload	ClearSamplerFeedbackPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+366	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ClearTexturePayload	ClearTexturePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+367	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ClearUnorderedAccessBufferPayload	ClearUnorderedAccessBufferPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+368	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CommandRecorder	CommandRecorder	合并	NullCommandList	唯一 NullCommandList 承担 recording/Close；CommandRecorder 不再是第二层。
+369	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CommandUsageLedger	CommandUsageLedger	删除	—	CommandList 直接持有所借 owner 集；不再经 UsageLedger snapshot 一次。
+370	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CopyAccelerationStructurePayload	CopyAccelerationStructurePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+371	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CopyBufferPayload	CopyBufferPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+372	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CopyBufferToTexturePayload	CopyBufferToTexturePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+373	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CopyTexturePayload	CopyTexturePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+374	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.CopyTextureToBufferPayload	CopyTextureToBufferPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+375	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DecodeSamplerFeedbackPayload	DecodeSamplerFeedbackPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+376	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device	Device	改名	NullDevice	Null backend owner 用显式且常见的 Null* 名，并直接继承 public owner。
+377	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.BufferRequirementKey	BufferRequirementKey	删除	—	requirement cache 直接用规范化 Desc；mapping backend state 直接并入 BufferMapping。
+378	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.NullBufferMapping	NullBufferMapping	合并	BufferMapping	public BufferMapping 已是唯一映射 lifetime。
+379	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.SubmissionTransaction	SubmissionTransaction	保留	Device.SubmissionTransaction	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+380	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.SubmissionTransaction.QueryCounters	QueryCounters	保留	Device.SubmissionTransaction.QueryCounters	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+381	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.SubmissionTransaction.StagedBuffer	StagedBuffer	保留	Device.SubmissionTransaction.StagedBuffer	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+382	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.SubmissionTransaction.StagedQueryPool	StagedQueryPool	保留	Device.SubmissionTransaction.StagedQueryPool	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+383	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.SubmissionTransaction.StagedStorage	StagedStorage	保留	Device.SubmissionTransaction.StagedStorage	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+384	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.SubmissionTransaction.StagedTexture	StagedTexture	保留	Device.SubmissionTransaction.StagedTexture	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+385	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.Device.TextureRequirementKey	TextureRequirementKey	删除	—	requirement cache 直接用规范化 Desc；mapping backend state 直接并入 BufferMapping。
+386	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DeviceConfiguration	DeviceConfiguration	保留	DeviceConfiguration	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+387	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DispatchIndirectPayload	DispatchIndirectPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+388	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DispatchMeshIndirectPayload	DispatchMeshIndirectPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+389	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DispatchMeshPayload	DispatchMeshPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+390	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DispatchPayload	DispatchPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+391	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DispatchRaysPayload	DispatchRaysPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+392	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DispatchWorkGraphPayload	DispatchWorkGraphPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+393	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DrawIndexedIndirectPayload	DrawIndexedIndirectPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+394	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DrawIndexedPayload	DrawIndexedPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+395	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DrawIndirectPayload	DrawIndirectPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+396	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.DrawPayload	DrawPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+397	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.EmitAccelerationStructureCompactedSizePayload	EmitAccelerationStructureCompactedSizePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+398	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.EncodeSamplerFeedbackPayload	EncodeSamplerFeedbackPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+399	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.EndQueryPayload	EndQueryPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+400	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.EndRenderingPayload	EndRenderingPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+401	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.EntityTable<T>	EntityTable	删除	—	public owner 与 backend owner 合并后，不再需要 EntityTable/Slot/NullPosition generation 系统。
+402	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.EntityTable<T>.Slot	Slot	删除	—	public owner 与 backend owner 合并后，不再需要 EntityTable/Slot/NullPosition generation 系统。
+403	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.InsertDebugMarkerPayload	InsertDebugMarkerPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+404	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullAccelerationStructureBinding	NullAccelerationStructureBinding	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+405	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullAccelerationStructureBindlessValue	NullAccelerationStructureBindlessValue	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+406	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBindGroup	NullBindGroup	改名	NullDescriptorSet	Null backend owner 用显式且常见的 Null* 名，并直接继承 public owner。
+407	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBindGroupLayout	NullBindGroupLayout	改名	NullDescriptorSetLayout	Null backend owner 用显式且常见的 Null* 名，并直接继承 public owner。
+408	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBinding	NullBinding	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+409	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBindlessTable	NullBindlessTable	改名	NullDescriptorHeap	Null backend owner 用显式且常见的 Null* 名，并直接继承 public owner。
+410	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBindlessValue	NullBindlessValue	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+411	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBuffer	NullBuffer	保留	NullBuffer	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+412	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBufferBinding	NullBufferBinding	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+413	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBufferBindlessValue	NullBufferBindlessValue	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+414	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullBufferView	NullBufferView	保留	NullBufferView	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+415	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullCommandList	NullCommandList	保留	NullCommandList	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+416	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullDeviceStatistics	NullDeviceStatistics	保留	NullDeviceStatistics	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+417	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullHeap	NullHeap	保留	NullHeap	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+418	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullPipeline	NullPipeline	保留	NullPipeline	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+419	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullPipelineLayout	NullPipelineLayout	保留	NullPipelineLayout	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+420	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullPosition	NullPosition	删除	—	public owner 与 backend owner 合并后，不再需要 EntityTable/Slot/NullPosition generation 系统。
+421	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullQueryPool	NullQueryPool	保留	NullQueryPool	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+422	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullRayTracingPipeline	NullRayTracingPipeline	删除	—	ray-tracing 状态并入 NullPipeline；不再创建第二个 pipeline owner。
+423	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullSampler	NullSampler	保留	NullSampler	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+424	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullSamplerBinding	NullSamplerBinding	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+425	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullSamplerBindlessValue	NullSamplerBindlessValue	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+426	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullSwapchain	NullSwapchain	保留	NullSwapchain	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+427	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullTexture	NullTexture	保留	NullTexture	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+428	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullTextureBinding	NullTextureBinding	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+429	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullTextureBindlessValue	NullTextureBindlessValue	删除	—	descriptor binding/value subclass 重复 WriteDescriptorSet/DescriptorHeap entry。
+430	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullTextureView	NullTextureView	保留	NullTextureView	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+431	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.NullWorkGraph	NullWorkGraph	保留	NullWorkGraph	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+432	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.PendingSplitTransition	PendingSplitTransition	删除	—	split transition 由 BufferBarrier/TextureBarrier + BarrierFlags 的 tracker 直接保存。
+433	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.PopDebugGroupPayload	PopDebugGroupPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+434	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.PushDebugGroupPayload	PushDebugGroupPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+435	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ResetQueryPoolPayload	ResetQueryPoolPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+436	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ResolveQueryPoolPayload	ResolveQueryPoolPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+437	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.ResolveTexturePayload	ResolveTexturePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+438	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.RetainedCommand	RetainedCommand	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+439	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.RetainedCommandKind	RetainedCommandKind	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+440	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.RetainedCommandStream	RetainedCommandStream	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+441	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetBindGroupPayload	SetBindGroupPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+442	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetDescriptorsPayload	SetDescriptorsPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+443	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetIndexBufferPayload	SetIndexBufferPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+444	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetPipelinePayload	SetPipelinePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+445	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetPushConstantsPayload	SetPushConstantsPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+446	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetScissorPayload	SetScissorPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+447	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetShadingRateImagePayload	SetShadingRateImagePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+448	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetShadingRatePayload	SetShadingRatePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+449	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetStencilReferencePayload	SetStencilReferencePayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+450	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetVertexBufferPayload	SetVertexBufferPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+451	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.SetViewportPayload	SetViewportPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+452	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.TextureLayout	TextureLayout	保留	TextureLayout	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+453	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.TexturePlaneEnumerator	TexturePlaneEnumerator	保留	TexturePlaneEnumerator	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+454	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.TextureSubresourceEnumerator	TextureSubresourceEnumerator	保留	TextureSubresourceEnumerator	Null backend 的真实 owner、原子提交模拟或布局算法有独立职责。
+455	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.WorkGraphBackingRegistration	WorkGraphBackingRegistration	删除	—	backing registration 是 NullWorkGraph 的状态，不是独立领域类型。
+456	SomeEngine.Graphics.Null	SomeEngine.Graphics.Null.WriteTimestampPayload	WriteTimestampPayload	删除	—	Null command payload/Kind/boxed stream 是一命令一类型的重复层；合并为 Filament 式生成 CommandStream。
+457	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccelerationStructureBuildAccess	AccelerationStructureBuildAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+458	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccelerationStructureFacts	AccelerationStructureFacts	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+459	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccelerationStructureInputsAccess	AccelerationStructureInputsAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+460	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccelerationStructureRow	AccelerationStructureRow	删除	—	resource/view canonical storage 直接复用 Desc + typed handle；不再为同一事实建立 Row 影子。
+461	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccelerationStructureViewAccess	AccelerationStructureViewAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+462	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccessNormalizer	AccessNormalizer	保留	AccessNormalizer	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+463	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AccessRow	AccessRow	合并	PassInputData / PassOutputData	Unity compiler 将 read/write edge 表达为 PassInputData/PassOutputData；附件为 PassFragmentData。
+464	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AliasBarrierRow	AliasBarrierRow	合并	BarrierGroup	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+465	SomeEngine.RenderGraph	SomeEngine.RenderGraph.AliasingStatistics	AliasingStatistics	保留	AliasingStatistics	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+466	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ArenaColumn<T>	ArenaColumn	保留	ArenaColumn<T>	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+467	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ArenaColumn<T>.Chunk	Chunk	保留	ArenaColumn<T>.Chunk	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+468	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ArenaColumn<T>.Enumerator	Enumerator	保留	ArenaColumn<T>.Enumerator	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+469	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ArenaSlice<T>	ArenaSlice	保留	ArenaSlice<T>	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+470	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ArenaSlice<T>.Enumerator	Enumerator	保留	ArenaSlice<T>.Enumerator	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+471	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BarrierRow	BarrierRow	合并	BarrierGroup	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+472	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BarrierRowKind	BarrierRowKind	删除	—	BarrierRowKind 与 flat barrier 类型重复；TransitionOrigin 只需 diagnostics bit，不是领域 enum。
+473	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BarrierRowPayload	BarrierRowPayload	合并	BarrierGroup	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+474	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BindlessAccessRow	BindlessAccessRow	删除	—	query/bindless/shader argument 直接存于 PassData 的 typed collections；无额外 Row 类型。
+475	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BottomLevelAccelerationStructureInputsAccess	BottomLevelAccelerationStructureInputsAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+476	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferAccess	BufferAccess	删除	—	access wrapper 类型退出；builder 直接接收 typed handle + Unity AccessFlags。
+477	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferBindlessAccess	BufferBindlessAccess	删除	—	access wrapper 类型退出；builder 直接接收 typed handle + Unity AccessFlags。
+478	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferBoundaryIndex	BufferBoundaryIndex	保留	BufferBoundaryIndex	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+479	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferImport	BufferImport	合并	ResourceUnversionedData	import 数据并入标准 ResourceUnversionedData；Buffer/Texture 只通过 typed handle 区分。
+480	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferRow	BufferRow	删除	—	resource/view canonical storage 直接复用 Desc + typed handle；不再为同一事实建立 Row 影子。
+481	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferTransitionRow	BufferTransitionRow	合并	BufferBarrier	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+482	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferUnorderedAccessRow	BufferUnorderedAccessRow	合并	BufferBarrier	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+483	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferUse	BufferUse	合并	AccessFlags	Unity AccessFlags 已包含 Read/Write/Discard/WriteAll；不再维护 Use/PriorContents/Coverage 三套枚举。
+484	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferViewAccess	BufferViewAccess	删除	—	access wrapper 类型退出；builder 直接接收 typed handle + Unity AccessFlags。
+485	SomeEngine.RenderGraph	SomeEngine.RenderGraph.BufferViewRow	BufferViewRow	删除	—	resource/view canonical storage 直接复用 Desc + typed handle；不再为同一事实建立 Row 影子。
+486	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ColorAttachment	ColorAttachment	删除	—	attachment 由 Unity 精确方法 SetRenderAttachment/SetRenderAttachmentDepth 声明，不再造参数 wrapper。
+487	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ColorAttachmentRow	ColorAttachmentRow	改名	PassFragmentData	Unity RenderGraph 编译器已有精确 PassBreakReason/PassData/PassFragmentData 术语。
+488	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CommandBatch	CommandBatch	保留	CommandBatch	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+489	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CommandSubmissionCpuTimings	CommandSubmissionCpuTimings	保留	CommandSubmissionCpuTimings	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+490	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CommandTask	CommandTask	删除	—	CPU record task 与 command unit 是 CommandBatch 之上的重复调度层；batch 直接持 RuntimeCmd。
+491	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CommandUnitKind	CommandUnitKind	删除	—	AMD RPS RuntimeCmd 已以 cmdId 表示运行时命令身份；不再保留第二个 CommandUnitKind 类型。
+492	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CommandUnitRow	CommandUnitRow	改名	RuntimeCmd	AMD RPS 已有精确 RuntimeCmd；不再把存储实现写进 Row 后缀。
+493	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CompilerCpuTimings	CompilerCpuTimings	保留	CompilerCpuTimings	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+494	SomeEngine.RenderGraph	SomeEngine.RenderGraph.CullingStatistics	CullingStatistics	保留	CullingStatistics	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+495	SomeEngine.RenderGraph	SomeEngine.RenderGraph.DepthAttachmentDeclaration	DepthAttachmentDeclaration	删除	—	attachment 由 Unity 精确方法 SetRenderAttachment/SetRenderAttachmentDepth 声明，不再造参数 wrapper。
+496	SomeEngine.RenderGraph	SomeEngine.RenderGraph.DepthStencilAttachment	DepthStencilAttachment	删除	—	attachment 由 Unity 精确方法 SetRenderAttachment/SetRenderAttachmentDepth 声明，不再造参数 wrapper。
+497	SomeEngine.RenderGraph	SomeEngine.RenderGraph.DepthStencilAttachmentRow	DepthStencilAttachmentRow	改名	PassFragmentData	Unity RenderGraph 编译器已有精确 PassBreakReason/PassData/PassFragmentData 术语。
+498	SomeEngine.RenderGraph	SomeEngine.RenderGraph.DescriptorGroupRow	DescriptorGroupRow	合并	WriteDescriptorSet	compiler descriptor/push constant rows 直接复用标准 descriptor/push-constant facts。
+499	SomeEngine.RenderGraph	SomeEngine.RenderGraph.GraphArena	GraphArena	保留	GraphArena	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+500	SomeEngine.RenderGraph	SomeEngine.RenderGraph.GraphArena.Page	Page	保留	GraphArena.Page	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+501	SomeEngine.RenderGraph	SomeEngine.RenderGraph.GraphId	GraphId	合并	BufferHandle / TextureHandle / BufferViewHandle / TextureViewHandle / AccelerationStructureHandle / SamplerHandle / DescriptorHeapHandle / QueryPoolHandle	GraphId 是 untyped id；其身份并入 Unity 式 typed handles，不再单独存在。
+502	SomeEngine.RenderGraph	SomeEngine.RenderGraph.GraphIdKind	GraphIdKind	删除	—	GraphIdKind 是 typed handles 之外的第二个判别真相，直接删除。
+503	SomeEngine.RenderGraph	SomeEngine.RenderGraph.HeapRequirementRow	HeapRequirementRow	合并	MemoryRequirements	heap requirement 与已有标准 MemoryRequirements 合一。
+504	SomeEngine.RenderGraph	SomeEngine.RenderGraph.InitialAccelerationStructureBuildAccess	InitialAccelerationStructureBuildAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+505	SomeEngine.RenderGraph	SomeEngine.RenderGraph.InvocationCpuTimings	InvocationCpuTimings	保留	InvocationCpuTimings	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+506	SomeEngine.RenderGraph	SomeEngine.RenderGraph.IPass<TParameters>	IPass	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+507	SomeEngine.RenderGraph	SomeEngine.RenderGraph.IPassParameters<TSelf>	IPassParameters	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+508	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ParameterSlice<T>	ParameterSlice	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+509	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassCommandScope	PassCommandScope	改名	RasterGraphContext / ComputeGraphContext / UnsafeGraphContext	Unity 当前回调按 pass 类型使用 RasterGraphContext/ComputeGraphContext/UnsafeGraphContext；不采用已废弃的单一 RenderGraphContext。
+510	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassFlags	PassFlags	保留	PassFlags	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+511	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassParametersAttribute	PassParametersAttribute	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+512	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassPushConstantRow	PassPushConstantRow	合并	PushConstantRange	compiler descriptor/push constant rows 直接复用标准 descriptor/push-constant facts。
+513	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassRollbackMarker	PassRollbackMarker	保留	PassRollbackMarker	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+514	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassRow	PassRow	改名	PassData	Unity RenderGraph 编译器已有精确 PassBreakReason/PassData/PassFragmentData 术语。
+515	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassSchedulingAffinity	PassSchedulingAffinity	删除	—	调度亲和是 compiler policy，不是 pass authoring 公共事实。
+516	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PassThunk<TPass, TParameters>	PassThunk	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+517	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PriorContents	PriorContents	合并	AccessFlags	Unity AccessFlags 已包含 Read/Write/Discard/WriteAll；不再维护 Use/PriorContents/Coverage 三套枚举。
+518	SomeEngine.RenderGraph	SomeEngine.RenderGraph.PushConstantAttribute	PushConstantAttribute	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+519	SomeEngine.RenderGraph	SomeEngine.RenderGraph.QueryAccessRow	QueryAccessRow	删除	—	query/bindless/shader argument 直接存于 PassData 的 typed collections；无额外 Row 类型。
+520	SomeEngine.RenderGraph	SomeEngine.RenderGraph.QueryAttribute	QueryAttribute	删除	—	改用 Unity 式 RenderGraphBuilder + PassData；删除自造 source-generated parameter ABI。
+521	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RasterMergeBreakReason	RasterMergeBreakReason	改名	PassBreakReason	Unity RenderGraph 编译器已有精确 PassBreakReason/PassData/PassFragmentData 术语。
+522	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RasterScopeCompiler	RasterScopeCompiler	保留	RasterScopeCompiler	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+523	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RasterStatistics	RasterStatistics	保留	RasterStatistics	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+524	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RayTracingAabbAccess	RayTracingAabbAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+525	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RayTracingTriangleAccess	RayTracingTriangleAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+526	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ReachabilityTable	ReachabilityTable	保留	ReachabilityTable	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+527	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ReferenceColumn<T>	ReferenceColumn	保留	ReferenceColumn<T>	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+528	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraph	RenderGraph	保留	RenderGraph	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+529	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraph.PassAccessHead	PassAccessHead	保留	RenderGraph.PassAccessHead	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+530	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler	RenderGraphCompiler	保留	RenderGraphCompiler	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+531	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.AccessHistory	AccessHistory	保留	RenderGraphCompiler.AccessHistory	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+532	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.CommandUnitTaskMetrics	CommandUnitTaskMetrics	删除	—	CPU record task 与 command unit 是 CommandBatch 之上的重复调度层；batch 直接持 RuntimeCmd。
+533	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.ContentMask	ContentMask	保留	RenderGraphCompiler.ContentMask	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+534	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.PassBarrierChain	PassBarrierChain	保留	RenderGraphCompiler.PassBarrierChain	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+535	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.PassBarrierEntry	PassBarrierEntry	保留	RenderGraphCompiler.PassBarrierEntry	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+536	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.PassBarrierTable	PassBarrierTable	保留	RenderGraphCompiler.PassBarrierTable	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+537	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.PassPredecessorTable	PassPredecessorTable	保留	RenderGraphCompiler.PassPredecessorTable	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+538	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.ProducerIndex	ProducerIndex	保留	RenderGraphCompiler.ProducerIndex	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+539	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.ResourceQueueHistory	ResourceQueueHistory	保留	RenderGraphCompiler.ResourceQueueHistory	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+540	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.TextureBarrierTracker	TextureBarrierTracker	保留	RenderGraphCompiler.TextureBarrierTracker	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+541	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.TextureCell	TextureCell	保留	RenderGraphCompiler.TextureCell	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+542	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.TextureCellEnumerable	TextureCellEnumerable	保留	RenderGraphCompiler.TextureCellEnumerable	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+543	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphCompiler.TextureCellEnumerable.Enumerator	Enumerator	保留	RenderGraphCompiler.TextureCellEnumerable.Enumerator	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+544	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderGraphExecutionException	RenderGraphExecutionException	保留	RenderGraphExecutionException	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+545	SomeEngine.RenderGraph	SomeEngine.RenderGraph.RenderingExtent	RenderingExtent	改名	Extent2D	Vulkan 已有精确 Extent2D 结构。
+546	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ResourceAcquisitionCpuTimings	ResourceAcquisitionCpuTimings	保留	ResourceAcquisitionCpuTimings	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+547	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ResourcePlacementRow	ResourcePlacementRow	删除	—	placement 只需 heap index+offset 两列；独立 Row 与 PhysicalPlacement 都删除。
+548	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ShaderArgumentKind	ShaderArgumentKind	删除	—	descriptor binding 类型已经区分资源；ShaderArgumentKind 是重复判别器。
+549	SomeEngine.RenderGraph	SomeEngine.RenderGraph.ShaderArgumentRow	ShaderArgumentRow	删除	—	query/bindless/shader argument 直接存于 PassData 的 typed collections；无额外 Row 类型。
+550	SomeEngine.RenderGraph	SomeEngine.RenderGraph.StencilAttachmentDeclaration	StencilAttachmentDeclaration	删除	—	attachment 由 Unity 精确方法 SetRenderAttachment/SetRenderAttachmentDepth 声明，不再造参数 wrapper。
+551	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureAccess	TextureAccess	删除	—	access wrapper 类型退出；builder 直接接收 typed handle + Unity AccessFlags。
+552	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureBindlessAccess	TextureBindlessAccess	删除	—	access wrapper 类型退出；builder 直接接收 typed handle + Unity AccessFlags。
+553	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureImport	TextureImport	合并	ResourceUnversionedData	import 数据并入标准 ResourceUnversionedData；Buffer/Texture 只通过 typed handle 区分。
+554	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureRow	TextureRow	删除	—	resource/view canonical storage 直接复用 Desc + typed handle；不再为同一事实建立 Row 影子。
+555	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureTransitionRow	TextureTransitionRow	合并	TextureBarrier	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+556	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureUnorderedAccessRow	TextureUnorderedAccessRow	合并	TextureBarrier	RG 编译结果直接生成标准 flat barrier，删除 RowKind/Payload/variant rows。
+557	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureUse	TextureUse	合并	AccessFlags	Unity AccessFlags 已包含 Read/Write/Discard/WriteAll；不再维护 Use/PriorContents/Coverage 三套枚举。
+558	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureViewAccess	TextureViewAccess	删除	—	access wrapper 类型退出；builder 直接接收 typed handle + Unity AccessFlags。
+559	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TextureViewRow	TextureViewRow	删除	—	resource/view canonical storage 直接复用 Desc + typed handle；不再为同一事实建立 Row 影子。
+560	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TopLevelAccelerationStructureInputsAccess	TopLevelAccelerationStructureInputsAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+561	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransientPlacementCompiler	TransientPlacementCompiler	保留	TransientPlacementCompiler	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+562	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransientPlacementCompiler.PlacementCandidate	PlacementCandidate	保留	TransientPlacementCompiler.PlacementCandidate	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+563	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransientPlacementCompiler.PlacementResourceRow	PlacementResourceRow	删除	—	placement compiler 的聚合 row 只是循环临时值，字段并入现有 workspace。
+564	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransientPlacementCompiler.ProfileKey	ProfileKey	保留	TransientPlacementCompiler.ProfileKey	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+565	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransientPlacementCompiler.ResourceOccurrenceIndex	ResourceOccurrenceIndex	保留	TransientPlacementCompiler.ResourceOccurrenceIndex	Render Graph/编译算法中有独立职责，且名称是 Unity/RPS 或普通算法术语。
+566	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransientPlacementCompiler.ResourceOccurrenceRow	ResourceOccurrenceRow	删除	—	ResourceOccurrenceIndex 已经是唯一索引；其 storage row 内联。
+567	SomeEngine.RenderGraph	SomeEngine.RenderGraph.TransitionOrigin	TransitionOrigin	删除	—	BarrierRowKind 与 flat barrier 类型重复；TransitionOrigin 只需 diagnostics bit，不是领域 enum。
+568	SomeEngine.RenderGraph	SomeEngine.RenderGraph.UpdateAccelerationStructureBuildAccess	UpdateAccelerationStructureBuildAccess	删除	—	RG ray-tracing access class hierarchy复制了 RHI build geometry；builder 直接声明 handles/AccessFlags。
+569	SomeEngine.RenderGraph	SomeEngine.RenderGraph.UploadBufferData	UploadBufferData	删除	—	byte[]/ReadOnlyMemory<byte> 在 ImportBuffer 边界直接转移或复制；不再创建一次性 owner wrapper。
+570	SomeEngine.RenderGraph	SomeEngine.RenderGraph.WriteCoverage	WriteCoverage	合并	AccessFlags	Unity AccessFlags 已包含 Read/Write/Discard/WriteAll；不再维护 Use/PriorContents/Coverage 三套枚举。
+571	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphDiagnostics	RenderGraphDiagnostics	保留	RenderGraphDiagnostics	detached diagnostics projection 与 formatter/query 有独立职责。
+572	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot	RenderGraphSnapshot	保留	RenderGraphSnapshot	detached diagnostics projection 与 formatter/query 有独立职责。
+573	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.AccessRow	AccessRow	改名	RenderGraphSnapshot.Access	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+574	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.AliasingBarrierRow	AliasingBarrierRow	合并	RenderGraphSnapshot.Barrier	diagnostics barrier subclass 继承树合为一个 flat Barrier projection。
+575	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.BarrierRow	BarrierRow	合并	RenderGraphSnapshot.Barrier	diagnostics barrier subclass 继承树合为一个 flat Barrier projection。
+576	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.BatchRow	BatchRow	改名	RenderGraphSnapshot.Batch	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+577	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.BufferTransitionBarrierRow	BufferTransitionBarrierRow	合并	RenderGraphSnapshot.Barrier	diagnostics barrier subclass 继承树合为一个 flat Barrier projection。
+578	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.BufferUnorderedAccessBarrierRow	BufferUnorderedAccessBarrierRow	合并	RenderGraphSnapshot.Barrier	diagnostics barrier subclass 继承树合为一个 flat Barrier projection。
+579	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.PassRow	PassRow	改名	RenderGraphSnapshot.Pass	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+580	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.QueuePositionRow	QueuePositionRow	改名	RenderGraphSnapshot.Fence	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+581	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.ResourceRow	ResourceRow	改名	RenderGraphSnapshot.Resource	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+582	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.TaskRow	TaskRow	改名	RenderGraphSnapshot.Task	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+583	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.TextureTransitionBarrierRow	TextureTransitionBarrierRow	合并	RenderGraphSnapshot.Barrier	diagnostics barrier subclass 继承树合为一个 flat Barrier projection。
+584	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.TextureUnorderedAccessBarrierRow	TextureUnorderedAccessBarrierRow	合并	RenderGraphSnapshot.Barrier	diagnostics barrier subclass 继承树合为一个 flat Barrier projection。
+585	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.TimingRow	TimingRow	改名	RenderGraphSnapshot.Timing	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+586	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshot.UnitRow	UnitRow	改名	RenderGraphSnapshot.Command	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+587	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshotDiff	RenderGraphSnapshotDiff	保留	RenderGraphSnapshotDiff	detached diagnostics projection 与 formatter/query 有独立职责。
+588	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshotDot	RenderGraphSnapshotDot	保留	RenderGraphSnapshotDot	detached diagnostics projection 与 formatter/query 有独立职责。
+589	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshotHtml	RenderGraphSnapshotHtml	保留	RenderGraphSnapshotHtml	detached diagnostics projection 与 formatter/query 有独立职责。
+590	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshotJson	RenderGraphSnapshotJson	保留	RenderGraphSnapshotJson	detached diagnostics projection 与 formatter/query 有独立职责。
+591	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.RenderGraphSnapshotQuery	RenderGraphSnapshotQuery	保留	RenderGraphSnapshotQuery	detached diagnostics projection 与 formatter/query 有独立职责。
+592	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.SnapshotClockDomain	SnapshotClockDomain	改名	ClockDomain	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+593	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.SnapshotMaterializer	SnapshotMaterializer	删除	—	materialization 是 RenderGraphDiagnostics 的实现函数，不形成额外 service 层。
+594	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.SnapshotTimeUnit	SnapshotTimeUnit	改名	TimeUnit	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+595	SomeEngine.RenderGraph.Diagnostics	SomeEngine.RenderGraph.Diagnostics.SnapshotTransitionOrigin	SnapshotTransitionOrigin	改名	TransitionOrigin	snapshot 中的 Row 只是在暴露存储布局；改为 detached domain record 名。
+596	SomeEngine.Generators	SomeEngine.Generators.RenderGraphParameterGenerator	RenderGraphParameterGenerator	删除	—	Unity 式 RenderGraphBuilder/PassData 取代自造 parameter source-generator ABI，生成器整条删除。
+597	SomeEngine.Generators	SomeEngine.Generators.RenderGraphParameterGenerator.ParameterFieldKind	ParameterFieldKind	删除	—	Unity 式 RenderGraphBuilder/PassData 取代自造 parameter source-generator ABI，生成器整条删除。
+598	SomeEngine.Generators	SomeEngine.Generators.RenderGraphParameterGenerator.ParameterMember	ParameterMember	删除	—	Unity 式 RenderGraphBuilder/PassData 取代自造 parameter source-generator ABI，生成器整条删除。

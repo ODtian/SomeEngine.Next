@@ -7,7 +7,7 @@
 ## 本轮已完成
 
 - `SomeEngine.Core`
-- `SomeEngine.Assets`
+- `SomeEngine.Assets` as one-type assets: `Texture`, `Mesh`, `Shader`, `Material`, `MaterialInstance`, and `ClusterShaders` are simultaneously the authoritative `[BinaryContract]` roots, authoring values, and the unique values behind `AssetLoader` strong handles. Non-generic `[Asset(".suffix")]` source-generates closed `AssetType<T>` operations; `Load<T>` returns the canonical `AssetHandle<T>` before readiness, `WaitAsync` observes the shared operation, `Read` grants a scoped read, and `ReloadAsync` disposes the old backing before opening a new publication behind the same stable handle. ECS stores `AssetHandle<T>`, never `T` or a loader-local integer token. Closed generic resident slots remove runtime asset-interface/`Type` dispatch. Dependencies are strong lifetime pins released only after parent cleanup. There is no `*AssetData`, `IAssetData`, runtime wrapper, parallel IO facade, provider family, or compatibility alias. `BinaryDocument<T>` owns generic chunk IO; third-party `IAssetStorage` implementations supply immutable publication ranges. Exact TypeId/fingerprint/epoch checks finish before decode or output, and probing/fallback/migration remain absent.
 - `SomeEngine.ECS`
 - `SomeEngine.ECS.Systems`
 - `SomeEngine.ECS.Serialization`
@@ -17,10 +17,10 @@
 - `SomeEngine.Graphics.Direct3D12` as the Windows native backend
 - `SomeEngine.Job`
 - `SomeEngine.Job.Dots`
-- `SomeEngine.Render` as the asset/material projection side of [[Render-Boundaries|Render Domain]]
-- `SomeEngine.Render.Cluster` as backend-free [[Render-Boundaries|Cluster Renderer]] domain/model
+- `SomeEngine.Render` as the backend-free render domain and [[Render-Boundaries|RenderWorld ECS]] extraction/component boundary; it consumes `SomeEngine.Assets.Schema.Mesh`, `Texture`, `Shader`, and `Material` and declares no second asset classes with those names
+- `SomeEngine.Render.Cluster` as the backend-neutral [[Render-Boundaries|Cluster Renderer]] residency owner and shared Render-instance layout/prepare contributor; product preparation resolves ECS `AssetHandle<Mesh>` only through the owning `AssetLoader`, transfers the scoped read to the epoch, and holds no independent mesh mmap/source backing. `ClusterShaders` resolves all shader dependencies through the same generic loader route; Cluster pipeline construction likewise accepts shader handles rather than raw retained `Shader` objects
 - `SomeEngine.RenderGraph` as the immediate render-graph compiler and execution layer
-- `SomeEngine.Generators`, `SomeEngine.AssetCook`, `SomeEngine.RenderGraph.Sample`, the `SomeEngine.Graphics.Benchmarks` executable test host, and harness projects as build-support/evidence code, not runtime product assemblies
+- `SomeEngine.Assets.Importers`, `SomeEngine.Generators`, `SomeEngine.AssetCook`, `SomeEngine.RenderGraph.Sample`, the `SomeEngine.Graphics.Benchmarks` executable test host, and harness projects as build-support/evidence code, not runtime product assemblies
 
 ## 本轮未完成
 
@@ -29,8 +29,8 @@
 ## 不属于本轮
 
 - the superseded `SomeEngine.Rhi*` legacy RHI projects and old-repository RHI/RenderGraph implementations; they remain migration evidence, not active product assemblies
-- renderer execution beyond the accepted Graphics/RenderGraph core
-- Cluster execution
+- renderer execution beyond the accepted resource-owner/frame-coordination boundary, including shader/PSO assembly, descriptor binding, and RenderGraph command recording
+- Cluster execution, including traversal/culling dispatch, material shading, debug visualization, and presentation; the accepted Cluster boundary stops at validated residency, RenderWorld preparation, same-epoch bindings, and completion-gated physical-resource ownership
 - Runtime as a first-round product boundary; Runtime source may remain as reference material
 - Editor renderer integration
 - ImGui/editor window integration; backend-neutral swapchain/present contracts and the native D3D12 implementation belong to the accepted Graphics boundary

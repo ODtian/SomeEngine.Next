@@ -1,6 +1,12 @@
-# Harness Definition
+# Legacy Harness Definition
 
-Harness 是**强制自动门禁**。
+> 状态：已停用。本文余下内容仅保存旧设计背景，不再定义默认工作流或完成门禁。
+
+Harness 目前只保留为独立、显式 opt-in 的 .NET 检查集合。默认 `SomeEngine.slnx` 和 `just` 不包含这些检查；只有明确运行 `SomeEngine.Harness.slnx` 或 `just harness-test` 才会执行。旧 PowerShell runner、hard/warning bucket、run-id 和自动编排已经删除。
+
+## Retired design reference
+
+以下内容描述已经退役的 harness 设计，不具有现行规范效力。
 
 如果一条规则依赖 AI agent 记忆、解读或自报合规，它不是 harness——可能是 guidance、review 或 design policy，但不构成 grill 检查。
 
@@ -52,7 +58,7 @@ Quality analyzer opt-out, suppression, and analyzer-input removal checks use the
 
 Declared external source/local-package consumer checks also use that declaration surface.
 
-Accepted Assets schema wiring is read from the same declaration surface, so schema includes cannot disappear from the main project file and avoid the first-round schema contract check. The same surface rejects `FlatSharpSchema Remove` entries that would remove accepted schema items.
+Accepted Assets schema wiring is authoritative C# `[Asset(".suffix")]` plus `[BinaryContract(BinaryCompatibility.ExactSchema)]` on the same concrete class. The declaration scan requires the six built-in single asset types and rejects `*AssetData`, `IAssetData`, duplicate Render/Cluster asset classes, product `.fbs` files, and FlatSharp/FlatBuffers wiring.
 
 Product/domain boundary source checks include text contract files under accepted product roots, not only `.cs`: schema, asset, shader, material, and YAML/JSON-style contract files are part of the same first-round boundary scan. Extension matching is case-insensitive, so uppercase or mixed-case contract file extensions cannot avoid the scan.
 
