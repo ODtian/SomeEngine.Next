@@ -1,12 +1,13 @@
 using SomeEngine.Assets;
-using SomeEngine.Render.Assets;
+using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 
 namespace SomeEngine.Render.Components;
 
 public struct MeshInstance : IComponent
 {
-    public Handle<Mesh> Mesh;
+    public AssetHandle<Mesh> Mesh;
     public float BoundsExpansion;
 }
 

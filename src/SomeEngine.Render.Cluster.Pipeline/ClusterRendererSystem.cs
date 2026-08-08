@@ -1,0 +1,804 @@
+using System.Buffers.Binary;
+using System.Numerics;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
+using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Graphics;
+using SomeEngine.Render.Components;
+using SomeEngine.Render.Instances;
+using SomeEngine.Render.Systems;
+using SomeEngine.RenderGraph;
+using Buffer = SomeEngine.Graphics.Buffer;
+
+namespace SomeEngine.Render.Cluster.Pipeline;
+
+/// <summary>
+/// Complete Cluster frame consumer: hierarchy traversal, two-phase visibility, raster/deform
+/// binning, cached deformation, software and hardware visibility raster, HiZ, material/pixel
+/// binning, lighting, motion, temporal resolve, tone mapping, and presentation.
+/// </summary>
+public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemContext>
+{
+    private const int ReadbackGenerationCount = 2;
+    private static readonly TimeSpan ReadbackRetirementTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
+    private readonly AssetLoader _assets;
+    private readonly ClusterRenderResources _resources;
+    private readonly IRenderInstanceBatchSource<RenderInstanceSingleGroup> _instances;
+    private readonly RenderInstancePropertyLayout _instanceLayout;
+    private readonly ClusterMaterialTable _materialTable;
+    private readonly AssetHandle<ClusterShaders> _configuration;
+    private readonly ClusterRenderTargetSource _targets;
+    private readonly ClusterPipelineOptions _options;
+    private QueryHandle _viewQuery;
+    private QueryHandle _directionalQuery;
+    private QueryHandle _pointQuery;
+    private QueryHandle _spotQuery;
+    private ClusterShaderLibrary? _shaders;
+    private ClusterMaterialRuntime? _materials;
+    private ClusterRenderHistory? _history;
+    private IndirectCommandLayout? _dispatchIndirectLayout;
+    private IndirectCommandLayout? _drawIndirectLayout;
+    private readonly Buffer?[] _pageFaultReadbacks = new Buffer?[ReadbackGenerationCount];
+    private byte[] _pageFaultReadbackBytes = [];
+    private readonly ClusterEpochId[] _pageFaultReadbackEpochs =
+        new ClusterEpochId[ReadbackGenerationCount];
+    private readonly bool[] _pageFaultReadbackPending = new bool[ReadbackGenerationCount];
+    private readonly Buffer?[] _diagnosticsReadbacks = new Buffer?[ReadbackGenerationCount];
+    private byte[] _diagnosticsReadbackBytes = [];
+    private readonly ulong[] _diagnosticsReadbackFrames = new ulong[ReadbackGenerationCount];
+    private readonly bool[] _diagnosticsReadbackPending = new bool[ReadbackGenerationCount];
+    private readonly QueueCompletion[][] _readbackFences = [[], []];
+    private readonly ulong[] _readbackSequences = new ulong[ReadbackGenerationCount];
+    private readonly Buffer?[] _lightBuffers = new Buffer?[ReadbackGenerationCount];
+    private readonly int[] _lightBufferCapacities = new int[ReadbackGenerationCount];
+    private readonly List<ClusterGpuLight> _gpuLights = [];
+    private readonly ViewCollector _viewCollector = new();
+    private readonly LightCollector _lightCollector = new();
+    private Buffer? _lightCountsBuffer;
+    private Buffer? _lightGridBuffer;
+    private Buffer? _lightIndicesBuffer;
+    private Buffer? _lightGridUniformsBuffer;
+    private int _lightStructureWidth;
+    private int _lightStructureHeight;
+    private int _lightStructureDirectionalCount = -1;
+    private int _lightStructurePointCount = -1;
+    private int _lightStructureSpotCount = -1;
+    private ulong _diagnosticsSubmittedFrame;
+    private ulong _nextReadbackSequence;
+    private int _readbackWriteGeneration = -1;
+    private int _preferredReadbackGeneration;
+    private ClusterFrameDiagnostics? _latestFrameDiagnostics;
+    private Format _outputFormat;
+    private ClusterEpochId _pendingReadbackEpoch;
+    private ulong _pendingReplayGeneration;
+    private bool _pendingReplay;
+    private bool _hasPendingFrame;
+    private bool _created;
+
+    public ClusterRendererSystem(
+        IGraphicsBackend backend,
+        Device device,
+        AssetLoader assets,
+        ClusterRenderResources resources,
+        IRenderInstanceBatchSource<RenderInstanceSingleGroup> instances,
+        RenderInstancePropertyLayout instanceLayout,
+        ClusterMaterialTable materialTable,
+        AssetHandle<ClusterShaders> configuration,
+        ClusterRenderTargetSource targets,
+        ClusterPipelineOptions? options = null)
+    {
+        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
+        _device = device ?? throw new ArgumentNullException(nameof(device));
+        _assets = assets ?? throw new ArgumentNullException(nameof(assets));
+        _resources = resources ?? throw new ArgumentNullException(nameof(resources));
+        _instances = instances ?? throw new ArgumentNullException(nameof(instances));
+        _instanceLayout = instanceLayout ?? throw new ArgumentNullException(nameof(instanceLayout));
+        _materialTable = materialTable ?? throw new ArgumentNullException(nameof(materialTable));
+        if (!configuration.IsValid)
+            throw new ArgumentException("The Cluster render configuration must be valid.", nameof(configuration));
+        _configuration = configuration;
+        _targets = targets ?? throw new ArgumentNullException(nameof(targets));
+        _options = options ?? new ClusterPipelineOptions();
+    }
+
+    public void OnCreate(ref RenderFrameSystemContext context)
+    {
+        if (_created)
+            throw new InvalidOperationException("The full Cluster renderer is already created.");
+        _options.Validate();
+        if (_configuration.LoadState != AssetLoadState.Ready)
+            throw new InvalidOperationException("The Cluster render configuration is not ready.");
+
+        QueryHandle view = default;
+        QueryHandle directional = default;
+        QueryHandle point = default;
+        QueryHandle spot = default;
+        try
+        {
+            view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
+            directional = context.World.Query(
+                new QueryDefinitionBuilder().Read<RenderDirectionalLight>());
+            point = context.World.Query(new QueryDefinitionBuilder().Read<RenderPointLight>());
+            spot = context.World.Query(new QueryDefinitionBuilder().Read<RenderSpotLight>());
+            _viewQuery = view;
+            _directionalQuery = directional;
+            _pointQuery = point;
+            _spotQuery = spot;
+            _created = true;
+        }
+        catch
+        {
+            ReleaseIfValid(context.World, spot);
+            ReleaseIfValid(context.World, point);
+            ReleaseIfValid(context.World, directional);
+            ReleaseIfValid(context.World, view);
+            throw;
+        }
+    }
+
+    internal int AdmitFrameResources()
+    {
+        if (_hasPendingFrame)
+            throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
+        if (_readbackWriteGeneration >= 0)
+            return 1;
+        _readbackWriteGeneration =
+            AcquireReadbackGeneration(out int availableGenerationCount);
+        return availableGenerationCount;
+    }
+
+    internal bool TryAdmitFrameResources(
+        out int availableGenerationCount,
+        out QueueCompletion[] retirementFences)
+    {
+        if (_hasPendingFrame)
+            throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
+        if (_readbackWriteGeneration >= 0)
+        {
+            availableGenerationCount = 1;
+            retirementFences = [];
+            return true;
+        }
+        if (!TryAcquireReadbackGeneration(
+                out int generation,
+                out availableGenerationCount,
+                out retirementFences))
+        {
+            return false;
+        }
+        _readbackWriteGeneration = generation;
+        return true;
+    }
+
+    public void OnUpdate(ref RenderFrameSystemContext context)
+    {
+        if (!_created)
+            throw new InvalidOperationException("The full Cluster renderer was not created.");
+        if (_hasPendingFrame)
+            throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
+        ClusterRenderTarget target = _targets.GetRequired();
+        EnsureRuntime(in target);
+        _resources.PumpStreaming();
+
+        RenderInstanceBatches<RenderInstanceSingleGroup>? current = _instances.Current;
+        if (current is null || current.GroupCount != 1)
+        {
+            throw new InvalidOperationException(
+                "The full Cluster renderer requires one unclassified instance batch.");
+        }
+        RenderInstanceBatch batch = current.Groups[0].Batch;
+        ClusterMaterialSnapshot materialSnapshot = _materialTable.Current;
+        if (materialSnapshot.MaterialCount == 0)
+            throw new InvalidOperationException("The Cluster scene has no published materials.");
+        _materials!.Synchronize(materialSnapshot);
+
+        ViewCollector viewCollector = _viewCollector;
+        LightCollector lights = _lightCollector;
+        viewCollector.Clear();
+        lights.Clear();
+        try
+        {
+            context.World.ExecuteQuery(
+                _viewQuery,
+                ref viewCollector,
+                static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
+            if (viewCollector.Views.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"The default Cluster frame requires exactly one render view; found {viewCollector.Views.Count}.");
+            }
+            RenderView view = viewCollector.Views[0];
+            if (view.ViewportWidth != target.Width || view.ViewportHeight != target.Height)
+            {
+                throw new InvalidOperationException(
+                    "The render-view viewport and acquired presentation target have different dimensions.");
+            }
+
+            context.World.ExecuteQuery(
+                _directionalQuery,
+                ref lights,
+                static (QueryCursor cursor, ref LightCollector state) => state.CollectDirectional(cursor));
+            context.World.ExecuteQuery(
+                _pointQuery,
+                ref lights,
+                static (QueryCursor cursor, ref LightCollector state) => state.CollectPoint(cursor));
+            context.World.ExecuteQuery(
+                _spotQuery,
+                ref lights,
+                static (QueryCursor cursor, ref LightCollector state) => state.CollectSpot(cursor));
+
+            using ClusterRenderBinding binding = _resources.Use(
+                context.ActiveFrame,
+                batch,
+                _instanceLayout);
+            EnsurePageFaultReadback(binding.PageFaultCapacity);
+            EnsureDiagnosticsReadback();
+            if (_readbackWriteGeneration < 0)
+                _readbackWriteGeneration = AcquireReadbackGeneration();
+            bool replayRequested = _resources.TryGetFaultReplayRequest(out ulong replayGeneration);
+            ClusterViewUniforms viewUniforms = ClusterViewUniforms.Create(
+                in view,
+                _options,
+                binding.DispatchExtent,
+                binding.PageFaultCapacity);
+            bool historyPrepared = false;
+            try
+            {
+                bool hasHistory = _history!.Prepare(
+                    target.Width,
+                    target.Height,
+                    in view);
+                historyPrepared = true;
+                if (hasHistory)
+                {
+                    Matrix4x4 previousView = _history.PreviousView;
+                    Matrix4x4 previousProjection = _history.PreviousProjection;
+                    viewUniforms.PrevViewProj = previousView * previousProjection;
+                    viewUniforms.HasPrevHistory = 1;
+                    viewUniforms.HiZMipCount = checked((uint)_history.HiZMipCount);
+                    viewUniforms.HiZInvSize = new Vector2(
+                        1.0f / target.Width,
+                        1.0f / target.Height);
+                    viewUniforms.PrevView = previousView;
+                    viewUniforms.PrevP00 = previousProjection.M11;
+                    viewUniforms.PrevP11 = previousProjection.M22;
+                }
+
+                _pendingReadbackEpoch = binding.ReadbackEpoch;
+                _pendingReplay = replayRequested;
+                _pendingReplayGeneration = replayGeneration;
+                _hasPendingFrame = true;
+
+                global::SomeEngine.RenderGraph.RenderGraph graph = context.Graph;
+                RecordFrame(
+                    ref graph,
+                    in target,
+                    in binding,
+                    materialSnapshot,
+                    in view,
+                    in viewUniforms,
+                    lights,
+                    hasHistory);
+            }
+            catch
+            {
+                if (historyPrepared)
+                    _history!.Discard();
+                ClearPendingFrame();
+                throw;
+            }
+        }
+        finally
+        {
+            viewCollector.Clear();
+            lights.Clear();
+        }
+    }
+
+    /// <summary>Publishes temporal state only after the authored graph submitted successfully.</summary>
+    public void Commit(ReadOnlySpan<QueueCompletion> completions)
+    {
+        if (!_hasPendingFrame)
+            throw new InvalidOperationException("No authored Cluster frame is waiting for commit.");
+        int generation = RequireReadbackWriteGeneration();
+        QueueCompletion[] fences = completions.ToArray();
+        _history!.Commit(fences);
+        _readbackFences[generation] = fences;
+        _readbackSequences[generation] = checked(++_nextReadbackSequence);
+        _pageFaultReadbackEpochs[generation] = _pendingReadbackEpoch;
+        _pageFaultReadbackPending[generation] = true;
+        if (_options.EnableDiagnosticsReadback)
+        {
+            _diagnosticsSubmittedFrame = checked(_diagnosticsSubmittedFrame + 1);
+            _diagnosticsReadbackFrames[generation] = _diagnosticsSubmittedFrame;
+            _diagnosticsReadbackPending[generation] = true;
+        }
+        _preferredReadbackGeneration = 1 - generation;
+        if (_pendingReplay)
+            _resources.AcknowledgeFaultReplay(_pendingReplayGeneration);
+        ClearPendingFrame();
+    }
+
+    /// <summary>Rejects authoring state when graph compilation, recording, or submission fails.</summary>
+    public void Discard()
+    {
+        if (!_hasPendingFrame) return;
+        _history!.Discard();
+        ClearPendingFrame();
+    }
+
+    private void ClearPendingFrame()
+    {
+        _pendingReadbackEpoch = default;
+        _pendingReplayGeneration = 0;
+        _pendingReplay = false;
+        _readbackWriteGeneration = -1;
+        _hasPendingFrame = false;
+    }
+
+    public void OnDestroy(ref RenderFrameSystemContext context)
+    {
+        if (!_created)
+            return;
+        List<Exception>? failures = null;
+        Release(ref _spotQuery, context.World, ref failures);
+        Release(ref _pointQuery, context.World, ref failures);
+        Release(ref _directionalQuery, context.World, ref failures);
+        Release(ref _viewQuery, context.World, ref failures);
+        Dispose(ref _materials, ref failures);
+        Dispose(ref _shaders, ref failures);
+        Dispose(ref _history, ref failures);
+        Dispose(ref _dispatchIndirectLayout, ref failures);
+        Dispose(ref _drawIndirectLayout, ref failures);
+        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
+        {
+            if (_pageFaultReadbacks[generation] is { } pageFaultReadback)
+            {
+                try { pageFaultReadback.Dispose(); }
+                catch (Exception failure) { (failures ??= []).Add(failure); }
+            }
+            _pageFaultReadbacks[generation] = null;
+            _pageFaultReadbackEpochs[generation] = default;
+            _pageFaultReadbackPending[generation] = false;
+
+            if (_diagnosticsReadbacks[generation] is { } diagnosticsReadback)
+            {
+                try { diagnosticsReadback.Dispose(); }
+                catch (Exception failure) { (failures ??= []).Add(failure); }
+            }
+            _diagnosticsReadbacks[generation] = null;
+            _diagnosticsReadbackFrames[generation] = 0;
+            _diagnosticsReadbackPending[generation] = false;
+            _readbackFences[generation] = [];
+            _readbackSequences[generation] = 0;
+
+            if (_lightBuffers[generation] is { } lightBuffer)
+            {
+                try { lightBuffer.Dispose(); }
+                catch (Exception failure) { (failures ??= []).Add(failure); }
+            }
+            _lightBuffers[generation] = null;
+            _lightBufferCapacities[generation] = 0;
+        }
+        Dispose(ref _lightCountsBuffer, ref failures);
+        Dispose(ref _lightGridBuffer, ref failures);
+        Dispose(ref _lightIndicesBuffer, ref failures);
+        Dispose(ref _lightGridUniformsBuffer, ref failures);
+        _gpuLights.Clear();
+        _lightStructureWidth = 0;
+        _lightStructureHeight = 0;
+        _lightStructureDirectionalCount = -1;
+        _lightStructurePointCount = -1;
+        _lightStructureSpotCount = -1;
+        _pageFaultReadbackBytes = [];
+        _diagnosticsReadbackBytes = [];
+        _diagnosticsSubmittedFrame = 0;
+        _nextReadbackSequence = 0;
+        _readbackWriteGeneration = -1;
+        _preferredReadbackGeneration = 0;
+        _latestFrameDiagnostics = null;
+        ClearPendingFrame();
+        _created = false;
+        if (failures is not null)
+            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
+    }
+
+    private void EnsureRuntime(in ClusterRenderTarget target)
+    {
+        if (_shaders is not null)
+        {
+            if (_outputFormat != target.Format)
+            {
+                throw new InvalidOperationException(
+                    "The presentation format changed inside a live Cluster renderer epoch.");
+            }
+            return;
+        }
+
+        ClusterShaderLibrary? shaders = null;
+        ClusterMaterialRuntime? materials = null;
+        ClusterRenderHistory? history = null;
+        IndirectCommandLayout? dispatchIndirectLayout = null;
+        IndirectCommandLayout? drawIndirectLayout = null;
+        try
+        {
+            shaders = new ClusterShaderLibrary(
+                _backend,
+                _device,
+                _assets,
+                _configuration,
+                target.Format);
+            materials = new ClusterMaterialRuntime(_backend, _device, _assets, shaders);
+            history = new ClusterRenderHistory(_backend, _device);
+            IndirectArgumentDesc[] dispatchArguments =
+                [new(IndirectArgumentType.Dispatch)];
+            dispatchIndirectLayout = _backend.CreateIndirectCommandLayout(
+                _device,
+                new IndirectCommandLayoutDesc(
+                    dispatchArguments,
+                    ClusterIndirectAbi.DispatchStride,
+                    label: "Cluster dispatch indirect layout"));
+            IndirectArgumentDesc[] drawArguments =
+                [new(IndirectArgumentType.Draw)];
+            drawIndirectLayout = _backend.CreateIndirectCommandLayout(
+                _device,
+                new IndirectCommandLayoutDesc(
+                    drawArguments,
+                    ClusterIndirectAbi.DrawStride,
+                    label: "Cluster draw indirect layout"));
+            _shaders = shaders;
+            _materials = materials;
+            _history = history;
+            _dispatchIndirectLayout = dispatchIndirectLayout;
+            _drawIndirectLayout = drawIndirectLayout;
+            _outputFormat = target.Format;
+        }
+        catch
+        {
+            drawIndirectLayout?.Dispose();
+            dispatchIndirectLayout?.Dispose();
+            history?.Dispose();
+            materials?.Dispose();
+            shaders?.Dispose();
+            throw;
+        }
+    }
+
+    private void EnsurePageFaultReadback(int capacity)
+    {
+        int byteCount = checked(sizeof(uint) + capacity * sizeof(uint));
+        if (_pageFaultReadbacks[0] is not null)
+        {
+            if (_pageFaultReadbackBytes.Length != byteCount)
+            {
+                throw new InvalidOperationException(
+                    "The Cluster page-fault capacity changed inside a live renderer epoch.");
+            }
+            return;
+        }
+
+        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
+        {
+            _pageFaultReadbacks[generation] = _backend.CreateBuffer(
+                _device,
+                new BufferDesc(
+                    checked((ulong)byteCount),
+                    BufferUsages.CopyDestination,
+                    $"Cluster page-fault readback {generation}"),
+                MemoryType.Readback);
+        }
+        _pageFaultReadbackBytes = new byte[byteCount];
+    }
+
+    private int AcquireReadbackGeneration() =>
+        AcquireReadbackGeneration(out _);
+
+    private int AcquireReadbackGeneration(out int availableGenerationCount)
+    {
+        if (TryAcquireReadbackGeneration(
+                out int generation,
+                out availableGenerationCount,
+                out _))
+        {
+            return generation;
+        }
+
+        int preferred = _preferredReadbackGeneration;
+        int alternate = 1 - preferred;
+        int oldest = _readbackSequences[preferred] <= _readbackSequences[alternate]
+            ? preferred
+            : alternate;
+        if (!WaitForAll(_readbackFences[oldest], ReadbackRetirementTimeout))
+        {
+            throw new TimeoutException(
+                $"Cluster readback generation {oldest} did not retire within {ReadbackRetirementTimeout}.");
+        }
+        DrainCompletedReadbacks();
+        if (_pageFaultReadbackPending[oldest])
+            throw new InvalidOperationException("A completed Cluster readback generation was not reclaimed.");
+        availableGenerationCount =
+            (_pageFaultReadbackPending[0] ? 0 : 1) +
+            (_pageFaultReadbackPending[1] ? 0 : 1);
+        return oldest;
+    }
+
+    private bool TryAcquireReadbackGeneration(
+        out int generation,
+        out int availableGenerationCount,
+        out QueueCompletion[] retirementFences)
+    {
+        DrainCompletedReadbacks();
+        int preferred = _preferredReadbackGeneration;
+        int alternate = 1 - preferred;
+        bool preferredAvailable = !_pageFaultReadbackPending[preferred];
+        bool alternateAvailable = !_pageFaultReadbackPending[alternate];
+        availableGenerationCount =
+            (preferredAvailable ? 1 : 0) + (alternateAvailable ? 1 : 0);
+        if (preferredAvailable)
+        {
+            generation = preferred;
+            retirementFences = [];
+            return true;
+        }
+        if (alternateAvailable)
+        {
+            generation = alternate;
+            retirementFences = [];
+            return true;
+        }
+
+        int oldest = _readbackSequences[preferred] <= _readbackSequences[alternate]
+            ? preferred
+            : alternate;
+        generation = -1;
+        retirementFences = _readbackFences[oldest];
+        if (retirementFences.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "An unavailable Cluster readback generation has no retirement position.");
+        }
+        return false;
+    }
+
+    private int RequireReadbackWriteGeneration()
+    {
+        if ((uint)_readbackWriteGeneration >= ReadbackGenerationCount)
+        {
+            throw new InvalidOperationException(
+                "Cluster readback storage has no admitted write generation.");
+        }
+        return _readbackWriteGeneration;
+    }
+
+    private void DrainCompletedReadbacks()
+    {
+        while (TryGetOldestPendingReadback(out int generation))
+        {
+            QueueCompletion[] readiness = _readbackFences[generation];
+            if (readiness.Length != 0 && !WaitForAll(readiness, TimeSpan.Zero))
+                return;
+
+            Buffer pageFaultReadback =
+                _pageFaultReadbacks[generation] is { } value
+                    ? value
+                    : throw new InvalidOperationException(
+                        "Cluster page-fault readback ownership was lost.");
+            ClusterEpochId epoch = _pageFaultReadbackEpochs[generation];
+            if (!epoch.IsValid)
+                throw new InvalidOperationException("Cluster page-fault readback epoch was lost.");
+            ReadMappedBuffer(pageFaultReadback, _pageFaultReadbackBytes);
+            _resources.IngestPageFaultReadback(epoch, _pageFaultReadbackBytes);
+            _pageFaultReadbackEpochs[generation] = default;
+            _pageFaultReadbackPending[generation] = false;
+
+            if (_diagnosticsReadbackPending[generation])
+                DrainDiagnosticsReadback(generation);
+        }
+    }
+
+    private bool TryGetOldestPendingReadback(out int generation)
+    {
+        generation = -1;
+        ulong sequence = ulong.MaxValue;
+        for (int candidate = 0; candidate < ReadbackGenerationCount; candidate++)
+        {
+            if (!_pageFaultReadbackPending[candidate]
+                || _readbackSequences[candidate] >= sequence)
+            {
+                continue;
+            }
+            generation = candidate;
+            sequence = _readbackSequences[candidate];
+        }
+        return generation >= 0;
+    }
+
+    /// <summary>
+    /// Reads counters from the latest frame. The caller must have completed its GPU frame before
+    /// requesting CPU-visible diagnostics.
+    /// </summary>
+    public ClusterFrameDiagnostics CaptureFrameDiagnostics()
+    {
+        if (!_created || !_options.EnableDiagnosticsReadback)
+        {
+            throw new InvalidOperationException(
+                "Cluster frame diagnostics are not enabled for this renderer epoch.");
+        }
+        DrainCompletedReadbacks();
+        return _latestFrameDiagnostics ?? throw new InvalidOperationException(
+            "No completed Cluster frame diagnostics are available.");
+    }
+
+    private void EnsureDiagnosticsReadback()
+    {
+        if (!_options.EnableDiagnosticsReadback
+            || _diagnosticsReadbacks[0] is not null)
+            return;
+        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
+        {
+            _diagnosticsReadbacks[generation] = _backend.CreateBuffer(
+                _device,
+                new BufferDesc(
+                    DiagnosticsReadbackByteSize,
+                    BufferUsages.CopyDestination,
+                    $"Cluster frame diagnostics readback {generation}"),
+                MemoryType.Readback);
+        }
+        _diagnosticsReadbackBytes = new byte[DiagnosticsReadbackByteSize];
+    }
+
+    private void DrainDiagnosticsReadback(int generation)
+    {
+        if (!_diagnosticsReadbackPending[generation])
+            return;
+        Buffer diagnosticsReadback = _diagnosticsReadbacks[generation] is { } value
+            ? value
+            : throw new InvalidOperationException("Cluster diagnostics readback ownership was lost.");
+        ReadMappedBuffer(diagnosticsReadback, _diagnosticsReadbackBytes);
+        ReadOnlySpan<byte> bytes = _diagnosticsReadbackBytes;
+        _latestFrameDiagnostics = new ClusterFrameDiagnostics(
+            _diagnosticsReadbackFrames[generation],
+            ReadUInt32(bytes, CandidateCountReadbackOffset),
+            ReadUInt32(bytes, CandidateArgsReadbackOffset),
+            ReadUInt32(bytes, DrawArgsReadbackOffset + sizeof(uint)),
+            ReadUInt32(bytes, DrawArgsReadbackOffset + 2 * sizeof(uint)),
+            ReadUInt32(bytes, Phase2CandidateCountReadbackOffset),
+            ReadUInt32(bytes, Phase2CandidateArgsReadbackOffset),
+            ReadUInt32(bytes, Phase2DrawArgsReadbackOffset + sizeof(uint)),
+            ReadUInt32(bytes, Phase2DrawArgsReadbackOffset + 2 * sizeof(uint)),
+            ReadUInt32(bytes, RasterReserveReadbackOffset),
+            ReadUInt32(bytes, RasterReserveReadbackOffset + sizeof(uint)),
+            ReadUInt32(bytes, ShadeReserveReadbackOffset),
+            ReadUInt32(bytes, DeformReserveReadbackOffset),
+            ReadUInt32(bytes, CachedDeformClustersReadbackOffset),
+            ReadUInt32(bytes, CacheAllocationReadbackOffset),
+            _options.DeformCacheBytes,
+            ReadUInt32(bytes, SoftwareDebugReadbackOffset));
+        _diagnosticsReadbackFrames[generation] = 0;
+        _diagnosticsReadbackPending[generation] = false;
+    }
+
+    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>
+        BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, sizeof(uint)));
+
+    private void ReadMappedBuffer(Buffer source, Span<byte> destination)
+    {
+        BufferRange range = new(0, checked((ulong)destination.Length));
+        using MappedBuffer mapping = _backend.Map(source, MapType.Read, range);
+        mapping.Invalidate(range);
+        mapping.Bytes.CopyTo(destination);
+    }
+
+    private bool WaitForAll(ReadOnlySpan<QueueCompletion> completions, TimeSpan timeout)
+    {
+        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        if (timeout == TimeSpan.Zero)
+        {
+            foreach (ref readonly QueueCompletion completion in completions)
+            {
+                if (!_backend.IsComplete(completion))
+                    return false;
+            }
+            return true;
+        }
+
+        long started = Environment.TickCount64;
+        foreach (ref readonly QueueCompletion completion in completions)
+        {
+            TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
+                ? Timeout.InfiniteTimeSpan
+                : timeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+            if (remaining < TimeSpan.Zero)
+                remaining = TimeSpan.Zero;
+            if (_backend.WaitCpu(completion, remaining) != WaitStatus.Completed)
+                return false;
+        }
+        return true;
+    }
+
+    private IndirectCommandLayout RequireDispatchIndirectLayout() =>
+        _dispatchIndirectLayout ?? throw new InvalidOperationException(
+            "The Cluster dispatch indirect layout is unavailable.");
+
+    private IndirectCommandLayout RequireDrawIndirectLayout() =>
+        _drawIndirectLayout ?? throw new InvalidOperationException(
+            "The Cluster draw indirect layout is unavailable.");
+
+    private static void ReleaseIfValid(RenderWorld world, QueryHandle query)
+    {
+        if (query.IsValid)
+            world.ReleaseQuery(query);
+    }
+
+    private static void Release(
+        ref QueryHandle query,
+        RenderWorld world,
+        ref List<Exception>? failures)
+    {
+        if (!query.IsValid)
+            return;
+        try { world.ReleaseQuery(query); }
+        catch (Exception failure) { (failures ??= []).Add(failure); }
+        query = default;
+    }
+
+    private static void Dispose<T>(ref T? value, ref List<Exception>? failures)
+        where T : class, IDisposable
+    {
+        if (value is null)
+            return;
+        try { value.Dispose(); }
+        catch (Exception failure) { (failures ??= []).Add(failure); }
+        value = null;
+    }
+
+    private sealed class ViewCollector
+    {
+        internal List<RenderView> Views { get; } = [];
+
+        internal void Clear() => Views.Clear();
+
+        internal void Collect(QueryCursor cursor)
+        {
+            foreach (QueryRow row in cursor.Rows)
+                Views.Add(row.Read<RenderView>());
+        }
+    }
+
+    private sealed class LightCollector
+    {
+        internal List<RenderDirectionalLight> Directional { get; } = [];
+        internal List<RenderPointLight> Points { get; } = [];
+        internal List<RenderSpotLight> Spots { get; } = [];
+
+        internal void Clear()
+        {
+            Directional.Clear();
+            Points.Clear();
+            Spots.Clear();
+        }
+
+        internal void CollectDirectional(QueryCursor cursor)
+        {
+            foreach (QueryRow row in cursor.Rows)
+                Directional.Add(row.Read<RenderDirectionalLight>());
+        }
+
+        internal void CollectPoint(QueryCursor cursor)
+        {
+            foreach (QueryRow row in cursor.Rows)
+                Points.Add(row.Read<RenderPointLight>());
+        }
+
+        internal void CollectSpot(QueryCursor cursor)
+        {
+            foreach (QueryRow row in cursor.Rows)
+                Spots.Add(row.Read<RenderSpotLight>());
+        }
+    }
+}

@@ -104,9 +104,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
 
-        float4 instanceTint = getInstancePropertyFloat4(ctx.instanceID, 0, float4(1.0));
-        float4 tint = scalars.BaseColorTint * instanceTint;
-        float3 baseColor = albedoSample.rgb * tint.rgb;
+        float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float  roughness = clamp(armSample.x * scalars.Roughness, 0.0, 1.0);
         float  metallic  = clamp(armSample.y * scalars.MetallicFactor, 0.0, 1.0);
 

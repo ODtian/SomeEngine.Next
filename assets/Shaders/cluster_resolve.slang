@@ -4,7 +4,6 @@ struct ResolveUniforms
 {
     float4x4 ViewProj;
     float4x4 View;
-    uint PageTableSize;
     uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
@@ -72,10 +71,10 @@ void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 pos2 = FetchVertexPosition(PageHeap, pageOffset, posOffset, vStart, vi2, intBase);
 
     // Transform to world space
-    GpuTransform t = Instances[realInstanceID];
-    float3 wp0 = ApplyTransform(pos0, t);
-    float3 wp1 = ApplyTransform(pos1, t);
-    float3 wp2 = ApplyTransform(pos2, t);
+    RenderInstanceTransform t = GetCurrentInstanceTransform(realInstanceID);
+    float3 wp0 = TransformInstanceLocalPosition(pos0, t);
+    float3 wp1 = TransformInstanceLocalPosition(pos1, t);
+    float3 wp2 = TransformInstanceLocalPosition(pos2, t);
 
     // Compute face normal from world-space triangle
     float3 edge1 = wp1 - wp0;

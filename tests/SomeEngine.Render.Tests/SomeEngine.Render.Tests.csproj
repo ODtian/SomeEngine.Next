@@ -20,5 +20,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.Render\SomeEngine.Render.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Job\SomeEngine.Job.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Generators\SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

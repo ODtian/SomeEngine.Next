@@ -28,7 +28,7 @@ uint ShadeKey(DrawRequest req, uint localTri)
     uint packedMaterials = PageHeap.Load(clusterOffset + 48);
     uint packedRanges = PageHeap.Load(clusterOffset + 52);
     uint localMaterialIndex = LocalMaterial(packedMaterials, packedRanges, localTri);
-    uint slotOffset = GetInstanceSlotOffset(req.InstanceID);
+    uint slotOffset = GetClusterMaterialSlotOffset(req.InstanceID);
 
     return SlotBin(
         SlotBuffer,

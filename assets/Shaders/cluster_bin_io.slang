@@ -37,7 +37,7 @@ uint SlotBin(
     uint capacity,
     uint maxBins)
 {
-    uint slotOffset = GetInstanceSlotOffset(instanceID);
+    uint slotOffset = GetClusterMaterialSlotOffset(instanceID);
     return SlotBin(slots, slotOffset, 0u, field, capacity, maxBins);
 }
 

@@ -11,7 +11,6 @@ struct ShadeUniforms
     float4x4 PrevViewProj;
     float4x4 MotionViewProj;
     float4x4 PrevMotionViewProj;
-    uint PageTableSize;
     uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
@@ -83,8 +82,6 @@ RWTexture2D<float2> OutputMotionVectors;
 
 ByteAddressBuffer DeformCache;
 StructuredBuffer<uint> CacheOffsets;
-StructuredBuffer<GpuTransform> PreviousInstances;
-
 static const uint SHADE_CACHE_OFFSET_INVALID = 0xFFFFFFFDu;
 static const uint LIGHT_GRID_INVALID_CLUSTER = 0xFFFFFFFFu;
 
@@ -163,7 +160,7 @@ bool decodeTriangle(uint2 pixelCoord, out TriangleInfo tri)
 
 VertexEvalContext makeVertexEvalContext(
     TriangleInfo tri,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     uint isPreviousFrame,
     uint localVertIdx)
 {
@@ -186,7 +183,7 @@ VertexEvalContext makeVertexEvalContext(
 void evaluateTriangleVerticesWithTransform<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
     TriangleInfo tri,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     uint isPreviousFrame,
     out TVE.DeformedVertex v0,
     out TVE.DeformedVertex v1,
@@ -207,7 +204,7 @@ void evaluateTriangleVertices<TVE : IVertexEvaluate>(
     evaluateTriangleVerticesWithTransform(
         evaluator,
         tri,
-        Instances[tri.instanceID],
+        GetCurrentInstanceTransform(tri.instanceID),
         0,
         v0,
         v1,
@@ -224,7 +221,7 @@ void evaluatePreviousTriangleVertices<TVE : IVertexEvaluate>(
     evaluateTriangleVerticesWithTransform(
         evaluator,
         tri,
-        PreviousInstances[tri.instanceID],
+        GetPreviousInstanceTransform(tri.instanceID),
         1,
         v0,
         v1,

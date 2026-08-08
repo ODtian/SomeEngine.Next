@@ -54,9 +54,9 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
             v2);
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
         UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>();
-        float4 instanceTint = getInstancePropertyFloat4(ctx.instanceID, 0, float4(1.0));
-        float4 tint = scalars.BaseColorTint * instanceTint;
-        outputColor[ctx.pixelCoord] = float4(albedoSample.rgb * tint.rgb, 1.0);
+        outputColor[ctx.pixelCoord] = float4(
+            albedoSample.rgb * scalars.BaseColorTint.rgb,
+            1.0);
     }
 
     void evaluateDebug(

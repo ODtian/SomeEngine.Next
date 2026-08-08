@@ -2,24 +2,44 @@
   "asset_guid": "342033f9-b60c-57a1-89a0-84bd80c651e3",
   "source_guid": "18e6c2e7-f5c6-45da-8548-865f1ac95081",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "33f0da0d73793512b01d8fd589b2e0a282a3a8bdb07c658b9338f367991dd0f1",
+  "content_fingerprint": "732d3ab69a9cabacd75bde8cb2445f22f6eabc5e4d7d98babeb005f2ad401671",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_cull.slang",
-      "hash": "78a14fe66e66b753e5678fd3ebfabbb16b7e17c9166a17e39d75448b0eaf98ae"
+      "hash": "48783a0cfc974946cc0b1a5b51e46d6e84706569ad855bb23d674377bbfdf264"
+    },
+    {
+      "path": "assets/Shaders/cluster_instance_properties.slang",
+      "hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "2f1ac580b574b8f58413f488143ce9a52859c0f2126508f2ef41fd1fbdd6651d"
+      "hash": "630000735cfb610901de645ddbebb5993498434fa1e403ce1b30938788bc9bd8"
+    },
+    {
+      "path": "assets/Shaders/cluster_view.slang",
+      "hash": "8553e66ac2c9cc7fc56b1e8978f598fdddd72035e254aafbb336579f9121df23"
     },
     {
       "path": "assets/Shaders/common.slang",
-      "hash": "a40161bc79252d542bd62f09fe4a9f828e9c84a20b2ccc63609c9c49bbef37bd"
+      "hash": "a93b99723ef3481ca2f236ebef37c85b125e61b520a942c2112a610ef9a40baa"
     },
     {
-      "path": "assets/Shaders/generated/instance_header_layout.slang",
-      "hash": "2b3e33696675e1dae139a69ea3cf32b451c755889a0df862c6190d7a4125d98d"
+      "path": "assets/Shaders/generated/render_instance_layout.slang",
+      "hash": "cf8fa08c7f1b56d2cfe5e5419fcbf8664c8906c14123109c48d0064d6d65d738"
+    },
+    {
+      "path": "assets/Shaders/render_instance_properties.slang",
+      "hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
+    },
+    {
+      "path": "assets/Shaders/render_instance_transform.slang",
+      "hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
+    },
+    {
+      "path": "assets/Shaders/resource_effects.slang",
+      "hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     }
   ],
-  "importer_version": 15
+  "importer_version": 24
 }

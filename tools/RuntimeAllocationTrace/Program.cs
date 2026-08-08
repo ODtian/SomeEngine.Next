@@ -2,6 +2,7 @@ using System.Diagnostics.Tracing;
 using System.Text.Json;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.EventPipe;
+using Microsoft.Diagnostics.Tracing.Etlx;
 using SomeEngine.Runtime;
 
 const string ProviderName = "SomeEngine-RuntimeAllocationProbe";
@@ -31,6 +32,21 @@ if (string.Equals(args[0], "report", StringComparison.OrdinalIgnoreCase))
     return 0;
 }
 
+if (string.Equals(args[0], "alloc-stacks", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length < 2)
+    {
+        PrintUsage();
+        return 2;
+    }
+
+    int top = args.Length > 2 && int.TryParse(args[2], out int parsedTop)
+        ? parsedTop
+        : 80;
+    WriteAllocationStacks(args[1], top);
+    return 0;
+}
+
 PrintUsage();
 return 2;
 
@@ -39,6 +55,7 @@ static void PrintUsage()
     Console.Error.WriteLine("Usage:");
     Console.Error.WriteLine("  RuntimeAllocationTrace probe [frames]");
     Console.Error.WriteLine("  RuntimeAllocationTrace report <input.nettrace> <output.json>");
+    Console.Error.WriteLine("  RuntimeAllocationTrace alloc-stacks <input.nettrace> [top]");
 }
 
 static void RunProbe(int frames)
@@ -95,7 +112,6 @@ static long Consume(RuntimeStartupOptions options, int frame)
     value += options.DeviceValidation ? 11 : 0;
     value += options.DynamicScene ? 13 : 0;
     value += options.AsyncCompute ? 17 : 0;
-    value += options.ClusterDebug.HasValue ? (int)options.ClusterDebug.Value : 0;
     value += options.Profiler.EnableTracy ? 19 : 0;
     value += frame;
     return value;
@@ -201,6 +217,103 @@ static void WriteReport(string inputTracePath, string outputJsonPath)
     File.WriteAllText(outputJsonPath, JsonSerializer.Serialize(report, options));
 }
 
+static void WriteAllocationStacks(string inputTracePath, int top)
+{
+    if (top <= 0)
+    {
+        throw new ArgumentOutOfRangeException(nameof(top), "Top count must be positive.");
+    }
+
+    inputTracePath = Path.GetFullPath(inputTracePath);
+    var byType = new Dictionary<string, AllocationAggregate>(StringComparer.Ordinal);
+    var byStack = new Dictionary<string, AllocationAggregate>(StringComparer.Ordinal);
+    string etlxPath = inputTracePath + ".etlx";
+    if (!File.Exists(etlxPath))
+    {
+        etlxPath = TraceLog.CreateFromEventPipeDataFile(
+            inputTracePath,
+            etlxPath,
+            new TraceLogOptions());
+    }
+    using TraceLog trace = TraceLog.OpenOrConvert(etlxPath);
+    using TraceEventDispatcher source = trace.Events.GetSource();
+    source.Clr.GCAllocationTick += data =>
+    {
+        long bytes = data.AllocationAmount64 > 0
+            ? data.AllocationAmount64
+            : data.AllocationAmount;
+        if (bytes <= 0)
+        {
+            return;
+        }
+
+        TraceCallStack? callStack = data.CallStack();
+        var engineFrames = new List<string>(8);
+        bool runtimeFrame = false;
+        for (TraceCallStack? frame = callStack;
+             frame is not null;
+             frame = frame.Caller)
+        {
+            string method = frame.CodeAddress.FullMethodName;
+            if (method.Contains("SomeEngine.Runtime.RuntimeApplication.ExecuteFrame", StringComparison.Ordinal) ||
+                method.Contains("SomeEngine.RenderGraph.RenderGraph.", StringComparison.Ordinal))
+            {
+                runtimeFrame = true;
+            }
+            if (engineFrames.Count < 8 &&
+                method.Contains("SomeEngine.", StringComparison.Ordinal))
+            {
+                engineFrames.Add(method);
+            }
+        }
+        if (!runtimeFrame)
+        {
+            return;
+        }
+
+        string type = string.IsNullOrEmpty(data.TypeName)
+            ? $"0x{data.TypeID:X}"
+            : data.TypeName;
+        AddAllocation(byType, type, bytes);
+        string stack = engineFrames.Count == 0
+            ? type + " | <no SomeEngine frame>"
+            : type + " | " + string.Join(" <- ", engineFrames);
+        AddAllocation(byStack, stack, bytes);
+    };
+    source.Process();
+
+    Console.WriteLine("Allocation samples by type:");
+    WriteAllocationAggregates(byType, top);
+    Console.WriteLine();
+    Console.WriteLine("Allocation samples by engine stack:");
+    WriteAllocationAggregates(byStack, top);
+}
+
+static void AddAllocation(
+    Dictionary<string, AllocationAggregate> destination,
+    string key,
+    long bytes)
+{
+    destination.TryGetValue(key, out AllocationAggregate current);
+    destination[key] = new AllocationAggregate(
+        checked(current.Bytes + bytes),
+        checked(current.Samples + 1));
+}
+
+static void WriteAllocationAggregates(
+    Dictionary<string, AllocationAggregate> values,
+    int top)
+{
+    foreach ((string key, AllocationAggregate value) in values
+                 .OrderByDescending(static pair => pair.Value.Bytes)
+                 .ThenBy(static pair => pair.Key, StringComparer.Ordinal)
+                 .Take(top))
+    {
+        Console.WriteLine(
+            $"{value.Bytes,12:N0} bytes  {value.Samples,6:N0} samples  {key}");
+    }
+}
+
 [EventSource(Name = "SomeEngine-RuntimeAllocationProbe")]
 internal sealed class RuntimeAllocationProbeEventSource : EventSource
 {
@@ -222,6 +335,8 @@ internal sealed class RuntimeAllocationProbeEventSource : EventSource
 internal readonly record struct FrameInterval(int Index, double StartMSec, double EndMSec);
 
 internal readonly record struct AllocationSample(double TimeStampRelativeMSec, long Bytes);
+
+internal readonly record struct AllocationAggregate(long Bytes, int Samples);
 
 internal sealed record RuntimeAllocationTrace(
     string Scenario,

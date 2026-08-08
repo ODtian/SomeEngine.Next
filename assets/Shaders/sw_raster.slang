@@ -34,7 +34,7 @@ cbuffer PushConstants : register(b100, space0)
 };
 
 ByteAddressBuffer PageHeap;
-// Instances is declared in cluster_common.slang (via vertex_evaluate.slang)
+// Instance-property accessors are declared in cluster_common.slang (via vertex_evaluate.slang).
 StructuredBuffer<uint4> VisibleClusters;
 StructuredBuffer<uint2> BinnedClusterIndexBuffer; // .x = visibleClusterIndex, .y = rangeStart<<16 | rangeEnd
 StructuredBuffer<RasterBinEntry> RasterBinMeta;
@@ -215,7 +215,7 @@ VertexEvalContext MakeSWRasterVertexEvalContext(
     int3 intBase,
     uint localVertIdx,
     uint instanceID,
-    GpuTransform transform)
+    RenderInstanceTransform transform)
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
@@ -481,7 +481,7 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
         intBase, vStart, tStart, vertexCount, triangleCount,
         posOffset, idxOffset, attrOffset, totalVertexCount);
 
-    GpuTransform transform = Instances[realInstanceID];
+    RenderInstanceTransform transform = GetCurrentInstanceTransform(realInstanceID);
 
     // ─── Debug Dump (lane 0, after all early-outs) ───
     if (Uniforms.DebugDump != 0 && groupThreadIndex == 0)

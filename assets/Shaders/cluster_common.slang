@@ -3,7 +3,7 @@
 
 #include "common.slang"
 #include "cluster_structures.slang"
-#include "generated/instance_header_layout.slang"
+#include "cluster_instance_properties.slang"
 #include "visbuffer_encoding.slang"
 
 // ── Shared structures ──
@@ -103,34 +103,47 @@ uint FetchVertexIndex(ByteAddressBuffer pageHeap, uint pageOffset, uint idxOffse
 }
 
 // ── Instance Data ──
-StructuredBuffer<GpuTransform> Instances;
-ByteAddressBuffer InstanceHeaders;
-ByteAddressBuffer InstanceDataHeap;
+ByteAddressBuffer InstanceData;
+ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 
-uint GetInstanceBVHRootIndex(uint instanceID)
+RenderInstanceTransform GetCurrentInstanceTransform(uint instanceID)
 {
-    return LoadInstanceBVHRootIndex(InstanceHeaders, instanceID);
+    return LoadRenderTransform(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD),
+        instanceID);
 }
 
-uint GetInstanceSlotOffset(uint instanceID)
+RenderInstanceTransform GetPreviousInstanceTransform(uint instanceID)
 {
-    return LoadInstanceSlotOffset(InstanceHeaders, instanceID);
+    return LoadRenderTransform(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD),
+        instanceID);
+}
+
+uint GetClusterInstanceBvhRoot(uint instanceID)
+{
+    return LoadClusterBvhRoot(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD),
+        instanceID);
+}
+
+uint GetClusterMaterialSlotOffset(uint instanceID)
+{
+    return LoadClusterMaterialSlotOffset(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
+        instanceID);
 }
 
 float GetInstanceBoundsExpansion(uint instanceID)
 {
-    return LoadInstanceBoundsExpansionWorld(InstanceHeaders, instanceID);
-}
-
-float4 getInstancePropertyFloat4(uint instanceID, uint relativeOffset, float4 defaultValue)
-{
-    uint flags = LoadInstanceDataFlags(InstanceHeaders, instanceID);
-    if ((flags & INSTANCE_DATA_FLAG_MATERIAL_OVERRIDE) != 0)
-    {
-        uint baseOffset = LoadInstanceDataOffset(InstanceHeaders, instanceID);
-        return asfloat(InstanceDataHeap.Load4(baseOffset + relativeOffset));
-    }
-    return defaultValue;
+    return LoadClusterBoundsExpansion(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
+        instanceID);
 }
 
 // ── Screen-space utilities ──

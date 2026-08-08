@@ -1,6 +1,6 @@
 namespace SomeEngine.Render.Materials;
 
-public enum CompareOp
+public enum CompareOperation
 {
     Never,
     Less,
@@ -38,13 +38,13 @@ public readonly record struct MaterialState
     public int OverlayLayer { get; init; }
     public float BoundsExpansion { get; init; }
     public byte StencilRef { get; init; }
-    public CompareOp StencilCompare { get; init; }
+    public CompareOperation StencilCompare { get; init; }
     public StencilOp StencilPass { get; init; }
 
     public static MaterialState Default => new()
     {
         Surface = SurfaceMode.Opaque,
-        StencilCompare = CompareOp.Always,
+        StencilCompare = CompareOperation.Always,
         StencilPass = StencilOp.Keep,
     };
 }

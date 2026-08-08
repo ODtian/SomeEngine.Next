@@ -4,7 +4,6 @@ struct DrawUniforms
 {
     float4x4 ViewProj;
     float4x4 View;
-    uint PageTableSize;
     uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
@@ -127,7 +126,7 @@ VertexEvalContext MakeDrawVertexEvalContext(
     int3 intBase,
     uint localVertIdx,
     uint instanceID,
-    GpuTransform transform)
+    RenderInstanceTransform transform)
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
@@ -228,7 +227,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
         intBase,
         localVertIdx,
         realInstanceID,
-        Instances[realInstanceID]);
+        GetCurrentInstanceTransform(realInstanceID));
     StaticVertexEval.DeformedVertex vertex;
     LoadDrawDeformedVertex(eval, false, visibleClusterIndex, vertexCount, ctx, vertex);
 
@@ -326,7 +325,7 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
         intBase,
         localVertIdx,
         realInstanceID,
-        Instances[realInstanceID]);
+        GetCurrentInstanceTransform(realInstanceID));
     TVE.DeformedVertex vertex;
     LoadDrawDeformedVertex(evaluator, useDeformCache, visibleClusterIndex, vertexCount, ctx, vertex);
 

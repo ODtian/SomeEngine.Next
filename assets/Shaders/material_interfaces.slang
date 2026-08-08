@@ -1,9 +1,16 @@
 #ifndef MATERIAL_INTERFACES_SLANG
 #define MATERIAL_INTERFACES_SLANG
 
-#include "vertex_evaluate.slang"
+#include "material_vertex_interfaces.slang"
 
-interface ISurfaceEvaluate<TVE : IVertexEvaluate>
+[__AttributeUsage(_AttributeTargets.Var)]
+struct InstancePropertyAttribute
+{
+    string canonicalId;
+    string accessor;
+};
+
+interface ISurfaceEvaluate<TVE : IMaterialVertex>
 {
     void evaluateSurface(
         uniform TVE eval,

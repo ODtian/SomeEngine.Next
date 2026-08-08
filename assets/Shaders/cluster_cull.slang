@@ -1,69 +1,29 @@
 #include "cluster_structures.slang"
 #include "common.slang"
-#include "generated/instance_header_layout.slang"
+#include "cluster_instance_properties.slang"
+#include "cluster_view.slang"
+#include "resource_effects.slang"
 
-struct CullingUniforms
-{
-    float4x4 ViewProj;
-    float3 CameraPos;
-    float LodThreshold;
+ConstantBuffer<ClusterViewUniforms> Uniforms;
 
-    float LodScale;
-    uint MaxQueueNodes;
-    uint MaxCandidates;
-    uint MaxTraversalDepth;
-
-    int ForcedLODLevel;
-    uint InstanceCount;
-    uint DebugMode;
-    uint VisualiseBVH;
-    int DebugBVHDepth;
-    uint CurrentDepth;
-    uint Pad5;
-    uint Pad6;
-
-    float4x4 PrevViewProj;
-    uint HasPrevHistory;
-    uint HiZMipCount;
-    float2 HiZInvSize;
-
-    float4x4 View;
-    float P00;
-    float P11;
-    uint ScreenWidth;
-    uint ScreenHeight;
-
-    float4x4 PrevView;
-    float PrevP00;
-    float PrevP11;
-    float2 Pad8;
-};
-
-ConstantBuffer<CullingUniforms> Uniforms;
-
-StructuredBuffer<GpuTransform> Instances;
-ByteAddressBuffer InstanceHeaders;
+ByteAddressBuffer InstanceData;
+ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer PageHeap;
 StructuredBuffer<uint3> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer DrawArgs;                // IndirectArgs: must stay raw, layout = CullDrawArgs
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> VisibleClusters;
 Texture2D<float> HiZTexture;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint3> Phase2CandidateClusters;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> Phase2CandidateCount;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer Phase2DrawArgs;          // IndirectArgs: must stay raw, layout = CullDrawArgs
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer Phase2CandidateArgs;     // IndirectArgs: must stay raw
-
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void clear_main_single(uint3 tid : SV_DispatchThreadID)
-{
-    if (tid.x != 0 || tid.y != 0 || tid.z != 0)
-        return;
-
-    StoreCullDrawArgs(DrawArgs, 0u, CullDrawArgs(96, 0, 0));
-    DrawArgs.Store(12, 0u);
-}
 
 [shader("compute")]
 [numthreads(1, 1, 1)]
@@ -146,30 +106,14 @@ GPUCluster LoadCluster(uint pageOffset, uint clusterIndex)
     return c;
 }
 
-bool PassesLODFilter(GPUCluster cluster, GpuTransform t)
+bool PassesLODFilter(GPUCluster cluster, RenderInstanceTransform t)
 {
-    bool visible = true;
-
-    if (Uniforms.ForcedLODLevel >= 0)
-    {
-        uint lod = (cluster.PackedCounts >> 16) & 0xFF;
-        if (lod != uint(Uniforms.ForcedLODLevel))
-            visible = false;
-    }
-    else if (Uniforms.DebugMode == 0)
-    {
-        float3 worldCenter = ApplyTransform(cluster.LODCenter, t);
-        float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
-        float worldRadius = cluster.LODRadius * maxScale;
-
-
-        float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
-        float lodError = DecodeClusterLODError(cluster);
-        if (lodError * Uniforms.LodScale > Uniforms.LodThreshold * clusterDist)
-            visible = false;
-    }
-
-    return visible;
+    float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
+    float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
+    float worldRadius = cluster.LODRadius * maxScale;
+    float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
+    float lodError = DecodeClusterLODError(cluster);
+    return lodError * Uniforms.LodScale <= Uniforms.LodThreshold * clusterDist;
 }
 
 void BuildWorldAabbScreenBoundsAndNearDepth(
@@ -256,7 +200,7 @@ void BuildWorldAabbScreenBoundsAndNearDepth(
 
 void BuildClusterAabbScreenBoundsAndNearDepth(
     GPUCluster cluster,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     bool usePrev,
     float boundsExpansion,
     out float2 minUv,
@@ -292,7 +236,7 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
     [unroll]
     for (uint cornerIdx = 0; cornerIdx < 8; cornerIdx++)
     {
-        float3 worldPos = ApplyTransform(localCorners[cornerIdx], transform);
+        float3 worldPos = TransformInstanceLocalPosition(localCorners[cornerIdx], transform);
         worldMin = min(worldMin, worldPos);
         worldMax = max(worldMax, worldPos);
     }
@@ -339,7 +283,7 @@ float SampleHiZMax(float2 minUv, float2 maxUv, uint mipLevel)
 
 bool IsOccludedByHiZ(
     GPUCluster cluster,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     float boundsExpansion,
     bool usePrev,
     out float2 minUv,
@@ -361,20 +305,15 @@ bool IsOccludedByHiZ(
     return nearDepth > (hizDepth + epsilon);
 }
 
-// SW/HW threshold: clusters with screen area smaller than this (in pixels^2) are SW rasterized.
-// roughly 45x45 pixels
-static const float SW_AREA_THRESHOLD = 2000.0; 
-static const uint ENABLE_SW_HW_SPLIT = 1;
-
 bool ShouldUseSWRaster(float2 minUv, float2 maxUv)
 {
-    if (ENABLE_SW_HW_SPLIT == 0)
-        return true;
+    if (Uniforms.ForceHardwareRaster != 0u)
+        return false;
 
     float width = (maxUv.x - minUv.x) * Uniforms.ScreenWidth;
     float height = (maxUv.y - minUv.y) * Uniforms.ScreenHeight;
     float area = width * height;
-    return area < SW_AREA_THRESHOLD;
+    return area < Uniforms.SoftwareRasterAreaThreshold;
 }
 
 void AppendVisible(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
@@ -421,14 +360,14 @@ bool LoadAndFilterCandidate(
     out uint clusterID,
     out uint instanceID,
     out GPUCluster cluster,
-    out GpuTransform t,
+    out RenderInstanceTransform t,
     out float boundsExpansion)
 {
     pageOffset = 0;
     clusterID = 0;
     instanceID = 0;
     cluster = (GPUCluster)0;
-    t = (GpuTransform)0;
+    t = (RenderInstanceTransform)0;
     boundsExpansion = 0.0;
 
     uint count = min(CandidateCount[0], Uniforms.MaxCandidates);
@@ -441,11 +380,23 @@ bool LoadAndFilterCandidate(
     instanceID = candidate.z;
 
     cluster = LoadCluster(pageOffset, clusterID);
-    t = Instances[instanceID];
-    boundsExpansion = max(0.0, LoadInstanceBoundsExpansionWorld(InstanceHeaders, instanceID));
+    t = LoadRenderTransform(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD),
+        instanceID);
+    boundsExpansion = max(
+        0.0,
+        LoadClusterBoundsExpansion(
+            InstanceData,
+            LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
+            instanceID));
 
-    bool passesLod = PassesLODFilter(cluster, t);
-    return passesLod;
+    float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
+    float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
+    float worldRadius = cluster.LODRadius * maxScale;
+    float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
+    float lodError = DecodeClusterLODError(cluster);
+    return lodError * Uniforms.LodScale <= Uniforms.LodThreshold * clusterDist;
 }
 
 [numthreads(64, 1, 1)]
@@ -455,7 +406,7 @@ void main_phase1(uint3 dispatchThreadID: SV_DispatchThreadID)
     uint clusterID;
     uint instanceID;
     GPUCluster cluster;
-    GpuTransform t;
+    RenderInstanceTransform t;
     float boundsExpansion;
     if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))
         return;
@@ -477,36 +428,6 @@ void main_phase1(uint3 dispatchThreadID: SV_DispatchThreadID)
         bool isSW = ShouldUseSWRaster(minUv, maxUv);
         AppendVisible(pageOffset, clusterID, instanceID, isSW);
     }
-}
-
-[numthreads(64, 1, 1)]
-void main_single(uint3 dispatchThreadID: SV_DispatchThreadID)
-{
-    uint pageOffset;
-    uint clusterID;
-    uint instanceID;
-    GPUCluster cluster;
-    GpuTransform t;
-    float boundsExpansion;
-    if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))
-        return;
-
-    float2 minUv;
-    float2 maxUv;
-    float nearDepth;
-    uint mipLevel;
-    BuildClusterAabbScreenBoundsAndNearDepth(
-        cluster,
-        t,
-        false,
-        boundsExpansion,
-        minUv,
-        maxUv,
-        nearDepth,
-        mipLevel);
-
-    bool isSW = ShouldUseSWRaster(minUv, maxUv);
-    AppendVisible(pageOffset, clusterID, instanceID, isSW);
 }
 
 // HiZ follow-up cull: use Phase2DrawArgs for own counts, read Phase1's counts for global offset
@@ -548,7 +469,7 @@ void main_phase2(uint3 dispatchThreadID: SV_DispatchThreadID)
     uint clusterID;
     uint instanceID;
     GPUCluster cluster;
-    GpuTransform t;
+    RenderInstanceTransform t;
     float boundsExpansion;
     if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))
         return;

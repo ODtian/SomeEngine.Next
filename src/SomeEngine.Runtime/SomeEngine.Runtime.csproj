@@ -1,0 +1,61 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.Runtime.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\SomeEngine.Core\SomeEngine.Core.csproj" />
+    <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+    <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
+    <ProjectReference Include="..\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="..\SomeEngine.Graphics.Validation\SomeEngine.Graphics.Validation.csproj" />
+    <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />
+    <ProjectReference Include="..\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
+    <ProjectReference Include="..\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
+    <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
+    <ProjectReference Include="..\SomeEngine.RenderGraph.Diagnostics\SomeEngine.RenderGraph.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="imgui.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\assets\**\*">
+      <Link>assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\samples\**\*.asset">
+      <Link>samples\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Library\AssetManifest\**\*">
+      <Link>Library\AssetManifest\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\external\dxc\bin\x64\dxcompiler.dll">
+      <Link>dxcompiler.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\external\dxc\bin\x64\dxil.dll">
+      <Link>dxil.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

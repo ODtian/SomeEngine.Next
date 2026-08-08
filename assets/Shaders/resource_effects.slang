@@ -9,7 +9,7 @@ enum ResourceEffects : uint
 };
 
 [Flags]
-enum ResourceOperations : uint
+enum ResourceQualifiers : uint
 {
     None = 0,
     Atomic = 1,
@@ -24,7 +24,7 @@ enum ResourceOperations : uint
 struct ResourceEffectAttribute
 {
     ResourceEffects effects;
-    ResourceOperations operations;
+    ResourceQualifiers qualifiers;
 };
 
 #endif

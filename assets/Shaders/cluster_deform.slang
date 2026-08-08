@@ -1,5 +1,5 @@
 // cluster_deform.slang — Pre-deformation Compute Shader
-// 32 threads/group, 1 group = 1 DeformBin batch entry.
+// 64 threads/group, 1 group = 1 DeformBin cluster entry.
 // DeformCache is binned by VertexEval; raster remains independently binned.
 
 #ifndef CLUSTER_DEFORM_SLANG
@@ -12,12 +12,10 @@
 
 struct DeformUniforms
 {
-    uint   MaxVisibleClusters;
     uint   MaxDeformCacheBytes;
     uint   MaxClusterVertices;
     uint   CurrentBin;
-    uint   Reserved0;
-    uint   ResetCacheAllocationState;
+    uint   Pad0;
 };
 
 cbuffer PushConstants : register(b100, space0)
@@ -29,20 +27,42 @@ ByteAddressBuffer PageHeap;
 StructuredBuffer<uint4> VisibleClusters;
 StructuredBuffer<uint2> BinnedClusterIndexBuffer;
 StructuredBuffer<DeformBinEntry> DeformBinMeta;
-StructuredBuffer<GpuTransform> PreviousInstances;
-ByteAddressBuffer DrawArgs;
-ByteAddressBuffer ReadOffsetArgs;
 
 RWByteAddressBuffer      DeformCache;
-StructuredBuffer<uint>   CacheOffsets;
 RWStructuredBuffer<uint> CacheOffsetsWrite;
 RWStructuredBuffer<uint> CacheAllocationCounter;
-RWByteAddressBuffer      DeformDispatchArgs;
 
 static const uint CACHE_OFFSET_OVERFLOW    = 0xFFFFFFFDu;
 static const uint CACHE_OFFSET_UNINITIALIZED = 0xFFFFFFFEu;
 
 groupshared uint DeformKernelCacheBaseByte;
+
+bool TryAllocateDeformCache(uint requestBytes, out uint cacheBaseByte)
+{
+    cacheBaseByte = CACHE_OFFSET_OVERFLOW;
+    if (requestBytes == 0u || requestBytes > Uniforms.MaxDeformCacheBytes)
+        return false;
+
+    uint observedBytes = CacheAllocationCounter[0];
+    uint latestBytes;
+    while (observedBytes <= Uniforms.MaxDeformCacheBytes - requestBytes)
+    {
+        uint committedBytes = observedBytes + requestBytes;
+        InterlockedCompareExchange(
+            CacheAllocationCounter[0],
+            observedBytes,
+            committedBytes,
+            latestBytes);
+        if (latestBytes == observedBytes)
+        {
+            cacheBaseByte = observedBytes;
+            InterlockedAdd(CacheAllocationCounter[1], 1u);
+            return true;
+        }
+        observedBytes = latestBytes;
+    }
+    return false;
+}
 
 uint MaskedBitCount(uint2 bits, uint index)
 {
@@ -88,7 +108,7 @@ VertexEvalContext MakeDeformVertexEvalContext(
     int3 intBase,
     uint localVertIdx,
     uint instanceID,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     uint isPreviousFrame)
 {
     VertexEvalContext ctx;
@@ -203,16 +223,8 @@ void DeformKernel<TVE : IVertexEvaluate>(
                 ? requestBytesRaw
                 : 0u;
 
-        uint cacheBaseByte = CACHE_OFFSET_OVERFLOW;
-        if (requestBytes != 0u && requestBytes <= Uniforms.MaxDeformCacheBytes)
-        {
-            uint allocatedBaseByte;
-            InterlockedAdd(CacheAllocationCounter[0], requestBytes, allocatedBaseByte);
-            bool overflow =
-                allocatedBaseByte > Uniforms.MaxDeformCacheBytes ||
-                requestBytes > Uniforms.MaxDeformCacheBytes - allocatedBaseByte;
-            cacheBaseByte = overflow ? CACHE_OFFSET_OVERFLOW : allocatedBaseByte;
-        }
+        uint cacheBaseByte;
+        TryAllocateDeformCache(requestBytes, cacheBaseByte);
 
         CacheOffsetsWrite[visibleIndex] = cacheBaseByte;
         DeformKernelCacheBaseByte = cacheBaseByte;
@@ -227,8 +239,8 @@ void DeformKernel<TVE : IVertexEvaluate>(
     if (localVertIdx >= vertexCount || localVertIdx >= Uniforms.MaxClusterVertices)
         return;
 
-    GpuTransform transform = Instances[realInstanceID];
-    GpuTransform previousTransform = PreviousInstances[realInstanceID];
+    RenderInstanceTransform transform = GetCurrentInstanceTransform(realInstanceID);
+    RenderInstanceTransform previousTransform = GetPreviousInstanceTransform(realInstanceID);
 
     VertexEvalContext ctx = MakeDeformVertexEvalContext(
         pageOffset,

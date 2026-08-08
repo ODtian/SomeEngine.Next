@@ -3,6 +3,7 @@
 
 #include "common.slang"
 #include "cluster_common.slang"
+#include "material_vertex_interfaces.slang"
 
 struct VertexEvalContext
 {
@@ -16,7 +17,7 @@ struct VertexEvalContext
     uint localVertIdx;
     int3 intBase;
     uint instanceID;
-    GpuTransform transform;
+    RenderInstanceTransform transform;
     uint IsPreviousFrame;
 
     StreamCursor getStreamCursor()
@@ -41,10 +42,10 @@ float3 EvalObjectPosition(VertexEvalContext ctx)
 
 float3 EvalWorldPosition(VertexEvalContext ctx)
 {
-    return ApplyTransform(EvalObjectPosition(ctx), ctx.transform);
+    return TransformInstanceLocalPosition(EvalObjectPosition(ctx), ctx.transform);
 }
 
-float3 RotateByTransform(float3 v, GpuTransform transform)
+float3 RotateByTransform(float3 v, RenderInstanceTransform transform)
 {
     float3 qvec = transform.Rotation.xyz;
     float qw = transform.Rotation.w;
@@ -77,10 +78,8 @@ StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
     return attrs;
 }
 
-interface IVertexEvaluate
+interface IVertexEvaluate : IMaterialVertex
 {
-    associatedtype DeformedVertex;
-
     DeformedVertex evaluate(VertexEvalContext ctx);
     float3 getPosition(DeformedVertex v);
 

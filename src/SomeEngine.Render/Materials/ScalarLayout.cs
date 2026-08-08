@@ -1,7 +1,9 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
+using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Render.Materials;
 
@@ -10,18 +12,37 @@ public sealed class ScalarLayout
     public const int HeaderByteSize = 16;
     public const int PayloadAlignment = 16;
 
-    public static readonly ScalarLayout Empty = new([], 0, 0);
+    public static readonly ScalarLayout Empty = new(string.Empty, [], 0, 0);
 
-    private readonly ScalarFieldLayout[] _fields;
+    private readonly IReadOnlyList<ScalarFieldLayout> _fields;
 
-    private ScalarLayout(ScalarFieldLayout[] fields, uint payloadByteSize, uint layoutHash)
+    private ScalarLayout(
+        string name,
+        ScalarFieldLayout[] fields,
+        uint payloadByteSize,
+        uint layoutHash)
     {
         Array.Sort(fields, static (left, right) => left.Offset.CompareTo(right.Offset));
+        Name = name;
         _fields = fields;
 
         PayloadByteSize = payloadByteSize;
         LayoutHash = layoutHash;
     }
+
+    private ScalarLayout(
+        string name,
+        IReadOnlyList<ScalarFieldLayout> fields,
+        uint payloadByteSize,
+        uint layoutHash)
+    {
+        Name = name;
+        _fields = fields;
+        PayloadByteSize = payloadByteSize;
+        LayoutHash = layoutHash;
+    }
+
+    public string Name { get; }
 
     public IReadOnlyList<ScalarFieldLayout> Fields => _fields;
 
@@ -32,9 +53,13 @@ public sealed class ScalarLayout
     public int ByteSize => HeaderByteSize + AlignUp((int)PayloadByteSize, PayloadAlignment);
 
     public static ScalarLayout FromFields(
+        string name,
         IEnumerable<ScalarFieldLayout> fields,
         uint payloadByteSize)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(fields);
+
         var materialFields = new List<ScalarFieldLayout>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (ScalarFieldLayout field in fields)
@@ -53,9 +78,53 @@ public sealed class ScalarLayout
             materialFields.Add(field);
         }
 
-        return materialFields.Count == 0
-            ? Empty
-            : new ScalarLayout([.. materialFields], payloadByteSize, ComputeHash(materialFields, payloadByteSize));
+        return new ScalarLayout(
+            name,
+            [.. materialFields],
+            payloadByteSize,
+            ComputeHash(name, materialFields, payloadByteSize));
+    }
+
+    internal static ScalarLayout FromData(ShaderMaterialScalarLayout layout)
+    {
+        string name = layout.Name ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidDataException("A cooked material scalar layout must have a name.");
+
+        IReadOnlyList<ScalarFieldLayout> fields = BorrowedReadOnlyList.Project(
+            layout.Fields,
+            static field => new ScalarFieldLayout(
+                field.Name ?? string.Empty,
+                field.Offset,
+                field.Size,
+                field.RowCount,
+                field.ColumnCount,
+                field.ScalarType));
+        return new ScalarLayout(
+            name,
+            fields,
+            layout.Size,
+            ComputeHash(name, fields, layout.Size));
+    }
+
+    internal bool HasSameContract(ScalarLayout other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (!string.Equals(Name, other.Name, StringComparison.Ordinal)
+            || PayloadByteSize != other.PayloadByteSize
+            || LayoutHash != other.LayoutHash
+            || _fields.Count != other._fields.Count)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < _fields.Count; index++)
+        {
+            if (_fields[index] != other._fields[index])
+                return false;
+        }
+
+        return true;
     }
 
     internal void WriteHeader(Span<byte> destination)
@@ -100,7 +169,7 @@ public sealed class ScalarLayout
         out ScalarFieldLayout field,
         out Span<byte> fieldBytes)
     {
-        for (int i = 0; i < _fields.Length; i++)
+        for (int i = 0; i < _fields.Count; i++)
         {
             field = _fields[i];
             if (string.Equals(field.Name, name, StringComparison.Ordinal))
@@ -155,12 +224,18 @@ public sealed class ScalarLayout
             destination.Slice(byteOffset, sizeof(uint)),
             BitConverter.SingleToUInt32Bits(value));
 
-    private static uint ComputeHash(IReadOnlyList<ScalarFieldLayout> fields, uint payloadByteSize)
+    private static uint ComputeHash(
+        string name,
+        IReadOnlyList<ScalarFieldLayout> fields,
+        uint payloadByteSize)
     {
         const uint offsetBasis = 2166136261u;
         const uint prime = 16777619u;
 
         uint hash = offsetBasis;
+        foreach (char character in name)
+            HashUInt(ref hash, character);
+        HashUInt(ref hash, 0);
         HashUInt(ref hash, payloadByteSize);
         foreach (ScalarFieldLayout field in fields)
         {
@@ -189,7 +264,7 @@ public sealed class ScalarLayout
     private static int AlignUp(int value, int alignment)
         => ((value + alignment - 1) / alignment) * alignment;
 
-    // Values are persisted from SlangScalarType in shader_asset.fbs.
+    // Values are persisted from the cooked shader contract's Slang scalar-type numbering.
     private const byte ScalarBool = 2;
     private const byte ScalarInt32 = 3;
     private const byte ScalarUInt32 = 4;

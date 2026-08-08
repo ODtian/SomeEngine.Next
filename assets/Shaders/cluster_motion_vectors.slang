@@ -15,8 +15,6 @@ ConstantBuffer<MotionVectorUniforms> Uniforms;
 Texture2D<uint> VisBuffer;
 StructuredBuffer<DrawRequest> VisibleClusters;
 ByteAddressBuffer PageHeap;
-StructuredBuffer<GpuTransform> PreviousInstances;
-
 RWTexture2D<float2> OutputMotionVectors;
 
 static const uint MOTION_VECTOR_THREAD_GROUP_SIZE_X = 8;
@@ -76,7 +74,7 @@ bool DecodeMotionTriangle(uint2 pixelCoord, out MotionTriangleInfo tri)
 
 VertexEvalContext MakeMotionVertexEvalContext(
     MotionTriangleInfo tri,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     uint isPreviousFrame,
     uint localVertIdx)
 {
@@ -99,7 +97,7 @@ VertexEvalContext MakeMotionVertexEvalContext(
 void EvaluateMotionTriangle<TVE : IVertexEvaluate>(
     uniform TVE eval,
     MotionTriangleInfo tri,
-    GpuTransform transform,
+    RenderInstanceTransform transform,
     uint isPreviousFrame,
     out TVE.DeformedVertex v0,
     out TVE.DeformedVertex v1,
@@ -181,12 +179,12 @@ void CSMotionVectors(uint3 dispatchThreadID : SV_DispatchThreadID)
     StaticVertexEval.DeformedVertex v0;
     StaticVertexEval.DeformedVertex v1;
     StaticVertexEval.DeformedVertex v2;
-    EvaluateMotionTriangle(eval, tri, Instances[tri.instanceID], 0u, v0, v1, v2);
+    EvaluateMotionTriangle(eval, tri, GetCurrentInstanceTransform(tri.instanceID), 0u, v0, v1, v2);
 
     StaticVertexEval.DeformedVertex previousV0;
     StaticVertexEval.DeformedVertex previousV1;
     StaticVertexEval.DeformedVertex previousV2;
-    EvaluateMotionTriangle(eval, tri, PreviousInstances[tri.instanceID], 1u, previousV0, previousV1, previousV2);
+    EvaluateMotionTriangle(eval, tri, GetPreviousInstanceTransform(tri.instanceID), 1u, previousV0, previousV1, previousV2);
 
     WriteMotionVector(eval, pixelCoord, v0, v1, v2, previousV0, previousV1, previousV2);
 }

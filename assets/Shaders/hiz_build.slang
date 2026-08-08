@@ -1,10 +1,18 @@
+﻿#include "resource_effects.slang"
+
 Texture2D<float> DepthTexture;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWTexture2D<float> HiZMip0;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWTexture2D<float> HiZMip1;
 
+[ResourceEffect(ResourceEffects.Read, ResourceQualifiers.None)]
 RWTexture2D<float> SrcMip;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWTexture2D<float> DstMip;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWTexture2D<float> DstMip1;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWTexture2D<float> DstMip2;
 
 uint CoveredEnd(uint dstCoord, uint dstSize, uint srcSize)

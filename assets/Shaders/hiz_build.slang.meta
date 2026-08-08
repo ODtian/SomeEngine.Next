@@ -1,4 +1,7 @@
 {
   "source_guid": "81959704-24ce-4e82-a2ec-4b0015d1204a",
-  "importer": "SlangShaderImporter"
+  "importer": "SlangShaderImporter",
+  "importer_settings": {
+    "cook_profile": "default"
+  }
 }

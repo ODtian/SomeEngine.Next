@@ -1,667 +1,1119 @@
 using System.Numerics;
 using SomeEngine.Assets;
-using SomeEngine.Core.ECS;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Materials;
 using SomeEngine.Render.Systems;
-using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Hooks;
 using SomeEngine.ECS.Queries;
-using EntityId = SomeEngine.ECS.Entities.Entity;
+using Entity = SomeEngine.ECS.Entities.Entity;
 
 namespace SomeEngine.Render.Tests;
 
-public class RenderWorldExtractorTests
+public sealed class RenderWorldExtractorTests
 {
     [Fact]
-    public void Rebuild_CopiesSourceStateOnly()
+    public void Extract_UsesInstalledSystemsAndUpdatesStableMirror()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        Handle<Material> material = new(7, 1);
-        Handle<Mesh> mesh = new(11, 1);
-        EntityId entity = AddSource(source, material, mesh, bounds: 1.25f);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(1, 1),
+            boundsExpansion: 0.25f,
+            position: Vector3.One);
 
-        extractor.Rebuild(source);
+        extraction.Extract(mainWorld);
 
-        RenderInstance instance = Assert.Single(Instances(renderWorld.World));
-        Assert.Equal(entity, instance.SourceEntity);
-        Assert.Equal(0, instance.InstanceIndex);
-        Assert.Equal(mesh, instance.Mesh);
-        Assert.Equal(1.25f, instance.BoundsExpansion);
-        Assert.Equal(material, Assert.Single(Assert.Single(Materials(renderWorld.World)).Materials.ToArray()));
-        Assert.Single(Sources(renderWorld.World));
-        Assert.Equal(1, renderWorld.CountInstances());
+        Entity mirror = Mirror(renderWorld, source);
+        Assert.True(renderWorld.IsAlive(mirror));
+
+        Move(mainWorld, source, new Vector3(4, 5, 6));
+        extraction.Extract(mainWorld);
+
+        Assert.Equal(new Vector3(4, 5, 6), renderWorld.Read<RenderTransform>(mirror).Position);
     }
 
     [Fact]
-    public void Rebuild_UpdatesBindings_WhenHandlesChange()
+    public async Task Extract_WaitsForActiveMainWorldMutationBeforeReadingSourceImage()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        Handle<Material> first = new(1, 1);
-        Handle<Material> second = new(2, 1);
-        EntityId entity = AddSource(source, first, new Handle<Mesh>(3, 1), bounds: 0);
+        using var extractionSystems = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(1, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
+        using ManualResetEventSlim mutationEntered = new();
+        using ManualResetEventSlim releaseMutation = new();
+        mainWorld.Hooks<MeshInstance>().OnReplace(
+            (DeferredWorld _, Entity _, in MeshInstance _) =>
+            {
+                mutationEntered.Set();
+                Assert.True(releaseMutation.Wait(TimeSpan.FromSeconds(10)));
+            });
 
-        extractor.Rebuild(source);
-        uint version = extractor.Version;
-        EntityId renderEntity = Assert.Single(Sources(renderWorld.World));
-        ref MeshMaterialBindings bindings = ref source.Get<MeshMaterialBindings>(entity);
-        bindings.Materials = new[] { second };
-        extractor.Rebuild(source);
-
-        Assert.True(extractor.Version > version);
-        Assert.Equal(renderEntity, Assert.Single(Sources(renderWorld.World)));
-        RenderMaterials materials = Assert.Single(Materials(renderWorld.World));
-        Assert.Equal(second, Assert.Single(materials.Materials.ToArray()));
-    }
-
-    [Fact]
-    public void Rebuild_UpdatesBindings_WhenBindingsAdded()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        Handle<Material> material = new(9, 1);
-        EntityId entity = AddSource(
-            source,
-            material: default,
-            mesh: new Handle<Mesh>(3, 1),
-            bounds: 0,
-            bindMaterial: false);
-
-        extractor.Rebuild(source);
-        EntityId renderEntity = RenderEntity(renderWorld.World, entity);
-        ClearDirty(renderWorld.World, renderEntity);
-        Assert.Empty(Assert.Single(Materials(renderWorld.World)).Materials.ToArray());
-
-        source.Add(entity, new MeshMaterialBindings { Materials = new[] { material } });
-        extractor.Rebuild(source);
-
-        Assert.Single(Instances(renderWorld.World));
-        RenderMaterials materials = Assert.Single(Materials(renderWorld.World));
-        Assert.Equal(material, Assert.Single(materials.Materials.ToArray()));
-        Assert.True((renderWorld.World.Read<InstanceDirty>(renderEntity).Flags & InstanceDirtyFlags.MaterialHeader) != 0);
-    }
-
-    [Fact]
-    public void Rebuild_ClearsBindings_WhenBindingsRemoved()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(3, 1), bounds: 0);
-
-        extractor.Rebuild(source);
-        EntityId renderEntity = RenderEntity(renderWorld.World, entity);
-        ClearDirty(renderWorld.World, renderEntity);
-        source.Remove<MeshMaterialBindings>(entity);
-        extractor.Rebuild(source);
-
-        Assert.Single(Instances(renderWorld.World));
-        RenderMaterials materials = Assert.Single(Materials(renderWorld.World));
-        Assert.Empty(materials.Materials.ToArray());
-        Assert.True((renderWorld.World.Read<InstanceDirty>(renderEntity).Flags & InstanceDirtyFlags.MaterialHeader) != 0);
-    }
-
-    [Fact]
-    public void Rebuild_UpdatesOnlyChangedMaterialRows()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        Handle<Material> first = new(1, 1);
-        Handle<Material> changed = new(2, 1);
-        Handle<Material> stable = new(3, 1);
-        EntityId firstEntity = AddSource(source, first, new Handle<Mesh>(3, 1), bounds: 0);
-        EntityId stableEntity = AddSource(source, stable, new Handle<Mesh>(4, 1), bounds: 0);
-
-        extractor.Rebuild(source);
-        EntityId firstRender = RenderEntity(renderWorld.World, firstEntity);
-        EntityId stableRender = RenderEntity(renderWorld.World, stableEntity);
-        ClearDirty(renderWorld.World, firstRender);
-        ClearDirty(renderWorld.World, stableRender);
-
-        ref MeshMaterialBindings bindings = ref source.Get<MeshMaterialBindings>(firstEntity);
-        bindings.Materials = new[] { changed };
-        extractor.Rebuild(source);
-
-        Assert.Equal(changed, Assert.Single(renderWorld.World.Read<RenderMaterials>(firstRender).Materials.ToArray()));
-        Assert.Equal(stable, Assert.Single(renderWorld.World.Read<RenderMaterials>(stableRender).Materials.ToArray()));
-        Assert.True((renderWorld.World.Read<InstanceDirty>(firstRender).Flags & InstanceDirtyFlags.MaterialHeader) != 0);
-        Assert.False(renderWorld.World.Has<InstanceDirty>(stableRender));
-    }
-
-    [Fact]
-    public void Rebuild_TracksTransformDirty()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-        MaterialOverride materialOverride = new() { BaseColorTint = Vector4.One };
-        source.Add(entity, materialOverride);
-
-        extractor.Rebuild(source);
-        EntityId renderEntity = Assert.Single(Sources(renderWorld.World));
-        renderWorld.World.Remove<InstanceDirty>(renderEntity);
-        var moved = new TransformQvvs(new Vector3(4, 5, 6), Quaternion.Identity, 1);
-        ref WorldTransform transform = ref source.Get<WorldTransform>(entity);
-        transform.Qvvs = moved;
-        extractor.Rebuild(source);
-
-        Assert.Equal(1, renderWorld.InstanceUpdateCount);
-        RenderInstance storedInstance = Assert.Single(Instances(renderWorld.World));
-        Assert.True(renderWorld.TryGetInstance(
-            storedInstance.InstanceIndex,
-            out _,
-            out RenderInstance slotInstance,
-            out bool hasOverride,
-            out MaterialOverride storedOverride));
-        Assert.Equal(new Vector3(4, 5, 6), slotInstance.Transform.Position);
-        Assert.True(hasOverride);
-        Assert.Equal(materialOverride.BaseColorTint, storedOverride.BaseColorTint);
-        Assert.Equal(renderEntity, renderWorld.InstanceUpdateEntities[0]);
-        Assert.Equal(storedInstance.InstanceIndex, renderWorld.InstanceUpdateIndices[0]);
-        Assert.True((renderWorld.InstanceUpdateFlags[0] & InstanceDirtyFlags.Transform) != 0);
-        Assert.False(renderWorld.World.Has<InstanceDirty>(renderEntity));
-    }
-
-    [Fact]
-    public void Rebuild_TracksFullRangeTransformUpdatesAsUniform()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId first = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-        EntityId second = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-
-        extractor.Rebuild(source);
-        Move(source, first, new Vector3(1, 0, 0));
-        Move(source, second, new Vector3(2, 0, 0));
-        extractor.Rebuild(source);
-
-        Assert.True(renderWorld.InstanceUpdateUniform);
-        Assert.True(renderWorld.InstanceUpdatesCoverAllSlots);
-        Assert.Equal(2, renderWorld.InstanceUpdateCount);
-        Assert.True((renderWorld.InstanceUpdateFlagsUnion & InstanceDirtyFlags.Transform) != 0);
-    }
-
-    [Fact]
-    public void Rebuild_KeepsSparseTransformUpdatesNonUniform()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId first = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-        EntityId second = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-
-        extractor.Rebuild(source);
-        EntityId firstRender = RenderEntity(renderWorld.World, first);
-        EntityId secondRender = RenderEntity(renderWorld.World, second);
-        Move(source, second, new Vector3(2, 0, 0));
-        extractor.Rebuild(source);
-
-        Assert.False(renderWorld.InstanceUpdateUniform);
-        Assert.Equal(1, renderWorld.InstanceUpdateCount);
-        Assert.Equal(secondRender, renderWorld.InstanceUpdateEntities[0]);
-        Assert.NotEqual(firstRender, renderWorld.InstanceUpdateEntities[0]);
-        Assert.True((renderWorld.InstanceUpdateFlags[0] & InstanceDirtyFlags.Transform) != 0);
-    }
-
-    [Fact]
-    public void Rebuild_TracksSparseTransformUpdatePastFixedBitsetWidth()
-    {
-        World source = new();
-        RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        const int movedIndex = 129;
-        EntityId movedSource = default;
-        for (int i = 0; i <= movedIndex; i++)
+        MeshInstance replacement = new()
         {
-            EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-            if (i == movedIndex)
-                movedSource = entity;
+            Mesh = new AssetHandle<Mesh>(2, 1),
+            BoundsExpansion = 3,
+        };
+        Task mutation = Task.Run(() => mainWorld.Replace(source, replacement));
+        Assert.True(mutationEntered.Wait(TimeSpan.FromSeconds(5)));
+
+        Task extraction = Task.Run(() => extractionSystems.Extract(mainWorld));
+        try
+        {
+            await Task.Delay(100);
+            Assert.False(extraction.IsCompleted);
+        }
+        finally
+        {
+            releaseMutation.Set();
         }
 
-        extractor.Rebuild(source);
-        EntityId movedRender = RenderEntity(renderWorld.World, movedSource);
-        Move(source, movedSource, new Vector3(129, 2, 3));
-        extractor.Rebuild(source);
+        await Task.WhenAll(mutation, extraction);
 
-        Assert.False(renderWorld.InstanceUpdateUniform);
-        Assert.Equal(1, renderWorld.InstanceUpdateCount);
-        Assert.Equal(movedRender, renderWorld.InstanceUpdateEntities[0]);
-        Assert.Equal(movedIndex, renderWorld.InstanceUpdateIndices[0]);
-        Assert.True((renderWorld.InstanceUpdateFlags[0] & InstanceDirtyFlags.Transform) != 0);
-        Assert.True(renderWorld.TryGetInstance(
-            movedIndex,
-            out _,
-            out RenderInstance slotInstance,
-            out _,
-            out _));
-        Assert.Equal(new Vector3(129, 2, 3), slotInstance.Transform.Position);
+        Entity mirror = Mirror(renderWorld, source);
+        Assert.Equal(replacement.Mesh, renderWorld.Read<RenderMesh>(mirror).Mesh);
+        Assert.Equal(replacement.BoundsExpansion, renderWorld.Read<RenderMesh>(mirror).BoundsExpansion);
     }
 
     [Fact]
-    public void Rebuild_DoesNotChangeShapeVersion_WhenTransformChanges()
+    public void Extract_ApplyFaultKeepsPublishedRootUnchanged()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        AssetHandle<Mesh> firstOldMesh = new(11, 1);
+        AssetHandle<Mesh> secondOldMesh = new(12, 1);
+        AssetHandle<Material> oldMaterial = new(21, 1);
+        Entity firstSource = AddMeshSource(
+            mainWorld,
+            firstOldMesh,
+            boundsExpansion: 1,
+            position: Vector3.One);
+        Entity secondSource = AddMeshSource(
+            mainWorld,
+            secondOldMesh,
+            boundsExpansion: 2,
+            position: new Vector3(2));
+        SetSourceBindings(mainWorld, firstSource, oldMaterial, default, count: 1);
+        extraction.Extract(mainWorld);
 
-        extractor.Rebuild(source);
-        uint version = extractor.Version;
-        uint shapeVersion = extractor.ShapeVersion;
+        Entity firstMirror = Mirror(renderWorld, firstSource);
+        Entity secondMirror = Mirror(renderWorld, secondSource);
+        renderWorld.Add(firstMirror, new PipelinePreparedState(47));
 
-        var moved = new TransformQvvs(new Vector3(4, 5, 6), Quaternion.Identity, 1);
-        ref WorldTransform transform = ref source.Get<WorldTransform>(entity);
-        transform.Qvvs = moved;
-        extractor.Rebuild(source);
+        Move(mainWorld, firstSource, new Vector3(10));
+        Move(mainWorld, secondSource, new Vector3(20));
+        mainWorld.Replace(
+            firstSource,
+            new MeshInstance { Mesh = new AssetHandle<Mesh>(31, 2), BoundsExpansion = 3 });
+        mainWorld.Replace(
+            secondSource,
+            new MeshInstance { Mesh = new AssetHandle<Mesh>(32, 2), BoundsExpansion = 4 });
+        SetSourceBindings(
+            mainWorld,
+            firstSource,
+            new AssetHandle<Material>(41, 2),
+            default,
+            count: 1);
 
-        Assert.True(extractor.Version > version);
-        Assert.Equal(shapeVersion, extractor.ShapeVersion);
+        int replaceCount = 0;
+        renderWorld.Hooks<RenderMesh>().OnReplace(
+            (DeferredWorld _, Entity _, in RenderMesh _) =>
+            {
+                if (Interlocked.Increment(ref replaceCount) == 2)
+                    throw new InvalidOperationException("intentional extraction apply fault");
+            });
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => extraction.Extract(mainWorld));
+
+        Assert.Contains("intentional extraction apply fault", error.Message, StringComparison.Ordinal);
+        Assert.Equal(2, replaceCount);
+        Assert.Equal(firstOldMesh, renderWorld.Read<RenderMesh>(firstMirror).Mesh);
+        Assert.Equal(secondOldMesh, renderWorld.Read<RenderMesh>(secondMirror).Mesh);
+        Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(firstMirror).Position);
+        Assert.Equal(new Vector3(2), renderWorld.Read<RenderTransform>(secondMirror).Position);
+        AssertRenderBindings(renderWorld, firstMirror, oldMaterial, default, count: 1);
+        Assert.Equal(47, renderWorld.Read<PipelinePreparedState>(firstMirror).Value);
     }
 
     [Fact]
-    public void Rebuild_ChangesShapeVersion_WhenBindingsChange()
+    public void Extract_LightModuleFaultRollsBackEarlierMeshModuleChanges()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        Handle<Material> first = new(1, 1);
-        Handle<Material> second = new(2, 1);
-        EntityId entity = AddSource(source, first, new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        AssetHandle<Mesh> originalMesh = new(43, 1);
+        Entity source = AddMeshSource(
+            mainWorld,
+            originalMesh,
+            boundsExpansion: 1,
+            position: Vector3.One);
+        PointLight originalLight = new(
+            Vector3.One,
+            8,
+            new Vector3(0.5f),
+            2,
+            0x04u);
+        mainWorld.Add(source, originalLight);
+        extraction.Extract(mainWorld);
 
-        extractor.Rebuild(source);
-        uint shapeVersion = extractor.ShapeVersion;
+        Entity mirror = Mirror(renderWorld, source);
+        Move(mainWorld, source, new Vector3(5, 6, 7));
+        mainWorld.Replace(
+            source,
+            new MeshInstance
+            {
+                Mesh = new AssetHandle<Mesh>(44, 2),
+                BoundsExpansion = 3,
+            });
+        mainWorld.Replace(
+            source,
+            originalLight with
+            {
+                Range = 16,
+                Intensity = 7,
+            });
+        renderWorld.Hooks<RenderPointLight>().OnReplace(
+            (DeferredWorld _, Entity _, in RenderPointLight _) =>
+                throw new InvalidOperationException("intentional light extraction fault"));
 
-        ref MeshMaterialBindings bindings = ref source.Get<MeshMaterialBindings>(entity);
-        bindings.Materials = new[] { second };
-        extractor.Rebuild(source);
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => extraction.Extract(mainWorld));
 
-        Assert.True(extractor.ShapeVersion > shapeVersion);
+        Assert.Contains("intentional light extraction fault", error.Message, StringComparison.Ordinal);
+        Assert.Equal(originalMesh, renderWorld.Read<RenderMesh>(mirror).Mesh);
+        Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(mirror).Position);
+        AssertPointLight(originalLight, renderWorld.Read<RenderPointLight>(mirror));
     }
 
     [Fact]
-    public void Rebuild_ChangesShapeVersion_WhenMaterialOverridePresenceChanges()
+    public void Extract_RejectsReentrantHookBeforeScratchCanBeRewritten()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity firstSource = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(51, 1),
+            boundsExpansion: 1,
+            position: Vector3.Zero);
+        Entity secondSource = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(52, 1),
+            boundsExpansion: 2,
+            position: Vector3.One);
+        extraction.Extract(mainWorld);
 
-        extractor.Rebuild(source);
-        uint shapeVersion = extractor.ShapeVersion;
+        AssetHandle<Mesh> firstReplacement = new(61, 2);
+        AssetHandle<Mesh> secondReplacement = new(62, 2);
+        mainWorld.Replace(
+            firstSource,
+            new MeshInstance { Mesh = firstReplacement, BoundsExpansion = 3 });
+        mainWorld.Replace(
+            secondSource,
+            new MeshInstance { Mesh = secondReplacement, BoundsExpansion = 4 });
 
-        source.Add(entity, new MaterialOverride { BaseColorTint = Vector4.One });
-        extractor.Rebuild(source);
+        int replaceCount = 0;
+        InvalidOperationException? nestedFault = null;
+        renderWorld.Hooks<RenderMesh>().OnReplace(
+            (DeferredWorld _, Entity _, in RenderMesh _) =>
+            {
+                if (Interlocked.Increment(ref replaceCount) != 1)
+                    return;
 
-        Assert.True(extractor.ShapeVersion > shapeVersion);
-        shapeVersion = extractor.ShapeVersion;
+                try
+                {
+                    extraction.Extract(mainWorld);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    nestedFault = exception;
+                }
+            });
 
-        source.Remove<MaterialOverride>(entity);
-        extractor.Rebuild(source);
+        extraction.Extract(mainWorld);
 
-        Assert.True(extractor.ShapeVersion > shapeVersion);
+        Assert.NotNull(nestedFault);
+        Assert.Contains("already active", nestedFault.Message, StringComparison.Ordinal);
+        Assert.Equal(2, replaceCount);
+        Assert.Equal(
+            firstReplacement,
+            renderWorld.Read<RenderMesh>(Mirror(renderWorld, firstSource)).Mesh);
+        Assert.Equal(
+            secondReplacement,
+            renderWorld.Read<RenderMesh>(Mirror(renderWorld, secondSource)).Mesh);
+
+        extraction.Extract(mainWorld);
+        Assert.Equal(1, renderWorld.GetByIndex<RenderSource, Entity>(firstSource).Length);
+        Assert.Equal(1, renderWorld.GetByIndex<RenderSource, Entity>(secondSource).Length);
     }
 
     [Fact]
-    public void Rebuild_DoesNotChangeShapeVersion_WhenMaterialOverrideValueChanges()
+    public void Extract_IndexesOneStableRenderSourceMirrorPerMainEntity()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
-        source.Add(entity, new MaterialOverride { BaseColorTint = Vector4.One });
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity firstSource = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(1, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
+        Entity secondSource = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(2, 1),
+            boundsExpansion: 0,
+            position: Vector3.One);
 
-        extractor.Rebuild(source);
-        uint version = extractor.Version;
-        uint shapeVersion = extractor.ShapeVersion;
+        extraction.Extract(mainWorld);
 
-        source.AddOrSet(entity, new MaterialOverride { BaseColorTint = new Vector4(0.5f, 1, 1, 1) });
-        extractor.Rebuild(source);
+        Entity firstMirror = Mirror(renderWorld, firstSource);
+        Entity secondMirror = Mirror(renderWorld, secondSource);
+        Assert.NotEqual(firstMirror, secondMirror);
+        Assert.Equal(firstSource, renderWorld.Read<RenderSource>(firstMirror).Entity);
+        Assert.Equal(secondSource, renderWorld.Read<RenderSource>(secondMirror).Entity);
 
-        Assert.True(extractor.Version > version);
-        Assert.Equal(shapeVersion, extractor.ShapeVersion);
+        extraction.Extract(mainWorld);
+
+        Assert.Equal(firstMirror, Mirror(renderWorld, firstSource));
+        Assert.Equal(secondMirror, Mirror(renderWorld, secondSource));
     }
 
     [Fact]
-    public void Rebuild_DoesNotVersion_WhenSourceUnchanged()
+    public void Extract_DoesNotInvalidateIndependentInternedQueryAcquisitions()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        QueryHandle renderSourceQuery = renderWorld.Query(
+            new QueryDefinitionBuilder().Read<RenderSource>());
+        QueryHandle sourceQuery = mainWorld.Query(SourceExtractionDefinition());
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(3, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
 
-        extractor.Rebuild(source);
-        uint version = extractor.Version;
-        extractor.Rebuild(source);
+        renderWorld.ReleaseQuery(renderSourceQuery);
+        extraction.Extract(mainWorld);
 
-        Assert.Equal(version, extractor.Version);
-        Assert.Single(Instances(renderWorld.World));
+        Assert.Equal(source, renderWorld.Read<RenderSource>(Mirror(renderWorld, source)).Entity);
+        Assert.Equal(SourceExtractionDefinition().Key, mainWorld.GetQueryDefinition(sourceQuery).Key);
+        mainWorld.ReleaseQuery(sourceQuery);
     }
 
     [Fact]
-    public void Rebuild_DoesNotChangeShapeVersion_WhenLightValuesChangeWithoutCountChange()
+    public void Extract_StoresTransformAndMeshAsSeparateRenderComponents()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId lightEntity = source.CreateEntity();
-        Handle<Texture> atlas = new(31, 1);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        AssetHandle<Mesh> mesh = new(17, 3);
+        var sourceTransform = new TransformQvvs(
+            new Vector3(3, 2, 1),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
+            2)
+        {
+            Stretch = new Vector3(1, 2, 3),
+        };
+        Entity source = mainWorld.CreateEntity();
+        mainWorld.Add(source, new WorldTransform { Qvvs = sourceTransform });
+        mainWorld.Add(source, new MeshInstance { Mesh = mesh, BoundsExpansion = 1.5f });
+
+        extraction.Extract(mainWorld);
+
+        Entity mirror = Mirror(renderWorld, source);
+        Assert.True(renderWorld.Has<RenderTransform>(mirror));
+        Assert.True(renderWorld.Has<RenderMesh>(mirror));
+        RenderTransform transform = renderWorld.Read<RenderTransform>(mirror);
+        RenderMesh renderMesh = renderWorld.Read<RenderMesh>(mirror);
+        Assert.Equal(sourceTransform.Position, transform.Position);
+        Assert.Equal(sourceTransform.Rotation, transform.Rotation);
+        Assert.Equal(sourceTransform.Scale, transform.Scale);
+        Assert.Equal(sourceTransform.Stretch, transform.Stretch);
+        Assert.Equal(mesh, renderMesh.Mesh);
+        Assert.Equal(1.5f, renderMesh.BoundsExpansion);
+    }
+
+    [Fact]
+    public void Extract_TranslatesMaterialBindingBuffersAndTracksReplacementAndRemoval()
+    {
+        World mainWorld = new();
+        RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(5, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
+        AssetHandle<Material> first = new(11, 1);
+        AssetHandle<Material> second = new(12, 1);
+        AssetHandle<Material> replacement = new(13, 2);
+        SetSourceBindings(mainWorld, source, first, second, count: 2);
+
+        extraction.Extract(mainWorld);
+
+        Entity mirror = Mirror(renderWorld, source);
+        Assert.True(renderWorld.HasBuffer<RenderMaterialBinding>(mirror));
+        Assert.False(renderWorld.HasBuffer<MeshMaterialBinding>(mirror));
+        AssertRenderBindings(renderWorld, mirror, first, second, count: 2);
+
+        SetSourceBindings(mainWorld, source, replacement, default, count: 1);
+        extraction.Extract(mainWorld);
+
+        Assert.Equal(mirror, Mirror(renderWorld, source));
+        AssertRenderBindings(renderWorld, mirror, replacement, default, count: 1);
+
+        mainWorld.RemoveBuffer<MeshMaterialBinding>(source);
+        extraction.Extract(mainWorld);
+
+        Assert.Equal(mirror, Mirror(renderWorld, source));
+        Assert.False(renderWorld.HasBuffer<RenderMaterialBinding>(mirror));
+    }
+
+    [Fact]
+    public void Extract_ValueDeltaMatchesForcedStructuralReference()
+    {
+        World deltaMainWorld = new();
+        World referenceMainWorld = new();
+        RenderWorld deltaRenderWorld = new();
+        RenderWorld referenceRenderWorld = new();
+        using var deltaExtraction = new RenderExtractionSystems(deltaRenderWorld);
+        using var referenceExtraction = new RenderExtractionSystems(referenceRenderWorld);
+        AssetHandle<Mesh> initialMesh = new(81, 1);
+        AssetHandle<Material> initialMaterial = new(82, 1);
+        Entity deltaMeshSource = AddMeshSource(
+            deltaMainWorld,
+            initialMesh,
+            boundsExpansion: 1,
+            position: Vector3.One);
+        Entity referenceMeshSource = AddMeshSource(
+            referenceMainWorld,
+            initialMesh,
+            boundsExpansion: 1,
+            position: Vector3.One);
+        SetSourceBindings(
+            deltaMainWorld,
+            deltaMeshSource,
+            initialMaterial,
+            default,
+            count: 1);
+        SetSourceBindings(
+            referenceMainWorld,
+            referenceMeshSource,
+            initialMaterial,
+            default,
+            count: 1);
+        PointLight initialPoint = new(
+            Vector3.One,
+            8,
+            new Vector3(0.25f, 0.5f, 1),
+            2,
+            0x01u);
+        LightCookie initialCookie = new(
+            new AssetHandle<Texture>(83, 1),
+            0.5f,
+            new Vector4(1, 1, 0, 0),
+            Matrix4x4.Identity);
+        deltaMainWorld.Add(deltaMeshSource, initialPoint);
+        deltaMainWorld.Add(deltaMeshSource, initialCookie);
+        referenceMainWorld.Add(referenceMeshSource, initialPoint);
+        referenceMainWorld.Add(referenceMeshSource, initialCookie);
+
+        DirectionalLight initialDirectional = new(
+            -Vector3.UnitY,
+            Vector3.One,
+            1,
+            0x02u);
+        Entity deltaDirectionalSource = deltaMainWorld.CreateEntity(initialDirectional);
+        Entity referenceDirectionalSource =
+            referenceMainWorld.CreateEntity(initialDirectional);
+        SpotLight initialSpot = new(
+            Vector3.Zero,
+            12,
+            Vector3.UnitZ,
+            0.8f,
+            0.4f,
+            new Vector3(1, 0.5f, 0.25f),
+            3,
+            0x04u);
+        Entity deltaSpotSource = deltaMainWorld.CreateEntity(initialSpot);
+        Entity referenceSpotSource = referenceMainWorld.CreateEntity(initialSpot);
+
+        deltaExtraction.Extract(deltaMainWorld);
+        referenceExtraction.Extract(referenceMainWorld);
+
+        AssetHandle<Mesh> replacementMesh = new(91, 2);
+        AssetHandle<Material> replacementMaterial = new(92, 2);
+        MeshInstance replacementInstance = new()
+        {
+            Mesh = replacementMesh,
+            BoundsExpansion = 4,
+        };
+        Vector3 replacementPosition = new(7, 8, 9);
+        PointLight replacementPoint = initialPoint with
+        {
+            Position = new Vector3(2, 3, 4),
+            Range = 32,
+            Intensity = 6,
+            LayerMask = 0x10u,
+        };
+        LightCookie replacementCookie = initialCookie with
+        {
+            Texture = new AssetHandle<Texture>(93, 2),
+            Strength = 0.75f,
+            ScaleOffset = new Vector4(0.5f, 0.5f, 0.25f, 0.25f),
+            WorldToCookie = Matrix4x4.CreateTranslation(1, 2, 3),
+        };
+        DirectionalLight replacementDirectional = initialDirectional with
+        {
+            Direction = Vector3.Normalize(new Vector3(1, -2, 3)),
+            Intensity = 5,
+            LayerMask = 0x20u,
+        };
+        SpotLight replacementSpot = initialSpot with
+        {
+            Position = new Vector3(4, 5, 6),
+            Range = 24,
+            Intensity = 7,
+            LayerMask = 0x40u,
+        };
+
+        Move(deltaMainWorld, deltaMeshSource, replacementPosition);
+        Move(referenceMainWorld, referenceMeshSource, replacementPosition);
+        deltaMainWorld.Replace(deltaMeshSource, replacementInstance);
+        referenceMainWorld.Replace(referenceMeshSource, replacementInstance);
+        SetSourceBindings(
+            deltaMainWorld,
+            deltaMeshSource,
+            replacementMaterial,
+            default,
+            count: 1);
+        SetSourceBindings(
+            referenceMainWorld,
+            referenceMeshSource,
+            replacementMaterial,
+            default,
+            count: 1);
+        deltaMainWorld.Replace(deltaMeshSource, replacementPoint);
+        referenceMainWorld.Replace(referenceMeshSource, replacementPoint);
+        deltaMainWorld.Replace(deltaMeshSource, replacementCookie);
+        referenceMainWorld.Replace(referenceMeshSource, replacementCookie);
+        deltaMainWorld.Replace(deltaDirectionalSource, replacementDirectional);
+        referenceMainWorld.Replace(referenceDirectionalSource, replacementDirectional);
+        deltaMainWorld.Replace(deltaSpotSource, replacementSpot);
+        referenceMainWorld.Replace(referenceSpotSource, replacementSpot);
+
+        long deltaTopology = deltaMainWorld.PublishedTopologyRevision;
+        Entity irrelevant = referenceMainWorld.CreateEntity();
+        referenceMainWorld.DestroyEntity(irrelevant);
+        Assert.Equal(deltaTopology, deltaMainWorld.PublishedTopologyRevision);
+        Assert.NotEqual(deltaTopology, referenceMainWorld.PublishedTopologyRevision);
+        long deltaRenderTopology = deltaRenderWorld.PublishedTopologyRevision;
+        long referenceRenderTopology = referenceRenderWorld.PublishedTopologyRevision;
+
+        deltaExtraction.Extract(deltaMainWorld);
+        referenceExtraction.Extract(referenceMainWorld);
+
+        Assert.Equal(deltaRenderTopology, deltaRenderWorld.PublishedTopologyRevision);
+        Assert.True(
+            referenceRenderWorld.PublishedTopologyRevision > referenceRenderTopology);
+        Entity deltaMeshMirror = Mirror(deltaRenderWorld, deltaMeshSource);
+        Entity referenceMeshMirror = Mirror(referenceRenderWorld, referenceMeshSource);
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderTransform>(referenceMeshMirror),
+            deltaRenderWorld.Read<RenderTransform>(deltaMeshMirror));
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderPreviousTransform>(referenceMeshMirror),
+            deltaRenderWorld.Read<RenderPreviousTransform>(deltaMeshMirror));
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderMesh>(referenceMeshMirror),
+            deltaRenderWorld.Read<RenderMesh>(deltaMeshMirror));
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderPointLight>(referenceMeshMirror),
+            deltaRenderWorld.Read<RenderPointLight>(deltaMeshMirror));
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderLightCookie>(referenceMeshMirror),
+            deltaRenderWorld.Read<RenderLightCookie>(deltaMeshMirror));
+        Assert.Equal(
+            Vector3.One,
+            deltaRenderWorld.Read<RenderPreviousTransform>(deltaMeshMirror).Value.Position);
+        Assert.Equal(
+            replacementPosition,
+            deltaRenderWorld.Read<RenderTransform>(deltaMeshMirror).Position);
+        AssertRenderBindings(
+            deltaRenderWorld,
+            deltaMeshMirror,
+            replacementMaterial,
+            default,
+            count: 1);
+        AssertRenderBindings(
+            referenceRenderWorld,
+            referenceMeshMirror,
+            replacementMaterial,
+            default,
+            count: 1);
+
+        Entity deltaDirectionalMirror = Mirror(deltaRenderWorld, deltaDirectionalSource);
+        Entity referenceDirectionalMirror =
+            Mirror(referenceRenderWorld, referenceDirectionalSource);
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderDirectionalLight>(referenceDirectionalMirror),
+            deltaRenderWorld.Read<RenderDirectionalLight>(deltaDirectionalMirror));
+
+        Entity deltaSpotMirror = Mirror(deltaRenderWorld, deltaSpotSource);
+        Entity referenceSpotMirror = Mirror(referenceRenderWorld, referenceSpotSource);
+        Assert.Equal(
+            referenceRenderWorld.Read<RenderSpotLight>(referenceSpotMirror),
+            deltaRenderWorld.Read<RenderSpotLight>(deltaSpotMirror));
+    }
+
+    [Fact]
+    public void Extract_CreatesPerEntityLightsAndOptionalCookies()
+    {
+        World mainWorld = new();
+        RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld);
         DirectionalLight directional = new(
             new Vector3(0, -1, 0),
             new Vector3(1, 0.5f, 0.25f),
-            2f,
-            0x00000002u,
-            1,
+            2,
+            0x02u);
+        PointLight point = new(
+            new Vector3(1, 2, 3),
+            8,
+            new Vector3(0.25f, 1, 0.5f),
+            3,
+            0x04u);
+        SpotLight spot = new(
+            new Vector3(4, 5, 6),
+            16,
+            Vector3.Normalize(new Vector3(0, -1, 1)),
+            0.8f,
+            0.4f,
+            new Vector3(0.1f, 0.2f, 1),
+            4,
+            0x08u);
+        LightCookie directionalCookie = new(
+            new AssetHandle<Texture>(31, 1),
             0.5f,
             new Vector4(0.5f, 0.5f, 0, 0),
             Matrix4x4.Identity);
-        source.Add(lightEntity, new SceneLights(new[] { directional }, ReadOnlyMemory<PointLight>.Empty, ReadOnlyMemory<SpotLight>.Empty, atlas));
-
-        extractor.Rebuild(source);
-        uint version = extractor.Version;
-        uint shapeVersion = extractor.ShapeVersion;
-
-        DirectionalLight updatedDirectional = new(
-            new Vector3(1, -1, 0),
-            new Vector3(0.75f, 1, 0.5f),
-            5f,
-            0x00000004u,
-            2,
+        LightCookie spotCookie = new(
+            new AssetHandle<Texture>(32, 1),
             0.75f,
             new Vector4(0.25f, 0.25f, 0.5f, 0),
             Matrix4x4.CreateTranslation(1, 2, 3));
-        source.AddOrSet(
-            lightEntity,
-            new SceneLights(
-                new[] { updatedDirectional },
-                ReadOnlyMemory<PointLight>.Empty,
-                ReadOnlyMemory<SpotLight>.Empty,
-                atlas));
-        extractor.Rebuild(source);
+        Entity directionalSource = mainWorld.CreateEntity();
+        Entity pointSource = mainWorld.CreateEntity();
+        Entity spotSource = mainWorld.CreateEntity();
+        mainWorld.Add(directionalSource, directional);
+        mainWorld.Add(directionalSource, directionalCookie);
+        mainWorld.Add(pointSource, point);
+        mainWorld.Add(spotSource, spot);
+        mainWorld.Add(spotSource, spotCookie);
 
-        Assert.True(extractor.Version > version);
-        Assert.Equal(shapeVersion, extractor.ShapeVersion);
-        Assert.Equal(new[] { updatedDirectional }, renderWorld.SceneLights.DirectionalLights.ToArray());
-        Assert.Equal(atlas, renderWorld.SceneLights.LightCookieAtlas);
+        extraction.Extract(mainWorld);
+
+        Entity directionalMirror = Mirror(renderWorld, directionalSource);
+        Entity pointMirror = Mirror(renderWorld, pointSource);
+        Entity spotMirror = Mirror(renderWorld, spotSource);
+        AssertDirectionalLight(
+            directional,
+            renderWorld.Read<RenderDirectionalLight>(directionalMirror));
+        AssertLightCookie(
+            directionalCookie,
+            renderWorld.Read<RenderLightCookie>(directionalMirror));
+        Assert.False(renderWorld.Has<RenderPointLight>(directionalMirror));
+        Assert.False(renderWorld.Has<RenderSpotLight>(directionalMirror));
+        AssertPointLight(point, renderWorld.Read<RenderPointLight>(pointMirror));
+        Assert.False(renderWorld.Has<RenderLightCookie>(pointMirror));
+        AssertSpotLight(spot, renderWorld.Read<RenderSpotLight>(spotMirror));
+        AssertLightCookie(spotCookie, renderWorld.Read<RenderLightCookie>(spotMirror));
+
+        DirectionalLight updatedDirectional = directional with { Intensity = 7, LayerMask = 0x10u };
+        mainWorld.Replace(directionalSource, updatedDirectional);
+        mainWorld.Remove<LightCookie>(directionalSource);
+        extraction.Extract(mainWorld);
+
+        Assert.Equal(directionalMirror, Mirror(renderWorld, directionalSource));
+        AssertDirectionalLight(
+            updatedDirectional,
+            renderWorld.Read<RenderDirectionalLight>(directionalMirror));
+        Assert.False(renderWorld.Has<RenderLightCookie>(directionalMirror));
     }
 
     [Fact]
-    public void Rebuild_DoesNotChangeInstanceShapeVersion_WhenLightCountChanges()
+    public void Extract_RemovingMeshFacetKeepsSameLightMirror()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId lightEntity = source.CreateEntity();
-        DirectionalLight directional = new(new Vector3(0, -1, 0), Vector3.One, 2f);
-        PointLight point = new(new Vector3(1, 2, 3), 8f, new Vector3(0.25f, 1, 0.5f), 3f);
-        source.Add(
-            lightEntity,
-            new SceneLights(
-                new[] { directional },
-                ReadOnlyMemory<PointLight>.Empty,
-                ReadOnlyMemory<SpotLight>.Empty,
-                default));
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(7, 1),
+            boundsExpansion: 0.5f,
+            position: Vector3.One);
+        PointLight point = new(Vector3.One, 10, Vector3.One, 2);
+        mainWorld.Add(source, point);
+        SetSourceBindings(mainWorld, source, new AssetHandle<Material>(21, 1), default, count: 1);
 
-        extractor.Rebuild(source);
-        uint shapeVersion = extractor.ShapeVersion;
-        uint instanceShapeVersion = renderWorld.InstanceShapeVersion;
+        extraction.Extract(mainWorld);
+        Entity mirror = Mirror(renderWorld, source);
 
-        source.AddOrSet(
-            lightEntity,
-            new SceneLights(
-                new[] { directional },
-                new[] { point },
-                ReadOnlyMemory<SpotLight>.Empty,
-                default));
-        extractor.Rebuild(source);
+        mainWorld.Remove<MeshInstance>(source);
+        extraction.Extract(mainWorld);
 
-        Assert.True(extractor.ShapeVersion > shapeVersion);
-        Assert.Equal(instanceShapeVersion, renderWorld.InstanceShapeVersion);
+        Assert.True(renderWorld.IsAlive(mirror));
+        Assert.Equal(mirror, Mirror(renderWorld, source));
+        AssertPointLight(point, renderWorld.Read<RenderPointLight>(mirror));
+        Assert.False(renderWorld.Has<RenderTransform>(mirror));
+        Assert.False(renderWorld.Has<RenderMesh>(mirror));
+        Assert.False(renderWorld.HasBuffer<RenderMaterialBinding>(mirror));
     }
 
     [Fact]
-    public void Rebuild_UpdatesOnNewData()
+    public void Extract_PreservesRendererOnlyComponentOnMirror()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId lightEntity = source.CreateEntity();
-        Handle<Texture> initialAtlas = new(41, 1);
-        Handle<Texture> updatedAtlas = new(42, 1);
-        DirectionalLight directional = new(new Vector3(0, -1, 0), new Vector3(1, 0.5f, 0.25f), 2f);
-        PointLight point = new(new Vector3(1, 2, 3), 8f, new Vector3(0.25f, 1, 0.5f), 3f);
-        SpotLight spot = new(new Vector3(4, 5, 6), 16f, new Vector3(0, -1, 1), 0.8f, 0.4f, new Vector3(0.1f, 0.2f, 1), 4f);
-        source.Add(lightEntity, new SceneLights(new[] { directional }, new[] { point }, new[] { spot }, initialAtlas));
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(8, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
+        extraction.Extract(mainWorld);
+        Entity mirror = Mirror(renderWorld, source);
+        renderWorld.Add(mirror, new PipelinePreparedState(73));
 
-        extractor.Rebuild(source);
+        Move(mainWorld, source, new Vector3(9, 8, 7));
+        extraction.Extract(mainWorld);
 
-        Assert.Equal(new[] { directional }, renderWorld.SceneLights.DirectionalLights.ToArray());
-        Assert.Equal(new[] { point }, renderWorld.SceneLights.PointLights.ToArray());
-        Assert.Equal(new[] { spot }, renderWorld.SceneLights.SpotLights.ToArray());
-        Assert.Equal(initialAtlas, renderWorld.SceneLights.LightCookieAtlas);
-
-        uint version = extractor.Version;
-        uint shapeVersion = extractor.ShapeVersion;
-        DirectionalLight updatedDirectional = new(new Vector3(1, -1, 0), new Vector3(0.75f, 1, 0.5f), 5f);
-        SpotLight updatedSpot = new(new Vector3(6, 5, 4), 12f, new Vector3(1, -1, 0), 0.7f, 0.2f, new Vector3(1, 0.25f, 0.1f), 6f);
-        source.AddOrSet(
-            lightEntity,
-            new SceneLights(
-                new[] { updatedDirectional },
-                ReadOnlyMemory<PointLight>.Empty,
-                new[] { updatedSpot },
-                updatedAtlas));
-        extractor.Rebuild(source);
-
-        Assert.True(extractor.Version > version);
-        Assert.True(extractor.ShapeVersion > shapeVersion);
-        Assert.Equal(new[] { updatedDirectional }, renderWorld.SceneLights.DirectionalLights.ToArray());
-        Assert.Empty(renderWorld.SceneLights.PointLights.ToArray());
-        Assert.Equal(new[] { updatedSpot }, renderWorld.SceneLights.SpotLights.ToArray());
-        Assert.Equal(updatedAtlas, renderWorld.SceneLights.LightCookieAtlas);
-
-        version = extractor.Version;
-        extractor.Rebuild(source);
-
-        Assert.Equal(version, extractor.Version);
+        Assert.Equal(mirror, Mirror(renderWorld, source));
+        Assert.Equal(73, renderWorld.Read<PipelinePreparedState>(mirror).Value);
+        Assert.Equal(new Vector3(9, 8, 7), renderWorld.Read<RenderTransform>(mirror).Position);
     }
 
     [Fact]
-    public void Rebuild_RemovesInstance_WhenMeshRemoved()
+    public void Extract_PreservesRendererOnlyEntity()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity rendererOnly = renderWorld.CreateEntity();
+        renderWorld.Add(rendererOnly, new PipelinePreparedState(91));
+        AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(9, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
 
-        extractor.Rebuild(source);
-        source.Remove<MeshInstance>(entity);
-        extractor.Rebuild(source);
+        extraction.Extract(mainWorld);
+        extraction.Extract(mainWorld);
 
-        Assert.Empty(Instances(renderWorld.World));
-        Assert.Empty(Sources(renderWorld.World));
-        Removed<RenderInstance> removed = Assert.Single(RemovedInstances(renderWorld.World));
-        Assert.Equal(0, removed.Value.InstanceIndex);
+        Assert.True(renderWorld.IsAlive(rendererOnly));
+        Assert.False(renderWorld.Has<RenderSource>(rendererOnly));
+        Assert.Equal(91, renderWorld.Read<PipelinePreparedState>(rendererOnly).Value);
     }
 
     [Fact]
-    public void Rebuild_RemovesInstance_WhenTransformRemoved()
+    public void Extract_DestroysMirrorWhenSourceIsDestroyed()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(10, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
+        extraction.Extract(mainWorld);
+        Entity mirror = Mirror(renderWorld, source);
+        renderWorld.Add(mirror, new PipelinePreparedState(12));
 
-        extractor.Rebuild(source);
-        source.Remove<WorldTransform>(entity);
-        extractor.Rebuild(source);
+        mainWorld.DestroyEntity(source);
+        extraction.Extract(mainWorld);
 
-        Assert.Empty(Instances(renderWorld.World));
-        Assert.Empty(Sources(renderWorld.World));
-        Assert.False(source.Has<RenderSourceLink>(entity));
-        Removed<RenderInstance> removed = Assert.Single(RemovedInstances(renderWorld.World));
-        Assert.Equal(0, removed.Value.InstanceIndex);
+        Assert.False(mainWorld.IsAlive(source));
+        Assert.False(renderWorld.IsAlive(mirror));
+        Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(source).Length);
     }
 
     [Fact]
-    public void Rebuild_RemovesInstance_WhenSourceDestroyed()
+    public void Extract_TopologyFaultRollsBackCreatedAndDestroyedMirrorsThenCanRetry()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = AddSource(source, new Handle<Material>(1, 1), new Handle<Mesh>(5, 1), bounds: 0);
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity removedSource = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(73, 1),
+            boundsExpansion: 1,
+            position: Vector3.Zero);
+        extraction.Extract(mainWorld);
+        Entity removedMirror = Mirror(renderWorld, removedSource);
+        renderWorld.Add(removedMirror, new PipelinePreparedState(144));
 
-        extractor.Rebuild(source);
-        source.DestroyEntity(entity);
-        extractor.Rebuild(source);
+        mainWorld.DestroyEntity(removedSource);
+        Entity addedSource = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(74, 1),
+            boundsExpansion: 2,
+            position: Vector3.One);
+        int removeCount = 0;
+        renderWorld.Hooks<RenderSource>().OnRemove(
+            (DeferredWorld _, Entity _, in RenderSource _) =>
+            {
+                if (Interlocked.Increment(ref removeCount) == 1)
+                {
+                    throw new InvalidOperationException(
+                        "intentional mirror topology fault");
+                }
+            });
 
-        Assert.Empty(Instances(renderWorld.World));
-        Assert.Empty(Sources(renderWorld.World));
-        Assert.False(source.IsAlive(entity));
-        Removed<RenderInstance> removed = Assert.Single(RemovedInstances(renderWorld.World));
-        Assert.Equal(0, removed.Value.InstanceIndex);
+        InvalidOperationException fault = Assert.Throws<InvalidOperationException>(
+            () => extraction.Extract(mainWorld));
+
+        Assert.Contains("intentional mirror topology fault", fault.Message, StringComparison.Ordinal);
+        Assert.True(renderWorld.IsAlive(removedMirror));
+        Assert.Equal(removedMirror, Mirror(renderWorld, removedSource));
+        Assert.Equal(144, renderWorld.Read<PipelinePreparedState>(removedMirror).Value);
+        Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(addedSource).Length);
+
+        extraction.Extract(mainWorld);
+
+        Assert.False(renderWorld.IsAlive(removedMirror));
+        Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(removedSource).Length);
+        Entity addedMirror = Mirror(renderWorld, addedSource);
+        Assert.Equal(new AssetHandle<Mesh>(74, 1), renderWorld.Read<RenderMesh>(addedMirror).Mesh);
+        Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(addedMirror).Position);
     }
 
     [Fact]
-    public void Rebuild_AddsInstance_WhenTransformAdded()
+    public void Extract_DoesNotWriteRenderLinksOrSnapshotsIntoMainWorld()
     {
-        World source = new();
+        World mainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = source.CreateEntity();
-        var transform = new TransformQvvs(Vector3.One, Quaternion.Identity, 1);
-        source.Add(entity, new MeshInstance { Mesh = new Handle<Mesh>(5, 1), BoundsExpansion = 0.5f });
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity source = AddMeshSource(
+            mainWorld,
+            new AssetHandle<Mesh>(11, 1),
+            boundsExpansion: 0.75f,
+            position: Vector3.One);
+        SetSourceBindings(mainWorld, source, new AssetHandle<Material>(31, 1), default, count: 1);
 
-        extractor.Rebuild(source);
-        source.Add(entity, new WorldTransform { Qvvs = transform });
-        extractor.Rebuild(source);
+        extraction.Extract(mainWorld);
 
-        RenderInstance instance = Assert.Single(Instances(renderWorld.World));
-        Assert.Equal(entity, instance.SourceEntity);
-        Assert.True(source.Has<RenderSourceLink>(entity));
+        Assert.True(mainWorld.Has<WorldTransform>(source));
+        Assert.True(mainWorld.Has<MeshInstance>(source));
+        Assert.True(mainWorld.HasBuffer<MeshMaterialBinding>(source));
+        Assert.False(mainWorld.Has<RenderSource>(source));
+        Assert.False(mainWorld.Has<RenderTransform>(source));
+        Assert.False(mainWorld.Has<RenderMesh>(source));
+        Assert.False(mainWorld.HasBuffer<RenderMaterialBinding>(source));
     }
 
     [Fact]
-    public void Rebuild_AddsInstance_WhenMeshAdded()
+    public void Extract_FirstFailureDoesNotBindSourceWorld()
     {
-        World source = new();
+        World rejectedMainWorld = new();
+        World acceptedMainWorld = new();
         RenderWorld renderWorld = new();
-        RenderWorldExtractor extractor = new(renderWorld);
-        EntityId entity = source.CreateEntity();
-        var transform = new TransformQvvs(Vector3.One, Quaternion.Identity, 1);
-        source.Add(entity, new WorldTransform { Qvvs = transform });
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity rejectedSource = AddMeshSource(
+            rejectedMainWorld,
+            new AssetHandle<Mesh>(71, 1),
+            boundsExpansion: 1,
+            position: Vector3.Zero);
+        acceptedMainWorld.CreateEntity();
+        Entity acceptedSource = AddMeshSource(
+            acceptedMainWorld,
+            new AssetHandle<Mesh>(72, 1),
+            boundsExpansion: 2,
+            position: Vector3.One);
+        int addCount = 0;
+        renderWorld.Hooks<RenderMesh>().OnAdd(
+            (DeferredWorld _, Entity _, in RenderMesh _) =>
+            {
+                if (++addCount == 1)
+                    throw new InvalidOperationException("intentional first extraction fault");
+            });
 
-        extractor.Rebuild(source);
-        source.Add(entity, new MeshInstance { Mesh = new Handle<Mesh>(5, 1), BoundsExpansion = 0.5f });
-        extractor.Rebuild(source);
+        InvalidOperationException firstFault = Assert.Throws<InvalidOperationException>(
+            () => extraction.Extract(rejectedMainWorld));
 
-        RenderInstance instance = Assert.Single(Instances(renderWorld.World));
-        Assert.Equal(entity, instance.SourceEntity);
-        Assert.True(source.Has<RenderSourceLink>(entity));
+        Assert.Contains("intentional first extraction fault", firstFault.Message, StringComparison.Ordinal);
+        Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(rejectedSource).Length);
+
+        extraction.Extract(acceptedMainWorld);
+
+        Entity acceptedMirror = Mirror(renderWorld, acceptedSource);
+        Assert.Equal(new AssetHandle<Mesh>(72, 1), renderWorld.Read<RenderMesh>(acceptedMirror).Mesh);
+        Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(rejectedSource).Length);
+        InvalidOperationException bindingFault = Assert.Throws<InvalidOperationException>(
+            () => extraction.Extract(rejectedMainWorld));
+        Assert.Contains("one authoritative main World", bindingFault.Message, StringComparison.Ordinal);
+        Assert.True(renderWorld.IsAlive(acceptedMirror));
     }
 
-    private static EntityId AddSource(
+    [Fact]
+    public void Extract_BindsRenderWorldToOneMainWorld()
+    {
+        World firstMainWorld = new();
+        World secondMainWorld = new();
+        RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Entity firstSource = AddMeshSource(
+            firstMainWorld,
+            new AssetHandle<Mesh>(41, 1),
+            boundsExpansion: 0,
+            position: Vector3.Zero);
+        AddMeshSource(
+            secondMainWorld,
+            new AssetHandle<Mesh>(42, 1),
+            boundsExpansion: 0,
+            position: Vector3.One);
+
+        extraction.Extract(firstMainWorld);
+        Entity firstMirror = Mirror(renderWorld, firstSource);
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => extraction.Extract(secondMainWorld));
+
+        Assert.Contains("one authoritative main World", error.Message, StringComparison.Ordinal);
+        Assert.True(renderWorld.IsAlive(firstMirror));
+        Assert.Equal(new AssetHandle<Mesh>(41, 1), renderWorld.Read<RenderMesh>(firstMirror).Mesh);
+    }
+
+    [Fact]
+    public void Extract_RejectsUsingRenderWorldAsItsOwnMainWorld()
+    {
+        RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld);
+
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => extraction.Extract(renderWorld));
+
+        Assert.Equal("mainWorld", error.ParamName);
+        Assert.Contains("cannot be an authoritative", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExtractionFeatureRegistersItsOwnReadsAndPublicationLogic()
+    {
+        World mainWorld = new();
+        Entity source = mainWorld.CreateEntity();
+        mainWorld.Add(source, new CustomExtractValue(37));
+        RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        var custom = new CustomExtractionSystem();
+        extraction.Add(custom);
+
+        extraction.Extract(mainWorld);
+
+        Entity mirror = Mirror(renderWorld, source);
+        Assert.Equal(37, renderWorld.Read<CustomRenderValue>(mirror).Value);
+        Assert.Throws<InvalidOperationException>(() =>
+            extraction.Add(new CustomExtractionSystem()));
+        Assert.Null(typeof(RenderWorld).GetMethod(
+            "Extract",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public));
+    }
+
+    [Fact]
+    public void Extract_RejectsAnotherRenderWorldAsTheMainWorld()
+    {
+        RenderWorld source = new();
+        RenderWorld destination = new();
+        using var extraction = new RenderExtractionSystems(destination);
+
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => extraction.Extract(source));
+
+        Assert.Equal("mainWorld", error.ParamName);
+        Assert.Contains("requires a main World", error.Message, StringComparison.Ordinal);
+    }
+
+    private static Entity AddMeshSource(
         World world,
-        Handle<Material> material,
-        Handle<Mesh> mesh,
-        float bounds,
-        bool bindMaterial = true)
+        AssetHandle<Mesh> mesh,
+        float boundsExpansion,
+        Vector3 position)
     {
-        EntityId entity = world.CreateEntity();
-        var transform = new TransformQvvs(Vector3.One, Quaternion.Identity, 1);
-        world.Add(entity, new WorldTransform { Qvvs = transform });
-        world.Add(entity, new MeshInstance { Mesh = mesh, BoundsExpansion = bounds });
-        if (bindMaterial)
-            world.Add(entity, new MeshMaterialBindings { Materials = new[] { material } });
+        Entity entity = world.CreateEntity();
+        world.Add(
+            entity,
+            new WorldTransform
+            {
+                Qvvs = new TransformQvvs(position, Quaternion.Identity, 1),
+            });
+        world.Add(entity, new MeshInstance { Mesh = mesh, BoundsExpansion = boundsExpansion });
         return entity;
     }
 
-    private static void Move(World world, EntityId entity, Vector3 position)
+    private static QueryDefinition SourceExtractionDefinition() =>
+        new QueryDefinitionBuilder()
+            .Optional<WorldTransform>(QueryAccess.Read)
+            .Optional<MeshInstance>(QueryAccess.Read)
+            .Optional<DirectionalLight>(QueryAccess.Read)
+            .Optional<PointLight>(QueryAccess.Read)
+            .Optional<SpotLight>(QueryAccess.Read)
+            .Optional<LightCookie>(QueryAccess.Read)
+            .OptionalBuffer<MeshMaterialBinding>(QueryAccess.Read)
+            .Build();
+
+    private static void Move(World world, Entity entity, Vector3 position)
     {
-        var moved = new TransformQvvs(position, Quaternion.Identity, 1);
-        ref WorldTransform transform = ref world.Get<WorldTransform>(entity);
-        transform.Qvvs = moved;
+        WorldTransform transform = world.Read<WorldTransform>(entity);
+        transform.Qvvs = new TransformQvvs(position, Quaternion.Identity, 1);
+        world.Replace(entity, transform);
     }
 
-    private static EntityId RenderEntity(World world, EntityId source)
+    private static Entity Mirror(RenderWorld renderWorld, Entity source)
     {
-        var query = world.Query(new QueryDefinitionBuilder().Read<RenderSourceEntity>());
-        foreach (var chunk in world.RunQuery(query).Chunks)
-        {
-            ReadOnlySpan<EntityId> entities = chunk.Entities;
-            ReadOnlySpan<RenderSourceEntity> sources = chunk.Read<RenderSourceEntity>();
-            for (int i = 0; i < entities.Length; i++)
+        ReadOnlySpan<Entity> matches = renderWorld.GetByIndex<RenderSource, Entity>(source);
+        Assert.Equal(1, matches.Length);
+        return matches[0];
+    }
+
+    private static void SetSourceBindings(
+        World world,
+        Entity entity,
+        AssetHandle<Material> first,
+        AssetHandle<Material> second,
+        int count)
+    {
+        Assert.InRange(count, 0, 2);
+        if (!world.HasBuffer<MeshMaterialBinding>(entity))
+            world.AddBuffer<MeshMaterialBinding>(entity);
+
+        MaterialBindingExpectation state = new(first, second, count);
+        world.ExecuteBufferWrite<MeshMaterialBinding, MaterialBindingExpectation>(
+            entity,
+            ref state,
+            static (DynamicBuffer<MeshMaterialBinding> buffer, ref MaterialBindingExpectation values) =>
             {
-                if (sources[i].SourceEntity == source)
-                    return entities[i];
+                buffer.Clear();
+                if (values.Count > 0)
+                    buffer.Add(new MeshMaterialBinding(values.First));
+                if (values.Count > 1)
+                    buffer.Add(new MeshMaterialBinding(values.Second));
+            });
+    }
+
+    private static void AssertRenderBindings(
+        RenderWorld renderWorld,
+        Entity entity,
+        AssetHandle<Material> first,
+        AssetHandle<Material> second,
+        int count)
+    {
+        MaterialBindingExpectation state = new(first, second, count);
+        renderWorld.ExecuteBufferRead<RenderMaterialBinding, MaterialBindingExpectation>(
+            entity,
+            ref state,
+            static (BufferView<RenderMaterialBinding> buffer, ref MaterialBindingExpectation expected) =>
+            {
+                ReadOnlySpan<RenderMaterialBinding> bindings = buffer.AsSpan();
+                Assert.Equal(expected.Count, bindings.Length);
+                if (expected.Count > 0)
+                    Assert.Equal(expected.First, bindings[0].Material);
+                if (expected.Count > 1)
+                    Assert.Equal(expected.Second, bindings[1].Material);
+            });
+    }
+
+    private static void AssertDirectionalLight(
+        in DirectionalLight expected,
+        in RenderDirectionalLight actual)
+    {
+        Assert.Equal(expected.Direction, actual.Direction);
+        Assert.Equal(expected.Color, actual.Color);
+        Assert.Equal(expected.Intensity, actual.Intensity);
+        Assert.Equal(expected.LayerMask, actual.LayerMask);
+    }
+
+    private static void AssertPointLight(in PointLight expected, in RenderPointLight actual)
+    {
+        Assert.Equal(expected.Position, actual.Position);
+        Assert.Equal(expected.Range, actual.Range);
+        Assert.Equal(expected.Color, actual.Color);
+        Assert.Equal(expected.Intensity, actual.Intensity);
+        Assert.Equal(expected.LayerMask, actual.LayerMask);
+    }
+
+    private static void AssertSpotLight(in SpotLight expected, in RenderSpotLight actual)
+    {
+        Assert.Equal(expected.Position, actual.Position);
+        Assert.Equal(expected.Range, actual.Range);
+        Assert.Equal(expected.Direction, actual.Direction);
+        Assert.Equal(expected.InnerConeCos, actual.InnerConeCos);
+        Assert.Equal(expected.OuterConeCos, actual.OuterConeCos);
+        Assert.Equal(expected.Color, actual.Color);
+        Assert.Equal(expected.Intensity, actual.Intensity);
+        Assert.Equal(expected.LayerMask, actual.LayerMask);
+    }
+
+    private static void AssertLightCookie(in LightCookie expected, in RenderLightCookie actual)
+    {
+        Assert.Equal(expected.Texture, actual.Texture);
+        Assert.Equal(expected.Strength, actual.Strength);
+        Assert.Equal(expected.ScaleOffset, actual.ScaleOffset);
+        Assert.Equal(expected.WorldToCookie, actual.WorldToCookie);
+    }
+
+    private readonly record struct PipelinePreparedState(int Value) : SomeEngine.ECS.IComponent;
+
+    private readonly record struct CustomExtractValue(int Value) :
+        SomeEngine.ECS.IComponent;
+
+    private readonly record struct CustomRenderValue(int Value) :
+        SomeEngine.ECS.IComponent;
+
+    private sealed class CustomExtractionSystem : IRenderExtractionSystem
+    {
+        private readonly List<(Entity Source, int Value)> _values = [];
+
+        public void DeclareReads(RenderExtractionQuery query) =>
+            query.ReadOptional<CustomExtractValue>();
+
+        public void Reset() => _values.Clear();
+
+        public void Collect(QueryChunkView chunk)
+        {
+            if (!chunk.TryRead<CustomExtractValue>(out ReadOnlySpan<CustomExtractValue> values))
+                return;
+            ReadOnlySpan<Entity> entities = chunk.Entities;
+            for (int row = 0; row < entities.Length; row++)
+                _values.Add((entities[row], values[row].Value));
+        }
+
+        public void Apply(RenderExtractionContext context)
+        {
+            for (int index = 0; index < _values.Count; index++)
+            {
+                (Entity source, int value) = _values[index];
+                Entity mirror = context.RetainMirror(source);
+                context.Upsert(mirror, new CustomRenderValue(value));
             }
         }
-
-        throw new InvalidOperationException("render source entity was not found.");
     }
 
-    private static void ClearDirty(World world, EntityId entity)
-    {
-        if (world.Has<InstanceDirty>(entity))
-            world.Remove<InstanceDirty>(entity);
-    }
-
-    private static List<RenderInstance> Instances(World world)
-    {
-        var result = new List<RenderInstance>();
-        var query = world.Query(new QueryDefinitionBuilder().Read<RenderInstance>());
-        foreach (var chunk in world.RunQuery(query).Chunks)
-        {
-            foreach (var instance in chunk.Read<RenderInstance>())
-                result.Add(instance);
-        }
-        return result;
-    }
-
-    private static List<EntityId> Sources(World world)
-    {
-        var result = new List<EntityId>();
-        var query = world.Query(new QueryDefinitionBuilder().Read<RenderSourceEntity>());
-        foreach (var chunk in world.RunQuery(query).Chunks)
-        {
-            foreach (var entity in chunk.Entities)
-                result.Add(entity);
-        }
-        return result;
-    }
-
-    private static List<RenderMaterials> Materials(World world)
-    {
-        var result = new List<RenderMaterials>();
-        var query = world.Query(new QueryDefinitionBuilder().Read<RenderMaterials>());
-        foreach (var chunk in world.RunQuery(query).Chunks)
-        {
-            foreach (var materials in chunk.Read<RenderMaterials>())
-                result.Add(materials);
-        }
-        return result;
-    }
-
-    private static List<Removed<RenderInstance>> RemovedInstances(World world)
-    {
-        var result = new List<Removed<RenderInstance>>();
-        var query = world.Query(new QueryDefinitionBuilder().Removed<RenderInstance>());
-        foreach (var chunk in world.RunQuery(query).Chunks)
-        {
-            foreach (var removed in chunk.Read<Removed<RenderInstance>>())
-                result.Add(removed);
-        }
-        return result;
-    }
+    private readonly record struct MaterialBindingExpectation(
+        AssetHandle<Material> First,
+        AssetHandle<Material> Second,
+        int Count);
 }

@@ -142,9 +142,14 @@ uint GetSlotField(
     uint fieldIndex,
     uint slotCapacity)
 {
-    uint slotIndex = slotOffset + localMaterialIndex;
-    if (slotIndex >= slotCapacity)
+    // SLOT_INVALID is the fixed instance-property sentinel while RenderWorld material-slot
+    // composition is unavailable. Check before addition so it cannot wrap into a valid slot.
+    if (slotOffset >= slotCapacity)
         return SLOT_INVALID;
+    if (localMaterialIndex >= slotCapacity - slotOffset)
+        return SLOT_INVALID;
+
+    uint slotIndex = slotOffset + localMaterialIndex;
 
     uint fieldBaseUint = fieldIndex * (slotCapacity / 2);
     uint wordIdx = fieldBaseUint + (slotIndex / 2);

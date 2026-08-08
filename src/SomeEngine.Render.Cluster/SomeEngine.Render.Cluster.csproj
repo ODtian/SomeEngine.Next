@@ -7,6 +7,13 @@
   <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Core\SomeEngine.Core.csproj" />
     <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+    <ProjectReference Include="..\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
+    <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
     <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />
+    <ProjectReference Include="..\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
+    <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-struct GpuTransform
+struct InstanceTransform
 {
     float4 Rotation;
     float3 Position;
@@ -7,7 +7,7 @@ struct GpuTransform
     float Padding;
 };
 
-StructuredBuffer<GpuTransform> Transforms;
+StructuredBuffer<InstanceTransform> Transforms;
 
 struct PSInput
 {
@@ -23,7 +23,7 @@ PSInput VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
     positions[1] = float2(0.0, 0.05);
     positions[2] = float2(0.05, -0.05);
 
-    GpuTransform transform = Transforms[instanceID];
+    InstanceTransform transform = Transforms[instanceID];
     float3 position = float3(positions[vertexID], 0.0) + transform.Position;
 
     PSInput output;

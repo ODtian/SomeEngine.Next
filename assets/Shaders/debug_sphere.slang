@@ -15,7 +15,6 @@ cbuffer DrawUniforms
 {
     float4x4 ViewProj;
     float4x4 View;
-    uint PageTableSize;
     uint DebugMode;
 };
 

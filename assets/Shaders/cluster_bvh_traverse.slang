@@ -1,75 +1,27 @@
 #include "cluster_structures.slang"
 #include "common.slang"
-#include "generated/instance_header_layout.slang"
+#include "cluster_instance_properties.slang"
+#include "cluster_view.slang"
+#include "resource_effects.slang"
 
-struct CullingUniforms
-{
-    float4x4 ViewProj;
-    float3 CameraPos;
-    float LodThreshold; // 64+12=76
-
-    float LodScale;     // 80
-    uint MaxQueueNodes; // 84
-    uint MaxCandidates; // 88
-    uint MaxTraversalDepth; // 92
-
-    int ForcedLODLevel; // 96
-    uint InstanceCount; // 100
-    uint DebugMode;     // 104
-    uint VisualiseBVH;  // 108
-    int DebugBVHDepth;  // 112
-    uint CurrentDepth;  // 116
-    uint Pad4;
-    uint Pad5;
-
-    float4x4 PrevViewProj;
-    uint HasPrevHistory;
-    uint HiZMipCount;
-    float2 HiZInvSize;
-
-    float4x4 View;
-    float P00;
-    float P11;
-    uint ScreenWidth;
-    uint ScreenHeight;
-
-    float4x4 PrevView;
-    float PrevP00;
-    float PrevP11;
-    float2 Pad8;
-};
-
-ConstantBuffer<CullingUniforms> Uniforms;
+ConstantBuffer<ClusterViewUniforms> Uniforms;
 
 StructuredBuffer<ClusterBVHNode> GlobalBVH;
-ByteAddressBuffer PageHeap;
-StructuredBuffer<GpuTransform> Instances;
-ByteAddressBuffer InstanceHeaders;
+ByteAddressBuffer InstanceData;
+ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 
-cbuffer DepthIndexCB
-{
-    uint DepthIndex;
-};
-
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer CandidateArgs;           // IndirectArgs: must stay raw
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint3> CandidateClusters;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> CandidateCount;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PageFaultBuffer;
 
-static const uint MaxPageFaults = 4096;
-static const uint MaxTraverseStack = 128;
-
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void clear_args(uint3 tid : SV_DispatchThreadID)
-{
-    if (tid.x != 0 || tid.y != 0 || tid.z != 0)
-        return;
-
-    CandidateCount[0] = 0;
-    StoreDispatchArgs(CandidateArgs, 0u, DispatchArgs(0, 1, 1));
-    PageFaultBuffer.Store(0, 0u);
-}
+// Mesh registration proves that the exact depth-first pending set fits this array. Overflow is a
+// rejected asset invariant, never a runtime branch that silently drops a subtree.
+static const uint TraverseStackCapacity = 128;
 
 void PublishCandidateDispatchArgs(uint start, uint count)
 {
@@ -83,7 +35,7 @@ void PublishCandidateDispatchArgs(uint start, uint count)
     CandidateArgs.InterlockedMax(0, groups, unused);
 }
 
-float LocalExpansionForWorldRadius(GpuTransform t, float worldExpansion)
+float LocalExpansionForWorldRadius(RenderInstanceTransform t, float worldExpansion)
 {
     if (worldExpansion <= 0.0)
         return 0.0;
@@ -93,7 +45,10 @@ float LocalExpansionForWorldRadius(GpuTransform t, float worldExpansion)
     return worldExpansion / minAxisScale;
 }
 
-bool IsNodeOutsideFrustum(ClusterBVHNode node, GpuTransform t, float boundsExpansion)
+bool IsNodeOutsideFrustum(
+    ClusterBVHNode node,
+    RenderInstanceTransform t,
+    float boundsExpansion)
 {
     float3 localMin = node.BoundMin.xyz;
     float3 localMax = node.BoundMax.xyz;
@@ -122,7 +77,7 @@ bool IsNodeOutsideFrustum(ClusterBVHNode node, GpuTransform t, float boundsExpan
     [unroll]
     for (uint i = 0; i < 8; ++i)
     {
-        float3 world = ApplyTransform(corners[i], t);
+        float3 world = TransformInstanceLocalPosition(corners[i], t);
         float4 clip = mul(float4(world, 1.0), Uniforms.ViewProj);
 
         outsideLeft += (clip.x < -clip.w) ? 1 : 0;
@@ -143,12 +98,15 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
     if (instanceID >= Uniforms.InstanceCount)
         return;
 
-    uint bvhRootIndex = LoadInstanceBVHRootIndex(InstanceHeaders, instanceID);
+    uint bvhRootIndex = LoadClusterBvhRoot(
+        InstanceData,
+        LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD),
+        instanceID);
     if (bvhRootIndex == 0xFFFFFFFF)
         return;
 
-    uint nodeStack[MaxTraverseStack];
-    uint depthStack[MaxTraverseStack];
+    uint nodeStack[TraverseStackCapacity];
+    uint depthStack[TraverseStackCapacity];
     uint stackCount = 1;
     nodeStack[0] = bvhRootIndex;
     depthStack[0] = 0;
@@ -165,26 +123,27 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
         {
             uint faultIndex;
             PageFaultBuffer.InterlockedAdd(0, 1, faultIndex);
-            if (faultIndex < MaxPageFaults)
+            if (faultIndex < Uniforms.MaxPageFaults)
             {
                 PageFaultBuffer.Store(4 + faultIndex * 4, nodeIndex);
             }
             continue;
         }
 
-        GpuTransform t = Instances[instanceID];
-        float boundsExpansion = max(0.0, LoadInstanceBoundsExpansionWorld(InstanceHeaders, instanceID));
+        RenderInstanceTransform t = LoadRenderTransform(
+            InstanceData,
+            LoadRenderInstanceMetadata(InstanceProperties, RENDER_CURRENT_TRANSFORM_METADATA_WORD),
+            instanceID);
+        float boundsExpansion = max(
+            0.0,
+            LoadClusterBoundsExpansion(
+                InstanceData,
+                LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
+                instanceID));
 
-        bool culled = false;
-        if (Uniforms.DebugMode == 0)
-        {
-            if (IsNodeOutsideFrustum(node, t, boundsExpansion))
-            {
-                culled = true;
-            }
-        }
+        bool culled = IsNodeOutsideFrustum(node, t, boundsExpansion);
 
-        float3 worldCenter = ApplyTransform(node.LODSphere.xyz, t);
+        float3 worldCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, t);
         float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
         float worldRadius = node.LODSphere.w * maxScale;
 
@@ -192,12 +151,9 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
         float distToSurface = max(0.0, dist - worldRadius);
 
         // LOD Culling
-        if (Uniforms.ForcedLODLevel < 0 && Uniforms.DebugMode == 0)
+        if (node.LODError * Uniforms.LodScale <= Uniforms.LodThreshold * distToSurface)
         {
-            if (node.LODError * Uniforms.LodScale <= Uniforms.LodThreshold * distToSurface)
-            {
-                culled = true;
-            }
+            culled = true;
         }
 
         if (culled)
@@ -213,12 +169,9 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
             uint count = node.ChildCount;
             for (uint i = 0; i < count; ++i)
             {
-                if (stackCount < MaxTraverseStack)
-                {
-                    nodeStack[stackCount] = start + i;
-                    depthStack[stackCount] = nextDepth;
-                    stackCount++;
-                }
+                nodeStack[stackCount] = start + i;
+                depthStack[stackCount] = nextDepth;
+                stackCount++;
             }
         }
         else
