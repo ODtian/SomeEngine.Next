@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="harness\shared\SomeEngine.Harness.Core\SomeEngine.Harness.Core.csproj" />
+  <Project Path="harness\quality\SomeEngine.Harness.QualityAnalyzer\SomeEngine.Harness.QualityAnalyzer.csproj" />
+  <Project Path="harness\quality\SomeEngine.Harness.QualityAnalyzer.Tests\SomeEngine.Harness.QualityAnalyzer.Tests.csproj" />
+  <Project Path="harness\maintainability\SomeEngine.Harness.Maintainability\SomeEngine.Harness.Maintainability.csproj" />
+  <Project Path="harness\architecture\SomeEngine.Harness.Architecture\SomeEngine.Harness.Architecture.csproj" />
+  <Project Path="harness\behaviour\SomeEngine.Harness.Behaviour\SomeEngine.Harness.Behaviour.csproj" />
+  <Project Path="harness\coverage\SomeEngine.Harness.Coverage\SomeEngine.Harness.Coverage.csproj" />
+</Solution>

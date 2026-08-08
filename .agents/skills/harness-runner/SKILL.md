@@ -1,52 +1,16 @@
 ---
 name: harness-runner
-description: Run the SomeEngine harness gate. Use whenever Codex must validate a run or batch by invoking the single harness entry, applying fixed hard/warning policy, and interpreting PASS, NEEDS_FIX, NEEDS_GRILL, or HARNESS_BROKEN.
+description: Suspended compatibility placeholder. The scripted SomeEngine harness runner has been removed and this skill must not be invoked.
 ---
 
-# Harness Runner
+# Harness Runner (Suspended)
 
-Use this as a helper, not as a planning or implementation workflow.
+The scripted harness workflow is retired. Its PowerShell entrypoint, hard/warning buckets, run ids, and harness status artifacts no longer exist.
 
-## Command
+Do not invoke this skill and do not recreate an orchestration script. If the user explicitly requests the remaining opt-in harness checks, run the ordinary .NET test solution directly:
 
-Run:
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File harness/RunHarness.ps1 -RunId <id>
+```shell
+dotnet test SomeEngine.Harness.slnx
 ```
 
-For local hard-only validation after a build:
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File harness/RunHarness.ps1 -Mode Hard -RunId <id> -NoBuild
-```
-
-## Responsibilities
-
-- Run the repository-defined harness entry.
-- Preserve the fixed hard/warning policy implemented by `harness/RunHarness.ps1`.
-- Report the resulting status.
-- Treat warning failures as warnings, not blocking failures.
-
-## Do not do
-
-- Do not design harness.
-- Do not edit product or harness code.
-- Do not execute review targets or write review results.
-- Do not choose hard/warning classification per run.
-- Do not call `just all` as the batch completion gate; use `harness/RunHarness.ps1`.
-
-## Status meanings
-
-```text
-PASS            hard checks and ReviewTargetGate passed; warnings may exist
-NEEDS_FIX       code, tests, harness artifacts, or review results need repair
-NEEDS_GRILL     accepted intent/harness conflicts and must be re-grilled
-HARNESS_BROKEN  runner/gate/result schema is invalid or cannot run reliably
-```
-
-If a run id is supplied, the script writes:
-
-```text
-.agent-runs/<id>/batch/harness-run.json
-```
+That command is an explicit user opt-in, not a default workflow or completion gate.
