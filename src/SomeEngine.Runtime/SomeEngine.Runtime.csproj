@@ -30,7 +30,7 @@
     <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="imgui.ini">
+    <Content Include="imgui.ini" Condition="Exists('imgui.ini')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

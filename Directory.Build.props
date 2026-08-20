@@ -1,4 +1,4 @@
-<Project>
+<Project TreatAsLocalProperty="SlangToolchainVersion">
   <PropertyGroup>
     <SomeEngineRepositoryRoot>$(MSBuildThisFileDirectory)</SomeEngineRepositoryRoot>
     <LangVersion>latest</LangVersion>
@@ -6,5 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <_RequestedSlangToolchainVersion>$(SlangToolchainVersion)</_RequestedSlangToolchainVersion>
+    <SlangToolchainVersion>2026.14</SlangToolchainVersion>
+    <SlangStandardModuleDirectory>slang-standard-module-$(SlangToolchainVersion)</SlangStandardModuleDirectory>
+    <SlangTestFixtureDirectory>SlangStandardModule$(SlangToolchainVersion)</SlangTestFixtureDirectory>
   </PropertyGroup>
 </Project>
