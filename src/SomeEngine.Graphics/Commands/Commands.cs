@@ -28,7 +28,7 @@ public readonly record struct CommandRecordingDesc(
     string? Label = null);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -59,6 +59,8 @@ internal abstract class RecordedCommandsLease
     private ulong _sequence;
     private RecordedCommandsStatus _status = RecordedCommandsStatus.Discarded;
     private bool _callerDisposed = true;
+    private int _callerReleaseState = 2;
+    private int _callerReleaseOwnerThreadId;
 
     protected RecordedCommandsLease(Device device, Queue queue)
     {
@@ -83,6 +85,8 @@ internal abstract class RecordedCommandsLease
             throw new ArgumentOutOfRangeException(nameof(sequence));
         lock (_gate)
         {
+            while (_callerReleaseState == 1)
+                Monitor.Wait(_gate);
             if (_sequence != 0 &&
                 _status is RecordedCommandsStatus.Executable or
                     RecordedCommandsStatus.Submitting or
@@ -93,6 +97,8 @@ internal abstract class RecordedCommandsLease
             _sequence = sequence;
             _status = RecordedCommandsStatus.Executable;
             _callerDisposed = false;
+            _callerReleaseState = 0;
+            _callerReleaseOwnerThreadId = 0;
         }
     }
 
@@ -176,6 +182,14 @@ internal abstract class RecordedCommandsLease
         lock (_gate)
         {
             sequence = _sequence;
+            if (_callerReleaseState == 1)
+            {
+                if (_callerReleaseOwnerThreadId == Environment.CurrentManagedThreadId)
+                    return false;
+                while (_sequence == sequence && _callerReleaseState == 1)
+                    Monitor.Wait(_gate);
+                return false;
+            }
             if (_status != RecordedCommandsStatus.Executable)
                 return false;
 
@@ -195,17 +209,68 @@ internal abstract class RecordedCommandsLease
         bool discard = false;
         lock (_gate)
         {
-            if (_sequence != sequence || _callerDisposed)
+            if (_sequence != sequence)
                 return;
+            if (_callerDisposed)
+            {
+                if (_callerReleaseState == 1 &&
+                    _callerReleaseOwnerThreadId == Environment.CurrentManagedThreadId)
+                {
+                    return;
+                }
+                while (_sequence == sequence && _callerReleaseState == 1)
+                    Monitor.Wait(_gate);
+                return;
+            }
             _callerDisposed = true;
             if (_status == RecordedCommandsStatus.Executable)
             {
                 _status = RecordedCommandsStatus.Discarded;
+                _callerReleaseState = 1;
+                _callerReleaseOwnerThreadId = Environment.CurrentManagedThreadId;
                 discard = true;
             }
+            else
+            {
+                _callerReleaseState = 2;
+                _callerReleaseOwnerThreadId = 0;
+            }
         }
-        if (discard)
+        if (!discard)
+            return;
+        try
+        {
             DiscardUnsubmitted(sequence);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (_sequence == sequence)
+                {
+                    _callerReleaseState = 2;
+                    _callerReleaseOwnerThreadId = 0;
+                    Monitor.PulseAll(_gate);
+                }
+            }
+        }
+    }
+
+    protected void CancelActivation(ulong sequence)
+    {
+        lock (_gate)
+        {
+            EnsureSequenceUnderGate(sequence);
+            if (_status != RecordedCommandsStatus.Executable)
+                return;
+            _status = RecordedCommandsStatus.Discarded;
+            _callerDisposed = true;
+            _callerReleaseState = 2;
+            _callerReleaseOwnerThreadId = 0;
+        }
     }
 
     protected abstract void DiscardUnsubmitted(ulong sequence);
@@ -218,8 +283,8 @@ internal abstract class RecordedCommandsLease
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
-/// <para><b>Ownership:</b> Caller-disposed single-submit right. Automatic retirement retains named public dependencies; Manual retirement leaves them caller-owned.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
+/// <para><b>Ownership:</b> Caller-disposed single-submit right. The accepted submission retains its native execution dependencies until Queue completion; public wrappers remain caller-owned.</para>
 /// <para><b>After Dispose:</b> Status remains readable as Disposed; submission and payload access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
@@ -253,7 +318,7 @@ public readonly struct RecordedCommands : IDisposable
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -267,7 +332,7 @@ public abstract class RecordedBundle : DeviceResource
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -305,7 +370,8 @@ public readonly record struct MemoryBarrier(
     PipelineSync SyncBefore,
     PipelineSync SyncAfter,
     ResourceAccess AccessBefore,
-    ResourceAccess AccessAfter);
+    ResourceAccess AccessAfter,
+    BarrierPhase Phase = BarrierPhase.Complete);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -318,7 +384,8 @@ public readonly record struct BufferBarrier(
     PipelineSync SyncBefore,
     PipelineSync SyncAfter,
     ResourceAccess AccessBefore,
-    ResourceAccess AccessAfter);
+    ResourceAccess AccessAfter,
+    BarrierPhase Phase = BarrierPhase.Complete);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -334,7 +401,8 @@ public readonly record struct TextureBarrier(
     ResourceAccess AccessBefore,
     ResourceAccess AccessAfter,
     TextureLayout LayoutBefore,
-    TextureLayout LayoutAfter);
+    TextureLayout LayoutAfter,
+    BarrierPhase Phase = BarrierPhase.Complete);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -347,7 +415,7 @@ public readonly record struct AliasingResource(
     TextureSubresourceRange? TextureRange = null);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -554,7 +622,7 @@ public enum RenderingOptions : byte
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>

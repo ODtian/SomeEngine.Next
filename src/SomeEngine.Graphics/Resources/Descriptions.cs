@@ -268,6 +268,23 @@ public readonly record struct HeapDesc(
     uint VisibleNodeMask = 1,
     string? Label = null);
 
+/// <summary>
+/// Selects the linked-adapter node on which a committed resource is created and
+/// the enabled nodes from which it is visible.
+/// </summary>
+/// <remarks>
+/// A zero <see cref="CreationNodeMask"/> asks the Device to use its primary
+/// enabled node. A zero <see cref="VisibleNodeMask"/> means the resolved creation
+/// node only. A nonzero creation mask must contain exactly one bit.
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public readonly record struct ResourceNodePlacement(
+    uint CreationNodeMask = 0,
+    uint VisibleNodeMask = 0);
+
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
@@ -277,10 +294,11 @@ public readonly record struct HeapDesc(
 public readonly record struct BufferDesc(
     ulong Size,
     BufferUsages Usages,
-    string? Label = null);
+    string? Label = null,
+    ResourceNodePlacement NodePlacement = default);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -298,7 +316,8 @@ public readonly ref struct TextureDesc
         Format format,
         TextureUsages usages,
         ReadOnlySpan<Format> permittedViewFormats = default,
-        string? label = null)
+        string? label = null,
+        ResourceNodePlacement nodePlacement = default)
     {
         Dimension = dimension;
         Width = width;
@@ -311,6 +330,7 @@ public readonly ref struct TextureDesc
         Usages = usages;
         PermittedViewFormats = permittedViewFormats;
         Label = label;
+        NodePlacement = nodePlacement;
     }
 
     public TextureDimension Dimension { get; }
@@ -324,6 +344,7 @@ public readonly ref struct TextureDesc
     public TextureUsages Usages { get; }
     public ReadOnlySpan<Format> PermittedViewFormats { get; }
     public string? Label { get; }
+    public ResourceNodePlacement NodePlacement { get; }
 }
 
 /// <remarks>
@@ -351,7 +372,9 @@ public readonly record struct BufferInfo(
     BufferUsages Usages,
     MemoryType MemoryType,
     ulong AllocationOffset,
-    ulong AllocationSize);
+    ulong AllocationSize,
+    uint CreationNodeMask,
+    uint VisibleNodeMask);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -376,7 +399,9 @@ public sealed class TextureInfo
         MemoryType memoryType,
         ReadOnlySpan<Format> permittedViewFormats,
         ulong allocationOffset,
-        ulong allocationSize)
+        ulong allocationSize,
+        uint creationNodeMask,
+        uint visibleNodeMask)
     {
         Dimension = dimension;
         Width = width;
@@ -390,6 +415,8 @@ public sealed class TextureInfo
         MemoryType = memoryType;
         AllocationOffset = allocationOffset;
         AllocationSize = allocationSize;
+        CreationNodeMask = creationNodeMask;
+        VisibleNodeMask = visibleNodeMask;
         _permittedViewFormats = permittedViewFormats.ToArray();
     }
 
@@ -405,6 +432,8 @@ public sealed class TextureInfo
     public MemoryType MemoryType { get; }
     public ulong AllocationOffset { get; }
     public ulong AllocationSize { get; }
+    public uint CreationNodeMask { get; }
+    public uint VisibleNodeMask { get; }
     public ReadOnlySpan<Format> PermittedViewFormats => _permittedViewFormats;
 }
 

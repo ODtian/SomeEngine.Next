@@ -1,6 +1,6 @@
 namespace SomeEngine.Graphics.Validation;
 
-public sealed partial class ValidationLayer<TBackend>
+public sealed partial class ValidationLayer
 {
     public CalibratedTimestampInfo CalibrateTimestamps(Queue queue)
     {
@@ -17,7 +17,37 @@ public sealed partial class ValidationLayer<TBackend>
     {
         RequireCapability<ExternalResources>(device);
         _ = handle.Value;
-        return Track(Backend.ImportBuffer(device, handle, desc, state), device);
+        var resourceState = new ResourceValidationState(buffer: true);
+        BufferDesc createDesc = desc;
+        ImportedResourceState importState = state;
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            Buffer? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.ImportBuffer(device, handle, createDesc, importState);
+                resourceState.Bind(result);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _resourceStates.Add(result, resourceState);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _resourceStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Texture ImportTexture(
@@ -28,7 +58,35 @@ public sealed partial class ValidationLayer<TBackend>
     {
         RequireCapability<ExternalResources>(device);
         _ = handle.Value;
-        return Track(Backend.ImportTexture(device, handle, desc, state), device);
+        var resourceState = new ResourceValidationState(buffer: false);
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            Texture? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.ImportTexture(device, handle, desc, state);
+                resourceState.Bind(result);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _resourceStates.Add(result, resourceState);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _resourceStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Heap ImportHeap(
@@ -38,7 +96,35 @@ public sealed partial class ValidationLayer<TBackend>
     {
         RequireCapability<ExternalResources>(device);
         _ = handle.Value;
-        return Track(Backend.ImportHeap(device, handle, desc), device);
+        var metadata = new HeapValidationState(desc.VisibleNodeMask);
+        HeapDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _heapStates.EnsureAdditionalCapacity();
+            Heap? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.ImportHeap(device, handle, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _heapStates.Add(result, metadata);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _heapStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public ExternalHandle ExportBuffer(Buffer buffer, ExternalHandleType type)
@@ -68,11 +154,34 @@ public sealed partial class ValidationLayer<TBackend>
         string? label = null)
     {
         RequireCapability<ExternalTimelines>(device);
-        ExternalTimeline timeline = Track(
-            Backend.CreateExternalTimeline(device, initialValue, label),
-            device);
-        _timelines.Add(timeline, new TimelineValidationState(true, initialValue));
-        return timeline;
+        var state = new TimelineValidationState(true, initialValue);
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _timelines.EnsureAdditionalCapacity();
+            ExternalTimeline? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.CreateExternalTimeline(device, initialValue, label);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _timelines.Add(result, state);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _timelines.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public ExternalTimeline ImportTimeline(
@@ -82,11 +191,34 @@ public sealed partial class ValidationLayer<TBackend>
     {
         RequireCapability<ExternalTimelines>(device);
         _ = handle.Value;
-        ExternalTimeline timeline = Track(
-            Backend.ImportTimeline(device, handle, label),
-            device);
-        _timelines.Add(timeline, new TimelineValidationState(false, 0));
-        return timeline;
+        var state = new TimelineValidationState(false, 0);
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _timelines.EnsureAdditionalCapacity();
+            ExternalTimeline? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.ImportTimeline(device, handle, label);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _timelines.Add(result, state);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _timelines.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public ExternalHandle ExportTimeline(ExternalTimeline timeline, ExternalHandleType type)

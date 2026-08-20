@@ -4,10 +4,32 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SomeEngineQualityAnalyzerEnabled>true</SomeEngineQualityAnalyzerEnabled>
+    <SomeEngineQualityBaselineEnabled>false</SomeEngineQualityBaselineEnabled>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Description>Backend-neutral graphics device, resource, command, synchronization, and presentation contracts.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
   </ItemGroup>
+
+  <Target Name="GenerateSlangToolchainIdentity" BeforeTargets="CoreCompile"
+          DependsOnTargets="ValidateSlangToolchainIdentity">
+    <PropertyGroup>
+      <_SlangToolchainIdentitySource>$(IntermediateOutputPath)SlangToolchainIdentity.g.cs</_SlangToolchainIdentitySource>
+    </PropertyGroup>
+    <ItemGroup>
+      <_SlangToolchainIdentityLine Include="namespace SomeEngine.Graphics%3B" />
+      <_SlangToolchainIdentityLine Include="internal static class SlangToolchainIdentity" />
+      <_SlangToolchainIdentityLine Include="{" />
+      <_SlangToolchainIdentityLine Include="    internal const string Version = &quot;$(SlangToolchainVersion)&quot;%3B" />
+      <_SlangToolchainIdentityLine Include="    internal const string StandardModuleDirectory = &quot;$(SlangStandardModuleDirectory)&quot;%3B" />
+      <_SlangToolchainIdentityLine Include="}" />
+      <Compile Include="$(_SlangToolchainIdentitySource)" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_SlangToolchainIdentitySource)"
+                      Lines="@(_SlangToolchainIdentityLine)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+  </Target>
 </Project>

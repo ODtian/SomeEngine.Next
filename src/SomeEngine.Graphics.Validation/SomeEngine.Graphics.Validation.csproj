@@ -4,10 +4,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SomeEngineQualityAnalyzerEnabled>true</SomeEngineQualityAnalyzerEnabled>
+    <SomeEngineQualityBaselineEnabled>false</SomeEngineQualityBaselineEnabled>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Description>Optional validation layer for the backend-neutral graphics receiver.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
     <ProjectReference Include="../SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
   </ItemGroup>

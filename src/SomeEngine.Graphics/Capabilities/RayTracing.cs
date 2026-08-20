@@ -133,7 +133,7 @@ public readonly record struct AccelerationStructureInfo(
     BufferRange StorageRange);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -168,7 +168,7 @@ public readonly record struct AccelerationStructureSrvDesc(
     string? Label = null);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -180,23 +180,6 @@ public abstract class AccelerationStructureSrv : DeviceResource
 
     public AccelerationStructureSrvDesc Description { get; }
     public AccelerationStructure Resource => Description.AccelerationStructure;
-}
-
-/// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
-/// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
-/// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
-/// </remarks>
-public abstract class BindlessAccelerationStructureSrv : AccelerationStructureSrv
-{
-    internal BindlessAccelerationStructureSrv(
-        Device device,
-        in AccelerationStructureSrvDesc description,
-        uint descriptorIndex)
-        : base(device, description) => DescriptorIndex = descriptorIndex;
-
-    public uint DescriptorIndex { get; }
 }
 
 /// <remarks>
@@ -245,7 +228,7 @@ public readonly record struct AccelerationStructureGeometry(
     BufferRegion Transform = default);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -345,7 +328,7 @@ public enum RayTracingPipelineOptions : byte
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -363,7 +346,8 @@ public readonly ref struct RayTracingPipelineDesc
         uint maximumAttributeSize,
         RayTracingPipelineOptions options = RayTracingPipelineOptions.None,
         uint nodeMask = 1,
-        string? label = null)
+        string? label = null,
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
     {
         Program = program;
         RayGeneration = rayGeneration;
@@ -376,6 +360,7 @@ public readonly ref struct RayTracingPipelineDesc
         Options = options;
         NodeMask = nodeMask;
         Label = label;
+        StaticSamplers = staticSamplers;
     }
 
     public IComponentType Program { get; }
@@ -389,6 +374,7 @@ public readonly ref struct RayTracingPipelineDesc
     public RayTracingPipelineOptions Options { get; }
     public uint NodeMask { get; }
     public string? Label { get; }
+    public ReadOnlySpan<StaticSamplerBinding> StaticSamplers { get; }
 }
 
 /// <remarks>
@@ -407,7 +393,7 @@ public readonly record struct RayTracingShaderTableDesc(
     string? Label = null);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -420,6 +406,20 @@ public abstract class RayTracingShaderTable : DeviceResource
     public RayTracingShaderTableDesc Description { get; }
 }
 
+/// <summary>One exact SL# parameter-object occurrence encoded into a DXR shader record.</summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced SL# reflection remains owned by the associated Pipeline.</para>
+/// <para><b>Ownership:</b> Pure managed value; it borrows the exact Slang layout identity and slices of the enclosing update payload.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public readonly record struct RayTracingLocalParameterBlock(
+    VariableLayoutReflection Layout,
+    uint ResourceOffset,
+    uint ResourceCount,
+    uint OrdinaryDataOffset,
+    uint OrdinaryDataSize);
+
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
@@ -431,64 +431,43 @@ public readonly struct RayTracingShaderRecord
     private RayTracingShaderRecord(
         EntryPointReflection entryPoint,
         string? hitGroupName,
-        VariableLayoutReflection layout,
-        uint resourceOffset,
-        uint resourceCount,
-        uint ordinaryDataOffset,
-        uint ordinaryDataSize)
+        uint parameterBlockOffset,
+        uint parameterBlockCount)
     {
         EntryPoint = entryPoint;
         HitGroupName = hitGroupName;
-        Layout = layout;
-        ResourceOffset = resourceOffset;
-        ResourceCount = resourceCount;
-        OrdinaryDataOffset = ordinaryDataOffset;
-        OrdinaryDataSize = ordinaryDataSize;
+        ParameterBlockOffset = parameterBlockOffset;
+        ParameterBlockCount = parameterBlockCount;
     }
 
     public EntryPointReflection EntryPoint { get; }
     public string? HitGroupName { get; }
-    public VariableLayoutReflection Layout { get; }
-    public uint ResourceOffset { get; }
-    public uint ResourceCount { get; }
-    public uint OrdinaryDataOffset { get; }
-    public uint OrdinaryDataSize { get; }
+    public uint ParameterBlockOffset { get; }
+    public uint ParameterBlockCount { get; }
 
     public static RayTracingShaderRecord Entry(
         EntryPointReflection entryPoint,
-        VariableLayoutReflection layout,
-        uint resourceOffset,
-        uint resourceCount,
-        uint ordinaryDataOffset,
-        uint ordinaryDataSize) =>
+        uint parameterBlockOffset,
+        uint parameterBlockCount) =>
         new(
             entryPoint,
             null,
-            layout,
-            resourceOffset,
-            resourceCount,
-            ordinaryDataOffset,
-            ordinaryDataSize);
+            parameterBlockOffset,
+            parameterBlockCount);
 
     public static RayTracingShaderRecord HitGroup(
         string hitGroupName,
-        VariableLayoutReflection layout,
-        uint resourceOffset,
-        uint resourceCount,
-        uint ordinaryDataOffset,
-        uint ordinaryDataSize) =>
+        uint parameterBlockOffset,
+        uint parameterBlockCount) =>
         new(
             EntryPointReflection.Null,
             hitGroupName ?? throw new ArgumentNullException(nameof(hitGroupName)),
-            layout,
-            resourceOffset,
-            resourceCount,
-            ordinaryDataOffset,
-            ordinaryDataSize);
+            parameterBlockOffset,
+            parameterBlockCount);
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -500,6 +479,7 @@ public readonly ref struct RayTracingShaderTableUpdate
         ReadOnlySpan<RayTracingShaderRecord> miss,
         ReadOnlySpan<RayTracingShaderRecord> hit,
         ReadOnlySpan<RayTracingShaderRecord> callable,
+        ReadOnlySpan<RayTracingLocalParameterBlock> parameterBlocks,
         ReadOnlySpan<ResourceBinding> resources,
         ReadOnlySpan<byte> ordinaryData)
     {
@@ -507,6 +487,7 @@ public readonly ref struct RayTracingShaderTableUpdate
         Miss = miss;
         Hit = hit;
         Callable = callable;
+        ParameterBlocks = parameterBlocks;
         Resources = resources;
         OrdinaryData = ordinaryData;
     }
@@ -515,6 +496,7 @@ public readonly ref struct RayTracingShaderTableUpdate
     public ReadOnlySpan<RayTracingShaderRecord> Miss { get; }
     public ReadOnlySpan<RayTracingShaderRecord> Hit { get; }
     public ReadOnlySpan<RayTracingShaderRecord> Callable { get; }
+    public ReadOnlySpan<RayTracingLocalParameterBlock> ParameterBlocks { get; }
     public ReadOnlySpan<ResourceBinding> Resources { get; }
     public ReadOnlySpan<byte> OrdinaryData { get; }
 }

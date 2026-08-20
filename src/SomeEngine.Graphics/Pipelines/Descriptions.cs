@@ -16,7 +16,6 @@ public enum PrimitiveTopology : byte
     LineStrip,
     TriangleList,
     TriangleStrip,
-    PatchList,
 }
 
 /// <remarks>
@@ -135,6 +134,32 @@ public enum BlendOperation : byte
 /// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
+public enum LogicOperation : byte
+{
+    Clear,
+    Set,
+    Copy,
+    CopyInverted,
+    NoOperation,
+    Invert,
+    And,
+    Nand,
+    Or,
+    Nor,
+    Xor,
+    Equivalence,
+    AndReverse,
+    AndInverted,
+    OrReverse,
+    OrInverted,
+}
+
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
 [Flags]
 public enum ColorWriteMasks : byte
 {
@@ -180,7 +205,21 @@ public readonly record struct RasterizerState(
     float DepthBiasClamp = 0,
     float SlopeScaledDepthBias = 0,
     bool DepthClip = true,
-    bool ConservativeRasterization = false);
+    bool ConservativeRasterization = false)
+{
+    public RasterizerState()
+        : this(
+            FillType.Solid,
+            CullType.Back,
+            FrontFace.CounterClockwise,
+            0,
+            0,
+            0,
+            true,
+            false)
+    {
+    }
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -191,7 +230,13 @@ public readonly record struct RasterizerState(
 public readonly record struct MultisampleState(
     uint SampleCount = 1,
     uint SampleMask = uint.MaxValue,
-    bool AlphaToCoverage = false);
+    bool AlphaToCoverage = false)
+{
+    public MultisampleState()
+        : this(1, uint.MaxValue, false)
+    {
+    }
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -203,7 +248,17 @@ public readonly record struct StencilFaceState(
     StencilOperation Fail,
     StencilOperation DepthFail,
     StencilOperation Pass,
-    CompareOperation Comparison);
+    CompareOperation Comparison)
+{
+    public StencilFaceState()
+        : this(
+            StencilOperation.Keep,
+            StencilOperation.Keep,
+            StencilOperation.Keep,
+            CompareOperation.Always)
+    {
+    }
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -220,7 +275,22 @@ public readonly record struct DepthStencilState(
     byte StencilReadMask = byte.MaxValue,
     byte StencilWriteMask = byte.MaxValue,
     StencilFaceState Front = default,
-    StencilFaceState Back = default);
+    StencilFaceState Back = default)
+{
+    public DepthStencilState()
+        : this(
+            false,
+            false,
+            CompareOperation.Less,
+            false,
+            false,
+            byte.MaxValue,
+            byte.MaxValue,
+            new StencilFaceState(),
+            new StencilFaceState())
+    {
+    }
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -236,10 +306,24 @@ public readonly record struct BlendAttachmentState(
     BlendFactor SourceAlpha = BlendFactor.One,
     BlendFactor DestinationAlpha = BlendFactor.Zero,
     BlendOperation AlphaOperation = BlendOperation.Add,
-    ColorWriteMasks WriteMask = ColorWriteMasks.All);
+    ColorWriteMasks WriteMask = ColorWriteMasks.All)
+{
+    public BlendAttachmentState()
+        : this(
+            false,
+            BlendFactor.One,
+            BlendFactor.Zero,
+            BlendOperation.Add,
+            BlendFactor.One,
+            BlendFactor.Zero,
+            BlendOperation.Add,
+            ColorWriteMasks.All)
+    {
+    }
+}
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -249,16 +333,16 @@ public readonly ref struct BlendState
     public BlendState(
         ReadOnlySpan<BlendAttachmentState> attachments,
         bool independentBlend = false,
-        bool logicOperationEnabled = false)
+        LogicOperation? logicOperation = null)
     {
         Attachments = attachments;
         IndependentBlend = independentBlend;
-        LogicOperationEnabled = logicOperationEnabled;
+        LogicOperation = logicOperation;
     }
 
     public ReadOnlySpan<BlendAttachmentState> Attachments { get; }
     public bool IndependentBlend { get; }
-    public bool LogicOperationEnabled { get; }
+    public LogicOperation? LogicOperation { get; }
 }
 
 /// <remarks>
@@ -286,7 +370,7 @@ public readonly record struct VertexBufferLayout(
     uint InstanceStepRate = 1);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -355,7 +439,7 @@ public readonly struct StreamOutputElement
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -377,8 +461,19 @@ public readonly ref struct StreamOutputState
     public uint? RasterizedStreamIndex { get; }
 }
 
+/// <summary>A sampler state fixed in a pipeline for one concrete Slang sampler declaration.</summary>
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared.</para>
+/// <para><b>Ownership:</b> Pure value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public readonly record struct StaticSamplerBinding(
+    VariableReflection Sampler,
+    SamplerDesc Description);
+
+/// <remarks>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -399,7 +494,8 @@ public readonly ref struct GraphicsPipelineDesc
         in BlendState blend,
         in AttachmentFormatSignature attachments,
         DynamicStates dynamicStates = DynamicStates.None,
-        string? label = null)
+        string? label = null,
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
     {
         Program = program;
         Vertex = vertex;
@@ -417,6 +513,7 @@ public readonly ref struct GraphicsPipelineDesc
         StreamOutput = default;
         HasStreamOutput = false;
         Label = label;
+        StaticSamplers = staticSamplers;
     }
 
     public GraphicsPipelineDesc(
@@ -434,7 +531,8 @@ public readonly ref struct GraphicsPipelineDesc
         in AttachmentFormatSignature attachments,
         in StreamOutputState streamOutput,
         DynamicStates dynamicStates = DynamicStates.None,
-        string? label = null)
+        string? label = null,
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
         : this(
             program,
             vertex,
@@ -449,7 +547,8 @@ public readonly ref struct GraphicsPipelineDesc
             blend,
             attachments,
             dynamicStates,
-            label)
+            label,
+            staticSamplers)
     {
         StreamOutput = streamOutput;
         HasStreamOutput = true;
@@ -471,21 +570,37 @@ public readonly ref struct GraphicsPipelineDesc
     public StreamOutputState StreamOutput { get; }
     public bool HasStreamOutput { get; }
     public string? Label { get; }
+    public ReadOnlySpan<StaticSamplerBinding> StaticSamplers { get; }
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
-/// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. The caller must not mutate the
+/// <see cref="ComputePipelineDesc.StaticSamplers"/> backing memory concurrently with pipeline creation.</para>
+/// <para><b>Ownership:</b> The caller retains ownership of
+/// <see cref="ComputePipelineDesc.StaticSamplers"/>; CreateComputePipeline consumes its
+/// contents synchronously and does not retain the memory.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain their own terminal state.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct ComputePipelineDesc(
     IComponentType Program,
     EntryPointReflection Compute,
-    string? Label = null);
+    string? Label = null,
+    ReadOnlyMemory<StaticSamplerBinding> StaticSamplers = default)
+{
+    public void Deconstruct(
+        out IComponentType program,
+        out EntryPointReflection compute,
+        out string? label)
+    {
+        program = Program;
+        compute = Compute;
+        label = Label;
+    }
+}
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -503,7 +618,8 @@ public readonly ref struct MeshPipelineDesc
         in BlendState blend,
         in AttachmentFormatSignature attachments,
         DynamicStates dynamicStates = DynamicStates.None,
-        string? label = null)
+        string? label = null,
+        ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
     {
         Program = program;
         Mesh = mesh;
@@ -516,6 +632,7 @@ public readonly ref struct MeshPipelineDesc
         Attachments = attachments;
         DynamicStates = dynamicStates;
         Label = label;
+        StaticSamplers = staticSamplers;
     }
 
     public IComponentType Program { get; }
@@ -529,4 +646,5 @@ public readonly ref struct MeshPipelineDesc
     public AttachmentFormatSignature Attachments { get; }
     public DynamicStates DynamicStates { get; }
     public string? Label { get; }
+    public ReadOnlySpan<StaticSamplerBinding> StaticSamplers { get; }
 }

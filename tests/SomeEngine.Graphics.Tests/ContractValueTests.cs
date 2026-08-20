@@ -4,6 +4,61 @@ namespace SomeEngine.Graphics.Tests;
 
 public sealed class ContractValueTests
 {
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(9_999, 0)]
+    [InlineData(10_000, 1)]
+    [InlineData(19_999, 1)]
+    public void Timeout_conversion_matches_WaitHandle_fractional_millisecond_conversion(
+        long ticks,
+        int expectedMilliseconds)
+    {
+        Assert.Equal(
+            expectedMilliseconds,
+            Timeouts.ToMilliseconds(
+                TimeSpan.FromTicks(ticks),
+                "timeout"));
+    }
+
+    [Fact]
+    public void Timeout_conversion_accepts_only_the_infinite_sentinel_as_negative()
+    {
+        Assert.Equal(
+            Timeout.Infinite,
+            Timeouts.ToMilliseconds(Timeout.InfiniteTimeSpan, "timeout"));
+    }
+
+    [Fact]
+    public void Timeout_conversion_accepts_the_exact_integer_limit()
+    {
+        Assert.Equal(
+            int.MaxValue,
+            Timeouts.ToMilliseconds(
+                TimeSpan.FromMilliseconds(int.MaxValue),
+                "timeout"));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-9_999)]
+    [InlineData(-10_001)]
+    [InlineData(-20_000)]
+    public void Timeout_conversion_rejects_every_finite_negative_value(long ticks)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Timeouts.ToMilliseconds(TimeSpan.FromTicks(ticks), "timeout"));
+    }
+
+    [Fact]
+    public void Timeout_conversion_rejects_values_beyond_the_integer_limit()
+    {
+        TimeSpan tooLarge = TimeSpan.FromMilliseconds((double)int.MaxValue + 1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Timeouts.ToMilliseconds(tooLarge, "timeout"));
+    }
+
     [Fact]
     public void Whole_buffer_range_resolves_to_the_resource_size()
     {
@@ -39,7 +94,9 @@ public sealed class ContractValueTests
             MemoryType.DeviceLocal,
             permitted,
             0,
-            64 * 32 * 4);
+            64 * 32 * 4,
+            1,
+            1);
 
         permitted[0] = Format.R32Float;
 

@@ -1,6 +1,6 @@
 namespace SomeEngine.Graphics.Validation;
 
-public sealed partial class ValidationLayer<TBackend>
+public sealed partial class ValidationLayer
 {
     private ResourceValidationEvent CreateTransitionEvent(
         Resource resource,
@@ -10,15 +10,26 @@ public sealed partial class ValidationLayer<TBackend>
         ResourceAccess accessBefore,
         ResourceAccess accessAfter,
         TextureLayout? layoutBefore,
-        TextureLayout? layoutAfter) =>
-        ResourceValidationEvent.Transition(
+        TextureLayout? layoutAfter,
+        BarrierPhase phase)
+    {
+        ValidateBarrierPhase(phase);
+        return ResourceValidationEvent.Transition(
             ResolveBarrierRange(resource, textureRange, allowWholeTexture: false),
             syncBefore,
             syncAfter,
             accessBefore,
             accessAfter,
             layoutBefore,
-            layoutAfter);
+            layoutAfter,
+            phase);
+    }
+
+    private void ValidateBarrierPhase(BarrierPhase phase)
+    {
+        if (!Enum.IsDefined(phase))
+            Reject("Barriers", $"Unknown barrier phase value {(byte)phase}.");
+    }
 
     private ResourceValidationEvent CreateReleaseEvent(in QueueRelease barrier)
     {
@@ -85,11 +96,15 @@ public sealed partial class ValidationLayer<TBackend>
 
     private void ValidateAliasingResourceShape(in AliasingResource resource)
     {
-        if (resource.Resource is Buffer && resource.TextureRange is not null)
+        if (resource.Resource is Buffer or AccelerationStructure &&
+            resource.TextureRange is not null)
         {
+            string kind = resource.Resource is AccelerationStructure
+                ? "AccelerationStructure"
+                : "Buffer";
             Reject(
                 "Barriers",
-                "A Buffer aliasing entry cannot contain a Texture subresource range.",
+                $"A {kind} aliasing entry cannot contain a Texture subresource range.",
                 resource.Resource.Label);
         }
     }
@@ -140,15 +155,28 @@ public sealed partial class ValidationLayer<TBackend>
                 resource.Label);
         }
 
-        if (resource is Buffer)
+        if (resource is Buffer or AccelerationStructure)
         {
             if (textureRange is not null)
-                Reject("Barriers", "A Buffer cannot use a Texture subresource range.", resource.Label);
-            return new ResourceBarrierRange(state!, [0]);
+            {
+                string kind = resource is AccelerationStructure
+                    ? "AccelerationStructure"
+                    : "Buffer";
+                Reject(
+                    "Barriers",
+                    $"A {kind} cannot use a Texture subresource range.",
+                    resource.Label);
+            }
+            return state!.WholeBufferRange!;
         }
 
         if (resource is not Texture)
-            Reject("Barriers", "Barrier resource must be a Buffer or Texture.", resource.Label);
+        {
+            Reject(
+                "Barriers",
+                "Barrier resource must be a Buffer, Texture, or AccelerationStructure.",
+                resource.Label);
+        }
         var texture = (Texture)resource;
 
         TextureSubresourceRange range;
@@ -291,6 +319,8 @@ public sealed partial class ValidationLayer<TBackend>
         switch (validationEvent.Kind)
         {
             case ResourceValidationEventKind.Transition:
+                ValidateLocalTransition(context, validationEvent);
+                break;
             case ResourceValidationEventKind.Release:
                 foreach (int cell in validationEvent.Range!.Cells)
                 {
@@ -326,18 +356,65 @@ public sealed partial class ValidationLayer<TBackend>
                 foreach (int cell in range.Cells)
                 {
                     var key = new ResourceCellKey(range.State, cell);
-                    if (context.ResourceStates.TryGetValue(key, out LocalResourceState state) &&
-                        state.Status == LocalResourceStatus.Released)
+                    if (!context.ResourceStates.TryGetValue(key, out LocalResourceState state))
+                        continue;
+                    if (state.Status == LocalResourceStatus.Released)
                     {
                         Reject(
                             "Barriers",
                             "An aliased range cannot be deactivated while a Queue handoff is pending.",
                             range.Resource.Label);
                     }
+                    if (state.Split is not null)
+                    {
+                        Reject(
+                            "Barriers",
+                            "An aliased range cannot be deactivated while a split barrier is pending.",
+                            range.Resource.Label);
+                    }
                 }
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
+        }
+    }
+
+    private void ValidateLocalTransition(
+        ContextValidationState context,
+        in ResourceValidationEvent validationEvent)
+    {
+        ResourceBarrierRange range = validationEvent.Range!;
+        PendingSplitState declared = PendingSplitState.FromEvent(validationEvent);
+        foreach (int cell in range.Cells)
+        {
+            var key = new ResourceCellKey(range.State, cell);
+            if (!context.ResourceStates.TryGetValue(key, out LocalResourceState state))
+                continue;
+
+            if (validationEvent.Phase == BarrierPhase.End)
+            {
+                RequireLocalStatusAvailable(range, state);
+                if (state.Split is not PendingSplitState pending)
+                {
+                    Reject(
+                        "Barriers",
+                        "A split-barrier End has no matching Begin in this command stream.",
+                        range.Resource.Label);
+                    return;
+                }
+                RequireMatchingSplit(range, pending, declared);
+                continue;
+            }
+
+            RequireLocalAvailable(range, state);
+            RequireBeforeState(
+                range,
+                state.Sync,
+                state.Access,
+                state.Layout,
+                validationEvent.SyncBefore,
+                validationEvent.AccessBefore,
+                validationEvent.LayoutBefore);
         }
     }
 
@@ -348,6 +425,8 @@ public sealed partial class ValidationLayer<TBackend>
         switch (validationEvent.Kind)
         {
             case ResourceValidationEventKind.Transition:
+                ApplyLocalTransition(context, validationEvent);
+                break;
             case ResourceValidationEventKind.Acquire:
                 SetLocalRange(
                     context,
@@ -410,6 +489,66 @@ public sealed partial class ValidationLayer<TBackend>
         context.ResourceEvents.Add(validationEvent);
     }
 
+    private static void ApplyLocalTransition(
+        ContextValidationState context,
+        in ResourceValidationEvent validationEvent)
+    {
+        if (validationEvent.Phase == BarrierPhase.Begin)
+        {
+            SetLocalRange(
+                context,
+                validationEvent.Range!,
+                new LocalResourceState(
+                    LocalResourceStatus.Available,
+                    validationEvent.SyncBefore,
+                    validationEvent.AccessBefore,
+                    validationEvent.LayoutBefore,
+                    PendingSplitState.FromEvent(validationEvent)));
+            return;
+        }
+
+        SetLocalRange(
+            context,
+            validationEvent.Range!,
+            new LocalResourceState(
+                LocalResourceStatus.Available,
+                validationEvent.SyncAfter,
+                validationEvent.AccessAfter,
+                validationEvent.LayoutAfter));
+    }
+
+    private void PrepareLocalResourceEvent(
+        ContextValidationState context,
+        ResourceValidationEvent validationEvent)
+    {
+        CommandMutationCapacity capacity = new()
+        {
+            ResourceEvents = 1,
+        };
+        if (validationEvent.Range is not null)
+            PrepareResourceRange(context, validationEvent.Range, ref capacity);
+        if (validationEvent.BeforeRanges is not null)
+        {
+            foreach (ResourceBarrierRange range in validationEvent.BeforeRanges)
+                PrepareResourceRange(context, range, ref capacity);
+        }
+        if (validationEvent.AfterRanges is not null)
+        {
+            foreach (ResourceBarrierRange range in validationEvent.AfterRanges)
+                PrepareResourceRange(context, range, ref capacity);
+        }
+        ReserveCommandMutation(context, capacity);
+    }
+
+    private void PrepareResourceRange(
+        ContextValidationState context,
+        ResourceBarrierRange range,
+        ref CommandMutationCapacity capacity)
+    {
+        capacity.ResourceStates = checked(capacity.ResourceStates + range.Cells.Length);
+        PrepareCommandDependencyCore(context, range.Resource, ref capacity);
+    }
+
     private static void SetLocalRange(
         ContextValidationState context,
         ResourceBarrierRange range,
@@ -423,6 +562,20 @@ public sealed partial class ValidationLayer<TBackend>
         ResourceBarrierRange range,
         in LocalResourceState state)
     {
+        RequireLocalStatusAvailable(range, state);
+        if (state.Split is not null)
+        {
+            Reject(
+                "Barriers",
+                "The resource range has a pending split barrier and only the matching End is legal.",
+                range.Resource.Label);
+        }
+    }
+
+    private void RequireLocalStatusAvailable(
+        ResourceBarrierRange range,
+        in LocalResourceState state)
+    {
         if (state.Status == LocalResourceStatus.Inactive)
             Reject("Barriers", "The aliased resource range is inactive.", range.Resource.Label);
         if (state.Status == LocalResourceStatus.Released)
@@ -432,6 +585,19 @@ public sealed partial class ValidationLayer<TBackend>
                 "The resource range was released and cannot be used before a matching acquire.",
                 range.Resource.Label);
         }
+    }
+
+    private void RequireMatchingSplit(
+        ResourceBarrierRange range,
+        in PendingSplitState pending,
+        in PendingSplitState declared)
+    {
+        if (pending == declared)
+            return;
+        Reject(
+            "Barriers",
+            "A split-barrier End must repeat the exact Begin transition.",
+            range.Resource.Label);
     }
 
     private void RequireBeforeState(
@@ -457,23 +623,24 @@ public sealed partial class ValidationLayer<TBackend>
             range.Resource.Label);
     }
 
-    private ResourceSubmissionReservation? ReserveResourceSubmission(
+    private ResourceSubmissionReservation? PlanResourceSubmission(
         Queue queue,
         ReadOnlySpan<QueueCompletion> completionWaits,
         ReadOnlySpan<TimelinePoint> timelineWaits,
-        ReadOnlySpan<RecordedValidationState> recordings)
+        ReadOnlySpan<RecordedValidationState> recordings,
+        ReadOnlySpan<TimelineSignal> timelineSignals,
+        ResourceSubmissionReservation workspace)
     {
         bool hasEvents = false;
         foreach (RecordedValidationState recording in recordings)
-            hasEvents |= recording.ResourceEvents.Length != 0;
+            hasEvents |= recording.ResourceEvents.Count != 0;
         if (!hasEvents)
             return null;
 
-        lock (_gate)
-        {
-            var changes = new Dictionary<ResourceCellKey, ResourceCellState>();
-            var touched = new HashSet<ResourceValidationState>(ReferenceEqualityComparer.Instance);
-            var newHandoffs = new List<PendingHandoff>();
+            workspace.Clear();
+            Dictionary<ResourceCellKey, ResourceCellState> changes = workspace.Changes;
+            HashSet<ResourceValidationState> touched = workspace.States;
+            List<PendingHandoff> newHandoffs = workspace.NewHandoffs;
 
             foreach (RecordedValidationState recording in recordings)
             foreach (ResourceValidationEvent validationEvent in recording.ResourceEvents)
@@ -497,22 +664,24 @@ public sealed partial class ValidationLayer<TBackend>
                         "The resource is already participating in a concurrent Queue submission.",
                         state.Resource.Label);
                 }
-                if (queue.Device.RetirementType == RetirementType.Manual && state.Resource.IsDisposed)
-                {
-                    Reject(
-                        "Retirement",
-                        "A Manual-retirement resource was disposed before its recorded use was accepted by a Queue.",
-                        state.Resource.Label);
-                }
             }
 
-            foreach (ResourceValidationState state in touched)
-                state.SubmissionInProgress = true;
-            return new ResourceSubmissionReservation(
-                changes,
-                touched.ToArray(),
-                newHandoffs.ToArray());
-        }
+            Dictionary<ResourceValidationState, int> cellCapacityByState = workspace.CellCapacities;
+            foreach (ResourceCellKey key in changes.Keys)
+            {
+                cellCapacityByState.TryGetValue(key.State, out int count);
+                cellCapacityByState[key.State] = checked(count + 1);
+            }
+            TimelinePoint[] signals = timelineSignals.IsEmpty
+                ? []
+                : new TimelinePoint[timelineSignals.Length];
+            for (int index = 0; index < timelineSignals.Length; index++)
+            {
+                TimelineSignal signal = timelineSignals[index];
+                signals[index] = new TimelinePoint(signal.Timeline, signal.Value);
+            }
+            workspace.TimelineSignals = signals;
+            return workspace;
     }
 
     private static void AddTouchedResources(
@@ -571,18 +740,48 @@ public sealed partial class ValidationLayer<TBackend>
         Dictionary<ResourceCellKey, ResourceCellState> changes)
     {
         ResourceBarrierRange range = validationEvent.Range!;
+        PendingSplitState declared = PendingSplitState.FromEvent(validationEvent);
         foreach (int cell in range.Cells)
         {
             ResourceCellState current = GetSimulatedState(range.State, cell, changes);
             RequireQueueOwnership(queue, range, current);
-            RequireBeforeState(
-                range,
-                current.Sync,
-                current.Access,
-                current.Layout,
-                validationEvent.SyncBefore,
-                validationEvent.AccessBefore,
-                validationEvent.LayoutBefore);
+
+            if (validationEvent.Phase == BarrierPhase.End)
+            {
+                if (current.Split is not PendingSplitState pending)
+                {
+                    Reject(
+                        "Barriers",
+                        "A split-barrier End has no matching submitted Begin.",
+                        range.Resource.Label);
+                    return;
+                }
+                RequireMatchingSplit(range, pending, declared);
+            }
+            else
+            {
+                RequireNoPendingSplit(range, current);
+                RequireBeforeState(
+                    range,
+                    current.Sync,
+                    current.Access,
+                    current.Layout,
+                    validationEvent.SyncBefore,
+                    validationEvent.AccessBefore,
+                    validationEvent.LayoutBefore);
+            }
+
+            if (validationEvent.Phase == BarrierPhase.Begin)
+            {
+                changes[new ResourceCellKey(range.State, cell)] = current with
+                {
+                    OwnerQueue = queue,
+                    OwnerType = queue.Type,
+                    Split = declared,
+                };
+                continue;
+            }
+
             changes[new ResourceCellKey(range.State, cell)] = current with
             {
                 Sync = validationEvent.SyncAfter,
@@ -590,6 +789,7 @@ public sealed partial class ValidationLayer<TBackend>
                 Layout = validationEvent.LayoutAfter,
                 OwnerQueue = queue,
                 OwnerType = queue.Type,
+                Split = null,
             };
         }
     }
@@ -605,6 +805,7 @@ public sealed partial class ValidationLayer<TBackend>
         {
             ResourceCellState current = GetSimulatedState(range.State, cell, changes);
             RequireQueueOwnership(queue, range, current);
+            RequireNoPendingSplit(range, current);
             RequireBeforeState(
                 range,
                 current.Sync,
@@ -630,7 +831,7 @@ public sealed partial class ValidationLayer<TBackend>
             {
                 Sync = PipelineSync.None,
                 Access = ResourceAccess.NoAccess,
-                Layout = range.Resource is Texture ? TextureLayout.QueueCommon : null,
+                Layout = range.Resource is Texture ? TextureLayout.General : null,
                 OwnerQueue = queue,
                 OwnerType = queue.Type,
                 Handoff = handoff,
@@ -650,6 +851,7 @@ public sealed partial class ValidationLayer<TBackend>
         foreach (int cell in range.Cells)
         {
             ResourceCellState current = GetSimulatedState(range.State, cell, changes);
+            RequireNoPendingSplit(range, current);
             if (!current.Active || current.Handoff is null)
             {
                 Reject(
@@ -730,6 +932,7 @@ public sealed partial class ValidationLayer<TBackend>
         {
             ResourceCellState current = GetSimulatedState(range.State, cell, changes);
             RequireQueueOwnership(queue, range, current);
+            RequireNoPendingSplit(range, current);
             changes[new ResourceCellKey(range.State, cell)] = current with
             {
                 Active = false,
@@ -796,6 +999,18 @@ public sealed partial class ValidationLayer<TBackend>
         }
     }
 
+    private void RequireNoPendingSplit(
+        ResourceBarrierRange range,
+        in ResourceCellState state)
+    {
+        if (state.Split is null)
+            return;
+        Reject(
+            "Barriers",
+            "The resource range has a pending split barrier and only the matching End is legal.",
+            range.Resource.Label);
+    }
+
     private bool IsHandoffOrdered(
         PendingHandoff handoff,
         ReadOnlySpan<QueueCompletion> completionWaits,
@@ -823,35 +1038,25 @@ public sealed partial class ValidationLayer<TBackend>
     private void CompleteResourceSubmission(
         ResourceSubmissionReservation? reservation,
         in QueueCompletion completion,
-        ReadOnlySpan<TimelineSignal> timelineSignals,
         bool commit)
     {
         if (reservation is null)
             return;
 
-        lock (_gate)
+        if (commit)
         {
-            if (commit)
+            foreach (PendingHandoff handoff in reservation.NewHandoffs)
             {
-                var signals = new TimelinePoint[timelineSignals.Length];
-                for (int index = 0; index < signals.Length; index++)
-                {
-                    TimelineSignal signal = timelineSignals[index];
-                    signals[index] = new TimelinePoint(signal.Timeline, signal.Value);
-                }
-                foreach (PendingHandoff handoff in reservation.NewHandoffs)
-                {
-                    handoff.Completion = completion;
-                    handoff.HasCompletion = true;
-                    handoff.TimelineSignals = signals;
-                }
-                foreach ((ResourceCellKey key, ResourceCellState value) in reservation.Changes)
-                    key.State.SetCell(key.Cell, value);
+                handoff.Completion = completion;
+                handoff.HasCompletion = true;
+                handoff.TimelineSignals = reservation.TimelineSignals;
             }
-
-            foreach (ResourceValidationState state in reservation.States)
-                state.SubmissionInProgress = false;
+            foreach ((ResourceCellKey key, ResourceCellState value) in reservation.Changes)
+                key.State.SetCell(key.Cell, value);
         }
+
+        foreach (ResourceValidationState state in reservation.States)
+            state.SubmissionInProgress = false;
     }
 
     private void ResetAcquiredTextureState(in SwapchainImage image)
@@ -867,14 +1072,7 @@ public sealed partial class ValidationLayer<TBackend>
 
         lock (_gate)
         {
-            if (state!.SubmissionInProgress)
-            {
-                Reject(
-                    "Presentation",
-                    "Swapchain image was acquired while its prior resource state was still being submitted.",
-                    texture.Label);
-            }
-            state.Reset(
+            state!.Reset(
                 image.InitialSync,
                 image.InitialAccess,
                 image.InitialLayout,
@@ -930,7 +1128,26 @@ public sealed partial class ValidationLayer<TBackend>
         LocalResourceStatus Status,
         PipelineSync Sync,
         ResourceAccess Access,
-        TextureLayout? Layout);
+        TextureLayout? Layout,
+        PendingSplitState? Split = null);
+
+    private readonly record struct PendingSplitState(
+        PipelineSync SyncBefore,
+        PipelineSync SyncAfter,
+        ResourceAccess AccessBefore,
+        ResourceAccess AccessAfter,
+        TextureLayout? LayoutBefore,
+        TextureLayout? LayoutAfter)
+    {
+        internal static PendingSplitState FromEvent(in ResourceValidationEvent validationEvent) =>
+            new(
+                validationEvent.SyncBefore,
+                validationEvent.SyncAfter,
+                validationEvent.AccessBefore,
+                validationEvent.AccessAfter,
+                validationEvent.LayoutBefore,
+                validationEvent.LayoutAfter);
+    }
 
     private readonly record struct ResourceCellKey(ResourceValidationState State, int Cell);
 
@@ -941,14 +1158,28 @@ public sealed partial class ValidationLayer<TBackend>
         TextureLayout? Layout,
         Queue? OwnerQueue,
         QueueType? OwnerType,
-        PendingHandoff? Handoff);
+        PendingHandoff? Handoff,
+        PendingSplitState? Split = null);
 
     private sealed class ResourceValidationState
     {
         private readonly Dictionary<int, ResourceCellState> _cells = [];
         private ResourceCellState _initial;
 
+        internal ResourceValidationState(bool buffer = false)
+        {
+            if (buffer)
+                WholeBufferRange = new ResourceBarrierRange(this, [0]);
+        }
+
         internal ResourceValidationState(Resource resource)
+        {
+            if (resource is Buffer)
+                WholeBufferRange = new ResourceBarrierRange(this, [0]);
+            Bind(resource);
+        }
+
+        internal void Bind(Resource resource)
         {
             Resource = resource;
             _initial = new ResourceCellState(
@@ -961,13 +1192,17 @@ public sealed partial class ValidationLayer<TBackend>
                 Handoff: null);
         }
 
-        internal Resource Resource { get; }
+        internal Resource Resource { get; private set; } = null!;
+        internal ResourceBarrierRange? WholeBufferRange { get; private set; }
         internal bool SubmissionInProgress;
 
         internal ResourceCellState GetCell(int cell) =>
             _cells.TryGetValue(cell, out ResourceCellState state) ? state : _initial;
 
         internal void SetCell(int cell, in ResourceCellState state) => _cells[cell] = state;
+
+        internal void EnsureCellCapacity(int additionalCapacity) =>
+            _cells.EnsureCapacity(checked(_cells.Count + additionalCapacity));
 
         internal void Reset(
             PipelineSync sync,
@@ -994,7 +1229,7 @@ public sealed partial class ValidationLayer<TBackend>
         internal Resource Resource => State.Resource;
     }
 
-    private sealed class ResourceValidationEvent
+    private readonly struct ResourceValidationEvent
     {
         private ResourceValidationEvent(ResourceValidationEventKind kind)
         {
@@ -1012,6 +1247,7 @@ public sealed partial class ValidationLayer<TBackend>
         internal TextureLayout? LayoutBefore { get; private init; }
         internal TextureLayout? LayoutAfter { get; private init; }
         internal QueueType QueueType { get; private init; }
+        internal BarrierPhase Phase { get; private init; }
 
         internal static ResourceValidationEvent Transition(
             ResourceBarrierRange range,
@@ -1020,7 +1256,8 @@ public sealed partial class ValidationLayer<TBackend>
             ResourceAccess accessBefore,
             ResourceAccess accessAfter,
             TextureLayout? layoutBefore,
-            TextureLayout? layoutAfter) =>
+            TextureLayout? layoutAfter,
+            BarrierPhase phase) =>
             new(ResourceValidationEventKind.Transition)
             {
                 Range = range,
@@ -1030,6 +1267,7 @@ public sealed partial class ValidationLayer<TBackend>
                 AccessAfter = accessAfter,
                 LayoutBefore = layoutBefore,
                 LayoutAfter = layoutAfter,
+                Phase = phase,
             };
 
         internal static ResourceValidationEvent Release(
@@ -1103,18 +1341,21 @@ public sealed partial class ValidationLayer<TBackend>
 
     private sealed class ResourceSubmissionReservation
     {
-        internal ResourceSubmissionReservation(
-            Dictionary<ResourceCellKey, ResourceCellState> changes,
-            ResourceValidationState[] states,
-            PendingHandoff[] newHandoffs)
-        {
-            Changes = changes;
-            States = states;
-            NewHandoffs = newHandoffs;
-        }
+        internal readonly Dictionary<ResourceCellKey, ResourceCellState> Changes = [];
+        internal readonly HashSet<ResourceValidationState> States =
+            new(ReferenceEqualityComparer.Instance);
+        internal readonly Dictionary<ResourceValidationState, int> CellCapacities =
+            new(ReferenceEqualityComparer.Instance);
+        internal readonly List<PendingHandoff> NewHandoffs = [];
+        internal TimelinePoint[] TimelineSignals = [];
 
-        internal Dictionary<ResourceCellKey, ResourceCellState> Changes { get; }
-        internal ResourceValidationState[] States { get; }
-        internal PendingHandoff[] NewHandoffs { get; }
+        internal void Clear()
+        {
+            Changes.Clear();
+            States.Clear();
+            CellCapacities.Clear();
+            NewHandoffs.Clear();
+            TimelineSignals = [];
+        }
     }
 }

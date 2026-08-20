@@ -1,6 +1,6 @@
 namespace SomeEngine.Graphics.Validation;
 
-public sealed partial class ValidationLayer<TBackend>
+public sealed partial class ValidationLayer
 {
     public MemoryRequirements GetBufferMemoryRequirements(
         Device device,
@@ -30,7 +30,35 @@ public sealed partial class ValidationLayer<TBackend>
     public Heap CreateHeap(Device device, in HeapDesc desc)
     {
         RequireDevice(device);
-        return Track(Backend.CreateHeap(device, desc), device);
+        var metadata = new HeapValidationState(desc.VisibleNodeMask);
+        HeapDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _heapStates.EnsureAdditionalCapacity();
+            Heap? result = null;
+            bool objectAdded = false;
+            bool metadataAdded = false;
+            try
+            {
+                result = Backend.CreateHeap(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _heapStates.Add(result, metadata);
+                metadataAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (metadataAdded)
+                    _heapStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Buffer CreateBuffer(
@@ -39,41 +67,197 @@ public sealed partial class ValidationLayer<TBackend>
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
         RequireDevice(device);
-        return Track(Backend.CreateBuffer(device, desc, memoryType), device);
+        var state = new ResourceValidationState(buffer: true);
+        BufferDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            Buffer? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.CreateBuffer(device, createDesc, memoryType);
+                state.Bind(result);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _resourceStates.Add(result, state);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _resourceStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Buffer CreatePlacedBuffer(Device device, Heap heap, ulong offset, in BufferDesc desc)
     {
         RequireDevice(device);
         RequireOnDevice(device, heap, "Heap");
-        return Track(Backend.CreatePlacedBuffer(device, heap, offset, desc), heap);
+        var state = new ResourceValidationState(buffer: true);
+        BufferDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(heap);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            Buffer? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.CreatePlacedBuffer(device, heap, offset, createDesc);
+                state.Bind(result);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _resourceStates.Add(result, state);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _resourceStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Texture CreateTexture(Device device, in TextureDesc desc)
     {
         RequireDevice(device);
-        return Track(Backend.CreateTexture(device, desc), device);
+        var state = new ResourceValidationState(buffer: false);
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            Texture? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.CreateTexture(device, desc);
+                state.Bind(result);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _resourceStates.Add(result, state);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _resourceStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Texture CreatePlacedTexture(Device device, Heap heap, ulong offset, in TextureDesc desc)
     {
         RequireDevice(device);
         RequireOnDevice(device, heap, "Heap");
-        return Track(Backend.CreatePlacedTexture(device, heap, offset, desc), heap);
+        var state = new ResourceValidationState(buffer: false);
+        var objectInfo = new ValidationObjectInfo(heap);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            Texture? result = null;
+            bool objectAdded = false;
+            bool stateAdded = false;
+            try
+            {
+                result = Backend.CreatePlacedTexture(device, heap, offset, desc);
+                state.Bind(result);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                _resourceStates.Add(result, state);
+                stateAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (stateAdded)
+                    _resourceStates.Remove(result!);
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public BufferCbv CreateBufferCbv(Device device, in BufferCbvDesc desc)
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Buffer, "Buffer");
-        return Track(Backend.CreateBufferCbv(device, desc), desc.Buffer);
+        BufferCbvDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Buffer);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            BufferCbv? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateBufferCbv(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public BufferSrv CreateBufferSrv(Device device, in BufferSrvDesc desc)
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Buffer, "Buffer");
-        return Track(Backend.CreateBufferSrv(device, desc), desc.Buffer);
+        BufferSrvDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Buffer);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            BufferSrv? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateBufferSrv(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public BufferUav CreateBufferUav(Device device, in BufferUavDesc desc)
@@ -82,21 +266,84 @@ public sealed partial class ValidationLayer<TBackend>
         RequireOnDevice(device, desc.Buffer, "Buffer");
         if (desc.CounterBuffer is not null)
             RequireOnDevice(device, desc.CounterBuffer, "Counter Buffer");
-        return Track(Backend.CreateBufferUav(device, desc), desc.Buffer);
+        BufferUavDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Buffer);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            BufferUav? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateBufferUav(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public TextureSrv CreateTextureSrv(Device device, in TextureSrvDesc desc)
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
-        return Track(Backend.CreateTextureSrv(device, desc), desc.Texture);
+        TextureSrvDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Texture);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            TextureSrv? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateTextureSrv(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public TextureUav CreateTextureUav(Device device, in TextureUavDesc desc)
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
-        return Track(Backend.CreateTextureUav(device, desc), desc.Texture);
+        TextureUavDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Texture);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            TextureUav? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateTextureUav(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public ColorAttachmentView CreateColorAttachmentView(
@@ -105,7 +352,28 @@ public sealed partial class ValidationLayer<TBackend>
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
-        return Track(Backend.CreateColorAttachmentView(device, desc), desc.Texture);
+        ColorAttachmentViewDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Texture);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            ColorAttachmentView? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateColorAttachmentView(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public DepthStencilView CreateDepthStencilView(
@@ -114,56 +382,55 @@ public sealed partial class ValidationLayer<TBackend>
     {
         RequireDevice(device);
         RequireOnDevice(device, desc.Texture, "Texture");
-        return Track(Backend.CreateDepthStencilView(device, desc), desc.Texture);
+        DepthStencilViewDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(desc.Texture);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            DepthStencilView? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateDepthStencilView(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public Sampler CreateSampler(Device device, in SamplerDesc desc)
     {
         RequireDevice(device);
-        return Track(Backend.CreateSampler(device, desc), device);
-    }
-
-    public BindlessBufferCbv CreateBindlessBufferCbv(Device device, in BufferCbvDesc desc)
-    {
-        RequireDevice(device);
-        RequireOnDevice(device, desc.Buffer, "Buffer");
-        return Track(Backend.CreateBindlessBufferCbv(device, desc), desc.Buffer);
-    }
-
-    public BindlessBufferSrv CreateBindlessBufferSrv(Device device, in BufferSrvDesc desc)
-    {
-        RequireDevice(device);
-        RequireOnDevice(device, desc.Buffer, "Buffer");
-        return Track(Backend.CreateBindlessBufferSrv(device, desc), desc.Buffer);
-    }
-
-    public BindlessBufferUav CreateBindlessBufferUav(Device device, in BufferUavDesc desc)
-    {
-        RequireDevice(device);
-        RequireOnDevice(device, desc.Buffer, "Buffer");
-        if (desc.CounterBuffer is not null)
-            RequireOnDevice(device, desc.CounterBuffer, "Counter Buffer");
-        return Track(Backend.CreateBindlessBufferUav(device, desc), desc.Buffer);
-    }
-
-    public BindlessTextureSrv CreateBindlessTextureSrv(Device device, in TextureSrvDesc desc)
-    {
-        RequireDevice(device);
-        RequireOnDevice(device, desc.Texture, "Texture");
-        return Track(Backend.CreateBindlessTextureSrv(device, desc), desc.Texture);
-    }
-
-    public BindlessTextureUav CreateBindlessTextureUav(Device device, in TextureUavDesc desc)
-    {
-        RequireDevice(device);
-        RequireOnDevice(device, desc.Texture, "Texture");
-        return Track(Backend.CreateBindlessTextureUav(device, desc), desc.Texture);
-    }
-
-    public BindlessSampler CreateBindlessSampler(Device device, in SamplerDesc desc)
-    {
-        RequireDevice(device);
-        return Track(Backend.CreateBindlessSampler(device, desc), device);
+        SamplerDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            Sampler? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateSampler(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public MappedBuffer Map(Buffer buffer, MapType type, in BufferRange range)
@@ -177,4 +444,5 @@ public sealed partial class ValidationLayer<TBackend>
         if (!ReferenceEquals(expected, actual))
             Reject("Ownership", $"{objectType} belongs to another Device.");
     }
+
 }

@@ -71,6 +71,9 @@ public readonly record struct AdapterEnumerationOptions(
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>These flags request capabilities while creating a Device. They are not runtime capability
+/// facts; after creation, callers must use <see cref="IGraphicsBackend.TryGetCapability{TCapability}"/>
+/// and the returned typed capability.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 [Flags]
@@ -105,7 +108,7 @@ public readonly record struct DeviceQueueDesc(
     uint NodeIndex = 0);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -114,7 +117,6 @@ public readonly ref struct DeviceDesc
 {
     public DeviceDesc(
         AdapterId adapterId,
-        RetirementType retirementType,
         ReadOnlySpan<DeviceQueueDesc> queues,
         DeviceFeatures requiredFeatures = DeviceFeatures.None,
         DeviceFeatures optionalFeatures = DeviceFeatures.None,
@@ -122,7 +124,6 @@ public readonly ref struct DeviceDesc
         string? label = null)
     {
         AdapterId = adapterId;
-        RetirementType = retirementType;
         Queues = queues;
         RequiredFeatures = requiredFeatures;
         OptionalFeatures = optionalFeatures;
@@ -131,9 +132,11 @@ public readonly ref struct DeviceDesc
     }
 
     public AdapterId AdapterId { get; }
-    public RetirementType RetirementType { get; }
     public ReadOnlySpan<DeviceQueueDesc> Queues { get; }
+    /// <summary>Capability requests that must be satisfied for Device creation to succeed.</summary>
     public DeviceFeatures RequiredFeatures { get; }
+
+    /// <summary>Capability requests enabled only when the selected adapter supports them.</summary>
     public DeviceFeatures OptionalFeatures { get; }
     public uint EnabledNodeMask { get; }
     public string? Label { get; }
@@ -227,6 +230,8 @@ public readonly record struct FormatSupport(
     SampleCounts SupportedSampleCounts,
     SampleCounts SupportedSparseSampleCounts)
 {
+    private const uint MaximumSampleCount = 32;
+
     public bool SupportsSampleCount(uint sampleCount) =>
         TryGetSampleCount(sampleCount, out SampleCounts value) &&
         (SupportedSampleCounts & value) != 0;
@@ -244,7 +249,7 @@ public readonly record struct FormatSupport(
             4 => SomeEngine.Graphics.SampleCounts.Four,
             8 => SomeEngine.Graphics.SampleCounts.Eight,
             16 => SomeEngine.Graphics.SampleCounts.Sixteen,
-            32 => SomeEngine.Graphics.SampleCounts.ThirtyTwo,
+            MaximumSampleCount => SomeEngine.Graphics.SampleCounts.ThirtyTwo,
             _ => SomeEngine.Graphics.SampleCounts.None,
         };
         return value != SomeEngine.Graphics.SampleCounts.None;
@@ -262,39 +267,53 @@ public sealed class DeviceCapabilities
     private readonly FormatSupport[] _formats;
 
     public DeviceCapabilities(
-        DeviceFeatures features,
         in DeviceLimits limits,
         bool supportsBundles,
         bool supportsPipelineStatistics,
         bool supportsStreamOutputStatistics,
+        bool supportsDepthBounds,
+        DynamicStates supportedDynamicStates,
         ReadOnlySpan<FormatSupport> formats)
     {
-        Features = features;
         Limits = limits;
         SupportsBundles = supportsBundles;
         SupportsPipelineStatistics = supportsPipelineStatistics;
         SupportsStreamOutputStatistics = supportsStreamOutputStatistics;
+        SupportsDepthBounds = supportsDepthBounds;
+        const DynamicStates knownDynamicStates =
+            DynamicStates.Viewport |
+            DynamicStates.Scissor |
+            DynamicStates.BlendConstants |
+            DynamicStates.StencilReference |
+            DynamicStates.DepthBounds |
+            DynamicStates.DepthBias |
+            DynamicStates.PrimitiveTopology |
+            DynamicStates.StripCut;
+        if ((supportedDynamicStates & ~knownDynamicStates) != 0)
+            throw new ArgumentOutOfRangeException(nameof(supportedDynamicStates));
+        SupportedDynamicStates = supportedDynamicStates;
         _formats = formats.ToArray();
 
         Format[] definedFormats = Enum.GetValues<Format>();
         if (_formats.Length != definedFormats.Length)
-            throw new ArgumentException("The format snapshot must contain every Format exactly once.", nameof(formats));
+            throw new ArgumentException("The format support table must contain every Format exactly once.", nameof(formats));
         for (int index = 0; index < _formats.Length; index++)
         {
             if (_formats[index].Format != definedFormats[index])
             {
                 throw new ArgumentException(
-                    "The format snapshot must follow the canonical Format declaration order.",
+                    "The format support table must follow the canonical Format declaration order.",
                     nameof(formats));
             }
         }
     }
 
-    public DeviceFeatures Features { get; }
     public DeviceLimits Limits { get; }
     public bool SupportsBundles { get; }
     public bool SupportsPipelineStatistics { get; }
     public bool SupportsStreamOutputStatistics { get; }
+    public bool SupportsDepthBounds { get; }
+    public DynamicStates SupportedDynamicStates { get; }
     public ReadOnlySpan<FormatSupport> Formats => _formats;
 
     public FormatSupport GetFormatSupport(Format format)
@@ -307,7 +326,7 @@ public sealed class DeviceCapabilities
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Thread safety:</b> Thread-safe. Concurrent Dispose calls are safe and collectively perform one logical release; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -317,29 +336,31 @@ public abstract class Device : GraphicsObject
     private readonly object _terminalGate = new();
     private int _status = (int)DeviceStatus.Active;
     private GraphicsException? _loss;
+    private Exception? _teardownFailure;
 
     internal Device(
         in AdapterInfo adapter,
         DeviceCapabilities capabilities,
-        RetirementType retirementType,
         uint enabledNodeMask,
         string? label)
         : base(label)
     {
         Adapter = adapter;
         Capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
-        RetirementType = retirementType;
         EnabledNodeMask = enabledNodeMask;
     }
 
     public AdapterInfo Adapter { get; }
     public DeviceCapabilities Capabilities { get; }
-    public RetirementType RetirementType { get; }
     public uint EnabledNodeMask { get; }
     public DeviceStatus Status => (DeviceStatus)Volatile.Read(ref _status);
 
-    internal object RuntimeIdentity { get; init; } = null!;
+    internal IGraphicsBackend BackendOwner { get; init; } = null!;
     internal GraphicsException? Loss => Volatile.Read(ref _loss);
+    internal Exception? TeardownFailure => Volatile.Read(ref _teardownFailure);
+
+    internal override void RecordReleaseFailure(Exception exception) =>
+        Interlocked.CompareExchange(ref _teardownFailure, exception, null);
 
     internal void ThrowIfUnavailable()
     {
@@ -401,7 +422,7 @@ public abstract class DeviceCapability
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed Device-owned Queue; callers never Dispose it.</para>
-/// <para><b>After Dispose:</b> The Queue has no independent Dispose operation; parent Device disposal invalidates submission and native access while immutable provenance remains readable.</para>
+/// <para><b>After Dispose:</b> The Queue has no Dispose operation; parent Device disposal invalidates submission and native access while immutable provenance remains readable.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public abstract class Queue
@@ -410,18 +431,21 @@ public abstract class Queue
         Device device,
         QueueType type,
         uint index,
-        float priority)
+        float priority,
+        uint nodeIndex)
     {
         Device = device ?? throw new ArgumentNullException(nameof(device));
         Type = type;
         Index = index;
         Priority = priority;
+        NodeIndex = nodeIndex;
     }
 
     public Device Device { get; }
     public QueueType Type { get; }
     public uint Index { get; }
     public float Priority { get; }
+    public uint NodeIndex { get; }
 }
 
 /// <remarks>
@@ -448,7 +472,7 @@ public readonly record struct SurfaceDesc(
     string? Label = null);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -459,18 +483,18 @@ public abstract class Surface : GraphicsObject
         NativeWindowType type,
         nint windowHandle,
         nint displayHandle,
-        object runtimeIdentity,
+        IGraphicsBackend backendOwner,
         string? label)
         : base(label)
     {
         Type = type;
         WindowHandle = windowHandle;
         DisplayHandle = displayHandle;
-        RuntimeIdentity = runtimeIdentity ?? throw new ArgumentNullException(nameof(runtimeIdentity));
+        BackendOwner = backendOwner ?? throw new ArgumentNullException(nameof(backendOwner));
     }
 
     public NativeWindowType Type { get; }
     public nint WindowHandle { get; }
     public nint DisplayHandle { get; }
-    internal object RuntimeIdentity { get; }
+    internal IGraphicsBackend BackendOwner { get; }
 }

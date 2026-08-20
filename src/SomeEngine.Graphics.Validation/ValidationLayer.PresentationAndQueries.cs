@@ -1,6 +1,6 @@
 namespace SomeEngine.Graphics.Validation;
 
-public sealed partial class ValidationLayer<TBackend>
+public sealed partial class ValidationLayer
 {
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
@@ -12,7 +12,28 @@ public sealed partial class ValidationLayer<TBackend>
         }
         if (desc.Surface.IsDisposed)
             Reject("Lifetime", "Swapchain Surface is disposed.", desc.Surface.Label);
-        return Track(Backend.CreateSwapchain(device, desc), device);
+        SwapchainDesc createDesc = desc;
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            Swapchain? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateSwapchain(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public SwapchainAcquireStatus Acquire(
@@ -20,15 +41,46 @@ public sealed partial class ValidationLayer<TBackend>
         in SwapchainAcquireOptions options,
         out SwapchainImage image)
     {
-        Require(swapchain);
-        SwapchainAcquireStatus status = Backend.Acquire(swapchain, options, out image);
-        if (status == SwapchainAcquireStatus.Success)
+        _ = Timeouts.ToMilliseconds(options.Timeout, nameof(options));
+        if (options.PreserveContents)
         {
-            if (!ReferenceEquals(swapchain, image.Swapchain))
-                Reject("Presentation", "Acquire returned an image for another Swapchain.", swapchain.Label);
-            TrackIfAbsent(image.Texture, swapchain);
-            ResetAcquiredTextureState(image);
+            throw new NotSupportedException(
+                "The selected presentation backend does not advertise preserved back-buffer contents.");
         }
+        Require(swapchain);
+        var imageInfo = new ValidationObjectInfo(swapchain);
+        var imageState = new ResourceValidationState(buffer: false);
+        SwapchainAcquireStatus status;
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            _resourceStates.EnsureAdditionalCapacity();
+            status = Backend.Acquire(swapchain, options, out image);
+            if (status == SwapchainAcquireStatus.Success &&
+                !_objects.TryGetValue(image.Texture, out _))
+            {
+                bool objectAdded = false;
+                bool stateAdded = false;
+                try
+                {
+                    imageState.Bind(image.Texture);
+                    _objects.Add(image.Texture, imageInfo);
+                    objectAdded = true;
+                    _resourceStates.Add(image.Texture, imageState);
+                    stateAdded = true;
+                }
+                catch
+                {
+                    if (stateAdded)
+                        _resourceStates.Remove(image.Texture);
+                    if (objectAdded)
+                        _objects.Remove(image.Texture);
+                    throw;
+                }
+            }
+        }
+        if (status == SwapchainAcquireStatus.Success)
+            ResetAcquiredTextureState(image);
         return status;
     }
 
@@ -38,8 +90,24 @@ public sealed partial class ValidationLayer<TBackend>
         Swapchain swapchain = image.Swapchain;
         Require(swapchain);
         RequireSameDevice(queue.Device, swapchain.Device, "SwapchainImage");
+        RequirePresentationQueue(queue, swapchain);
         ValidatePresentTextureState(queue, image.Texture);
         return Backend.Present(queue, image);
+    }
+
+    private void RequirePresentationQueue(Queue queue, Swapchain swapchain)
+    {
+        Queue presentationQueue = Backend.GetQueue(
+            swapchain.Device,
+            QueueType.Graphics,
+            0);
+        if (!ReferenceEquals(queue, presentationQueue))
+        {
+            Reject(
+                "Presentation",
+                "SwapchainImage submission and presentation require the Graphics Queue that owns the native swapchain.",
+                swapchain.Label);
+        }
     }
 
     public ReconfigureStatus Reconfigure(Swapchain swapchain, in SwapchainConfig config)
@@ -51,7 +119,33 @@ public sealed partial class ValidationLayer<TBackend>
     public QueryPool CreateQueryPool(Device device, in QueryPoolDesc desc)
     {
         RequireDevice(device);
-        return Track(Backend.CreateQueryPool(device, desc), device);
+        DeviceValidationState deviceState = _deviceStates.GetValue(
+            device,
+            static _ => throw new InvalidOperationException(
+                "The Device has no Validation node metadata."));
+        uint nodeIndex = deviceState.ResolveNodeIndex(desc.NodeIndex, nameof(desc));
+        QueryPoolDesc createDesc = desc with { NodeIndex = nodeIndex };
+        var objectInfo = new ValidationObjectInfo(device);
+        lock (_gate)
+        {
+            _objects.EnsureAdditionalCapacity();
+            QueryPool? result = null;
+            bool objectAdded = false;
+            try
+            {
+                result = Backend.CreateQueryPool(device, createDesc);
+                _objects.Add(result, objectInfo);
+                objectAdded = true;
+                return result;
+            }
+            catch
+            {
+                if (objectAdded)
+                    _objects.Remove(result!);
+                result?.Dispose();
+                throw;
+            }
+        }
     }
 
     public void BeginQuery(CommandContext context, QueryPool pool, uint queryIndex)
@@ -65,6 +159,9 @@ public sealed partial class ValidationLayer<TBackend>
             QueryLocalPhase phase = GetLocalQueryPhase(state, slot);
             if (phase is QueryLocalPhase.Active or QueryLocalPhase.Ready)
                 Reject("Queries", "Query index is already active or has an unresolved result.", pool.Label);
+            CommandMutationCapacity capacity = new() { QueryEvents = 1, QueryPhases = 1 };
+            PrepareCommandDependencyCore(state, pool, ref capacity);
+            ReserveCommandMutation(state, capacity);
             Backend.BeginQuery(context, pool, queryIndex);
             RecordQueryEvent(state, slot, QueryValidationEventType.Begin, QueryLocalPhase.Active);
             RecordCommandDependencyCore(state, pool);
@@ -82,6 +179,9 @@ public sealed partial class ValidationLayer<TBackend>
             QueryLocalPhase phase = GetLocalQueryPhase(state, slot);
             if (phase is QueryLocalPhase.Ready or QueryLocalPhase.Resolved)
                 Reject("Queries", "EndQuery has no matching active query in execution order.", pool.Label);
+            CommandMutationCapacity capacity = new() { QueryEvents = 1, QueryPhases = 1 };
+            PrepareCommandDependencyCore(state, pool, ref capacity);
+            ReserveCommandMutation(state, capacity);
             Backend.EndQuery(context, pool, queryIndex);
             RecordQueryEvent(state, slot, QueryValidationEventType.End, QueryLocalPhase.Ready);
             RecordCommandDependencyCore(state, pool);
@@ -100,6 +200,9 @@ public sealed partial class ValidationLayer<TBackend>
             QueryLocalPhase phase = GetLocalQueryPhase(state, slot);
             if (phase is QueryLocalPhase.Active or QueryLocalPhase.Ready)
                 Reject("Queries", "Timestamp query index has an unresolved earlier result.", pool.Label);
+            CommandMutationCapacity capacity = new() { QueryEvents = 1, QueryPhases = 1 };
+            PrepareCommandDependencyCore(state, pool, ref capacity);
+            ReserveCommandMutation(state, capacity);
             Backend.WriteTimestamp(context, pool, queryIndex);
             RecordQueryEvent(state, slot, QueryValidationEventType.Write, QueryLocalPhase.Ready);
             RecordCommandDependencyCore(state, pool);
@@ -130,6 +233,15 @@ public sealed partial class ValidationLayer<TBackend>
                 if (GetLocalQueryPhase(state, slot) == QueryLocalPhase.Active)
                     Reject("Queries", "ResolveQueries cannot resolve an active query.", pool.Label);
             }
+
+            CommandMutationCapacity capacity = new()
+            {
+                QueryEvents = checked((int)queryCount),
+                QueryPhases = checked((int)queryCount),
+            };
+            PrepareCommandDependencyCore(state, pool, ref capacity);
+            PrepareCommandDependencyCore(state, destination, ref capacity);
+            ReserveCommandMutation(state, capacity);
 
             Backend.ResolveQueries(
                 context,

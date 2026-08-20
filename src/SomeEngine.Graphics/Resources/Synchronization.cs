@@ -29,8 +29,24 @@ public enum PipelineSync : ulong
     EmitAccelerationStructurePostBuildInfo = 1UL << 16,
     BuildRayTracingAccelerationStructure = 1UL << 17,
     CopyRayTracingAccelerationStructure = 1UL << 18,
-    Split = 1UL << 19,
     All = ulong.MaxValue,
+}
+
+/// <summary>
+/// Selects whether a barrier is issued as a complete operation or as one half of
+/// a split transition.
+/// </summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; copied values remain readable.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public enum BarrierPhase : byte
+{
+    Complete,
+    Begin,
+    End,
 }
 
 /// <remarks>
@@ -43,7 +59,6 @@ public enum PipelineSync : ulong
 public enum ResourceAccess : ulong
 {
     NoAccess = 0,
-    Common = 1UL << 0,
     VertexBuffer = 1UL << 1,
     ConstantBuffer = 1UL << 2,
     IndexBuffer = 1UL << 3,
@@ -73,7 +88,7 @@ public enum ResourceAccess : ulong
 public enum TextureLayout : byte
 {
     Undefined,
-    Common,
+    General,
     Present,
     RenderTarget,
     UnorderedAccess,
@@ -85,5 +100,4 @@ public enum TextureLayout : byte
     ResolveSource,
     ResolveDestination,
     ShadingRateSource,
-    QueueCommon,
 }

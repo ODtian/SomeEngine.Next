@@ -1,5 +1,58 @@
 namespace SomeEngine.Graphics;
 
+/// <summary>
+/// Indicates that a Device was created with presentation support and can create
+/// swapchains for compatible surfaces.
+/// </summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable metadata may be shared.</para>
+/// <para><b>Ownership:</b> Borrowed immutable metadata owned by its Device.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state and does not revive its disposed Device.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public sealed class Presentation : DeviceCapability
+{
+    internal Presentation(Device device)
+        : base(device)
+    {
+    }
+}
+
+/// <summary>Optional advanced modes exposed by a Device's native Pipeline implementation.</summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>Basic asynchronous Pipeline creation is part of <see cref="IGraphicsBackend"/> and does
+/// not require any flag in this enum. These flags describe only optional native behavior.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+[Flags]
+public enum PipelineCreationFeatures : byte
+{
+    None = 0,
+    PersistentCacheData = 1 << 0,
+    CompileRequiredDetection = 1 << 1,
+    PipelineSpecialization = 1 << 2,
+}
+
+/// <summary>Reports optional advanced native Pipeline creation behavior.</summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable metadata may be shared.</para>
+/// <para><b>Ownership:</b> Borrowed immutable metadata owned by its Device.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state and does not revive its disposed Device.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public sealed class PipelineCreationSupport : DeviceCapability
+{
+    internal PipelineCreationSupport(
+        Device device,
+        PipelineCreationFeatures features)
+        : base(device) => Features = features;
+
+    public PipelineCreationFeatures Features { get; }
+}
+
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Borrowed or caller-supplied managed identity; it owns no independent native lifetime unless a member explicitly says otherwise.</para>
@@ -70,21 +123,7 @@ public enum ExternalHandleType : byte
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
-/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
-/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
-/// </remarks>
-[Flags]
-public enum ExternalHandleTypes : byte
-{
-    None = 0,
-    OpaqueWin32 = 1 << 0,
-    OpaqueWin32Kmt = 1 << 1,
-}
-
-/// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-owned OS shared handle returned by export. Dispose closes exactly
 /// that handle. Passing it to an import borrows its Value synchronously and never transfers or closes
 /// the input handle.</para>
@@ -94,6 +133,7 @@ public enum ExternalHandleTypes : byte
 /// </remarks>
 public sealed class ExternalHandle : IDisposable
 {
+    private DisposeGate _disposeGate;
     private nint _value;
     private readonly Action<nint>? _release;
 
@@ -119,15 +159,20 @@ public sealed class ExternalHandle : IDisposable
 
     public void Dispose()
     {
-        nint value = Interlocked.Exchange(ref _value, 0);
-        if (value == 0)
+        if (!_disposeGate.TryEnter())
             return;
         try
         {
-            _release?.Invoke(value);
+            nint value = Interlocked.Exchange(ref _value, 0);
+            if (value != 0)
+                _release?.Invoke(value);
         }
         catch
         {
+        }
+        finally
+        {
+            _disposeGate.Exit();
         }
     }
 }
@@ -140,30 +185,60 @@ public sealed class ExternalHandle : IDisposable
 /// </remarks>
 public sealed class ExternalResources : DeviceCapability
 {
+    private readonly ExternalHandleType[] _bufferImportHandleTypes;
+    private readonly ExternalHandleType[] _bufferExportHandleTypes;
+    private readonly ExternalHandleType[] _textureImportHandleTypes;
+    private readonly ExternalHandleType[] _textureExportHandleTypes;
+    private readonly ExternalHandleType[] _heapImportHandleTypes;
+    private readonly ExternalHandleType[] _heapExportHandleTypes;
+
     internal ExternalResources(
         Device device,
-        ExternalHandleTypes bufferImportHandleTypes,
-        ExternalHandleTypes bufferExportHandleTypes,
-        ExternalHandleTypes textureImportHandleTypes,
-        ExternalHandleTypes textureExportHandleTypes,
-        ExternalHandleTypes heapImportHandleTypes,
-        ExternalHandleTypes heapExportHandleTypes)
+        ReadOnlySpan<ExternalHandleType> bufferImportHandleTypes,
+        ReadOnlySpan<ExternalHandleType> bufferExportHandleTypes,
+        ReadOnlySpan<ExternalHandleType> textureImportHandleTypes,
+        ReadOnlySpan<ExternalHandleType> textureExportHandleTypes,
+        ReadOnlySpan<ExternalHandleType> heapImportHandleTypes,
+        ReadOnlySpan<ExternalHandleType> heapExportHandleTypes)
         : base(device)
     {
-        BufferImportHandleTypes = bufferImportHandleTypes;
-        BufferExportHandleTypes = bufferExportHandleTypes;
-        TextureImportHandleTypes = textureImportHandleTypes;
-        TextureExportHandleTypes = textureExportHandleTypes;
-        HeapImportHandleTypes = heapImportHandleTypes;
-        HeapExportHandleTypes = heapExportHandleTypes;
+        _bufferImportHandleTypes = ValidateHandleTypes(bufferImportHandleTypes);
+        _bufferExportHandleTypes = ValidateHandleTypes(bufferExportHandleTypes);
+        _textureImportHandleTypes = ValidateHandleTypes(textureImportHandleTypes);
+        _textureExportHandleTypes = ValidateHandleTypes(textureExportHandleTypes);
+        _heapImportHandleTypes = ValidateHandleTypes(heapImportHandleTypes);
+        _heapExportHandleTypes = ValidateHandleTypes(heapExportHandleTypes);
     }
 
-    public ExternalHandleTypes BufferImportHandleTypes { get; }
-    public ExternalHandleTypes BufferExportHandleTypes { get; }
-    public ExternalHandleTypes TextureImportHandleTypes { get; }
-    public ExternalHandleTypes TextureExportHandleTypes { get; }
-    public ExternalHandleTypes HeapImportHandleTypes { get; }
-    public ExternalHandleTypes HeapExportHandleTypes { get; }
+    public bool SupportsBufferImport(ExternalHandleType type) =>
+        Contains(_bufferImportHandleTypes, type);
+    public bool SupportsBufferExport(ExternalHandleType type) =>
+        Contains(_bufferExportHandleTypes, type);
+    public bool SupportsTextureImport(ExternalHandleType type) =>
+        Contains(_textureImportHandleTypes, type);
+    public bool SupportsTextureExport(ExternalHandleType type) =>
+        Contains(_textureExportHandleTypes, type);
+    public bool SupportsHeapImport(ExternalHandleType type) =>
+        Contains(_heapImportHandleTypes, type);
+    public bool SupportsHeapExport(ExternalHandleType type) =>
+        Contains(_heapExportHandleTypes, type);
+
+    private static ExternalHandleType[] ValidateHandleTypes(
+        ReadOnlySpan<ExternalHandleType> handleTypes)
+    {
+        ExternalHandleType[] result = handleTypes.ToArray();
+        foreach (ExternalHandleType type in result)
+        {
+            if (!Enum.IsDefined(type))
+                throw new ArgumentOutOfRangeException(nameof(handleTypes));
+        }
+        return result;
+    }
+
+    private static bool Contains(
+        ExternalHandleType[] handleTypes,
+        ExternalHandleType type) =>
+        Enum.IsDefined(type) && Array.IndexOf(handleTypes, type) >= 0;
 }
 
 /// <remarks>
@@ -174,18 +249,40 @@ public sealed class ExternalResources : DeviceCapability
 /// </remarks>
 public sealed class ExternalTimelines : DeviceCapability
 {
+    private readonly ExternalHandleType[] _importHandleTypes;
+    private readonly ExternalHandleType[] _exportHandleTypes;
+
     internal ExternalTimelines(
         Device device,
-        ExternalHandleTypes importHandleTypes,
-        ExternalHandleTypes exportHandleTypes)
+        ReadOnlySpan<ExternalHandleType> importHandleTypes,
+        ReadOnlySpan<ExternalHandleType> exportHandleTypes)
         : base(device)
     {
-        ImportHandleTypes = importHandleTypes;
-        ExportHandleTypes = exportHandleTypes;
+        _importHandleTypes = ValidateHandleTypes(importHandleTypes);
+        _exportHandleTypes = ValidateHandleTypes(exportHandleTypes);
     }
 
-    public ExternalHandleTypes ImportHandleTypes { get; }
-    public ExternalHandleTypes ExportHandleTypes { get; }
+    public bool SupportsImport(ExternalHandleType type) =>
+        Contains(_importHandleTypes, type);
+    public bool SupportsExport(ExternalHandleType type) =>
+        Contains(_exportHandleTypes, type);
+
+    private static ExternalHandleType[] ValidateHandleTypes(
+        ReadOnlySpan<ExternalHandleType> handleTypes)
+    {
+        ExternalHandleType[] result = handleTypes.ToArray();
+        foreach (ExternalHandleType type in result)
+        {
+            if (!Enum.IsDefined(type))
+                throw new ArgumentOutOfRangeException(nameof(handleTypes));
+        }
+        return result;
+    }
+
+    private static bool Contains(
+        ExternalHandleType[] handleTypes,
+        ExternalHandleType type) =>
+        Enum.IsDefined(type) && Array.IndexOf(handleTypes, type) >= 0;
 }
 
 /// <remarks>

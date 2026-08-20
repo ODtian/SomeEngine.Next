@@ -16,49 +16,186 @@ public enum DescriptorTableType : byte
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
+/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public readonly record struct DescriptorSlotDesc(
+    ResourceBindingType Type,
+    Format? Format = null,
+    uint StructureStride = 0,
+    TextureViewDimension? TextureDimension = null,
+    bool HasCounter = false,
+    TextureAspects Aspects = TextureAspects.Color);
+
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be copied and shared.</para>
+/// <para><b>Ownership:</b> Pure value. Identity is the exact <see cref="DescriptorTable"/> reference plus <see cref="Value"/>; the value owns no table or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state. Disposing its table makes the index unusable for receiver operations, and the copied numeric value is never reinterpreted as an index into another table.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public readonly struct DescriptorIndex : IEquatable<DescriptorIndex>
+{
+    private readonly DescriptorTable? _table;
+
+    internal DescriptorIndex(DescriptorTable table, uint value)
+    {
+        _table = table ?? throw new ArgumentNullException(nameof(table));
+        Value = value;
+    }
+
+    public uint Value { get; }
+    public bool IsValid => _table is not null;
+
+    public bool Equals(DescriptorIndex other) =>
+        ReferenceEquals(_table, other._table) && Value == other.Value;
+
+    public override bool Equals(object? obj) => obj is DescriptorIndex other && Equals(other);
+    public override int GetHashCode() => HashCode.Combine(
+        _table is null ? 0 : RuntimeHelpers.GetHashCode(_table),
+        Value);
+    public static bool operator ==(DescriptorIndex left, DescriptorIndex right) => left.Equals(right);
+    public static bool operator !=(DescriptorIndex left, DescriptorIndex right) => !left.Equals(right);
+}
+
+/// <remarks>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public abstract class DescriptorTable : DeviceResource
 {
-    private readonly ResourceBindingType[] _slotTypes;
+    private const uint MaximumStructuredBufferStride = 2_048;
+
+    private readonly DescriptorSlotDesc[] _slots;
 
     internal DescriptorTable(
         Device device,
-        ReadOnlySpan<ResourceBindingType> slotTypes,
+        DescriptorTableType type,
+        uint nodeIndex,
+        ReadOnlySpan<DescriptorSlotDesc> slots,
         string? label)
-        : base(device, label)
+        : base(device ?? throw new ArgumentNullException(nameof(device)), label)
     {
-        if (slotTypes.IsEmpty)
-            throw new ArgumentException("A DescriptorTable requires at least one typed slot.", nameof(slotTypes));
-        _slotTypes = slotTypes.ToArray();
-        bool samplers = _slotTypes[0] == ResourceBindingType.Sampler;
-        foreach (ResourceBindingType slotType in _slotTypes)
+        if (slots.IsEmpty)
+            throw new ArgumentException("A DescriptorTable requires at least one typed slot.", nameof(slots));
+        _slots = slots.ToArray();
+        bool samplers = type == DescriptorTableType.Sampler;
+        foreach (DescriptorSlotDesc slot in _slots)
         {
-            if (!Enum.IsDefined(slotType) || slotType == ResourceBindingType.None)
-                throw new ArgumentOutOfRangeException(nameof(slotTypes));
-            if ((slotType == ResourceBindingType.Sampler) != samplers)
+            if (!Enum.IsDefined(slot.Type) || slot.Type == ResourceBindingType.None)
+                throw new ArgumentOutOfRangeException(nameof(slots));
+            if ((slot.Type == ResourceBindingType.Sampler) != samplers)
             {
                 throw new ArgumentException(
-                    "A DescriptorTable cannot mix Resource and Sampler slots.",
-                    nameof(slotTypes));
+                    "A DescriptorTable slot must match the table heap type.",
+                    nameof(slots));
             }
+            ValidateSlot(slot, nameof(slots));
         }
-        Type = samplers ? DescriptorTableType.Sampler : DescriptorTableType.Resource;
-        Count = checked((uint)_slotTypes.Length);
+        Type = type;
+        NodeIndex = nodeIndex;
+        Count = checked((uint)_slots.Length);
     }
 
     public DescriptorTableType Type { get; }
+    public uint NodeIndex { get; }
     public uint Count { get; }
-    public ReadOnlySpan<ResourceBindingType> SlotTypes => _slotTypes;
+    public ReadOnlySpan<DescriptorSlotDesc> Slots => _slots;
 
-    public ResourceBindingType GetSlotType(uint slot)
+    public DescriptorSlotDesc GetSlotDesc(uint slot)
     {
         if (slot >= Count)
             throw new ArgumentOutOfRangeException(nameof(slot));
-        return _slotTypes[checked((int)slot)];
+        return _slots[checked((int)slot)];
+    }
+
+    internal ResourceBindingType GetSlotType(uint slot) => GetSlotDesc(slot).Type;
+
+    private static void ValidateSlot(in DescriptorSlotDesc slot, string parameterName)
+    {
+        switch (slot.Type)
+        {
+            case ResourceBindingType.ConstantBuffer:
+            case ResourceBindingType.Sampler:
+            case ResourceBindingType.AccelerationStructure:
+                ValidateUnshapedSlot(slot, parameterName);
+                break;
+            case ResourceBindingType.BufferSrv:
+            case ResourceBindingType.BufferUav:
+                ValidateBufferSlot(slot, parameterName);
+                break;
+            case ResourceBindingType.TextureSrv:
+            case ResourceBindingType.TextureUav:
+                ValidateTextureSlot(slot, parameterName);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(parameterName);
+        }
+    }
+
+    private static void ValidateUnshapedSlot(
+        in DescriptorSlotDesc slot,
+        string parameterName)
+    {
+        if (slot.Format.HasValue ||
+            slot.StructureStride != 0 ||
+            slot.TextureDimension.HasValue ||
+            slot.HasCounter)
+        {
+            throw new ArgumentException(
+                "The descriptor slot contains fields that do not apply to its type.",
+                parameterName);
+        }
+    }
+
+    private static void ValidateBufferSlot(
+        in DescriptorSlotDesc slot,
+        string parameterName)
+    {
+        if (slot.TextureDimension.HasValue ||
+            slot.Format.HasValue && slot.StructureStride != 0)
+        {
+            throw new ArgumentException(
+                "A Buffer slot cannot combine texture or typed/structured shapes.",
+                parameterName);
+        }
+
+        uint stride = slot.StructureStride;
+        if (stride != 0 && ((stride & 3) != 0 || stride > MaximumStructuredBufferStride))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                $"A structured Buffer stride must be a four-byte multiple no greater than {MaximumStructuredBufferStride}.");
+        }
+
+        if (slot.HasCounter &&
+            (slot.Type != ResourceBindingType.BufferUav || stride == 0))
+        {
+            throw new ArgumentException(
+                "Only a structured Buffer UAV slot may carry a counter.",
+                parameterName);
+        }
+    }
+
+    private static void ValidateTextureSlot(
+        in DescriptorSlotDesc slot,
+        string parameterName)
+    {
+        if (!slot.Format.HasValue ||
+            !slot.TextureDimension.HasValue ||
+            slot.StructureStride != 0 ||
+            slot.HasCounter)
+        {
+            throw new ArgumentException(
+                "A Texture slot requires Format and TextureDimension only.",
+                parameterName);
+        }
+
+        if (!Enum.IsDefined(slot.TextureDimension.Value))
+            throw new ArgumentOutOfRangeException(parameterName);
     }
 }
 
@@ -88,216 +225,62 @@ public enum ResourceBindingType : byte
 /// </remarks>
 public readonly struct ResourceBinding : IEquatable<ResourceBinding>
 {
-    private readonly object? _value;
+    private readonly GraphicsObject? _value;
 
-    private ResourceBinding(ResourceBindingType type, object? value, uint arrayElement)
+    private ResourceBinding(ResourceBindingType type, GraphicsObject? value)
     {
         Type = type;
         _value = value;
-        ArrayElement = arrayElement;
     }
 
     public ResourceBindingType Type { get; }
-    public uint ArrayElement { get; }
-    public object? Value => _value;
+    public GraphicsObject? Value => _value;
     public bool IsNull => _value is null;
 
-    public static ResourceBinding Null(ResourceBindingType type, uint arrayElement = 0)
+    public static ResourceBinding Null(ResourceBindingType type)
     {
         if (type == ResourceBindingType.None)
             return default;
         if (!Enum.IsDefined(type))
             throw new ArgumentOutOfRangeException(nameof(type));
-        return new ResourceBinding(type, null, arrayElement);
+        return new ResourceBinding(type, null);
     }
 
-    public static ResourceBinding ConstantBuffer(BufferCbv value, uint arrayElement = 0) =>
-        new(ResourceBindingType.ConstantBuffer, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+    public static ResourceBinding ConstantBuffer(BufferCbv value) =>
+        new(ResourceBindingType.ConstantBuffer, value ?? throw new ArgumentNullException(nameof(value)));
 
-    public static ResourceBinding ReadOnlyBuffer(BufferSrv value, uint arrayElement = 0) =>
-        new(ResourceBindingType.BufferSrv, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+    public static ResourceBinding ReadOnlyBuffer(BufferSrv value) =>
+        new(ResourceBindingType.BufferSrv, value ?? throw new ArgumentNullException(nameof(value)));
 
-    public static ResourceBinding WritableBuffer(BufferUav value, uint arrayElement = 0) =>
-        new(ResourceBindingType.BufferUav, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+    public static ResourceBinding WritableBuffer(BufferUav value) =>
+        new(ResourceBindingType.BufferUav, value ?? throw new ArgumentNullException(nameof(value)));
 
-    public static ResourceBinding SampledTexture(TextureSrv value, uint arrayElement = 0) =>
-        new(ResourceBindingType.TextureSrv, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+    public static ResourceBinding SampledTexture(TextureSrv value) =>
+        new(ResourceBindingType.TextureSrv, value ?? throw new ArgumentNullException(nameof(value)));
 
-    public static ResourceBinding StorageTexture(TextureUav value, uint arrayElement = 0) =>
-        new(ResourceBindingType.TextureUav, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+    public static ResourceBinding StorageTexture(TextureUav value) =>
+        new(ResourceBindingType.TextureUav, value ?? throw new ArgumentNullException(nameof(value)));
 
-    public static ResourceBinding SampledWith(Sampler value, uint arrayElement = 0) =>
-        new(ResourceBindingType.Sampler, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+    public static ResourceBinding SampledWith(Sampler value) =>
+        new(ResourceBindingType.Sampler, value ?? throw new ArgumentNullException(nameof(value)));
 
     public static ResourceBinding AccelerationStructure(
-        AccelerationStructureSrv value,
-        uint arrayElement = 0) =>
-        new(ResourceBindingType.AccelerationStructure, value ?? throw new ArgumentNullException(nameof(value)), arrayElement);
+        AccelerationStructureSrv value) =>
+        new(ResourceBindingType.AccelerationStructure, value ?? throw new ArgumentNullException(nameof(value)));
 
     public bool Equals(ResourceBinding other) =>
-        Type == other.Type &&
-        ValuesEqual(Type, _value, other._value) &&
-        ArrayElement == other.ArrayElement;
+        Type == other.Type && ReferenceEquals(_value, other._value);
 
     public override bool Equals(object? obj) => obj is ResourceBinding other && Equals(other);
     public override int GetHashCode() => HashCode.Combine(
         Type,
-        ValueHashCode(Type, _value),
-        ArrayElement);
+        _value is null ? 0 : RuntimeHelpers.GetHashCode(_value));
     public static bool operator ==(ResourceBinding left, ResourceBinding right) => left.Equals(right);
     public static bool operator !=(ResourceBinding left, ResourceBinding right) => !left.Equals(right);
-
-    private static bool ValuesEqual(
-        ResourceBindingType type,
-        object? left,
-        object? right)
-    {
-        if (ReferenceEquals(left, right))
-            return true;
-        if (left is null || right is null)
-            return false;
-
-        return type switch
-        {
-            ResourceBindingType.ConstantBuffer =>
-                left is BufferCbv leftView && right is BufferCbv rightView &&
-                ReferenceEquals(leftView.Resource, rightView.Resource) &&
-                leftView.Description.Range.Resolve(leftView.Resource.Info.Size) ==
-                    rightView.Description.Range.Resolve(rightView.Resource.Info.Size),
-            ResourceBindingType.BufferSrv =>
-                left is BufferSrv leftView && right is BufferSrv rightView &&
-                ReferenceEquals(leftView.Resource, rightView.Resource) &&
-                leftView.Description.Range.Resolve(leftView.Resource.Info.Size) ==
-                    rightView.Description.Range.Resolve(rightView.Resource.Info.Size) &&
-                leftView.Description.Format == rightView.Description.Format &&
-                leftView.Description.StructureStride == rightView.Description.StructureStride,
-            ResourceBindingType.BufferUav =>
-                left is BufferUav leftView && right is BufferUav rightView &&
-                ReferenceEquals(leftView.Resource, rightView.Resource) &&
-                leftView.Description.Range.Resolve(leftView.Resource.Info.Size) ==
-                    rightView.Description.Range.Resolve(rightView.Resource.Info.Size) &&
-                leftView.Description.Format == rightView.Description.Format &&
-                leftView.Description.StructureStride == rightView.Description.StructureStride &&
-                ReferenceEquals(
-                    leftView.Description.CounterBuffer,
-                    rightView.Description.CounterBuffer) &&
-                leftView.Description.CounterOffset == rightView.Description.CounterOffset,
-            ResourceBindingType.TextureSrv =>
-                left is TextureSrv leftView && right is TextureSrv rightView &&
-                ReferenceEquals(leftView.Resource, rightView.Resource) &&
-                leftView.Description.Range == rightView.Description.Range &&
-                leftView.Description.Format == rightView.Description.Format &&
-                leftView.Description.Dimension == rightView.Description.Dimension,
-            ResourceBindingType.TextureUav =>
-                left is TextureUav leftView && right is TextureUav rightView &&
-                ReferenceEquals(leftView.Resource, rightView.Resource) &&
-                leftView.Description.Range == rightView.Description.Range &&
-                leftView.Description.Format == rightView.Description.Format &&
-                leftView.Description.Dimension == rightView.Description.Dimension,
-            ResourceBindingType.Sampler =>
-                left is Sampler leftSampler && right is Sampler rightSampler &&
-                SamplersEqual(leftSampler.Description, rightSampler.Description),
-            ResourceBindingType.AccelerationStructure =>
-                left is AccelerationStructureSrv leftView &&
-                right is AccelerationStructureSrv rightView &&
-                ReferenceEquals(leftView.Resource, rightView.Resource),
-            _ => false,
-        };
-    }
-
-    private static bool SamplersEqual(in SamplerDesc left, in SamplerDesc right) =>
-        left.MinFilter == right.MinFilter &&
-        left.MagFilter == right.MagFilter &&
-        left.MipFilter == right.MipFilter &&
-        left.AddressU == right.AddressU &&
-        left.AddressV == right.AddressV &&
-        left.AddressW == right.AddressW &&
-        left.MipLodBias.Equals(right.MipLodBias) &&
-        left.MaximumAnisotropy == right.MaximumAnisotropy &&
-        left.Comparison == right.Comparison &&
-        left.BorderColor.X.Equals(right.BorderColor.X) &&
-        left.BorderColor.Y.Equals(right.BorderColor.Y) &&
-        left.BorderColor.Z.Equals(right.BorderColor.Z) &&
-        left.BorderColor.W.Equals(right.BorderColor.W) &&
-        left.MinimumLod.Equals(right.MinimumLod) &&
-        left.MaximumLod.Equals(right.MaximumLod);
-
-    private static int ValueHashCode(ResourceBindingType type, object? value)
-    {
-        if (value is null)
-            return 0;
-
-        HashCode hash = new();
-        switch (type)
-        {
-            case ResourceBindingType.ConstantBuffer when value is BufferCbv view:
-                hash.Add(RuntimeHelpers.GetHashCode(view.Resource));
-                hash.Add(view.Description.Range.Resolve(view.Resource.Info.Size));
-                break;
-            case ResourceBindingType.BufferSrv when value is BufferSrv view:
-                hash.Add(RuntimeHelpers.GetHashCode(view.Resource));
-                hash.Add(view.Description.Range.Resolve(view.Resource.Info.Size));
-                hash.Add(view.Description.Format);
-                hash.Add(view.Description.StructureStride);
-                break;
-            case ResourceBindingType.BufferUav when value is BufferUav view:
-                hash.Add(RuntimeHelpers.GetHashCode(view.Resource));
-                hash.Add(view.Description.Range.Resolve(view.Resource.Info.Size));
-                hash.Add(view.Description.Format);
-                hash.Add(view.Description.StructureStride);
-                hash.Add(view.Description.CounterBuffer is null
-                    ? 0
-                    : RuntimeHelpers.GetHashCode(view.Description.CounterBuffer));
-                hash.Add(view.Description.CounterOffset);
-                break;
-            case ResourceBindingType.TextureSrv when value is TextureSrv view:
-                hash.Add(RuntimeHelpers.GetHashCode(view.Resource));
-                hash.Add(view.Description.Range);
-                hash.Add(view.Description.Format);
-                hash.Add(view.Description.Dimension);
-                break;
-            case ResourceBindingType.TextureUav when value is TextureUav view:
-                hash.Add(RuntimeHelpers.GetHashCode(view.Resource));
-                hash.Add(view.Description.Range);
-                hash.Add(view.Description.Format);
-                hash.Add(view.Description.Dimension);
-                break;
-            case ResourceBindingType.Sampler when value is Sampler sampler:
-                AddSamplerHash(ref hash, sampler.Description);
-                break;
-            case ResourceBindingType.AccelerationStructure
-                when value is AccelerationStructureSrv view:
-                hash.Add(RuntimeHelpers.GetHashCode(view.Resource));
-                break;
-            default:
-                hash.Add(RuntimeHelpers.GetHashCode(value));
-                break;
-        }
-        return hash.ToHashCode();
-    }
-
-    private static void AddSamplerHash(ref HashCode hash, in SamplerDesc value)
-    {
-        hash.Add(value.MinFilter);
-        hash.Add(value.MagFilter);
-        hash.Add(value.MipFilter);
-        hash.Add(value.AddressU);
-        hash.Add(value.AddressV);
-        hash.Add(value.AddressW);
-        hash.Add(value.MipLodBias);
-        hash.Add(value.MaximumAnisotropy);
-        hash.Add(value.Comparison);
-        hash.Add(value.BorderColor.X);
-        hash.Add(value.BorderColor.Y);
-        hash.Add(value.BorderColor.Z);
-        hash.Add(value.BorderColor.W);
-        hash.Add(value.MinimumLod);
-        hash.Add(value.MaximumLod);
-    }
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -320,15 +303,13 @@ public readonly ref struct ParameterBlockBindings
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Thread-safe for concurrent binding and updates; each binding operation observes one immutable published generation. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public abstract class PersistentParameterBindings : DeviceResource
 {
-    private int _status = (int)PersistentParameterBindingsStatus.Unpublished;
-
     internal PersistentParameterBindings(
         Device device,
         VariableLayoutReflection layout,
@@ -339,15 +320,4 @@ public abstract class PersistentParameterBindings : DeviceResource
     }
 
     public VariableLayoutReflection Layout { get; }
-
-    public PersistentParameterBindingsStatus Status =>
-        IsDisposed
-            ? PersistentParameterBindingsStatus.Disposed
-            : (PersistentParameterBindingsStatus)Volatile.Read(ref _status);
-
-    internal void MarkPublished() =>
-        Interlocked.CompareExchange(
-            ref _status,
-            (int)PersistentParameterBindingsStatus.Published,
-            (int)PersistentParameterBindingsStatus.Unpublished);
 }

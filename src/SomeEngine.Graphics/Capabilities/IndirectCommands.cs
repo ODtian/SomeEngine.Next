@@ -1,28 +1,6 @@
-namespace SomeEngine.Graphics;
+using SlangShaderSharp;
 
-/// <remarks>
-/// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
-/// <para><b>Ownership:</b> Pure value; owns no RHI, OS, or native lifetime.</para>
-/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
-/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
-/// </remarks>
-[Flags]
-public enum IndirectArgumentTypes : ushort
-{
-    None = 0,
-    Draw = 1 << 0,
-    DrawIndexed = 1 << 1,
-    Dispatch = 1 << 2,
-    DispatchMesh = 1 << 3,
-    DispatchRays = 1 << 4,
-    WorkGraph = 1 << 5,
-    VertexBuffer = 1 << 6,
-    IndexBuffer = 1 << 7,
-    Constants = 1 << 8,
-    ConstantBuffer = 1 << 9,
-    ShaderResource = 1 << 10,
-    UnorderedAccess = 1 << 11,
-}
+namespace SomeEngine.Graphics;
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -32,23 +10,35 @@ public enum IndirectArgumentTypes : ushort
 /// </remarks>
 public sealed class IndirectCommands : DeviceCapability
 {
+    private readonly ulong _supportedArguments;
+
     internal IndirectCommands(
         Device device,
-        IndirectArgumentTypes argumentTypes,
+        ReadOnlySpan<IndirectArgumentType> supportedArguments,
         uint argumentBufferAlignment,
         uint countBufferAlignment,
         uint maximumCommandCount,
         uint maximumStride)
         : base(device)
     {
-        ArgumentTypes = argumentTypes;
+        ulong argumentMask = 0;
+        foreach (IndirectArgumentType argument in supportedArguments)
+        {
+            if (!Enum.IsDefined(argument))
+                throw new ArgumentOutOfRangeException(nameof(supportedArguments));
+            argumentMask |= 1UL << (int)argument;
+        }
+        _supportedArguments = argumentMask;
         ArgumentBufferAlignment = argumentBufferAlignment;
         CountBufferAlignment = countBufferAlignment;
         MaximumCommandCount = maximumCommandCount;
         MaximumStride = maximumStride;
     }
 
-    public IndirectArgumentTypes ArgumentTypes { get; }
+    public bool Supports(IndirectArgumentType argument) =>
+        Enum.IsDefined(argument) &&
+        (_supportedArguments & (1UL << (int)argument)) != 0;
+
     public uint ArgumentBufferAlignment { get; }
     public uint CountBufferAlignment { get; }
     public uint MaximumCommandCount { get; }
@@ -85,12 +75,13 @@ public enum IndirectArgumentType : byte
 /// </remarks>
 public readonly record struct IndirectArgumentDesc(
     IndirectArgumentType Type,
-    uint Slot = 0,
+    VariableLayoutReflection Parameters = default,
+    uint VertexBufferSlot = 0,
     uint ByteOffset = 0,
     uint ValueCount = 0);
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
 /// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
 /// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -116,7 +107,7 @@ public readonly ref struct IndirectCommandLayoutDesc
 }
 
 /// <remarks>
-/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe where supported; normal use racing with Dispose is not.</para>
+/// <para><b>Thread safety:</b> Externally synchronized. Concurrent Dispose calls are safe and collectively perform one logical release; normal use racing with Dispose is not.</para>
 /// <para><b>Ownership:</b> Caller-disposed RHI identity. Its backend or Device parent also ends it during cascading teardown; association properties are not shared ownership.</para>
 /// <para><b>After Dispose:</b> Only immutable managed metadata explicitly exposed by the type remains readable; behavior and native access are invalid.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
@@ -126,14 +117,14 @@ public abstract class IndirectCommandLayout : DeviceResource
     internal IndirectCommandLayout(
         Device device,
         uint stride,
-        in PipelineSignature pipelineSignature,
+        Pipeline? pipeline,
         string? label)
         : base(device, label)
     {
         Stride = stride;
-        PipelineSignature = pipelineSignature;
+        Pipeline = pipeline;
     }
 
     public uint Stride { get; }
-    public PipelineSignature PipelineSignature { get; }
+    public Pipeline? Pipeline { get; }
 }
