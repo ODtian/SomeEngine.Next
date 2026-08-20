@@ -9,48 +9,69 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class SlangComLifetimeTests
 {
     [Fact]
-    public void ImporterOwnedResultsDeclareUniqueComMarshalling()
+    public void ImporterMetadataUsesGeneratedComInterfaceAndUniqueOwnership()
     {
-        MethodInfo createBlob = typeof(Slang)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Single(method =>
-                method.Name == "CreateBlob" &&
-                method.GetParameters() is [{ ParameterType.IsPointer: true }, _]);
-        AssertUnique(createBlob.ReturnParameter);
-        AssertUnique(Parameter(typeof(IGlobalSession), nameof(IGlobalSession.CreateSession), 1));
-
-        MethodInfo load = Method(typeof(ISession), nameof(ISession.LoadModuleFromSource));
-        AssertUnique(load.ReturnParameter);
-        AssertUnique(load.GetParameters()[3]);
-        AssertUnique(Parameter(typeof(ISession), nameof(ISession.CreateCompositeComponentType), 2));
-        AssertUnique(Parameter(typeof(ISession), nameof(ISession.CreateCompositeComponentType), 3));
-        AssertUnique(Parameter(typeof(IModule), nameof(IModule.GetDefinedEntryPoint), 1));
-        AssertUnique(Parameter(typeof(IComponentType), nameof(IComponentType.GetLayout), 1));
-        AssertUnique(Parameter(typeof(IComponentType), nameof(IComponentType.Link), 0));
-        AssertUnique(Parameter(typeof(IComponentType), nameof(IComponentType.Link), 1));
-        AssertUnique(Parameter(typeof(IComponentType), nameof(IComponentType.GetEntryPointCode), 2));
-        AssertUnique(Parameter(typeof(IComponentType), nameof(IComponentType.GetEntryPointCode), 3));
-        AssertMetadataMarshaller(
+        Assert.NotNull(typeof(IMetadata).GetCustomAttribute<GeneratedComInterfaceAttribute>());
+        AssertMetadataInterface(
             Parameter(typeof(IComponentType), nameof(IComponentType.GetTargetMetadata), 1));
-        AssertMetadataMarshaller(
+        AssertMetadataInterface(
             Parameter(typeof(IComponentType), nameof(IComponentType.GetEntryPointMetadata), 2));
-        AssertMetadataMarshaller(
-            Parameter(typeof(ICompileResult), nameof(ICompileResult.GetMetadata), 0));
     }
 
     [Fact]
-    public void CreateBlob_UsesUniqueWrapperAndFinalReleaseInvalidatesIt()
+    public void SlangBindingsMatchNativeOwnedAndBorrowedComResults()
+    {
+        AssertMarshaller(
+            Method(typeof(IComponentType), nameof(IComponentType.GetSession)).ReturnParameter,
+            "NoFreeComInterfaceMarshaller`1");
+        AssertMarshaller(
+            Method(typeof(ISession), nameof(ISession.GetGlobalSession)).ReturnParameter,
+            "NoFreeComInterfaceMarshaller`1");
+
+        MethodInfo createSession = Method(typeof(IGlobalSession), nameof(IGlobalSession.CreateSession));
+        AssertUniqueMarshaller(createSession.GetParameters()[1]);
+        MethodInfo loadModule = Method(typeof(ISession), nameof(ISession.LoadModuleFromSource));
+        AssertUniqueMarshaller(loadModule.ReturnParameter);
+        AssertUniqueMarshaller(loadModule.GetParameters()[3]);
+        MethodInfo compose = Method(
+            typeof(ISession),
+            nameof(ISession.CreateCompositeComponentType));
+        AssertUniqueMarshaller(compose.GetParameters()[2]);
+        AssertUniqueMarshaller(compose.GetParameters()[3]);
+        MethodInfo link = Method(typeof(IComponentType), nameof(IComponentType.Link));
+        AssertUniqueMarshaller(link.GetParameters()[0]);
+        AssertUniqueMarshaller(link.GetParameters()[1]);
+
+        Assert.Equal(
+            typeof(IGlobalSession),
+            Method(typeof(FunctionReflection), nameof(FunctionReflection.FindAttributeByName))
+                .GetParameters()[0].ParameterType);
+        Assert.Equal(
+            typeof(IGlobalSession),
+            Method(typeof(VariableReflection), nameof(VariableReflection.FindAttributeByName))
+                .GetParameters()[0].ParameterType);
+        Assert.Equal(16u, (uint)SlangStage.Node);
+
+        MethodInfo resultOverload = Assert.Single(
+            typeof(AttributeReflection).GetMethods(),
+            static method =>
+                method.Name == nameof(AttributeReflection.GetArgumentValueInt) &&
+                method.ReturnType == typeof(SlangResult));
+        Assert.Equal(typeof(int).MakeByRefType(), resultOverload.GetParameters()[1].ParameterType);
+    }
+
+    [Fact]
+    public void TrackedBlobIsInvalidAfterLifetimeDispose()
     {
         ISlangBlob blob = Slang.CreateBlob([0x5A]);
-        ComObject wrapper = Assert.IsAssignableFrom<ComObject>(blob);
-
-        wrapper.FinalRelease();
+        using (var lifetime = new SlangImportLifetime())
+            lifetime.Track(blob);
 
         Assert.Throws<ObjectDisposedException>(() => blob.GetBufferSize());
     }
 
     [Fact]
-    public void TrackedSession_IsInvalidAfterLifetimeDispose()
+    public void TrackedSessionIsInvalidAfterLifetimeDispose()
     {
         IGlobalSession global = SlangShaderImporter.GlobalSession;
         Assert.True(global.CreateSession(new SessionDesc(), out ISession session).Succeeded);
@@ -83,7 +104,7 @@ public sealed class SlangComLifetimeTests
                   """);
 
         ISession? sessionProbe = null;
-        Metadata? metadataProbe = null;
+        IMetadata? metadataProbe = null;
         var trackedWrappers = new List<WeakReference>();
         try
         {
@@ -92,7 +113,7 @@ public sealed class SlangComLifetimeTests
                 trackedWrappers.Add(new WeakReference(value));
                 if (value is ISession session)
                     sessionProbe = session;
-                if (value is Metadata metadata)
+                if (value is IMetadata metadata)
                     metadataProbe = metadata;
             };
 
@@ -113,17 +134,22 @@ public sealed class SlangComLifetimeTests
                 Assert.Null(metadataProbe);
             else
                 AssertDisposedAndDrop(ref metadataProbe);
-            for (int i = 0; i < 3; i++)
-            {
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                GC.Collect();
-            }
+            CollectFinalizers();
             Assert.All(trackedWrappers, reference => Assert.False(reference.IsAlive));
         }
         finally
         {
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void CollectFinalizers()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
         }
     }
 
@@ -137,9 +163,9 @@ public sealed class SlangComLifetimeTests
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void AssertDisposedAndDrop(ref Metadata? metadataProbe)
+    private static void AssertDisposedAndDrop(ref IMetadata? metadataProbe)
     {
-        Metadata released = metadataProbe ??
+        IMetadata released = metadataProbe ??
             throw new InvalidOperationException("The importer did not track compiled metadata.");
         Assert.Throws<ObjectDisposedException>(() =>
             released.IsParameterLocationUsed(
@@ -156,10 +182,14 @@ public sealed class SlangComLifetimeTests
     private static ParameterInfo Parameter(Type type, string methodName, int index) =>
         Method(type, methodName).GetParameters()[index];
 
-    private static void AssertUnique(ICustomAttributeProvider provider)
+    private static void AssertMetadataInterface(ParameterInfo parameter)
     {
+        Assert.Equal(typeof(IMetadata).MakeByRefType(), parameter.ParameterType);
+        Assert.Equal(
+            NullabilityState.NotNull,
+            new NullabilityInfoContext().Create(parameter).WriteState);
         MarshalUsingAttribute attribute = Assert.Single(
-            provider.GetCustomAttributes(typeof(MarshalUsingAttribute), inherit: false)
+            parameter.GetCustomAttributes(typeof(MarshalUsingAttribute), inherit: false)
                 .Cast<MarshalUsingAttribute>());
         Type nativeType = Assert.IsAssignableFrom<Type>(attribute.NativeType);
         Assert.True(nativeType.IsGenericType);
@@ -168,16 +198,16 @@ public sealed class SlangComLifetimeTests
             nativeType.GetGenericTypeDefinition());
     }
 
-    private static void AssertMetadataMarshaller(ParameterInfo parameter)
+    private static void AssertUniqueMarshaller(ParameterInfo parameter) =>
+        AssertMarshaller(parameter, nameof(UniqueComInterfaceMarshaller<object>).Split('`')[0] + "`1");
+
+    private static void AssertMarshaller(ParameterInfo parameter, string genericTypeName)
     {
-        Assert.Equal(typeof(Metadata).MakeByRefType(), parameter.ParameterType);
-        Assert.Equal(
-            NullabilityState.Nullable,
-            new NullabilityInfoContext().Create(parameter).WriteState);
         MarshalUsingAttribute attribute = Assert.Single(
             parameter.GetCustomAttributes(typeof(MarshalUsingAttribute), inherit: false)
                 .Cast<MarshalUsingAttribute>());
         Type nativeType = Assert.IsAssignableFrom<Type>(attribute.NativeType);
-        Assert.Equal("SlangShaderSharp.MetadataMarshaller", nativeType.FullName);
+        Assert.True(nativeType.IsGenericType);
+        Assert.Equal(genericTypeName, nativeType.GetGenericTypeDefinition().Name);
     }
 }

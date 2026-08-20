@@ -243,6 +243,7 @@ public static partial class SlangShaderImporter
             new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
             new(CompilerOptionName.VulkanEmitReflection, CompilerOptionValue.FromInt(1, 0)),
             new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
+            new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
         ];
         return new SessionDesc
         {
@@ -466,7 +467,7 @@ public static partial class SlangShaderImporter
             SlangResult metadataResult = linkedEntryPoint.LinkedProgram.GetEntryPointMetadata(
                 0,
                 targetIndex,
-                out Metadata? metadata,
+                out IMetadata metadata,
                 out ISlangBlob? metadataDiagnostics);
             state.Lifetime.Track(metadata);
             state.Lifetime.Track(metadataDiagnostics);
@@ -494,7 +495,7 @@ public static partial class SlangShaderImporter
         ShaderImportState state,
         string backendName,
         ShaderReflection reflection,
-        Metadata metadata)
+        IMetadata metadata)
     {
         EntryPointReflection entryReflection = reflection.GetEntryPointByIndex(0);
         ShaderStage stage = entryReflection.Stage != SlangStage.None
@@ -519,7 +520,7 @@ public static partial class SlangShaderImporter
     private static void RemoveUnusedEntryPointResources(
         Dictionary<SlangBindingMap.ResourceKey, uint> resources,
         string backendName,
-        Metadata metadata)
+        IMetadata metadata)
     {
         List<SlangBindingMap.ResourceKey>? unused = null;
         foreach (SlangBindingMap.ResourceKey resource in resources.Keys)
@@ -876,6 +877,8 @@ public static partial class SlangShaderImporter
                 return Schema.ShaderStage.RayIntersection;
             case SlangStage.Callable:
                 return Schema.ShaderStage.Callable;
+            case SlangStage.Node:
+                return Schema.ShaderStage.Node;
             default:
                 throw new NotImplementedException($"Stage {stage} not supported");
         }

@@ -211,6 +211,7 @@ public enum ShaderStage : byte
     RayAnyHit = 11,
     RayIntersection = 12,
     Callable = 13,
+    Node = 14,
 }
 
 public enum StorageFormat : ushort

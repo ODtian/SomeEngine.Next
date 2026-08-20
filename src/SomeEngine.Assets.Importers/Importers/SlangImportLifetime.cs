@@ -25,7 +25,7 @@ internal sealed class SlangImportLifetime : IDisposable
         where T : class
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (value is (ComObject or Metadata) && _seen.Add(value))
+        if (value is ComObject && _seen.Add(value))
         {
             _objects.Add(value);
             _trackObserver?.Invoke(value);
@@ -44,15 +44,7 @@ internal sealed class SlangImportLifetime : IDisposable
         {
             try
             {
-                switch (_objects[i])
-                {
-                    case Metadata metadata:
-                        metadata.Dispose();
-                        break;
-                    case ComObject wrapper:
-                        wrapper.FinalRelease();
-                        break;
-                }
+                ((ComObject)_objects[i]).FinalRelease();
             }
             catch (Exception exception)
             {

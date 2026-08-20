@@ -103,6 +103,7 @@ public sealed class LiveShaderProgram : IDisposable
                 [
                     new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
                     new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
+                    new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
                 ],
             };
             SlangResult sessionResult = globalSession.CreateSession(

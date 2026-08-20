@@ -746,6 +746,7 @@ internal static partial class SlangBindingMap
             Schema.ShaderStage.RayAnyHit => 0x800,
             Schema.ShaderStage.RayIntersection => 0x1000,
             Schema.ShaderStage.Callable => 0x2000,
+            Schema.ShaderStage.Node => 0x4000,
             _ => 0,
         };
 }
