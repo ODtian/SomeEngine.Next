@@ -1,9 +1,14 @@
 ---
-status: accepted
+status: superseded
 date: 2026-07-26
+superseded_by: ../../wiki/architecture/Render-Graph.md
 ---
 
 # Keep Render Graph immediate and invocation-owned
+
+> Historical rationale only. The sole current Render Graph design contract is
+> [Render Graph](../../wiki/architecture/Render-Graph.md). Names, API shapes, and decisions below do
+> not override that Wiki.
 
 ## Decision
 

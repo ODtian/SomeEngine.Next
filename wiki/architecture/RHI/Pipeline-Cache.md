@@ -2,51 +2,68 @@
 
 ### RHI-CACHE-001 — Versioned deterministic envelope
 
-`PipelineCache` persists one versioned RHI envelope rather than exposing a raw backend blob. Sections
-are keyed by normalized pipeline identity, backend/family tag and compatibility digest. Serialization
-and merge are deterministic: source order cannot change the resulting bytes, and corruption fails
-closed. The real product codec defines the byte layout once it is implemented and its normal tests own
-golden vectors. The plan does not maintain a speculative reference codec or a separate wire schema.
+`PipelineCache` owns one in-memory RHI envelope. Its complete public input is
+`PipelineCacheDesc.Data`; `TryGetPipelineCacheData` is its complete public output. The RHI does not
+choose persistence paths, file locks, eviction policy or atomic replacement. Applications own those
+filesystem concerns.
+
+The envelope is versioned, deterministic and bounded by caller policy. Parsing, serialization and
+merge validate magic, schema, environment data, counts, checked ranges, hashes and decoded-size
+limits before committing. Cancellation is checked through variable-size work and leaves caller
+output and destination cache unchanged until the final no-throw commit.
 ^rhi-cache-001
 
-### RHI-CACHE-002 — Compatibility-local misses
+### RHI-CACHE-002 — Environment-local misses
 
-Adapter, driver, Agility, Slang, root-layout or schema incompatibility invalidates only the affected
-native section. It does not discard normalized keys or unrelated backend/family sections. Unknown
-well-formed section tags are preserved so deterministic merge does not destroy another backend's
-data; unknown envelope schema or corrupt ranges/hashes are rejected.
+Adapter, driver, Agility SDK, Slang/native compiler, backend ABI, root-signature compiler, capability
+facts or schema changes make only the affected backend entry miss. Cache bytes never authorize
+compatibility between live Pipeline objects.
+
+A malformed envelope is rejected. A well-formed unknown backend section can be preserved by merge,
+but is not interpreted by the current backend.
 ^rhi-cache-002
 
 ### RHI-CACHE-003 — Pipeline-family coverage
 
-The envelope covers graphics, compute, mesh, ray tracing and work-graph identities. D3D12 classic
-PSOs may use CachedPSO/PipelineLibrary. State-object families use a native state-object database when
-supported; otherwise the same exact normalized key drives an in-memory cache and replay/warm
-manifest. Public cache semantics never claim that all families are `ID3D12PipelineLibrary1` entries.
+The cache covers Graphics, Compute, Mesh, Ray Tracing and Work Graph Pipeline families. Every key
+contains exact linked/specialized Slang code identity, selected entry/export/node identity, static
+sampler state, node mask, serialized native root-signature bytes and all family-specific public state.
+Labels, object addresses, descriptor contents, command values and backend-private lookup indices are
+excluded.
 
-Every family key begins with stable identities for the exact linked/specialized Slang program and
-emitted shader bytes, target/profile/capability/compiler options, global/local root-layout signatures,
-pipeline family and node mask. It then contains exactly these public inputs:
-
-| Family | Family-specific normalized key input |
-|---|---|
-| Graphics | Vertex attributes/buffer layouts, primitive topology and strip cut, rasterizer, multisample/sample mask, depth/stencil, blend, attachment-format signature, stream-output elements/gaps/strides/rasterized stream and declared dynamic-state set. |
-| Compute | Compute entry point and its specialization identity; no graphics-state defaults are inserted. |
-| Mesh | Mesh, optional amplification and optional pixel entry points plus the same attachment/raster/depth/blend/multisample/dynamic inputs that affect its native pipeline. |
-| Ray tracing | Ray-generation/miss/callable entry points, hit-group exports and their S# entry points, global/local layouts, recursion depth, payload/attribute sizes, pipeline flags and state-object additions. Shader-table records and their bound resources are runtime data and do not enter the pipeline key. |
-| Work Graph | ProgramName, reflected node/entry identities and overrides, global/local layouts, program flags and declared maximum input-record configuration. Backing Buffer address/content and dispatch records are runtime data and do not enter the key. |
-
-Labels, object addresses, cache objects and Slang session-local target indices never enter a
-persistent key. Enums use their permanent product numeric value, integers use fixed-width little
-endian encoding, sequences include count then elements in public order, and floating values use the
-same canonical equality as
-[[Queue-and-Commands#RHI-QUE-006 — Exact state-suppression policy]] (`+0 == -0`; all NaNs use one
-canonical encoding). Stable S#,
-root-layout and attachment signatures are content hashes, not process object identity.
-
-Compatibility identity includes adapter/driver identity, Agility and Slang versions, backend ABI,
-root-layout compiler version, key/envelope schema versions and the immutable Device capability
-snapshot. Exact envelope section tags, offsets, checksum algorithm and on-disk packing remain private
-choices of the one product codec and its golden tests; they are not a second pre-implementation wire
-format.
+A cache hit still creates a new caller-owned Pipeline and new physical Slang/native ownership. D3D12
+classic PSOs may consume cached PSO data. State-object families store and replay the exact data their
+native path supports; the public contract does not pretend every family is an
+`ID3D12PipelineLibrary` entry.
 ^rhi-cache-003
+
+### RHI-CACHE-004 — Asynchronous creation and warm-up boundary
+
+The same `IGraphicsBackend` exposes synchronous and asynchronous creation for Graphics, Compute, Mesh,
+Ray Tracing and Work Graph Pipelines. The asynchronous methods return `Task<Pipeline>` directly; no
+method-bearing compilation capability creates a second product surface.
+
+Before returning a Task, the backend:
+
+1. validates caller provenance and materializes every span-backed description field;
+2. acquires independent Slang global-session, session and linked-program ownership;
+3. retains any PipelineCache use required by the request;
+4. accepts the request into a backend execution facility or throws without leaking state.
+
+Task success means the native Pipeline/state object is fully created and immediately bindable. Native
+creation failure faults that Task. Device Lost faults queued/running work through the existing Device
+terminal error. The API does not expose cancellation that a driver cannot honor once native creation
+has begun.
+
+`PipelineCreationSupport` reports only optional advanced facts such as persistent cache data,
+compile-required detection or specialization. Basic asynchronous creation is a core operation and is
+not conditional on obtaining that capability.
+
+D3D12 uses a per-Device bounded queue of 256 requests and one to four background workers. Its
+`D3D12Diagnostics.PipelineCreation` snapshot reports accepted/queued/running/ready/failed/Device-Lost
+counts, cache lookups, Queue wait, native creation duration and family counts.
+
+Renderer/Runtime policy sits above this primitive: request deduplication, material/pass manifests,
+priority, load-phase waiting, fallback rendering and unused-prewarm accounting are not RHI concepts.
+No frame should perform Slang compile/link/codegen or first-use PSO creation.
+^rhi-cache-004

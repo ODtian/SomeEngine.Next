@@ -1,171 +1,103 @@
 # RHI Descriptors and Bindings
 
-### RHI-DSC-001 — Bindless identity and mutable tables
+### RHI-DSC-001 — Fixed DescriptorTable identity
 
-A Bindless view is the same immutable ordinary view identity plus one stable logical
-`DescriptorIndex`; it directly derives from its ordinary view type and can be used wherever that
-ordinary view is accepted. It has no object-level publication flag and cannot be rewritten from an
-arbitrary other view. Mutable stable-index content is represented separately by `DescriptorTable`,
-whose `uint` slots are pending descriptor storage rather than view identities. Ordinary view creation
-does not allocate a bindless index. The acceleration-structure pair follows the same rule explicitly:
-`AccelerationStructureSrv` is the ordinary descriptor identity and
-`BindlessAccelerationStructureSrv : AccelerationStructureSrv` adds only the stable index; neither one
-is the acceleration-structure storage identity.
+`DescriptorTable` owns a fixed nonempty array of `DescriptorSlotDesc`. The table is either Resource or
+Sampler storage, has one Device node index, and exposes a stable `Count`. There is no public slot
+allocate/free API and slots are not recycled within the table lifetime.
 
-The complete shader-visible inheritance set is `BindlessBufferCbv : BufferCbv`,
-`BindlessBufferSrv : BufferSrv`, `BindlessBufferUav : BufferUav`,
-`BindlessTextureSrv : TextureSrv`, `BindlessTextureUav : TextureUav`,
-`BindlessSampler : Sampler` and the acceleration-structure pair above. Each Bindless abstract base
-initializes one concrete, nonvirtual, get-only `uint DescriptorIndex` in its base constructor. There
-is no index interface, virtual getter, delegate or separate index-state object. RTV and DSV views are
-not shader-visible and therefore have no Bindless form.
+`GetDescriptorIndex(table, slot)` returns `DescriptorIndex`. Its identity is exactly the table
+reference plus numeric `Value`. Equal numeric values from different tables are not equal. The numeric
+value is the value shader data may carry; the table reference remains host provenance.
 
-Specification correction: the earlier count-only
-`CreateDescriptorTable(Device, DescriptorTableType, uint count)` shape could not determine the native
-kind of an initial Resource null descriptor and therefore could not satisfy its own Type-correct-null
-requirement. The terminal API is
-`CreateDescriptorTable(Device, ReadOnlySpan<ResourceBindingType> slotTypes)`. The nonempty span fixes
-each slot's immutable descriptor Type; `None` is not a table slot Type, and Resource and Sampler Types
-cannot be mixed in one table. `DescriptorTable.Type` is derived from that span, while `Count` is the
-span length. Slot numbers are zero-based, and `GetDescriptorIndex(table, slot)` returns the stable
-global `uint` index used by shaders.
-
-Each Resource slot accepts only the BufferCbv/Srv/Uav, TextureSrv/Uav or
-AccelerationStructureSrv Type declared for that slot, or a Type-correct null of that same Type. A
-Sampler slot accepts Sampler or null. `WriteDescriptor(table, slot, value)` changes only pending
-content and rejects a Type different from the slot declaration without changing that pending
-content. All slots begin pending Type-correct null and become shader-visible only through
-PublishDescriptors. Table growth is not exposed; the global heaps may grow underneath while every
-table index remains stable.
-
-If the backend replaces native storage behind the same public Resource identity, every existing View
-keeps the same Description and, for a Bindless view, the same DescriptorIndex. The backend stages the
-refreshed native descriptor for the next publication generation. This internal resource rename is not
-permission to rewrite one public View from another View.
+`DescriptorSlotDesc` describes only the native storage shape needed by a free-standing mutable table:
+resource/sampler kind, typed or structured Buffer facts, Texture view dimension/format/aspects and UAV
+counter form. Pipeline-owned bounded slots are derived directly from S# and do not ask the caller to
+repeat shader layout.
 ^rhi-dsc-001
 
-### RHI-DSC-002 — Atomic descriptor publication
+### RHI-DSC-002 — Write and publish boundary
 
-`PublishDescriptors` atomically publishes pending persistent bindings and table writes as one new
-generation; already-open contexts keep their captured generation. OutOfDescriptors and recoverable
-NativeFailure throw while preserving the current generation and every pending write for retry.
-DeviceLost preserves the same atomic visibility boundary but makes retry impossible because Device
-is terminal. No failure exposes a partial candidate generation.
+`WriteDescriptor` validates table ownership, slot bounds, binding type, concrete view shape and live
+resource provenance before replacing CPU-side pending content. Resource slots can use the exact
+supported typed null representation. Sampler slots require a concrete Sampler because D3D12 has no
+null sampler descriptor.
 
-A persistent parameter binding is Unpublished until its complete descriptor content has entered a
-published generation, then Published. Its first Dispose immediately makes the public binding Disposed
-and unusable; `DisposalRequested` and `Retired` are internal native-allocation stages, not alternate
-public Dispose semantics. Dispose never alters an already published generation. If the binding was
-still Unpublished, disposal atomically removes its pending candidate and releases its never-visible
-physical range. If it was Published, Automatic mode retires its physical ranges and captured public
-payload after every capturing context/payload/generation completes. In Manual mode the caller must
-wait before Dispose, after which only internally owned native generation storage can remain pending
-retirement. Publication never resurrects a disposed binding. A default or foreign-device binding is
-always rejected.
+`PublishDescriptors(Device, nodeIndex)` atomically makes all validated pending table content available
+to later command recording on that node. It is an operation, not a public version object. Failure,
+cancellation, descriptor exhaustion or Device Lost cannot expose a partial update. A table index does
+not change when content is written or published.
 
-A Bindless view is immediately usable as its ordinary view and exposes its immutable DescriptorIndex
-at creation, but shader indexing is a caller precondition until a generation containing that descriptor
-has been published. The optional Validation Layer diagnoses unpublished indexing; the direct backend
-does not test publication at each binding or draw. Disposing it before first publication cancels the
-pending descriptor. Public view disposal is immediate and idempotent. Automatic mode delays index
-and physical-range reuse until every recording, descriptor generation and submitted use that
-references the view has completed; Manual mode permits reuse only after a valid Dispose by a caller
-that has already waited for every relevant completion. A stale object can
-never alias a replacement index in either mode.
-
-DescriptorTable writes always enforce slot bounds and Resource-versus-Sampler table Type because
-those select and address actual descriptor storage. The Validation Layer diagnoses a foreign Device
-before forwarding. Writing a resource descriptor to a Sampler table or a Sampler to a Resource table
-is ArgumentException and changes no pending write. Descriptor-generation identities never wrap.
-Exhausting the final identity throws GraphicsException(OutOfDescriptors), preserves the current
-generation and pending writes, and permanently closes further publication on that Device; existing
-generations remain usable until normal retirement and recovery requires creating a new Device.
+Previously recorded commands retain the native descriptor generation they captured; a later publish
+does not rewrite accepted work.
 ^rhi-dsc-002
 
-### RHI-DSC-003 — Objects retained by a descriptor generation
+### RHI-DSC-003 — Descriptor object retention
 
-In Automatic retirement mode, every live descriptor generation strongly retains, for every
-published slot, the descriptor/view identity and every referenced resource, counter Buffer, Sampler
-or AccelerationStructure. Overwriting A with B affects only a later generation; typed null also
-affects only the later generation. Public Dispose of a table, view, resource or sampler is immediate;
-only destruction or reuse of its native descriptor/storage, logical index and physical range waits
-until every generation that references it retires.
+A table stores public binding identity in CPU staging. Command recording resolves the current native
+descriptor data and captures every resource, view, Sampler, counter resource and descriptor-generation
+lease required by the command.
 
-In Manual retirement mode, the RHI retains each immutable native descriptor-heap generation and its
-physical ranges for as long as a captured Context or submitted payload can address it, but it does not
-strongly retain the public slot payload. The caller keeps every referenced view/resource/sampler and
-its native storage alive through the relevant Queue completions before disposing or reusing it.
-
-DescriptorTable.Dispose immediately ends future Write/Publish use and discards never-published pending
-writes; it does not Dispose objects named by its slots. Already-published generations captured by a
-Context or submitted payload remain immutable. In Automatic mode they strongly retain each slot's
-view and referenced resource/counter/Sampler/AccelerationStructure; in Manual mode they retain only
-the internally owned native generation. Dispose never
-publishes pending writes or rewrites a published generation.
+Disposing a referenced view prevents future use, but it cannot invalidate already accepted commands.
+Disposing a DescriptorTable ends future writes/index use and releases table storage after captured
+native generations retire. Correct physical retention is unconditional and is not selected per
+Device or per submission.
 ^rhi-dsc-003
 
-### RHI-DSC-004 — Descriptor heap growth
+### RHI-DSC-004 — Backend-private heap generations
 
-Logical resource and sampler indices remain stable across runtime growth. Publication prepares the
-candidate heap generation, copies live descriptors and applies pending writes before it becomes
-current. Old contexts continue using the old native generation until all Queue watermarks retire it.
-Growth is a cold operation; steady command encoding never allocates an array or object to materialize
-descriptor descriptions.
+Shader-visible heap growth, copying and generation switching are backend details. D3D12 may keep CPU
+staging descriptors, allocate another shader-visible heap generation and copy stable table slots into
+it before one no-throw commit.
+
+Public code observes only stable table indices and explicit `PublishDescriptors`. Heap generation,
+fragmentation, temporary descriptor ranges and completion retirement do not become public address
+spaces or compatibility values.
 ^rhi-dsc-004
 
-### RHI-DSC-005 — Slang-derived binding
+### RHI-DSC-005 — Slang-derived binding and direct native placement
 
-S# `VariableLayoutReflection` and its parameter layout are the binding authority. Persistent bindings
-materialize versioned content that can be reused and content-compared; each published version is
-immutable, while a later Update stages the next version. Transient bindings are
-caller-owned stack/span packets. The base RHI reads that layout only to materialize descriptors and
-root arguments. The Validation Layer separately diagnoses incompatible parameter blocks, missing or
-duplicate fields and wrong resource usage; no equivalent reflection walk remains in the direct hot
-path. Persistent content is materialized at creation or descriptor publication and binds without
-per-frame reconstruction; transient content is copied into the recording context's pre-sized
-descriptor arena and ordinary-data storage. Equal normalized content may reuse already-materialized
-descriptors and suppress a redundant root/table setter, but no binding call changes barrier state or
-resource lifetime implicitly. D3D12 may cache native descriptor/root binding state, but it does not
-introduce a second shader binding namespace, layout version or semantic table.
+The exact linked S# program and live reflection define bounded resource order, parameter-object
+identity, ordinary data and static sampler declarations. D3D12 creates Pipeline-private
+`NativeParameterBinding` placement during Pipeline construction. Validation independently walks the
+same S# facts.
+
+The command hot path consumes precomputed slot arrays and pure native destinations. It does not walk
+reflection, parse names, calculate registers/spaces, hash strings or build a normalized layout.
+Pipeline-private lookup structures are implementation details and may be changed only with measured
+evidence and without introducing a public shader identity.
 ^rhi-dsc-005
 
 ### RHI-DSC-006 — Ordinary views and permitted formats
 
-Resources and views are separate reference identities. The ordinary view families are `BufferCbv`,
-`BufferSrv`, `BufferUav`, `TextureSrv`, `TextureUav`, `ColorAttachmentView`, `DepthStencilView`,
-`AccelerationStructureSrv` and `Sampler`. A Buffer/Texture does not synthesize all possible views at
-creation, and a ColorAttachmentView is not a shader-resource view with another flag. Each view has
-one immutable Description and one Resource (Sampler has only its Description); backend private
-children contain the native descriptor identity.
+Buffers and Textures are storage identities. CBV, SRV, UAV, color-attachment, depth-stencil and
+acceleration-structure views are separate caller-disposed identities. A view cannot add an undeclared
+resource usage, escape its byte/subresource range, use an unsupported format, violate alignment or
+name a resource from another Device/backend.
 
-Resource creation fixes usages and, for a Texture format family that needs them, the exact permitted
-view formats. View creation cannot add an undeclared usage, reinterpret to an undeclared format,
-escape the resource/subresource/byte range or violate alignment. Those are caller contract errors and
-throw `ArgumentException` before native descriptor creation; they are not an ordinary
-`IncompatibleFormat` status. D3D12 descriptor creation has no HRESULT, so every field needed to avoid
-an invalid native descriptor is checked in the base path. A rare failure from allocating/copying its
-descriptor storage follows the normal `GraphicsException` policy.
+D3D12 descriptor creation has no HRESULT, so every field required to prevent an invalid native
+descriptor is checked before the native call. The view retains the physical resource reference needed
+by its native descriptor.
 ^rhi-dsc-006
 
 ### RHI-DSC-007 — Parameter binding inputs
 
-`ResourceBindingType` has exactly None, ConstantBuffer, BufferSrv, BufferUav, TextureSrv, TextureUav,
-Sampler and AccelerationStructure. One `ResourceBinding` contains that Type and the corresponding
-ordinary view/Sampler plus any required array element; it does not contain a backend slot number.
-`ParameterBlockBindings` is a stack-only operation description over caller-owned spans of those
-values and ordinary scalar data. The spans are consumed synchronously.
+`ResourceBinding` is runtime payload: a binding type plus a concrete public view/Sampler reference or
+an allowed typed null. Equality uses object reference identity.
 
-A sampler carrying S# `ImmutableSamplerReflection` is shader-owned immutable state, not a runtime
-`ResourceBinding`: S# retains its complete binding range and typed state but omits it from the
-canonical bounded `BindingElements` sequence. Consequently the caller span contains no element for
-that sampler. A sampler without that S# fact remains an ordinary runtime Sampler binding.
+`ParameterBlockBindings` is a stack-only packet containing one exact S#
+`VariableLayoutReflection`, the bounded `ResourceBinding` span in reflected order, and the exact
+ordinary-data bytes including padding. It contains no register, space, root slot, route, cursor or
+backend token.
 
-`PersistentParameterBindings` materializes one complete parameter block for repeated use. Create or
-Update stages a complete replacement; there is no partially updated published version. Each call
-uses its S# `VariableLayoutReflection` to materialize the required fields once, then descriptor
-publication makes the new materialized content visible under
-[[Descriptors-and-Bindings#RHI-DSC-002 — Atomic descriptor publication]]. Transient binding copies
-the supplied descriptor/scalar content into the current Context's pre-reserved storage. Neither form
-changes resource synchronization state. Content equality includes each binding Type, view/Sampler
-semantic equality, array position and scalar bytes; it never compares caller span addresses.
+`PersistentParameterBindings` is created for one Pipeline and one reflected parameter object. Update
+builds a complete immutable replacement before publishing it. Independent recording contexts may bind
+concurrently while another thread publishes a replacement; each bind observes and retains one exact
+generation before native mutation. A recording retains a generation once even when several material
+runs select it. The mutable public wrapper itself is not a second physical ownership edge. Transient
+and persistent binding share the same S# validation and D3D12 placement.
+
+`StaticSamplerBinding` pairs one S# sampler declaration identity with one `SamplerDesc`. Register,
+space, array shape and stage visibility come only from S#; the state participates in Pipeline cache
+identity and conflicts with runtime sampler binding are rejected.
 ^rhi-dsc-007

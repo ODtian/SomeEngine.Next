@@ -1,74 +1,58 @@
-# RHI Presentation Contract
+# RHI Presentation
 
 ### RHI-PRESENT-001 — Acquired swapchain image
 
-Successful acquire returns one sequence-bound `SwapchainImage`. All copies share one state machine:
-Acquired has one Submit right, successful submission produces Submitted with one Present right, and
-successful Present produces Presented. No copy can repeat either right. Every payload/status getter
-validates the exact acquire sequence and swapchain generation. The value carries the acquired Texture
-plus its immutable initial access/layout defined by
-[[Queue-and-Commands#RHI-QUE-007 — Canonical initial synchronization facts]]. Reconfigure
-invalidation, Device loss and Swapchain disposal make all copies unable to expose a newly reused
-internal image slot. Acquire timeout follows
-[[Queue-and-Commands#RHI-QUE-003 — CPU wait domain]].
-The default SwapchainImage is invalid: every payload/status getter and any use in Submit/Present
-throws `InvalidOperationException`. Sequence values never wrap or make an old copied value current.
+`Acquire` returns a `SwapchainImage` value only on success. The value carries one swapchain generation
+and one acquisition sequence plus the current Texture and its initial synchronization facts.
 
-`SwapchainImage` does not implement Dispose. A portable Dispose could neither return an acquired
-Vulkan image on every supported implementation nor do so without hiding Present/Queue work; pretending
-otherwise would violate the common Dispose contract. Successful Present consumes the current
-sequence. A frame that cannot be presented must explicitly reconfigure or dispose the Swapchain as
-required by its error path; dropping a value does not release an acquisition or make a later slot
-valid.
+The image lifecycle is:
+
+```text
+Acquired -> Submitted -> Presented
+         -> Invalidated or DeviceLost
+```
+
+`QueueSubmitDesc.SwapchainImages` performs the Acquired-to-Submitted transition as part of submission
+preflight. A failed pre-acceptance submit restores Acquired. `Present` requires the submitted image,
+the owning Graphics Queue and the same Device. Stale sequence/generation values are rejected.
 ^rhi-present-001
 
 ### RHI-PRESENT-002 — Reconfigure commit boundary
 
-Busy, Unsupported and caller-parameter rejection occur before releasing old back-buffer references
-and preserve the old generation. Once native resize is attempted, Reconfigure has crossed its commit
-boundary: all old Texture/View wrappers and acquired `SwapchainImage` values are immediately
-invalidated on both success and failure. Success increments generation and rebuilds wrappers. A
-normal HRESULT leaves the swapchain exactly OutOfDate and throws; device removal transitions Device
-and Swapchain to DeviceLost, invalidates every acquired `SwapchainImage`, and throws. No
-post-boundary failure revives or ambiguously preserves the old generation.
+`Reconfigure` validates the complete `SwapchainConfig` and returns `Busy` while any image prevents a
+safe native resize. It builds or resizes native state before one commit. Success increments
+`SwapchainInfo.Generation`, updates the immutable current configuration and invalidates every image
+from the previous generation.
+
+Failure or an unsupported configuration leaves the prior generation usable. Reconfigure does not
+implicitly wait for arbitrary application Queue work.
 ^rhi-present-002
 
-### RHI-PRESENT-003 — Status and device-loss separation
+### RHI-PRESENT-003 — Expected status and Device Lost separation
 
-Acquire/Present/Reconfigure statuses contain only expected presentation outcomes. Invalid timeout or
-configuration input is a standard argument exception. Device removal updates terminal object state
-and throws `GraphicsException(DeviceLost)` rather than adding DeviceLost to each operation status.
-Present consumes only the current `SwapchainImage` returned for the same swapchain generation and
-accepted Submit. Its precondition is an explicit caller/Render-Graph-authored transition to
-`TextureLayout.Present` with no outstanding resource access; Present never inserts or repairs that
-transition. A zero-timeout acquire that cannot obtain an image returns Timeout, the same status used
-when any finite deadline expires; there is one unavailability/deadline status rather than two
-synonymous branches.
+Acquire uses exactly `Success`, `Timeout` and `OutOfDate`. Present uses exactly `Success`,
+`Suboptimal`, `Occluded` and `OutOfDate`. Reconfigure uses exactly `Success`, `Busy` and
+`Unsupported`.
 
-Argument, ownership, generation, image-state and Present-layout checks finish before invoking the
-native Present call and preserve the one Present right when they reject the call. Invocation of
-native Present consumes that right regardless of whether the native result is Success, Suboptimal,
-Occluded or OutOfDate; the same `SwapchainImage` can never be presented again. OutOfDate requires
-Reconfigure or Swapchain replacement. Device removal invalidates the image and throws
-`GraphicsException(DeviceLost)`. No status after native invocation restores Submitted state.
+Timeout, occlusion, mode change and out-of-date are expected presentation control flow. A native
+Device removal result is captured as the Device's terminal `GraphicsException`; it is never hidden as
+an ordinary status. After Device Lost, existing images become unusable and report their terminal image
+state.
 ^rhi-present-003
 
-### RHI-PRESENT-004 — Creation, configuration and expected statuses
+### RHI-PRESENT-004 — Creation, configuration and telemetry
 
-`SwapchainDesc` is the complete creation input: Surface, image count/usages, initial
-`SwapchainConfig` and Label. `SwapchainConfig` is exactly the native-reconfigurable subset: width,
-height, Format, color space, present mode/tearing policy and maximum frame latency. Width/height zero
-means the Surface's current drawable extent at the Reconfigure call; other invalid values throw.
-Changing Device, Surface or image usages requires a new Swapchain and is not disguised as
-Reconfigure. `SwapchainInfo` reports the resolved current config, image count, generation and
-presentation support snapshot.
+Presentation is requested during Device creation and confirmed by the typed `Presentation`
+capability. A Surface is a backend-owned OS-window association. A Swapchain is created for a Device,
+Surface, image count, image usages and `SwapchainConfig` containing dimensions, format, color space,
+present type, tearing policy, maximum frame latency and optional HDR10 metadata.
 
-`SwapchainAcquireOptions` contains only timeout and whether prior contents must be preserved. Acquire
-returns Success with a SwapchainImage, Timeout when its valid deadline expires, or OutOfDate when the
-native presentation target must be reconfigured; it never returns a default image on Success.
-Present returns Success, Suboptimal, Occluded or OutOfDate. Reconfigure returns Success, Busy before
-the commit boundary when an acquired/submitted image still prevents resize, or Unsupported when the
-requested format/color-space/present combination is not in the immutable support snapshot. Invalid
-arguments throw, rare native failures throw, and DeviceLost is always terminal/exceptional. Status
-values do not overlap in meaning.
+The backend validates the format/color-space/output combination and reports `SwapchainSupport` rather
+than silently substituting a different public configuration. Monitor migration and resize are handled
+through explicit support queries/reconfiguration.
+
+D3D12 presentation diagnostics are exposed through the Device's `D3D12Diagnostics` capability, not a
+second method on `D3D12Backend`. `GetPresentationInfo(swapchain)` returns a thread-safe snapshot with
+configuration/generation, out-of-date state, Acquire/Present/Reconfigure attempt and failure counts,
+last statuses, CPU durations and last submission completion.
 ^rhi-present-004

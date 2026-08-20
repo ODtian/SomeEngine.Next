@@ -1,5 +1,9 @@
 # RHI / Render Graph 全类型命名迁移表
 
+> **历史迁移台账，不是命名权威。** 当前 Render Graph 名称只由
+> [Render Graph Wiki](../wiki/architecture/Render-Graph.md) 及其引用的 Wiki 命名原则定义。
+> 下表中的旧名、迁移目标和 `Row` 名称只用于追溯旧工作树。
+
 此表固定重构前 598 个 RHI、D3D12、Null、Render Graph、diagnostics 与已删除 RG generator 语义类型的逐项结论。当前语义图由 `tools/RhiTypeGraph` 从工作树重新生成。
 
 - 原始类型：598

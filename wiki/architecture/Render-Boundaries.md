@@ -30,21 +30,20 @@ recorders, and finished command lists all follow direct owner/borrow/transfer bo
 lifecycle handles plus `Destroy`, feature device interfaces, feature command contexts, backend
 record mirrors, and detached `Info` packets are not part of the boundary.
 
-`SomeEngine.RenderGraph` is one level above Graphics and depends only on portable owners. One
-`RenderGraph` is one single-use invocation. It borrows imported owners, acquires internal transient
-claims, declares passes with exact access relations, records through `PassCommandScope`, submits
-finished command lists, and returns a `DevicePosition`. It does not create persistent physical
-owners, export graph-created resources, expose raw recorder/resource bridges, or retain reusable
-compiled topology.
+`SomeEngine.RenderGraph` is one level above Graphics and depends only on portable owners. Its complete
+execution, synchronization, resource, cache, publication, presentation, diagnostics, and performance
+contract is defined only by [[Render-Graph]]. This boundary note does not restate or specialize that
+contract.
 
 Shader assets cross into execution through one exact projection to `ShaderArtifact` and
 `ShaderSlot` facts. Pipelines and graph validation consume the same slot kind, stage visibility,
 effect, qualifier, and shape facts. Assets, Graphics, and Render Graph do not maintain parallel
 runtime shader-contract representations.
 
-`SomeEngine.RenderGraph.Diagnostics` may explicitly materialize one immutable detached
-`RenderGraphSnapshot`. It has no reverse dependency into core, does not retain a live graph, and
-does not decorate command recording.
+Render Graph diagnostics follow
+[[Render-Graph-Diagnostics-Limits-and-Performance#RG-EVID-001 — Direct diagnostics, no diagnostic model]].
+There is no `SomeEngine.RenderGraph.Diagnostics` topology-model assembly or detached graph
+observation object; this boundary note does not define another execution contract.
 
 ## RenderWorld ECS
 

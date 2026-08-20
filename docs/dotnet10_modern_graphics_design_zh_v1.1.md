@@ -1,5 +1,9 @@
 # 基于 C# / .NET 10 的现代 AAA 级 Graphics 设计
 
+> **历史研究材料。** 本文不定义当前 RHI 或 Render Graph。Render Graph 的唯一现行设计
+> 契约是 [Render Graph Wiki](../wiki/architecture/Render-Graph.md)；RHI 事实由该 Wiki
+> 引用的 RHI 契约页定义。
+
 **文档版本**：1.1  
 **目标运行时**：.NET 10 / C# 14，64 位  
 **最低后端**：Direct3D 12、Vulkan、Metal  

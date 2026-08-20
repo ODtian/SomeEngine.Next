@@ -26,57 +26,11 @@ _Avoid_: base render, engine subsystem
 
 ## Render Graph Language
 
-**Render Graph Invocation**:
-One single-use `RenderGraph` owner containing authoring rows, compiler-derived rows, active transient-placement relations, recording schedule, and submission bookkeeping. Authoring, compilation, recording, and submission are operations inside this owner, never additional graph objects.
-_Avoid_: graph template, compiled graph owner, graph execution result
-
-**Graph Id**:
-An opaque, invocation-scoped, non-owning locator for a graph resource or view. It never owns a physical resource, exposes a backend handle, or survives its graph.
-_Avoid_: resource owner, public handle, bindless index
-
-**Pass**:
-One logical graph operation that declares accesses and supplies callback behavior. It names an actual `QueueType`; it is not a command list, recording task, parameter owner, or execution domain.
-_Avoid_: pass domain, command context, reusable pass object
-
-**Pass Access**:
-The canonical relation between one Pass and one exact resource/view selection, including effect, use, prior-contents contract, and write coverage. The pass callback may use only declarations authored for that pass.
-_Avoid_: raw resource bridge, implicit shader dependency, backend resource state
-
-**Pass Command Scope**:
-The non-escaping `ref struct` borrow presented to a pass callback. It validates declared graph relations and exposes graph-safe command operations without returning the raw command recorder or physical owners.
-_Avoid_: pass context, stored command proxy, recorder owner
-
-**Command Recorder**:
-The single-use mutable graphics command owner. `Finish` transfers its retained payload and owner pins to one finished `CommandList`; queue submission consumes that finished owner once.
-_Avoid_: feature command context, command subclass hierarchy, copyable command-list handle
-
-**External Render Resource**:
-A `Buffer`, `Texture`, view, pipeline, or other graphics owner whose lifetime extends beyond one graph and is borrowed by that invocation. Imported resources declare exact entry, readiness, and return facts and remain fully tracked.
-_Avoid_: untracked resource, persistent graph resource, global texture slot
-
-**Transient Placement Pool**:
-The device-owned internal allocator that uniquely owns reusable heaps, resources, views, final resource states, and retirement coordinates. A graph holds only active, one-time placement claims and returns them after submission or failure.
-_Avoid_: public transient lease, graph-owned cache, descriptor-backed key
-
-**Queue Position**:
-An exact non-zero monotonic coordinate on one actual queue of one device. It may still be pending and therefore is not named a completion, fence, event, or wait.
-_Avoid_: completion object, backend fence, frame index
-
-**Device Position**:
-The canonical same-device product coordinate containing at most one maximum coordinate per queue. Its order and merge are component-wise; the origin contains no wait condition.
-_Avoid_: queue-point set, total device timeline, execution result
-
-**Shader Slot**:
-The canonical shader-interface row containing binding kind, address, count, stage visibility, access effect, and qualifier set. Qualifiers such as Atomic, Append, Consume, RasterOrdered, and Feedback remain facts orthogonal to the effect.
-_Avoid_: shader contract wrapper, operations packet, reflected/runtime double truth
-
-**Exact Resource Selection**:
-Every range or region stored after an authoring/create boundary is finite and exact. Whole-resource requests are normalized while the target owner is known; `default` is never a whole-resource sentinel.
-_Avoid_: whole range sentinel, inactive union fields, optional owner coordinates
-
-**Render Graph Snapshot**:
-The sole detached immutable diagnostics owner, materialized only on explicit request. Its access and barrier rows project canonical graph variants; diagnostics never observe a live graph through a wrapper or decorate command recording.
-_Avoid_: live graph view, replay layer, diagnostics result wrapper
+The sole current Render Graph language and architecture is the Wiki contract rooted at
+[Render Graph](wiki/architecture/Render-Graph.md). This context file does not repeat its symbols,
+suffix rules, resource model, synchronization model, or execution state machines. Read the linked
+contract notes and cite their stable `RG-*` identifiers; terminology from historical ADRs, audits,
+source code, or prior revisions does not define the current Render Graph.
 
 ## Execution and ECS Language
 

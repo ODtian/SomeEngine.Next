@@ -1,6 +1,10 @@
 # RHI / Render Graph 概念依赖审计
 
-状态：固定实施审计与闭包交付记录（Section 6 为终态心智模型）  
+> **历史审计，不是现行设计。** Render Graph 的唯一现行契约是
+> [Render Graph Wiki](../wiki/architecture/Render-Graph.md)。本文保留旧源码与旧概念的审计
+> 证据，其中的名称、终态判断和 `Row` 结构均不得用于覆盖 Wiki 条款。
+
+状态：已归档的实施审计与闭包交付记录（Section 6 只表示当时的心智模型）
 审计输入基线：2026-07-23 工作树；终态验证：2026-07-27 工作树  
 范围：`SomeEngine.Graphics`、`SomeEngine.Graphics.Direct3D12`、`SomeEngine.Graphics.Null`、`SomeEngine.RenderGraph`、`SomeEngine.RenderGraph.Diagnostics`，以及直接生成 Render Graph 类型的生成器代码。
 

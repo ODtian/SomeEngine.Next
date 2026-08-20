@@ -1,5 +1,9 @@
 # Default Runtime Debug CPU E2E 性能闭环方案
 
+> **性能证据方案，不是 Render Graph 设计。** 当前 Render Graph 架构、名称和验收口径只
+> 取自 [Render Graph Wiki](../wiki/architecture/Render-Graph.md)；本文中的旧 API 名称和
+> 对旧审计的引用不得建立或修改架构条款。
+
 > 日期：2026-07-28  
 > 方案代号：`PERF-RT-E2E-v6`  
 > 当前状态：**EVIDENCE BUILDING / NO-GO**  

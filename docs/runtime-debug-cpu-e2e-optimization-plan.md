@@ -1,5 +1,9 @@
 # 已撤回：Default Runtime Debug CPU E2E 假设审计记录
 
+> Render Graph 的唯一现行设计契约是
+> [Render Graph Wiki](../wiki/architecture/Render-Graph.md)。本撤回记录中的旧名称和
+> 架构假设没有权威性。
+
 > 撤回日期：2026-07-28  
 > 当前裁决：**RETRACTED / NO-GO；不得作为候选方案或正式产品实现依据**  
 > 撤回原因：用户要求每个优化点在被提出为候选以前就必须有具体、实际证据；原 v5 的 V5-02～V5-08 不满足该资格。  

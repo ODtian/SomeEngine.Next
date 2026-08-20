@@ -1,5 +1,8 @@
 # RHI / Render Graph 完整类型依赖图索引
 
+> **生成证据，不是设计契约。** 图只描述生成时工作树中的类型依赖。当前 Render Graph
+> 架构与命名以 [Render Graph Wiki](../wiki/architecture/Render-Graph.md) 为唯一权威。
+
 本文件同时读取当前工作树的 Roslyn semantic source 和内存编译结果。边方向为 `source type → referenced type`；权威边集取两者并集，因此既保留会在编译时擦除的 enum/constant 等语义依赖，也保留源码没有显式写出但在签名或 IL 中出现的推断/隐式依赖。每个源/目标类型对只保留一次，同时保存 `signature`、`inheritance`、`creation`、`body-use`、`containment` 类明确关系。`value-state` 是内联值，没有独立释放生命周期；引用类型 `state` 只表示持久保存，所有权必须继续根据构造、逃逸、发布、替换与清理路径推导。rank 先压缩强连通分量，再按依赖叶子计算，仅用于依赖顺序和审计，不是人为架构层级。
 
 - 节点：330
