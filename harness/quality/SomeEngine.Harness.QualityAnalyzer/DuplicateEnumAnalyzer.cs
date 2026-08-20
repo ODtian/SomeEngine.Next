@@ -9,13 +9,22 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SomeEngine.Harness.QualityAnalyzer;
 
 /// <summary>
-/// Duplicate enum gate. Detects two enum declarations in the same compilation
-/// that share member names (case-insensitive). Duplicate enums are a DRY
-/// violation: related enums should be merged or one should be dropped.
+/// Duplicate enum gate. Detects singular/plural enum declarations that reuse
+/// meaningful member names. Common values such as None or Unknown are not
+/// evidence that two otherwise unrelated enum domains should be merged.
 /// </summary>
 internal static class DuplicateEnumAnalyzer
 {
     public const string RuleId = "SE052";
+
+    private static readonly ImmutableHashSet<string> IgnoredMembers =
+        ImmutableHashSet.Create(
+            System.StringComparer.OrdinalIgnoreCase,
+            "None",
+            "Unknown",
+            "Unspecified",
+            "Default",
+            "Invalid");
 
     public static readonly ImmutableArray<DiagnosticDescriptor> Descriptors =
         ImmutableArray.Create(
@@ -73,8 +82,14 @@ internal static class DuplicateEnumAnalyzer
             for (var rightIndex = leftIndex + 1; rightIndex < snapshot.Length; rightIndex++)
             {
                 EnumInfo right = snapshot[rightIndex];
+                if (!NamesSuggestDuplicate(left.Name, right.Name))
+                {
+                    continue;
+                }
+
                 var shared = right.Members
                     .Intersect(left.Members, System.StringComparer.OrdinalIgnoreCase)
+                    .Where(member => !IgnoredMembers.Contains(member))
                     .Distinct(System.StringComparer.OrdinalIgnoreCase)
                     .OrderBy(member => member, System.StringComparer.OrdinalIgnoreCase)
                     .ToArray();
@@ -93,6 +108,17 @@ internal static class DuplicateEnumAnalyzer
             }
         }
     }
+
+    private static bool NamesSuggestDuplicate(string left, string right) =>
+        System.String.Equals(
+            RemovePluralSuffix(left),
+            RemovePluralSuffix(right),
+            System.StringComparison.OrdinalIgnoreCase);
+
+    private static string RemovePluralSuffix(string value) =>
+        value.Length > 1 && value.EndsWith("s", System.StringComparison.OrdinalIgnoreCase)
+            ? value.Substring(0, value.Length - 1)
+            : value;
 
     private sealed class EnumInfo
     {

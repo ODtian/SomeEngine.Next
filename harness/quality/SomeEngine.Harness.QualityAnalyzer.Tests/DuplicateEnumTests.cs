@@ -14,19 +14,19 @@ public sealed class DuplicateEnumTests
             AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config.json"));
 
     [Fact]
-    public async Task SharedEnumMember_Diagnostic()
+    public async Task SingularAndPluralEnumWithSharedMember_Diagnostic()
     {
         var test = new OfflineAnalyzerTest
         {
             TestState =
             {
-                Sources = { "enum First { Shared } enum Second { Shared }" },
+                Sources = { "enum ThingType { Shared } enum ThingTypes { Shared }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
                 ExpectedDiagnostics =
                 {
                     DiagnosticResult.CompilerWarning("SE052")
-                        .WithSpan(1, 28, 1, 34)
-                        .WithArguments("Second", "First", "Shared"),
+                        .WithSpan(1, 32, 1, 42)
+                        .WithArguments("ThingTypes", "ThingType", "Shared"),
                 },
             },
         };
@@ -35,7 +35,7 @@ public sealed class DuplicateEnumTests
     }
 
     [Fact]
-    public async Task SharedEnumMemberAcrossFiles_ReportsLaterDeclarationDeterministically()
+    public async Task SingularAndPluralEnumAcrossFiles_ReportsLaterDeclarationDeterministically()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -43,16 +43,34 @@ public sealed class DuplicateEnumTests
             {
                 Sources =
                 {
-                    ("A.cs", "enum First { Shared }"),
-                    ("B.cs", "enum Second { Shared }"),
+                    ("A.cs", "enum ThingType { Shared }"),
+                    ("B.cs", "enum ThingTypes { Shared }"),
                 },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
                 ExpectedDiagnostics =
                 {
                     DiagnosticResult.CompilerWarning("SE052")
                         .WithLocation("B.cs", 1, 6)
-                        .WithArguments("Second", "First", "Shared"),
+                        .WithArguments("ThingTypes", "ThingType", "Shared"),
                 },
+            },
+        };
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task UnrelatedEnumsWithCommonMembers_NoDiagnostic()
+    {
+        var test = new OfflineAnalyzerTest
+        {
+            TestState =
+            {
+                Sources =
+                {
+                    "enum QueueType { None, Copy } enum PipelineStage { None, Copy }",
+                },
+                AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
             },
         };
 

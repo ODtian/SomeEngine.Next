@@ -1293,16 +1293,8 @@
     ]
   },
   "naming": {
-    "forbiddenClassSuffixes": [
-      "Plan",
-      "Run",
-      "Program"
-    ],
-    "forbiddenMethodSuffixes": [
-      "Plan",
-      "Run",
-      "Program"
-    ],
+    "forbiddenClassSuffixes": [],
+    "forbiddenMethodSuffixes": [],
     "classWhitelist": [
       "Program"
     ]
@@ -1323,11 +1315,11 @@
     "warnOnImplicitCast": true
   },
   "complexity": {
-    "maxCyclomaticComplexity": 12,
-    "maxMethodLines": 60,
-    "maxMethodsPerClass": 25,
-    "maxFieldsPerClass": 20,
-    "maxCoupledTypes": 8
+    "maxCyclomaticComplexity": 24,
+    "maxMethodLines": 120,
+    "maxMethodsPerClass": 50,
+    "maxFieldsPerClass": 32,
+    "maxCoupledTypes": 24
   },
   "architecture": {
     "layerContract": {

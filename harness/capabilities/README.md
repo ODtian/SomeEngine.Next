@@ -1,5 +1,9 @@
 # Graphics / RenderGraph capability continuity
 
+> This directory is historical capability and source-inventory evidence, not a Render Graph design
+> contract. The sole current architecture is the Wiki contract rooted at
+> [Render Graph](../../wiki/architecture/Render-Graph.md).
+
 `graphics-rendergraph-capabilities.v1.json` is the accepted run `0004` continuity ledger. It is not a wish list and it is not a backend capability bitset. Each row independently records:
 
 - the strongest level actually evidenced by the original checkpoint ZIP;

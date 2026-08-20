@@ -63,6 +63,24 @@ public sealed class HardcodedLiteralTests
     }
 
     [Fact]
+    public async Task NativeOperationLabelArgument_NoDiagnostic()
+    {
+        var test = new OfflineAnalyzerTest
+        {
+            TestState =
+            {
+                Sources =
+                {
+                    "class Sample { void M() => Report(\"ID3D12Device::CreateFence\"); void Report(string value) {} }",
+                },
+                AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
+            },
+        };
+
+        await test.RunAsync();
+    }
+
+    [Fact]
     public async Task SmallStructuralNumber_NoDiagnostic()
     {
         var test = new OfflineAnalyzerTest
@@ -70,6 +88,21 @@ public sealed class HardcodedLiteralTests
             TestState =
             {
                 Sources = { "class Sample { int M(int value) => value * 4; }" },
+                AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
+            },
+        };
+
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task NativeAbiNumber_NoDiagnostic()
+    {
+        var test = new OfflineAnalyzerTest
+        {
+            TestState =
+            {
+                Sources = { "class Sample { uint M() => 0xf2352aeb; }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
             },
         };

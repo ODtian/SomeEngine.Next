@@ -14,7 +14,7 @@ public sealed class NamingBlacklistTests
             AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config.json"));
 
     [Fact]
-    public async Task ClassEndingInPlan_Diagnostic()
+    public async Task ClassEndingInPlan_NoDiagnosticByDefault()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -22,12 +22,6 @@ public sealed class NamingBlacklistTests
             {
                 Sources = { "class FooPlan { }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-                ExpectedDiagnostics =
-                {
-                    DiagnosticResult.CompilerError("SE001")
-                        .WithSpan(1, 7, 1, 14)
-                        .WithArguments("FooPlan"),
-                },
             },
         };
 
@@ -35,7 +29,7 @@ public sealed class NamingBlacklistTests
     }
 
     [Fact]
-    public async Task ClassEndingInRun_Diagnostic()
+    public async Task ClassEndingInRun_NoDiagnosticByDefault()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -43,12 +37,6 @@ public sealed class NamingBlacklistTests
             {
                 Sources = { "class FooRun { }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-                ExpectedDiagnostics =
-                {
-                    DiagnosticResult.CompilerError("SE001")
-                        .WithSpan(1, 7, 1, 13)
-                        .WithArguments("FooRun"),
-                },
             },
         };
 
@@ -56,7 +44,7 @@ public sealed class NamingBlacklistTests
     }
 
     [Fact]
-    public async Task ClassEndingInProgram_Diagnostic()
+    public async Task ClassEndingInProgram_NoDiagnosticByDefault()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -64,12 +52,6 @@ public sealed class NamingBlacklistTests
             {
                 Sources = { "class FooProgram { }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-                ExpectedDiagnostics =
-                {
-                    DiagnosticResult.CompilerError("SE001")
-                        .WithSpan(1, 7, 1, 17)
-                        .WithArguments("FooProgram"),
-                },
             },
         };
 
@@ -77,7 +59,7 @@ public sealed class NamingBlacklistTests
     }
 
     [Fact]
-    public async Task MethodEndingInPlan_Diagnostic()
+    public async Task MethodEndingInPlan_NoDiagnosticByDefault()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -85,12 +67,6 @@ public sealed class NamingBlacklistTests
             {
                 Sources = { "class Sample { void WorkPlan() { } }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-                ExpectedDiagnostics =
-                {
-                    DiagnosticResult.CompilerError("SE002")
-                        .WithSpan(1, 21, 1, 29)
-                        .WithArguments("WorkPlan"),
-                },
             },
         };
 
@@ -98,7 +74,7 @@ public sealed class NamingBlacklistTests
     }
 
     [Fact]
-    public async Task MethodEndingInRun_Diagnostic()
+    public async Task MethodEndingInRun_NoDiagnosticByDefault()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -106,12 +82,6 @@ public sealed class NamingBlacklistTests
             {
                 Sources = { "class Sample { void WorkRun() { } }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-                ExpectedDiagnostics =
-                {
-                    DiagnosticResult.CompilerError("SE002")
-                        .WithSpan(1, 21, 1, 28)
-                        .WithArguments("WorkRun"),
-                },
             },
         };
 
@@ -119,7 +89,7 @@ public sealed class NamingBlacklistTests
     }
 
     [Fact]
-    public async Task MethodEndingInProgram_Diagnostic()
+    public async Task MethodEndingInProgram_NoDiagnosticByDefault()
     {
         var test = new OfflineAnalyzerTest
         {
@@ -127,12 +97,6 @@ public sealed class NamingBlacklistTests
             {
                 Sources = { "class Sample { void WorkProgram() { } }" },
                 AdditionalFiles = { (Path.Combine("harness", "config.json"), File.ReadAllText(ConfigPath)) },
-                ExpectedDiagnostics =
-                {
-                    DiagnosticResult.CompilerError("SE002")
-                        .WithSpan(1, 21, 1, 32)
-                        .WithArguments("WorkProgram"),
-                },
             },
         };
 

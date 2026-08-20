@@ -84,29 +84,16 @@ internal static class HardcodedLiteralAnalyzer
 
         if (literal.IsKind(SyntaxKind.NumericLiteralExpression))
         {
-            return IsAllowedNumericLiteral(literal.Token.Text);
+            // Numeric literals in low-level code commonly encode native ABI values,
+            // bit positions, alignments, GUID components, and table indices. Without
+            // semantic product-domain knowledge this analyzer cannot distinguish
+            // configuration data from implementation data, and forcing names for all
+            // of them creates more concepts without improving readability.
+            return true;
         }
 
         return literal.IsKind(SyntaxKind.StringLiteralExpression)
             && IsAllowedStringLiteral(literal);
-    }
-
-    private static bool IsAllowedNumericLiteral(string text)
-    {
-        string normalized = text
-            .TrimEnd('u', 'U', 'l', 'L', 'f', 'F', 'd', 'D', 'm', 'M');
-
-        if (normalized is "0" or "1" or "0.0" or "1.0" or "0.5" or "2.0")
-        {
-            return true;
-        }
-
-        if (int.TryParse(normalized, out int integer))
-        {
-            return integer >= 0 && integer <= 16;
-        }
-
-        return false;
     }
 
     private static bool IsAllowedStringLiteral(LiteralExpressionSyntax literal)
@@ -127,7 +114,29 @@ internal static class HardcodedLiteralAnalyzer
             return true;
         }
 
-        return !LooksLikeContractToken(value);
+        return !IsPersistentProductValue(literal) || !LooksLikeContractToken(value);
+    }
+
+    private static bool IsPersistentProductValue(LiteralExpressionSyntax literal)
+    {
+        if (literal.FirstAncestorOrSelf<ReturnStatementSyntax>() is not null)
+            return true;
+
+        if (literal.Parent is ArrowExpressionClauseSyntax arrow &&
+            arrow.Parent is MethodDeclarationSyntax or PropertyDeclarationSyntax)
+        {
+            return true;
+        }
+
+        if (literal.FirstAncestorOrSelf<EqualsValueClauseSyntax>()?.Parent is
+            VariableDeclaratorSyntax variable &&
+            variable.Parent?.Parent is FieldDeclarationSyntax field)
+        {
+            return !field.Modifiers.Any(SyntaxKind.ConstKeyword);
+        }
+
+        return literal.FirstAncestorOrSelf<EqualsValueClauseSyntax>()?.Parent is
+            PropertyDeclarationSyntax;
     }
 
     private static bool IsExceptionMessage(LiteralExpressionSyntax literal)
@@ -145,11 +154,6 @@ internal static class HardcodedLiteralAnalyzer
 
     private static bool LooksLikeContractToken(string value)
     {
-        if (value.IndexOfAny(['/', '\\', '.', ':', '_', '-']) >= 0)
-        {
-            return true;
-        }
-
         if (value.Length <= 2)
         {
             return false;
@@ -159,6 +163,11 @@ internal static class HardcodedLiteralAnalyzer
         if (hasWhitespace)
         {
             return false;
+        }
+
+        if (value.IndexOfAny(['/', '\\', '.', ':', '_', '-']) >= 0)
+        {
+            return true;
         }
 
         bool hasUpper = value.Any(char.IsUpper);

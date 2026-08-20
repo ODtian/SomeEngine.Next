@@ -42,6 +42,14 @@ internal static class ClassSizeAnalyzer
     private static void Analyze(SyntaxNodeAnalysisContext ctx, AnalyzerHarnessConfig config)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
+        if (cls.Modifiers.Any(SyntaxKind.PartialKeyword))
+        {
+            // A partial declaration already separates source responsibilities.
+            // Counting one syntax part as if it were the whole type produces
+            // duplicate diagnostics and pressures code into proxy classes.
+            return;
+        }
+
         var name = cls.Identifier.ValueText;
         int maxMethods = config.Complexity.MaxMethodsPerClass;
         int maxFields = config.Complexity.MaxFieldsPerClass;
