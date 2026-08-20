@@ -976,7 +976,7 @@ public sealed partial class RenderGraph
     private static (PipelineSync Sync, ResourceAccess Access) BufferState(
         GraphResourceUsage usage) => usage switch
     {
-        GraphResourceUsage.Common => (PipelineSync.None, ResourceAccess.Common),
+        GraphResourceUsage.Common => (PipelineSync.None, ResourceAccess.NoAccess),
         GraphResourceUsage.VertexOrConstantBuffer =>
             (PipelineSync.AllShading, ResourceAccess.VertexBuffer | ResourceAccess.ConstantBuffer),
         GraphResourceUsage.IndexBuffer => (PipelineSync.IndexInput, ResourceAccess.IndexBuffer),
@@ -997,7 +997,7 @@ public sealed partial class RenderGraph
         GraphResourceUsage usage) => usage switch
     {
         GraphResourceUsage.Common =>
-            (PipelineSync.None, ResourceAccess.Common, TextureLayout.Common),
+            (PipelineSync.None, ResourceAccess.NoAccess, TextureLayout.General),
         GraphResourceUsage.Undefined =>
             (PipelineSync.None, ResourceAccess.NoAccess, TextureLayout.Undefined),
         GraphResourceUsage.Present =>

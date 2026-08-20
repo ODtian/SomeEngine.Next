@@ -28,7 +28,6 @@ internal static class WarpGraphTestSupport
         ];
         return backend.CreateDevice(new DeviceDesc(
             warp.Id,
-            RetirementType.Automatic,
             queues,
             label: "Render Graph WARP device"));
     }

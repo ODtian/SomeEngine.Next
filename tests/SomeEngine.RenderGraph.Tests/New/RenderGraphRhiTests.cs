@@ -10,7 +10,7 @@ public sealed class RenderGraphRhiTests
     public void Cross_queue_graph_emits_handoffs_and_round_trips_native_memory()
     {
         Assert.True(OperatingSystem.IsWindows());
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = WarpGraphTestSupport.CreateDevice(backend);
         byte[] expected = CreatePattern(1024);
         using Buffer readback = backend.CreateBuffer(
@@ -61,7 +61,7 @@ public sealed class RenderGraphRhiTests
     [Fact]
     public void Handles_are_scoped_to_one_graph_invocation()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = WarpGraphTestSupport.CreateDevice(backend);
         using var first = new RenderGraph(backend, device);
         using var second = new RenderGraph(backend, device);
@@ -82,7 +82,7 @@ public sealed class RenderGraphRhiTests
     [Fact]
     public void Non_overlapping_transients_alias_with_an_explicit_native_barrier()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = WarpGraphTestSupport.CreateDevice(backend);
         byte[] expected = CreatePattern(1024);
         using Buffer readback = backend.CreateBuffer(

@@ -23,7 +23,7 @@ internal static class Program
             return 2;
         }
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         AdapterInfo warp = SelectWarp(backend);
         DeviceQueueDesc[] queues =
         [
@@ -32,7 +32,6 @@ internal static class Program
         ];
         using Device device = backend.CreateDevice(new DeviceDesc(
             warp.Id,
-            RetirementType.Automatic,
             queues,
             label: "Render Graph sample"));
         using Buffer readback = backend.CreateBuffer(

@@ -380,7 +380,7 @@ public ref struct UnsafeGraphContext
         RequireAccelerationStructure(accelerationStructure);
 
     public uint GetDescriptorIndex(in DescriptorTableHandle table, uint slot) =>
-        _backend.GetDescriptorIndex(_graph.GetDescriptorTable(table), slot);
+        _backend.GetDescriptorIndex(_graph.GetDescriptorTable(table), slot).Value;
 
     public void BuildAccelerationStructure(in AccelerationStructureBuildDesc description) =>
         _backend.BuildAccelerationStructure(_commands, description);

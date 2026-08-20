@@ -83,7 +83,6 @@ internal static class RuntimeApplication
             Label: boot.Title));
         using Device device = backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             queues,
             requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands,
             label: "SomeEngine Runtime Device"));
@@ -117,12 +116,12 @@ internal static class RuntimeApplication
 
     private static IGraphicsBackend CreateBackend(bool validation)
     {
-        var backend = new D3D12Backend();
+        IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         if (!validation)
             return backend;
         try
         {
-            return new ValidationLayer<D3D12Backend>(backend);
+            return new ValidationLayer(backend);
         }
         catch
         {
