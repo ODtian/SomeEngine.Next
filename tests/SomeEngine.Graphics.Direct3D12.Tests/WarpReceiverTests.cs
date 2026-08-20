@@ -20,21 +20,42 @@ public sealed class WarpReceiverTests
     }
 
     [Fact]
-    public void Generic_and_interface_receiver_chains_produce_identical_native_results()
+    public void Receiver_rejects_objects_created_by_another_backend_instance()
+    {
+        using var receiver = new D3D12Backend();
+        using var foreignReceiver = new D3D12Backend();
+        using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(foreignReceiver);
+        using Buffer foreignBuffer = foreignReceiver.CreateBuffer(
+            foreignDevice,
+            new BufferDesc(64, BufferUsages.CopySource),
+            MemoryType.Upload);
+        using CommandContext foreignContext = foreignReceiver.CreateCommandContext(
+            foreignDevice,
+            new CommandContextDesc(QueueType.Copy, 0, 1));
+
+        _ = Assert.Throws<ArgumentException>(() =>
+            receiver.GetQueue(foreignDevice, QueueType.Copy));
+        _ = Assert.Throws<ArgumentException>(() =>
+            receiver.Map(foreignBuffer, MapType.Write, new BufferRange(0, 64)));
+        _ = Assert.Throws<ArgumentException>(() => receiver.Begin(foreignContext));
+    }
+
+    [Fact]
+    public void Concrete_and_interface_receiver_chains_produce_identical_native_results()
     {
         Assert.True(OperatingSystem.IsWindows());
         byte[] source = CreatePattern(257);
 
-        byte[] genericResult;
-        using (var graphics = new Graphics<D3D12Backend>(new D3D12Backend()))
-            genericResult = ExecuteGeneric(graphics, source);
+        byte[] concreteResult;
+        using (var backend = new D3D12Backend())
+            concreteResult = ExecuteConcrete(backend, source);
 
         byte[] interfaceResult;
         using (IGraphicsBackend backend = new D3D12Backend())
             interfaceResult = ExecuteInterface(backend, source);
 
-        Assert.Equal(source, genericResult);
-        Assert.Equal(genericResult, interfaceResult);
+        Assert.Equal(source, concreteResult);
+        Assert.Equal(concreteResult, interfaceResult);
     }
 
     [Fact]
@@ -349,12 +370,10 @@ public sealed class WarpReceiverTests
     }
 
     [Fact]
-    public void State_shadow_uses_public_normalized_float_equality_and_one_native_setter()
+    public void Repeated_normalized_state_calls_produce_valid_direct_and_bundle_payloads()
     {
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Assert.NotNull(diagnostics);
         Assert.True(backend.TryGetCapability(device, out VariableRateShading? shadingRate));
         Assert.NotNull(shadingRate);
         using Buffer stateBuffer = backend.CreateBuffer(
@@ -386,8 +405,8 @@ public sealed class WarpReceiverTests
 
         float firstNaN = BitConverter.Int32BitsToSingle(unchecked((int)0x7FC0_0001));
         float secondNaN = BitConverter.Int32BitsToSingle(unchecked((int)0x7FC0_1234));
-        Viewport[] firstViewport = [new(firstNaN, +0.0f, 64, 64, -0.0f, 1)];
-        Viewport[] equivalentViewport = [new(secondNaN, -0.0f, 64, 64, +0.0f, 1)];
+        Viewport[] firstViewport = [new(+0.0f, +0.0f, 64, 64, -0.0f, 1)];
+        Viewport[] equivalentViewport = [new(-0.0f, -0.0f, 64, 64, +0.0f, 1)];
         ScissorRect[] scissors = [new(0, 0, 64, 64)];
         VertexBufferBinding[] vertexBuffers = [new(stateBuffer, 0, 16, 64)];
         IndexBufferBinding indexBuffer = new(stateBuffer, 0, 64, IndexType.UInt16);
@@ -437,27 +456,6 @@ public sealed class WarpReceiverTests
         }
         using RecordedCommands commands = backend.End(context);
 
-        D3D12CommandStatistics statistics = diagnostics!.GetCommandStatistics(commands);
-        Assert.Equal(0, statistics.PipelineSetters);
-        Assert.Equal(0, statistics.PersistentBindingSetters);
-        Assert.Equal(1, statistics.ViewportSetters);
-        Assert.Equal(1, statistics.ScissorSetters);
-        D3D12StateSetterStatistics setters = statistics.StateSetters;
-        Assert.Equal(1, setters.VertexBuffers);
-        Assert.Equal(1, setters.IndexBuffers);
-        Assert.Equal(1, setters.StreamOutputBuffers);
-        Assert.Equal(1, setters.Viewports);
-        Assert.Equal(1, setters.Scissors);
-        Assert.Equal(1, setters.BlendConstants);
-        Assert.Equal(1, setters.StencilReferences);
-        Assert.Equal(1, setters.DepthBounds);
-        Assert.Equal(1, setters.DepthBias);
-        Assert.Equal(1, setters.PrimitiveTopologies);
-        Assert.Equal(1, setters.StripCuts);
-        Assert.Equal(1, setters.Predication);
-        Assert.Equal(1, setters.ShadingRates);
-        Assert.Equal(shadingRateImage is null ? 0 : 1, setters.ShadingRateImages);
-
         using CommandContext bundleContext = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Graphics, 0, 1, Bundle: true));
@@ -501,25 +499,10 @@ public sealed class WarpReceiverTests
             ShadingRateCombiner.Passthrough);
         using RecordedBundle bundle = backend.EndBundle(bundleContext);
 
-        D3D12StateSetterStatistics bundleSetters =
-            diagnostics.GetCommandStatistics(bundle).StateSetters;
-        Assert.Equal(1, bundleSetters.VertexBuffers);
-        Assert.Equal(1, bundleSetters.IndexBuffers);
-        Assert.Equal(0, bundleSetters.StreamOutputBuffers);
-        Assert.Equal(0, bundleSetters.Viewports);
-        Assert.Equal(0, bundleSetters.Scissors);
-        Assert.Equal(1, bundleSetters.BlendConstants);
-        Assert.Equal(1, bundleSetters.StencilReferences);
-        Assert.Equal(1, bundleSetters.DepthBounds);
-        Assert.Equal(1, bundleSetters.DepthBias);
-        Assert.Equal(1, bundleSetters.PrimitiveTopologies);
-        Assert.Equal(1, bundleSetters.StripCuts);
-        Assert.Equal(1, bundleSetters.ShadingRates);
-        Assert.Equal(shadingRateImage is null ? 0 : 1, bundleSetters.ShadingRateImages);
     }
 
     [Fact]
-    public void State_shadow_compares_distinct_pipeline_and_binding_wrappers_by_immutable_content()
+    public void State_shadow_uses_strict_pipeline_and_binding_object_identity()
     {
         const string source = """
             StructuredBuffer<float4> values;
@@ -569,14 +552,11 @@ public sealed class WarpReceiverTests
             entries);
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        ParameterBlockLayoutReflection reflected =
-            ParameterBlockLayoutReflection.Reflect(layout);
-        Assert.Equal(1, reflected.BoundedResourceCount);
+        TypeLayoutReflection reflected = GetDataLayout(layout);
+        Assert.Equal((nint)1, reflected.BindingRangeCount);
 
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Assert.NotNull(diagnostics);
         using Buffer buffer = backend.CreateBuffer(
             device,
             new BufferDesc(256, BufferUsages.ShaderRead),
@@ -586,59 +566,51 @@ public sealed class WarpReceiverTests
             BufferRange.Whole,
             StructureStride: 16,
             Label: "ordinary-wrapper");
-        BufferSrvDesc bindlessDescription = ordinaryDescription with
+        BufferSrvDesc equivalentDescription = ordinaryDescription with
         {
-            Label = "bindless-wrapper",
+            Label = "equivalent-wrapper",
         };
         using BufferSrv ordinary = backend.CreateBufferSrv(device, ordinaryDescription);
-        using BindlessBufferSrv bindless = backend.CreateBindlessBufferSrv(
-            device,
-            bindlessDescription);
+        using BufferSrv equivalent = backend.CreateBufferSrv(device, equivalentDescription);
         ResourceBinding ordinaryBinding = ResourceBinding.ReadOnlyBuffer(ordinary);
-        ResourceBinding bindlessBinding = ResourceBinding.ReadOnlyBuffer(bindless);
-        Assert.Equal(ordinaryBinding, bindlessBinding);
-        Assert.Equal(ordinaryBinding.GetHashCode(), bindlessBinding.GetHashCode());
+        ResourceBinding equivalentBinding = ResourceBinding.ReadOnlyBuffer(equivalent);
+        Assert.NotEqual(ordinaryBinding, equivalentBinding);
+        Assert.Equal(ordinaryBinding, ResourceBinding.ReadOnlyBuffer(ordinary));
 
-        byte[] ordinaryData = new byte[checked((int)reflected.OrdinaryDataSize)];
+        byte[] ordinaryData = new byte[checked((int)reflected.GetSize(
+            SlangParameterCategory.Uniform))];
+        ComputePipelineDesc pipelineDescription = new(shader.Program, shader.GetEntryPoint(0));
+        using Pipeline firstPipeline = backend.CreateComputePipeline(device, pipelineDescription);
+        using Pipeline secondPipeline = backend.CreateComputePipeline(device, pipelineDescription);
         using PersistentParameterBindings firstBindings =
             backend.CreatePersistentParameterBindings(
                 device,
+                firstPipeline,
                 new ParameterBlockBindings(layout, [ordinaryBinding], ordinaryData),
                 "first-bindings");
         using PersistentParameterBindings secondBindings =
             backend.CreatePersistentParameterBindings(
                 device,
-                new ParameterBlockBindings(layout, [bindlessBinding], ordinaryData),
+                firstPipeline,
+                new ParameterBlockBindings(layout, [equivalentBinding], ordinaryData),
                 "second-bindings");
         backend.PublishDescriptors(device);
 
-        ComputePipelineDesc pipelineDescription = new(
-            shader.Program,
-            shader.GetEntryPoint(0));
-        using Pipeline firstPipeline = backend.CreateComputePipeline(
-            device,
-            pipelineDescription);
-        using Pipeline secondPipeline = backend.CreateComputePipeline(
-            device,
-            pipelineDescription);
         Assert.NotSame(firstPipeline, secondPipeline);
-        Assert.Equal(firstPipeline.Signature, secondPipeline.Signature);
-
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(context);
         backend.SetPipeline(context, firstPipeline);
-        backend.SetPipeline(context, secondPipeline);
         backend.SetPersistentParameterBindings(context, firstBindings);
         backend.SetPersistentParameterBindings(context, secondBindings);
+        backend.SetPipeline(context, secondPipeline);
+        Assert.Throws<ArgumentException>(() =>
+            backend.SetPersistentParameterBindings(context, firstBindings));
+        Assert.Throws<ArgumentException>(() =>
+            backend.SetPersistentParameterBindings(context, secondBindings));
         using RecordedCommands commands = backend.End(context);
-
-        D3D12CommandStatistics statistics = diagnostics!.GetCommandStatistics(commands);
-        Assert.Equal(1, statistics.PipelineSetters);
-        Assert.Equal(1, statistics.PersistentBindingSetters);
-        Assert.Equal(1, statistics.StateSetters.Pipelines);
-        Assert.Equal(1, statistics.StateSetters.PersistentParameterBindings);
+        Assert.Equal(RecordedCommandsStatus.Executable, commands.Status);
 
         using CommandContext transientContext = backend.CreateCommandContext(
             device,
@@ -650,15 +622,10 @@ public sealed class WarpReceiverTests
             new ParameterBlockBindings(layout, [ordinaryBinding], ordinaryData));
         backend.SetTransientParameterBindings(
             transientContext,
-            new ParameterBlockBindings(layout, [bindlessBinding], ordinaryData));
+            new ParameterBlockBindings(layout, [equivalentBinding], ordinaryData));
         backend.SetPersistentParameterBindings(transientContext, firstBindings);
         backend.SetPersistentParameterBindings(transientContext, secondBindings);
         using RecordedCommands transientCommands = backend.End(transientContext);
-
-        D3D12CommandStatistics transientStatistics =
-            diagnostics.GetCommandStatistics(transientCommands);
-        Assert.Equal(1, transientStatistics.StateSetters.TransientParameterBindings);
-        Assert.Equal(0, transientStatistics.StateSetters.PersistentParameterBindings);
 
         Format[] colorFormats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
@@ -685,24 +652,38 @@ public sealed class WarpReceiverTests
         using Pipeline secondGraphicsPipeline = backend.CreateGraphicsPipeline(
             device,
             graphicsDescription);
+        using PersistentParameterBindings firstGraphicsBindings =
+            backend.CreatePersistentParameterBindings(
+                device,
+                firstGraphicsPipeline,
+                new ParameterBlockBindings(layout, [ordinaryBinding], ordinaryData),
+                "first-graphics-bindings");
+        using PersistentParameterBindings secondGraphicsBindings =
+            backend.CreatePersistentParameterBindings(
+                device,
+                firstGraphicsPipeline,
+                new ParameterBlockBindings(layout, [equivalentBinding], ordinaryData),
+                "second-graphics-bindings");
+        backend.PublishDescriptors(device);
         using CommandContext bundleContext = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Graphics, 0, 1, Bundle: true));
         backend.Begin(bundleContext);
         backend.SetPipeline(bundleContext, firstGraphicsPipeline);
+        backend.SetPersistentParameterBindings(bundleContext, firstGraphicsBindings);
+        backend.SetPersistentParameterBindings(bundleContext, secondGraphicsBindings);
         backend.SetPipeline(bundleContext, secondGraphicsPipeline);
-        backend.SetPersistentParameterBindings(bundleContext, firstBindings);
-        backend.SetPersistentParameterBindings(bundleContext, secondBindings);
+        Assert.Throws<ArgumentException>(() =>
+            backend.SetPersistentParameterBindings(bundleContext, firstGraphicsBindings));
+        Assert.Throws<ArgumentException>(() =>
+            backend.SetPersistentParameterBindings(bundleContext, secondGraphicsBindings));
         using RecordedBundle bundle = backend.EndBundle(bundleContext);
+        Assert.False(bundle.IsDisposed);
 
-        D3D12StateSetterStatistics bundleStatistics =
-            diagnostics.GetCommandStatistics(bundle).StateSetters;
-        Assert.Equal(1, bundleStatistics.Pipelines);
-        Assert.Equal(1, bundleStatistics.PersistentParameterBindings);
     }
 
     [Fact]
-    public void Sixteen_byte_transient_constant_buffer_suppresses_equal_normalized_content()
+    public void Sixteen_byte_transient_constant_buffer_repeated_values_remain_recordable()
     {
         const string source = """
             float4 tint;
@@ -720,29 +701,26 @@ public sealed class WarpReceiverTests
             [new("computeMain", SlangStage.Compute)]);
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
-        ParameterBlockLayoutReflection reflected =
-            ParameterBlockLayoutReflection.Reflect(layout);
-        Assert.Equal(16u, reflected.OrdinaryDataSize);
-        Assert.Equal(SlangBindingType.ConstantBuffer, reflected.OrdinaryDataBindingType);
-        Assert.Equal(0, reflected.BoundedResourceCount);
+        TypeLayoutReflection reflected = GetDataLayout(layout);
+        Assert.Equal((nuint)16, reflected.GetSize(SlangParameterCategory.Uniform));
+        Assert.Equal((nint)0, reflected.BindingRangeCount);
 
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Assert.NotNull(diagnostics);
         byte[] first = new byte[16];
         byte[] second = new byte[16];
         first[0] = 1;
         second[0] = 2;
-        using PersistentParameterBindings persistent =
-            backend.CreatePersistentParameterBindings(
-                device,
-                new ParameterBlockBindings(layout, [], first),
-                "persistent first value");
-        backend.PublishDescriptors(device);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
             new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
+        using PersistentParameterBindings persistent =
+            backend.CreatePersistentParameterBindings(
+                device,
+                pipeline,
+                new ParameterBlockBindings(layout, [], first),
+                "persistent first value");
+        backend.PublishDescriptors(device);
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
@@ -764,17 +742,13 @@ public sealed class WarpReceiverTests
             new ParameterBlockBindings(layout, [], first));
         backend.SetPersistentParameterBindings(context, persistent);
         using RecordedCommands commands = backend.End(context);
+        Assert.Equal(RecordedCommandsStatus.Executable, commands.Status);
 
-        D3D12CommandStatistics statistics = diagnostics!.GetCommandStatistics(commands);
-        Assert.Equal(1, statistics.PersistentBindingSetters);
-        Assert.Equal(1, statistics.StateSetters.PersistentParameterBindings);
-        Assert.Equal(2, statistics.StateSetters.TransientParameterBindings);
     }
 
-    private static byte[] ExecuteGeneric<TBackend>(
-        Graphics<TBackend> graphics,
+    private static byte[] ExecuteConcrete(
+        D3D12Backend graphics,
         ReadOnlySpan<byte> source)
-        where TBackend : class, IGraphicsBackend
     {
         AdapterEnumerationOptions options = new(
             AdapterPreference.HighPerformance,
@@ -790,7 +764,6 @@ public sealed class WarpReceiverTests
 
         using Device device = graphics.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             queues,
             label: "generic receiver proof"));
         using Buffer upload = graphics.CreateBuffer(
@@ -829,6 +802,18 @@ public sealed class WarpReceiverTests
 
     private static byte[] ExecuteInterface(IGraphicsBackend backend, ReadOnlySpan<byte> source) =>
         D3D12TestSupport.ExecuteCopyChain(backend, source);
+
+    private static TypeLayoutReflection GetDataLayout(VariableLayoutReflection layout)
+    {
+        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
+        if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
+        {
+            TypeLayoutReflection element = result.ElementTypeLayout.UnwrapArray();
+            if (element != TypeLayoutReflection.Null)
+                result = element;
+        }
+        return result;
+    }
 
     private static byte[] CreatePattern(int length)
     {

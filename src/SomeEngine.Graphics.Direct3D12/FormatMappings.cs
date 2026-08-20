@@ -176,6 +176,21 @@ internal static class FormatMappings
             Format.BC7UNormSrgb;
     }
 
+    internal static bool IsInteger(Format format)
+    {
+        _ = ToDxgi(format);
+        return format is
+            Format.R8UInt or Format.R8SInt or
+            Format.R8G8UInt or Format.R8G8SInt or
+            Format.R8G8B8A8UInt or Format.R8G8B8A8SInt or
+            Format.R16UInt or Format.R16SInt or
+            Format.R16G16UInt or Format.R16G16SInt or
+            Format.R16G16B16A16UInt or Format.R16G16B16A16SInt or
+            Format.R32UInt or Format.R32SInt or
+            Format.R32G32UInt or Format.R32G32SInt or
+            Format.R32G32B32A32UInt or Format.R32G32B32A32SInt;
+    }
+
     internal static void GetCopyBlockInfo(
         Format format,
         out uint blockWidth,

@@ -3,18 +3,18 @@ using Silk.NET.Core.Native;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public bool IsComplete(in QueueCompletion completion)
     {
-        D3D12Queue queue = NativeCast.Queue(completion.Queue);
+        D3D12Queue queue = RequireQueue(completion.Queue, nameof(completion));
         return queue.IsComplete(completion.Value);
     }
 
     public WaitStatus WaitCpu(in QueueCompletion completion, TimeSpan timeout)
     {
-        ValidateWaitTimeout(timeout);
-        D3D12Queue queue = NativeCast.Queue(completion.Queue);
+        int milliseconds = Timeouts.ToMilliseconds(timeout, nameof(timeout));
+        D3D12Queue queue = RequireQueue(completion.Queue, nameof(completion));
         if (queue.IsComplete(completion.Value))
             return WaitStatus.Completed;
 
@@ -23,17 +23,26 @@ public sealed unsafe partial class D3D12Backend
             bManualReset: false,
             bInitialState: false,
             null);
+        if (waitEvent == 0)
+        {
+            ThrowAfterDeviceRemovedReasonQuery(
+                queue.NativeDevice,
+                Marshal.GetHRForLastWin32Error(),
+                "Creating the Direct3D 12 completion wait event");
+        }
         try
         {
-            ThrowIfDeviceFailed(
+            ThrowIfFailed(
                 queue.NativeDevice,
                 queue.Fence->SetEventOnCompletion(completion.Value, (void*)waitEvent),
+                NativeOperationType.Ordinary,
                 "ID3D12Fence::SetEventOnCompletion");
 
-            uint milliseconds = timeout == Timeout.InfiniteTimeSpan
-                ? uint.MaxValue
-                : checked((uint)Math.Ceiling(timeout.TotalMilliseconds));
-            uint result = SilkMarshal.WaitWindowsObjects(waitEvent, milliseconds);
+            uint result = SilkMarshal.WaitWindowsObjects(
+                waitEvent,
+                milliseconds == Timeout.Infinite
+                    ? uint.MaxValue
+                    : checked((uint)milliseconds));
             return result switch
             {
                 0 => queue.IsComplete(completion.Value)
@@ -42,10 +51,7 @@ public sealed unsafe partial class D3D12Backend
                         GraphicsError.NativeFailure,
                         "The Direct3D 12 completion event was signaled before its fence value."),
                 0x102 => WaitStatus.Timeout,
-                _ => throw new GraphicsException(
-                    GraphicsError.NativeFailure,
-                    "Waiting for a Direct3D 12 completion failed.",
-                    Marshal.GetHRForLastWin32Error()),
+                _ => ThrowWaitFailure(queue.NativeDevice),
             };
         }
         finally
@@ -54,15 +60,12 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void ValidateWaitTimeout(TimeSpan timeout)
+    private static WaitStatus ThrowWaitFailure(D3D12Device device)
     {
-        if (timeout == Timeout.InfiniteTimeSpan)
-            return;
-        if (timeout < TimeSpan.Zero || timeout.TotalMilliseconds > int.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(timeout),
-                "A wait timeout must be nonnegative, at most Int32.MaxValue milliseconds, or infinite.");
-        }
+        ThrowAfterDeviceRemovedReasonQuery(
+            device,
+            Marshal.GetHRForLastWin32Error(),
+            "Waiting for a Direct3D 12 completion");
+        return default;
     }
 }

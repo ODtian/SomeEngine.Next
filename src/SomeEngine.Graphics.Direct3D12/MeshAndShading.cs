@@ -6,23 +6,23 @@ using NativeShadingRateCombiner = Silk.NET.Direct3D12.ShadingRateCombiner;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public void DispatchMesh(CommandContext context, in DispatchArguments arguments)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<MeshShaders>(nameof(DispatchMesh));
         command.List->DispatchMesh(arguments.X, arguments.Y, arguments.Z);
     }
 
     public void DispatchMeshIndirect(CommandContext context, in BufferRegion arguments)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         MeshShaders capability =
             command.NativeDevice.RequireCapability<MeshShaders>(nameof(DispatchMeshIndirect));
         if (!capability.IndirectDispatch)
             throw new NotSupportedException("Indirect mesh dispatch is unavailable.");
-        D3D12Buffer buffer = NativeCast.Buffer(arguments.Buffer);
+        D3D12Buffer buffer = RequireBuffer(arguments.Buffer);
         BufferRange range = arguments.Range.Resolve(buffer.Info.Size);
         if ((buffer.Info.Usages & BufferUsages.Indirect) == 0 ||
             range.Offset % 4 != 0 ||
@@ -32,6 +32,7 @@ public sealed unsafe partial class D3D12Backend
                 "The indirect mesh arguments must name an aligned 12-byte Indirect Buffer range.",
                 nameof(arguments));
         }
+        command.PrepareCaptures(1, 0, 1);
         command.Capture(buffer);
         command.List->ExecuteIndirect(
             command.NativeDevice.MeshDispatchSignature,
@@ -48,7 +49,7 @@ public sealed unsafe partial class D3D12Backend
         ShadingRateCombiner primitiveCombiner,
         ShadingRateCombiner imageCombiner)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         VariableRateShading capability =
             command.NativeDevice.RequireCapability<VariableRateShading>(nameof(SetShadingRate));
         if (!capability.Rates.Contains(rate) ||
@@ -67,13 +68,12 @@ public sealed unsafe partial class D3D12Backend
             ToNativeShadingRateCombiner(imageCombiner),
         };
         command.List->RSSetShadingRate(ToNativeShadingRate(rate), combiners);
-        command.Recording.RecordShadingRateSetter();
         command.RememberShadingRate(rate, primitiveCombiner, imageCombiner);
     }
 
     public void SetShadingRateImage(CommandContext context, Texture? texture)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         VariableRateShading capability = command.NativeDevice
             .RequireCapability<VariableRateShading>(nameof(SetShadingRateImage));
         if (!capability.ShadingRateImage)
@@ -84,13 +84,14 @@ public sealed unsafe partial class D3D12Backend
         D3D12TextureResource? native = null;
         if (texture is not null)
         {
-            native = NativeCast.Texture(texture);
+            native = RequireTexture(texture);
+            command.PrepareCaptures(1, 0, 1);
+            command.PrepareSwapchainUses(1);
             command.Capture(native);
         }
 
         ID3D12Resource* shadingRateImage = native is null ? null : native.Native;
         command.List->RSSetShadingRateImage(shadingRateImage);
-        command.Recording.RecordShadingRateImageSetter();
         command.RememberShadingRateImage(texture);
     }
 
@@ -141,12 +142,14 @@ public sealed unsafe partial class D3D12Backend
                 EnabledNodeMask);
             Guid iid = ID3D12CommandSignature.Guid;
             ID3D12CommandSignature* signature = null;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                this,
                 Native->CreateCommandSignature(
                     &description,
                     null,
                     &iid,
                     (void**)&signature),
+                NativeOperationType.Ordinary,
                 "ID3D12Device::CreateCommandSignature(DispatchRays)");
             _rayDispatchSignature = signature;
         }
@@ -164,12 +167,14 @@ public sealed unsafe partial class D3D12Backend
                 EnabledNodeMask);
             Guid iid = ID3D12CommandSignature.Guid;
             ID3D12CommandSignature* signature = null;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                this,
                 Native->CreateCommandSignature(
                     &description,
                     null,
                     &iid,
                     (void**)&signature),
+                NativeOperationType.Ordinary,
                 "ID3D12Device::CreateCommandSignature(DispatchMesh)");
             _meshDispatchSignature = signature;
         }

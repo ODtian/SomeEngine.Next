@@ -1,38 +1,60 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
+using Silk.NET.Direct3D12;
 using SomeEngine.Graphics.Direct3D12;
 using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-public sealed class D3D12NativeCastShapeTests
+public sealed class D3D12ObjectConversionTests
 {
     [Fact]
-    public void Representative_resource_conversion_has_the_configuration_selected_IL_shape()
+    public void Representative_resource_conversion_always_performs_a_runtime_type_check()
     {
         Type castType = typeof(D3D12Backend).GetNestedType(
-            "NativeCast",
-            BindingFlags.NonPublic) ?? throw new MissingMemberException("D3D12Backend.NativeCast");
+            "RequireD3D12",
+            BindingFlags.NonPublic) ?? throw new MissingMemberException("D3D12Backend.RequireD3D12");
         MethodInfo method = castType.GetMethod(
             "Buffer",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             [typeof(Buffer)],
-            modifiers: null) ?? throw new MissingMethodException("D3D12Backend.NativeCast.Buffer");
+            modifiers: null) ?? throw new MissingMethodException("D3D12Backend.RequireD3D12.Buffer");
         Instruction[] instructions = Decode(method);
 
-#if DEBUG
-        Assert.Contains(instructions, static instruction => instruction.OpCode == OpCodes.Castclass);
-        Assert.DoesNotContain(instructions, static instruction => IsUnsafeAs(instruction.Method));
-#else
-        Assert.DoesNotContain(instructions, static instruction => instruction.OpCode == OpCodes.Castclass);
-        Assert.DoesNotContain(
+        Assert.Contains(
             instructions,
-            static instruction => instruction.OpCode.FlowControl is
-                FlowControl.Branch or FlowControl.Cond_Branch);
-        Assert.Contains(instructions, static instruction => IsUnsafeAs(instruction.Method));
-#endif
+            static instruction =>
+                instruction.OpCode == OpCodes.Isinst ||
+                instruction.OpCode == OpCodes.Castclass);
+        Assert.DoesNotContain(instructions, static instruction => IsUnsafeAs(instruction.Method));
+    }
+
+    [Fact]
+    public void Command_list_helpers_use_Silk_methods_and_never_emit_calli()
+    {
+        Type calls = typeof(D3D12Backend).Assembly.GetType(
+            "SomeEngine.Graphics.Direct3D12.D3D12CommandListFastCalls",
+            throwOnError: true)!;
+        MethodInfo[] methods = calls.GetMethods(
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotEmpty(methods);
+        foreach (MethodInfo method in methods)
+        {
+            Instruction[] instructions = Decode(method);
+            Assert.DoesNotContain(
+                instructions,
+                static instruction => instruction.OpCode == OpCodes.Calli);
+        }
+
+        MethodInfo draw = methods.Single(static method => method.Name == "DrawInstanced");
+        Assert.Contains(
+            Decode(draw),
+            static instruction =>
+                instruction.Method?.DeclaringType == typeof(ID3D12GraphicsCommandList10) &&
+                instruction.Method.Name == nameof(ID3D12GraphicsCommandList10.DrawInstanced));
     }
 
     private static bool IsUnsafeAs(MethodBase? method) =>

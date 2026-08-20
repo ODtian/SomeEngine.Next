@@ -26,9 +26,7 @@ internal static class D3D12TestSupport
             : throw new NotSupportedException("The Direct3D 12 WARP adapter is unavailable.");
     }
 
-    internal static Device CreateWarpDevice(
-        IGraphicsBackend backend,
-        RetirementType retirementType = RetirementType.Automatic)
+    internal static Device CreateWarpDevice(IGraphicsBackend backend)
     {
         AdapterInfo adapter = SelectWarp(backend);
         DeviceQueueDesc[] queues =
@@ -39,13 +37,20 @@ internal static class D3D12TestSupport
         ];
         return backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            retirementType,
             queues,
-            optionalFeatures: DeviceFeatures.IndirectCommands |
+            optionalFeatures: DeviceFeatures.Presentation |
+                              DeviceFeatures.SparseResources |
+                              DeviceFeatures.SamplerFeedback |
+                              DeviceFeatures.Residency |
+                              DeviceFeatures.RayTracing |
                               DeviceFeatures.MeshShaders |
                               DeviceFeatures.VariableRateShading |
-                              DeviceFeatures.RayTracing |
-                              DeviceFeatures.WorkGraphs,
+                              DeviceFeatures.WorkGraphs |
+                              DeviceFeatures.IndirectCommands |
+                              DeviceFeatures.CalibratedTimestamps |
+                              DeviceFeatures.LinkedAdapters |
+                              DeviceFeatures.ExternalResources |
+                              DeviceFeatures.ExternalTimelines,
             label: "WARP integration device"));
     }
 
@@ -78,7 +83,6 @@ internal static class D3D12TestSupport
             {
                 return backend.CreateDevice(new DeviceDesc(
                     adapter.Id,
-                    RetirementType.Automatic,
                     queues,
                     requiredFeatures: DeviceFeatures.SamplerFeedback,
                     label: "sampler-feedback hardware integration device"));
@@ -142,5 +146,69 @@ internal static class D3D12TestSupport
         }
         backend.CollectCompleted(device);
         return result;
+    }
+
+    internal static void UploadSinglePixelR32Float(
+        IGraphicsBackend backend,
+        Device device,
+        Texture texture,
+        float value)
+    {
+        using Buffer upload = backend.CreateBuffer(
+            device,
+            new BufferDesc(256, BufferUsages.CopySource, "single-pixel upload"),
+            MemoryType.Upload);
+        using (MappedBuffer mapping = backend.Map(upload, MapType.Write, BufferRange.Whole))
+        {
+            mapping.Bytes.Clear();
+            BitConverter.GetBytes(value).CopyTo(mapping.Bytes);
+            mapping.Flush(new BufferRange(0, 4));
+        }
+
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Compute, 0, 1, Label: "single-pixel upload"));
+        backend.Begin(context);
+        backend.Barrier(context, new TextureBarrier(
+            texture,
+            range,
+            PipelineSync.None,
+            PipelineSync.Copy,
+            ResourceAccess.NoAccess,
+            ResourceAccess.CopyDestination,
+            TextureLayout.Undefined,
+            TextureLayout.CopyDestination));
+        backend.CopyBufferToTexture(context, new BufferTextureCopy(
+            upload,
+            0,
+            256,
+            1,
+            texture,
+            0,
+            0,
+            TextureAspects.Color,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1));
+        backend.Barrier(context, new TextureBarrier(
+            texture,
+            range,
+            PipelineSync.Copy,
+            PipelineSync.ComputeShading,
+            ResourceAccess.CopyDestination,
+            ResourceAccess.ShaderResource,
+            TextureLayout.CopyDestination,
+            TextureLayout.ShaderResource));
+        using RecordedCommands recorded = backend.End(context);
+        QueueCompletion completion = backend.Submit(
+            backend.GetQueue(device, QueueType.Compute),
+            new QueueSubmitDesc([], [], [recorded], [], []));
+        Assert.Equal(WaitStatus.Completed,
+            backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+        backend.CollectCompleted(device);
     }
 }

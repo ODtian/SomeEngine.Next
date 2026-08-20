@@ -7,6 +7,175 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class WarpCreationValidationTests
 {
     [Fact]
+    public void Backend_rejects_objects_created_by_another_backend_instance()
+    {
+        using var owner = new D3D12Backend();
+        using var foreign = new D3D12Backend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(owner);
+        using Buffer buffer = owner.CreateBuffer(
+            device,
+            new BufferDesc(256, BufferUsages.CopySource),
+            MemoryType.Upload);
+
+        Assert.Throws<ArgumentException>(() =>
+        {
+            using MappedBuffer _ = foreign.Map(buffer, MapType.Write, BufferRange.Whole);
+        });
+    }
+
+    [Fact]
+    public void Device_scoped_creation_rejects_resources_from_another_device()
+    {
+        using var backend = new D3D12Backend();
+        using Device first = D3D12TestSupport.CreateWarpDevice(backend);
+        using Device second = D3D12TestSupport.CreateWarpDevice(backend);
+        using Buffer buffer = backend.CreateBuffer(
+            first,
+            new BufferDesc(256, BufferUsages.ShaderRead));
+
+        Assert.Throws<ArgumentException>(() =>
+            backend.CreateBufferSrv(
+                second,
+                new BufferSrvDesc(buffer, BufferRange.Whole)));
+    }
+
+    [Fact]
+    public void Unrequested_feature_capabilities_are_not_enabled()
+    {
+        using var backend = new D3D12Backend();
+        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            warp.Id,
+            [new DeviceQueueDesc(QueueType.Graphics)]));
+
+        Assert.False(backend.TryGetCapability<Presentation>(device, out _));
+        Assert.False(backend.TryGetCapability<SparseResources>(device, out _));
+        Assert.False(backend.TryGetCapability<SamplerFeedback>(device, out _));
+        Assert.False(backend.TryGetCapability<Residency>(device, out _));
+        Assert.False(backend.TryGetCapability<RayTracing>(device, out _));
+        Assert.False(backend.TryGetCapability<MeshShaders>(device, out _));
+        Assert.False(backend.TryGetCapability<VariableRateShading>(device, out _));
+        Assert.False(backend.TryGetCapability<WorkGraphs>(device, out _));
+        Assert.False(backend.TryGetCapability<IndirectCommands>(device, out _));
+        Assert.False(backend.TryGetCapability<CalibratedTimestamps>(device, out _));
+        Assert.False(backend.TryGetCapability<LinkedAdapters>(device, out _));
+        Assert.False(backend.TryGetCapability<ExternalResources>(device, out _));
+        Assert.False(backend.TryGetCapability<ExternalTimelines>(device, out _));
+        Assert.True(backend.TryGetCapability<D3D12NativeAccess>(device, out _));
+        Assert.True(backend.TryGetCapability<D3D12Diagnostics>(device, out _));
+    }
+
+    [Fact]
+    public void Unavailable_optional_feature_does_not_disable_the_device()
+    {
+        using var backend = new D3D12Backend();
+        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            warp.Id,
+            [new DeviceQueueDesc(QueueType.Graphics)],
+            optionalFeatures: DeviceFeatures.LinkedAdapters));
+
+        Assert.False(backend.TryGetCapability<LinkedAdapters>(device, out _));
+        Assert.Equal(DeviceStatus.Active, device.Status);
+    }
+
+    [Fact]
+    public void Presentation_must_be_enabled_before_swapchain_creation()
+    {
+        using D3D12TestWindow window = new();
+        using var backend = new D3D12Backend();
+        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        using Surface surface = backend.CreateSurface(new SurfaceDesc(
+            NativeWindowType.Win32,
+            window.Handle));
+        DeviceQueueDesc[] copyQueues = [new(QueueType.Copy)];
+        DeviceQueueDesc[] graphicsQueues = [new(QueueType.Graphics)];
+        SwapchainConfig config = new(
+            32,
+            32,
+            Format.R8G8B8A8UNorm,
+            ColorSpace.Srgb,
+            PresentType.Mailbox,
+            false,
+            2);
+        using (Device disabled = backend.CreateDevice(new DeviceDesc(
+            warp.Id,
+            copyQueues,
+            optionalFeatures: DeviceFeatures.Presentation)))
+        {
+            Assert.False(backend.TryGetCapability<Presentation>(disabled, out _));
+            Assert.Throws<NotSupportedException>(() =>
+                backend.CreateSwapchain(
+                    disabled,
+                    new SwapchainDesc(
+                        surface,
+                        2,
+                        TextureUsages.ColorAttachment,
+                        config)));
+            Assert.Equal(DeviceStatus.Active, disabled.Status);
+        }
+
+        GraphicsException missing = Assert.Throws<GraphicsException>(() =>
+            backend.CreateDevice(new DeviceDesc(
+                warp.Id,
+                copyQueues,
+                requiredFeatures: DeviceFeatures.Presentation)));
+        Assert.Equal(GraphicsError.NativeFailure, missing.Error);
+        Assert.Null(missing.NativeCode);
+
+        using Device enabled = backend.CreateDevice(new DeviceDesc(
+            warp.Id,
+            graphicsQueues,
+            optionalFeatures: DeviceFeatures.Presentation));
+        Assert.True(backend.TryGetCapability<Presentation>(enabled, out Presentation? presentation));
+        Assert.NotNull(presentation);
+        Assert.Same(enabled, presentation.Device);
+        using Swapchain swapchain = backend.CreateSwapchain(
+            enabled,
+            new SwapchainDesc(
+                surface,
+                2,
+                TextureUsages.ColorAttachment,
+                config));
+        Assert.Equal(ReconfigureStatus.Success, backend.Reconfigure(swapchain, config));
+    }
+
+    [Fact]
+    public void Missing_required_feature_is_a_retryable_graphics_failure()
+    {
+        using var backend = new D3D12Backend();
+        AdapterInfo warp = D3D12TestSupport.SelectWarp(backend);
+        DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
+
+        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
+            backend.CreateDevice(new DeviceDesc(
+                warp.Id,
+                queues,
+                requiredFeatures: DeviceFeatures.LinkedAdapters)));
+
+        Assert.Equal(GraphicsError.NativeFailure, failure.Error);
+        Assert.Null(failure.NativeCode);
+
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            warp.Id,
+            queues));
+        Assert.Equal(DeviceStatus.Active, device.Status);
+    }
+
+    [Fact]
+    public void Explicit_WARP_selection_preserves_the_enumerated_adapter_identity()
+    {
+        using var backend = new D3D12Backend();
+        AdapterInfo selected = D3D12TestSupport.SelectWarp(backend);
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            selected.Id,
+            [new DeviceQueueDesc(QueueType.Graphics)]));
+
+        Assert.Equal(selected, device.Adapter);
+        Assert.False(device.Adapter.HardwareAccelerated);
+    }
+
+    [Fact]
     public void Device_description_rejects_malformed_queue_topology_before_native_creation()
     {
         using IGraphicsBackend backend = new D3D12Backend();
@@ -14,38 +183,30 @@ public sealed class WarpCreationValidationTests
 
         Assert.Throws<ArgumentException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics, Count: 0)])));
         Assert.Throws<ArgumentException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics), new DeviceQueueDesc(QueueType.Graphics)])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics, Priority: float.NaN)])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc((QueueType)byte.MaxValue)])));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics, NodeIndex: 1)],
             enabledNodeMask: 1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: (DeviceFeatures)(1UL << 63))));
 
         using Device valid = backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             [new DeviceQueueDesc(QueueType.Graphics)]));
         Assert.Equal(QueueType.Graphics, backend.GetQueue(valid, QueueType.Graphics).Type);
     }
@@ -217,6 +378,89 @@ public sealed class WarpCreationValidationTests
                 TextureUsages.Sampled,
                 [Format.R8G8B8A8UNormSrgb, Format.R8G8B8A8UNormSrgb])));
     }
+
+    [Fact]
+    public void Ordinary_texture_paths_reject_the_sampler_feedback_subtype()
+    {
+        using IGraphicsBackend backend = new D3D12Backend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        TextureDesc ordinary = new(
+            TextureDimension.Texture2D,
+            64,
+            64,
+            1,
+            1,
+            1,
+            1,
+            Format.R8G8B8A8UNorm,
+            TextureUsages.CopySource |
+            TextureUsages.CopyDestination |
+            TextureUsages.Sampled |
+            TextureUsages.Storage);
+        BufferTextureCopy copy = new(
+            null!,
+            0,
+            0,
+            0,
+            null!,
+            0,
+            0,
+            TextureAspects.Color,
+            0,
+            0,
+            0,
+            64,
+            64,
+            1);
+
+        Assert.Throws<ArgumentException>(() =>
+            backend.GetTextureMemoryRequirements(device, CreateFeedbackTextureDescription()));
+        Assert.Throws<ArgumentException>(() =>
+            backend.GetTextureCopyFootprint(
+                device,
+                CreateFeedbackTextureDescription(),
+                copy));
+        Assert.Throws<ArgumentException>(() =>
+            backend.CreateTexture(device, CreateFeedbackTextureDescription()));
+
+        MemoryRequirements requirements = backend.GetTextureMemoryRequirements(device, ordinary);
+        using Heap heap = backend.CreateHeap(
+            device,
+            new HeapDesc(
+                requirements.Size,
+                0,
+                MemoryType.DeviceLocal,
+                HeapFlags.Textures));
+        Assert.Throws<ArgumentException>(() =>
+            backend.CreatePlacedTexture(
+                device,
+                heap,
+                0,
+                CreateFeedbackTextureDescription()));
+
+        Assert.True(backend.TryGetCapability(device, out SparseResources? sparse));
+        Assert.NotNull(sparse);
+        Assert.Throws<ArgumentException>(() =>
+            backend.CreateReservedTexture(device, CreateFeedbackTextureDescription()));
+
+        using Texture committed = backend.CreateTexture(device, ordinary);
+        using Texture placed = backend.CreatePlacedTexture(device, heap, 0, ordinary);
+        using Texture reserved = backend.CreateReservedTexture(device, ordinary);
+        Assert.Equal(TextureUsages.Storage, committed.Info.Usages & TextureUsages.Storage);
+        Assert.Equal(TextureUsages.Storage, placed.Info.Usages & TextureUsages.Storage);
+        Assert.Equal(TextureUsages.Storage, reserved.Info.Usages & TextureUsages.Storage);
+    }
+
+    private static TextureDesc CreateFeedbackTextureDescription() => new(
+        TextureDimension.Texture2D,
+        64,
+        64,
+        1,
+        1,
+        1,
+        1,
+        Format.R8G8B8A8UNorm,
+        TextureUsages.Storage | TextureUsages.SamplerFeedback);
 
     [Fact]
     public void Placed_resources_validate_heap_class_alignment_and_range()

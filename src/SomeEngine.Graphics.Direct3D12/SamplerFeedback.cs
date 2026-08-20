@@ -8,42 +8,20 @@ using NativeTextureLayout = Silk.NET.Direct3D12.TextureLayout;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public SamplerFeedbackTexture CreateSamplerFeedbackTexture(
         Device device,
         in SamplerFeedbackTextureDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         SamplerFeedback capability =
             nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackTexture));
-        D3D12TextureResource sampled = NativeCast.Texture(desc.SampledTexture);
+        D3D12TextureResource sampled = RequireTexture(desc.SampledTexture);
+        RequireSameDevice(nativeDevice, sampled.Owner, nameof(desc));
 
         TextureInfo sampledInfo = sampled.Info;
-        if (sampledInfo.Dimension != TextureDimension.Texture2D ||
-            sampledInfo.SampleCount != 1 ||
-            (sampledInfo.Usages & TextureUsages.Sampled) == 0)
-        {
-            throw new ArgumentException(
-                "Sampler feedback requires a single-sampled Texture2D with Sampled usage.",
-                nameof(desc));
-        }
-        if (!capability.SupportedFormats.Contains(sampledInfo.Format))
-        {
-            throw new NotSupportedException(
-                $"Format {sampledInfo.Format} does not support sampler feedback.");
-        }
-        if (desc.MipRegionWidth < capability.MinimumMipRegionWidth ||
-            desc.MipRegionHeight < capability.MinimumMipRegionHeight ||
-            desc.MipRegionWidth > sampledInfo.Width / 2 ||
-            desc.MipRegionHeight > sampledInfo.Height / 2 ||
-            !BitOperations.IsPow2(desc.MipRegionWidth) ||
-            !BitOperations.IsPow2(desc.MipRegionHeight))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(desc),
-                "Sampler-feedback mip-region dimensions must be supported powers of two.");
-        }
+        ValidateSamplerFeedbackDescription(capability, sampledInfo, desc);
         DxgiFormat opaqueFormat = desc.Type switch
         {
             SamplerFeedbackType.MinimumMip => DxgiFormat.FormatSamplerFeedbackMinMipOpaque,
@@ -65,48 +43,18 @@ public sealed unsafe partial class D3D12Backend
 
         HeapProperties properties = CreateHeapProperties(
             MemoryType.DeviceLocal,
-            nativeDevice.EnabledNodeMask,
-            nativeDevice.EnabledNodeMask);
-        NativeResource* native = null;
-        Guid iid = NativeResource.Guid;
-        if (nativeDevice.EnhancedBarriers)
-        {
-            ThrowIfDeviceFailed(
-                nativeDevice,
-                nativeDevice.Native->CreateCommittedResource3(
-                    &properties,
-                    Silk.NET.Direct3D12.HeapFlags.None,
-                    &nativeDescription,
-                    BarrierLayout.Undefined,
-                    null,
-                    null,
-                    0,
-                    null,
-                    &iid,
-                    (void**)&native),
-                "ID3D12Device10::CreateCommittedResource3(sampler feedback)");
-        }
-        else
-        {
-            ThrowIfDeviceFailed(
-                nativeDevice,
-                nativeDevice.Native->CreateCommittedResource2(
-                    &properties,
-                    Silk.NET.Direct3D12.HeapFlags.None,
-                    &nativeDescription,
-                    ResourceStates.Common,
-                    null,
-                    null,
-                    &iid,
-                    (void**)&native),
-                "ID3D12Device8::CreateCommittedResource2(sampler feedback)");
-        }
+            sampledInfo.CreationNodeMask,
+            sampledInfo.VisibleNodeMask);
+        NativeResource* native = CreateSamplerFeedbackResource(
+            nativeDevice,
+            properties,
+            nativeDescription);
 
         D3D12SamplerFeedbackTexture? result = null;
         try
         {
             ResourceAllocationInfo allocation = nativeDevice.Native->GetResourceAllocationInfo2(
-                nativeDevice.EnabledNodeMask,
+                sampledInfo.VisibleNodeMask,
                 1,
                 &nativeDescription,
                 null);
@@ -131,7 +79,9 @@ public sealed unsafe partial class D3D12Backend
                 MemoryType.DeviceLocal,
                 ReadOnlySpan<Format>.Empty,
                 0,
-                allocation.SizeInBytes);
+                allocation.SizeInBytes,
+                sampledInfo.CreationNodeMask,
+                sampledInfo.VisibleNodeMask);
             result = new D3D12SamplerFeedbackTexture(
                 nativeDevice,
                 native,
@@ -139,7 +89,6 @@ public sealed unsafe partial class D3D12Backend
                 desc);
             native = null;
             nativeDevice.RegisterChild(result);
-            sampled.RegisterView(result);
             return result;
         }
         catch
@@ -154,14 +103,88 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
+    private static void ValidateSamplerFeedbackDescription(
+        SamplerFeedback capability,
+        in TextureInfo sampled,
+        in SamplerFeedbackTextureDesc description)
+    {
+        if (sampled.Dimension != TextureDimension.Texture2D ||
+            sampled.SampleCount != 1 ||
+            (sampled.Usages & TextureUsages.Sampled) == 0)
+        {
+            throw new ArgumentException(
+                "Sampler feedback requires a single-sampled Texture2D with Sampled usage.",
+                nameof(description));
+        }
+        if (!capability.SupportedFormats.Contains(sampled.Format))
+        {
+            throw new NotSupportedException(
+                $"Format {sampled.Format} does not support sampler feedback.");
+        }
+        if (description.MipRegionWidth < capability.MinimumMipRegionWidth ||
+            description.MipRegionHeight < capability.MinimumMipRegionHeight ||
+            description.MipRegionWidth > sampled.Width / 2 ||
+            description.MipRegionHeight > sampled.Height / 2 ||
+            !BitOperations.IsPow2(description.MipRegionWidth) ||
+            !BitOperations.IsPow2(description.MipRegionHeight))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(description),
+                "Sampler-feedback mip-region dimensions must be supported powers of two.");
+        }
+    }
+
+    private static NativeResource* CreateSamplerFeedbackResource(
+        D3D12Device device,
+        in HeapProperties properties,
+        in ResourceDesc1 description)
+    {
+        NativeResource* result = null;
+        Guid iid = NativeResource.Guid;
+        fixed (HeapProperties* nativeProperties = &properties)
+        fixed (ResourceDesc1* nativeDescription = &description)
+        {
+            int hr = device.EnhancedBarriers
+                ? device.Native->CreateCommittedResource3(
+                    nativeProperties,
+                    Silk.NET.Direct3D12.HeapFlags.None,
+                    nativeDescription,
+                    BarrierLayout.Undefined,
+                    null,
+                    null,
+                    0,
+                    null,
+                    &iid,
+                    (void**)&result)
+                : device.Native->CreateCommittedResource2(
+                    nativeProperties,
+                    Silk.NET.Direct3D12.HeapFlags.None,
+                    nativeDescription,
+                    ResourceStates.Common,
+                    null,
+                    null,
+                    &iid,
+                    (void**)&result);
+            ThrowIfFailed(
+                device,
+                hr,
+                NativeOperationType.Ordinary,
+                device.EnhancedBarriers
+                    ? "ID3D12Device10::CreateCommittedResource3(sampler feedback)"
+                    : "ID3D12Device8::CreateCommittedResource2(sampler feedback)");
+        }
+        return result;
+    }
+
     public SamplerFeedbackUav CreateSamplerFeedbackUav(
         Device device,
         SamplerFeedbackTexture texture,
         in TextureUavDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackUav));
-        D3D12SamplerFeedbackTexture feedback = NativeCast.SamplerFeedbackTexture(texture);
+        D3D12SamplerFeedbackTexture feedback = RequireSamplerFeedbackTexture(texture);
+        RequireSameDevice(nativeDevice, feedback, nameof(texture));
         TextureInfo info = feedback.Info;
         TextureSubresourceRange range = desc.Range;
         TextureViewDimension expectedDimension = info.ArrayLayerCount == 1
@@ -181,8 +204,12 @@ public sealed unsafe partial class D3D12Backend
                 nameof(desc));
         }
         D3D12TextureResource feedbackResource = feedback.NativeResource;
-        D3D12TextureResource sampled = NativeCast.Texture(feedback.SampledTexture);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
+        D3D12TextureResource sampled = RequireTexture(feedback.SampledTexture);
+        DescriptorLease descriptor = nativeDevice
+            .GetResourceDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(
+                    feedbackResource.Info.CreationNodeMask))
+            .Allocate();
         D3D12SamplerFeedbackUav? result = null;
         try
         {
@@ -197,8 +224,6 @@ public sealed unsafe partial class D3D12Backend
                 desc,
                 descriptor);
             nativeDevice.RegisterChild(result);
-            feedbackResource.RegisterView(result);
-            sampled.RegisterView(result);
             return result;
         }
         catch
@@ -215,15 +240,19 @@ public sealed unsafe partial class D3D12Backend
         CommandContext context,
         SamplerFeedbackUav feedback)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ClearSamplerFeedback));
-        D3D12SamplerFeedbackUav native = NativeCast.SamplerFeedbackUav(feedback);
+        D3D12SamplerFeedbackUav native = RequireSamplerFeedbackUav(feedback);
 
+        command.PrepareCaptures(2, 1, 2);
+        command.PrepareSwapchainUses(2);
+        command.PrepareDescriptors(1, 0);
+        command.PrepareTransientObjects((1 != 0 ? 1 : 0));
         (CpuDescriptorHandle cpu, GpuDescriptorHandle gpu) =
             command.StageSamplerFeedbackDescriptor(native.NativeDescriptor);
         command.Capture((TextureUav)native);
         command.Capture(native.SampledResource);
-        uint* values = stackalloc uint[4];
+        uint* values = stackalloc uint[4] { 0, 0, 0, 0 };
         command.List->ClearUnorderedAccessViewUint(
             gpu,
             cpu,
@@ -239,11 +268,11 @@ public sealed unsafe partial class D3D12Backend
         Buffer destination,
         in BufferRange destinationRange)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
         D3D12SamplerFeedbackTexture nativeFeedback =
-            NativeCast.SamplerFeedbackTexture(feedback);
-        D3D12Buffer nativeDestination = NativeCast.Buffer(destination);
+            RequireSamplerFeedbackTexture(feedback);
+        D3D12Buffer nativeDestination = RequireBuffer(destination);
 
         if (nativeFeedback.Description.Type != SamplerFeedbackType.MinimumMip ||
             nativeFeedback.Info.ArrayLayerCount != 1)
@@ -264,6 +293,8 @@ public sealed unsafe partial class D3D12Backend
                 "The destination range cannot contain the decoded feedback map.");
         }
 
+        command.PrepareCaptures(3, 0, 3);
+        command.PrepareSwapchainUses(2);
         command.Capture(nativeFeedback.NativeResource);
         command.Capture(nativeFeedback.SampledResource);
         command.Capture(nativeDestination);
@@ -285,13 +316,15 @@ public sealed unsafe partial class D3D12Backend
         Texture destination,
         in TextureSubresourceRange destinationRange)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
         D3D12SamplerFeedbackTexture nativeFeedback =
-            NativeCast.SamplerFeedbackTexture(feedback);
-        D3D12TextureResource nativeDestination = NativeCast.Texture(destination);
+            RequireSamplerFeedbackTexture(feedback);
+        D3D12TextureResource nativeDestination = RequireTexture(destination);
         ValidateFeedbackTextureDestination(nativeFeedback, nativeDestination, destinationRange);
 
+        command.PrepareCaptures(3, 0, 3);
+        command.PrepareSwapchainUses(3);
         command.Capture(nativeFeedback.NativeResource);
         command.Capture(nativeFeedback.SampledResource);
         command.Capture(nativeDestination);
@@ -368,7 +401,6 @@ public sealed unsafe partial class D3D12Backend
     private sealed class D3D12SamplerFeedbackTexture : SamplerFeedbackTexture
     {
         private readonly D3D12TextureResource _native;
-        private int _released;
 
         internal D3D12SamplerFeedbackTexture(
             D3D12Device device,
@@ -377,8 +409,13 @@ public sealed unsafe partial class D3D12Backend
             in SamplerFeedbackTextureDesc description)
             : base(device, info, description)
         {
-            _native = new D3D12TextureResource(this, device, null, native);
-            SampledResource = NativeCast.Texture(description.SampledTexture);
+            SampledResource = RequireD3D12.Texture(description.SampledTexture);
+            _native = new D3D12TextureResource(
+                this,
+                device,
+                null,
+                native,
+                dependency: SampledResource.NativeLifetime);
             DecodedWidth = DivideRoundUp(info.Width, description.MipRegionWidth);
             DecodedHeight = DivideRoundUp(info.Height, description.MipRegionHeight);
             DecodedByteCount = checked((ulong)DecodedWidth * DecodedHeight);
@@ -390,13 +427,7 @@ public sealed unsafe partial class D3D12Backend
         internal uint DecodedHeight { get; }
         internal ulong DecodedByteCount { get; }
 
-        internal override void Release(bool fromParent)
-        {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-            SampledResource.UnregisterView(this);
-            _native.Release();
-        }
+        internal override void Release(bool fromParent) => _native.Release();
 
         private static uint DivideRoundUp(uint value, uint divisor) =>
             checked((value + divisor - 1) / divisor);
@@ -404,7 +435,7 @@ public sealed unsafe partial class D3D12Backend
 
     private sealed class D3D12SamplerFeedbackUav : SamplerFeedbackUav, INativeDescriptor
     {
-        private readonly ViewLifetime _lifetime;
+        private readonly ViewReferences _references;
 
         internal D3D12SamplerFeedbackUav(
             D3D12Device device,
@@ -417,17 +448,17 @@ public sealed unsafe partial class D3D12Backend
             FeedbackResource = feedback;
             SampledResource = sampled;
             NativeDescriptor = descriptor;
-            _lifetime = new ViewLifetime(
+            _references = new ViewReferences(
                 device,
                 descriptor,
-                texture: feedback,
-                pairedTexture: sampled);
+                feedback.NativeLifetime,
+                sampled.NativeLifetime);
         }
 
         internal D3D12TextureResource FeedbackResource { get; }
         internal D3D12TextureResource SampledResource { get; }
         public DescriptorLease NativeDescriptor { get; }
-        internal override void Release(bool fromParent) => _lifetime.Release(this);
+        internal override void Release(bool fromParent) => _references.Release(this);
     }
 
     private sealed partial class D3D12CommandContext
@@ -442,7 +473,7 @@ public sealed unsafe partial class D3D12Backend
         internal (CpuDescriptorHandle Cpu, GpuDescriptorHandle Gpu)
             StageSamplerFeedbackDescriptor(DescriptorLease descriptor)
         {
-            uint index = AllocateDescriptors(ParameterHeap.Resource, 1);
+            uint index = AllocateDescriptorPair(1, 0).ResourceBase;
             CpuDescriptorHandle cpu = GetCpuHandle(ParameterHeap.Resource, index);
             _context.NativeDevice.Native->CopyDescriptorsSimple(
                 1,
@@ -468,28 +499,20 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static partial class NativeCast
+    private static partial class RequireD3D12
     {
         internal static D3D12SamplerFeedbackTexture SamplerFeedbackTexture(
-            SamplerFeedbackTexture value)
-        {
-#if DEBUG
-            return (D3D12SamplerFeedbackTexture)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe
-                .As<SamplerFeedbackTexture, D3D12SamplerFeedbackTexture>(ref value);
-#endif
-        }
+            SamplerFeedbackTexture value) =>
+            value as D3D12SamplerFeedbackTexture ??
+            throw new ArgumentException(
+                "The SamplerFeedbackTexture was not created by the Direct3D 12 backend.",
+                nameof(value));
 
         internal static D3D12SamplerFeedbackUav SamplerFeedbackUav(
-            SamplerFeedbackUav value)
-        {
-#if DEBUG
-            return (D3D12SamplerFeedbackUav)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe
-                .As<SamplerFeedbackUav, D3D12SamplerFeedbackUav>(ref value);
-#endif
-        }
+            SamplerFeedbackUav value) =>
+            value as D3D12SamplerFeedbackUav ??
+            throw new ArgumentException(
+                "The SamplerFeedbackUav was not created by the Direct3D 12 backend.",
+                nameof(value));
     }
 }

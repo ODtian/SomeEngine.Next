@@ -1,44 +1,64 @@
+using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public DescriptorTable CreateDescriptorTable(
         Device device,
-        ReadOnlySpan<ResourceBindingType> slotTypes,
-        string? label = null)
+        ReadOnlySpan<DescriptorSlotDesc> slots,
+        string? label = null,
+        uint nodeIndex = uint.MaxValue,
+        CancellationToken cancellationToken = default)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
-        DescriptorTableType type = GetDescriptorTableType(slotTypes);
-        uint count = checked((uint)slotTypes.Length);
-        DescriptorRange range = nativeDevice.Descriptors.Reserve(type, count);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (slots.IsEmpty)
+            throw new ArgumentException("A DescriptorTable requires at least one typed slot.", nameof(slots));
+
+        uint resolvedNodeIndex = nativeDevice.ResolveNodeIndex(nodeIndex, nameof(nodeIndex));
+        DescriptorTableType type = slots[0].Type == ResourceBindingType.Sampler
+            ? DescriptorTableType.Sampler
+            : DescriptorTableType.Resource;
+        DescriptorPublisher publisher = nativeDevice.GetDescriptorPublisher(resolvedNodeIndex);
+        uint count = checked((uint)slots.Length);
+        DescriptorRange range = publisher.Reserve(type, count);
         D3D12DescriptorTable? result = null;
         try
         {
-            result = new D3D12DescriptorTable(nativeDevice, range, slotTypes, label);
-            nativeDevice.Descriptors.InitializeTable(result);
+            result = new D3D12DescriptorTable(
+                nativeDevice,
+                publisher,
+                type,
+                resolvedNodeIndex,
+                range,
+                slots,
+                label);
+            publisher.InitializeTable(result);
             nativeDevice.RegisterChild(result);
             return result;
         }
         catch
         {
             if (result is null)
-                nativeDevice.Descriptors.Cancel(range);
+                publisher.Cancel(range);
             else
                 result.Dispose();
             throw;
         }
     }
 
-    public uint GetDescriptorIndex(DescriptorTable table, uint slot)
+    public DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint slot)
     {
-        D3D12DescriptorTable native = NativeCast.DescriptorTable(table);
+        D3D12DescriptorTable native = RequireDescriptorTable(table);
         native.CheckSlot(slot);
-        return checked(native.FirstIndex + slot);
+        return new DescriptorIndex(
+            native,
+            checked(native.FirstIndex + slot));
     }
 
     public void WriteDescriptor(
@@ -46,24 +66,34 @@ public sealed unsafe partial class D3D12Backend
         uint slot,
         in ResourceBinding value)
     {
-        D3D12DescriptorTable native = NativeCast.DescriptorTable(table);
+        D3D12DescriptorTable native = RequireDescriptorTable(table);
         native.CheckSlot(slot);
-        EnsureTableBindingType(native.GetSlotType(slot), value);
-        native.NativeDevice.Descriptors.StageBinding(
+        DescriptorSlotDesc slotDesc = native.GetSlotDesc(slot);
+        EnsureTableBindingType(slotDesc.Type, value);
+        native.Publisher.StageBinding(
             native.Type,
             checked(native.FirstIndex + slot),
+            slotDesc,
             value);
     }
 
     public PersistentParameterBindings CreatePersistentParameterBindings(
         Device device,
+        Pipeline pipeline,
         in ParameterBlockBindings bindings,
         string? label = null)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
+        ObjectDisposedException.ThrowIf(pipeline.IsDisposed, pipeline);
+        if (!ReferenceEquals(device, pipeline.Device))
+            throw new ArgumentException("Pipeline belongs to a different Device.", nameof(pipeline));
+        D3D12Pipeline nativePipeline = RequirePipeline(pipeline);
+        NativeParameterBinding nativeLayout = nativePipeline.RootSignature.GetBlock(bindings.Layout);
         D3D12PersistentParameterBindings result = new(
             nativeDevice,
+            nativePipeline,
+            nativeLayout,
             bindings.Layout,
             label);
         try
@@ -84,31 +114,30 @@ public sealed unsafe partial class D3D12Backend
         in ParameterBlockBindings bindings)
     {
         D3D12PersistentParameterBindings native =
-            NativeCast.PersistentParameterBindings(destination);
+            RequirePersistentParameterBindings(destination);
         native.StageReplacement(bindings);
     }
 
-    public void PublishDescriptors(Device device) =>
-        NativeCast.Device(device).Descriptors.Publish();
-
-    private static DescriptorTableType GetDescriptorTableType(
-        ReadOnlySpan<ResourceBindingType> slotTypes)
+    public void PublishDescriptors(
+        Device device,
+        uint nodeIndex = uint.MaxValue,
+        CancellationToken cancellationToken = default)
     {
-        if (slotTypes.IsEmpty)
-            throw new ArgumentException("A DescriptorTable requires at least one typed slot.", nameof(slotTypes));
-        bool samplers = slotTypes[0] == ResourceBindingType.Sampler;
-        foreach (ResourceBindingType type in slotTypes)
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        nativeDevice.ThrowIfUnavailable();
+        uint resolvedNodeIndex = nativeDevice.ResolveNodeIndex(nodeIndex, nameof(nodeIndex));
+        DescriptorGeneration generation = nativeDevice
+            .GetDescriptorPublisher(resolvedNodeIndex)
+            .Publish(cancellationToken);
+        try
         {
-            if (!Enum.IsDefined(type) || type == ResourceBindingType.None)
-                throw new ArgumentOutOfRangeException(nameof(slotTypes));
-            if ((type == ResourceBindingType.Sampler) != samplers)
-            {
-                throw new ArgumentException(
-                    "A DescriptorTable cannot mix Resource and Sampler slots.",
-                    nameof(slotTypes));
-            }
+            // Publish returns one retained caller reference in addition to the publisher's current
+            // generation ownership. Public callers only need the new current generation installed.
         }
-        return samplers ? DescriptorTableType.Sampler : DescriptorTableType.Resource;
+        finally
+        {
+            generation.Release();
+        }
     }
 
     private static void EnsureTableBindingType(
@@ -136,62 +165,61 @@ public sealed unsafe partial class D3D12Backend
 
     private sealed class DescriptorRange
     {
-        internal DescriptorRange(DescriptorTableType type, uint first, uint count)
+        internal DescriptorRange(
+            DescriptorTableType type,
+            uint first,
+            uint count,
+            ulong identity)
         {
             Type = type;
             First = first;
             Count = count;
+            Identity = identity;
         }
 
         internal DescriptorTableType Type { get; }
         internal uint First { get; set; }
         internal uint Count { get; set; }
+        internal ulong Identity { get; set; }
         internal DescriptorRangeState State { get; set; }
         internal bool HasPublishedContent { get; set; }
         internal bool ActivationQueued { get; set; }
         internal ulong ReusableAfterGeneration { get; set; }
         internal DescriptorRange? Next { get; set; }
         internal DescriptorRange? ActivationNext { get; set; }
-        internal ResourceBindingType[]? SlotTypes { get; set; }
+        internal DescriptorSlotDesc[]? Slots { get; set; }
 
-        internal void SetSlotTypes(ReadOnlySpan<ResourceBindingType> slotTypes)
+        internal void SetSlot(uint slot, in DescriptorSlotDesc value)
         {
-            if ((uint)slotTypes.Length != Count)
-                throw new ArgumentException("Descriptor slot-type count does not match its range.", nameof(slotTypes));
-            SlotTypes = slotTypes.ToArray();
-        }
-
-        internal void SetSlotType(uint slot, ResourceBindingType type)
-        {
-            if (slot >= Count || type == ResourceBindingType.None || !Enum.IsDefined(type))
+            if (slot >= Count || value.Type == ResourceBindingType.None || !Enum.IsDefined(value.Type))
                 throw new ArgumentOutOfRangeException(nameof(slot));
-            SlotTypes ??= new ResourceBindingType[checked((int)Count)];
-            ResourceBindingType current = SlotTypes[checked((int)slot)];
-            if (current != ResourceBindingType.None && current != type)
-                throw new InvalidOperationException("A descriptor range slot changed its declared type.");
-            SlotTypes[checked((int)slot)] = type;
+            Slots ??= new DescriptorSlotDesc[checked((int)Count)];
+            DescriptorSlotDesc current = Slots[checked((int)slot)];
+            if (current.Type != ResourceBindingType.None && current != value)
+                throw new InvalidOperationException("A descriptor range slot changed its declared shape.");
+            Slots[checked((int)slot)] = value;
         }
 
-        internal ResourceBindingType GetSlotType(uint slot)
+        internal DescriptorSlotDesc GetSlot(uint slot)
         {
-            if (slot >= Count || SlotTypes is null)
-                throw new InvalidOperationException("The descriptor range has no declared slot type.");
-            ResourceBindingType type = SlotTypes[checked((int)slot)];
-            if (type == ResourceBindingType.None)
+            if (slot >= Count || Slots is null)
+                throw new InvalidOperationException("The descriptor range has no declared slot shape.");
+            DescriptorSlotDesc value = Slots[checked((int)slot)];
+            if (value.Type == ResourceBindingType.None)
                 throw new InvalidOperationException("The descriptor range contains an untyped slot.");
-            return type;
+            return value;
         }
     }
 
     private sealed class DescriptorPublisher : IDisposable
     {
         private readonly D3D12Device _device;
+        private readonly DescriptorTableType? _restrictedType;
+        private readonly uint _nodeMask;
         private readonly object _gate = new();
         private readonly Dictionary<uint, DescriptorRecord> _pendingResources = [];
         private readonly Dictionary<uint, DescriptorRecord> _pendingSamplers = [];
         private readonly Dictionary<GraphicsObject, DescriptorRange> _owners =
-            new(ReferenceEqualityComparer.Instance);
-        private readonly HashSet<D3D12PersistentParameterBindings> _pendingBindings =
             new(ReferenceEqualityComparer.Instance);
         private readonly SortedSet<ulong> _liveGenerations = [];
         private DescriptorRecord?[] _resources = [];
@@ -207,13 +235,32 @@ public sealed unsafe partial class D3D12Backend
         private DescriptorRange? _retiredTail;
         private uint _nextResource;
         private uint _nextSampler;
+        private ulong _nextAllocationIdentity = 1;
         private ulong _nextGeneration = 2;
         private bool _disposed;
 
-        internal DescriptorPublisher(D3D12Device device)
+        internal DescriptorPublisher(
+            D3D12Device device,
+            DescriptorTableType? restrictedType = null,
+            uint initialCapacity = 0,
+            uint nodeMask = 0)
         {
             _device = device;
-            _current = DescriptorGeneration.Create(this, device, 1, 1, 1, [], []);
+            _restrictedType = restrictedType;
+            _nodeMask = nodeMask == 0 ? device.PrimaryNodeMask : nodeMask;
+            if (restrictedType is DescriptorTableType.Resource)
+                _pendingResources.EnsureCapacity(checked((int)Math.Min(initialCapacity, int.MaxValue)));
+            else if (restrictedType is DescriptorTableType.Sampler)
+                _pendingSamplers.EnsureCapacity(checked((int)Math.Min(initialCapacity, int.MaxValue)));
+            _current = DescriptorGeneration.Create(
+                this,
+                device,
+                _nodeMask,
+                1,
+                1,
+                1,
+                [],
+                []);
             try
             {
                 _liveGenerations.Add(1);
@@ -227,11 +274,16 @@ public sealed unsafe partial class D3D12Backend
 
         internal DescriptorGeneration CaptureCurrent()
         {
-            lock (_gate)
+            while (true)
             {
-                ObjectDisposedException.ThrowIf(_disposed, this);
-                _current.Retain();
-                return _current;
+                ObjectDisposedException.ThrowIf(
+                    Volatile.Read(ref _disposed),
+                    this);
+                DescriptorGeneration? current = Volatile.Read(ref _current);
+                if (current is null)
+                    continue;
+                if (current.TryRetain())
+                    return current;
             }
         }
 
@@ -242,6 +294,12 @@ public sealed unsafe partial class D3D12Backend
                 ObjectDisposedException.ThrowIf(_disposed, this);
                 if (!Enum.IsDefined(type) || count == 0)
                     throw new ArgumentOutOfRangeException(nameof(count));
+                if (_restrictedType is DescriptorTableType restricted && restricted != type)
+                {
+                    throw new ArgumentException(
+                        "The descriptor allocation does not match the descriptor heap type.",
+                        nameof(type));
+                }
 
                 ref DescriptorRange? free = ref type == DescriptorTableType.Resource
                     ? ref _freeResources
@@ -266,11 +324,15 @@ public sealed unsafe partial class D3D12Backend
                     }
                     else
                     {
-                        reused = new DescriptorRange(type, candidate.First, count);
+                        reused = new DescriptorRange(
+                            type,
+                            candidate.First,
+                            count,
+                            identity: 0);
                         candidate.First = checked(candidate.First + count);
                         candidate.Count -= count;
                     }
-                    ResetReserved(reused);
+                    ResetReserved(reused, AllocateIdentity());
                     return reused;
                 }
 
@@ -286,7 +348,11 @@ public sealed unsafe partial class D3D12Backend
                         GraphicsError.OutOfDescriptors,
                         $"The D3D12 {type} logical descriptor index space is exhausted.");
                 }
-                DescriptorRange result = new(type, next, count);
+                DescriptorRange result = new(
+                    type,
+                    next,
+                    count,
+                    AllocateIdentity());
                 next = checked(next + count);
                 return result;
             }
@@ -318,16 +384,23 @@ public sealed unsafe partial class D3D12Backend
                 if (range.Count != 1 || range.State != DescriptorRangeState.Reserved)
                     throw new InvalidOperationException("The bindless descriptor reservation is not active.");
                 DescriptorRecord record = DescriptorRecord.Create(
-                    _device,
                     source,
                     owner,
-                    type);
+                    type,
+                    GetDescriptorSlotDesc(owner, type));
+                if ((record.VisibleNodeMask & _nodeMask) == 0)
+                {
+                    record.Release();
+                    throw new ArgumentException(
+                        "The descriptor resource is not visible from the table node.",
+                        nameof(owner));
+                }
                 bool ownerAdded = false;
                 bool recordTransferred = false;
                 try
                 {
                     _owners.EnsureCapacity(checked(_owners.Count + 1));
-                    range.SetSlotType(0, type);
+                    range.SetSlot(0, GetDescriptorSlotDesc(owner, type));
                     _owners.Add(owner, range);
                     ownerAdded = true;
                     ReplacePending(range.Type, range.First, record);
@@ -357,13 +430,13 @@ public sealed unsafe partial class D3D12Backend
                 pending.EnsureCapacity(checked(pending.Count + checked((int)range.Count)));
                 try
                 {
-                    range.SetSlotTypes(table.SlotTypes);
                     for (uint slot = 0; slot < range.Count; slot++)
                     {
+                        range.SetSlot(slot, table.GetSlotDesc(slot));
                         ReplacePending(
                             range.Type,
                             checked(range.First + slot),
-                            DescriptorRecord.CreateNull(table.GetSlotType(slot)));
+                            DescriptorRecord.CreateNull(table.GetSlotDesc(slot)));
                     }
                     range.State = DescriptorRangeState.Active;
                     QueueActivation(range);
@@ -379,119 +452,20 @@ public sealed unsafe partial class D3D12Backend
         internal void StageBinding(
             DescriptorTableType type,
             uint index,
+            in DescriptorSlotDesc slot,
             in ResourceBinding binding)
         {
             lock (_gate)
             {
-                DescriptorRecord record = CreateBindingRecord(binding);
+                DescriptorRecord record = CreateBindingRecord(binding, slot);
+                if ((record.VisibleNodeMask & _nodeMask) == 0)
+                {
+                    record.Release();
+                    throw new ArgumentException(
+                        "The descriptor resource is not visible from the table node.",
+                        nameof(binding));
+                }
                 ReplacePending(type, index, record);
-            }
-        }
-
-        internal void StagePersistentBinding(
-            D3D12PersistentParameterBindings owner,
-            ReadOnlySpan<ResourceBinding> bindings)
-        {
-            D3D12ParameterBlockShape shape = owner.Shape;
-            shape.RequireMaterializationShape(bindings, owner.PendingOrdinaryData);
-            List<(DescriptorTableType Type, uint Index, DescriptorRecord Record)> prepared = [];
-            int ordinal = 0;
-            try
-            {
-                foreach (ParameterLeaf leaf in shape.Leaves)
-                {
-                    if (leaf.Unbounded)
-                        continue;
-                    for (uint element = 0; element < leaf.DescriptorCount; element++)
-                    {
-                        DescriptorTableType tableType = leaf.Heap == ParameterHeap.Sampler
-                            ? DescriptorTableType.Sampler
-                            : DescriptorTableType.Resource;
-                        uint baseIndex = tableType == DescriptorTableType.Sampler
-                            ? owner.SamplerBaseIndex
-                            : owner.ResourceBaseIndex;
-                        prepared.Add((
-                            tableType,
-                            checked(baseIndex + leaf.HeapOffset + element),
-                            CreateBindingRecord(bindings[ordinal++], leaf.Type)));
-                    }
-                }
-            }
-            catch
-            {
-                foreach (var value in prepared)
-                    value.Record.Release();
-                throw;
-            }
-
-            lock (_gate)
-            {
-                try
-                {
-                    ObjectDisposedException.ThrowIf(_disposed, this);
-                    int resourceAdds = 0;
-                    int samplerAdds = 0;
-                    foreach (var value in prepared)
-                    {
-                        if (value.Type == DescriptorTableType.Resource)
-                            resourceAdds++;
-                        else
-                            samplerAdds++;
-                    }
-                    _pendingResources.EnsureCapacity(checked(_pendingResources.Count + resourceAdds));
-                    _pendingSamplers.EnsureCapacity(checked(_pendingSamplers.Count + samplerAdds));
-                    _pendingBindings.EnsureCapacity(checked(_pendingBindings.Count + 1));
-                    SetPersistentRangeSlotTypes(owner);
-                }
-                catch
-                {
-                    foreach (var value in prepared)
-                        value.Record.Release();
-                    throw;
-                }
-                foreach (var value in prepared)
-                    ReplacePending(value.Type, value.Index, value.Record);
-                _pendingBindings.Add(owner);
-                Activate(owner.ResourceRange);
-                Activate(owner.SamplerRange);
-            }
-        }
-
-        private static void SetPersistentRangeSlotTypes(
-            D3D12PersistentParameterBindings owner)
-        {
-            foreach (ParameterLeaf leaf in owner.Shape.Leaves)
-            {
-                if (leaf.Unbounded)
-                    continue;
-                DescriptorRange? range = leaf.Heap == ParameterHeap.Sampler
-                    ? owner.SamplerRange
-                    : owner.ResourceRange;
-                if (range is null)
-                    throw new InvalidOperationException("A parameter descriptor range is missing.");
-                for (uint element = 0; element < leaf.DescriptorCount; element++)
-                    range.SetSlotType(checked(leaf.HeapOffset + element), leaf.Type);
-            }
-
-            RequireComplete(owner.ResourceRange);
-            RequireComplete(owner.SamplerRange);
-
-            static void RequireComplete(DescriptorRange? range)
-            {
-                if (range is null)
-                    return;
-                for (uint slot = 0; slot < range.Count; slot++)
-                    _ = range.GetSlotType(slot);
-            }
-        }
-
-        internal void RemoveBindingObject(D3D12PersistentParameterBindings binding)
-        {
-            lock (_gate)
-            {
-                _pendingBindings.Remove(binding);
-                Retire(binding.ResourceRange);
-                Retire(binding.SamplerRange);
             }
         }
 
@@ -511,17 +485,21 @@ public sealed unsafe partial class D3D12Backend
                 Retire(table.Range);
         }
 
-        internal void Publish()
+        internal DescriptorGeneration Publish(
+            CancellationToken cancellationToken = default)
         {
             lock (_gate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
                 _device.ThrowIfUnavailable();
+                cancellationToken.ThrowIfCancellationRequested();
                 StageRetirementTombstones();
                 if (_pendingResources.Count == 0 &&
-                    _pendingSamplers.Count == 0 &&
-                    _pendingBindings.Count == 0)
-                    return;
+                    _pendingSamplers.Count == 0)
+                {
+                    _current.Retain();
+                    return _current;
+                }
                 if (_nextGeneration == ulong.MaxValue)
                 {
                     throw new GraphicsException(
@@ -533,10 +511,12 @@ public sealed unsafe partial class D3D12Backend
                 DescriptorRecord?[] samplers = GrowCopy(_samplers, _nextSampler);
                 ApplyPending(resources, _pendingResources);
                 ApplyPending(samplers, _pendingSamplers);
+                cancellationToken.ThrowIfCancellationRequested();
 
                 DescriptorGeneration candidate = DescriptorGeneration.Create(
                     this,
                     _device,
+                    _nodeMask,
                     _nextGeneration,
                     Math.Max(1u, _nextResource),
                     Math.Max(1u, _nextSampler),
@@ -545,6 +525,7 @@ public sealed unsafe partial class D3D12Backend
                 try
                 {
                     _liveGenerations.Add(candidate.Identity);
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
                 catch
                 {
@@ -555,18 +536,14 @@ public sealed unsafe partial class D3D12Backend
                 DescriptorGeneration previous = _current;
                 CommitArray(ref _resources, resources, _pendingResources);
                 CommitArray(ref _samplers, samplers, _pendingSamplers);
-                _current = candidate;
+                Volatile.Write(ref _current, candidate);
                 _nextGeneration++;
                 MarkActivationsPublished();
-                CommitRetirements(candidate.Identity);
-                foreach (D3D12PersistentParameterBindings binding in _pendingBindings)
-                {
-                    if (!binding.IsDisposed)
-                        binding.CommitPublished(candidate.Identity);
-                }
-                _pendingBindings.Clear();
+                CommitRetirements();
+                candidate.Retain();
                 previous.Release();
                 ReclaimRetiredRanges();
+                return candidate;
             }
         }
 
@@ -588,7 +565,6 @@ public sealed unsafe partial class D3D12Backend
                 _pendingResources.Clear();
                 _pendingSamplers.Clear();
                 _owners.Clear();
-                _pendingBindings.Clear();
                 _resources = [];
                 _samplers = [];
                 _current.Release();
@@ -617,15 +593,24 @@ public sealed unsafe partial class D3D12Backend
         private Dictionary<uint, DescriptorRecord> GetPending(DescriptorTableType type) =>
             type == DescriptorTableType.Resource ? _pendingResources : _pendingSamplers;
 
-        private static void ResetReserved(DescriptorRange range)
+        private static void ResetReserved(DescriptorRange range, ulong identity)
         {
+            range.Identity = identity;
             range.State = DescriptorRangeState.Reserved;
             range.HasPublishedContent = false;
             range.ActivationQueued = false;
             range.ReusableAfterGeneration = 0;
             range.Next = null;
             range.ActivationNext = null;
-            range.SlotTypes = null;
+            range.Slots = null;
+        }
+
+        private ulong AllocateIdentity()
+        {
+            if (_nextAllocationIdentity == ulong.MaxValue)
+                throw new InvalidOperationException(
+                    "The descriptor allocation identity space is exhausted.");
+            return _nextAllocationIdentity++;
         }
 
         private void Activate(DescriptorRange? range)
@@ -723,7 +708,7 @@ public sealed unsafe partial class D3D12Backend
                     ReplacePending(
                         range.Type,
                         checked(range.First + slot),
-                        DescriptorRecord.CreateNull(range.GetSlotType(slot)));
+                        DescriptorRecord.CreateTombstone(range.GetSlot(slot)));
                 }
             }
         }
@@ -743,7 +728,7 @@ public sealed unsafe partial class D3D12Backend
             _pendingActivationTail = null;
         }
 
-        private void CommitRetirements(ulong generation)
+        private void CommitRetirements()
         {
             DescriptorRange? current = _pendingRetirementHead;
             _pendingRetirementHead = null;
@@ -751,14 +736,8 @@ public sealed unsafe partial class D3D12Backend
             while (current is not null)
             {
                 DescriptorRange? next = current.Next;
-                current.State = DescriptorRangeState.Retired;
-                current.ReusableAfterGeneration = generation;
                 current.Next = null;
-                if (_retiredTail is null)
-                    _retiredHead = current;
-                else
-                    _retiredTail.Next = current;
-                _retiredTail = current;
+                Recycle(current);
                 current = next;
             }
         }
@@ -786,7 +765,7 @@ public sealed unsafe partial class D3D12Backend
             range.ActivationQueued = false;
             range.ReusableAfterGeneration = 0;
             range.ActivationNext = null;
-            range.SlotTypes = null;
+            range.Slots = null;
             ref DescriptorRange? head = ref range.Type == DescriptorTableType.Resource
                 ? ref _freeResources
                 : ref _freeSamplers;
@@ -844,6 +823,53 @@ public sealed unsafe partial class D3D12Backend
         private DescriptorRecord CreateBindingRecord(in ResourceBinding binding)
             => CreateBindingRecord(binding, binding.Type);
 
+        internal static DescriptorSlotDesc GetDescriptorSlotDesc(
+            GraphicsObject owner,
+            ResourceBindingType type) => owner switch
+        {
+            BufferCbv => new DescriptorSlotDesc(ResourceBindingType.ConstantBuffer),
+            BufferSrv value => new DescriptorSlotDesc(
+                ResourceBindingType.BufferSrv,
+                value.Description.Format,
+                value.Description.StructureStride),
+            BufferUav value => new DescriptorSlotDesc(
+                ResourceBindingType.BufferUav,
+                value.Description.Format,
+                value.Description.StructureStride,
+                HasCounter: value.Description.CounterBuffer is not null),
+            TextureSrv value => new DescriptorSlotDesc(
+                ResourceBindingType.TextureSrv,
+                value.Description.Format,
+                TextureDimension: value.Description.Dimension,
+                Aspects: value.Description.Range.Aspects),
+            TextureUav value => new DescriptorSlotDesc(
+                ResourceBindingType.TextureUav,
+                value.Description.Format,
+                TextureDimension: value.Description.Dimension,
+                Aspects: value.Description.Range.Aspects),
+            Sampler => new DescriptorSlotDesc(ResourceBindingType.Sampler),
+            AccelerationStructureSrv =>
+                new DescriptorSlotDesc(ResourceBindingType.AccelerationStructure),
+            _ => new DescriptorSlotDesc(type),
+        };
+
+        private DescriptorRecord CreateBindingRecord(
+            in ResourceBinding binding,
+            in DescriptorSlotDesc slot)
+        {
+            if (binding.Value is null)
+                return DescriptorRecord.CreateNull(slot);
+            if (binding.Value is GraphicsObject owner && owner is INativeDescriptor descriptor)
+            {
+                return DescriptorRecord.Create(
+                    descriptor.NativeDescriptor,
+                    owner,
+                    slot.Type,
+                    slot);
+            }
+            throw new ArgumentException("The binding is not a D3D12 descriptor.", nameof(binding));
+        }
+
         private DescriptorRecord CreateBindingRecord(
             in ResourceBinding binding,
             ResourceBindingType expectedType)
@@ -853,10 +879,10 @@ public sealed unsafe partial class D3D12Backend
             if (binding.Value is GraphicsObject owner && owner is INativeDescriptor descriptor)
             {
                 return DescriptorRecord.Create(
-                    _device,
                     descriptor.NativeDescriptor,
                     owner,
-                    expectedType);
+                    expectedType,
+                    new DescriptorSlotDesc(expectedType));
             }
             throw new ArgumentException("The binding is not a D3D12 descriptor.", nameof(binding));
         }
@@ -906,67 +932,72 @@ public sealed unsafe partial class D3D12Backend
 
     private sealed class DescriptorRecord
     {
-        private static readonly DescriptorRecord[] NullRecords =
-        [
-            new(ResourceBindingType.None, immortal: true),
-            new(ResourceBindingType.ConstantBuffer, immortal: true),
-            new(ResourceBindingType.BufferSrv, immortal: true),
-            new(ResourceBindingType.BufferUav, immortal: true),
-            new(ResourceBindingType.TextureSrv, immortal: true),
-            new(ResourceBindingType.TextureUav, immortal: true),
-            new(ResourceBindingType.Sampler, immortal: true),
-            new(ResourceBindingType.AccelerationStructure, immortal: true),
-        ];
-
-        private readonly bool _immortal;
         private DescriptorLease? _source;
         private NativeLease? _resource;
         private NativeLease? _secondaryResource;
         private GraphicsObject? _owner;
         private int _references = 1;
 
-        private DescriptorRecord(ResourceBindingType type, bool immortal = false)
+        private DescriptorRecord(
+            in DescriptorSlotDesc slot,
+            uint visibleNodeMask = uint.MaxValue,
+            bool allowDummySampler = false)
         {
-            Type = type;
-            _immortal = immortal;
+            Slot = slot;
+            VisibleNodeMask = visibleNodeMask;
+            AllowDummySampler = allowDummySampler;
         }
 
-        internal ResourceBindingType Type { get; }
+        internal DescriptorSlotDesc Slot { get; }
+        internal ResourceBindingType Type => Slot.Type;
+        internal bool AllowDummySampler { get; }
+        internal uint VisibleNodeMask { get; }
         internal DescriptorLease? Source => _source;
         internal GraphicsObject? Owner => _owner;
         internal NativeLease? Resource => _resource;
 
         internal static DescriptorRecord CreateNull(ResourceBindingType type)
+            => CreateNull(new DescriptorSlotDesc(type));
+
+        internal static DescriptorRecord CreateNull(in DescriptorSlotDesc slot)
         {
-            if (!Enum.IsDefined(type))
-                throw new ArgumentOutOfRangeException(nameof(type));
-            return NullRecords[(int)type];
+            if (!Enum.IsDefined(slot.Type) || slot.Type == ResourceBindingType.None)
+                throw new ArgumentOutOfRangeException(nameof(slot));
+            return new DescriptorRecord(slot);
+        }
+
+        internal static DescriptorRecord CreateTombstone(in DescriptorSlotDesc slot)
+        {
+            if (!Enum.IsDefined(slot.Type) || slot.Type == ResourceBindingType.None)
+                throw new ArgumentOutOfRangeException(nameof(slot));
+            return new DescriptorRecord(slot, allowDummySampler: true);
         }
 
         internal static DescriptorRecord Create(
-            D3D12Device device,
             DescriptorLease source,
             GraphicsObject owner,
-            ResourceBindingType type)
+            ResourceBindingType type,
+            in DescriptorSlotDesc slot)
         {
-            DescriptorRecord result = new(type);
+            if (slot.Type != type)
+                throw new ArgumentException("Descriptor slot type does not match the descriptor value.", nameof(slot));
+            DescriptorRecord result = new(
+                slot,
+                visibleNodeMask: GetVisibleNodeMask(owner));
             (NativeLease? resource, NativeLease? secondaryResource) =
                 GetResourceLifetimes(owner);
             source.Retain();
             try
             {
-                if (device.RetirementType == RetirementType.Automatic)
+                resource?.Retain();
+                try
                 {
-                    resource?.Retain();
-                    try
-                    {
-                        secondaryResource?.Retain();
-                    }
-                    catch
-                    {
-                        resource?.Release();
-                        throw;
-                    }
+                    secondaryResource?.Retain();
+                }
+                catch
+                {
+                    resource?.Release();
+                    throw;
                 }
             }
             catch
@@ -975,19 +1006,14 @@ public sealed unsafe partial class D3D12Backend
                 throw;
             }
             result._source = source;
-            if (device.RetirementType == RetirementType.Automatic)
-            {
-                result._owner = owner;
-                result._resource = resource;
-                result._secondaryResource = secondaryResource;
-            }
+            result._owner = owner;
+            result._resource = resource;
+            result._secondaryResource = secondaryResource;
             return result;
         }
 
         internal void Retain()
         {
-            if (_immortal)
-                return;
             int current = Volatile.Read(ref _references);
             while (current > 0)
             {
@@ -1004,8 +1030,6 @@ public sealed unsafe partial class D3D12Backend
 
         internal void Release()
         {
-            if (_immortal)
-                return;
             if (Interlocked.Decrement(ref _references) != 0)
                 return;
             Interlocked.Exchange(ref _secondaryResource, null)?.Release();
@@ -1017,22 +1041,40 @@ public sealed unsafe partial class D3D12Backend
         private static (NativeLease? Primary, NativeLease? Secondary)
             GetResourceLifetimes(GraphicsObject owner) => owner switch
         {
-            BufferCbv view => (NativeCast.Buffer(view.Resource).NativeLifetime, null),
-            BufferSrv view => (NativeCast.Buffer(view.Resource).NativeLifetime, null),
+            BufferCbv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
+            BufferSrv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
             BufferUav view => (
-                NativeCast.Buffer(view.Resource).NativeLifetime,
+                RequireD3D12.Buffer(view.Resource).NativeLifetime,
                 view.Description.CounterBuffer is Buffer counter
-                    ? NativeCast.Buffer(counter).NativeLifetime
+                    ? RequireD3D12.Buffer(counter).NativeLifetime
                     : null),
             D3D12SamplerFeedbackUav view => (
                 view.FeedbackResource.NativeLifetime,
                 view.SampledResource.NativeLifetime),
-            TextureSrv view => (NativeCast.Texture(view.Resource).NativeLifetime, null),
-            TextureUav view => (NativeCast.Texture(view.Resource).NativeLifetime, null),
+            TextureSrv view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
+            TextureUav view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
             AccelerationStructureSrv view => (
-                NativeCast.AccelerationStructure(view.Resource).NativeLifetime,
+                RequireD3D12.AccelerationStructure(view.Resource).NativeLifetime,
                 null),
             _ => (null, null),
+        };
+
+        private static uint GetVisibleNodeMask(GraphicsObject owner) => owner switch
+        {
+            BufferCbv view => RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
+            BufferSrv view => RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
+            BufferUav view => view.Description.CounterBuffer is Buffer counter
+                ? RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask &
+                  RequireD3D12.Buffer(counter).Info.VisibleNodeMask
+                : RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
+            D3D12SamplerFeedbackUav view =>
+                view.FeedbackResource.Info.VisibleNodeMask &
+                view.SampledResource.Info.VisibleNodeMask,
+            TextureSrv view => RequireD3D12.Texture(view.Resource).Info.VisibleNodeMask,
+            TextureUav view => RequireD3D12.Texture(view.Resource).Info.VisibleNodeMask,
+            AccelerationStructureSrv view =>
+                RequireD3D12.AccelerationStructure(view.Resource).Storage.Info.VisibleNodeMask,
+            _ => uint.MaxValue,
         };
     }
 
@@ -1071,23 +1113,45 @@ public sealed unsafe partial class D3D12Backend
         internal static DescriptorGeneration Create(
             DescriptorPublisher publisher,
             D3D12Device device,
+            uint nodeMask,
             ulong identity,
             uint resourceCount,
             uint samplerCount,
             DescriptorRecord?[] resources,
             DescriptorRecord?[] samplers)
         {
-            ID3D12DescriptorHeap* resourceHeap = CreateHeap(
-                device,
-                DescriptorHeapType.CbvSrvUav,
-                resourceCount);
+            int retainedCapacity = checked(
+                CountRetainedRecords(resources) + CountRetainedRecords(samplers));
+            DescriptorRecord[] retained = new DescriptorRecord[retainedCapacity];
+            int retainedCount = 0;
+            ID3D12DescriptorHeap* resourceHeap = null;
             ID3D12DescriptorHeap* samplerHeap = null;
-            List<DescriptorRecord> retained = [];
             try
             {
-                samplerHeap = CreateHeap(device, DescriptorHeapType.Sampler, samplerCount);
-                CopyRecords(device, resourceHeap, DescriptorHeapType.CbvSrvUav, resources, retained);
-                CopyRecords(device, samplerHeap, DescriptorHeapType.Sampler, samplers, retained);
+                resourceHeap = CreateHeap(
+                    device,
+                    DescriptorHeapType.CbvSrvUav,
+                    resourceCount,
+                    nodeMask);
+                samplerHeap = CreateHeap(
+                    device,
+                    DescriptorHeapType.Sampler,
+                    samplerCount,
+                    nodeMask);
+                CopyRecords(
+                    device,
+                    resourceHeap,
+                    DescriptorHeapType.CbvSrvUav,
+                    resources,
+                    retained,
+                    ref retainedCount);
+                CopyRecords(
+                    device,
+                    samplerHeap,
+                    DescriptorHeapType.Sampler,
+                    samplers,
+                    retained,
+                    ref retainedCount);
                 return new DescriptorGeneration(
                     publisher,
                     identity,
@@ -1095,20 +1159,19 @@ public sealed unsafe partial class D3D12Backend
                     samplerCount,
                     resourceHeap,
                     samplerHeap,
-                    [.. retained]);
+                    retained);
             }
             catch
             {
-                foreach (DescriptorRecord record in retained)
-                    record.Release();
-                if (samplerHeap is not null)
-                    _ = samplerHeap->Release();
-                _ = resourceHeap->Release();
+                for (int index = 0; index < retainedCount; index++)
+                    retained[index].Release();
+                ReleaseHeap(samplerHeap);
+                ReleaseHeap(resourceHeap);
                 throw;
             }
         }
 
-        internal void Retain()
+        internal bool TryRetain()
         {
             int current = Volatile.Read(ref _references);
             while (current > 0)
@@ -1118,9 +1181,16 @@ public sealed unsafe partial class D3D12Backend
                     checked(current + 1),
                     current);
                 if (exchanged == current)
-                    return;
+                    return true;
                 current = exchanged;
             }
+            return false;
+        }
+
+        internal void Retain()
+        {
+            if (TryRetain())
+                return;
             throw new ObjectDisposedException(nameof(DescriptorGeneration));
         }
 
@@ -1132,12 +1202,10 @@ public sealed unsafe partial class D3D12Backend
                 record.Release();
             ID3D12DescriptorHeap* sampler = _samplers;
             _samplers = null;
-            if (sampler is not null)
-                _ = sampler->Release();
+            ReleaseHeap(sampler);
             ID3D12DescriptorHeap* resources = _resources;
             _resources = null;
-            if (resources is not null)
-                _ = resources->Release();
+            ReleaseHeap(resources);
             _publisher.OnGenerationReleased(Identity);
         }
 
@@ -1146,40 +1214,76 @@ public sealed unsafe partial class D3D12Backend
             ID3D12DescriptorHeap* resourceDestination,
             ID3D12DescriptorHeap* samplerDestination)
         {
-            if (ResourceCount != 0)
-            {
-                device.Native->CopyDescriptorsSimple(
-                    ResourceCount,
-                    resourceDestination->GetCPUDescriptorHandleForHeapStart(),
-                    ResourceHeap->GetCPUDescriptorHandleForHeapStart(),
-                    DescriptorHeapType.CbvSrvUav);
-            }
-            if (SamplerCount != 0)
-            {
-                device.Native->CopyDescriptorsSimple(
-                    SamplerCount,
-                    samplerDestination->GetCPUDescriptorHandleForHeapStart(),
-                    SamplerHeap->GetCPUDescriptorHandleForHeapStart(),
-                    DescriptorHeapType.Sampler);
-            }
+            CopyResourceTo(device, resourceDestination);
+            CopySamplerTo(device, samplerDestination);
+        }
+
+        internal void CopyResourceTo(
+            D3D12Device device,
+            ID3D12DescriptorHeap* destination)
+        {
+            if (ResourceCount == 0)
+                return;
+            device.Native->CopyDescriptorsSimple(
+                ResourceCount,
+                destination->GetCPUDescriptorHandleForHeapStart(),
+                ResourceHeap->GetCPUDescriptorHandleForHeapStart(),
+                DescriptorHeapType.CbvSrvUav);
+        }
+
+        internal void CopySamplerTo(
+            D3D12Device device,
+            ID3D12DescriptorHeap* destination)
+        {
+            if (SamplerCount == 0)
+                return;
+            device.Native->CopyDescriptorsSimple(
+                SamplerCount,
+                destination->GetCPUDescriptorHandleForHeapStart(),
+                SamplerHeap->GetCPUDescriptorHandleForHeapStart(),
+                DescriptorHeapType.Sampler);
         }
 
         private static ID3D12DescriptorHeap* CreateHeap(
             D3D12Device device,
             DescriptorHeapType type,
-            uint count)
+            uint count,
+            uint nodeMask)
         {
             DescriptorHeapDesc desc = new(
                 type,
                 count,
                 DescriptorHeapFlags.ShaderVisible,
-                device.EnabledNodeMask);
+                nodeMask);
             ID3D12DescriptorHeap* heap = null;
             Guid iid = ID3D12DescriptorHeap.Guid;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                device,
                 device.Native->CreateDescriptorHeap(&desc, &iid, (void**)&heap),
+                NativeOperationType.Ordinary,
                 "ID3D12Device::CreateDescriptorHeap");
+            SetNativeName(
+                heap,
+                $"Published {type} Descriptor Heap (count={count}, nodeMask=0x{nodeMask:X})");
             return heap;
+        }
+
+        private static void ReleaseHeap(ID3D12DescriptorHeap* heap)
+        {
+            if (heap is null)
+                return;
+            _ = heap->Release();
+        }
+
+        private static int CountRetainedRecords(DescriptorRecord?[] records)
+        {
+            int result = 0;
+            foreach (DescriptorRecord? record in records)
+            {
+                if (record?.Source is not null)
+                    result = checked(result + 1);
+            }
+            return result;
         }
 
         private static void CopyRecords(
@@ -1187,7 +1291,8 @@ public sealed unsafe partial class D3D12Backend
             ID3D12DescriptorHeap* heap,
             DescriptorHeapType type,
             DescriptorRecord?[] records,
-            List<DescriptorRecord> retained)
+            DescriptorRecord[] retained,
+            ref int retainedCount)
         {
             CpuDescriptorHandle destination = heap->GetCPUDescriptorHandleForHeapStart();
             uint increment = device.Native->GetDescriptorHandleIncrementSize(type);
@@ -1198,128 +1303,328 @@ public sealed unsafe partial class D3D12Backend
                     destination.Ptr + checked((nuint)((uint)index * increment)));
                 if (record?.Source is DescriptorLease source)
                 {
-                    device.Native->CopyDescriptorsSimple(1, target, source.Cpu, type);
                     record.Retain();
-                    retained.Add(record);
+                    try
+                    {
+                        retained[retainedCount] = record;
+                        retainedCount++;
+                    }
+                    catch
+                    {
+                        record.Release();
+                        throw;
+                    }
+                    device.Native->CopyDescriptorsSimple(1, target, source.Cpu, type);
                     continue;
                 }
-                if (type == DescriptorHeapType.CbvSrvUav)
+                if (record is not null &&
+                    record.Type == ResourceBindingType.Sampler &&
+                    !record.AllowDummySampler)
                 {
-                    WriteNullResourceDescriptor(
-                        device,
-                        record?.Type ?? ResourceBindingType.TextureSrv,
-                        target);
+                    throw new InvalidOperationException(
+                        "A Sampler DescriptorTable contains an unwritten slot. D3D12 has no null sampler descriptor.");
                 }
-                else
-                {
-                    Silk.NET.Direct3D12.SamplerDesc sampler = new()
-                    {
-                        Filter = Filter.MinMagMipPoint,
-                        AddressU = TextureAddressMode.Clamp,
-                        AddressV = TextureAddressMode.Clamp,
-                        AddressW = TextureAddressMode.Clamp,
-                        ComparisonFunc = ComparisonFunc.Always,
-                        MaxAnisotropy = 1,
-                        MaxLOD = float.MaxValue,
-                    };
-                    device.Native->CreateSampler(&sampler, target);
-                }
+                WriteTypedNullDescriptor(
+                    device,
+                    record?.Slot ?? (type == DescriptorHeapType.Sampler
+                        ? new DescriptorSlotDesc(ResourceBindingType.Sampler)
+                        : new DescriptorSlotDesc(
+                            ResourceBindingType.TextureSrv,
+                            Format.R8G8B8A8UNorm,
+                            TextureDimension: TextureViewDimension.Texture2D)),
+                    target,
+                    allowDummySampler: record is null || record.AllowDummySampler);
             }
         }
+    }
 
-        private static void WriteNullResourceDescriptor(
-            D3D12Device device,
-            ResourceBindingType type,
-            CpuDescriptorHandle destination)
+    private static void WriteTypedNullDescriptor(
+        D3D12Device device,
+        ResourceBindingType type,
+        CpuDescriptorHandle destination) =>
+        WriteTypedNullDescriptor(
+            device,
+            new DescriptorSlotDesc(type),
+            destination,
+            allowDummySampler: true);
+
+    private static void WriteTypedNullDescriptor(
+        D3D12Device device,
+        in DescriptorSlotDesc slot,
+        CpuDescriptorHandle destination,
+        bool allowDummySampler = false)
+    {
+        switch (slot.Type)
         {
-            switch (type)
-            {
-                case ResourceBindingType.ConstantBuffer:
-                    device.Native->CreateConstantBufferView(null, destination);
-                    return;
-                case ResourceBindingType.BufferSrv:
+            case ResourceBindingType.ConstantBuffer:
+                device.Native->CreateConstantBufferView(null, destination);
+                return;
+            case ResourceBindingType.BufferSrv:
+                WriteNullBufferSrv(device, slot, destination);
+                return;
+            case ResourceBindingType.BufferUav:
+                WriteNullBufferUav(device, slot, destination);
+                return;
+            case ResourceBindingType.TextureUav:
+                WriteNullTextureUav(device, slot, destination);
+                return;
+            case ResourceBindingType.AccelerationStructure:
+                WriteNullAccelerationStructure(device, destination);
+                return;
+            case ResourceBindingType.Sampler:
+                if (!allowDummySampler)
                 {
-                    ShaderResourceViewDesc native = new()
-                    {
-                        Format = Silk.NET.DXGI.Format.FormatR32Uint,
-                        ViewDimension = SrvDimension.Buffer,
-                        Shader4ComponentMapping = 5768,
-                    };
-                    native.Buffer = new Silk.NET.Direct3D12.BufferSrv { NumElements = 1 };
-                    device.Native->CreateShaderResourceView(null, &native, destination);
-                    return;
+                    throw new InvalidOperationException(
+                        "D3D12 has no null sampler descriptor; write a concrete Sampler before publication.");
                 }
-                case ResourceBindingType.BufferUav:
-                {
-                    UnorderedAccessViewDesc native = new()
-                    {
-                        Format = Silk.NET.DXGI.Format.FormatR32Uint,
-                        ViewDimension = UavDimension.Buffer,
-                    };
-                    native.Buffer = new Silk.NET.Direct3D12.BufferUav { NumElements = 1 };
-                    device.Native->CreateUnorderedAccessView(null, null, &native, destination);
-                    return;
-                }
-                case ResourceBindingType.TextureUav:
-                {
-                    UnorderedAccessViewDesc native = new()
-                    {
-                        Format = Silk.NET.DXGI.Format.FormatR8G8B8A8Unorm,
-                        ViewDimension = UavDimension.Texture2D,
-                    };
-                    device.Native->CreateUnorderedAccessView(null, null, &native, destination);
-                    return;
-                }
-                case ResourceBindingType.AccelerationStructure:
-                {
-                    ShaderResourceViewDesc native = new()
-                    {
-                        Format = Silk.NET.DXGI.Format.FormatUnknown,
-                        ViewDimension = SrvDimension.RaytracingAccelerationStructure,
-                        Shader4ComponentMapping = 5768,
-                    };
-                    native.RaytracingAccelerationStructure =
-                        new RaytracingAccelerationStructureSrv(0);
-                    device.Native->CreateShaderResourceView(null, &native, destination);
-                    return;
-                }
-                case ResourceBindingType.None:
-                case ResourceBindingType.TextureSrv:
-                {
-                    ShaderResourceViewDesc native = new()
-                    {
-                        Format = Silk.NET.DXGI.Format.FormatR8G8B8A8Unorm,
-                        ViewDimension = SrvDimension.Texture2D,
-                        Shader4ComponentMapping = 5768,
-                    };
-                    native.Texture2D = new Tex2DSrv { MipLevels = 1 };
-                    device.Native->CreateShaderResourceView(null, &native, destination);
-                    return;
-                }
-                case ResourceBindingType.Sampler:
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(type));
-            }
+                WriteDummySampler(device, destination);
+                return;
+            case ResourceBindingType.None:
+            case ResourceBindingType.TextureSrv:
+                WriteNullTextureSrv(device, slot, destination);
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(slot));
+        }
+    }
+
+    private static void WriteNullBufferSrv(
+        D3D12Device device,
+        in DescriptorSlotDesc slot,
+        CpuDescriptorHandle destination)
+    {
+        GetNullBufferShape(
+            slot,
+            out Silk.NET.DXGI.Format format,
+            out uint stride,
+            out BufferSrvFlags flags);
+        ShaderResourceViewDesc native = new()
+        {
+            Format = format,
+            ViewDimension = SrvDimension.Buffer,
+            Shader4ComponentMapping = 5768,
+        };
+        native.Buffer = new Silk.NET.Direct3D12.BufferSrv
+        {
+            NumElements = 1,
+            StructureByteStride = stride,
+            Flags = flags,
+        };
+        device.Native->CreateShaderResourceView(null, &native, destination);
+    }
+
+    private static void WriteNullBufferUav(
+        D3D12Device device,
+        in DescriptorSlotDesc slot,
+        CpuDescriptorHandle destination)
+    {
+        GetNullBufferShape(
+            slot,
+            out Silk.NET.DXGI.Format format,
+            out uint stride,
+            out BufferSrvFlags srvFlags);
+        UnorderedAccessViewDesc native = new()
+        {
+            Format = format,
+            ViewDimension = UavDimension.Buffer,
+        };
+        native.Buffer = new Silk.NET.Direct3D12.BufferUav
+        {
+            NumElements = 1,
+            StructureByteStride = stride,
+            Flags = srvFlags == BufferSrvFlags.Raw
+                ? BufferUavFlags.Raw
+                : BufferUavFlags.None,
+        };
+        device.Native->CreateUnorderedAccessView(null, null, &native, destination);
+    }
+
+    private static void WriteNullTextureUav(
+        D3D12Device device,
+        in DescriptorSlotDesc slot,
+        CpuDescriptorHandle destination)
+    {
+        TextureViewDimension dimension = slot.TextureDimension
+            ?? throw new ArgumentException(
+                "A Texture UAV descriptor slot requires TextureDimension.",
+                nameof(slot));
+        Format format = slot.Format
+            ?? throw new ArgumentException(
+                "A Texture UAV descriptor slot requires Format.",
+                nameof(slot));
+        UnorderedAccessViewDesc native = new()
+        {
+            Format = FormatMappings.ToDxgi(format),
+            ViewDimension = ToUavDimension(dimension),
+        };
+        InitializeNullUav(ref native, dimension);
+        device.Native->CreateUnorderedAccessView(null, null, &native, destination);
+    }
+
+    private static void WriteNullAccelerationStructure(
+        D3D12Device device,
+        CpuDescriptorHandle destination)
+    {
+        ShaderResourceViewDesc native = new()
+        {
+            Format = Silk.NET.DXGI.Format.FormatUnknown,
+            ViewDimension = SrvDimension.RaytracingAccelerationStructure,
+            Shader4ComponentMapping = 5768,
+        };
+        native.RaytracingAccelerationStructure = new RaytracingAccelerationStructureSrv(0);
+        device.Native->CreateShaderResourceView(null, &native, destination);
+    }
+
+    private static void WriteDummySampler(
+        D3D12Device device,
+        CpuDescriptorHandle destination)
+    {
+        Silk.NET.Direct3D12.SamplerDesc sampler = new()
+        {
+            Filter = Filter.MinMagMipPoint,
+            AddressU = TextureAddressMode.Clamp,
+            AddressV = TextureAddressMode.Clamp,
+            AddressW = TextureAddressMode.Clamp,
+            ComparisonFunc = ComparisonFunc.Always,
+            MaxAnisotropy = 1,
+            MaxLOD = float.MaxValue,
+        };
+        device.Native->CreateSampler(&sampler, destination);
+    }
+
+    private static void WriteNullTextureSrv(
+        D3D12Device device,
+        in DescriptorSlotDesc slot,
+        CpuDescriptorHandle destination)
+    {
+        TextureViewDimension dimension = slot.TextureDimension
+            ?? TextureViewDimension.Texture2D;
+        Format format = slot.Format ?? Format.R8G8B8A8UNorm;
+        ShaderResourceViewDesc native = new()
+        {
+            Format = FormatMappings.ToShaderViewFormat(format, slot.Aspects),
+            ViewDimension = ToSrvDimension(dimension),
+            Shader4ComponentMapping = 5768,
+        };
+        InitializeNullSrv(ref native, dimension);
+        device.Native->CreateShaderResourceView(null, &native, destination);
+    }
+
+    private static void GetNullBufferShape(
+        in DescriptorSlotDesc slot,
+        out Silk.NET.DXGI.Format format,
+        out uint stride,
+        out BufferSrvFlags flags)
+    {
+        if (slot.Format is Format typed)
+        {
+            format = FormatMappings.ToDxgi(typed);
+            stride = 0;
+            flags = BufferSrvFlags.None;
+            return;
+        }
+        if (slot.StructureStride != 0)
+        {
+            format = Silk.NET.DXGI.Format.FormatUnknown;
+            stride = slot.StructureStride;
+            flags = BufferSrvFlags.None;
+            return;
+        }
+        format = Silk.NET.DXGI.Format.FormatR32Typeless;
+        stride = 0;
+        flags = BufferSrvFlags.Raw;
+    }
+
+    private static void InitializeNullSrv(
+        ref ShaderResourceViewDesc native,
+        TextureViewDimension dimension)
+    {
+        switch (dimension)
+        {
+            case TextureViewDimension.Texture1D:
+                native.Texture1D = new Tex1DSrv { MipLevels = 1 };
+                break;
+            case TextureViewDimension.Texture1DArray:
+                native.Texture1DArray = new Tex1DArraySrv { MipLevels = 1, ArraySize = 1 };
+                break;
+            case TextureViewDimension.Texture2D:
+                native.Texture2D = new Tex2DSrv { MipLevels = 1 };
+                break;
+            case TextureViewDimension.Texture2DArray:
+                native.Texture2DArray = new Tex2DArraySrv { MipLevels = 1, ArraySize = 1 };
+                break;
+            case TextureViewDimension.Texture2DMultisampled:
+                break;
+            case TextureViewDimension.Texture2DMultisampledArray:
+                native.Texture2DMSArray = new Tex2DmsArraySrv { ArraySize = 1 };
+                break;
+            case TextureViewDimension.Cube:
+                native.TextureCube = new TexcubeSrv { MipLevels = 1 };
+                break;
+            case TextureViewDimension.CubeArray:
+                native.TextureCubeArray = new TexcubeArraySrv { MipLevels = 1, NumCubes = 1 };
+                break;
+            case TextureViewDimension.Texture3D:
+                native.Texture3D = new Tex3DSrv { MipLevels = 1 };
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(dimension));
+        }
+    }
+
+    private static void InitializeNullUav(
+        ref UnorderedAccessViewDesc native,
+        TextureViewDimension dimension)
+    {
+        switch (dimension)
+        {
+            case TextureViewDimension.Texture1D:
+                native.Texture1D = new Tex1DUav();
+                break;
+            case TextureViewDimension.Texture1DArray:
+                native.Texture1DArray = new Tex1DArrayUav { ArraySize = 1 };
+                break;
+            case TextureViewDimension.Texture2D:
+                native.Texture2D = new Tex2DUav();
+                break;
+            case TextureViewDimension.Texture2DArray:
+            case TextureViewDimension.Cube:
+            case TextureViewDimension.CubeArray:
+                native.ViewDimension = UavDimension.Texture2Darray;
+                native.Texture2DArray = new Tex2DArrayUav { ArraySize = 1 };
+                break;
+            case TextureViewDimension.Texture3D:
+                native.Texture3D = new Tex3DUav { WSize = 1 };
+                break;
+            case TextureViewDimension.Texture2DMultisampled:
+            case TextureViewDimension.Texture2DMultisampledArray:
+                throw new NotSupportedException("D3D12 does not support multisampled UAV descriptors.");
+            default:
+                throw new ArgumentOutOfRangeException(nameof(dimension));
         }
     }
 
     private sealed class D3D12DescriptorTable : DescriptorTable
     {
         private readonly D3D12Device _device;
-        private int _released;
 
         internal D3D12DescriptorTable(
             D3D12Device device,
+            DescriptorPublisher publisher,
+            DescriptorTableType type,
+            uint nodeIndex,
             DescriptorRange range,
-            ReadOnlySpan<ResourceBindingType> slotTypes,
+            ReadOnlySpan<DescriptorSlotDesc> slots,
             string? label)
-            : base(device, slotTypes, label)
+            : base(device, type, nodeIndex, slots, label)
         {
             _device = device;
+            Publisher = publisher;
             Range = range;
         }
 
         internal D3D12Device NativeDevice => _device;
+        internal DescriptorPublisher Publisher { get; }
         internal DescriptorRange Range { get; }
         internal uint FirstIndex => Range.First;
         internal void CheckSlot(uint slot)
@@ -1331,9 +1636,7 @@ public sealed unsafe partial class D3D12Backend
 
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-            _device.Descriptors.DisposeTable(this);
+            Publisher.DisposeTable(this);
             _device.UnregisterChild(this);
         }
     }
@@ -1341,56 +1644,56 @@ public sealed unsafe partial class D3D12Backend
     private sealed class D3D12PersistentParameterBindings : PersistentParameterBindings
     {
         private readonly D3D12Device _device;
+        private RetainedSlangProgram? _program;
+        private readonly NativeLease _pipelineState;
         private readonly object _gate = new();
-        private D3D12ParameterMaterialization? _pending;
-        private D3D12ParameterMaterialization? _published;
+        private D3D12PersistentParameterData? _current;
         private ulong _nextVersion = 1;
-        private int _released;
 
         internal D3D12PersistentParameterBindings(
             D3D12Device device,
+            D3D12Pipeline ownerPipeline,
+            NativeParameterBinding nativeLayout,
             VariableLayoutReflection layout,
             string? label)
             : base(device, layout, label)
         {
             _device = device;
-            Shape = D3D12ParameterBlockShape.Compile(layout);
-            DescriptorRange? resourceRange = null;
+            OwnerPipeline = ownerPipeline;
+            NativeLayout = nativeLayout;
+            OrdinaryConstantBufferRootParameter =
+                nativeLayout.ResourceTable is null &&
+                nativeLayout.SamplerTable is null &&
+                nativeLayout.OrdinaryRoot is { UsesRootConstants: false } ordinary
+                    ? ordinary.RootParameterIndex
+                    : null;
+            RetainedSlangProgram? program = null;
+            NativeLease? pipelineState = null;
             try
             {
-                resourceRange = Shape.ResourceDescriptorCount == 0
-                    ? null
-                    : device.Descriptors.Reserve(
-                        DescriptorTableType.Resource,
-                        Shape.ResourceDescriptorCount);
-                SamplerRange = Shape.SamplerDescriptorCount == 0
-                    ? null
-                    : device.Descriptors.Reserve(
-                        DescriptorTableType.Sampler,
-                        Shape.SamplerDescriptorCount);
-                ResourceRange = resourceRange;
+                program = ownerPipeline.RetainProgramReference();
+                pipelineState = ownerPipeline.RetainNativeState();
+                _program = program;
+                program = null;
+                _pipelineState = pipelineState;
             }
             catch
             {
-                if (resourceRange is not null)
-                    device.Descriptors.Cancel(resourceRange);
+                pipelineState?.Release();
+                program?.Dispose();
                 throw;
             }
         }
 
         internal D3D12Device NativeDevice => _device;
-        internal D3D12ParameterBlockShape Shape { get; }
-        internal DescriptorRange? ResourceRange { get; }
-        internal DescriptorRange? SamplerRange { get; }
-        internal uint ResourceBaseIndex => ResourceRange?.First ?? 0;
-        internal uint SamplerBaseIndex => SamplerRange?.First ?? 0;
-        internal D3D12ParameterMaterialization? PublishedMaterialization
+        internal D3D12Pipeline OwnerPipeline { get; }
+        internal NativeParameterBinding NativeLayout { get; }
+        internal uint? OrdinaryConstantBufferRootParameter { get; }
+        internal D3D12PersistentParameterData? CurrentData
         {
             [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref _published);
+            get => Volatile.Read(ref _current);
         }
-        internal ReadOnlySpan<byte> PendingOrdinaryData =>
-            _pending?.OrdinaryData ?? ReadOnlySpan<byte>.Empty;
 
         internal void StageReplacement(in ParameterBlockBindings bindings)
         {
@@ -1399,7 +1702,11 @@ public sealed unsafe partial class D3D12Backend
                 ThrowIfDisposed();
                 if (Layout != bindings.Layout)
                     throw new ArgumentException("The parameter layout cannot change during an update.", nameof(bindings));
-                Shape.RequireMaterializationShape(bindings.Resources, bindings.OrdinaryData);
+                RequireNativeParameterBindings(
+                    Layout,
+                    NativeLayout,
+                    bindings.Resources,
+                    bindings.OrdinaryData);
                 if (_nextVersion == ulong.MaxValue)
                 {
                     throw new GraphicsException(
@@ -1407,97 +1714,44 @@ public sealed unsafe partial class D3D12Backend
                         "The persistent-parameter version domain is exhausted.");
                 }
 
-                D3D12ParameterMaterialization candidate =
-                    D3D12ParameterMaterialization.Create(
+                D3D12PersistentParameterData candidate =
+                    D3D12PersistentParameterData.Create(
                         _device,
                         _nextVersion,
                         bindings.Resources,
+                        NativeLayout.Slots,
                         bindings.OrdinaryData,
-                        Shape.UsesOrdinaryConstantBuffer);
-                D3D12ParameterMaterialization? previous = _pending;
-                _pending = candidate;
-                try
-                {
-                    _device.Descriptors.StagePersistentBinding(this, bindings.Resources);
-                    _nextVersion++;
-                }
-                catch
-                {
-                    _pending = previous;
-                    candidate.Release();
-                    throw;
-                }
+                        NativeLayout.OrdinaryRoot is { UsesRootConstants: false });
+                D3D12PersistentParameterData? previous = _current;
+                Volatile.Write(ref _current, candidate);
+                _nextVersion++;
                 previous?.Release();
-            }
-        }
-
-        internal void CommitPublished(ulong generationIdentity)
-        {
-            lock (_gate)
-            {
-                if (_pending is null || IsDisposed)
-                    return;
-                _pending.PublishedGeneration = generationIdentity;
-                D3D12ParameterMaterialization? previous = _published;
-                _published = _pending;
-                _pending = null;
-                MarkPublished();
-                previous?.Release();
-            }
-        }
-
-        internal D3D12ParameterMaterialization CapturePublished(
-            ulong descriptorGeneration)
-        {
-            lock (_gate)
-            {
-                ThrowIfDisposed();
-                D3D12ParameterMaterialization materialization = _published
-                    ?? throw new InvalidOperationException(
-                        "Persistent parameter bindings must be published before recording use.");
-                if (materialization.PublishedGeneration > descriptorGeneration)
-                {
-                    throw new InvalidOperationException(
-                        "The CommandContext captured an older descriptor generation than these bindings.");
-                }
-                materialization.Retain();
-                return materialization;
             }
         }
 
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-            _device.Descriptors.RemoveBindingObject(this);
             lock (_gate)
-            {
-                Interlocked.Exchange(ref _pending, null)?.Release();
-                Interlocked.Exchange(ref _published, null)?.Release();
-            }
+                Interlocked.Exchange(ref _current, null)?.Release();
+            _pipelineState.Release();
+            Interlocked.Exchange(ref _program, null)?.Dispose();
             _device.UnregisterChild(this);
         }
     }
 
-    private static partial class NativeCast
+    private static partial class RequireD3D12
     {
-        internal static D3D12DescriptorTable DescriptorTable(DescriptorTable value)
-        {
-#if DEBUG
-            return (D3D12DescriptorTable)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<DescriptorTable, D3D12DescriptorTable>(ref value);
-#endif
-        }
+        internal static D3D12DescriptorTable DescriptorTable(DescriptorTable value) =>
+            value as D3D12DescriptorTable ??
+            throw new ArgumentException(
+                "The DescriptorTable was not created by the Direct3D 12 backend.",
+                nameof(value));
 
         internal static D3D12PersistentParameterBindings PersistentParameterBindings(
-            PersistentParameterBindings value)
-        {
-#if DEBUG
-            return (D3D12PersistentParameterBindings)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<PersistentParameterBindings, D3D12PersistentParameterBindings>(ref value);
-#endif
-        }
+            PersistentParameterBindings value) =>
+            value as D3D12PersistentParameterBindings ??
+            throw new ArgumentException(
+                "The PersistentParameterBindings were not created by the Direct3D 12 backend.",
+                nameof(value));
     }
 }

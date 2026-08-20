@@ -2,28 +2,33 @@ using System.Diagnostics;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using NativeHeapDesc = Silk.NET.Direct3D12.HeapDesc;
+using NativeHeapFlags = Silk.NET.Direct3D12.HeapFlags;
 using NativeResourceDesc = Silk.NET.Direct3D12.ResourceDesc;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     private const uint GenericAll = 0x1000_0000;
 
     public CalibratedTimestampInfo CalibrateTimestamps(Queue queue)
     {
-        D3D12Queue native = NativeCast.Queue(queue);
+        D3D12Queue native = RequireQueue(queue, nameof(queue));
         _ = native.NativeDevice.RequireCapability<CalibratedTimestamps>(nameof(CalibrateTimestamps));
-        lock (native.Gate)
+        using (native.Gate.EnterScope())
         {
             ulong queueFrequency = 0;
             ulong queueCounter = 0;
             ulong cpuCounter = 0;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                native.NativeDevice,
                 native.Native->GetTimestampFrequency(&queueFrequency),
+                NativeOperationType.Ordinary,
                 "ID3D12CommandQueue::GetTimestampFrequency");
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                native.NativeDevice,
                 native.Native->GetClockCalibration(&queueCounter, &cpuCounter),
+                NativeOperationType.Ordinary,
                 "ID3D12CommandQueue::GetClockCalibration");
             return new CalibratedTimestampInfo(
                 checked((long)cpuCounter),
@@ -39,10 +44,13 @@ public sealed unsafe partial class D3D12Backend
         in BufferDesc desc,
         in ImportedResourceState state)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalResources capability =
             nativeDevice.RequireCapability<ExternalResources>(nameof(ImportBuffer));
-        RequireExternalHandleType(capability.BufferImportHandleTypes, handle.Type, nameof(ImportBuffer));
+        RequireExternalHandleType(
+            capability.SupportsBufferImport(handle.Type),
+            handle.Type,
+            nameof(ImportBuffer));
         ID3D12Resource* resource = OpenShared<ID3D12Resource>(nativeDevice, handle);
         return ImportBufferCore(nativeDevice, resource, ownsReference: true, desc, state);
     }
@@ -60,7 +68,7 @@ public sealed unsafe partial class D3D12Backend
         in BufferDesc desc,
         in ImportedResourceState state)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<D3D12NativeAccess>(nameof(ImportBuffer));
         _ = nativeDevice.RequireCapability<ExternalResources>(nameof(ImportBuffer));
         bool ownsReference = BeginNativeImport(resource, ownership, nameof(resource));
@@ -73,10 +81,13 @@ public sealed unsafe partial class D3D12Backend
         in TextureDesc desc,
         in ImportedResourceState state)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalResources capability =
             nativeDevice.RequireCapability<ExternalResources>(nameof(ImportTexture));
-        RequireExternalHandleType(capability.TextureImportHandleTypes, handle.Type, nameof(ImportTexture));
+        RequireExternalHandleType(
+            capability.SupportsTextureImport(handle.Type),
+            handle.Type,
+            nameof(ImportTexture));
         ID3D12Resource* resource = OpenShared<ID3D12Resource>(nativeDevice, handle);
         return ImportTextureCore(nativeDevice, resource, ownsReference: true, desc, state);
     }
@@ -94,7 +105,7 @@ public sealed unsafe partial class D3D12Backend
         in TextureDesc desc,
         in ImportedResourceState state)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<D3D12NativeAccess>(nameof(ImportTexture));
         _ = nativeDevice.RequireCapability<ExternalResources>(nameof(ImportTexture));
         bool ownsReference = BeginNativeImport(resource, ownership, nameof(resource));
@@ -106,10 +117,13 @@ public sealed unsafe partial class D3D12Backend
         ExternalHandle handle,
         in HeapDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalResources capability =
             nativeDevice.RequireCapability<ExternalResources>(nameof(ImportHeap));
-        RequireExternalHandleType(capability.HeapImportHandleTypes, handle.Type, nameof(ImportHeap));
+        RequireExternalHandleType(
+            capability.SupportsHeapImport(handle.Type),
+            handle.Type,
+            nameof(ImportHeap));
         ID3D12Heap* heap = OpenShared<ID3D12Heap>(nativeDevice, handle);
         return ImportHeapCore(nativeDevice, heap, ownsReference: true, desc);
     }
@@ -126,7 +140,7 @@ public sealed unsafe partial class D3D12Backend
         NativeObjectOwnership ownership,
         in HeapDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<D3D12NativeAccess>(nameof(ImportHeap));
         _ = nativeDevice.RequireCapability<ExternalResources>(nameof(ImportHeap));
         bool ownsReference = BeginNativeImport(heap, ownership, nameof(heap));
@@ -135,11 +149,14 @@ public sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportBuffer(Buffer buffer, ExternalHandleType type)
     {
-        D3D12Buffer native = NativeCast.Buffer(buffer);
-        D3D12Device device = NativeCast.Device(buffer.Device);
+        D3D12Buffer native = RequireBuffer(buffer);
+        D3D12Device device = RequireDevice(buffer.Device, nameof(buffer));
         ExternalResources capability =
             device.RequireCapability<ExternalResources>(nameof(ExportBuffer));
-        RequireExternalHandleType(capability.BufferExportHandleTypes, type, nameof(ExportBuffer));
+        RequireExternalHandleType(
+            capability.SupportsBufferExport(type),
+            type,
+            nameof(ExportBuffer));
         if ((native.Info.Usages & BufferUsages.Shareable) == 0)
             throw new ArgumentException("The Buffer was not created as shareable.", nameof(buffer));
         return CreateSharedHandle(
@@ -150,11 +167,14 @@ public sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportTexture(Texture texture, ExternalHandleType type)
     {
-        D3D12TextureResource native = NativeCast.Texture(texture);
-        D3D12Device device = NativeCast.Device(texture.Device);
+        D3D12TextureResource native = RequireTexture(texture);
+        D3D12Device device = RequireDevice(texture.Device, nameof(texture));
         ExternalResources capability =
             device.RequireCapability<ExternalResources>(nameof(ExportTexture));
-        RequireExternalHandleType(capability.TextureExportHandleTypes, type, nameof(ExportTexture));
+        RequireExternalHandleType(
+            capability.SupportsTextureExport(type),
+            type,
+            nameof(ExportTexture));
         if ((native.Info.Usages & TextureUsages.Shareable) == 0)
             throw new ArgumentException("The Texture was not created as shareable.", nameof(texture));
         return CreateSharedHandle(
@@ -165,11 +185,14 @@ public sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportHeap(Heap heap, ExternalHandleType type)
     {
-        D3D12Heap native = NativeCast.Heap(heap);
-        D3D12Device device = NativeCast.Device(heap.Device);
+        D3D12Heap native = RequireHeap(heap);
+        D3D12Device device = RequireDevice(heap.Device, nameof(heap));
         ExternalResources capability =
             device.RequireCapability<ExternalResources>(nameof(ExportHeap));
-        RequireExternalHandleType(capability.HeapExportHandleTypes, type, nameof(ExportHeap));
+        RequireExternalHandleType(
+            capability.SupportsHeapExport(type),
+            type,
+            nameof(ExportHeap));
         if ((native.Info.Flags & HeapFlags.Shareable) == 0)
             throw new ArgumentException("The Heap was not created as shareable.", nameof(heap));
         return CreateSharedHandle(
@@ -183,16 +206,18 @@ public sealed unsafe partial class D3D12Backend
         ulong initialValue,
         string? label = null)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<ExternalTimelines>(nameof(CreateExternalTimeline));
         ID3D12Fence* fence = null;
         Guid iid = ID3D12Fence.Guid;
-        NativeCall.ThrowIfFailed(
+        ThrowIfFailed(
+            nativeDevice,
             nativeDevice.Native->CreateFence(
                 initialValue,
                 FenceFlags.Shared,
                 &iid,
                 (void**)&fence),
+            NativeOperationType.Ordinary,
             "ID3D12Device::CreateFence");
         try
         {
@@ -217,10 +242,13 @@ public sealed unsafe partial class D3D12Backend
         ExternalHandle handle,
         string? label = null)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalTimelines capability =
             nativeDevice.RequireCapability<ExternalTimelines>(nameof(ImportTimeline));
-        RequireExternalHandleType(capability.ImportHandleTypes, handle.Type, nameof(ImportTimeline));
+        RequireExternalHandleType(
+            capability.SupportsImport(handle.Type),
+            handle.Type,
+            nameof(ImportTimeline));
         ID3D12Fence* fence = OpenShared<ID3D12Fence>(nativeDevice, handle);
         try
         {
@@ -254,7 +282,18 @@ public sealed unsafe partial class D3D12Backend
             ValidateImportedResourceState(state, texture: false);
             NativeResourceDesc expectedDescription = CreateBufferDescription(desc);
             ValidateImportedResourceDescription(resource->GetDesc(), expectedDescription, "Buffer");
-            MemoryRequirements requirements = GetBufferMemoryRequirements(device, desc);
+            (MemoryType memoryType, uint creationNodeMask, uint visibleNodeMask) =
+                GetImportedResourceHeapProperties(device, resource);
+            ValidateImportedResourceNodePlacement(
+                desc.NodePlacement,
+                creationNodeMask,
+                visibleNodeMask,
+                nameof(desc));
+            ResourceAllocationInfo allocation = device.Native->GetResourceAllocationInfo(
+                visibleNodeMask,
+                1,
+                &expectedDescription);
+            EnsureAllocationInfo(allocation, "Buffer");
             result = new D3D12Buffer(
                 device,
                 heap: null,
@@ -262,9 +301,11 @@ public sealed unsafe partial class D3D12Backend
                 new BufferInfo(
                     desc.Size,
                     desc.Usages,
-                    MemoryType.DeviceLocal,
+                    memoryType,
                     0,
-                    requirements.Size),
+                    allocation.SizeInBytes,
+                    creationNodeMask,
+                    visibleNodeMask),
                 state.Sync,
                 state.Access,
                 desc.Label,
@@ -293,17 +334,43 @@ public sealed unsafe partial class D3D12Backend
         D3D12Texture? result = null;
         try
         {
+            NativeResourceDesc expectedDescription = CreateTextureDescription(desc);
             RequireNativeObjectDevice(device, (ID3D12DeviceChild*)resource, nameof(resource));
             ValidateImportedResourceState(state, texture: true);
             TextureLayout layout = state.Layout!.Value;
-            NativeResourceDesc expectedDescription = CreateTextureDescription(desc);
             ValidateImportedResourceDescription(resource->GetDesc(), expectedDescription, "Texture");
-            MemoryRequirements requirements = GetTextureMemoryRequirements(device, desc);
+            (MemoryType memoryType, uint creationNodeMask, uint visibleNodeMask) =
+                GetImportedResourceHeapProperties(device, resource);
+            ValidateImportedResourceNodePlacement(
+                desc.NodePlacement,
+                creationNodeMask,
+                visibleNodeMask,
+                nameof(desc));
+            ResourceAllocationInfo allocation = device.Native->GetResourceAllocationInfo(
+                visibleNodeMask,
+                1,
+                &expectedDescription);
+            EnsureAllocationInfo(allocation, "Texture");
             result = new D3D12Texture(
                 device,
                 heap: null,
                 resource,
-                CreateTextureInfo(desc, 0, requirements.Size),
+                new TextureInfo(
+                    desc.Dimension,
+                    desc.Width,
+                    desc.Height,
+                    desc.Depth,
+                    desc.MipLevelCount,
+                    desc.ArrayLayerCount,
+                    desc.SampleCount,
+                    desc.Format,
+                    desc.Usages,
+                    memoryType,
+                    desc.PermittedViewFormats,
+                    0,
+                    allocation.SizeInBytes,
+                    creationNodeMask,
+                    visibleNodeMask),
                 desc.Label,
                 state.Sync,
                 state.Access,
@@ -360,6 +427,65 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
+    private static (MemoryType MemoryType, uint CreationNodeMask, uint VisibleNodeMask)
+        GetImportedResourceHeapProperties(
+            D3D12Device device,
+            ID3D12Resource* resource)
+    {
+        HeapProperties properties = default;
+        NativeHeapFlags flags = default;
+        ThrowIfFailed(
+            device,
+            resource->GetHeapProperties(&properties, &flags),
+            NativeOperationType.Ordinary,
+            "ID3D12Resource::GetHeapProperties");
+
+        MemoryType memoryType = properties.Type switch
+        {
+            HeapType.Default => MemoryType.DeviceLocal,
+            HeapType.Upload => MemoryType.Upload,
+            HeapType.Readback => MemoryType.Readback,
+            HeapType.Custom => properties.CPUPageProperty switch
+            {
+                CpuPageProperty.WriteCombine => MemoryType.Upload,
+                CpuPageProperty.WriteBack => MemoryType.Readback,
+                CpuPageProperty.NotAvailable => MemoryType.DeviceLocal,
+                _ => throw new NotSupportedException(
+                    "The imported custom Heap has no portable RHI memory class."),
+            },
+            _ => throw new NotSupportedException(
+                "The imported resource reports an unsupported D3D12 Heap type."),
+        };
+
+        uint creation = properties.CreationNodeMask == 0
+            ? device.PrimaryNodeMask
+            : properties.CreationNodeMask;
+        uint visible = properties.VisibleNodeMask == 0
+            ? creation
+            : properties.VisibleNodeMask;
+        _ = device.ResolveResourcePlacement(
+            new ResourceNodePlacement(creation, visible),
+            nameof(resource));
+        return (memoryType, creation, visible);
+    }
+
+    private static void ValidateImportedResourceNodePlacement(
+        in ResourceNodePlacement requested,
+        uint creationNodeMask,
+        uint visibleNodeMask,
+        string parameterName)
+    {
+        if (requested.CreationNodeMask == 0 && requested.VisibleNodeMask == 0)
+            return;
+        if (requested.CreationNodeMask != creationNodeMask ||
+            requested.VisibleNodeMask != visibleNodeMask)
+        {
+            throw new ArgumentException(
+                "The imported resource node placement does not match the native resource.",
+                parameterName);
+        }
+    }
+
     private static bool BeginNativeImport(
         void* value,
         NativeObjectOwnership ownership,
@@ -384,8 +510,10 @@ public sealed unsafe partial class D3D12Backend
         try
         {
             Guid iid = ID3D12Device10.Guid;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                expected,
                 value->GetDevice(&iid, (void**)&actual),
+                NativeOperationType.Ordinary,
                 "ID3D12DeviceChild::GetDevice");
             if (actual != expected.Native)
             {
@@ -487,11 +615,14 @@ public sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportTimeline(ExternalTimeline timeline, ExternalHandleType type)
     {
-        D3D12ExternalTimeline native = NativeCast.Timeline(timeline);
-        D3D12Device device = NativeCast.Device(timeline.Device);
+        D3D12ExternalTimeline native = RequireTimeline(timeline);
+        D3D12Device device = RequireDevice(timeline.Device, nameof(timeline));
         ExternalTimelines capability =
             device.RequireCapability<ExternalTimelines>(nameof(ExportTimeline));
-        RequireExternalHandleType(capability.ExportHandleTypes, type, nameof(ExportTimeline));
+        RequireExternalHandleType(
+            capability.SupportsExport(type),
+            type,
+            nameof(ExportTimeline));
         return CreateSharedHandle(
             device,
             (ID3D12DeviceChild*)native.Native,
@@ -509,24 +640,22 @@ public sealed unsafe partial class D3D12Backend
             : typeof(T) == typeof(ID3D12Heap)
                 ? ID3D12Heap.Guid
                 : ID3D12Fence.Guid;
-        NativeCall.ThrowIfFailed(
+        ThrowIfFailed(
+            device,
             device.Native->OpenSharedHandle((void*)handle.Value, &iid, (void**)&result),
+            NativeOperationType.Ordinary,
             "ID3D12Device::OpenSharedHandle");
         return result;
     }
 
     private static void RequireExternalHandleType(
-        ExternalHandleTypes supported,
+        bool supported,
         ExternalHandleType type,
         string operation)
     {
-        ExternalHandleTypes required = type switch
-        {
-            ExternalHandleType.OpaqueWin32 => ExternalHandleTypes.OpaqueWin32,
-            ExternalHandleType.OpaqueWin32Kmt => ExternalHandleTypes.OpaqueWin32Kmt,
-            _ => throw new ArgumentOutOfRangeException(nameof(type)),
-        };
-        if ((supported & required) == 0)
+        if (!Enum.IsDefined(type))
+            throw new ArgumentOutOfRangeException(nameof(type));
+        if (!supported)
         {
             throw new NotSupportedException(
                 $"{operation} does not support external handle type {type}.");
@@ -541,13 +670,15 @@ public sealed unsafe partial class D3D12Backend
         if (type != ExternalHandleType.OpaqueWin32)
             throw new NotSupportedException("D3D12 supports NT shared handles through this RHI path.");
         void* handle = null;
-        NativeCall.ThrowIfFailed(
+        ThrowIfFailed(
+            device,
             device.Native->CreateSharedHandle(
                 value,
                 null,
                 GenericAll,
                 (char*)null,
                 &handle),
+            NativeOperationType.Ordinary,
             "ID3D12Device::CreateSharedHandle");
         return new ExternalHandle(
             type,
@@ -559,7 +690,6 @@ public sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly NativeLease _native;
-        private int _released;
 
         internal D3D12ExternalTimeline(
             D3D12Device device,
@@ -574,36 +704,23 @@ public sealed unsafe partial class D3D12Backend
 
         internal ID3D12Fence* Native => (ID3D12Fence*)_native.Pointer;
 
-        internal void RetainSubmission()
-        {
-            if (_device.RetirementType == RetirementType.Automatic)
-                _native.Retain();
-        }
+        internal void RetainSubmission() => _native.Retain();
 
-        internal void ReleaseSubmission()
-        {
-            if (_device.RetirementType == RetirementType.Automatic)
-                _native.Release();
-        }
+        internal void ReleaseSubmission() => _native.Release();
 
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
             _native.Release();
             _device.UnregisterChild(this);
         }
     }
 
-    private static partial class NativeCast
+    private static partial class RequireD3D12
     {
-        internal static D3D12ExternalTimeline Timeline(ExternalTimeline value)
-        {
-#if DEBUG
-            return (D3D12ExternalTimeline)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<ExternalTimeline, D3D12ExternalTimeline>(ref value);
-#endif
-        }
+        internal static D3D12ExternalTimeline Timeline(ExternalTimeline value) =>
+            value as D3D12ExternalTimeline ??
+            throw new ArgumentException(
+                "The ExternalTimeline was not created by the Direct3D 12 backend.",
+                nameof(value));
     }
 }

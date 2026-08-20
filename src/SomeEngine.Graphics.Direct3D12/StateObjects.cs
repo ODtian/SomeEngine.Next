@@ -5,13 +5,14 @@ using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     private static readonly byte[] StateObjectReplayMagic = "SERHISO1"u8.ToArray();
 
     private static CompiledProgramLibrary CompileProgramLibrary(
         IComponentType program,
-        ShaderReflection reflection)
+        ShaderReflection reflection,
+        ReadOnlySpan<EntryPointReflection> entries)
     {
         ArgumentNullException.ThrowIfNull(program);
         if (program.GetSpecializationParamCount() != 0)
@@ -21,33 +22,77 @@ public sealed unsafe partial class D3D12Backend
                 "State-object creation requires a fully specialized Slang program.");
         }
 
-        ISlangBlob? code = null;
-        ISlangBlob? diagnostics = null;
-        try
+        if (entries.IsEmpty)
+            throw new ArgumentException("A state-object library requires at least one Slang entry point.", nameof(entries));
+        byte[][] libraries = new byte[entries.Length][];
+        for (int entryIndex = 0; entryIndex < entries.Length; entryIndex++)
         {
-            SlangResult result = program.GetTargetCode(0, out code!, out diagnostics);
-            if (result.Failed || code is null || code.GetBufferPointer() is null ||
-                code.GetBufferSize() == 0)
+            int reflectionIndex = GetStateObjectEntryPointIndex(reflection, entries[entryIndex]);
+            ISlangBlob? code = null;
+            ISlangBlob? diagnostics = null;
+            try
             {
-                throw new GraphicsException(
-                    GraphicsError.ShaderCompilation,
-                    FormatSlangFailure("Slang state-object DXIL generation failed", diagnostics),
-                    result);
-            }
+                SlangResult result = program.GetEntryPointCode(
+                    reflectionIndex,
+                    0,
+                    out code!,
+                    out diagnostics);
+                if (result.Failed || code is null || code.GetBufferPointer() is null ||
+                    code.GetBufferSize() == 0)
+                {
+                    throw new GraphicsException(
+                        GraphicsError.ShaderCompilation,
+                        FormatSlangFailure(
+                            $"Slang state-object DXIL generation failed for entry " +
+                            $"'{GetStableEntryPointName(entries[entryIndex])}'",
+                            diagnostics),
+                        result);
+                }
 
-            byte[] bytes = new ReadOnlySpan<byte>(
-                (void*)code.GetBufferPointer(),
-                checked((int)code.GetBufferSize())).ToArray();
-            return new CompiledProgramLibrary(
-                bytes,
-                SHA256.HashData(bytes),
-                CreateSlangProgramIdentity(program, reflection));
+                libraries[entryIndex] = new ReadOnlySpan<byte>(
+                    (void*)code.GetBufferPointer(),
+                    checked((int)code.GetBufferSize())).ToArray();
+            }
+            finally
+            {
+                ReleaseSlang(code);
+                ReleaseSlang(diagnostics);
+            }
         }
-        finally
+
+        return new CompiledProgramLibrary(
+            libraries,
+            HashProgramLibraries(libraries),
+            CreateSlangProgramIdentity(program, reflection));
+    }
+
+    private static int GetStateObjectEntryPointIndex(
+        ShaderReflection reflection,
+        EntryPointReflection entry)
+    {
+        for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
-            ReleaseSlang(code);
-            ReleaseSlang(diagnostics);
+            if (reflection.GetEntryPointByIndex(index) == entry)
+                return checked((int)index);
         }
+        throw new ArgumentException(
+            "The state-object entry-point reflection does not belong to the supplied Slang program.",
+            nameof(entry));
+    }
+
+    private static byte[] HashProgramLibraries(ReadOnlySpan<byte[]> libraries)
+    {
+        using MemoryStream stream = new();
+        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(checked((uint)libraries.Length));
+            foreach (byte[] library in libraries)
+            {
+                writer.Write(checked((uint)library.Length));
+                writer.Write(library);
+            }
+        }
+        return SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
     }
 
     private static byte[] CreateSlangProgramIdentity(
@@ -97,10 +142,11 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static string GetStableEntryPointName(EntryPointReflection entryPoint) =>
-        string.IsNullOrWhiteSpace(entryPoint.NameOverride)
-            ? entryPoint.Name
-            : entryPoint.NameOverride;
+    internal static string GetStableEntryPointName(EntryPointReflection entryPoint) =>
+        WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
+
+    internal static string GetStableEntryPointName(string name, string? nameOverride) =>
+        WorkGraphValidation.GetEffectiveEntryPointName(name, nameOverride);
 
     private static void WriteCompiledProgramIdentity(
         BinaryWriter writer,
@@ -110,18 +156,26 @@ public sealed unsafe partial class D3D12Backend
         WriteCanonicalBytes(writer, library.CodeHash);
     }
 
-    private static byte[] ResolveStateObjectReplayCode(
+    private static byte[][] ResolveStateObjectReplayCode(
         D3D12PipelineCache? cache,
         byte family,
         ReadOnlySpan<byte> key,
         CompiledProgramLibrary library)
     {
-        if (cache is null || !cache.TryGet(family, key, out byte[] payload))
-            return library.Code;
+        if (cache is null ||
+            !cache.TryGet(
+                family,
+                key,
+                out D3D12PipelineCache.CacheCandidate? candidate) ||
+            candidate is null)
+        {
+            return library.Libraries;
+        }
+        D3D12PipelineCache.CacheCandidate validCandidate = candidate.Value;
 
         try
         {
-            ReadOnlySpan<byte> source = payload;
+            ReadOnlySpan<byte> source = validCandidate.Payload;
             int minimumLength = checked(
                 StateObjectReplayMagic.Length + sizeof(uint) + sizeof(byte) +
                 32 + 32 + 32 + sizeof(uint));
@@ -142,26 +196,34 @@ public sealed unsafe partial class D3D12Backend
             if (!ReadReplayBytes(source, ref offset, 32).SequenceEqual(library.ProgramIdentity))
                 throw new InvalidDataException("The state-object Slang program identity is invalid.");
             ReadOnlySpan<byte> expectedCodeHash = ReadReplayBytes(source, ref offset, 32);
-            uint codeLength = ReadReplayUInt32(source, ref offset);
-            ReadOnlySpan<byte> code = ReadReplayBytes(
-                source,
-                ref offset,
-                checked((int)codeLength));
+            uint libraryCount = ReadReplayUInt32(source, ref offset);
+            if (libraryCount != library.Libraries.Length)
+                throw new InvalidDataException("The state-object replay library count is invalid.");
+            for (int index = 0; index < library.Libraries.Length; index++)
+            {
+                uint codeLength = ReadReplayUInt32(source, ref offset);
+                byte[] current = library.Libraries[index];
+                if (codeLength != current.Length ||
+                    !ReadReplayBytes(source, ref offset, current.Length).SequenceEqual(current))
+                {
+                    throw new InvalidDataException("The state-object replay library code is invalid.");
+                }
+            }
             if (offset != source.Length ||
-                !expectedCodeHash.SequenceEqual(library.CodeHash) ||
-                !SHA256.HashData(code).AsSpan().SequenceEqual(expectedCodeHash))
+                !expectedCodeHash.SequenceEqual(library.CodeHash))
             {
                 throw new InvalidDataException("The state-object replay code is invalid.");
             }
 
-            return code.ToArray();
+            return library.Libraries;
         }
-        catch (Exception exception) when (exception is not GraphicsException)
+        catch (Exception exception) when (exception is
+            InvalidDataException or
+            EndOfStreamException or
+            OverflowException)
         {
-            throw new GraphicsException(
-                GraphicsError.NativeFailure,
-                "The state-object replay cache section is corrupt.",
-                innerException: exception);
+            _ = validCandidate.Owner.Reject(validCandidate);
+            return library.Libraries;
         }
     }
 
@@ -174,22 +236,39 @@ public sealed unsafe partial class D3D12Backend
         if (cache is null)
             return;
 
-        using MemoryStream stream = new();
-        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        D3D12PipelineCache.CacheAdmission? admission;
+        try
         {
-            writer.Write(StateObjectReplayMagic);
-            writer.Write(StateObjectReplaySchemaVersion);
-            writer.Write(family);
-            writer.Write(key);
-            writer.Write(library.ProgramIdentity);
-            writer.Write(library.CodeHash);
-            writer.Write(checked((uint)library.Code.Length));
-            writer.Write(library.Code);
+            using MemoryStream stream = new();
+            using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+            {
+                writer.Write(StateObjectReplayMagic);
+                writer.Write(StateObjectReplaySchemaVersion);
+                writer.Write(family);
+                writer.Write(key);
+                writer.Write(library.ProgramIdentity);
+                writer.Write(library.CodeHash);
+                writer.Write(checked((uint)library.Libraries.Length));
+                foreach (byte[] code in library.Libraries)
+                {
+                    writer.Write(checked((uint)code.Length));
+                    writer.Write(code);
+                }
+            }
+            admission = cache.PrepareAdmission(
+                family,
+                key,
+                stream.GetBuffer().AsSpan(0, checked((int)stream.Length)),
+                CancellationToken.None);
         }
-        cache.Store(
-            family,
-            key,
-            stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
+        catch (Exception exception) when (exception is
+            OutOfMemoryException or
+            OverflowException or
+            IOException)
+        {
+            return;
+        }
+        _ = cache.CommitAdmission(admission);
     }
 
     private static uint ReadReplayUInt32(ReadOnlySpan<byte> source, ref int offset)
@@ -251,9 +330,7 @@ public sealed unsafe partial class D3D12Backend
                 nameof(entryPoint));
         }
 
-        string name = string.IsNullOrWhiteSpace(entryPoint.NameOverride)
-            ? entryPoint.Name
-            : entryPoint.NameOverride;
+        string name = WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
         if (string.IsNullOrWhiteSpace(name))
             throw new GraphicsException(GraphicsError.ShaderCompilation, $"The {role} export has no Slang name.");
         return name;
@@ -262,16 +339,16 @@ public sealed unsafe partial class D3D12Backend
     private sealed class CompiledProgramLibrary
     {
         internal CompiledProgramLibrary(
-            byte[] code,
+            byte[][] libraries,
             byte[] codeHash,
             byte[] programIdentity)
         {
-            Code = code;
+            Libraries = libraries;
             CodeHash = codeHash;
             ProgramIdentity = programIdentity;
         }
 
-        internal byte[] Code { get; }
+        internal byte[][] Libraries { get; }
         internal byte[] CodeHash { get; }
         internal byte[] ProgramIdentity { get; }
     }
@@ -286,6 +363,7 @@ public sealed unsafe partial class D3D12Backend
             if (count <= 0)
                 throw new ArgumentOutOfRangeException(nameof(count));
             nuint bytes = checked((nuint)count * (nuint)sizeof(T));
+            _allocations.EnsureCapacity(checked(_allocations.Count + 1));
             T* result = (T*)NativeMemory.AllocZeroed(bytes);
             if (result is null)
                 throw new OutOfMemoryException();
@@ -298,6 +376,15 @@ public sealed unsafe partial class D3D12Backend
             ArgumentException.ThrowIfNullOrWhiteSpace(value);
             char* result = Allocate<char>(checked(value.Length + 1));
             value.AsSpan().CopyTo(new Span<char>(result, value.Length));
+            return result;
+        }
+
+        internal byte* Bytes(ReadOnlySpan<byte> value)
+        {
+            if (value.IsEmpty)
+                throw new ArgumentException("A native byte allocation cannot be empty.", nameof(value));
+            byte* result = Allocate<byte>(value.Length);
+            value.CopyTo(new Span<byte>(result, value.Length));
             return result;
         }
 

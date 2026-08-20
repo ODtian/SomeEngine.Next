@@ -12,7 +12,7 @@ using NativeSampleDesc = Silk.NET.DXGI.SampleDesc;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     private static readonly byte[] AttributeSemantic = "ATTRIBUTE\0"u8.ToArray();
 
@@ -21,10 +21,13 @@ public sealed unsafe partial class D3D12Backend
         in GraphicsPipelineDesc desc,
         PipelineCache? cache = null)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ValidateGraphicsDescription(desc);
+        ValidateDynamicStates(nativeDevice, desc.DynamicStates);
+        ValidateDepthBounds(nativeDevice, desc.DepthStencil, desc.DynamicStates);
+        ValidateAttachmentFormats(nativeDevice, desc.Attachments, desc.Blend);
 
         ShaderReflection reflection = GetProgramReflection(desc.Program);
         CompiledShader vertex = CompileShader(
@@ -42,129 +45,74 @@ public sealed unsafe partial class D3D12Backend
         ValidateVertexLocations(desc.Vertex, desc.VertexAttributes);
 
         EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
-        D3D12RootLayout root = D3D12RootLayoutBuilder.Compile(
+        D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
             nativeDevice,
-            desc.Program,
             reflection,
             entries,
+            desc.StaticSamplers,
             PipelineType.Graphics,
             allowInputAssembler: true,
             allowStreamOutput: desc.HasStreamOutput);
 
-        byte[] key = CreateGraphicsPipelineKey(nativeDevice, root, vertex, pixel, desc);
         ID3D12PipelineState* pipelineState = null;
+        NativeLease? nativeState = null;
+        D3D12RootSignatureState? rootToRelease = root;
+        RetainedSlangProgram? retainedProgram = null;
         D3D12ClassicPipeline? result = null;
         nint[] allocatedSemantics = [];
         try
         {
-            InputElementDesc[] inputElements = CreateInputElements(
-                desc.VertexBuffers,
-                desc.VertexAttributes);
-            SODeclarationEntry[] outputElements = [];
-            uint[] outputStrides = [];
-            if (desc.HasStreamOutput)
-            {
-                CreateStreamOutput(
-                    desc.StreamOutput,
-                    out outputElements,
-                    out outputStrides,
-                    out allocatedSemantics);
-            }
+            byte[] key = CreateNativeGraphicsPipeline(
+                nativeDevice,
+                nativeCache,
+                root,
+                vertex,
+                pixel,
+                desc,
+                ref allocatedSemantics,
+                out pipelineState);
 
-            BlendDesc blend = CreateBlend(desc.Blend, desc.Attachments.ColorFormats.Length);
-            RasterizerDesc rasterizer = CreateRasterizer(desc.Rasterizer, desc.Multisample);
-            DepthStencilDesc depthStencil = CreateDepthStencil(desc.DepthStencil);
-            NativeFormat[] colorFormats = CreateColorFormats(desc.Attachments.ColorFormats);
-            byte[]? cachedData = TryGetCachedData(nativeCache, 1, key);
-
-            fixed (byte* vertexCode = vertex.Code)
-            fixed (byte* pixelCode = pixel.Code)
-            fixed (byte* semantic = AttributeSemantic)
-            fixed (InputElementDesc* inputPointer = inputElements)
-            fixed (SODeclarationEntry* outputPointer = outputElements)
-            fixed (uint* stridePointer = outputStrides)
-            fixed (byte* cachedPointer = cachedData)
-            {
-                for (int index = 0; index < inputElements.Length; index++)
-                    inputElements[index].SemanticName = semantic;
-
-                GraphicsPipelineStateDesc native = new()
-                {
-                    PRootSignature = root.Native,
-                    VS = new ShaderBytecode(vertexCode, (nuint)vertex.Code.Length),
-                    PS = new ShaderBytecode(pixelCode, (nuint)pixel.Code.Length),
-                    BlendState = blend,
-                    SampleMask = desc.Multisample.SampleMask,
-                    RasterizerState = rasterizer,
-                    DepthStencilState = depthStencil,
-                    InputLayout = new InputLayoutDesc(
-                        inputPointer,
-                        checked((uint)inputElements.Length)),
-                    IBStripCutValue = ToNativeStripCut(desc.StripCut),
-                    PrimitiveTopologyType = ToNativeTopologyType(desc.Topology),
-                    NumRenderTargets = checked((uint)colorFormats.Length),
-                    DSVFormat = desc.Attachments.DepthStencilFormat is Format depthFormat
-                        ? FormatMappings.ToDxgi(depthFormat)
-                        : NativeFormat.FormatUnknown,
-                    SampleDesc = new NativeSampleDesc(desc.Multisample.SampleCount, 0),
-                    NodeMask = nativeDevice.EnabledNodeMask,
-                    CachedPSO = cachedData is null
-                        ? default
-                        : new CachedPipelineState(cachedPointer, (nuint)cachedData.Length),
-                    Flags = PipelineStateFlags.None,
-                };
-                for (int index = 0; index < colorFormats.Length; index++)
-                    native.RTVFormats[index] = colorFormats[index];
-                if (desc.HasStreamOutput)
-                {
-                    native.StreamOutput = new StreamOutputDesc(
-                        outputPointer,
-                        checked((uint)outputElements.Length),
-                        stridePointer,
-                        checked((uint)outputStrides.Length),
-                        desc.StreamOutput.RasterizedStreamIndex ?? uint.MaxValue);
-                }
-
-                Guid iid = ID3D12PipelineState.Guid;
-                NativeCall.ThrowIfFailed(
-                    nativeDevice.Native->CreateGraphicsPipelineState(
-                        &native,
-                        &iid,
-                        (void**)&pipelineState),
-                    "ID3D12Device::CreateGraphicsPipelineState");
-            }
-
-            StoreCachedData(nativeCache, 1, key, pipelineState);
+            SetNativeName(pipelineState, desc.Label ?? "Graphics Pipeline State");
+            nativeState = new NativeLease(
+                (IUnknown*)pipelineState,
+                ownsReference: true,
+                root.NativeLifetime);
+            pipelineState = null;
+            retainedProgram = RetainProgram(desc.Program);
             result = new D3D12ClassicPipeline(
                 nativeDevice,
-                pipelineState,
+                nativeState,
                 root,
+                retainedProgram,
                 PipelineType.Graphics,
-                ToPipelineSignature(key),
                 desc.Topology,
                 desc.StripCut,
                 desc.DynamicStates,
                 desc.Label);
+            nativeState = null;
+            rootToRelease = null;
+            retainedProgram = null;
             nativeDevice.RegisterChild(result);
+            StoreCachedData(nativeDevice, nativeCache, 1, key, (ID3D12PipelineState*)result.NativeObject);
             return result;
         }
         catch
         {
-            if (result is null)
-            {
-                if (pipelineState is not null)
-                    _ = pipelineState->Release();
-                root.Release();
-            }
+            if (result is not null)
+                result.Dispose();
             else
             {
-                result.Dispose();
+                nativeState?.Release();
+                if (pipelineState is not null)
+                    _ = pipelineState->Release();
+                retainedProgram?.Dispose();
             }
             throw;
         }
         finally
         {
+            rootToRelease?.Release();
             foreach (nint semantic in allocatedSemantics)
             {
                 if (semantic != 0)
@@ -173,12 +121,216 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
+    private byte[] CreateNativeGraphicsPipeline(
+        D3D12Device nativeDevice,
+        D3D12PipelineCache? nativeCache,
+        D3D12RootSignatureState root,
+        in CompiledShader vertex,
+        in CompiledShader pixel,
+        in GraphicsPipelineDesc desc,
+        ref nint[] allocatedSemantics,
+        out ID3D12PipelineState* pipelineState)
+    {
+        byte[] key = CreateGraphicsPipelineKey(nativeDevice, root, vertex, pixel, desc);
+        InputElementDesc[] inputElements = CreateInputElements(
+            desc.VertexBuffers,
+            desc.VertexAttributes);
+        SODeclarationEntry[] outputElements = [];
+        uint[] outputStrides = [];
+        if (desc.HasStreamOutput)
+        {
+            CreateStreamOutput(
+                desc.StreamOutput,
+                out outputElements,
+                out outputStrides,
+                out allocatedSemantics);
+        }
+        BlendDesc blend = CreateBlend(
+            desc.Blend,
+            desc.Attachments.ColorFormats.Length,
+            desc.Multisample.AlphaToCoverage);
+        RasterizerDesc rasterizer = CreateRasterizer(desc.Rasterizer, desc.Multisample);
+        RTFormatArray renderTargets = CreateRenderTargetFormats(desc.Attachments.ColorFormats);
+        D3D12PipelineCache.CacheCandidate? cacheCandidate = TryGetCachedData(nativeCache, 1, key);
+        byte[]? cachedData = cacheCandidate?.Payload;
+
+        fixed (byte* vertexCode = vertex.Code)
+        fixed (byte* pixelCode = pixel.Code)
+        fixed (byte* semantic = AttributeSemantic)
+        fixed (InputElementDesc* inputPointer = inputElements)
+        fixed (SODeclarationEntry* outputPointer = outputElements)
+        fixed (uint* stridePointer = outputStrides)
+        fixed (byte* cachedPointer = cachedData)
+        {
+            for (int index = 0; index < inputElements.Length; index++)
+                inputElements[index].SemanticName = semantic;
+            StreamOutputDesc streamOutput = desc.HasStreamOutput
+                ? new StreamOutputDesc(
+                    outputPointer,
+                    checked((uint)outputElements.Length),
+                    stridePointer,
+                    checked((uint)outputStrides.Length),
+                    desc.StreamOutput.RasterizedStreamIndex ?? uint.MaxValue)
+                : default;
+            ShaderBytecode vertexBytecode = new(vertexCode, (nuint)vertex.Code.Length);
+            ShaderBytecode pixelBytecode = new(pixelCode, (nuint)pixel.Code.Length);
+            InputLayoutDesc inputLayout = new(
+                inputPointer,
+                checked((uint)inputElements.Length));
+            NativeFormat depthStencilFormat = GetDepthStencilFormat(desc.Attachments);
+            NativeSampleDesc sampleDescription = new(desc.Multisample.SampleCount, 0);
+            PipelineStateFlags pipelineFlags = ToPipelineStateFlags(desc.DynamicStates);
+            CachedPipelineState cached = cachedData is null
+                ? default
+                : new CachedPipelineState(cachedPointer, (nuint)cachedData.Length);
+            pipelineState = desc.DepthStencil.DepthBoundsTest
+                ? CreateGraphicsPipelineStateWithCache(
+                    nativeDevice,
+                    cacheCandidate,
+                    root.Native,
+                    vertexBytecode,
+                    pixelBytecode,
+                    streamOutput,
+                    blend,
+                    desc.Multisample.SampleMask,
+                    rasterizer,
+                    CreateDepthStencil1(desc.DepthStencil),
+                    PipelineStateSubobjectType.DepthStencil1,
+                    inputLayout,
+                    ToNativeStripCut(desc.StripCut),
+                    ToNativeTopologyType(desc.Topology),
+                    renderTargets,
+                    depthStencilFormat,
+                    sampleDescription,
+                    cached,
+                    pipelineFlags,
+                    "ID3D12Device2::CreatePipelineState(graphics)")
+                : CreateGraphicsPipelineStateWithCache(
+                    nativeDevice,
+                    cacheCandidate,
+                    root.Native,
+                    vertexBytecode,
+                    pixelBytecode,
+                    streamOutput,
+                    blend,
+                    desc.Multisample.SampleMask,
+                    rasterizer,
+                    CreateDepthStencil(desc.DepthStencil),
+                    PipelineStateSubobjectType.DepthStencil,
+                    inputLayout,
+                    ToNativeStripCut(desc.StripCut),
+                    ToNativeTopologyType(desc.Topology),
+                    renderTargets,
+                    depthStencilFormat,
+                    sampleDescription,
+                    cached,
+                    pipelineFlags,
+                    "ID3D12Device2::CreatePipelineState(graphics)");
+        }
+        return key;
+    }
+
+    private static ID3D12PipelineState* CreateGraphicsPipelineStateWithCache<TDepthStencil>(
+        D3D12Device nativeDevice,
+        D3D12PipelineCache.CacheCandidate? cacheCandidate,
+        ID3D12RootSignature* rootSignature,
+        ShaderBytecode vertex,
+        ShaderBytecode pixel,
+        StreamOutputDesc streamOutput,
+        BlendDesc blend,
+        uint sampleMask,
+        RasterizerDesc rasterizer,
+        TDepthStencil depthStencil,
+        PipelineStateSubobjectType depthStencilType,
+        InputLayoutDesc inputLayout,
+        IndexBufferStripCutValue stripCut,
+        PrimitiveTopologyType topology,
+        in RTFormatArray renderTargets,
+        NativeFormat depthStencilFormat,
+        NativeSampleDesc sampleDescription,
+        CachedPipelineState cached,
+        PipelineStateFlags flags,
+        string operation)
+        where TDepthStencil : unmanaged
+    {
+        ID3D12PipelineState* pipelineState = null;
+        int createResult = CreateGraphicsPipelineState(
+            nativeDevice,
+            rootSignature,
+            vertex,
+            pixel,
+            streamOutput,
+            blend,
+            sampleMask,
+            rasterizer,
+            depthStencil,
+            depthStencilType,
+            inputLayout,
+            stripCut,
+            topology,
+            renderTargets,
+            depthStencilFormat,
+            sampleDescription,
+            cached,
+            flags,
+            &pipelineState);
+        if (cacheCandidate is not null && RetryRejectedCachedPipeline(
+                nativeDevice,
+                cacheCandidate.Value,
+                createResult,
+                ref pipelineState,
+                operation))
+        {
+            createResult = CreateGraphicsPipelineState(
+                nativeDevice,
+                rootSignature,
+                vertex,
+                pixel,
+                streamOutput,
+                blend,
+                sampleMask,
+                rasterizer,
+                depthStencil,
+                depthStencilType,
+                inputLayout,
+                stripCut,
+                topology,
+                renderTargets,
+                depthStencilFormat,
+                sampleDescription,
+                default,
+                flags,
+                &pipelineState);
+        }
+        ThrowIfFailed(
+            nativeDevice,
+            createResult,
+            NativeOperationType.PipelineCreation,
+            operation);
+        return pipelineState;
+    }
+
+    private static RTFormatArray CreateRenderTargetFormats(ReadOnlySpan<Format> formats)
+    {
+        NativeFormat[] nativeFormats = CreateColorFormats(formats);
+        RTFormatArray result = default;
+        result.NumRenderTargets = checked((uint)nativeFormats.Length);
+        for (int index = 0; index < nativeFormats.Length; index++)
+            result.RTFormats[index] = nativeFormats[index];
+        return result;
+    }
+
+    private static NativeFormat GetDepthStencilFormat(in AttachmentFormatSignature attachments) =>
+        attachments.DepthStencilFormat is Format format
+            ? FormatMappings.ToDxgi(format)
+            : NativeFormat.FormatUnknown;
+
     public Pipeline CreateComputePipeline(
         Device device,
         in ComputePipelineDesc desc,
         PipelineCache? cache = null)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ArgumentNullException.ThrowIfNull(desc.Program);
@@ -191,21 +343,26 @@ public sealed unsafe partial class D3D12Backend
             SlangStage.Compute,
             "compute");
         EntryPointReflection[] entries = [desc.Compute];
-        D3D12RootLayout root = D3D12RootLayoutBuilder.Compile(
+        D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
             nativeDevice,
-            desc.Program,
             reflection,
             entries,
+            desc.StaticSamplers.Span,
             PipelineType.Compute,
             allowInputAssembler: false,
             allowStreamOutput: false);
-        byte[] key = CreateComputePipelineKey(nativeDevice, root, compute);
         ID3D12PipelineState* pipelineState = null;
+        NativeLease? nativeState = null;
+        D3D12RootSignatureState? rootToRelease = root;
+        RetainedSlangProgram? retainedProgram = null;
         D3D12ClassicPipeline? result = null;
         try
         {
-            byte[]? cachedData = TryGetCachedData(nativeCache, 2, key);
+            byte[] key = CreateComputePipelineKey(nativeDevice, root, compute);
+            D3D12PipelineCache.CacheCandidate? cacheCandidate =
+                TryGetCachedData(nativeCache, 2, key);
+            byte[]? cachedData = cacheCandidate?.Payload;
             fixed (byte* shaderCode = compute.Code)
             fixed (byte* cachedPointer = cachedData)
             {
@@ -218,41 +375,70 @@ public sealed unsafe partial class D3D12Backend
                         : new CachedPipelineState(cachedPointer, (nuint)cachedData.Length),
                     PipelineStateFlags.None);
                 Guid iid = ID3D12PipelineState.Guid;
-                NativeCall.ThrowIfFailed(
-                    nativeDevice.Native->CreateComputePipelineState(
+                int createResult = nativeDevice.Native->CreateComputePipelineState(
+                    &native,
+                    &iid,
+                    (void**)&pipelineState);
+                if (cacheCandidate is not null && RetryRejectedCachedPipeline(
+                    nativeDevice,
+                    cacheCandidate.Value,
+                    createResult,
+                    ref pipelineState,
+                    "ID3D12Device::CreateComputePipelineState"))
+                {
+                    native.CachedPSO = default;
+                    createResult = nativeDevice.Native->CreateComputePipelineState(
                         &native,
                         &iid,
-                        (void**)&pipelineState),
+                        (void**)&pipelineState);
+                }
+                ThrowIfFailed(
+                    nativeDevice,
+                    createResult,
+                    NativeOperationType.PipelineCreation,
                     "ID3D12Device::CreateComputePipelineState");
             }
 
-            StoreCachedData(nativeCache, 2, key, pipelineState);
+            SetNativeName(pipelineState, desc.Label ?? "Compute Pipeline State");
+            nativeState = new NativeLease(
+                (IUnknown*)pipelineState,
+                ownsReference: true,
+                root.NativeLifetime);
+            pipelineState = null;
+            retainedProgram = RetainProgram(desc.Program);
             result = new D3D12ClassicPipeline(
                 nativeDevice,
-                pipelineState,
+                nativeState,
                 root,
+                retainedProgram,
                 PipelineType.Compute,
-                ToPipelineSignature(key),
                 default,
                 default,
                 DynamicStates.None,
                 desc.Label);
+            nativeState = null;
+            rootToRelease = null;
+            retainedProgram = null;
             nativeDevice.RegisterChild(result);
+            StoreCachedData(nativeDevice, nativeCache, 2, key, (ID3D12PipelineState*)result.NativeObject);
             return result;
         }
         catch
         {
-            if (result is null)
-            {
-                if (pipelineState is not null)
-                    _ = pipelineState->Release();
-                root.Release();
-            }
+            if (result is not null)
+                result.Dispose();
             else
             {
-                result.Dispose();
+                nativeState?.Release();
+                if (pipelineState is not null)
+                    _ = pipelineState->Release();
+                retainedProgram?.Dispose();
             }
             throw;
+        }
+        finally
+        {
+            rootToRelease?.Release();
         }
     }
 
@@ -261,7 +447,7 @@ public sealed unsafe partial class D3D12Backend
         in MeshPipelineDesc desc,
         PipelineCache? cache = null)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         MeshShaders meshCapability =
             nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipeline));
         if (desc.Amplification != EntryPointReflection.Null &&
@@ -272,6 +458,9 @@ public sealed unsafe partial class D3D12Backend
         }
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ValidateMeshDescription(desc);
+        ValidateDynamicStates(nativeDevice, desc.DynamicStates);
+        ValidateDepthBounds(nativeDevice, desc.DepthStencil, desc.DynamicStates);
+        ValidateAttachmentFormats(nativeDevice, desc.Attachments, desc.Blend);
 
         ShaderReflection reflection = GetProgramReflection(desc.Program);
         CompiledShader mesh = CompileShader(
@@ -302,15 +491,85 @@ public sealed unsafe partial class D3D12Backend
             entryList.Add(desc.Amplification);
         if (desc.Pixel != EntryPointReflection.Null)
             entryList.Add(desc.Pixel);
-        D3D12RootLayout root = D3D12RootLayoutBuilder.Compile(
+        D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
             nativeDevice,
-            desc.Program,
             reflection,
             CollectionsMarshal.AsSpan(entryList),
+            desc.StaticSamplers,
             PipelineType.Mesh,
             allowInputAssembler: false,
             allowStreamOutput: false);
+        ID3D12PipelineState* pipelineState = null;
+        NativeLease? nativeState = null;
+        D3D12RootSignatureState? rootToRelease = root;
+        RetainedSlangProgram? retainedProgram = null;
+        D3D12ClassicPipeline? result = null;
+        try
+        {
+            byte[] key = CreateNativeMeshPipeline(
+                nativeDevice,
+                nativeCache,
+                root,
+                mesh,
+                amplification,
+                pixel,
+                desc,
+                out pipelineState);
+
+            SetNativeName(pipelineState, desc.Label ?? "Mesh Pipeline State");
+            nativeState = new NativeLease(
+                (IUnknown*)pipelineState,
+                ownsReference: true,
+                root.NativeLifetime);
+            pipelineState = null;
+            retainedProgram = RetainProgram(desc.Program);
+            result = new D3D12ClassicPipeline(
+                nativeDevice,
+                nativeState,
+                root,
+                retainedProgram,
+                PipelineType.Mesh,
+                PrimitiveTopology.TriangleList,
+                StripCut.Disabled,
+                desc.DynamicStates,
+                desc.Label);
+            nativeState = null;
+            rootToRelease = null;
+            retainedProgram = null;
+            nativeDevice.RegisterChild(result);
+            StoreCachedData(nativeDevice, nativeCache, 3, key, (ID3D12PipelineState*)result.NativeObject);
+            return result;
+        }
+        catch
+        {
+            if (result is not null)
+                result.Dispose();
+            else
+            {
+                nativeState?.Release();
+                if (pipelineState is not null)
+                    _ = pipelineState->Release();
+                retainedProgram?.Dispose();
+            }
+            throw;
+        }
+        finally
+        {
+            rootToRelease?.Release();
+        }
+    }
+
+    private byte[] CreateNativeMeshPipeline(
+        D3D12Device nativeDevice,
+        D3D12PipelineCache? nativeCache,
+        D3D12RootSignatureState root,
+        in CompiledShader mesh,
+        CompiledShader? amplification,
+        CompiledShader? pixel,
+        in MeshPipelineDesc desc,
+        out ID3D12PipelineState* pipelineState)
+    {
         byte[] key = CreateMeshPipelineKey(
             nativeDevice,
             root,
@@ -318,91 +577,144 @@ public sealed unsafe partial class D3D12Backend
             amplification,
             pixel,
             desc);
-        ID3D12PipelineState* pipelineState = null;
-        D3D12ClassicPipeline? result = null;
-        try
+        BlendDesc blend = CreateBlend(
+            desc.Blend,
+            desc.Attachments.ColorFormats.Length,
+            desc.Multisample.AlphaToCoverage);
+        RasterizerDesc rasterizer = CreateRasterizer(desc.Rasterizer, desc.Multisample);
+        RTFormatArray renderTargets = CreateRenderTargetFormats(desc.Attachments.ColorFormats);
+        D3D12PipelineCache.CacheCandidate? cacheCandidate = TryGetCachedData(nativeCache, 3, key);
+        byte[]? cachedData = cacheCandidate?.Payload;
+        fixed (byte* meshCode = mesh.Code)
+        fixed (byte* amplificationCode = amplification?.Code)
+        fixed (byte* pixelCode = pixel?.Code)
+        fixed (byte* cachedPointer = cachedData)
         {
-            BlendDesc blend = CreateBlend(desc.Blend, desc.Attachments.ColorFormats.Length);
-            RasterizerDesc rasterizer = CreateRasterizer(desc.Rasterizer, desc.Multisample);
-            DepthStencilDesc depthStencil = CreateDepthStencil(desc.DepthStencil);
-            NativeFormat[] colorFormats = CreateColorFormats(desc.Attachments.ColorFormats);
-            RTFormatArray renderTargets = default;
-            renderTargets.NumRenderTargets = checked((uint)colorFormats.Length);
-            for (int index = 0; index < colorFormats.Length; index++)
-                renderTargets.RTFormats[index] = colorFormats[index];
-            byte[]? cachedData = TryGetCachedData(nativeCache, 3, key);
-
-            fixed (byte* meshCode = mesh.Code)
-            fixed (byte* amplificationCode = amplification?.Code)
-            fixed (byte* pixelCode = pixel?.Code)
-            fixed (byte* cachedPointer = cachedData)
-            {
-                MeshPipelineStream stream = new(
+            ShaderBytecode amplificationBytecode = amplification is null
+                ? default
+                : new ShaderBytecode(amplificationCode, (nuint)amplification.Code.Length);
+            ShaderBytecode meshBytecode = new(meshCode, (nuint)mesh.Code.Length);
+            ShaderBytecode pixelBytecode = pixel is null
+                ? default
+                : new ShaderBytecode(pixelCode, (nuint)pixel.Code.Length);
+            NativeFormat depthStencilFormat = GetDepthStencilFormat(desc.Attachments);
+            NativeSampleDesc sampleDescription = new(desc.Multisample.SampleCount, 0);
+            PipelineStateFlags pipelineFlags = ToPipelineStateFlags(desc.DynamicStates);
+            CachedPipelineState cached = cachedData is null
+                ? default
+                : new CachedPipelineState(cachedPointer, (nuint)cachedData.Length);
+            pipelineState = desc.DepthStencil.DepthBoundsTest
+                ? CreateMeshPipelineStateWithCache(
+                    nativeDevice,
+                    cacheCandidate,
                     root.Native,
-                    amplification is null
-                        ? default
-                        : new ShaderBytecode(
-                            amplificationCode,
-                            (nuint)amplification.Code.Length),
-                    new ShaderBytecode(meshCode, (nuint)mesh.Code.Length),
-                    pixel is null
-                        ? default
-                        : new ShaderBytecode(pixelCode, (nuint)pixel.Code.Length),
+                    amplificationBytecode,
+                    meshBytecode,
+                    pixelBytecode,
                     blend,
                     desc.Multisample.SampleMask,
                     rasterizer,
-                    depthStencil,
-                    PrimitiveTopologyType.Triangle,
+                    CreateDepthStencil1(desc.DepthStencil),
+                    PipelineStateSubobjectType.DepthStencil1,
                     renderTargets,
-                    desc.Attachments.DepthStencilFormat is Format depthFormat
-                        ? FormatMappings.ToDxgi(depthFormat)
-                        : NativeFormat.FormatUnknown,
-                    new NativeSampleDesc(desc.Multisample.SampleCount, 0),
-                    nativeDevice.EnabledNodeMask,
-                    cachedData is null
-                        ? default
-                        : new CachedPipelineState(cachedPointer, (nuint)cachedData.Length),
-                    PipelineStateFlags.None);
-                PipelineStateStreamDesc native = new((nuint)sizeof(MeshPipelineStream), &stream);
-                Guid iid = ID3D12PipelineState.Guid;
-                int createResult = nativeDevice.Native->CreatePipelineState(
-                    &native,
-                    &iid,
-                    (void**)&pipelineState);
-                ThrowIfDeviceFailed(
+                    depthStencilFormat,
+                    sampleDescription,
+                    cached,
+                    pipelineFlags,
+                    "ID3D12Device2::CreatePipelineState(mesh)")
+                : CreateMeshPipelineStateWithCache(
                     nativeDevice,
-                    createResult,
+                    cacheCandidate,
+                    root.Native,
+                    amplificationBytecode,
+                    meshBytecode,
+                    pixelBytecode,
+                    blend,
+                    desc.Multisample.SampleMask,
+                    rasterizer,
+                    CreateDepthStencil(desc.DepthStencil),
+                    PipelineStateSubobjectType.DepthStencil,
+                    renderTargets,
+                    depthStencilFormat,
+                    sampleDescription,
+                    cached,
+                    pipelineFlags,
                     "ID3D12Device2::CreatePipelineState(mesh)");
-            }
+        }
+        return key;
+    }
 
-            StoreCachedData(nativeCache, 3, key, pipelineState);
-            result = new D3D12ClassicPipeline(
+    private static ID3D12PipelineState* CreateMeshPipelineStateWithCache<TDepthStencil>(
+        D3D12Device nativeDevice,
+        D3D12PipelineCache.CacheCandidate? cacheCandidate,
+        ID3D12RootSignature* rootSignature,
+        ShaderBytecode amplification,
+        ShaderBytecode mesh,
+        ShaderBytecode pixel,
+        BlendDesc blend,
+        uint sampleMask,
+        RasterizerDesc rasterizer,
+        TDepthStencil depthStencil,
+        PipelineStateSubobjectType depthStencilType,
+        in RTFormatArray renderTargets,
+        NativeFormat depthStencilFormat,
+        NativeSampleDesc sampleDescription,
+        CachedPipelineState cached,
+        PipelineStateFlags flags,
+        string operation)
+        where TDepthStencil : unmanaged
+    {
+        ID3D12PipelineState* pipelineState = null;
+        int createResult = CreateMeshPipelineState(
+            nativeDevice,
+            rootSignature,
+            amplification,
+            mesh,
+            pixel,
+            blend,
+            sampleMask,
+            rasterizer,
+            depthStencil,
+            depthStencilType,
+            PrimitiveTopologyType.Triangle,
+            renderTargets,
+            depthStencilFormat,
+            sampleDescription,
+            cached,
+            flags,
+            &pipelineState);
+        if (cacheCandidate is not null && RetryRejectedCachedPipeline(
                 nativeDevice,
-                pipelineState,
-                root,
-                PipelineType.Mesh,
-                ToPipelineSignature(key),
-                PrimitiveTopology.TriangleList,
-                StripCut.Disabled,
-                desc.DynamicStates,
-                desc.Label);
-            nativeDevice.RegisterChild(result);
-            return result;
-        }
-        catch
+                cacheCandidate.Value,
+                createResult,
+                ref pipelineState,
+                operation))
         {
-            if (result is null)
-            {
-                if (pipelineState is not null)
-                    _ = pipelineState->Release();
-                root.Release();
-            }
-            else
-            {
-                result.Dispose();
-            }
-            throw;
+            createResult = CreateMeshPipelineState(
+                nativeDevice,
+                rootSignature,
+                amplification,
+                mesh,
+                pixel,
+                blend,
+                sampleMask,
+                rasterizer,
+                depthStencil,
+                depthStencilType,
+                PrimitiveTopologyType.Triangle,
+                renderTargets,
+                depthStencilFormat,
+                sampleDescription,
+                default,
+                flags,
+                &pipelineState);
         }
+        ThrowIfFailed(
+            nativeDevice,
+            createResult,
+            NativeOperationType.PipelineCreation,
+            operation);
+        return pipelineState;
     }
 
     private static D3D12PipelineCache? GetPipelineCache(
@@ -411,7 +723,12 @@ public sealed unsafe partial class D3D12Backend
     {
         if (cache is null)
             return null;
-        return NativeCast.PipelineCache(cache);
+        D3D12PipelineCache result = RequireD3D12.PipelineCache(cache);
+        if (!ReferenceEquals(result.Device, device))
+            throw new ArgumentException("The PipelineCache belongs to another Device.", nameof(cache));
+        if (result.IsDisposed && !D3D12PipelineCompiler.AllowsDisposedCache(result))
+            throw new ObjectDisposedException(nameof(cache));
+        return result;
     }
 
     private static ShaderReflection GetProgramReflection(IComponentType program)
@@ -424,13 +741,13 @@ public sealed unsafe partial class D3D12Backend
             if (reflection == ShaderReflection.Null)
             {
                 throw new GraphicsException(
-                    GraphicsError.NativeFailure,
+                    GraphicsError.ShaderCompilation,
                     FormatSlangFailure("Slang program layout materialization failed", diagnostics));
             }
             if (program.GetSpecializationParamCount() != 0)
             {
                 throw new GraphicsException(
-                    GraphicsError.NativeFailure,
+                    GraphicsError.PipelineCreation,
                     "Pipeline creation requires a fully specialized Slang program.");
             }
             return reflection;
@@ -486,7 +803,7 @@ public sealed unsafe partial class D3D12Backend
                 code.GetBufferSize() == 0)
             {
                 throw new GraphicsException(
-                    GraphicsError.NativeFailure,
+                    GraphicsError.ShaderCompilation,
                     FormatSlangFailure($"Slang {role} DXIL generation failed", diagnostics),
                     result);
             }
@@ -575,7 +892,14 @@ public sealed unsafe partial class D3D12Backend
             desc.Multisample,
             desc.DepthStencil,
             desc.Blend);
-        if (!Enum.IsDefined(desc.DynamicStates))
+        const DynamicStates knownDynamicStates =
+            DynamicStates.Viewport |
+            DynamicStates.Scissor |
+            DynamicStates.BlendConstants |
+            DynamicStates.StencilReference |
+            DynamicStates.DepthBounds |
+            DynamicStates.DepthBias;
+        if ((desc.DynamicStates & ~knownDynamicStates) != 0)
             throw new ArgumentOutOfRangeException(nameof(desc));
     }
 
@@ -603,6 +927,88 @@ public sealed unsafe partial class D3D12Backend
         if (!blend.Attachments.IsEmpty &&
             blend.Attachments.Length != attachments.ColorFormats.Length)
             throw new ArgumentException("Blend attachment count must equal the color attachment count.", nameof(blend));
+        if (blend.LogicOperation is LogicOperation logicOperation &&
+            !Enum.IsDefined(logicOperation))
+            throw new ArgumentOutOfRangeException(nameof(blend));
+        if (blend.LogicOperation.HasValue)
+        {
+            foreach (BlendAttachmentState attachment in blend.Attachments)
+            {
+                if (attachment.Enabled)
+                {
+                    throw new ArgumentException(
+                        "Logic operations and color blending cannot be enabled together.",
+                        nameof(blend));
+                }
+            }
+        }
+    }
+
+    private static void ValidateDepthBounds(
+        D3D12Device device,
+        in DepthStencilState state,
+        DynamicStates dynamicStates)
+    {
+        if ((dynamicStates & DynamicStates.DepthBounds) != 0 && !state.DepthBoundsTest)
+        {
+            throw new ArgumentException(
+                "Dynamic depth bounds require DepthBoundsTest to be enabled in the Pipeline.",
+                nameof(dynamicStates));
+        }
+        if (state.DepthBoundsTest && !device.Capabilities.SupportsDepthBounds)
+            throw new NotSupportedException("Depth-bounds testing is unavailable on this Device.");
+    }
+
+    private static void ValidateDynamicStates(
+        D3D12Device device,
+        DynamicStates requested)
+    {
+        DynamicStates unsupported =
+            requested & ~device.Capabilities.SupportedDynamicStates;
+        if (unsupported != DynamicStates.None)
+        {
+            throw new NotSupportedException(
+                $"Dynamic Pipeline state {unsupported} is unavailable on this Device.");
+        }
+    }
+
+    private static void ValidateAttachmentFormats(
+        D3D12Device device,
+        in AttachmentFormatSignature attachments,
+        in BlendState blend)
+    {
+        for (int index = 0; index < attachments.ColorFormats.Length; index++)
+        {
+            Format format = attachments.ColorFormats[index];
+            FormatSupport support = device.Capabilities.GetFormatSupport(format);
+            FormatFeatures required = FormatFeatures.ColorAttachment;
+            if (attachments.SampleCount > 1)
+                required |= FormatFeatures.MultisampleColorAttachment;
+            BlendAttachmentState state = blend.Attachments.IsEmpty
+                ? new BlendAttachmentState()
+                : blend.Attachments[index];
+            if (state.Enabled)
+                required |= FormatFeatures.ColorAttachmentBlend;
+            if (blend.LogicOperation.HasValue)
+                required |= FormatFeatures.LogicOperation;
+            if ((support.Features & required) != required ||
+                !support.SupportsSampleCount(attachments.SampleCount))
+            {
+                throw new NotSupportedException(
+                    $"Format {format} does not support the requested Pipeline attachment state.");
+            }
+        }
+
+        if (attachments.DepthStencilFormat is Format depthFormat)
+        {
+            FormatSupport support = device.Capabilities.GetFormatSupport(depthFormat);
+            if ((support.Features & FormatFeatures.DepthStencilAttachment) == 0 ||
+                !support.SupportsSampleCount(attachments.SampleCount))
+            {
+                throw new NotSupportedException(
+                    $"Format {depthFormat} does not support the requested depth/stencil state.");
+            }
+        }
     }
 
     private static VertexBufferLayout FindVertexBuffer(
@@ -701,6 +1107,7 @@ public sealed unsafe partial class D3D12Backend
         declarations = new SODeclarationEntry[state.Elements.Length];
         strides = state.BufferStrides.ToArray();
         List<nint> semantics = [];
+        semantics.EnsureCapacity(state.Elements.Length);
         try
         {
             for (int index = 0; index < declarations.Length; index++)
@@ -744,14 +1151,19 @@ public sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static BlendDesc CreateBlend(in BlendState state, int colorCount)
+    private static BlendDesc CreateBlend(
+        in BlendState state,
+        int colorCount,
+        bool alphaToCoverage)
     {
         BlendDesc result = default;
-        result.AlphaToCoverageEnable = state.Attachments.IsEmpty
-            ? false
-            : false;
+        result.AlphaToCoverageEnable = alphaToCoverage;
         result.IndependentBlendEnable = state.IndependentBlend;
-        BlendAttachmentState defaultState = default;
+        BlendAttachmentState defaultState = new();
+        bool logicOperationEnabled = state.LogicOperation.HasValue;
+        LogicOp logicOperation = state.LogicOperation is LogicOperation operation
+            ? ToNativeLogicOperation(operation)
+            : LogicOp.Copy;
         for (int index = 0; index < 8; index++)
         {
             BlendAttachmentState attachment = index < colorCount && !state.Attachments.IsEmpty
@@ -759,17 +1171,125 @@ public sealed unsafe partial class D3D12Backend
                 : defaultState;
             result.RenderTarget[index] = new RenderTargetBlendDesc(
                 attachment.Enabled,
-                state.LogicOperationEnabled,
+                logicOperationEnabled,
                 ToNativeBlend(attachment.SourceColor),
                 ToNativeBlend(attachment.DestinationColor),
                 ToNativeBlendOperation(attachment.ColorOperation),
                 ToNativeBlend(attachment.SourceAlpha),
                 ToNativeBlend(attachment.DestinationAlpha),
                 ToNativeBlendOperation(attachment.AlphaOperation),
-                LogicOp.Copy,
+                logicOperation,
                 (byte)attachment.WriteMask);
         }
         return result;
+    }
+
+    private static PipelineStateFlags ToPipelineStateFlags(DynamicStates states)
+    {
+        PipelineStateFlags result = PipelineStateFlags.None;
+        if ((states & DynamicStates.DepthBias) != 0)
+            result |= PipelineStateFlags.DynamicDepthBias;
+        if ((states & DynamicStates.StripCut) != 0)
+            result |= PipelineStateFlags.DynamicIndexBufferStripCut;
+        return result;
+    }
+
+    private static int CreateGraphicsPipelineState<TDepthStencil>(
+        D3D12Device device,
+        ID3D12RootSignature* rootSignature,
+        ShaderBytecode vertex,
+        ShaderBytecode pixel,
+        StreamOutputDesc streamOutput,
+        BlendDesc blend,
+        uint sampleMask,
+        RasterizerDesc rasterizer,
+        TDepthStencil depthStencil,
+        PipelineStateSubobjectType depthStencilType,
+        InputLayoutDesc inputLayout,
+        IndexBufferStripCutValue stripCut,
+        PrimitiveTopologyType topology,
+        in RTFormatArray renderTargets,
+        NativeFormat depthStencilFormat,
+        NativeSampleDesc sampleDescription,
+        CachedPipelineState cached,
+        PipelineStateFlags flags,
+        ID3D12PipelineState** pipelineState)
+        where TDepthStencil : unmanaged
+    {
+        GraphicsPipelineStream<TDepthStencil> stream = new(
+            rootSignature,
+            vertex,
+            pixel,
+            streamOutput,
+            blend,
+            sampleMask,
+            rasterizer,
+            depthStencil,
+            depthStencilType,
+            inputLayout,
+            stripCut,
+            topology,
+            renderTargets,
+            depthStencilFormat,
+            sampleDescription,
+            device.EnabledNodeMask,
+            cached,
+            flags);
+        PipelineStateStreamDesc description = new(
+            (nuint)sizeof(GraphicsPipelineStream<TDepthStencil>),
+            &stream);
+        Guid iid = ID3D12PipelineState.Guid;
+        return device.Native->CreatePipelineState(
+            &description,
+            &iid,
+            (void**)pipelineState);
+    }
+
+    private static int CreateMeshPipelineState<TDepthStencil>(
+        D3D12Device device,
+        ID3D12RootSignature* rootSignature,
+        ShaderBytecode amplification,
+        ShaderBytecode mesh,
+        ShaderBytecode pixel,
+        BlendDesc blend,
+        uint sampleMask,
+        RasterizerDesc rasterizer,
+        TDepthStencil depthStencil,
+        PipelineStateSubobjectType depthStencilType,
+        PrimitiveTopologyType topology,
+        in RTFormatArray renderTargets,
+        NativeFormat depthStencilFormat,
+        NativeSampleDesc sampleDescription,
+        CachedPipelineState cached,
+        PipelineStateFlags flags,
+        ID3D12PipelineState** pipelineState)
+        where TDepthStencil : unmanaged
+    {
+        MeshPipelineStream<TDepthStencil> stream = new(
+            rootSignature,
+            amplification,
+            mesh,
+            pixel,
+            blend,
+            sampleMask,
+            rasterizer,
+            depthStencil,
+            depthStencilType,
+            topology,
+            renderTargets,
+            depthStencilFormat,
+            sampleDescription,
+            device.EnabledNodeMask,
+            cached,
+            flags);
+        PipelineStateStreamDesc description = new(
+            (nuint)sizeof(MeshPipelineStream<TDepthStencil>),
+            &stream);
+        Guid iid = ID3D12PipelineState.Guid;
+        return device.Native->CreatePipelineState(
+            &description,
+            &iid,
+            (void**)pipelineState);
     }
 
     private static RasterizerDesc CreateRasterizer(
@@ -804,6 +1324,21 @@ public sealed unsafe partial class D3D12Backend
         state.StencilWriteMask,
         ToNativeStencilFace(state.Front),
         ToNativeStencilFace(state.Back));
+
+    private static DepthStencilDesc1 CreateDepthStencil1(in DepthStencilState state)
+    {
+        DepthStencilDesc1 result = default;
+        result.DepthEnable = state.DepthTest;
+        result.DepthWriteMask = state.DepthWrite ? DepthWriteMask.All : DepthWriteMask.Zero;
+        result.DepthFunc = ToNativeComparison(state.DepthComparison);
+        result.StencilEnable = state.StencilTest;
+        result.StencilReadMask = state.StencilReadMask;
+        result.StencilWriteMask = state.StencilWriteMask;
+        result.FrontFace = ToNativeStencilFace(state.Front);
+        result.BackFace = ToNativeStencilFace(state.Back);
+        result.DepthBoundsTestEnable = state.DepthBoundsTest;
+        return result;
+    }
 
     private static DepthStencilopDesc ToNativeStencilFace(in StencilFaceState state) => new(
         ToNativeStencilOperation(state.Fail),
@@ -843,6 +1378,27 @@ public sealed unsafe partial class D3D12Backend
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
+    private static LogicOp ToNativeLogicOperation(LogicOperation value) => value switch
+    {
+        LogicOperation.Clear => LogicOp.Clear,
+        LogicOperation.Set => LogicOp.Set,
+        LogicOperation.Copy => LogicOp.Copy,
+        LogicOperation.CopyInverted => LogicOp.CopyInverted,
+        LogicOperation.NoOperation => LogicOp.Noop,
+        LogicOperation.Invert => LogicOp.Invert,
+        LogicOperation.And => LogicOp.And,
+        LogicOperation.Nand => LogicOp.Nand,
+        LogicOperation.Or => LogicOp.Or,
+        LogicOperation.Nor => LogicOp.Nor,
+        LogicOperation.Xor => LogicOp.Xor,
+        LogicOperation.Equivalence => LogicOp.Equiv,
+        LogicOperation.AndReverse => LogicOp.AndReverse,
+        LogicOperation.AndInverted => LogicOp.AndInverted,
+        LogicOperation.OrReverse => LogicOp.OrReverse,
+        LogicOperation.OrInverted => LogicOp.OrInverted,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
     private static StencilOp ToNativeStencilOperation(StencilOperation value) => value switch
     {
         StencilOperation.Keep => StencilOp.Keep,
@@ -874,7 +1430,6 @@ public sealed unsafe partial class D3D12Backend
         PrimitiveTopology.PointList => PrimitiveTopologyType.Point,
         PrimitiveTopology.LineList or PrimitiveTopology.LineStrip => PrimitiveTopologyType.Line,
         PrimitiveTopology.TriangleList or PrimitiveTopology.TriangleStrip => PrimitiveTopologyType.Triangle,
-        PrimitiveTopology.PatchList => PrimitiveTopologyType.Patch,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
@@ -896,7 +1451,7 @@ public sealed unsafe partial class D3D12Backend
 
     private static byte[] CreateComputePipelineKey(
         D3D12Device device,
-        D3D12RootLayout root,
+        D3D12RootSignatureState root,
         CompiledShader compute) =>
         CreateCanonicalPipelineKey(
             device,
@@ -907,12 +1462,12 @@ public sealed unsafe partial class D3D12Backend
                 writer.Write(true);
                 WriteCompiledShaderIdentity(writer, compute);
             },
-            writer => WriteClassicRootLayouts(writer, root),
+            writer => WriteClassicRootSignatures(writer, root),
             static _ => { });
 
     private static byte[] CreateGraphicsPipelineKey(
         D3D12Device device,
-        D3D12RootLayout root,
+        D3D12RootSignatureState root,
         CompiledShader vertex,
         CompiledShader pixel,
         in GraphicsPipelineDesc desc)
@@ -929,13 +1484,13 @@ public sealed unsafe partial class D3D12Backend
                 writer.Write(true);
                 WriteCompiledShaderIdentity(writer, pixel);
             },
-            writer => WriteClassicRootLayouts(writer, root),
+            writer => WriteClassicRootSignatures(writer, root),
             data.Write);
     }
 
     private static byte[] CreateMeshPipelineKey(
         D3D12Device device,
-        D3D12RootLayout root,
+        D3D12RootSignatureState root,
         CompiledShader mesh,
         CompiledShader? amplification,
         CompiledShader? pixel,
@@ -957,7 +1512,7 @@ public sealed unsafe partial class D3D12Backend
                 if (pixel is not null)
                     WriteCompiledShaderIdentity(writer, pixel);
             },
-            writer => WriteClassicRootLayouts(writer, root),
+            writer => WriteClassicRootSignatures(writer, root),
             data.Write);
     }
 
@@ -971,22 +1526,51 @@ public sealed unsafe partial class D3D12Backend
         WriteCanonicalBytes(writer, shader.CodeHash);
     }
 
-    private static void WriteClassicRootLayouts(
+    private static void WriteClassicRootSignatures(
         BinaryWriter writer,
-        D3D12RootLayout root)
+        D3D12RootSignatureState root)
     {
         writer.Write(1u);
         WriteCanonicalBytes(writer, root.Serialized);
         writer.Write(0u);
     }
 
-    private static byte[]? TryGetCachedData(
+    private static D3D12PipelineCache.CacheCandidate? TryGetCachedData(
         D3D12PipelineCache? cache,
         byte family,
         ReadOnlySpan<byte> key) =>
-        cache is not null && cache.TryGet(family, key, out byte[] data) ? data : null;
+        cache is not null && cache.TryGet(family, key, out D3D12PipelineCache.CacheCandidate? candidate)
+            ? candidate
+            : null;
+
+    private static bool RetryRejectedCachedPipeline(
+        D3D12Device device,
+        D3D12PipelineCache.CacheCandidate candidate,
+        int result,
+        ref ID3D12PipelineState* pipeline,
+        string operation)
+    {
+        if (result >= 0)
+            return false;
+        if (pipeline is not null)
+        {
+            _ = pipeline->Release();
+            pipeline = null;
+        }
+        if (IsOutOfMemoryCode(result) || IsDirectDeviceRemovalCode(result))
+        {
+            ThrowIfFailed(
+                device,
+                result,
+                NativeOperationType.PipelineCreation,
+                operation);
+        }
+        _ = candidate.Owner.Reject(candidate);
+        return true;
+    }
 
     private static void StoreCachedData(
+        D3D12Device device,
         D3D12PipelineCache? cache,
         byte family,
         ReadOnlySpan<byte> key,
@@ -995,15 +1579,46 @@ public sealed unsafe partial class D3D12Backend
         if (cache is null)
             return;
         ID3D10Blob* blob = null;
-        NativeCall.ThrowIfFailed(
-            pipeline->GetCachedBlob(&blob),
-            "ID3D12PipelineState::GetCachedBlob");
+        int result = pipeline->GetCachedBlob(&blob);
+        if (result < 0)
+        {
+            if (blob is not null)
+                _ = blob->Release();
+            if (IsDirectDeviceRemovalCode(result))
+            {
+                ThrowIfFailed(
+                    device,
+                    result,
+                    NativeOperationType.Ordinary,
+                    "ID3D12PipelineState::GetCachedBlob");
+            }
+            return;
+        }
+        if (blob is null)
+            return;
         try
         {
-            ReadOnlySpan<byte> bytes = new(
-                blob->GetBufferPointer(),
-                checked((int)blob->GetBufferSize()));
-            cache.Store(family, key, bytes);
+            D3D12PipelineCache.CacheAdmission? admission;
+            try
+            {
+                nuint nativeSize = blob->GetBufferSize();
+                void* nativePointer = blob->GetBufferPointer();
+                if (nativeSize > int.MaxValue || (nativeSize != 0 && nativePointer == null))
+                    return;
+                ReadOnlySpan<byte> bytes = new(nativePointer, (int)nativeSize);
+                admission = cache.PrepareAdmission(
+                    family,
+                    key,
+                    bytes,
+                    CancellationToken.None);
+            }
+            catch (Exception exception) when (exception is
+                OutOfMemoryException or
+                OverflowException)
+            {
+                return;
+            }
+            _ = cache.CommitAdmission(admission);
         }
         finally
         {
@@ -1031,52 +1646,196 @@ public sealed unsafe partial class D3D12Backend
         internal byte[] ProgramIdentity { get; }
     }
 
-    private abstract class D3D12Pipeline : Pipeline, ID3D12PipelineArtifact
+    private static T RetainComReference<T>(T value)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        try
+        {
+            void* pointer = ComInterfaceMarshaller<T>.ConvertToUnmanaged(value);
+            try
+            {
+                return UniqueComInterfaceMarshaller<T>.ConvertToManaged(pointer)
+                    ?? throw new InvalidOperationException(
+                        $"The {typeof(T).Name} COM reference could not be materialized.");
+            }
+            finally
+            {
+                ComInterfaceMarshaller<T>.Free(pointer);
+            }
+        }
+        catch (InvalidCastException)
+        {
+            // Managed test and tool implementations have no native COM identity. Holding their
+            // managed object is sufficient for those implementations.
+            return value;
+        }
+    }
+
+    private static void ReleaseComReference<T>(T? value)
+        where T : class
+    {
+        if (value is null)
+            return;
+        object instance = value;
+        if (instance is System.Runtime.InteropServices.Marshalling.ComObject wrapper)
+            wrapper.FinalRelease();
+    }
+
+    private static RetainedSlangProgram RetainProgram(IComponentType program) =>
+        RetainedSlangProgram.Capture(program);
+
+    private sealed class RetainedSlangProgram : IDisposable
+    {
+        private readonly object _gate = new();
+        private IComponentType? _program;
+        private ISession? _session;
+        private IGlobalSession? _globalSession;
+
+        private RetainedSlangProgram(
+            IComponentType program,
+            ISession session,
+            IGlobalSession globalSession)
+        {
+            _program = program;
+            _session = session;
+            _globalSession = globalSession;
+        }
+
+        internal IComponentType Program
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _program
+                        ?? throw new ObjectDisposedException(nameof(RetainedSlangProgram));
+                }
+            }
+        }
+
+        internal static RetainedSlangProgram Capture(IComponentType program)
+        {
+            ArgumentNullException.ThrowIfNull(program);
+            IGlobalSession? globalReference = null;
+            ISession? sessionReference = null;
+            IComponentType? programReference = null;
+            try
+            {
+                ISession session = program.GetSession();
+                IGlobalSession globalSession = session.GetGlobalSession();
+                globalReference = RetainComReference(globalSession);
+                sessionReference = RetainComReference(session);
+                programReference = RetainComReference(program);
+                RetainedSlangProgram result = new(
+                    programReference,
+                    sessionReference,
+                    globalReference);
+                globalReference = null;
+                sessionReference = null;
+                programReference = null;
+                return result;
+            }
+            finally
+            {
+                ReleaseComReference(programReference);
+                ReleaseComReference(sessionReference);
+                ReleaseComReference(globalReference);
+            }
+        }
+
+        internal RetainedSlangProgram Retain()
+        {
+            lock (_gate)
+            {
+                return Capture(
+                    _program
+                    ?? throw new ObjectDisposedException(nameof(RetainedSlangProgram)));
+            }
+        }
+
+        public void Dispose()
+        {
+            IComponentType? program;
+            ISession? session;
+            IGlobalSession? globalSession;
+            lock (_gate)
+            {
+                program = _program;
+                session = _session;
+                globalSession = _globalSession;
+                _program = null;
+                _session = null;
+                _globalSession = null;
+            }
+            ReleaseComReference(program);
+            ReleaseComReference(session);
+            ReleaseComReference(globalSession);
+        }
+    }
+
+    private abstract class D3D12Pipeline : Pipeline
     {
         private readonly D3D12Device _device;
-        private readonly D3D12RootLayout _root;
+        private readonly D3D12RootSignatureState _root;
         private readonly NativeLease _native;
-        private readonly D3D12RootLayout[] _additionalRoots;
-        private int _released;
+        private readonly D3D12RootSignatureState[] _additionalRoots;
+        private readonly NativeLease[] _additionalLeases;
+        private readonly object _programGate = new();
+        private RetainedSlangProgram? _program;
 
         protected D3D12Pipeline(
             D3D12Device device,
-            IUnknown* native,
-            D3D12RootLayout root,
-            ReadOnlySpan<D3D12RootLayout> additionalRoots,
+            NativeLease native,
+            D3D12RootSignatureState root,
+            D3D12RootSignatureState[] additionalRoots,
+            NativeLease[] additionalLeases,
+            RetainedSlangProgram program,
             PipelineType type,
-            in PipelineSignature signature,
             string? label)
-            : base(device, type, signature, label)
+            : base(device, type, label)
         {
             _device = device;
             _root = root;
-            _additionalRoots = additionalRoots.ToArray();
-            _native = new NativeLease(
-                native,
-                ownsReference: true,
-                root.NativeLifetime);
+            _additionalRoots = additionalRoots;
+            _additionalLeases = additionalLeases;
+            _native = native;
+            _program = program;
         }
 
         internal IUnknown* NativeObject => (IUnknown*)_native.Pointer;
-        internal D3D12RootLayout RootLayout => _root;
-        ID3D12RootSignature* ID3D12PipelineArtifact.RootSignature => _root.Native;
-        NativeLease ID3D12PipelineArtifact.NativeLifetime => _native;
-
+        internal NativeLease NativeLifetime => _native;
+        internal D3D12RootSignatureState RootSignature => _root;
+        internal RetainedSlangProgram RetainProgramReference()
+        {
+            lock (_programGate)
+            {
+                RetainedSlangProgram program = _program
+                    ?? throw new ObjectDisposedException(nameof(Pipeline));
+                return program.Retain();
+            }
+        }
+        internal NativeLease RetainNativeState()
+        {
+            _native.Retain();
+            return _native;
+        }
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-            ReleaseAdditional();
             _native.Release();
-            foreach (D3D12RootLayout root in _additionalRoots)
-                root.Release();
+            for (int index = _additionalLeases.Length - 1; index >= 0; index--)
+                _additionalLeases[index].Release();
+            for (int index = _additionalRoots.Length - 1; index >= 0; index--)
+                _additionalRoots[index].Release();
             _root.Release();
+            RetainedSlangProgram? program;
+            lock (_programGate)
+            {
+                program = _program;
+                _program = null;
+            }
+            program?.Dispose();
             _device.UnregisterChild(this);
-        }
-
-        protected virtual void ReleaseAdditional()
-        {
         }
     }
 
@@ -1084,21 +1843,22 @@ public sealed unsafe partial class D3D12Backend
     {
         internal D3D12ClassicPipeline(
             D3D12Device device,
-            ID3D12PipelineState* native,
-            D3D12RootLayout root,
+            NativeLease native,
+            D3D12RootSignatureState root,
+            RetainedSlangProgram program,
             PipelineType type,
-            in PipelineSignature signature,
             PrimitiveTopology topology,
             StripCut stripCut,
             DynamicStates dynamicStates,
             string? label)
             : base(
                 device,
-                (IUnknown*)native,
+                native,
                 root,
-                ReadOnlySpan<D3D12RootLayout>.Empty,
+                [],
+                [],
+                program,
                 type,
-                signature,
                 label)
         {
             Topology = topology;
@@ -1128,7 +1888,72 @@ public sealed unsafe partial class D3D12Backend
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private readonly struct MeshPipelineStream
+    private readonly struct GraphicsPipelineStream<TDepthStencil>
+        where TDepthStencil : unmanaged
+    {
+        internal GraphicsPipelineStream(
+            ID3D12RootSignature* rootSignature,
+            ShaderBytecode vertex,
+            ShaderBytecode pixel,
+            StreamOutputDesc streamOutput,
+            BlendDesc blend,
+            uint sampleMask,
+            RasterizerDesc rasterizer,
+            TDepthStencil depthStencil,
+            PipelineStateSubobjectType depthStencilType,
+            InputLayoutDesc inputLayout,
+            IndexBufferStripCutValue stripCut,
+            PrimitiveTopologyType topology,
+            RTFormatArray renderTargets,
+            NativeFormat depthStencilFormat,
+            NativeSampleDesc sampleDescription,
+            uint nodeMask,
+            CachedPipelineState cached,
+            PipelineStateFlags flags)
+        {
+            RootSignature = new(PipelineStateSubobjectType.RootSignature, (nint)rootSignature);
+            VS = new(PipelineStateSubobjectType.VS, vertex);
+            PS = new(PipelineStateSubobjectType.PS, pixel);
+            StreamOutput = new(PipelineStateSubobjectType.StreamOutput, streamOutput);
+            Blend = new(PipelineStateSubobjectType.Blend, blend);
+            SampleMask = new(PipelineStateSubobjectType.SampleMask, sampleMask);
+            Rasterizer = new(PipelineStateSubobjectType.Rasterizer, rasterizer);
+            DepthStencil = new(depthStencilType, depthStencil);
+            InputLayout = new(PipelineStateSubobjectType.InputLayout, inputLayout);
+            StripCut = new(PipelineStateSubobjectType.IBStripCutValue, stripCut);
+            Topology = new(PipelineStateSubobjectType.PrimitiveTopology, topology);
+            RenderTargets = new(PipelineStateSubobjectType.RenderTargetFormats, renderTargets);
+            DepthStencilFormat = new(
+                PipelineStateSubobjectType.DepthStencilFormat,
+                depthStencilFormat);
+            SampleDescription = new(PipelineStateSubobjectType.SampleDesc, sampleDescription);
+            NodeMask = new(PipelineStateSubobjectType.NodeMask, nodeMask);
+            Cached = new(PipelineStateSubobjectType.CachedPso, cached);
+            Flags = new(PipelineStateSubobjectType.Flags, flags);
+        }
+
+        private readonly PipelineSubobject<nint> RootSignature;
+        private readonly PipelineSubobject<ShaderBytecode> VS;
+        private readonly PipelineSubobject<ShaderBytecode> PS;
+        private readonly PipelineSubobject<StreamOutputDesc> StreamOutput;
+        private readonly BlendPipelineSubobject Blend;
+        private readonly PipelineSubobject<uint> SampleMask;
+        private readonly PipelineSubobject<RasterizerDesc> Rasterizer;
+        private readonly PipelineSubobject<TDepthStencil> DepthStencil;
+        private readonly PipelineSubobject<InputLayoutDesc> InputLayout;
+        private readonly PipelineSubobject<IndexBufferStripCutValue> StripCut;
+        private readonly PipelineSubobject<PrimitiveTopologyType> Topology;
+        private readonly PipelineSubobject<RTFormatArray> RenderTargets;
+        private readonly PipelineSubobject<NativeFormat> DepthStencilFormat;
+        private readonly SampleDescPipelineSubobject SampleDescription;
+        private readonly PipelineSubobject<uint> NodeMask;
+        private readonly PipelineSubobject<CachedPipelineState> Cached;
+        private readonly PipelineSubobject<PipelineStateFlags> Flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct MeshPipelineStream<TDepthStencil>
+        where TDepthStencil : unmanaged
     {
         internal MeshPipelineStream(
             ID3D12RootSignature* rootSignature,
@@ -1138,7 +1963,8 @@ public sealed unsafe partial class D3D12Backend
             BlendDesc blend,
             uint sampleMask,
             RasterizerDesc rasterizer,
-            DepthStencilDesc depthStencil,
+            TDepthStencil depthStencil,
+            PipelineStateSubobjectType depthStencilType,
             PrimitiveTopologyType topology,
             RTFormatArray renderTargets,
             NativeFormat depthStencilFormat,
@@ -1154,7 +1980,7 @@ public sealed unsafe partial class D3D12Backend
             Blend = new(PipelineStateSubobjectType.Blend, blend);
             SampleMask = new(PipelineStateSubobjectType.SampleMask, sampleMask);
             Rasterizer = new(PipelineStateSubobjectType.Rasterizer, rasterizer);
-            DepthStencil = new(PipelineStateSubobjectType.DepthStencil, depthStencil);
+            DepthStencil = new(depthStencilType, depthStencil);
             Topology = new(PipelineStateSubobjectType.PrimitiveTopology, topology);
             RenderTargets = new(PipelineStateSubobjectType.RenderTargetFormats, renderTargets);
             DepthStencilFormat = new(
@@ -1173,7 +1999,7 @@ public sealed unsafe partial class D3D12Backend
         private readonly BlendPipelineSubobject Blend;
         private readonly PipelineSubobject<uint> SampleMask;
         private readonly PipelineSubobject<RasterizerDesc> Rasterizer;
-        private readonly PipelineSubobject<DepthStencilDesc> DepthStencil;
+        private readonly PipelineSubobject<TDepthStencil> DepthStencil;
         private readonly PipelineSubobject<PrimitiveTopologyType> Topology;
         private readonly PipelineSubobject<RTFormatArray> RenderTargets;
         private readonly PipelineSubobject<NativeFormat> DepthStencilFormat;
@@ -1225,7 +2051,7 @@ public sealed unsafe partial class D3D12Backend
         private MultisampleState Multisample { get; init; }
         private DepthStencilState DepthStencil { get; init; }
         private bool IndependentBlend { get; init; }
-        private bool LogicOperation { get; init; }
+        private LogicOperation? LogicOperation { get; init; }
         private Format? DepthFormat { get; init; }
         private DynamicStates DynamicStates { get; init; }
         private bool HasStreamOutput { get; init; }
@@ -1254,7 +2080,7 @@ public sealed unsafe partial class D3D12Backend
                 Multisample = desc.Multisample,
                 DepthStencil = desc.DepthStencil,
                 IndependentBlend = desc.Blend.IndependentBlend,
-                LogicOperation = desc.Blend.LogicOperationEnabled,
+                LogicOperation = desc.Blend.LogicOperation,
                 DepthFormat = desc.Attachments.DepthStencilFormat,
                 DynamicStates = desc.DynamicStates,
                 HasStreamOutput = desc.HasStreamOutput,
@@ -1272,7 +2098,9 @@ public sealed unsafe partial class D3D12Backend
             WriteMultisample(writer, Multisample);
             WriteDepthStencil(writer, DepthStencil);
             writer.Write(IndependentBlend);
-            writer.Write(LogicOperation);
+            writer.Write(LogicOperation.HasValue);
+            if (LogicOperation.HasValue)
+                writer.Write((byte)LogicOperation.Value);
             writer.Write(BlendAttachments.Length);
             foreach (BlendAttachmentState value in BlendAttachments)
                 WriteBlendAttachment(writer, value);
@@ -1320,7 +2148,7 @@ public sealed unsafe partial class D3D12Backend
         private MultisampleState Multisample { get; init; }
         private DepthStencilState DepthStencil { get; init; }
         private bool IndependentBlend { get; init; }
-        private bool LogicOperation { get; init; }
+        private LogicOperation? LogicOperation { get; init; }
         private Format? DepthFormat { get; init; }
         private DynamicStates DynamicStates { get; init; }
 
@@ -1332,7 +2160,7 @@ public sealed unsafe partial class D3D12Backend
             Multisample = desc.Multisample,
             DepthStencil = desc.DepthStencil,
             IndependentBlend = desc.Blend.IndependentBlend,
-            LogicOperation = desc.Blend.LogicOperationEnabled,
+            LogicOperation = desc.Blend.LogicOperation,
             DepthFormat = desc.Attachments.DepthStencilFormat,
             DynamicStates = desc.DynamicStates,
         };
@@ -1343,7 +2171,9 @@ public sealed unsafe partial class D3D12Backend
             WriteMultisample(writer, Multisample);
             WriteDepthStencil(writer, DepthStencil);
             writer.Write(IndependentBlend);
-            writer.Write(LogicOperation);
+            writer.Write(LogicOperation.HasValue);
+            if (LogicOperation.HasValue)
+                writer.Write((byte)LogicOperation.Value);
             writer.Write(BlendAttachments.Length);
             foreach (BlendAttachmentState value in BlendAttachments)
                 WriteBlendAttachment(writer, value);
@@ -1439,15 +2269,12 @@ public sealed unsafe partial class D3D12Backend
         writer.Write((byte)value.WriteMask);
     }
 
-    private static partial class NativeCast
+    private static partial class RequireD3D12
     {
-        internal static D3D12Pipeline Pipeline(Pipeline value)
-        {
-#if DEBUG
-            return (D3D12Pipeline)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<Pipeline, D3D12Pipeline>(ref value);
-#endif
-        }
+        internal static D3D12Pipeline Pipeline(Pipeline value) =>
+            value as D3D12Pipeline ??
+            throw new ArgumentException(
+                "The Pipeline was not created by the Direct3D 12 backend.",
+                nameof(value));
     }
 }

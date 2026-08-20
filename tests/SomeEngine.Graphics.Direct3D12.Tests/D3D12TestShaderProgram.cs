@@ -1,12 +1,27 @@
 using System.Runtime.InteropServices.Marshalling;
+using System.Security.Cryptography;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
-internal readonly record struct D3D12TestShaderEntry(string Name, SlangStage Stage);
+internal readonly record struct D3D12TestShaderEntry(
+    string Name,
+    SlangStage Stage,
+    string? NameOverride = null);
 
 internal sealed class D3D12TestShaderProgram : IDisposable
 {
+    private const string SlangStandardModuleDirectory =
+        SlangToolchainIdentity.StandardModuleDirectory;
+    private const string SlangWorkGraphSourceSha256 =
+        "5AC051E0BBB9E78CAD3D7D368AA76045ADEFE417133182E4B9A783ED711345D7";
+    private const string SlangWorkGraphModuleSha256 =
+        "6CAF5B40D92E1827909AA8EAF670848B7F7693AE429C0DE0E1776456D0865D13";
+    private const string SlangCompilerSha256 =
+        "D8CB09D946242045DE90792635BD1F1F9A5117C9ADF7B8B040BE694F89DFFCB2";
+    private const string SlangGlslangSha256 =
+        "5CE8128D06A3362AF1261EF132A6F6F2C0CEDD3919EFA64E798A68F21A505598";
+
     private static readonly Lazy<IGlobalSession> s_globalSession = new(
         CreateGlobalSession,
         LazyThreadSafetyMode.ExecutionAndPublication);
@@ -40,13 +55,81 @@ internal sealed class D3D12TestShaderProgram : IDisposable
         string moduleName,
         string source,
         ReadOnlySpan<D3D12TestShaderEntry> entries) =>
-        CompileModule(moduleName, source, entries, ".slang");
+        CompileModule(
+            moduleName,
+            source,
+            entries,
+            ".slang",
+            SlangCompileTarget.Dxil,
+            "sm_6_8");
+
+    internal static D3D12TestShaderProgram Compile(
+        string moduleName,
+        string source,
+        ReadOnlySpan<D3D12TestShaderEntry> entries,
+        string profileName) =>
+        CompileModule(
+            moduleName,
+            source,
+            entries,
+            ".slang",
+            SlangCompileTarget.Dxil,
+            profileName);
+
+    internal static D3D12TestShaderProgram CompileExperimental(
+        string moduleName,
+        string source,
+        ReadOnlySpan<D3D12TestShaderEntry> entries,
+        string profileName = "sm_6_8")
+    {
+        string standardModuleRoot = Path.Combine(
+            AppContext.BaseDirectory,
+            SlangStandardModuleDirectory);
+        RequireExperimentalWorkGraphFixture(
+            standardModuleRoot,
+            "workgraph.slang",
+            SlangWorkGraphSourceSha256);
+        RequireExperimentalWorkGraphFixture(
+            standardModuleRoot,
+            "workgraph.slang-module",
+            SlangWorkGraphModuleSha256);
+        RequirePinnedSlang2026_14File(
+            Path.Combine(AppContext.BaseDirectory, "slang-compiler.dll"),
+            SlangCompilerSha256);
+        RequirePinnedSlang2026_14File(
+            Path.Combine(AppContext.BaseDirectory, "slang-glslang.dll"),
+            SlangGlslangSha256);
+        return CompileModule(
+            moduleName,
+            source,
+            entries,
+            ".slang",
+            SlangCompileTarget.Dxil,
+            profileName,
+            standardModuleRoot);
+    }
+
+    internal static D3D12TestShaderProgram CompileForReflection(
+        string moduleName,
+        string source,
+        ReadOnlySpan<D3D12TestShaderEntry> entries,
+        SlangCompileTarget target,
+        string profileName) =>
+        CompileModule(moduleName, source, entries, ".slang", target, profileName);
+
+    internal static SlangTargetFlags TargetFlagsFor(SlangCompileTarget target) =>
+        target == SlangCompileTarget.Spirv
+            ? SlangTargetFlags.GenerateSpirvDirectly
+            : 0;
 
     private static D3D12TestShaderProgram CompileModule(
         string moduleName,
         string source,
         ReadOnlySpan<D3D12TestShaderEntry> entries,
-        string extension)
+        string extension,
+        SlangCompileTarget target,
+        string profileName,
+        string? experimentalStandardModuleRoot = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
@@ -58,23 +141,35 @@ internal sealed class D3D12TestShaderProgram : IDisposable
         try
         {
             IGlobalSession global = s_globalSession.Value;
-            SlangProfileID profile = global.FindProfile("sm_6_8");
+            SlangProfileID profile = global.FindProfile(profileName);
+            CompilerOptionEntry[] options = experimentalStandardModuleRoot is not null
+                ?
+                [
+                    new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1)),
+                    new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
+                    new(CompilerOptionName.ExperimentalFeature, CompilerOptionValue.FromInt(1, 0)),
+                ]
+                :
+                [
+                    new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1)),
+                    new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
+                ];
             SessionDesc description = new()
             {
                 Targets =
                 [
                     new TargetDesc
                     {
-                        Format = SlangCompileTarget.Dxil,
+                        Format = target,
                         Profile = profile,
+                        Flags = TargetFlagsFor(target),
                     },
                 ],
                 DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-                CompilerOptionEntries =
-                [
-                    new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(1, 0)),
-                    new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0, 0)),
-                ],
+                SearchPaths = experimentalStandardModuleRoot is not null
+                    ? [experimentalStandardModuleRoot]
+                    : null,
+                CompilerOptionEntries = options,
             };
             RequireSuccess(
                 global.CreateSession(description, out ISession session),
@@ -110,7 +205,19 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                     $"Slang test entry-point lookup '{request.Name}'",
                     null);
                 Track(entryPoint);
-                components[index + 1] = entryPoint;
+                IComponentType component = entryPoint;
+                if (!string.IsNullOrWhiteSpace(request.NameOverride))
+                {
+                    RequireSuccess(
+                        entryPoint.RenameEntryPoint(
+                            request.NameOverride,
+                            out IComponentType renamedEntryPoint),
+                        $"Slang test entry-point rename '{request.Name}' to " +
+                        $"'{request.NameOverride}'",
+                        null);
+                    component = Track(renamedEntryPoint);
+                }
+                components[index + 1] = component;
             }
 
             SlangResult compose = session.CreateCompositeComponentType(
@@ -192,6 +299,43 @@ internal sealed class D3D12TestShaderProgram : IDisposable
         }
     }
 
+
+    private static void RequireExperimentalWorkGraphFixture(
+        string standardModuleRoot,
+        string fileName,
+        string expectedSha256)
+    {
+        string fixturePath = Path.Combine(
+            standardModuleRoot,
+            "experimental",
+            fileName);
+        RequirePinnedSlang2026_14File(fixturePath, expectedSha256);
+    }
+
+    internal static void RequirePinnedSlang2026_14File(
+        string path,
+        string expectedSha256)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedSha256);
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException(
+                $"Pinned Slang 2026.14 file is missing. " +
+                $"Expected SHA-256 {expectedSha256}; path '{path}'.",
+                path);
+        }
+
+        using FileStream stream = File.OpenRead(path);
+        string actualSha256 = Convert.ToHexString(SHA256.HashData(stream));
+        if (!string.Equals(expectedSha256, actualSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Pinned Slang 2026.14 file identity mismatch at '{path}'. " +
+                $"Expected SHA-256 {expectedSha256}; actual SHA-256 {actualSha256}.");
+        }
+    }
+
     internal static D3D12TestShaderProgram CompileHlslPassThrough(
         string moduleName,
         string source,
@@ -216,6 +360,7 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                     {
                         Format = SlangCompileTarget.Dxil,
                         Profile = profile,
+                        Flags = 0,
                     },
                 ],
                 DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
@@ -269,9 +414,6 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 "Slang pass-through entry-point code retrieval",
                 null);
             Track(targetCode);
-            IComponentType targetProgram = new TargetCodeComponent(
-                program,
-                targetCode.Buffer.ToArray());
             ShaderReflection reflection = program.GetLayout(
                 0,
                 out ISlangBlob? layoutDiagnostics);
@@ -304,6 +446,10 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 }
                 reflectedEntries[index] = reflected;
             }
+            IComponentType targetProgram = new TargetCodeComponent(
+                program,
+                targetCode.Buffer.ToArray(),
+                reflection);
             return new D3D12TestShaderProgram(owned, targetProgram, reflection, reflectedEntries);
         }
         catch
@@ -366,12 +512,16 @@ internal sealed class D3D12TestShaderProgram : IDisposable
 
     private sealed class TargetCodeComponent(
         IComponentType inner,
-        byte[] targetCode) : IComponentType
+        byte[] targetCode,
+        ShaderReflection reflection) : IComponentType
     {
         public ISession GetSession() => inner.GetSession();
 
-        public ShaderReflection GetLayout(nint targetIndex, out ISlangBlob? diagnostics) =>
-            inner.GetLayout(targetIndex, out diagnostics);
+        public ShaderReflection GetLayout(nint targetIndex, out ISlangBlob? diagnostics)
+        {
+            diagnostics = null;
+            return reflection;
+        }
 
         public nint GetSpecializationParamCount() => inner.GetSpecializationParamCount();
 
@@ -451,14 +601,14 @@ internal sealed class D3D12TestShaderProgram : IDisposable
 
         public SlangResult GetTargetMetadata(
             nint targetIndex,
-            out Metadata? metadata,
+            out IMetadata metadata,
             out ISlangBlob? diagnostics) =>
             inner.GetTargetMetadata(targetIndex, out metadata, out diagnostics);
 
         public SlangResult GetEntryPointMetadata(
             nint entryPointIndex,
             nint targetIndex,
-            out Metadata? metadata,
+            out IMetadata metadata,
             out ISlangBlob? diagnostics) =>
             inner.GetEntryPointMetadata(
                 entryPointIndex,

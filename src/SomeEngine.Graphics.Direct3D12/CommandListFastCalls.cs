@@ -1,22 +1,16 @@
 using System.Runtime.CompilerServices;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
+using Silk.NET.Maths;
+using NativeViewport = Silk.NET.Direct3D12.Viewport;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
 internal static unsafe class D3D12CommandListFastCalls
 {
-    // These command-list recording calls are short, non-blocking user-mode
-    // operations. Suppressing the CLR transition keeps the RHI's managed
-    // receiver/context references from being spilled and reloaded around every
-    // draw or root argument. The slots are fixed by ID3D12GraphicsCommandList;
-    // later command-list interfaces preserve the inherited vtable prefix.
-    private const int DrawInstancedSlot = 12;
-    private const int DrawIndexedInstancedSlot = 13;
-    private const int DispatchSlot = 14;
-    private const int SetComputeRoot32BitConstantsSlot = 35;
-    private const int SetGraphicsRoot32BitConstantsSlot = 36;
-    private const int SetComputeRootConstantBufferViewSlot = 37;
-    private const int SetGraphicsRootConstantBufferViewSlot = 38;
+    // Keep all managed D3D12 calls on Silk.NET's generated COM surface. This
+    // helper only centralizes compute/graphics selection and state-call shape;
+    // it must not read COM vtables or emit unmanaged calli instructions.
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void DrawInstanced(
@@ -24,13 +18,8 @@ internal static unsafe class D3D12CommandListFastCalls
         uint vertexCount,
         uint instanceCount,
         uint firstVertex,
-        uint firstInstance)
-    {
-        void** vtable = *(void***)list;
-        var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
-            ID3D12GraphicsCommandList10*, uint, uint, uint, uint, void>)vtable[DrawInstancedSlot];
-        call(list, vertexCount, instanceCount, firstVertex, firstInstance);
-    }
+        uint firstInstance) =>
+        list->DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void DrawIndexedInstanced(
@@ -39,26 +28,108 @@ internal static unsafe class D3D12CommandListFastCalls
         uint instanceCount,
         uint firstIndex,
         int vertexOffset,
-        uint firstInstance)
-    {
-        void** vtable = *(void***)list;
-        var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
-            ID3D12GraphicsCommandList10*, uint, uint, uint, int, uint, void>)vtable[DrawIndexedInstancedSlot];
-        call(list, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
-    }
+        uint firstInstance) =>
+        list->DrawIndexedInstanced(
+            indexCount,
+            instanceCount,
+            firstIndex,
+            vertexOffset,
+            firstInstance);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Dispatch(
         ID3D12GraphicsCommandList10* list,
         uint x,
         uint y,
-        uint z)
+        uint z) =>
+        list->Dispatch(x, y, z);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetPrimitiveTopology(
+        ID3D12GraphicsCommandList10* list,
+        D3DPrimitiveTopology topology) =>
+        list->IASetPrimitiveTopology(topology);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetViewports(
+        ID3D12GraphicsCommandList10* list,
+        uint count,
+        NativeViewport* viewports) =>
+        list->RSSetViewports(count, viewports);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetScissors(
+        ID3D12GraphicsCommandList10* list,
+        uint count,
+        Box2D<int>* scissors) =>
+        list->RSSetScissorRects(count, scissors);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetPipelineState(
+        ID3D12GraphicsCommandList10* list,
+        ID3D12PipelineState* pipeline) =>
+        list->SetPipelineState(pipeline);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void ResourceBarrier(
+        ID3D12GraphicsCommandList10* list,
+        uint count,
+        ResourceBarrier* barriers) =>
+        list->ResourceBarrier(count, barriers);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetDescriptorHeaps(
+        ID3D12GraphicsCommandList10* list,
+        uint count,
+        ID3D12DescriptorHeap** heaps) =>
+        list->SetDescriptorHeaps(count, heaps);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetRootSignature(
+        ID3D12GraphicsCommandList10* list,
+        bool compute,
+        ID3D12RootSignature* rootSignature)
     {
-        void** vtable = *(void***)list;
-        var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
-            ID3D12GraphicsCommandList10*, uint, uint, uint, void>)vtable[DispatchSlot];
-        call(list, x, y, z);
+        if (compute)
+            list->SetComputeRootSignature(rootSignature);
+        else
+            list->SetGraphicsRootSignature(rootSignature);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetRootDescriptorTable(
+        ID3D12GraphicsCommandList10* list,
+        bool compute,
+        uint rootParameter,
+        GpuDescriptorHandle handle)
+    {
+        if (compute)
+            list->SetComputeRootDescriptorTable(rootParameter, handle);
+        else
+            list->SetGraphicsRootDescriptorTable(rootParameter, handle);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetRenderTargets(
+        ID3D12GraphicsCommandList10* list,
+        uint count,
+        CpuDescriptorHandle* renderTargets,
+        CpuDescriptorHandle* depthStencil) =>
+        list->OMSetRenderTargets(count, renderTargets, false, depthStencil);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void ClearRenderTargetView(
+        ID3D12GraphicsCommandList10* list,
+        CpuDescriptorHandle renderTarget,
+        float* color) =>
+        list->ClearRenderTargetView(renderTarget, color, 0, null);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void Barrier(
+        ID3D12GraphicsCommandList10* list,
+        uint groupCount,
+        BarrierGroup* groups) =>
+        list->Barrier(groupCount, groups);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void SetRootConstantBufferView(
@@ -67,13 +138,10 @@ internal static unsafe class D3D12CommandListFastCalls
         uint rootParameter,
         ulong address)
     {
-        void** vtable = *(void***)list;
-        int slot = compute
-            ? SetComputeRootConstantBufferViewSlot
-            : SetGraphicsRootConstantBufferViewSlot;
-        var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
-            ID3D12GraphicsCommandList10*, uint, ulong, void>)vtable[slot];
-        call(list, rootParameter, address);
+        if (compute)
+            list->SetComputeRootConstantBufferView(rootParameter, address);
+        else
+            list->SetGraphicsRootConstantBufferView(rootParameter, address);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -84,12 +152,9 @@ internal static unsafe class D3D12CommandListFastCalls
         uint count,
         void* values)
     {
-        void** vtable = *(void***)list;
-        int slot = compute
-            ? SetComputeRoot32BitConstantsSlot
-            : SetGraphicsRoot32BitConstantsSlot;
-        var call = (delegate* unmanaged[Stdcall, SuppressGCTransition]<
-            ID3D12GraphicsCommandList10*, uint, uint, void*, uint, void>)vtable[slot];
-        call(list, rootParameter, count, values, 0);
+        if (compute)
+            list->SetComputeRoot32BitConstants(rootParameter, count, values, 0);
+        else
+            list->SetGraphicsRoot32BitConstants(rootParameter, count, values, 0);
     }
 }

@@ -8,6 +8,178 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class WarpExternalTests
 {
     [Fact]
+    public unsafe void Failed_native_buffer_import_obeys_transferred_and_borrowed_ownership()
+    {
+        using D3D12Backend backend = new();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        BufferDesc description = new(65_536, BufferUsages.CopyDestination);
+        ImportedResourceState state = new(
+            PipelineSync.None,
+            ResourceAccess.NoAccess,
+            Layout: null,
+            QueueType.Graphics);
+        using Buffer source = backend.CreateBuffer(device, description);
+        ID3D12Resource* pointer = backend.GetNativeResource(source);
+        uint baseline = ProbeReferenceCount(pointer);
+
+        _ = pointer->AddRef();
+        Assert.Throws<ArgumentException>(() => backend.ImportBuffer(
+            device,
+            pointer,
+            NativeObjectOwnership.Transferred,
+            description with { Size = 32_768 },
+            state));
+        Assert.Equal(baseline, ProbeReferenceCount(pointer));
+
+        _ = pointer->AddRef();
+        uint borrowedBaseline = ProbeReferenceCount(pointer);
+        Assert.Throws<ArgumentException>(() => backend.ImportBuffer(
+            device,
+            pointer,
+            NativeObjectOwnership.Borrowed,
+            description with { Size = 32_768 },
+            state));
+        Assert.Equal(borrowedBaseline, ProbeReferenceCount(pointer));
+        _ = pointer->Release();
+    }
+
+    [Fact]
+    public unsafe void Feedback_usage_import_failure_preserves_native_and_shared_handle_ownership()
+    {
+        using D3D12Backend backend = new();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        TextureDesc description = new(
+            TextureDimension.Texture2D,
+            16,
+            8,
+            1,
+            1,
+            1,
+            1,
+            Format.R8G8B8A8UNorm,
+            TextureUsages.Sampled | TextureUsages.CopyDestination | TextureUsages.Shareable);
+        ImportedResourceState state = new(
+            PipelineSync.None,
+            ResourceAccess.NoAccess,
+            TextureLayout.Undefined,
+            QueueType.Graphics);
+        using Texture source = backend.CreateTexture(device, description);
+        ID3D12Resource* pointer = backend.GetNativeResource(source);
+        uint baseline = ProbeReferenceCount(pointer);
+
+        Assert.Throws<ArgumentException>(() => backend.ImportTexture(
+            device,
+            pointer,
+            NativeObjectOwnership.Borrowed,
+            CreateFeedbackImportDescription(),
+            state));
+        Assert.Equal(baseline, ProbeReferenceCount(pointer));
+
+        _ = pointer->AddRef();
+        Assert.Throws<ArgumentException>(() => backend.ImportTexture(
+            device,
+            pointer,
+            NativeObjectOwnership.Transferred,
+            CreateFeedbackImportDescription(),
+            state));
+        Assert.Equal(baseline, ProbeReferenceCount(pointer));
+
+        using ExternalHandle handle = backend.ExportTexture(
+            source,
+            ExternalHandleType.OpaqueWin32);
+        ID3D12Resource* opened = null;
+        Guid resourceId = ID3D12Resource.Guid;
+        int openResult = backend.GetNativeDevice(device)->OpenSharedHandle(
+            (void*)handle.Value,
+            &resourceId,
+            (void**)&opened);
+        Assert.True(openResult >= 0);
+        Assert.NotEqual(0, (nint)opened);
+        try
+        {
+            uint openedBaseline = ProbeReferenceCount(opened);
+            Assert.Throws<ArgumentException>(() => backend.ImportTexture(
+                device,
+                handle,
+                CreateFeedbackImportDescription(),
+                state));
+            Assert.Equal(openedBaseline, ProbeReferenceCount(opened));
+
+            Texture retry = backend.ImportTexture(device, handle, description, state);
+            Assert.Equal(description.Usages, retry.Info.Usages);
+            retry.Dispose();
+            Assert.Equal(openedBaseline, ProbeReferenceCount(opened));
+        }
+        finally
+        {
+            _ = opened->Release();
+        }
+    }
+
+    [Fact]
+    public unsafe void Transferred_native_texture_survives_source_wrapper_disposal()
+    {
+        using D3D12Backend backend = new();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        TextureDesc description = new(
+            TextureDimension.Texture2D,
+            16,
+            8,
+            1,
+            1,
+            1,
+            1,
+            Format.R8G8B8A8UNorm,
+            TextureUsages.Sampled | TextureUsages.CopyDestination);
+        ImportedResourceState state = new(
+            PipelineSync.None,
+            ResourceAccess.NoAccess,
+            TextureLayout.Undefined,
+            QueueType.Graphics);
+        Texture source = backend.CreateTexture(device, description);
+        ID3D12Resource* pointer = backend.GetNativeResource(source);
+        _ = pointer->AddRef();
+        using Texture transferred = backend.ImportTexture(
+            device,
+            pointer,
+            NativeObjectOwnership.Transferred,
+            description,
+            state);
+
+        source.Dispose();
+
+        Assert.Equal((nint)pointer, (nint)backend.GetNativeResource(transferred));
+        Assert.Equal((ulong)description.Width, pointer->GetDesc().Width);
+        using TextureSrv view = backend.CreateTextureSrv(
+            device,
+            new TextureSrvDesc(
+                transferred,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                Format.R8G8B8A8UNorm,
+                TextureViewDimension.Texture2D));
+    }
+
+    private static unsafe uint ProbeReferenceCount(ID3D12Resource* resource)
+    {
+        _ = resource->AddRef();
+        return resource->Release();
+    }
+
+    private static TextureDesc CreateFeedbackImportDescription() => new(
+        TextureDimension.Texture2D,
+        16,
+        8,
+        1,
+        1,
+        1,
+        1,
+        Format.R8G8B8A8UNorm,
+        TextureUsages.Sampled |
+        TextureUsages.CopyDestination |
+        TextureUsages.Shareable |
+        TextureUsages.SamplerFeedback);
+
+    [Fact]
     public void External_handle_support_is_reported_per_object_family_and_direction()
     {
         using IGraphicsBackend backend = new D3D12Backend();
@@ -15,17 +187,25 @@ public sealed class WarpExternalTests
 
         Assert.True(backend.TryGetCapability(device, out ExternalResources? resources));
         Assert.NotNull(resources);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, resources.BufferImportHandleTypes);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, resources.BufferExportHandleTypes);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, resources.TextureImportHandleTypes);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, resources.TextureExportHandleTypes);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, resources.HeapImportHandleTypes);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, resources.HeapExportHandleTypes);
+        Assert.True(resources.SupportsBufferImport(ExternalHandleType.OpaqueWin32));
+        Assert.True(resources.SupportsBufferExport(ExternalHandleType.OpaqueWin32));
+        Assert.True(resources.SupportsTextureImport(ExternalHandleType.OpaqueWin32));
+        Assert.True(resources.SupportsTextureExport(ExternalHandleType.OpaqueWin32));
+        Assert.True(resources.SupportsHeapImport(ExternalHandleType.OpaqueWin32));
+        Assert.True(resources.SupportsHeapExport(ExternalHandleType.OpaqueWin32));
+        Assert.False(resources.SupportsBufferImport(ExternalHandleType.OpaqueWin32Kmt));
+        Assert.False(resources.SupportsBufferExport(ExternalHandleType.OpaqueWin32Kmt));
+        Assert.False(resources.SupportsTextureImport(ExternalHandleType.OpaqueWin32Kmt));
+        Assert.False(resources.SupportsTextureExport(ExternalHandleType.OpaqueWin32Kmt));
+        Assert.False(resources.SupportsHeapImport(ExternalHandleType.OpaqueWin32Kmt));
+        Assert.False(resources.SupportsHeapExport(ExternalHandleType.OpaqueWin32Kmt));
 
         Assert.True(backend.TryGetCapability(device, out ExternalTimelines? timelines));
         Assert.NotNull(timelines);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, timelines.ImportHandleTypes);
-        Assert.Equal(ExternalHandleTypes.OpaqueWin32, timelines.ExportHandleTypes);
+        Assert.True(timelines.SupportsImport(ExternalHandleType.OpaqueWin32));
+        Assert.True(timelines.SupportsExport(ExternalHandleType.OpaqueWin32));
+        Assert.False(timelines.SupportsImport(ExternalHandleType.OpaqueWin32Kmt));
+        Assert.False(timelines.SupportsExport(ExternalHandleType.OpaqueWin32Kmt));
     }
 
     [Fact]
@@ -332,7 +512,7 @@ public sealed class WarpExternalTests
     public unsafe void Native_object_import_checks_native_device_identity_and_validation_tracks_wrappers()
     {
         using D3D12Backend backend = new();
-        using var validation = new ValidationLayer<D3D12Backend>(backend);
+        using var validation = new ValidationLayer(backend);
         using Device first = D3D12TestSupport.CreateWarpDevice(backend);
         using Device second = D3D12TestSupport.CreateWarpDevice(backend);
         BufferDesc description = new(65_536, BufferUsages.CopyDestination);

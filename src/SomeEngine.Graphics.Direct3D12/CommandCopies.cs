@@ -3,15 +3,16 @@ using NativeResourceDesc = Silk.NET.Direct3D12.ResourceDesc;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public void CopyBuffer(CommandContext context, in BufferCopy copy)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12Buffer source = NativeCast.Buffer(copy.Source);
-        D3D12Buffer destination = NativeCast.Buffer(copy.Destination);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12Buffer source = RequireBuffer(copy.Source);
+        D3D12Buffer destination = RequireBuffer(copy.Destination);
         _ = new BufferRange(copy.SourceOffset, copy.Size).Resolve(source.Info.Size);
         _ = new BufferRange(copy.DestinationOffset, copy.Size).Resolve(destination.Info.Size);
+        command.PrepareCaptures(2, sparseGenerations: 2);
         command.Capture(source);
         command.Capture(destination);
         command.List->CopyBufferRegion(
@@ -24,9 +25,9 @@ public sealed unsafe partial class D3D12Backend
 
     public void CopyBufferToTexture(CommandContext context, in BufferTextureCopy copy)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12Buffer source = NativeCast.Buffer(copy.Buffer);
-        D3D12TextureResource destination = NativeCast.Texture(copy.Texture);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12Buffer source = RequireBuffer(copy.Buffer);
+        D3D12TextureResource destination = RequireTexture(copy.Texture);
         TextureCopyLocation bufferLocation = CreateBufferCopyLocation(
             command.NativeDevice,
             source,
@@ -38,6 +39,8 @@ public sealed unsafe partial class D3D12Backend
             copy.ArrayLayer,
             copy.Aspect);
         Box sourceBox = new(0, 0, 0, copy.Width, copy.Height, copy.Depth);
+        command.PrepareCaptures(2, 0, 2);
+        command.PrepareSwapchainUses(1);
         command.Capture(source);
         command.Capture(destination);
         command.List->CopyTextureRegion(
@@ -51,9 +54,9 @@ public sealed unsafe partial class D3D12Backend
 
     public void CopyTextureToBuffer(CommandContext context, in BufferTextureCopy copy)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12Buffer destination = NativeCast.Buffer(copy.Buffer);
-        D3D12TextureResource source = NativeCast.Texture(copy.Texture);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12Buffer destination = RequireBuffer(copy.Buffer);
+        D3D12TextureResource source = RequireTexture(copy.Texture);
         TextureCopyLocation bufferLocation = CreateBufferCopyLocation(
             command.NativeDevice,
             destination,
@@ -71,6 +74,8 @@ public sealed unsafe partial class D3D12Backend
             checked(copy.X + copy.Width),
             checked(copy.Y + copy.Height),
             checked(copy.Z + copy.Depth));
+        command.PrepareCaptures(2, 0, 2);
+        command.PrepareSwapchainUses(1);
         command.Capture(source);
         command.Capture(destination);
         command.List->CopyTextureRegion(
@@ -84,9 +89,9 @@ public sealed unsafe partial class D3D12Backend
 
     public void CopyTexture(CommandContext context, in TextureCopy copy)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12TextureResource source = NativeCast.Texture(copy.Source);
-        D3D12TextureResource destination = NativeCast.Texture(copy.Destination);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12TextureResource source = RequireTexture(copy.Source);
+        D3D12TextureResource destination = RequireTexture(copy.Destination);
         ValidateTextureRegion(
             source.Info,
             copy.SourceMipLevel,
@@ -134,6 +139,8 @@ public sealed unsafe partial class D3D12Backend
             checked(copy.SourceX + copy.Width),
             checked(copy.SourceY + copy.Height),
             checked(copy.SourceZ + copy.Depth));
+        command.PrepareCaptures(2, sparseGenerations: 2);
+        command.PrepareSwapchainUses(2);
         command.Capture(source);
         command.Capture(destination);
         command.List->CopyTextureRegion(
@@ -147,10 +154,10 @@ public sealed unsafe partial class D3D12Backend
 
     public void ResolveTexture(CommandContext context, in TextureResolve resolve)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12TextureResource source = NativeCast.Texture(resolve.Source);
-        D3D12TextureResource destination = NativeCast.Texture(resolve.Destination);
-        _ = ToResolveMode(resolve.Type);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12TextureResource source = RequireTexture(resolve.Source);
+        D3D12TextureResource destination = RequireTexture(resolve.Destination);
+        ResolveMode resolveMode = ToResolveMode(resolve.Type, resolve.Format);
         uint sourceSubresource = NativeSubresource(
             source.Info,
             resolve.SourceMipLevel,
@@ -180,6 +187,8 @@ public sealed unsafe partial class D3D12Backend
                 "Resolve requires equally sized compatible 2D subresources from multisampled to single-sampled storage.",
                 nameof(resolve));
         }
+        command.PrepareCaptures(2, sparseGenerations: 2);
+        command.PrepareSwapchainUses(2);
         command.Capture(source);
         command.Capture(destination);
         command.List->ResolveSubresourceRegion(
@@ -191,7 +200,7 @@ public sealed unsafe partial class D3D12Backend
             sourceSubresource,
             null,
             FormatMappings.ToDxgi(resolve.Format),
-            ToResolveMode(resolve.Type));
+            resolveMode);
     }
 
     public void ClearBuffer(
@@ -200,9 +209,11 @@ public sealed unsafe partial class D3D12Backend
         in BufferRange range,
         uint value = 0)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12Buffer destination = NativeCast.Buffer(buffer);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12Buffer destination = RequireBuffer(buffer);
         BufferRange resolved = range.Resolve(destination.Info.Size);
+        command.PrepareCaptures(1, sparseGenerations: 1);
+        command.PrepareOrdinaryData(resolved.Size);
         D3D12OrdinaryDataReservation upload =
             command.ReserveTransientOrdinaryData(resolved.Size);
         command.Capture(destination);
@@ -221,15 +232,25 @@ public sealed unsafe partial class D3D12Backend
         in TextureSubresourceRange range,
         in System.Numerics.Vector4 color)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12TextureResource destination = NativeCast.Texture(texture);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12TextureResource destination = RequireTexture(texture);
+        if ((destination.Info.Usages & TextureUsages.ColorAttachment) == 0)
+        {
+            throw new ArgumentException(
+                "ClearTexture requires a Texture created with ColorAttachment usage.",
+                nameof(texture));
+        }
         ResolveTextureRange(destination.Info, range, TextureAspects.Color);
 
         float* values = stackalloc float[4] { color.X, color.Y, color.Z, color.W };
-        command.Capture(destination);
         uint descriptorCount = checked(
             range.MipLevelCount *
             (destination.Info.Dimension == TextureDimension.Texture3D ? 1u : range.ArrayLayerCount));
+        command.PrepareCaptures(1, sparseGenerations: 1);
+        command.PrepareSwapchainUses(1);
+        command.PrepareAttachmentDescriptors(descriptorCount, 0);
+        command.PrepareTransientObjects(1);
+        command.Capture(destination);
         D3D12CpuDescriptorRange descriptors = command.AllocateTemporaryAttachmentDescriptors(
             DescriptorHeapType.Rtv,
             descriptorCount);
@@ -297,8 +318,21 @@ public sealed unsafe partial class D3D12Backend
         float depth = 1,
         byte stencil = 0)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12TextureResource destination = NativeCast.Texture(texture);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12TextureResource destination = RequireTexture(texture);
+        if ((destination.Info.Usages & TextureUsages.DepthStencilAttachment) == 0)
+        {
+            throw new ArgumentException(
+                "ClearDepthStencil requires a Texture created with DepthStencilAttachment usage.",
+                nameof(texture));
+        }
+        const TextureAspects clearAspects = TextureAspects.Depth | TextureAspects.Stencil;
+        if ((range.Aspects & clearAspects) == 0 || (range.Aspects & ~clearAspects) != 0)
+        {
+            throw new ArgumentException(
+                "ClearDepthStencil requires explicit Depth and/or Stencil aspects.",
+                nameof(range));
+        }
         ResolveTextureRange(
             destination.Info,
             range,
@@ -309,10 +343,14 @@ public sealed unsafe partial class D3D12Backend
         if ((range.Aspects & TextureAspects.Stencil) != 0)
             flags |= ClearFlags.Stencil;
 
-        command.Capture(destination);
         uint descriptorCount = checked(
             range.MipLevelCount *
             (destination.Info.Dimension == TextureDimension.Texture3D ? 1u : range.ArrayLayerCount));
+        command.PrepareCaptures(1, sparseGenerations: 1);
+        command.PrepareSwapchainUses(1);
+        command.PrepareAttachmentDescriptors(0, descriptorCount);
+        command.PrepareTransientObjects(1);
+        command.Capture(destination);
         D3D12CpuDescriptorRange descriptors = command.AllocateTemporaryAttachmentDescriptors(
             DescriptorHeapType.Dsv,
             descriptorCount);
@@ -446,14 +484,25 @@ public sealed unsafe partial class D3D12Backend
             plane * info.MipLevelCount * info.ArrayLayerCount);
     }
 
-    private static ResolveMode ToResolveMode(ResolveType type) => type switch
+    private static ResolveMode ToResolveMode(ResolveType type, Format format)
     {
-        ResolveType.Average => ResolveMode.Average,
-        ResolveType.Minimum => ResolveMode.Min,
-        ResolveType.Maximum => ResolveMode.Max,
-        ResolveType.SampleZero => ResolveMode.Decompress,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
-    };
+        if (type == ResolveType.Average && FormatMappings.IsInteger(format))
+        {
+            throw new ArgumentException(
+                "Average resolve is unavailable for integer formats.",
+                nameof(format));
+        }
+
+        return type switch
+        {
+            ResolveType.Average => ResolveMode.Average,
+            ResolveType.Minimum => ResolveMode.Min,
+            ResolveType.Maximum => ResolveMode.Max,
+            ResolveType.SampleZero => throw new NotSupportedException(
+                "D3D12 has no native sample-zero multisample resolve mode."),
+            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        };
+    }
 
     private static void ResolveTextureRange(
         TextureInfo info,
@@ -621,20 +670,22 @@ public sealed unsafe partial class D3D12Backend
                     type,
                     required,
                     DescriptorHeapFlags.None,
-                    _context.NativeDevice.EnabledNodeMask);
+                    _context.NativeNodeMask);
                 ID3D12DescriptorHeap* replacement = null;
                 Guid iid = ID3D12DescriptorHeap.Guid;
-                NativeCall.ThrowIfFailed(
+                ThrowIfFailed(
+                    _context.NativeDevice,
                     _context.NativeDevice.Native->CreateDescriptorHeap(
                         &description,
                         &iid,
                         (void**)&replacement),
+                    NativeOperationType.Ordinary,
                     "ID3D12Device::CreateDescriptorHeap(command attachment arena)");
                 ID3D12DescriptorHeap* previous = heap;
                 heap = replacement;
                 capacity = required;
                 if (previous is not null)
-                    _ = previous->Release();
+                    _transientObjects.Add((nint)previous);
             }
 
             uint first = used;
@@ -652,6 +703,53 @@ public sealed unsafe partial class D3D12Backend
         {
             _temporaryRtvUsed = 0;
             _temporaryDsvUsed = 0;
+        }
+
+        private void PrepareTemporaryAttachmentCapacity(uint rtvCount, uint dsvCount)
+        {
+            PrepareTemporaryAttachmentCapacity(
+                DescriptorHeapType.Rtv,
+                checked(_temporaryRtvUsed + rtvCount));
+            PrepareTemporaryAttachmentCapacity(
+                DescriptorHeapType.Dsv,
+                checked(_temporaryDsvUsed + dsvCount));
+        }
+
+        private void PrepareTemporaryAttachmentCapacity(
+            DescriptorHeapType type,
+            uint required)
+        {
+            if (required == 0)
+                return;
+            ref ID3D12DescriptorHeap* heap = ref (type == DescriptorHeapType.Rtv
+                ? ref _temporaryRtvHeap
+                : ref _temporaryDsvHeap);
+            ref uint capacity = ref (type == DescriptorHeapType.Rtv
+                ? ref _temporaryRtvCapacity
+                : ref _temporaryDsvCapacity);
+            if (heap is not null && capacity >= required)
+                return;
+
+            DescriptorHeapDesc description = new(
+                type,
+                required,
+                DescriptorHeapFlags.None,
+                _context.NativeNodeMask);
+            ID3D12DescriptorHeap* replacement = null;
+            Guid iid = ID3D12DescriptorHeap.Guid;
+            ThrowIfFailed(
+                _context.NativeDevice,
+                _context.NativeDevice.Native->CreateDescriptorHeap(
+                    &description,
+                    &iid,
+                    (void**)&replacement),
+                NativeOperationType.Ordinary,
+                "ID3D12Device::CreateDescriptorHeap(command attachment arena)");
+            ID3D12DescriptorHeap* previous = heap;
+            heap = replacement;
+            capacity = required;
+            if (previous is not null)
+                _transientObjects.Add((nint)previous);
         }
 
         internal void ReleaseTemporaryAttachmentDescriptors()

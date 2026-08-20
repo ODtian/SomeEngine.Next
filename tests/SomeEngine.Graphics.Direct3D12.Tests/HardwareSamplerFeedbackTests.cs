@@ -13,9 +13,15 @@ public sealed class HardwareSamplerFeedbackTests
         bool hardwareAvailable)
     {
         Assert.True(hardwareAvailable);
-        using IGraphicsBackend backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateSamplerFeedbackHardwareDevice(backend);
+        var backend = new D3D12Backend();
+        Device device = D3D12TestSupport.CreateSamplerFeedbackHardwareDevice(backend);
+        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         AssertClearDecodeAndParentCascade(backend, device);
+        device.Dispose();
+        backend.Dispose();
+        Assert.Null(diagnostics!.TeardownFailure);
+        Assert.False(D3D12PrivateState.HasNativeDevice(device));
+        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
     }
 
     internal static void AssertClearDecodeAndParentCascade(
@@ -51,6 +57,34 @@ public sealed class HardwareSamplerFeedbackTests
             0,
             feedback.Info.ArrayLayerCount,
             TextureAspects.Color);
+        AssertOrdinaryFeedbackViewRejected(() => backend.CreateTextureSrv(
+            device,
+            new TextureSrvDesc(
+                feedback,
+                feedbackRange,
+                Format.R8UInt,
+                TextureViewDimension.Texture2D)));
+        AssertOrdinaryFeedbackViewRejected(() => backend.CreateTextureUav(
+            device,
+            new TextureUavDesc(
+                feedback,
+                feedbackRange,
+                Format.R8UInt,
+                TextureViewDimension.Texture2D)));
+        AssertOrdinaryFeedbackViewRejected(() => backend.CreateColorAttachmentView(
+            device,
+            new ColorAttachmentViewDesc(
+                feedback,
+                feedbackRange,
+                Format.R8UInt,
+                TextureViewDimension.Texture2D)));
+        AssertOrdinaryFeedbackViewRejected(() => backend.CreateDepthStencilView(
+            device,
+            new DepthStencilViewDesc(
+                feedback,
+                feedbackRange,
+                Format.R8UInt,
+                TextureViewDimension.Texture2D)));
         SamplerFeedbackUav uav = backend.CreateSamplerFeedbackUav(
             device,
             feedback,
@@ -135,10 +169,58 @@ public sealed class HardwareSamplerFeedbackTests
 
         sampled.Dispose();
         Assert.True(sampled.IsDisposed);
-        Assert.True(feedback.IsDisposed);
-        Assert.True(uav.IsDisposed);
+        Assert.False(feedback.IsDisposed);
+        Assert.False(uav.IsDisposed);
+        Assert.True(D3D12PrivateState.HasNativeResource(sampled));
         uav.Dispose();
         feedback.Dispose();
+        Assert.False(D3D12PrivateState.HasNativeResource(sampled));
+
+        Texture secondSampled = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D,
+                32,
+                32,
+                1,
+                1,
+                1,
+                1,
+                Format.R8G8B8A8UNorm,
+                TextureUsages.Sampled));
+        SamplerFeedbackTexture secondFeedback = backend.CreateSamplerFeedbackTexture(
+            device,
+            new SamplerFeedbackTextureDesc(
+                secondSampled,
+                SamplerFeedbackType.MinimumMip,
+                4,
+                4));
+        TextureSubresourceRange secondRange = new(
+            0,
+            secondFeedback.Info.MipLevelCount,
+            0,
+            secondFeedback.Info.ArrayLayerCount,
+            TextureAspects.Color);
+        SamplerFeedbackUav secondUav = backend.CreateSamplerFeedbackUav(
+            device,
+            secondFeedback,
+            new TextureUavDesc(
+                secondFeedback,
+                secondRange,
+                Format.R8UInt,
+                TextureViewDimension.Texture2D));
+        secondFeedback.Dispose();
+        Assert.True(secondFeedback.IsDisposed);
+        Assert.False(secondUav.IsDisposed);
+        Assert.False(secondSampled.IsDisposed);
+        secondUav.Dispose();
+        secondSampled.Dispose();
+    }
+
+    private static void AssertOrdinaryFeedbackViewRejected(Action create)
+    {
+        ArgumentException error = Assert.Throws<ArgumentException>(create);
+        Assert.Contains("Sampler-feedback", error.Message, StringComparison.Ordinal);
     }
 }
 

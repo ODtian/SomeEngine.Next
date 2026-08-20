@@ -10,23 +10,27 @@ using DxgiFormat = Silk.NET.DXGI.Format;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public BufferCbv CreateBufferCbv(Device device, in BufferCbvDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Buffer buffer = NativeCast.Buffer(desc.Buffer);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12Buffer buffer = RequireBuffer(desc.Buffer);
+        RequireSameDevice(nativeDevice, buffer, nameof(desc));
         ValidateBufferView(buffer, desc.Range, BufferUsages.Constant, null, 0);
         BufferRange range = desc.Range.Resolve(buffer.Info.Size);
         if ((range.Offset & 255) != 0 || (range.Size & 255) != 0 || range.Size > 65_536)
             throw new ArgumentException("A CBV range must be 256-byte aligned and at most 64 KiB.", nameof(desc));
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
+        DescriptorLease descriptor = nativeDevice
+            .GetResourceDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(buffer.Info.CreationNodeMask))
+            .Allocate();
         D3D12BufferCbv? result = null;
         try
         {
             WriteBufferCbv(nativeDevice, buffer, desc, descriptor.Cpu);
             result = new D3D12BufferCbv(nativeDevice, buffer, desc, descriptor);
-            RegisterView(nativeDevice, buffer, result);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -38,21 +42,25 @@ public sealed unsafe partial class D3D12Backend
 
     public BufferSrv CreateBufferSrv(Device device, in BufferSrvDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Buffer buffer = NativeCast.Buffer(desc.Buffer);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12Buffer buffer = RequireBuffer(desc.Buffer);
+        RequireSameDevice(nativeDevice, buffer, nameof(desc));
         ValidateBufferView(
             buffer,
             desc.Range,
             BufferUsages.ShaderRead,
             desc.Format,
             desc.StructureStride);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
+        DescriptorLease descriptor = nativeDevice
+            .GetResourceDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(buffer.Info.CreationNodeMask))
+            .Allocate();
         D3D12BufferSrv? result = null;
         try
         {
             WriteBufferSrv(nativeDevice, buffer, desc, descriptor.Cpu);
             result = new D3D12BufferSrv(nativeDevice, buffer, desc, descriptor);
-            RegisterView(nativeDevice, buffer, result);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -64,22 +72,26 @@ public sealed unsafe partial class D3D12Backend
 
     public BufferUav CreateBufferUav(Device device, in BufferUavDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Buffer buffer = NativeCast.Buffer(desc.Buffer);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12Buffer buffer = RequireBuffer(desc.Buffer);
+        RequireSameDevice(nativeDevice, buffer, nameof(desc));
         ValidateBufferView(
             buffer,
             desc.Range,
             BufferUsages.ShaderWrite,
             desc.Format,
             desc.StructureStride);
-        ValidateUavCounter(desc);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
+        D3D12Buffer? counter = ResolveUavCounter(nativeDevice, desc);
+        DescriptorLease descriptor = nativeDevice
+            .GetResourceDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(buffer.Info.CreationNodeMask))
+            .Allocate();
         D3D12BufferUav? result = null;
         try
         {
-            WriteBufferUav(nativeDevice, buffer, desc, descriptor.Cpu);
-            result = new D3D12BufferUav(nativeDevice, buffer, desc, descriptor);
-            RegisterView(nativeDevice, buffer, result);
+            WriteBufferUav(nativeDevice, buffer, counter, desc, descriptor.Cpu);
+            result = new D3D12BufferUav(nativeDevice, buffer, counter, desc, descriptor);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -91,21 +103,25 @@ public sealed unsafe partial class D3D12Backend
 
     public TextureSrv CreateTextureSrv(Device device, in TextureSrvDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12TextureResource texture = NativeCast.Texture(desc.Texture);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12TextureResource texture = RequireTexture(desc.Texture);
+        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
         ValidateTextureView(
             texture,
             desc.Range,
             desc.Format,
             desc.Dimension,
             TextureViewKind.ShaderResource);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
+        DescriptorLease descriptor = nativeDevice
+            .GetResourceDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
+            .Allocate();
         D3D12TextureSrv? result = null;
         try
         {
             WriteTextureSrv(nativeDevice, texture, desc, descriptor.Cpu);
             result = new D3D12TextureSrv(nativeDevice, texture, desc, descriptor);
-            RegisterView(nativeDevice, texture, result);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -117,21 +133,25 @@ public sealed unsafe partial class D3D12Backend
 
     public TextureUav CreateTextureUav(Device device, in TextureUavDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12TextureResource texture = NativeCast.Texture(desc.Texture);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12TextureResource texture = RequireTexture(desc.Texture);
+        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
         ValidateTextureView(
             texture,
             desc.Range,
             desc.Format,
             desc.Dimension,
             TextureViewKind.UnorderedAccess);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
+        DescriptorLease descriptor = nativeDevice
+            .GetResourceDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
+            .Allocate();
         D3D12TextureUav? result = null;
         try
         {
             WriteTextureUav(nativeDevice, texture, desc, descriptor.Cpu);
             result = new D3D12TextureUav(nativeDevice, texture, desc, descriptor);
-            RegisterView(nativeDevice, texture, result);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -145,21 +165,25 @@ public sealed unsafe partial class D3D12Backend
         Device device,
         in ColorAttachmentViewDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12TextureResource texture = NativeCast.Texture(desc.Texture);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12TextureResource texture = RequireTexture(desc.Texture);
+        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
         ValidateTextureView(
             texture,
             desc.Range,
             desc.Format,
             desc.Dimension,
             TextureViewKind.ColorAttachment);
-        DescriptorLease descriptor = nativeDevice.RenderTargetDescriptors.Allocate();
+        DescriptorLease descriptor = nativeDevice
+            .GetRenderTargetDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
+            .Allocate();
         D3D12ColorAttachmentView? result = null;
         try
         {
             WriteColorAttachmentView(nativeDevice, texture, desc, descriptor.Cpu);
             result = new D3D12ColorAttachmentView(nativeDevice, texture, desc, descriptor);
-            RegisterView(nativeDevice, texture, result);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -173,21 +197,25 @@ public sealed unsafe partial class D3D12Backend
         Device device,
         in SomeEngine.Graphics.DepthStencilViewDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12TextureResource texture = NativeCast.Texture(desc.Texture);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12TextureResource texture = RequireTexture(desc.Texture);
+        RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
         ValidateTextureView(
             texture,
             desc.Range,
             desc.Format,
             desc.Dimension,
             TextureViewKind.DepthStencil);
-        DescriptorLease descriptor = nativeDevice.DepthStencilDescriptors.Allocate();
+        DescriptorLease descriptor = nativeDevice
+            .GetDepthStencilDescriptors(
+                nativeDevice.ResolveResourceHomeNodeIndex(texture.Info.CreationNodeMask))
+            .Allocate();
         D3D12DepthStencilView? result = null;
         try
         {
             WriteDepthStencilView(nativeDevice, texture, desc, descriptor.Cpu);
             result = new D3D12DepthStencilView(nativeDevice, texture, desc, descriptor);
-            RegisterView(nativeDevice, texture, result);
+            nativeDevice.RegisterChild(result);
             return result;
         }
         catch
@@ -199,7 +227,7 @@ public sealed unsafe partial class D3D12Backend
 
     public Sampler CreateSampler(Device device, in SomeEngine.Graphics.SamplerDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ValidateSampler(desc);
         DescriptorLease descriptor = nativeDevice.SamplerDescriptors.Allocate();
         D3D12Sampler? result = null;
@@ -213,229 +241,6 @@ public sealed unsafe partial class D3D12Backend
         catch
         {
             ReleaseFailedView(result, descriptor);
-            throw;
-        }
-    }
-
-    public BindlessBufferCbv CreateBindlessBufferCbv(Device device, in BufferCbvDesc desc)
-    {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Buffer buffer = NativeCast.Buffer(desc.Buffer);
-        ValidateBufferView(buffer, desc.Range, BufferUsages.Constant, null, 0);
-        BufferRange range = desc.Range.Resolve(buffer.Info.Size);
-        if ((range.Offset & 255) != 0 || (range.Size & 255) != 0 || range.Size > 65_536)
-            throw new ArgumentException("A CBV range must be 256-byte aligned and at most 64 KiB.", nameof(desc));
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
-        D3D12BindlessBufferCbv? result = null;
-        DescriptorRange? rangeReservation = null;
-        bool staged = false;
-        try
-        {
-            WriteBufferCbv(nativeDevice, buffer, desc, descriptor.Cpu);
-            rangeReservation = nativeDevice.Descriptors.Reserve(DescriptorTableType.Resource, 1);
-            result = new D3D12BindlessBufferCbv(
-                nativeDevice, buffer, desc, descriptor, rangeReservation.First);
-            RegisterView(nativeDevice, buffer, result);
-            nativeDevice.Descriptors.StageDescriptor(
-                rangeReservation,
-                descriptor,
-                result,
-                ResourceBindingType.ConstantBuffer);
-            staged = true;
-            return result;
-        }
-        catch
-        {
-            ReleaseFailedView(result, descriptor);
-            if (rangeReservation is not null && !staged)
-                nativeDevice.Descriptors.Cancel(rangeReservation);
-            throw;
-        }
-    }
-
-    public BindlessBufferSrv CreateBindlessBufferSrv(Device device, in BufferSrvDesc desc)
-    {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Buffer buffer = NativeCast.Buffer(desc.Buffer);
-        ValidateBufferView(
-            buffer,
-            desc.Range,
-            BufferUsages.ShaderRead,
-            desc.Format,
-            desc.StructureStride);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
-        D3D12BindlessBufferSrv? result = null;
-        DescriptorRange? rangeReservation = null;
-        bool staged = false;
-        try
-        {
-            WriteBufferSrv(nativeDevice, buffer, desc, descriptor.Cpu);
-            rangeReservation = nativeDevice.Descriptors.Reserve(DescriptorTableType.Resource, 1);
-            result = new D3D12BindlessBufferSrv(
-                nativeDevice, buffer, desc, descriptor, rangeReservation.First);
-            RegisterView(nativeDevice, buffer, result);
-            nativeDevice.Descriptors.StageDescriptor(
-                rangeReservation,
-                descriptor,
-                result,
-                ResourceBindingType.BufferSrv);
-            staged = true;
-            return result;
-        }
-        catch
-        {
-            ReleaseFailedView(result, descriptor);
-            if (rangeReservation is not null && !staged)
-                nativeDevice.Descriptors.Cancel(rangeReservation);
-            throw;
-        }
-    }
-
-    public BindlessBufferUav CreateBindlessBufferUav(Device device, in BufferUavDesc desc)
-    {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Buffer buffer = NativeCast.Buffer(desc.Buffer);
-        ValidateBufferView(
-            buffer,
-            desc.Range,
-            BufferUsages.ShaderWrite,
-            desc.Format,
-            desc.StructureStride);
-        ValidateUavCounter(desc);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
-        D3D12BindlessBufferUav? result = null;
-        DescriptorRange? rangeReservation = null;
-        bool staged = false;
-        try
-        {
-            WriteBufferUav(nativeDevice, buffer, desc, descriptor.Cpu);
-            rangeReservation = nativeDevice.Descriptors.Reserve(DescriptorTableType.Resource, 1);
-            result = new D3D12BindlessBufferUav(
-                nativeDevice, buffer, desc, descriptor, rangeReservation.First);
-            RegisterView(nativeDevice, buffer, result);
-            nativeDevice.Descriptors.StageDescriptor(
-                rangeReservation,
-                descriptor,
-                result,
-                ResourceBindingType.BufferUav);
-            staged = true;
-            return result;
-        }
-        catch
-        {
-            ReleaseFailedView(result, descriptor);
-            if (rangeReservation is not null && !staged)
-                nativeDevice.Descriptors.Cancel(rangeReservation);
-            throw;
-        }
-    }
-
-    public BindlessTextureSrv CreateBindlessTextureSrv(Device device, in TextureSrvDesc desc)
-    {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12TextureResource texture = NativeCast.Texture(desc.Texture);
-        ValidateTextureView(
-            texture,
-            desc.Range,
-            desc.Format,
-            desc.Dimension,
-            TextureViewKind.ShaderResource);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
-        D3D12BindlessTextureSrv? result = null;
-        DescriptorRange? rangeReservation = null;
-        bool staged = false;
-        try
-        {
-            WriteTextureSrv(nativeDevice, texture, desc, descriptor.Cpu);
-            rangeReservation = nativeDevice.Descriptors.Reserve(DescriptorTableType.Resource, 1);
-            result = new D3D12BindlessTextureSrv(
-                nativeDevice, texture, desc, descriptor, rangeReservation.First);
-            RegisterView(nativeDevice, texture, result);
-            nativeDevice.Descriptors.StageDescriptor(
-                rangeReservation,
-                descriptor,
-                result,
-                ResourceBindingType.TextureSrv);
-            staged = true;
-            return result;
-        }
-        catch
-        {
-            ReleaseFailedView(result, descriptor);
-            if (rangeReservation is not null && !staged)
-                nativeDevice.Descriptors.Cancel(rangeReservation);
-            throw;
-        }
-    }
-
-    public BindlessTextureUav CreateBindlessTextureUav(Device device, in TextureUavDesc desc)
-    {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12TextureResource texture = NativeCast.Texture(desc.Texture);
-        ValidateTextureView(
-            texture,
-            desc.Range,
-            desc.Format,
-            desc.Dimension,
-            TextureViewKind.UnorderedAccess);
-        DescriptorLease descriptor = nativeDevice.ResourceDescriptors.Allocate();
-        D3D12BindlessTextureUav? result = null;
-        DescriptorRange? rangeReservation = null;
-        bool staged = false;
-        try
-        {
-            WriteTextureUav(nativeDevice, texture, desc, descriptor.Cpu);
-            rangeReservation = nativeDevice.Descriptors.Reserve(DescriptorTableType.Resource, 1);
-            result = new D3D12BindlessTextureUav(
-                nativeDevice, texture, desc, descriptor, rangeReservation.First);
-            RegisterView(nativeDevice, texture, result);
-            nativeDevice.Descriptors.StageDescriptor(
-                rangeReservation,
-                descriptor,
-                result,
-                ResourceBindingType.TextureUav);
-            staged = true;
-            return result;
-        }
-        catch
-        {
-            ReleaseFailedView(result, descriptor);
-            if (rangeReservation is not null && !staged)
-                nativeDevice.Descriptors.Cancel(rangeReservation);
-            throw;
-        }
-    }
-
-    public BindlessSampler CreateBindlessSampler(
-        Device device,
-        in SomeEngine.Graphics.SamplerDesc desc)
-    {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        ValidateSampler(desc);
-        DescriptorLease descriptor = nativeDevice.SamplerDescriptors.Allocate();
-        D3D12BindlessSampler? result = null;
-        DescriptorRange? rangeReservation = null;
-        bool staged = false;
-        try
-        {
-            WriteSampler(nativeDevice, desc, descriptor.Cpu);
-            rangeReservation = nativeDevice.Descriptors.Reserve(DescriptorTableType.Sampler, 1);
-            result = new D3D12BindlessSampler(
-                nativeDevice, desc, descriptor, rangeReservation.First);
-            nativeDevice.RegisterChild(result);
-            nativeDevice.Descriptors.StageDescriptor(
-                rangeReservation,
-                descriptor,
-                result,
-                ResourceBindingType.Sampler);
-            staged = true;
-            return result;
-        }
-        catch
-        {
-            ReleaseFailedView(result, descriptor);
-            if (rangeReservation is not null && !staged)
-                nativeDevice.Descriptors.Cancel(rangeReservation);
             throw;
         }
     }
@@ -479,6 +284,12 @@ public sealed unsafe partial class D3D12Backend
             {
                 throw new ArgumentException("The format is not a D3D12 typed Buffer format.");
             }
+            FormatSupport support = buffer.Device.Capabilities.GetFormatSupport(typed);
+            FormatFeatures requiredFeatures = FormatFeatures.Buffer |
+                (requiredUsage == BufferUsages.ShaderWrite
+                    ? FormatFeatures.Storage | FormatFeatures.StorageStore
+                    : FormatFeatures.ShaderLoad);
+            RequireFormatFeatures(support, requiredFeatures, "typed Buffer view");
             elementSize = FormatMappings.BytesPerElement(typed);
         }
         else if (structureStride != 0)
@@ -502,18 +313,22 @@ public sealed unsafe partial class D3D12Backend
             throw new ArgumentOutOfRangeException(nameof(requestedRange), "The Buffer view has too many elements.");
     }
 
-    private static void ValidateUavCounter(in BufferUavDesc desc)
+    private D3D12Buffer? ResolveUavCounter(
+        D3D12Device device,
+        in BufferUavDesc desc)
     {
         if (desc.CounterBuffer is null)
         {
             if (desc.CounterOffset != 0)
                 throw new ArgumentException("A null UAV counter Buffer requires CounterOffset=0.", nameof(desc));
-            return;
+            return null;
         }
         if (desc.Format.HasValue || desc.StructureStride == 0)
             throw new ArgumentException("Only a structured UAV may name a counter Buffer.", nameof(desc));
 
-        D3D12Buffer counter = NativeCast.Buffer(desc.CounterBuffer);
+        D3D12Buffer counter = RequireBuffer(desc.CounterBuffer);
+        if (!ReferenceEquals(counter.Device, device))
+            throw new ArgumentException("The UAV counter Buffer belongs to another Device.", nameof(desc));
         counter.ThrowIfDisposed();
         if ((counter.Info.Usages & BufferUsages.ShaderWrite) == 0)
             throw new ArgumentException("The UAV counter Buffer requires ShaderWrite usage.", nameof(desc));
@@ -525,6 +340,7 @@ public sealed unsafe partial class D3D12Backend
                 nameof(desc),
                 "The UAV counter offset must be 4 KiB aligned and contain four bytes.");
         }
+        return counter;
     }
 
     private static void ValidateTextureView(
@@ -536,6 +352,22 @@ public sealed unsafe partial class D3D12Backend
     {
         texture.Owner.ThrowIfDisposed();
         TextureInfo info = texture.Info;
+        ValidateTextureViewUsageAndFormat(info, format, kind);
+        ValidateTextureViewMipAndAspects(info, range, kind);
+        ValidateTextureViewDimensionAndLayers(info, range, dimension, kind);
+        ValidateTextureViewFormatSupport(texture, info, format, kind);
+    }
+
+    private static void ValidateTextureViewUsageAndFormat(
+        in TextureInfo info,
+        Format format,
+        TextureViewKind kind)
+    {
+        if ((info.Usages & TextureUsages.SamplerFeedback) != 0)
+        {
+            throw new ArgumentException(
+                "Sampler-feedback Textures require CreateSamplerFeedbackUav and cannot be used with ordinary Texture views.");
+        }
         TextureUsages requiredUsage = kind switch
         {
             TextureViewKind.ShaderResource => TextureUsages.Sampled,
@@ -566,7 +398,13 @@ public sealed unsafe partial class D3D12Backend
             if (kind == TextureViewKind.UnorderedAccess && FormatMappings.IsSrgb(format))
                 throw new ArgumentException("D3D12 does not support sRGB UAV formats.");
         }
+    }
 
+    private static void ValidateTextureViewMipAndAspects(
+        in TextureInfo info,
+        in TextureSubresourceRange range,
+        TextureViewKind kind)
+    {
         if (range.MipLevelCount == 0 ||
             range.FirstMipLevel >= info.MipLevelCount ||
             range.MipLevelCount > info.MipLevelCount - range.FirstMipLevel)
@@ -589,35 +427,48 @@ public sealed unsafe partial class D3D12Backend
         {
             _ = FormatMappings.PlaneIndex(info.Format, range.Aspects);
         }
+    }
 
-        bool arrayView = dimension is
-            TextureViewDimension.Texture1DArray or
-            TextureViewDimension.Texture2DArray or
-            TextureViewDimension.Texture2DMultisampledArray or
-            TextureViewDimension.Cube or
-            TextureViewDimension.CubeArray;
-        bool compatibleDimension = info.Dimension switch
-        {
-            TextureDimension.Texture1D => dimension is
-                TextureViewDimension.Texture1D or TextureViewDimension.Texture1DArray,
-            TextureDimension.Texture2D when info.SampleCount == 1 => dimension is
-                TextureViewDimension.Texture2D or
-                TextureViewDimension.Texture2DArray or
-                TextureViewDimension.Cube or
-                TextureViewDimension.CubeArray,
-            TextureDimension.Texture2D => dimension is
-                TextureViewDimension.Texture2DMultisampled or
-                TextureViewDimension.Texture2DMultisampledArray,
-            TextureDimension.Texture3D => dimension == TextureViewDimension.Texture3D,
-            _ => false,
-        };
-        if (!compatibleDimension)
+    private static void ValidateTextureViewDimensionAndLayers(
+        in TextureInfo info,
+        in TextureSubresourceRange range,
+        TextureViewDimension dimension,
+        TextureViewKind kind)
+    {
+        if (!IsCompatibleTextureViewDimension(info, dimension))
             throw new ArgumentException("The view dimension is incompatible with the Texture.");
         if (kind == TextureViewKind.UnorderedAccess && info.SampleCount != 1)
             throw new NotSupportedException("Direct3D 12 does not support multisampled UAVs.");
         if (kind == TextureViewKind.DepthStencil && info.Dimension == TextureDimension.Texture3D)
             throw new NotSupportedException("Direct3D 12 does not support 3D depth/stencil views.");
 
+        ValidateTextureViewLayerRange(info, range, kind);
+        ValidateTextureViewLayerShape(info, range, dimension, kind);
+    }
+
+    private static bool IsCompatibleTextureViewDimension(
+        in TextureInfo info,
+        TextureViewDimension dimension) => info.Dimension switch
+    {
+        TextureDimension.Texture1D => dimension is
+            TextureViewDimension.Texture1D or TextureViewDimension.Texture1DArray,
+        TextureDimension.Texture2D when info.SampleCount == 1 => dimension is
+            TextureViewDimension.Texture2D or
+            TextureViewDimension.Texture2DArray or
+            TextureViewDimension.Cube or
+            TextureViewDimension.CubeArray,
+        TextureDimension.Texture2D => dimension is
+            TextureViewDimension.Texture2DMultisampled or
+            TextureViewDimension.Texture2DMultisampledArray,
+        TextureDimension.Texture3D => dimension == TextureViewDimension.Texture3D,
+        _ => false,
+    };
+
+    private static void ValidateTextureViewLayerRange(
+        in TextureInfo info,
+        in TextureSubresourceRange range,
+        TextureViewKind kind)
+    {
         uint layerLimit = info.Dimension == TextureDimension.Texture3D &&
             kind is TextureViewKind.UnorderedAccess or TextureViewKind.ColorAttachment
                 ? Math.Max(1u, info.Depth >> checked((int)range.FirstMipLevel))
@@ -626,7 +477,20 @@ public sealed unsafe partial class D3D12Backend
             range.FirstArrayLayer >= layerLimit ||
             range.ArrayLayerCount > layerLimit - range.FirstArrayLayer)
             throw new ArgumentOutOfRangeException(nameof(range), "The Texture view layer range is invalid.");
+    }
 
+    private static void ValidateTextureViewLayerShape(
+        in TextureInfo info,
+        in TextureSubresourceRange range,
+        TextureViewDimension dimension,
+        TextureViewKind kind)
+    {
+        bool arrayView = dimension is
+            TextureViewDimension.Texture1DArray or
+            TextureViewDimension.Texture2DArray or
+            TextureViewDimension.Texture2DMultisampledArray or
+            TextureViewDimension.Cube or
+            TextureViewDimension.CubeArray;
         if (!arrayView && dimension != TextureViewDimension.Texture3D &&
             (info.ArrayLayerCount != 1 || range.FirstArrayLayer != 0 || range.ArrayLayerCount != 1))
             throw new ArgumentException("A non-array view requires a single-layer Texture.");
@@ -642,6 +506,47 @@ public sealed unsafe partial class D3D12Backend
         if (info.SampleCount != 1 &&
             (range.FirstMipLevel != 0 || range.MipLevelCount != 1))
             throw new ArgumentException("A multisampled Texture view selects its only mip level.");
+    }
+
+    private static void ValidateTextureViewFormatSupport(
+        D3D12TextureResource texture,
+        in TextureInfo info,
+        Format format,
+        TextureViewKind kind)
+    {
+        FormatSupport formatSupport = texture.Owner.Device.Capabilities.GetFormatSupport(format);
+        FormatFeatures requiredFormatFeatures = kind switch
+        {
+            TextureViewKind.ShaderResource => FormatFeatures.ShaderLoad |
+                (info.SampleCount > 1 ? FormatFeatures.MultisampleLoad : FormatFeatures.None),
+            TextureViewKind.UnorderedAccess =>
+                FormatFeatures.Storage | FormatFeatures.StorageStore,
+            TextureViewKind.ColorAttachment => FormatFeatures.ColorAttachment |
+                (info.SampleCount > 1
+                    ? FormatFeatures.MultisampleColorAttachment
+                    : FormatFeatures.None),
+            TextureViewKind.DepthStencil => FormatFeatures.DepthStencilAttachment,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        RequireFormatFeatures(formatSupport, requiredFormatFeatures, "Texture view");
+        if (!formatSupport.SupportsSampleCount(info.SampleCount))
+        {
+            throw new NotSupportedException(
+                $"Format {format} does not support {info.SampleCount}x samples for this view.");
+        }
+    }
+
+    private static void RequireFormatFeatures(
+        in FormatSupport support,
+        FormatFeatures required,
+        string operation)
+    {
+        if ((support.Features & required) != required)
+        {
+            throw new NotSupportedException(
+                $"Format {support.Format} does not provide the features required by {operation}: " +
+                $"{required}.");
+        }
     }
 
     private static void ValidateSampler(in SomeEngine.Graphics.SamplerDesc desc)
@@ -661,24 +566,6 @@ public sealed unsafe partial class D3D12Backend
             !float.IsFinite(desc.MaximumLod) ||
             desc.MinimumLod > desc.MaximumLod)
             throw new ArgumentException("The Sampler LOD range and bias must be finite and ordered.", nameof(desc));
-    }
-
-    private static void RegisterView(
-        D3D12Device device,
-        D3D12Buffer resource,
-        GraphicsObject view)
-    {
-        device.RegisterChild(view);
-        resource.RegisterView(view);
-    }
-
-    private static void RegisterView(
-        D3D12Device device,
-        D3D12TextureResource resource,
-        GraphicsObject view)
-    {
-        device.RegisterChild(view);
-        resource.RegisterView(view);
     }
 
     private static void WriteBufferCbv(
@@ -731,6 +618,7 @@ public sealed unsafe partial class D3D12Backend
     private static void WriteBufferUav(
         D3D12Device device,
         D3D12Buffer buffer,
+        D3D12Buffer? counter,
         in BufferUavDesc desc,
         CpuDescriptorHandle destination)
     {
@@ -757,12 +645,9 @@ public sealed unsafe partial class D3D12Backend
             CounterOffsetInBytes = desc.CounterOffset,
             Flags = srvFlags == BufferSrvFlags.Raw ? BufferUavFlags.Raw : BufferUavFlags.None,
         };
-        NativeResource* counter = desc.CounterBuffer is null
-            ? null
-            : NativeCast.Buffer(desc.CounterBuffer).Native;
         device.Native->CreateUnorderedAccessView(
             buffer.Native,
-            counter,
+            counter is null ? null : counter.Native,
             &native,
             destination);
     }

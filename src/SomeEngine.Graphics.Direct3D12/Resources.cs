@@ -13,19 +13,22 @@ using NativeSampleDesc = Silk.NET.DXGI.SampleDesc;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public MemoryRequirements GetBufferMemoryRequirements(
         Device device,
         in BufferDesc desc,
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         NativeResourceDesc native = CreateBufferDescription(desc);
         ValidateBufferMemoryType(desc, memoryType);
+        (_, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
+            desc.NodePlacement,
+            nameof(desc));
         ResourceAllocationInfo allocation = nativeDevice.Native->GetResourceAllocationInfo(
-            nativeDevice.EnabledNodeMask,
+            visibleNodeMask,
             1,
             &native);
         EnsureAllocationInfo(allocation, "Buffer");
@@ -37,11 +40,14 @@ public sealed unsafe partial class D3D12Backend
 
     public MemoryRequirements GetTextureMemoryRequirements(Device device, in TextureDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         NativeResourceDesc native = CreateTextureDescription(desc);
+        (_, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
+            desc.NodePlacement,
+            nameof(desc));
         ResourceAllocationInfo allocation = nativeDevice.Native->GetResourceAllocationInfo(
-            nativeDevice.EnabledNodeMask,
+            visibleNodeMask,
             1,
             &native);
         EnsureAllocationInfo(allocation, "Texture");
@@ -60,7 +66,7 @@ public sealed unsafe partial class D3D12Backend
         in BufferTextureCopy copy,
         ulong requestedBufferOffset = 0)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         if ((requestedBufferOffset & 511) != 0)
         {
@@ -69,8 +75,11 @@ public sealed unsafe partial class D3D12Backend
                 "A Texture footprint base offset must be 512-byte aligned.");
         }
         NativeResourceDesc native = CreateTextureDescription(desc);
+        (uint creationNodeMask, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
+            desc.NodePlacement,
+            nameof(desc));
         ValidateTextureRegion(
-            CreateTextureInfo(desc, 0, 0),
+            CreateTextureInfo(desc, 0, 0, creationNodeMask, visibleNodeMask),
             copy.MipLevel,
             copy.ArrayLayer,
             copy.Aspect,
@@ -139,7 +148,7 @@ public sealed unsafe partial class D3D12Backend
 
     public Heap CreateHeap(Device device, in HeapDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         ValidateHeapDescription(nativeDevice, desc);
         NativeHeapDesc nativeDescription = new()
@@ -155,8 +164,10 @@ public sealed unsafe partial class D3D12Backend
 
         ID3D12Heap* native = null;
         Guid iid = ID3D12Heap.Guid;
-        NativeCall.ThrowIfFailed(
+        ThrowIfFailed(
+            nativeDevice,
             nativeDevice.Native->CreateHeap(&nativeDescription, &iid, (void**)&native),
+            NativeOperationType.Ordinary,
             $"ID3D12Device::CreateHeap(size={desc.Size}, alignment={desc.Alignment}, " +
             $"memory={desc.MemoryType}, flags={desc.Flags}, " +
             $"creationNodeMask={desc.CreationNodeMask}, visibleNodeMask={desc.VisibleNodeMask})");
@@ -181,6 +192,7 @@ public sealed unsafe partial class D3D12Backend
             _ = native->Release();
             throw;
         }
+        SetNativeName(heap.Native, desc.Label ?? "D3D12 Heap");
         nativeDevice.RegisterChild(heap);
         return heap;
     }
@@ -190,35 +202,81 @@ public sealed unsafe partial class D3D12Backend
         in BufferDesc desc,
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         NativeResourceDesc nativeDescription = CreateBufferDescription(desc);
         ValidateBufferMemoryType(desc, memoryType);
+        (uint creationNodeMask, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
+            desc.NodePlacement,
+            nameof(desc));
         MemoryRequirements requirements = GetBufferMemoryRequirements(device, desc, memoryType);
         (PipelineSync sync, ResourceAccess access) = InitialBufferAccess(memoryType);
-        NativeResource* native = CreateCommittedResource(
+        BufferInfo info = new(
+            desc.Size,
+            desc.Usages,
+            memoryType,
+            0,
+            requirements.Size,
+            creationNodeMask,
+            visibleNodeMask);
+        bool shareable = (desc.Usages & BufferUsages.Shareable) != 0;
+        NativeLease? pooled = TryCreatePooledResource(
             nativeDevice,
             memoryType,
-            (desc.Usages & BufferUsages.Shareable) != 0,
+            ResourceHeapClass.Buffers,
+            poolEligible: !shareable,
+            creationNodeMask,
+            visibleNodeMask,
+            requirements,
             nativeDescription,
             ReadOnlySpan<DxgiFormat>.Empty);
         D3D12Buffer buffer;
-        try
+        if (pooled is not null)
         {
-            buffer = new D3D12Buffer(
+            try
+            {
+                buffer = new D3D12Buffer(
+                    nativeDevice,
+                    pooled,
+                    info,
+                    sync,
+                    access,
+                    desc.Label);
+            }
+            catch
+            {
+                pooled.Release();
+                throw;
+            }
+        }
+        else
+        {
+            NativeResource* native = CreateCommittedResource(
                 nativeDevice,
-                heap: null,
-                native,
-                new BufferInfo(desc.Size, desc.Usages, memoryType, 0, requirements.Size),
-                sync,
-                access,
-                desc.Label);
+                memoryType,
+                shareable,
+                creationNodeMask,
+                visibleNodeMask,
+                nativeDescription,
+                ReadOnlySpan<DxgiFormat>.Empty);
+            try
+            {
+                buffer = new D3D12Buffer(
+                    nativeDevice,
+                    heap: null,
+                    native,
+                    info,
+                    sync,
+                    access,
+                    desc.Label);
+            }
+            catch
+            {
+                _ = native->Release();
+                throw;
+            }
         }
-        catch
-        {
-            _ = native->Release();
-            throw;
-        }
+        SetNativeName(buffer.Native, desc.Label ?? $"{memoryType} Buffer");
         nativeDevice.RegisterChild(buffer);
         return buffer;
     }
@@ -229,14 +287,26 @@ public sealed unsafe partial class D3D12Backend
         ulong offset,
         in BufferDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Heap nativeHeap = NativeCast.Heap(heap);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12Heap nativeHeap = RequireHeap(heap);
+        RequireSameDevice(nativeDevice, nativeHeap, nameof(heap));
         nativeDevice.ThrowIfUnavailable();
         nativeHeap.ThrowIfDisposed();
         NativeResourceDesc nativeDescription = CreateBufferDescription(desc);
         ValidateBufferMemoryType(desc, nativeHeap.Info.MemoryType);
-        MemoryRequirements requirements =
-            GetBufferMemoryRequirements(device, desc, nativeHeap.Info.MemoryType);
+        ValidatePlacedResourceNodePlacement(desc.NodePlacement, nativeHeap.Info, nameof(desc));
+        ResourceAllocationInfo allocation = nativeDevice.Native->GetResourceAllocationInfo(
+            nativeHeap.Info.VisibleNodeMask,
+            1,
+            &nativeDescription);
+        EnsureAllocationInfo(allocation, "Buffer");
+        MemoryRequirements requirements = new(
+            allocation.SizeInBytes,
+            allocation.Alignment,
+            SomeEngine.Graphics.HeapFlags.Buffers |
+            ((desc.Usages & BufferUsages.Shareable) != 0
+                ? SomeEngine.Graphics.HeapFlags.Shareable
+                : SomeEngine.Graphics.HeapFlags.None));
         ValidatePlacement(
             nativeHeap,
             offset,
@@ -262,7 +332,9 @@ public sealed unsafe partial class D3D12Backend
                     desc.Usages,
                     nativeHeap.Info.MemoryType,
                     offset,
-                    requirements.Size),
+                    requirements.Size,
+                    nativeHeap.Info.CreationNodeMask,
+                    nativeHeap.Info.VisibleNodeMask),
                 sync,
                 access,
                 desc.Label);
@@ -272,48 +344,86 @@ public sealed unsafe partial class D3D12Backend
             _ = native->Release();
             throw;
         }
+        SetNativeName(buffer.Native, desc.Label ?? "Placed Buffer");
         nativeDevice.RegisterChild(buffer);
-        try
-        {
-            nativeHeap.RegisterResource(buffer);
-        }
-        catch
-        {
-            buffer.Dispose();
-            throw;
-        }
         return buffer;
     }
 
     public Texture CreateTexture(Device device, in TextureDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         NativeResourceDesc nativeDescription = CreateTextureDescription(desc);
+        (uint creationNodeMask, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
+            desc.NodePlacement,
+            nameof(desc));
         MemoryRequirements requirements = GetTextureMemoryRequirements(device, desc);
-        TextureInfo info = CreateTextureInfo(desc, 0, requirements.Size);
+        TextureInfo info = CreateTextureInfo(
+            desc,
+            0,
+            requirements.Size,
+            creationNodeMask,
+            visibleNodeMask);
         DxgiFormat[] castableFormats = CreateCastableFormats(desc);
-        NativeResource* native = CreateCommittedResource(
+        bool shareable = (desc.Usages & TextureUsages.Shareable) != 0;
+        ResourceHeapClass heapClass =
+            (desc.Usages & (TextureUsages.ColorAttachment |
+                            TextureUsages.DepthStencilAttachment)) != 0
+                ? ResourceHeapClass.Attachments
+                : ResourceHeapClass.Textures;
+        NativeLease? pooled = TryCreatePooledResource(
             nativeDevice,
             MemoryType.DeviceLocal,
-            (desc.Usages & TextureUsages.Shareable) != 0,
+            heapClass,
+            poolEligible: !shareable,
+            creationNodeMask,
+            visibleNodeMask,
+            requirements,
             nativeDescription,
             castableFormats);
         D3D12Texture texture;
-        try
+        if (pooled is not null)
         {
-            texture = new D3D12Texture(
+            try
+            {
+                texture = new D3D12Texture(
+                    nativeDevice,
+                    pooled,
+                    info,
+                    desc.Label);
+            }
+            catch
+            {
+                pooled.Release();
+                throw;
+            }
+        }
+        else
+        {
+            NativeResource* native = CreateCommittedResource(
                 nativeDevice,
-                heap: null,
-                native,
-                info,
-                desc.Label);
+                MemoryType.DeviceLocal,
+                shareable,
+                creationNodeMask,
+                visibleNodeMask,
+                nativeDescription,
+                castableFormats);
+            try
+            {
+                texture = new D3D12Texture(
+                    nativeDevice,
+                    heap: null,
+                    native,
+                    info,
+                    desc.Label);
+            }
+            catch
+            {
+                _ = native->Release();
+                throw;
+            }
         }
-        catch
-        {
-            _ = native->Release();
-            throw;
-        }
+        SetNativeName(texture.Native, desc.Label ?? "DeviceLocal Texture");
         nativeDevice.RegisterChild(texture);
         return texture;
     }
@@ -324,8 +434,9 @@ public sealed unsafe partial class D3D12Backend
         ulong offset,
         in TextureDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
-        D3D12Heap nativeHeap = NativeCast.Heap(heap);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12Heap nativeHeap = RequireHeap(heap);
+        RequireSameDevice(nativeDevice, nativeHeap, nameof(heap));
         nativeDevice.ThrowIfUnavailable();
         nativeHeap.ThrowIfDisposed();
         if (nativeHeap.Info.MemoryType != MemoryType.DeviceLocal)
@@ -335,7 +446,22 @@ public sealed unsafe partial class D3D12Backend
                 nameof(heap));
         }
         NativeResourceDesc nativeDescription = CreateTextureDescription(desc);
-        MemoryRequirements requirements = GetTextureMemoryRequirements(device, desc);
+        ValidatePlacedResourceNodePlacement(desc.NodePlacement, nativeHeap.Info, nameof(desc));
+        ResourceAllocationInfo allocation = nativeDevice.Native->GetResourceAllocationInfo(
+            nativeHeap.Info.VisibleNodeMask,
+            1,
+            &nativeDescription);
+        EnsureAllocationInfo(allocation, "Texture");
+        SomeEngine.Graphics.HeapFlags compatibleFlags = SomeEngine.Graphics.HeapFlags.Textures;
+        if ((desc.Usages & (TextureUsages.ColorAttachment |
+                           TextureUsages.DepthStencilAttachment)) != 0)
+            compatibleFlags |= SomeEngine.Graphics.HeapFlags.Attachments;
+        if ((desc.Usages & TextureUsages.Shareable) != 0)
+            compatibleFlags |= SomeEngine.Graphics.HeapFlags.Shareable;
+        MemoryRequirements requirements = new(
+            allocation.SizeInBytes,
+            allocation.Alignment,
+            compatibleFlags);
         SomeEngine.Graphics.HeapFlags requiredClass =
             (desc.Usages & (TextureUsages.ColorAttachment |
                             TextureUsages.DepthStencilAttachment)) != 0
@@ -347,7 +473,12 @@ public sealed unsafe partial class D3D12Backend
             requirements,
             requiredClass,
             (desc.Usages & TextureUsages.Shareable) != 0);
-        TextureInfo info = CreateTextureInfo(desc, offset, requirements.Size);
+        TextureInfo info = CreateTextureInfo(
+            desc,
+            offset,
+            requirements.Size,
+            nativeHeap.Info.CreationNodeMask,
+            nativeHeap.Info.VisibleNodeMask);
         DxgiFormat[] castableFormats = CreateCastableFormats(desc);
         NativeResource* native = CreatePlacedResource(
             nativeDevice,
@@ -370,40 +501,34 @@ public sealed unsafe partial class D3D12Backend
             _ = native->Release();
             throw;
         }
+        SetNativeName(texture.Native, desc.Label ?? "Placed Texture");
         nativeDevice.RegisterChild(texture);
-        try
-        {
-            nativeHeap.RegisterResource(texture);
-        }
-        catch
-        {
-            texture.Dispose();
-            throw;
-        }
         return texture;
     }
 
     public MappedBuffer Map(Buffer buffer, MapType type, in BufferRange range)
     {
-        D3D12Buffer nativeBuffer = NativeCast.Buffer(buffer);
+        D3D12Buffer nativeBuffer = RequireBuffer(buffer);
         BufferRange resolved = range.Resolve(nativeBuffer.Info.Size);
         if (resolved.Size > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(range), "A mapped Span cannot exceed Int32.MaxValue.");
 
-        return nativeBuffer.Map(type, resolved);
+        return nativeBuffer.Map(type, resolved, (int)resolved.Size);
     }
 
     private static NativeResource* CreateCommittedResource(
         D3D12Device device,
         MemoryType memoryType,
         bool shareable,
+        uint creationNodeMask,
+        uint visibleNodeMask,
         in NativeResourceDesc description,
         ReadOnlySpan<DxgiFormat> castableFormats)
     {
         HeapProperties properties = CreateHeapProperties(
             memoryType,
-            device.EnabledNodeMask,
-            device.EnabledNodeMask);
+            creationNodeMask,
+            visibleNodeMask);
         NativeHeapFlags heapFlags = shareable ? NativeHeapFlags.Shared : NativeHeapFlags.None;
         NativeResource* resource = null;
         Guid iid = NativeResource.Guid;
@@ -414,7 +539,8 @@ public sealed unsafe partial class D3D12Backend
             BarrierLayout layout = InitialLayout(memoryType, description.Dimension);
             fixed (DxgiFormat* formats = castableFormats)
             {
-                NativeCall.ThrowIfFailed(
+                ThrowIfFailed(
+                    device,
                     device.Native->CreateCommittedResource3(
                         &properties,
                         heapFlags,
@@ -426,6 +552,7 @@ public sealed unsafe partial class D3D12Backend
                         formats,
                         &iid,
                         (void**)&resource),
+                    NativeOperationType.Ordinary,
                     "ID3D12Device10::CreateCommittedResource3");
             }
         }
@@ -446,9 +573,10 @@ public sealed unsafe partial class D3D12Backend
                 null,
                 &iid,
                 (void**)&resource);
-            ThrowIfDeviceFailed(
+            ThrowIfFailed(
                 device,
                 createResult,
+                NativeOperationType.Ordinary,
                 "ID3D12Device::CreateCommittedResource");
         }
 
@@ -461,6 +589,21 @@ public sealed unsafe partial class D3D12Backend
         ulong offset,
         in NativeResourceDesc description,
         ReadOnlySpan<DxgiFormat> castableFormats)
+        => CreatePlacedResource(
+            device,
+            heap.Native,
+            offset,
+            heap.Info.MemoryType,
+            description,
+            castableFormats);
+
+    private static NativeResource* CreatePlacedResource(
+        D3D12Device device,
+        ID3D12Heap* heap,
+        ulong offset,
+        MemoryType memoryType,
+        in NativeResourceDesc description,
+        ReadOnlySpan<DxgiFormat> castableFormats)
     {
         NativeResource* resource = null;
         Guid iid = NativeResource.Guid;
@@ -468,12 +611,13 @@ public sealed unsafe partial class D3D12Backend
         if (device.EnhancedBarriers)
         {
             ResourceDesc1 description1 = ToDescription1(description);
-            BarrierLayout layout = InitialLayout(heap.Info.MemoryType, description.Dimension);
+            BarrierLayout layout = InitialLayout(memoryType, description.Dimension);
             fixed (DxgiFormat* formats = castableFormats)
             {
-                NativeCall.ThrowIfFailed(
+                ThrowIfFailed(
+                    device,
                     device.Native->CreatePlacedResource2(
-                        heap.Native,
+                        heap,
                         offset,
                         &description1,
                         layout,
@@ -482,6 +626,7 @@ public sealed unsafe partial class D3D12Backend
                         formats,
                         &iid,
                         (void**)&resource),
+                    NativeOperationType.Ordinary,
                     "ID3D12Device10::CreatePlacedResource2");
             }
         }
@@ -493,18 +638,19 @@ public sealed unsafe partial class D3D12Backend
             copy.Flags &= ~ResourceFlags.RaytracingAccelerationStructure;
             ResourceStates initialState = accelerationStructure
                 ? ResourceStates.RaytracingAccelerationStructure
-                : InitialLegacyState(heap.Info.MemoryType);
+                : InitialLegacyState(memoryType);
             int createResult = device.Native->CreatePlacedResource(
-                heap.Native,
+                heap,
                 offset,
                 &copy,
                 initialState,
                 null,
                 &iid,
                 (void**)&resource);
-            ThrowIfDeviceFailed(
+            ThrowIfFailed(
                 device,
                 createResult,
+                NativeOperationType.Ordinary,
                 "ID3D12Device::CreatePlacedResource");
         }
 
@@ -589,13 +735,15 @@ public sealed unsafe partial class D3D12Backend
             throw new ArgumentOutOfRangeException(nameof(desc), "The Heap flags contain unknown bits.");
         uint enabled = device.EnabledNodeMask;
         if (desc.CreationNodeMask == 0 ||
+            !BitOperations.IsPow2(desc.CreationNodeMask) ||
             desc.VisibleNodeMask == 0 ||
             (desc.CreationNodeMask & ~enabled) != 0 ||
             (desc.VisibleNodeMask & ~enabled) != 0 ||
             (desc.CreationNodeMask & desc.VisibleNodeMask) != desc.CreationNodeMask)
         {
             throw new ArgumentException(
-                "Heap node masks must be nonzero enabled nodes and every creation node must be visible.",
+                "A Heap requires exactly one enabled creation node, a nonempty enabled visibility set, " +
+                "and visibility of its creation node.",
                 nameof(desc));
         }
     }
@@ -647,6 +795,22 @@ public sealed unsafe partial class D3D12Backend
             TextureUsages.Shareable;
         if ((desc.Usages & ~knownUsages) != 0)
             throw new ArgumentOutOfRangeException(nameof(desc), "The Texture usage contains unknown bits.");
+        if ((desc.Usages & TextureUsages.SamplerFeedback) != 0)
+        {
+            throw new ArgumentException(
+                "TextureUsages.SamplerFeedback is reserved for CreateSamplerFeedbackTexture.",
+                nameof(desc));
+        }
+
+        ValidateTextureShape(desc);
+        ValidateTextureMipCount(desc);
+        ValidateMultisampling(desc);
+        ValidateTextureFormatUsage(desc);
+        ValidatePermittedViewFormats(desc);
+    }
+
+    private static void ValidateTextureShape(in TextureDesc desc)
+    {
         if (desc.Width == 0 || desc.Height == 0 || desc.Depth == 0 ||
             desc.MipLevelCount == 0 || desc.ArrayLayerCount == 0 || desc.SampleCount == 0)
         {
@@ -664,7 +828,10 @@ public sealed unsafe partial class D3D12Backend
             : desc.ArrayLayerCount;
         if (depthOrArray > ushort.MaxValue || desc.MipLevelCount > ushort.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(desc), "Texture depth/array and mip counts must fit D3D12 fields.");
+    }
 
+    private static void ValidateTextureMipCount(in TextureDesc desc)
+    {
         uint largestDimension = desc.Dimension switch
         {
             TextureDimension.Texture1D => desc.Width,
@@ -675,7 +842,10 @@ public sealed unsafe partial class D3D12Backend
         uint maximumMipCount = checked((uint)BitOperations.Log2(largestDimension) + 1);
         if (desc.MipLevelCount > maximumMipCount)
             throw new ArgumentOutOfRangeException(nameof(desc), "The Texture has more mip levels than its dimensions permit.");
+    }
 
+    private static void ValidateMultisampling(in TextureDesc desc)
+    {
         bool multisampled = desc.SampleCount != 1;
         if (multisampled &&
             (!BitOperations.IsPow2(desc.SampleCount) ||
@@ -686,7 +856,10 @@ public sealed unsafe partial class D3D12Backend
         {
             throw new ArgumentException("The multisampled Texture description is not representable by D3D12.", nameof(desc));
         }
+    }
 
+    private static void ValidateTextureFormatUsage(in TextureDesc desc)
+    {
         bool depthStencil = FormatMappings.IsDepthStencil(desc.Format);
         if (depthStencil && (desc.Usages & TextureUsages.ColorAttachment) != 0)
             throw new ArgumentException("A depth/stencil format cannot be a color attachment.", nameof(desc));
@@ -707,7 +880,10 @@ public sealed unsafe partial class D3D12Backend
         {
             throw new ArgumentException("A block-compressed format has an incompatible Texture usage.", nameof(desc));
         }
+    }
 
+    private static void ValidatePermittedViewFormats(in TextureDesc desc)
+    {
         DxgiFormat family = FormatMappings.ToTypelessFamily(desc.Format);
         for (int index = 0; index < desc.PermittedViewFormats.Length; index++)
         {
@@ -881,7 +1057,7 @@ public sealed unsafe partial class D3D12Backend
         memoryType switch
         {
             MemoryType.DeviceLocal => (PipelineSync.None, ResourceAccess.NoAccess),
-            MemoryType.Upload => (PipelineSync.None, ResourceAccess.Common),
+            MemoryType.Upload => (PipelineSync.None, ResourceAccess.NoAccess),
             MemoryType.Readback => (PipelineSync.Copy, ResourceAccess.CopyDestination),
             _ => throw new ArgumentOutOfRangeException(nameof(memoryType)),
         };
@@ -889,7 +1065,9 @@ public sealed unsafe partial class D3D12Backend
     private static TextureInfo CreateTextureInfo(
         in TextureDesc desc,
         ulong allocationOffset,
-        ulong allocationSize) =>
+        ulong allocationSize,
+        uint creationNodeMask,
+        uint visibleNodeMask) =>
         new(
             desc.Dimension,
             desc.Width,
@@ -903,7 +1081,25 @@ public sealed unsafe partial class D3D12Backend
             MemoryType.DeviceLocal,
             desc.PermittedViewFormats,
             allocationOffset,
-            allocationSize);
+            allocationSize,
+            creationNodeMask,
+            visibleNodeMask);
+
+    private static void ValidatePlacedResourceNodePlacement(
+        in ResourceNodePlacement placement,
+        in HeapInfo heap,
+        string parameterName)
+    {
+        if (placement.CreationNodeMask == 0 && placement.VisibleNodeMask == 0)
+            return;
+        if (placement.CreationNodeMask != heap.CreationNodeMask ||
+            placement.VisibleNodeMask != heap.VisibleNodeMask)
+        {
+            throw new ArgumentException(
+                "A placed resource inherits the creation and visibility masks of its Heap.",
+                parameterName);
+        }
+    }
 
     private static DxgiFormat[] CreateCastableFormats(in TextureDesc desc)
     {
@@ -930,11 +1126,7 @@ public sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12Heap : Heap
     {
         private readonly D3D12Device _device;
-        private readonly object _resourcesGate = new();
-        private readonly HashSet<GraphicsObject> _resources =
-            new(ReferenceEqualityComparer.Instance);
         private readonly NativeLease _native;
-        private int _released;
 
         internal D3D12Heap(
             D3D12Device device,
@@ -952,34 +1144,8 @@ public sealed unsafe partial class D3D12Backend
         internal NativeLease NativeLifetime => _native;
         internal D3D12Device NativeDevice => _device;
 
-        internal void RegisterResource(GraphicsObject resource)
-        {
-            lock (_resourcesGate)
-            {
-                ThrowIfDisposed();
-                _resources.Add(resource);
-            }
-        }
-
-        internal void UnregisterResource(GraphicsObject resource)
-        {
-            lock (_resourcesGate)
-                _resources.Remove(resource);
-        }
-
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-
-            GraphicsObject[] resources;
-            lock (_resourcesGate)
-                resources = [.. _resources];
-            foreach (GraphicsObject resource in resources)
-                resource.DisposeFromParent();
-            lock (_resourcesGate)
-                _resources.Clear();
-
             _native.Release();
             _device.UnregisterChild(this);
         }
@@ -988,13 +1154,8 @@ public sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12Buffer : Buffer
     {
         private readonly D3D12Device _device;
-        private readonly D3D12Heap? _heap;
-        private readonly ChildRegistry _views = new();
         private readonly NativeLease _native;
-        private D3D12MappingLease? _mapping;
-        private long _mappingSequence;
-        private int _mapped;
-        private int _released;
+        private readonly D3D12MappingLease _mapping;
 
         internal D3D12Buffer(
             D3D12Device device,
@@ -1009,88 +1170,117 @@ public sealed unsafe partial class D3D12Backend
             : base(device, heap, info, initialSync, initialAccess, label, initialQueueType)
         {
             _device = device;
-            _heap = heap;
+            _mapping = new D3D12MappingLease(this);
             _native = new NativeLease(
                 (IUnknown*)native,
                 ownsReference,
                 heap?.NativeLifetime);
         }
 
+        internal D3D12Buffer(
+            D3D12Device device,
+            NativeLease native,
+            in BufferInfo info,
+            PipelineSync initialSync,
+            ResourceAccess initialAccess,
+            string? label)
+            : base(device, heap: null, info, initialSync, initialAccess, label)
+        {
+            _device = device;
+            _mapping = new D3D12MappingLease(this);
+            _native = native;
+        }
+
         internal NativeResource* Native => (NativeResource*)_native.Pointer;
         internal NativeLease NativeLifetime => _native;
+        internal D3D12MemoryAllocation? MemoryAllocation => _native.MemoryAllocation;
         internal D3D12SparseState? SparseState { get; set; }
-        internal void RegisterView(GraphicsObject view) => _views.Register(this, view);
-        internal void UnregisterView(GraphicsObject view) => _views.Unregister(view);
 
-        internal MappedBuffer Map(MapType type, BufferRange range)
+        internal MappedBuffer Map(MapType type, BufferRange range, int length)
         {
             ThrowIfDisposed();
             _device.ThrowIfUnavailable();
-            if (Interlocked.CompareExchange(ref _mapped, 1, 0) != 0)
-                throw new InvalidOperationException("The Buffer already has an active mapping.");
 
+            ulong rangeEnd = checked(range.Offset + range.Size);
+            NativeRange completeRange = new()
+            {
+                Begin = checked((nuint)range.Offset),
+                End = checked((nuint)rangeEnd),
+            };
+            NativeRange readRange;
+            NativeRange writtenRange;
+            switch (type)
+            {
+                case MapType.Read:
+                    readRange = completeRange;
+                    writtenRange = default;
+                    break;
+                case MapType.Write:
+                    readRange = default;
+                    writtenRange = completeRange;
+                    break;
+                case MapType.ReadWrite:
+                    readRange = completeRange;
+                    writtenRange = completeRange;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(type));
+            }
+
+            ulong sequence = _mapping.PrepareNextSequence();
+            _native.Retain();
             try
             {
-                if (Volatile.Read(ref _mappingSequence) == long.MaxValue)
-                {
-                    throw new InvalidOperationException(
-                        "The Buffer mapping sequence domain is exhausted.");
-                }
-                ulong sequence = checked((ulong)Interlocked.Increment(ref _mappingSequence));
-                NativeRange readRange = type == MapType.Write
-                    ? default
-                    : new NativeRange
-                    {
-                        Begin = checked((nuint)range.Offset),
-                        End = checked((nuint)(range.Offset + range.Size)),
-                    };
+                _mapping.Prepare(writtenRange);
+            }
+            catch
+            {
+                _native.Release();
+                throw;
+            }
+
+            bool nativeMapAccepted = false;
+            try
+            {
                 void* basePointer = null;
-                NativeCall.ThrowIfFailed(
+                ThrowIfFailed(
+                    _device,
                     Native->Map(0, &readRange, &basePointer),
+                    NativeOperationType.Ordinary,
                     "ID3D12Resource::Map");
-                _native.Retain();
-                D3D12MappingLease lease = new(this, type, range, sequence);
+                nativeMapAccepted = true;
                 MappedBuffer result = new(
-                    lease,
+                    _mapping,
                     (nint)((byte*)basePointer + range.Offset),
-                    checked((int)range.Size));
-                Volatile.Write(ref _mapping, lease);
+                    length,
+                    sequence);
+                _mapping.PublishMapping(sequence, range);
                 return result;
             }
             catch
             {
-                Volatile.Write(ref _mapped, 0);
+                if (nativeMapAccepted)
+                {
+                    NativeRange noWrites = default;
+                    Native->Unmap(0, &noWrites);
+                }
+                _native.Release();
                 throw;
             }
         }
 
-        internal void EndMapping(
-            D3D12MappingLease mapping,
-            MapType type,
-            in BufferRange range)
+        internal void EndMapping(in NativeRange writtenRange)
         {
-            NativeRange writtenRange = type == MapType.Read
-                ? default
-                : new NativeRange
-                {
-                    Begin = checked((nuint)range.Offset),
-                    End = checked((nuint)(range.Offset + range.Size)),
-                };
-            Native->Unmap(0, &writtenRange);
-            _ = Interlocked.CompareExchange(ref _mapping, null, mapping);
-            Volatile.Write(ref _mapped, 0);
+            NativeRange nativeWrittenRange = writtenRange;
+            Native->Unmap(0, &nativeWrittenRange);
             _native.Release();
         }
 
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-            Volatile.Read(ref _mapping)?.Dispose();
-            _views.DisposeAll();
+            _mapping.DisposeCurrent();
             SparseState?.Dispose();
             _native.Release();
-            _heap?.UnregisterResource(this);
             _device.UnregisterChild(this);
         }
     }
@@ -1128,6 +1318,23 @@ public sealed unsafe partial class D3D12Backend
                 ownsReference);
         }
 
+        internal D3D12Texture(
+            D3D12Device device,
+            NativeLease native,
+            TextureInfo info,
+            string? label)
+            : base(
+                device,
+                heap: null,
+                info,
+                PipelineSync.None,
+                ResourceAccess.NoAccess,
+                SomeEngine.Graphics.TextureLayout.Undefined,
+                label)
+        {
+            _resource = new D3D12TextureResource(this, device, native);
+        }
+
         internal D3D12TextureResource NativeResource => _resource;
         internal NativeResource* Native => _resource.Native;
         internal NativeLease NativeLifetime => _resource.NativeLifetime;
@@ -1136,19 +1343,13 @@ public sealed unsafe partial class D3D12Backend
             get => _resource.SparseState;
             set => _resource.SparseState = value;
         }
-        internal void RegisterView(GraphicsObject view) => _resource.RegisterView(view);
-        internal void UnregisterView(GraphicsObject view) => _resource.UnregisterView(view);
-
         internal override void Release(bool fromParent) => _resource.Release();
     }
 
     private sealed partial class D3D12TextureResource
     {
         private readonly D3D12Device _device;
-        private readonly D3D12Heap? _heap;
-        private readonly ChildRegistry _views = new();
         private readonly NativeLease _native;
-        private int _released;
 
         internal D3D12TextureResource(
             Texture owner,
@@ -1160,11 +1361,20 @@ public sealed unsafe partial class D3D12Backend
         {
             Owner = owner;
             _device = device;
-            _heap = heap;
             _native = new NativeLease(
                 (IUnknown*)native,
                 ownsReference,
                 dependency ?? heap?.NativeLifetime);
+        }
+
+        internal D3D12TextureResource(
+            Texture owner,
+            D3D12Device device,
+            NativeLease native)
+        {
+            Owner = owner;
+            _device = device;
+            _native = native;
         }
 
         internal Texture Owner { get; }
@@ -1172,18 +1382,13 @@ public sealed unsafe partial class D3D12Backend
         internal TextureInfo Info => Owner.Info;
         internal NativeResource* Native => (NativeResource*)_native.Pointer;
         internal NativeLease NativeLifetime => _native;
+        internal D3D12MemoryAllocation? MemoryAllocation => _native.MemoryAllocation;
         internal D3D12SparseState? SparseState { get; set; }
-        internal void RegisterView(GraphicsObject view) => _views.Register(Owner, view);
-        internal void UnregisterView(GraphicsObject view) => _views.Unregister(view);
 
         internal void Release()
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
-            _views.DisposeAll();
             SparseState?.Dispose();
             _native.Release();
-            _heap?.UnregisterResource(Owner);
             _device.UnregisterChild(Owner);
         }
     }
@@ -1191,16 +1396,19 @@ public sealed unsafe partial class D3D12Backend
     private sealed class D3D12MappingLease : MappingLease
     {
         private readonly D3D12Buffer _buffer;
+        private NativeRange _writtenRange;
 
-        internal D3D12MappingLease(
-            D3D12Buffer buffer,
-            MapType type,
-            in BufferRange range,
-            ulong sequence)
-            : base(buffer, type, range, sequence)
+        internal D3D12MappingLease(D3D12Buffer buffer)
+            : base(buffer)
         {
             _buffer = buffer;
         }
+
+        internal void Prepare(in NativeRange writtenRange) =>
+            _writtenRange = writtenRange;
+
+        internal void PublishMapping(ulong sequence, in BufferRange range) =>
+            base.Publish(sequence, range);
 
         protected override void FlushCore(in BufferRange range)
         {
@@ -1210,40 +1418,7 @@ public sealed unsafe partial class D3D12Backend
         {
         }
 
-        protected override void UnmapCore() => _buffer.EndMapping(this, Type, Range);
-    }
-
-    private sealed class ChildRegistry
-    {
-        private readonly object _gate = new();
-        private readonly HashSet<GraphicsObject> _children =
-            new(ReferenceEqualityComparer.Instance);
-
-        internal void Register(GraphicsObject parent, GraphicsObject child)
-        {
-            lock (_gate)
-            {
-                parent.ThrowIfDisposed();
-                _children.Add(child);
-            }
-        }
-
-        internal void Unregister(GraphicsObject child)
-        {
-            lock (_gate)
-                _children.Remove(child);
-        }
-
-        internal void DisposeAll()
-        {
-            GraphicsObject[] children;
-            lock (_gate)
-                children = [.. _children];
-            foreach (GraphicsObject child in children)
-                child.DisposeFromParent();
-            lock (_gate)
-                _children.Clear();
-        }
+        protected override void UnmapCore() => _buffer.EndMapping(_writtenRange);
     }
 
     private sealed class NativeLease
@@ -1251,20 +1426,61 @@ public sealed unsafe partial class D3D12Backend
         private nint _pointer;
         private readonly bool _ownsReference;
         private NativeLease? _dependency;
+        private NativeLease[]? _dependencies;
+        private D3D12MemoryAllocation? _allocation;
         private int _references = 1;
 
         internal NativeLease(
             IUnknown* pointer,
             bool ownsReference,
-            NativeLease? dependency = null)
+            NativeLease? dependency = null,
+            D3D12MemoryAllocation? allocation = null)
         {
             _pointer = (nint)pointer;
             _ownsReference = ownsReference;
-            _dependency = dependency;
-            dependency?.Retain();
+            try
+            {
+                dependency?.Retain();
+                _dependency = dependency;
+                _allocation = allocation;
+            }
+            catch
+            {
+                if (ownsReference && pointer is not null)
+                    _ = pointer->Release();
+                _pointer = 0;
+                allocation?.Release();
+                throw;
+            }
+        }
+
+        internal NativeLease(
+            IUnknown* pointer,
+            bool ownsReference,
+            NativeLease[] dependencies)
+        {
+            _pointer = (nint)pointer;
+            _ownsReference = ownsReference;
+            int retained = 0;
+            try
+            {
+                for (; retained < dependencies.Length; retained++)
+                    dependencies[retained].Retain();
+            }
+            catch
+            {
+                if (ownsReference && pointer is not null)
+                    _ = pointer->Release();
+                _pointer = 0;
+                while (retained > 0)
+                    dependencies[--retained].Release();
+                throw;
+            }
+            _dependencies = dependencies;
         }
 
         internal nint Pointer => Volatile.Read(ref _pointer);
+        internal D3D12MemoryAllocation? MemoryAllocation => Volatile.Read(ref _allocation);
 
         internal void Retain()
         {
@@ -1289,50 +1505,38 @@ public sealed unsafe partial class D3D12Backend
             nint pointer = Interlocked.Exchange(ref _pointer, 0);
             if (_ownsReference && pointer != 0)
                 _ = ((IUnknown*)pointer)->Release();
+            Interlocked.Exchange(ref _allocation, null)?.Release();
             Interlocked.Exchange(ref _dependency, null)?.Release();
+            NativeLease[]? dependencies = Interlocked.Exchange(ref _dependencies, null);
+            if (dependencies is not null)
+            {
+                for (int index = dependencies.Length - 1; index >= 0; index--)
+                    dependencies[index].Release();
+            }
         }
     }
 
-    private static partial class NativeCast
+    private static partial class RequireD3D12
     {
-        internal static D3D12Heap Heap(Heap value)
-        {
-#if DEBUG
-            return (D3D12Heap)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<Heap, D3D12Heap>(ref value);
-#endif
-        }
+        internal static D3D12Heap Heap(Heap value) =>
+            value as D3D12Heap ??
+            throw new ArgumentException(
+                "The Heap was not created by the Direct3D 12 backend.",
+                nameof(value));
 
-        internal static D3D12Buffer Buffer(Buffer value)
-        {
-#if DEBUG
-            return (D3D12Buffer)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<Buffer, D3D12Buffer>(ref value);
-#endif
-        }
+        internal static D3D12Buffer Buffer(Buffer value) =>
+            value as D3D12Buffer ??
+            throw new ArgumentException(
+                "The Buffer was not created by the Direct3D 12 backend.",
+                nameof(value));
 
-        internal static D3D12TextureResource Texture(Texture value)
+        internal static D3D12TextureResource Texture(Texture value) => value switch
         {
-#if DEBUG
-            return value switch
-            {
-                D3D12Texture texture => texture.NativeResource,
-                D3D12SamplerFeedbackTexture feedback => feedback.NativeResource,
-                _ => throw new InvalidCastException("The Texture does not belong to this D3D12 backend."),
-            };
-#else
-            if ((value.Info.Usages & TextureUsages.SamplerFeedback) != 0)
-            {
-                return System.Runtime.CompilerServices.Unsafe
-                    .As<Texture, D3D12SamplerFeedbackTexture>(ref value)
-                    .NativeResource;
-            }
-            return System.Runtime.CompilerServices.Unsafe
-                .As<Texture, D3D12Texture>(ref value)
-                .NativeResource;
-#endif
-        }
+            D3D12Texture texture => texture.NativeResource,
+            D3D12SamplerFeedbackTexture feedback => feedback.NativeResource,
+            _ => throw new ArgumentException(
+                "The Texture was not created by the Direct3D 12 backend.",
+                nameof(value)),
+        };
     }
 }

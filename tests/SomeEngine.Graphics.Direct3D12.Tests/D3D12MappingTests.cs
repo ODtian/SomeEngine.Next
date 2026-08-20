@@ -101,14 +101,12 @@ public sealed class D3D12MappingTests
             NativeBarrierSync.BuildRaytracingAccelerationStructure),
         (PipelineSync.CopyRayTracingAccelerationStructure,
             NativeBarrierSync.CopyRaytracingAccelerationStructure),
-        (PipelineSync.Split, NativeBarrierSync.Split),
         (PipelineSync.All, NativeBarrierSync.All),
     ];
 
     private static readonly (ResourceAccess Portable, NativeBarrierAccess Native)[] AccessTable =
     [
         (ResourceAccess.NoAccess, NativeBarrierAccess.NoAccess),
-        (ResourceAccess.Common, NativeBarrierAccess.Common),
         (ResourceAccess.VertexBuffer, NativeBarrierAccess.VertexBuffer),
         (ResourceAccess.ConstantBuffer, NativeBarrierAccess.ConstantBuffer),
         (ResourceAccess.IndexBuffer, NativeBarrierAccess.IndexBuffer),
@@ -134,7 +132,7 @@ public sealed class D3D12MappingTests
     private static readonly (TextureLayout Portable, NativeBarrierLayout Native)[] LayoutTable =
     [
         (TextureLayout.Undefined, NativeBarrierLayout.Undefined),
-        (TextureLayout.Common, NativeBarrierLayout.Common),
+        (TextureLayout.General, NativeBarrierLayout.Common),
         (TextureLayout.Present, NativeBarrierLayout.Present),
         (TextureLayout.RenderTarget, NativeBarrierLayout.RenderTarget),
         (TextureLayout.UnorderedAccess, NativeBarrierLayout.UnorderedAccess),
@@ -146,7 +144,6 @@ public sealed class D3D12MappingTests
         (TextureLayout.ResolveSource, NativeBarrierLayout.ResolveSource),
         (TextureLayout.ResolveDestination, NativeBarrierLayout.ResolveDest),
         (TextureLayout.ShadingRateSource, NativeBarrierLayout.ShadingRateSource),
-        (TextureLayout.QueueCommon, NativeBarrierLayout.Common),
     ];
 
     public static IEnumerable<object[]> FormatCases() =>
@@ -348,7 +345,9 @@ public sealed class D3D12MappingTests
             MemoryType.DeviceLocal,
             [],
             0,
-            0);
+            0,
+            1,
+            1);
         TextureSubresourceRange range = new(
             0,
             1,

@@ -8,50 +8,70 @@ using DxgiFormat = Silk.NET.DXGI.Format;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
+    private const uint MaximumVertexBufferSlots = 32;
+    private const uint MaximumStreamOutputSlots = 4;
+
     public void SetVertexBuffers(
         CommandContext context,
         uint firstSlot,
         ReadOnlySpan<VertexBufferBinding> bindings)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        if ((uint)bindings.Length > MaximumVertexBufferSlots ||
+            firstSlot > MaximumVertexBufferSlots - (uint)bindings.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(bindings),
+                "D3D12 exposes at most 32 vertex-buffer slots.");
+        }
         if (command.VertexBuffersEqual(firstSlot, bindings))
             return;
+        command.PrepareCaptures(bindings.Length, 0, bindings.Length);
+        command.PrepareResolvedResources(bindings.Length);
         VertexBufferView* native = stackalloc VertexBufferView[bindings.Length];
-        for (int index = 0; index < bindings.Length; index++)
+        try
         {
-            ref readonly VertexBufferBinding binding = ref bindings[index];
-            D3D12Buffer buffer = NativeCast.Buffer(binding.Buffer);
-            native[index] = new VertexBufferView(
-                buffer.Native->GetGPUVirtualAddress() + binding.Offset,
-                checked((uint)binding.Size),
-                binding.Stride);
-            command.Capture(buffer);
+            for (int index = 0; index < bindings.Length; index++)
+            {
+                ref readonly VertexBufferBinding binding = ref bindings[index];
+                D3D12Buffer buffer = RequireBuffer(binding.Buffer);
+                command.StoreResolvedResource(index, buffer);
+                native[index] = new VertexBufferView(
+                    buffer.Native->GetGPUVirtualAddress() + binding.Offset,
+                    checked((uint)binding.Size),
+                    binding.Stride);
+            }
         }
+        catch
+        {
+            command.ClearResolvedResources(bindings.Length);
+            throw;
+        }
+        command.CaptureResolvedResources(bindings.Length);
         command.List->IASetVertexBuffers(
             firstSlot,
             checked((uint)bindings.Length),
             native);
-        command.Recording.RecordVertexBufferSetter();
         command.RememberVertexBuffers(firstSlot, bindings);
     }
 
     public void SetIndexBuffer(CommandContext context, in IndexBufferBinding binding)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.IndexBufferEquals(binding))
             return;
-        D3D12Buffer buffer = NativeCast.Buffer(binding.Buffer);
+        D3D12Buffer buffer = RequireBuffer(binding.Buffer);
         IndexBufferView native = new(
             buffer.Native->GetGPUVirtualAddress() + binding.Offset,
             checked((uint)binding.Size),
             binding.Type == IndexType.UInt16
                 ? DxgiFormat.FormatR16Uint
                 : DxgiFormat.FormatR32Uint);
+        command.PrepareCaptures(1, 0, 1);
         command.Capture(buffer);
         command.List->IASetIndexBuffer(&native);
-        command.Recording.RecordIndexBufferSetter();
         command.RememberIndexBuffer(binding);
     }
 
@@ -60,44 +80,61 @@ public sealed unsafe partial class D3D12Backend
         uint firstSlot,
         ReadOnlySpan<StreamOutputBufferBinding> bindings)
     {
-        if (context.Bundle)
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        if (command.Bundle)
         {
             throw new InvalidOperationException(
                 "Stream-output targets are not legal in a D3D12 command bundle.");
         }
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        if ((uint)bindings.Length > MaximumStreamOutputSlots ||
+            firstSlot > MaximumStreamOutputSlots - (uint)bindings.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(bindings),
+                "D3D12 exposes at most four stream-output target slots.");
+        }
         if (command.StreamOutputBuffersEqual(firstSlot, bindings))
             return;
+        command.PrepareCaptures(checked(bindings.Length * 2), 0, checked(bindings.Length * 2));
+        command.PrepareResolvedResources(checked(bindings.Length * 2));
         StreamOutputBufferView* native = stackalloc StreamOutputBufferView[bindings.Length];
-        for (int index = 0; index < bindings.Length; index++)
+        try
         {
-            ref readonly StreamOutputBufferBinding binding = ref bindings[index];
-            D3D12Buffer buffer = NativeCast.Buffer(binding.Buffer);
-            ulong filledSizeLocation = 0;
-            if (binding.FilledSizeBuffer is Buffer filled)
+            for (int index = 0; index < bindings.Length; index++)
             {
-                D3D12Buffer filledNative = NativeCast.Buffer(filled);
-                filledSizeLocation =
-                    filledNative.Native->GetGPUVirtualAddress() + binding.FilledSizeOffset;
-                command.Capture(filledNative);
+                ref readonly StreamOutputBufferBinding binding = ref bindings[index];
+                D3D12Buffer buffer = RequireBuffer(binding.Buffer);
+                command.StoreResolvedResource(index * 2, buffer);
+                ulong filledSizeLocation = 0;
+                if (binding.FilledSizeBuffer is Buffer filled)
+                {
+                    D3D12Buffer filledNative = RequireBuffer(filled);
+                    command.StoreResolvedResource(index * 2 + 1, filledNative);
+                    filledSizeLocation =
+                        filledNative.Native->GetGPUVirtualAddress() + binding.FilledSizeOffset;
+                }
+                native[index] = new StreamOutputBufferView(
+                    buffer.Native->GetGPUVirtualAddress() + binding.Offset,
+                    binding.Size,
+                    filledSizeLocation);
             }
-            native[index] = new StreamOutputBufferView(
-                buffer.Native->GetGPUVirtualAddress() + binding.Offset,
-                binding.Size,
-                filledSizeLocation);
-            command.Capture(buffer);
         }
+        catch
+        {
+            command.ClearResolvedResources(checked(bindings.Length * 2));
+            throw;
+        }
+        command.CaptureResolvedResources(checked(bindings.Length * 2));
         command.List->SOSetTargets(firstSlot, checked((uint)bindings.Length), native);
-        command.Recording.RecordStreamOutputBufferSetter();
         command.RememberStreamOutputBuffers(firstSlot, bindings);
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     public void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports)
     {
-        if (context.Bundle)
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        if (command.Bundle)
             throw new InvalidOperationException("Viewports are not legal in a D3D12 command bundle.");
-        D3D12CommandContext command = NativeCast.CommandContext(context);
         if (command.ViewportsEqual(viewports))
             return;
         SetViewportsSlow(command, viewports);
@@ -108,29 +145,56 @@ public sealed unsafe partial class D3D12Backend
         D3D12CommandContext command,
         ReadOnlySpan<Viewport> viewports)
     {
+        if ((uint)viewports.Length >
+            command.NativeDevice.Capabilities.Limits.MaximumViewports)
+        {
+            throw new ArgumentOutOfRangeException(nameof(viewports));
+        }
         NativeViewport* native = stackalloc NativeViewport[viewports.Length];
         for (int index = 0; index < viewports.Length; index++)
         {
             ref readonly Viewport viewport = ref viewports[index];
-            native[index] = new NativeViewport(
-                viewport.X,
-                viewport.Y,
-                viewport.Width,
-                viewport.Height,
-                viewport.MinimumDepth,
-                viewport.MaximumDepth);
+            if (!float.IsFinite(viewport.X) ||
+                !float.IsFinite(viewport.Y) ||
+                !float.IsFinite(viewport.Width) ||
+                !float.IsFinite(viewport.Height) ||
+                !float.IsFinite(viewport.MinimumDepth) ||
+                !float.IsFinite(viewport.MaximumDepth) ||
+                viewport.Width < 0 ||
+                viewport.Height < 0 ||
+                viewport.MinimumDepth < 0 ||
+                viewport.MaximumDepth > 1 ||
+                viewport.MinimumDepth > viewport.MaximumDepth)
+            {
+                throw new ArgumentException(
+                    "A viewport must contain finite coordinates, non-negative dimensions, " +
+                    "and an ordered depth interval inside [0, 1].",
+                    nameof(viewports));
+            }
+            native[index] = new NativeViewport
+            {
+                TopLeftX = viewport.X,
+                TopLeftY = viewport.Y,
+                Width = viewport.Width,
+                Height = viewport.Height,
+                MinDepth = viewport.MinimumDepth,
+                MaxDepth = viewport.MaximumDepth,
+            };
         }
-        command.List->RSSetViewports(checked((uint)viewports.Length), native);
-        command.Recording.RecordViewportSetter();
+        command.PrepareViewports(viewports.Length);
+        D3D12CommandListFastCalls.SetViewports(
+            command.List,
+            checked((uint)viewports.Length),
+            native);
         command.RememberViewports(viewports);
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     public void SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors)
     {
-        if (context.Bundle)
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        if (command.Bundle)
             throw new InvalidOperationException("Scissors are not legal in a D3D12 command bundle.");
-        D3D12CommandContext command = NativeCast.CommandContext(context);
         if (command.ScissorsEqual(scissors))
             return;
         SetScissorsSlow(command, scissors);
@@ -141,6 +205,11 @@ public sealed unsafe partial class D3D12Backend
         D3D12CommandContext command,
         ReadOnlySpan<ScissorRect> scissors)
     {
+        if ((uint)scissors.Length >
+            command.NativeDevice.Capabilities.Limits.MaximumViewports)
+        {
+            throw new ArgumentOutOfRangeException(nameof(scissors));
+        }
         Box2D<int>* native = stackalloc Box2D<int>[scissors.Length];
         for (int index = 0; index < scissors.Length; index++)
         {
@@ -151,39 +220,40 @@ public sealed unsafe partial class D3D12Backend
                 checked(rect.X + rect.Width),
                 checked(rect.Y + rect.Height));
         }
-        command.List->RSSetScissorRects(checked((uint)scissors.Length), native);
-        command.Recording.RecordScissorSetter();
+        command.PrepareScissors(scissors.Length);
+        D3D12CommandListFastCalls.SetScissors(
+            command.List,
+            checked((uint)scissors.Length),
+            native);
         command.RememberScissors(scissors);
     }
 
     public void SetBlendConstants(CommandContext context, in Vector4 value)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.BlendConstantsEqual(value))
             return;
         Vector4 copy = value;
         command.List->OMSetBlendFactor((float*)&copy);
-        command.Recording.RecordBlendConstantSetter();
         command.RememberBlendConstants(value);
     }
 
     public void SetStencilReference(CommandContext context, uint value)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.StencilReferenceEqual(value))
             return;
         command.List->OMSetStencilRef(value);
-        command.Recording.RecordStencilReferenceSetter();
         command.RememberStencilReference(value);
     }
 
     public void SetDepthBounds(CommandContext context, float minimum, float maximum)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        RequireDynamicStateSupport(command, DynamicStates.DepthBounds);
         if (command.DepthBoundsEqual(minimum, maximum))
             return;
         command.List->OMSetDepthBounds(minimum, maximum);
-        command.Recording.RecordDepthBoundsSetter();
         command.RememberDepthBounds(minimum, maximum);
     }
 
@@ -193,27 +263,29 @@ public sealed unsafe partial class D3D12Backend
         float clamp,
         float slopeScaledBias)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        RequireDynamicStateSupport(command, DynamicStates.DepthBias);
         if (command.DepthBiasEqual(bias, clamp, slopeScaledBias))
             return;
         command.List->RSSetDepthBias(bias, clamp, slopeScaledBias);
-        command.Recording.RecordDepthBiasSetter();
         command.RememberDepthBias(bias, clamp, slopeScaledBias);
     }
 
     public void SetPrimitiveTopology(CommandContext context, PrimitiveTopology topology)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.PrimitiveTopologyEqual(topology))
             return;
-        command.List->IASetPrimitiveTopology(ToNativeTopology(topology));
-        command.Recording.RecordPrimitiveTopologySetter();
+        D3D12CommandListFastCalls.SetPrimitiveTopology(
+            command.List,
+            ToNativeTopology(topology));
         command.RememberPrimitiveTopology(topology);
     }
 
     public void SetStripCut(CommandContext context, StripCut stripCut)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        RequireDynamicStateSupport(command, DynamicStates.StripCut);
         if (command.StripCutEqual(stripCut))
             return;
         command.List->IASetIndexBufferStripCutValue(stripCut switch
@@ -223,8 +295,18 @@ public sealed unsafe partial class D3D12Backend
             StripCut.UInt32 => IndexBufferStripCutValue.Value0xFfffffff,
             _ => throw new ArgumentOutOfRangeException(nameof(stripCut)),
         });
-        command.Recording.RecordStripCutSetter();
         command.RememberStripCut(stripCut);
+    }
+
+    private static void RequireDynamicStateSupport(
+        D3D12CommandContext command,
+        DynamicStates state)
+    {
+        if ((command.Device.Capabilities.SupportedDynamicStates & state) == 0)
+        {
+            throw new NotSupportedException(
+                $"Dynamic state {state} is unavailable on this Device.");
+        }
     }
 
     public void SetPredication(
@@ -233,12 +315,15 @@ public sealed unsafe partial class D3D12Backend
         ulong offset = 0,
         PredicationOperation operation = PredicationOperation.NotEqualZero)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.PredicationEqual(buffer, offset, operation))
             return;
-        D3D12Buffer? native = buffer is null ? null : NativeCast.Buffer(buffer);
+        D3D12Buffer? native = buffer is null ? null : RequireBuffer(buffer);
         if (native is not null)
+        {
+            command.PrepareCaptures(1, 0, 1);
             command.Capture(native);
+        }
         ID3D12Resource* predicate = native is null ? null : native.Native;
         command.List->SetPredication(
             predicate,
@@ -246,14 +331,13 @@ public sealed unsafe partial class D3D12Backend
             operation == PredicationOperation.EqualZero
                 ? PredicationOp.EqualZero
                 : PredicationOp.NotEqualZero);
-        command.Recording.RecordPredicationSetter();
         command.RememberPredication(buffer, offset, operation);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public void Draw(CommandContext context, in DrawArguments arguments)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12CommandListFastCalls.DrawInstanced(
             command.List,
             arguments.VertexCount,
@@ -264,7 +348,7 @@ public sealed unsafe partial class D3D12Backend
 
     public void DrawIndexed(CommandContext context, in DrawIndexedArguments arguments)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12CommandListFastCalls.DrawIndexedInstanced(
             command.List,
             arguments.IndexCount,
@@ -276,7 +360,7 @@ public sealed unsafe partial class D3D12Backend
 
     public void Dispatch(CommandContext context, in DispatchArguments arguments)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12CommandListFastCalls.Dispatch(
             command.List,
             arguments.X,
@@ -286,8 +370,9 @@ public sealed unsafe partial class D3D12Backend
 
     public void ExecuteBundle(CommandContext context, RecordedBundle bundle)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12RecordedBundle native = NativeCast.Bundle(bundle);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12RecordedBundle native = RequireBundle(bundle);
+        command.PrepareBundles(1);
         command.CaptureBundle(native);
         command.List->ExecuteBundle((ID3D12GraphicsCommandList*)native.NativeList);
         command.InvalidateStateShadow();
@@ -295,20 +380,20 @@ public sealed unsafe partial class D3D12Backend
 
     public void BeginEvent(CommandContext context, ReadOnlySpan<byte> utf8Label)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         fixed (byte* label = utf8Label)
             command.List->BeginEvent(0, label, checked((uint)utf8Label.Length));
     }
 
     public void EndEvent(CommandContext context)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         command.List->EndEvent();
     }
 
     public void SetMarker(CommandContext context, ReadOnlySpan<byte> utf8Label)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         fixed (byte* label = utf8Label)
             command.List->SetMarker(0, label, checked((uint)utf8Label.Length));
     }
@@ -321,14 +406,16 @@ public sealed unsafe partial class D3D12Backend
             PrimitiveTopology.LineStrip => D3DPrimitiveTopology.D3DPrimitiveTopologyLinestrip,
             PrimitiveTopology.TriangleList => D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist,
             PrimitiveTopology.TriangleStrip => D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglestrip,
-            PrimitiveTopology.PatchList => D3DPrimitiveTopology.D3DPrimitiveTopology1ControlPointPatchlist,
             _ => throw new ArgumentOutOfRangeException(nameof(topology)),
         };
 
     private sealed partial class D3D12CommandContext
     {
-        private readonly Dictionary<uint, VertexBufferBinding> _vertexBuffers = [];
-        private readonly Dictionary<uint, StreamOutputBufferBinding> _streamOutputBuffers = [];
+        private readonly VertexBufferBinding[] _vertexBuffers = new VertexBufferBinding[32];
+        private uint _vertexBufferSetMask;
+        private readonly StreamOutputBufferBinding[] _streamOutputBuffers =
+            new StreamOutputBufferBinding[4];
+        private byte _streamOutputBufferSetMask;
         private IndexBufferBinding _indexBuffer;
         private bool _hasIndexBuffer;
         private Viewport[] _viewports = [];
@@ -354,9 +441,24 @@ public sealed unsafe partial class D3D12Backend
 
         internal void InvalidateStateShadow()
         {
-            _vertexBuffers.Clear();
-            _streamOutputBuffers.Clear();
-            _indexBuffer = default;
+            uint vertexMask = _vertexBufferSetMask;
+            while (vertexMask != 0)
+            {
+                int slot = BitOperations.TrailingZeroCount(vertexMask);
+                _vertexBuffers[slot] = default;
+                vertexMask &= vertexMask - 1;
+            }
+            _vertexBufferSetMask = 0;
+            uint streamOutputMask = _streamOutputBufferSetMask;
+            while (streamOutputMask != 0)
+            {
+                int slot = BitOperations.TrailingZeroCount(streamOutputMask);
+                _streamOutputBuffers[slot] = default;
+                streamOutputMask &= streamOutputMask - 1;
+            }
+            _streamOutputBufferSetMask = 0;
+            if (_hasIndexBuffer)
+                _indexBuffer = default;
             _hasIndexBuffer = false;
             _viewportCount = 0;
             _scissorCount = 0;
@@ -376,8 +478,10 @@ public sealed unsafe partial class D3D12Backend
         {
             for (int index = 0; index < values.Length; index++)
             {
-                if (!_vertexBuffers.TryGetValue(first + (uint)index, out VertexBufferBinding current) ||
-                    current != values[index])
+                uint slot = checked(first + (uint)index);
+                uint bit = 1u << checked((int)slot);
+                if ((_vertexBufferSetMask & bit) == 0 ||
+                    _vertexBuffers[checked((int)slot)] != values[index])
                     return false;
             }
             return true;
@@ -386,7 +490,11 @@ public sealed unsafe partial class D3D12Backend
         internal void RememberVertexBuffers(uint first, ReadOnlySpan<VertexBufferBinding> values)
         {
             for (int index = 0; index < values.Length; index++)
-                _vertexBuffers[first + (uint)index] = values[index];
+            {
+                uint slot = checked(first + (uint)index);
+                _vertexBuffers[checked((int)slot)] = values[index];
+                _vertexBufferSetMask |= 1u << checked((int)slot);
+            }
         }
 
         internal bool IndexBufferEquals(in IndexBufferBinding value) =>
@@ -401,8 +509,10 @@ public sealed unsafe partial class D3D12Backend
         {
             for (int index = 0; index < values.Length; index++)
             {
-                if (!_streamOutputBuffers.TryGetValue(first + (uint)index, out StreamOutputBufferBinding current) ||
-                    current != values[index])
+                uint slot = checked(first + (uint)index);
+                byte bit = checked((byte)(1u << checked((int)slot)));
+                if ((_streamOutputBufferSetMask & bit) == 0 ||
+                    _streamOutputBuffers[checked((int)slot)] != values[index])
                     return false;
             }
             return true;
@@ -411,7 +521,11 @@ public sealed unsafe partial class D3D12Backend
         internal void RememberStreamOutputBuffers(uint first, ReadOnlySpan<StreamOutputBufferBinding> values)
         {
             for (int index = 0; index < values.Length; index++)
-                _streamOutputBuffers[first + (uint)index] = values[index];
+            {
+                uint slot = checked(first + (uint)index);
+                _streamOutputBuffers[checked((int)slot)] = values[index];
+                _streamOutputBufferSetMask |= checked((byte)(1u << checked((int)slot)));
+            }
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]

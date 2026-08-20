@@ -4,11 +4,11 @@ using NativeQueryType = Silk.NET.Direct3D12.QueryType;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
     public QueryPool CreateQueryPool(Device device, in QueryPoolDesc desc)
     {
-        D3D12Device nativeDevice = NativeCast.Device(device);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         if (!Enum.IsDefined(desc.Type))
             throw new ArgumentOutOfRangeException(nameof(desc), "The QueryType is unknown.");
@@ -34,23 +34,32 @@ public sealed unsafe partial class D3D12Backend
                 "StreamIndex is only valid for StreamOutputStatistics queries.",
                 nameof(desc));
         }
+        uint nodeIndex = nativeDevice.ResolveNodeIndex(desc.NodeIndex, nameof(desc));
+        QueryPoolDesc resolvedDescription = desc with { NodeIndex = nodeIndex };
         QueryResultInfo resultInfo = GetQueryResultInfo(desc.Type);
         QueryHeapDesc nativeDescription = new(
             ToQueryHeapType(desc.Type, desc.QueueType),
             desc.Count,
-            nativeDevice.EnabledNodeMask);
+            1u << checked((int)nodeIndex));
         ID3D12QueryHeap* heap = null;
         Guid iid = ID3D12QueryHeap.Guid;
-        NativeCall.ThrowIfFailed(
+        ThrowIfFailed(
+            nativeDevice,
             nativeDevice.Native->CreateQueryHeap(
                 &nativeDescription,
                 &iid,
                 (void**)&heap),
+            NativeOperationType.Ordinary,
             "ID3D12Device::CreateQueryHeap");
+        SetNativeName(heap, desc.Label ?? $"{desc.Type} Query Heap");
         D3D12QueryPool result;
         try
         {
-            result = new D3D12QueryPool(nativeDevice, heap, desc, resultInfo);
+            result = new D3D12QueryPool(
+                nativeDevice,
+                heap,
+                resolvedDescription,
+                resultInfo);
         }
         catch
         {
@@ -63,36 +72,39 @@ public sealed unsafe partial class D3D12Backend
 
     public void BeginQuery(CommandContext context, QueryPool pool, uint queryIndex)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12QueryPool native = NativeCast.QueryPool(pool);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12QueryPool native = RequireQueryPool(pool);
         native.RequireQueue(command);
         native.CheckIndex(queryIndex);
         if (native.Description.Type == SomeEngine.Graphics.QueryType.Timestamp)
             throw new InvalidOperationException("Timestamp queries are written, not begun.");
+        command.PrepareCaptures(1);
         command.Capture(native);
         command.List->BeginQuery(native.Native, native.NativeType, queryIndex);
     }
 
     public void EndQuery(CommandContext context, QueryPool pool, uint queryIndex)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12QueryPool native = NativeCast.QueryPool(pool);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12QueryPool native = RequireQueryPool(pool);
         native.RequireQueue(command);
         native.CheckIndex(queryIndex);
         if (native.Description.Type == SomeEngine.Graphics.QueryType.Timestamp)
             throw new InvalidOperationException("Timestamp queries are written, not ended.");
+        command.PrepareCaptures(1);
         command.Capture(native);
         command.List->EndQuery(native.Native, native.NativeType, queryIndex);
     }
 
     public void WriteTimestamp(CommandContext context, QueryPool pool, uint queryIndex)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12QueryPool native = NativeCast.QueryPool(pool);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12QueryPool native = RequireQueryPool(pool);
         native.RequireQueue(command);
         native.CheckIndex(queryIndex);
         if (native.Description.Type != SomeEngine.Graphics.QueryType.Timestamp)
             throw new InvalidOperationException("WriteTimestamp requires a Timestamp QueryPool.");
+        command.PrepareCaptures(1);
         command.Capture(native);
         command.List->EndQuery(native.Native, NativeQueryType.Timestamp, queryIndex);
     }
@@ -105,9 +117,9 @@ public sealed unsafe partial class D3D12Backend
         Buffer destination,
         in BufferRange destinationRange)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12QueryPool native = NativeCast.QueryPool(pool);
-        D3D12Buffer buffer = NativeCast.Buffer(destination);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12QueryPool native = RequireQueryPool(pool);
+        D3D12Buffer buffer = RequireBuffer(destination);
         native.RequireQueue(command);
         native.CheckRange(firstQuery, queryCount);
         if ((buffer.Info.Usages & BufferUsages.QueryResolve) == 0)
@@ -120,6 +132,7 @@ public sealed unsafe partial class D3D12Backend
         ulong required = checked((ulong)queryCount * native.ResultInfo.ResultStride);
         if (range.Size < required || (range.Offset & 7) != 0)
             throw new ArgumentOutOfRangeException(nameof(destinationRange));
+        command.PrepareCaptures(2, 0, 1);
         command.Capture(native);
         command.Capture(buffer);
         command.List->ResolveQueryData(
@@ -178,7 +191,6 @@ public sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly NativeLease _native;
-        private int _released;
 
         internal D3D12QueryPool(
             D3D12Device device,
@@ -209,6 +221,11 @@ public sealed unsafe partial class D3D12Backend
                 throw new InvalidOperationException(
                     "The QueryPool belongs to another Queue family.");
             }
+            if (Description.NodeIndex != context.NativeQueue.NodeIndex)
+            {
+                throw new InvalidOperationException(
+                    "The QueryPool belongs to another linked-adapter node.");
+            }
         }
 
         internal void CheckRange(uint first, uint count)
@@ -219,8 +236,6 @@ public sealed unsafe partial class D3D12Backend
 
         internal override void Release(bool fromParent)
         {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-                return;
             _native.Release();
             _device.UnregisterChild(this);
         }
@@ -229,18 +244,15 @@ public sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12CommandContext
     {
         internal void Capture(D3D12QueryPool value) =>
-            Recording.Capture(value, value.NativeLifetime);
+            Recording.Capture(value.NativeLifetime);
     }
 
-    private static partial class NativeCast
+    private static partial class RequireD3D12
     {
-        internal static D3D12QueryPool QueryPool(QueryPool value)
-        {
-#if DEBUG
-            return (D3D12QueryPool)value;
-#else
-            return System.Runtime.CompilerServices.Unsafe.As<QueryPool, D3D12QueryPool>(ref value);
-#endif
-        }
+        internal static D3D12QueryPool QueryPool(QueryPool value) =>
+            value as D3D12QueryPool ??
+            throw new ArgumentException(
+                "The QueryPool was not created by the Direct3D 12 backend.",
+                nameof(value));
     }
 }

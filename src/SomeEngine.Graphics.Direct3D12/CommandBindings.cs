@@ -8,48 +8,60 @@ using NativeResource = Silk.NET.Direct3D12.ID3D12Resource;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-public sealed unsafe partial class D3D12Backend
+internal sealed unsafe partial class D3D12Backend
 {
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public void SetPipeline(CommandContext context, Pipeline pipeline)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
-        D3D12Pipeline native = NativeCast.Pipeline(pipeline);
-        if (command.PipelineEqual(native))
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12Pipeline native = RequirePipeline(pipeline);
+        RequireSameDevice(command.NativeDevice, native, nameof(pipeline));
+        if (native.Type == PipelineType.WorkGraph)
+            throw new ArgumentException(
+                "A Work Graph Pipeline must be selected with BindWorkGraph.",
+                nameof(pipeline));
+        if (ReferenceEquals(command.CurrentPipeline, native))
             return;
-        SetPipelineSlow(context, command, native);
+        command.PrepareCaptures(1);
+        command.PrepareDescriptorTables(native.RootSignature.DefaultTables);
+        SetPipelineSlow(command, native);
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void SetPipelineSlow(
-        CommandContext context,
         D3D12CommandContext command,
         D3D12Pipeline native)
     {
+        command.CapturePipeline(native);
+        command.ResetWorkGraphState();
         if (native is D3D12ClassicPipeline classicPipeline)
-            command.List->SetPipelineState(classicPipeline.Native);
+            D3D12CommandListFastCalls.SetPipelineState(command.List, classicPipeline.Native);
         else if (native is D3D12RayTracingPipeline rayTracing)
             command.List->SetPipelineState1(rayTracing.Native);
         else
             throw new ArgumentException("The Pipeline cannot be selected by SetPipeline.", nameof(native));
-        command.Recording.RecordPipelineSetter();
-        if (native.Type is PipelineType.Compute or PipelineType.RayTracing)
-            command.List->SetComputeRootSignature(native.RootLayout.Native);
-        else
-            command.List->SetGraphicsRootSignature(native.RootLayout.Native);
+        D3D12CommandListFastCalls.SetRootSignature(
+            command.List,
+            native.Type is PipelineType.Compute or PipelineType.RayTracing,
+            native.RootSignature.Native);
         command.RememberPipeline(native);
-        command.CapturePipelineArtifact(native);
 
-        foreach (DefaultRootTable table in native.RootLayout.DefaultTables)
+        foreach (DefaultRootTable table in native.RootSignature.DefaultTables)
             command.SetRootTable(table.RootParameterIndex, table.Heap, 0);
 
         if (native.Type == PipelineType.Graphics)
         {
             D3D12ClassicPipeline classic = (D3D12ClassicPipeline)native;
-            if ((classic.DynamicStates & DynamicStates.PrimitiveTopology) == 0)
-                SetPrimitiveTopology(context, classic.Topology);
+            if ((classic.DynamicStates & DynamicStates.PrimitiveTopology) == 0 &&
+                !command.PrimitiveTopologyEqual(classic.Topology))
+            {
+                D3D12CommandListFastCalls.SetPrimitiveTopology(
+                    command.List,
+                    ToNativeTopology(classic.Topology));
+                command.RememberPrimitiveTopology(classic.Topology);
+            }
             if ((classic.DynamicStates & DynamicStates.StripCut) == 0)
-                SetStripCut(context, classic.StripCut);
+                command.RememberStripCut(classic.StripCut);
         }
     }
 
@@ -58,42 +70,153 @@ public sealed unsafe partial class D3D12Backend
         CommandContext context,
         PersistentParameterBindings bindings)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12PersistentParameterBindings native =
-            NativeCast.PersistentParameterBindings(bindings);
-        D3D12ParameterMaterialization? published = native.PublishedMaterialization;
-        if (command.PersistentBindingsEqual(native, published))
+            bindings as D3D12PersistentParameterBindings ??
+            throw new ArgumentException(
+                "The PersistentParameterBindings object was not created by the Direct3D 12 backend.",
+                nameof(bindings));
+        D3D12PersistentParameterData current =
+            RequireCurrentPersistentParameterData(native);
+        if (command.PersistentBindingIdentityEqual(native, current))
             return;
         D3D12Pipeline pipeline = command.Pipeline;
-        D3D12ParameterBlockLayout layout = command.ResolveParameterBlock(pipeline, native.Layout);
-        SetPersistentParameterBindingsSlow(command, native, layout);
+        if (!ReferenceEquals(pipeline, native.OwnerPipeline))
+            throw new ArgumentException(
+                "Persistent parameter bindings belong to a different Pipeline instance.",
+                nameof(bindings));
+        NativeParameterBinding layout = native.NativeLayout;
+        if (native.OrdinaryConstantBufferRootParameter is uint rootParameter)
+        {
+            BindPersistentRootConstantBuffer(
+                command,
+                native,
+                current,
+                rootParameter);
+            return;
+        }
+        BindPersistentDescriptors(command, native, layout, current);
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private void SetPersistentParameterBindingsSlow(
-        D3D12CommandContext command,
-        D3D12PersistentParameterBindings native,
-        D3D12ParameterBlockLayout layout)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static D3D12PersistentParameterData RequireCurrentPersistentParameterData(
+        D3D12PersistentParameterBindings bindings)
     {
-        D3D12ParameterMaterialization materialization =
-            native.CapturePublished(command.DescriptorGeneration.Identity);
-        command.Capture(materialization);
-        command.CaptureObject(native);
-        command.ApplyPersistentBlock(layout, native, materialization);
-        command.RememberPersistentBindings(native, materialization);
-        command.Recording.RecordPersistentBindingSetter();
+        D3D12PersistentParameterData? current = bindings.CurrentData;
+        if (current is not null)
+            return current;
+        bindings.ThrowIfDisposed();
+        throw new InvalidOperationException(
+            "Persistent parameter bindings have no materialized value.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void BindPersistentRootConstantBuffer(
+        D3D12CommandContext command,
+        D3D12PersistentParameterBindings bindings,
+        D3D12PersistentParameterData current,
+        uint rootParameter)
+    {
+        while (true)
+        {
+            if (!command.TryCapturePersistentParameterData(current))
+            {
+                current = RequireCurrentPersistentParameterData(bindings);
+                if (command.PersistentBindingIdentityEqual(bindings, current))
+                    return;
+                continue;
+            }
+            command.SetPersistentRootConstantBufferPrepared(
+                rootParameter,
+                current.OrdinaryAddress);
+            command.RememberPersistentBindings(bindings, current);
+            return;
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    private void BindPersistentDescriptors(
+        D3D12CommandContext command,
+        D3D12PersistentParameterBindings bindings,
+        NativeParameterBinding layout,
+        D3D12PersistentParameterData current)
+    {
+        while (true)
+        {
+            command.RequireResourceVisible(current.VisibleNodeMask, nameof(bindings));
+            command.PrepareSwapchainUses(current.SwapchainImages.Length);
+            if (!command.TryCapturePersistentParameterData(current))
+            {
+                current = RequireCurrentPersistentParameterData(bindings);
+                if (command.PersistentBindingIdentityEqual(bindings, current))
+                    return;
+                continue;
+            }
+            if (layout.OrdinaryRoot is { UsesRootConstants: true } ordinary)
+            {
+                command.PrepareRootConstants(
+                    ordinary.RootParameterIndex,
+                    ordinary.ConstantCount);
+            }
+            command.PrepareDescriptors(
+                layout.ResourceTable?.DescriptorCount ?? 0,
+                layout.SamplerTable?.DescriptorCount ?? 0);
+            ApplyPersistentDescriptors(command, bindings, layout, current);
+            return;
+        }
+    }
+
+    private void ApplyPersistentDescriptors(
+        D3D12CommandContext command,
+        D3D12PersistentParameterBindings bindings,
+        NativeParameterBinding layout,
+        D3D12PersistentParameterData data)
+    {
+        uint resourceCount = layout.ResourceTable?.DescriptorCount ?? 0;
+        uint samplerCount = layout.SamplerTable?.DescriptorCount ?? 0;
+        uint resourceBase = 0;
+        uint samplerBase = 0;
+        if (resourceCount != 0 || samplerCount != 0)
+        {
+            (resourceBase, samplerBase) =
+                command.AllocateTransientDescriptorPair(resourceCount, samplerCount);
+        }
+        uint resourceCursor = 0;
+        uint samplerCursor = 0;
+        foreach (DescriptorRecord descriptor in data.Descriptors)
+        {
+            ParameterHeap heap = descriptor.Type == ResourceBindingType.Sampler
+                ? ParameterHeap.Sampler
+                : ParameterHeap.Resource;
+            command.CopyPersistentDescriptor(
+                heap,
+                heap == ParameterHeap.Resource
+                    ? checked(resourceBase + resourceCursor++)
+                    : checked(samplerBase + samplerCursor++),
+                descriptor);
+        }
+        command.ApplyPersistentBlock(
+            layout,
+            resourceBase,
+            samplerBase,
+            data);
+        command.RememberPersistentBindings(bindings, data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SetTransientParameterBindings(
         CommandContext context,
         in ParameterBlockBindings bindings)
     {
-        D3D12CommandContext command = NativeCast.CommandContext(context);
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12Pipeline pipeline = command.Pipeline;
-        D3D12ParameterBlockLayout layout = command.ResolveParameterBlock(pipeline, bindings.Layout);
-        int ordinaryRootParameter = layout.OrdinaryConstantBuffer16RootParameter;
+        NativeParameterBinding layout = command.ResolveParameterBlock(pipeline, bindings.Layout);
+        int ordinaryRootParameter = layout.ResourceTable is null && layout.SamplerTable is null &&
+            layout.OrdinaryRoot is { UsesRootConstants: false } ordinary
+                ? checked((int)ordinary.RootParameterIndex)
+                : -1;
         if (ordinaryRootParameter >= 0 &&
+            layout.OrdinaryRoot!.Value.DataSize == 16 &&
             bindings.Resources.IsEmpty &&
             bindings.OrdinaryData.Length == 16)
         {
@@ -110,10 +233,14 @@ public sealed unsafe partial class D3D12Backend
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void SetTransientParameterBindingsGeneral(
         D3D12CommandContext command,
-        D3D12ParameterBlockLayout layout,
+        NativeParameterBinding layout,
         in ParameterBlockBindings bindings)
     {
-        layout.Shape.RequireMaterializationShape(bindings.Resources, bindings.OrdinaryData);
+        RequireNativeParameterBindings(
+            bindings.Layout,
+            layout,
+            bindings.Resources,
+            bindings.OrdinaryData);
         if (command.ParameterBindingsEqual(
                 bindings.Layout,
                 bindings.Resources,
@@ -122,11 +249,14 @@ public sealed unsafe partial class D3D12Backend
         {
             return;
         }
-        if (layout.Shape.Leaves.Length == 0)
+        if (layout.ResourceTable is null && layout.SamplerTable is null)
         {
+            command.PrepareOrdinaryData(layout.OrdinaryRoot is { UsesRootConstants: false }
+                    ? checked((ulong)bindings.OrdinaryData.Length)
+                    : 0);
+            command.PrepareBindingStorage(bindings.Resources.Length, bindings.OrdinaryData.Length);
             command.ApplyTransientOrdinaryData(layout, bindings.OrdinaryData);
             command.RememberTransientBindings(bindings, sameTransientShape);
-            command.Recording.RecordTransientBindingSetter();
             return;
         }
         SetTransientParameterBindingsSlow(command, layout, sameTransientShape, bindings);
@@ -135,40 +265,55 @@ public sealed unsafe partial class D3D12Backend
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static void SetTransientParameterBindingsSlow(
         D3D12CommandContext command,
-        D3D12ParameterBlockLayout layout,
+        NativeParameterBinding layout,
         bool sameTransientShape,
         in ParameterBlockBindings bindings)
     {
-        command.PrepareTransientBindingCaptures(bindings.Resources);
-        D3D12OrdinaryDataReservation ordinary = layout.Shape.UsesOrdinaryConstantBuffer
+        bool usesOrdinaryConstantBuffer = layout.OrdinaryRoot is { UsesRootConstants: false };
+        int bindingCount = bindings.Resources.Length;
+        command.PrepareCaptures(checked(bindingCount * 2), bindingCount, bindingCount);
+        command.PrepareSwapchainUses(bindingCount);
+        command.PrepareOrdinaryData(usesOrdinaryConstantBuffer
+                ? checked((ulong)bindings.OrdinaryData.Length)
+                : 0);
+        command.PrepareBindingStorage(bindingCount, bindings.OrdinaryData.Length);
+        if (layout.OrdinaryRoot is { UsesRootConstants: true } ordinaryRoot)
+        {
+            command.PrepareRootConstants(
+                ordinaryRoot.RootParameterIndex,
+                ordinaryRoot.ConstantCount);
+        }
+        D3D12OrdinaryDataReservation ordinary = usesOrdinaryConstantBuffer
             ? command.ReserveTransientOrdinaryData(checked((ulong)bindings.OrdinaryData.Length))
             : default;
+        for (int ordinal = 0; ordinal < bindings.Resources.Length; ordinal++)
+            command.Capture(bindings.Resources[ordinal]);
+        command.PrepareDescriptors(
+            layout.ResourceTable?.DescriptorCount ?? 0,
+            layout.SamplerTable?.DescriptorCount ?? 0);
 
-        (uint resourceBase, uint samplerBase) = command.AllocateTransientDescriptorPair(
-            layout.Shape.ResourceDescriptorCount,
-            layout.Shape.SamplerDescriptorCount);
+        uint resourceCount = layout.ResourceTable?.DescriptorCount ?? 0;
+        uint samplerCount = layout.SamplerTable?.DescriptorCount ?? 0;
+        (uint resourceBase, uint samplerBase) = command.AllocateTransientDescriptorPair(resourceCount, samplerCount);
 
-        int ordinal = 0;
-        foreach (ParameterLeaf leaf in layout.Shape.Leaves)
+        uint resourceCursor = 0;
+        uint samplerCursor = 0;
+        for (int ordinal = 0; ordinal < bindings.Resources.Length; ordinal++)
         {
-            if (leaf.Unbounded)
-                continue;
-            uint destinationBase = leaf.Heap == ParameterHeap.Resource
-                ? resourceBase
-                : samplerBase;
-            for (uint element = 0; element < leaf.DescriptorCount; element++)
-            {
-                ref readonly ResourceBinding binding = ref bindings.Resources[ordinal++];
-                command.CopyTransientDescriptor(
-                    leaf.Heap,
-                    checked(destinationBase + leaf.HeapOffset + element),
-                    binding,
-                    leaf.Type);
-                command.Capture(binding);
-            }
+            ref readonly ResourceBinding binding = ref bindings.Resources[ordinal];
+            ref readonly DescriptorSlotDesc slot = ref layout.Slots[ordinal];
+            ParameterHeap heap = slot.Type == ResourceBindingType.Sampler
+                ? ParameterHeap.Sampler : ParameterHeap.Resource;
+            command.CopyTransientDescriptor(
+                heap,
+                heap == ParameterHeap.Resource
+                    ? checked(resourceBase + resourceCursor++)
+                    : checked(samplerBase + samplerCursor++),
+                binding,
+                slot);
         }
 
-        if (layout.Shape.UsesOrdinaryConstantBuffer)
+        if (usesOrdinaryConstantBuffer)
             ordinary.Commit(bindings.OrdinaryData);
         command.ApplyTransientBlock(
             layout,
@@ -177,38 +322,42 @@ public sealed unsafe partial class D3D12Backend
             bindings.OrdinaryData,
             ordinary.Address);
         command.RememberTransientBindings(bindings, sameTransientShape);
-        command.Recording.RecordTransientBindingSetter();
     }
 
-    private sealed class D3D12ParameterMaterialization
+    private sealed class D3D12PersistentParameterData
     {
         private NativeLease? _ordinary;
         private int _references = 1;
 
-        private D3D12ParameterMaterialization(
+        private D3D12PersistentParameterData(
             ulong version,
             ResourceBinding[] resources,
+            DescriptorRecord[] descriptors,
             D3D12SwapchainImageLease[] swapchainImages,
             byte[] ordinaryData,
             NativeLease? ordinary,
-            ulong ordinaryAddress)
+            ulong ordinaryAddress,
+            uint visibleNodeMask)
         {
             Version = version;
             Resources = resources;
+            Descriptors = descriptors;
             SwapchainImages = swapchainImages;
             OrdinaryData = ordinaryData;
             _ordinary = ordinary;
             OrdinaryAddress = ordinaryAddress;
+            VisibleNodeMask = visibleNodeMask;
         }
 
         internal ulong Version { get; }
         internal ResourceBinding[] Resources { get; }
+        internal DescriptorRecord[] Descriptors { get; }
         internal D3D12SwapchainImageLease[] SwapchainImages { get; }
         internal byte[] OrdinaryData { get; }
         internal ulong OrdinaryAddress { get; }
-        internal ulong PublishedGeneration { get; set; }
+        internal uint VisibleNodeMask { get; }
 
-        internal bool ContentEquals(D3D12ParameterMaterialization other)
+        internal bool ContentEquals(D3D12PersistentParameterData other)
             => ContentEquals(other.Resources, other.OrdinaryData);
 
         internal bool ContentEquals(
@@ -228,32 +377,107 @@ public sealed unsafe partial class D3D12Backend
             return true;
         }
 
-        internal static D3D12ParameterMaterialization Create(
+        internal static D3D12PersistentParameterData Create(
             D3D12Device device,
             ulong version,
             ReadOnlySpan<ResourceBinding> resources,
+            ReadOnlySpan<DescriptorSlotDesc> slots,
             ReadOnlySpan<byte> ordinaryData,
             bool createOrdinaryBuffer)
         {
+            if (resources.Length != slots.Length)
+                throw new ArgumentException("The reflected descriptor-slot count does not match the binding count.", nameof(slots));
+            ResourceBinding[] resourcesCopy = resources.ToArray();
+            DescriptorRecord[] descriptorRecords = CreateDescriptorRecords(
+                resourcesCopy,
+                slots);
+            uint visibleNodeMask = uint.MaxValue;
+            foreach (DescriptorRecord descriptor in descriptorRecords)
+                visibleNodeMask &= descriptor.VisibleNodeMask;
+            byte[] ordinaryDataCopy = ordinaryData.ToArray();
+            D3D12SwapchainImageLease[] swapchainImages =
+                CaptureSwapchainBindings(resourcesCopy);
             NativeLease? lifetime = null;
             ulong address = 0;
-            if (createOrdinaryBuffer && !ordinaryData.IsEmpty)
+            if (createOrdinaryBuffer && ordinaryDataCopy.Length != 0)
             {
                 NativeResource* native = CreateOrdinaryDataResource(
                     device,
-                    ordinaryData,
+                    ordinaryDataCopy,
                     out address);
-                lifetime = new NativeLease((IUnknown*)native, ownsReference: true);
+                try
+                {
+                    lifetime = new NativeLease((IUnknown*)native, ownsReference: true);
+                }
+                catch
+                {
+                    _ = native->Release();
+                    throw;
+                }
             }
-            D3D12SwapchainImageLease[] swapchainImages =
-                CaptureSwapchainBindings(resources);
-            return new D3D12ParameterMaterialization(
-                version,
-                resources.ToArray(),
-                swapchainImages,
-                ordinaryData.ToArray(),
-                lifetime,
-                address);
+            try
+            {
+                D3D12PersistentParameterData result =
+                    new(
+                        version,
+                        resourcesCopy,
+                        descriptorRecords,
+                        swapchainImages,
+                        ordinaryDataCopy,
+                        lifetime,
+                        address,
+                        visibleNodeMask);
+                lifetime = null;
+                descriptorRecords = [];
+                return result;
+            }
+            catch
+            {
+                lifetime?.Release();
+                foreach (DescriptorRecord record in descriptorRecords)
+                    record.Release();
+                throw;
+            }
+        }
+
+        private static DescriptorRecord[] CreateDescriptorRecords(
+            ReadOnlySpan<ResourceBinding> resources,
+            ReadOnlySpan<DescriptorSlotDesc> slots)
+        {
+            DescriptorRecord[] records = new DescriptorRecord[resources.Length];
+            int created = 0;
+            try
+            {
+                for (; created < resources.Length; created++)
+                {
+                    ref readonly ResourceBinding binding = ref resources[created];
+                    ref readonly DescriptorSlotDesc slot = ref slots[created];
+                    if (binding.Value is null)
+                    {
+                        records[created] = DescriptorRecord.CreateNull(slot);
+                        continue;
+                    }
+                    if (binding.Value is not GraphicsObject owner ||
+                        owner is not INativeDescriptor descriptor)
+                    {
+                        throw new ArgumentException(
+                            "The persistent binding is not a D3D12 descriptor.",
+                            nameof(resources));
+                    }
+                    records[created] = DescriptorRecord.Create(
+                        descriptor.NativeDescriptor,
+                        owner,
+                        binding.Type,
+                        slot);
+                }
+                return records;
+            }
+            catch
+            {
+                for (int index = 0; index < created; index++)
+                    records[index].Release();
+                throw;
+            }
         }
 
         private static D3D12SwapchainImageLease[] CaptureSwapchainBindings(
@@ -264,8 +488,8 @@ public sealed unsafe partial class D3D12Backend
             {
                 D3D12SwapchainImageLease? lease = binding.Value switch
                 {
-                    TextureSrv view => NativeCast.Texture(view.Resource).SwapchainLease,
-                    TextureUav view => NativeCast.Texture(view.Resource).SwapchainLease,
+                    TextureSrv view => RequireD3D12.Texture(view.Resource).SwapchainLease,
+                    TextureUav view => RequireD3D12.Texture(view.Resource).SwapchainLease,
                     _ => null,
                 };
                 if (lease is null)
@@ -277,7 +501,7 @@ public sealed unsafe partial class D3D12Backend
             return images?.ToArray() ?? [];
         }
 
-        internal void Retain()
+        internal bool TryRetain()
         {
             int current = Volatile.Read(ref _references);
             while (current > 0)
@@ -287,16 +511,24 @@ public sealed unsafe partial class D3D12Backend
                     checked(current + 1),
                     current);
                 if (exchanged == current)
-                    return;
+                    return true;
                 current = exchanged;
             }
-            throw new ObjectDisposedException(nameof(D3D12ParameterMaterialization));
+            return false;
+        }
+
+        internal void Retain()
+        {
+            if (!TryRetain())
+                throw new ObjectDisposedException(nameof(D3D12PersistentParameterData));
         }
 
         internal void Release()
         {
             if (Interlocked.Decrement(ref _references) != 0)
                 return;
+            foreach (DescriptorRecord descriptor in Descriptors)
+                descriptor.Release();
             Interlocked.Exchange(ref _ordinary, null)?.Release();
         }
     }
@@ -315,14 +547,18 @@ public sealed unsafe partial class D3D12Backend
             device,
             MemoryType.Upload,
             shareable: false,
+            device.PrimaryNodeMask,
+            device.EnabledNodeMask,
             description,
             ReadOnlySpan<Silk.NET.DXGI.Format>.Empty);
         try
         {
             void* mapped = null;
             NativeRange readRange = default;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                device,
                 resource->Map(0, &readRange, &mapped),
+                NativeOperationType.Ordinary,
                 "ID3D12Resource::Map(parameter data)");
             data.CopyTo(new Span<byte>(mapped, data.Length));
             NativeRange written = new()
@@ -363,12 +599,17 @@ public sealed unsafe partial class D3D12Backend
         internal NativeResource* Resource => _resource;
         internal ulong Used => _used;
 
-        internal static D3D12OrdinaryDataChunk Create(D3D12Device device, ulong capacity)
+        internal static D3D12OrdinaryDataChunk Create(
+            D3D12Device device,
+            uint nodeMask,
+            ulong capacity)
         {
             NativeResource* resource = CreateCommittedResource(
                 device,
                 MemoryType.Upload,
                 shareable: false,
+                nodeMask,
+                nodeMask,
                 CreateBufferDescription(new BufferDesc(
                     capacity,
                     BufferUsages.Constant)),
@@ -377,8 +618,10 @@ public sealed unsafe partial class D3D12Backend
             {
                 void* mapped = null;
                 NativeRange readRange = default;
-                NativeCall.ThrowIfFailed(
+                ThrowIfFailed(
+                    device,
                     resource->Map(0, &readRange, &mapped),
+                    NativeOperationType.Ordinary,
                     "ID3D12Resource::Map(command ordinary-data arena)");
                 return new D3D12OrdinaryDataChunk(resource, (byte*)mapped, capacity);
             }
@@ -568,18 +811,18 @@ public sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandContext
     {
-        private RootTableState[] _rootTables = [];
-        private bool[] _rootTableSet = [];
-        private ulong[] _rootConstantBuffers = [];
-        private bool[] _rootConstantBufferSet = [];
-        private byte[]?[] _rootConstants = [];
-        private bool[] _rootConstantsSet = [];
+        private readonly RootTableState[] _rootTables = new RootTableState[64];
+        private readonly bool[] _rootTableSet = new bool[64];
+        private readonly ulong[] _rootConstantBuffers = new ulong[64];
+        private readonly bool[] _rootConstantBufferSet = new bool[64];
+        private readonly byte[]?[] _rootConstants = new byte[]?[64];
+        private readonly bool[] _rootConstantsSet = new bool[64];
         private int _rootStateLength;
         private D3D12Pipeline? _pipeline;
-        private VariableLayoutReflection _resolvedParameterLayout;
-        private D3D12ParameterBlockLayout? _resolvedParameterBlock;
         private D3D12PersistentParameterBindings? _persistentBindings;
-        private D3D12ParameterMaterialization? _persistentMaterialization;
+        private D3D12PersistentParameterData? _persistentData;
+        private VariableLayoutReflection _resolvedParameterLayout;
+        private NativeParameterBinding? _resolvedParameterBinding;
         private VariableLayoutReflection _transientBindingLayout;
         private ResourceBinding[] _transientBindingResources = [];
         private byte[] _transientBindingOrdinaryData = [];
@@ -587,23 +830,7 @@ public sealed unsafe partial class D3D12Backend
         private int _transientBindingOrdinaryDataCount;
         private bool _hasTransientBindings;
         private bool _computeRootBindings;
-
         internal D3D12Pipeline? CurrentPipeline => _pipeline;
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        internal bool PipelineEqual(D3D12Pipeline pipeline)
-        {
-            D3D12Pipeline? current = _pipeline;
-            return ReferenceEquals(current, pipeline) ||
-                current is not null && PipelineCompatibleSlow(current, pipeline);
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static bool PipelineCompatibleSlow(
-            D3D12Pipeline current,
-            D3D12Pipeline candidate) =>
-            current.Type == candidate.Type &&
-            current.Signature == candidate.Signature;
 
         internal D3D12Pipeline Pipeline
         {
@@ -614,14 +841,19 @@ public sealed unsafe partial class D3D12Backend
         internal void RememberPipeline(D3D12Pipeline pipeline)
         {
             _pipeline = pipeline;
+            _resolvedParameterLayout = default;
+            _resolvedParameterBinding = null;
             _computeRootBindings = pipeline.Type is PipelineType.Compute or
                 PipelineType.RayTracing or PipelineType.WorkGraph;
             ClearRootBindingState();
+            _rootStateLength = pipeline.RootSignature.RootStateLength;
         }
 
         internal void ResetPipelineBindingState()
         {
             _pipeline = null;
+            _resolvedParameterLayout = default;
+            _resolvedParameterBinding = null;
             ClearRootBindingState();
         }
 
@@ -631,65 +863,40 @@ public sealed unsafe partial class D3D12Backend
             Array.Clear(_rootConstantBufferSet, 0, _rootStateLength);
             Array.Clear(_rootConstantsSet, 0, _rootStateLength);
             _rootStateLength = 0;
-            _resolvedParameterBlock = null;
             _persistentBindings = null;
-            _persistentMaterialization = null;
+            _persistentData = null;
+            if (_transientBindingResourceCount != 0)
+            {
+                Array.Clear(
+                    _transientBindingResources,
+                    0,
+                    _transientBindingResourceCount);
+            }
+            _transientBindingResourceCount = 0;
+            _transientBindingOrdinaryDataCount = 0;
             _hasTransientBindings = false;
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        internal D3D12ParameterBlockLayout ResolveParameterBlock(
+        internal NativeParameterBinding ResolveParameterBlock(
             D3D12Pipeline pipeline,
             VariableLayoutReflection layout)
         {
-            if (_resolvedParameterBlock is not null && _resolvedParameterLayout == layout)
-                return _resolvedParameterBlock;
-            return ResolveParameterBlockSlow(pipeline, layout);
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private D3D12ParameterBlockLayout ResolveParameterBlockSlow(
-            D3D12Pipeline pipeline,
-            VariableLayoutReflection layout)
-        {
-            D3D12ParameterBlockLayout block = pipeline.RootLayout.GetBlock(layout);
+            NativeParameterBinding? cached = _resolvedParameterBinding;
+            if (cached is not null && _resolvedParameterLayout == layout)
+                return cached;
+            NativeParameterBinding resolved = pipeline.RootSignature.GetBlock(layout);
             _resolvedParameterLayout = layout;
-            _resolvedParameterBlock = block;
-            return block;
+            _resolvedParameterBinding = resolved;
+            return resolved;
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        internal bool PersistentBindingsEqual(
+        internal bool PersistentBindingIdentityEqual(
             D3D12PersistentParameterBindings bindings,
-            D3D12ParameterMaterialization? materialization)
-        {
-            if (materialization is null)
-                return false;
-            if (ReferenceEquals(_persistentMaterialization, materialization))
-                return true;
-            return PersistentBindingsEqualSlow(bindings, materialization);
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool PersistentBindingsEqualSlow(
-            D3D12PersistentParameterBindings bindings,
-            D3D12ParameterMaterialization materialization)
-        {
-            if (_persistentBindings is D3D12PersistentParameterBindings currentBindings &&
-                _persistentMaterialization is D3D12ParameterMaterialization currentMaterialization)
-            {
-                return currentBindings.Layout == bindings.Layout &&
-                    (ReferenceEquals(currentMaterialization, materialization) ||
-                     currentMaterialization.ContentEquals(materialization));
-            }
-            return _hasTransientBindings &&
-                _transientBindingLayout == bindings.Layout &&
-                materialization.ContentEquals(
-                    _transientBindingResources.AsSpan(0, _transientBindingResourceCount),
-                    _transientBindingOrdinaryData.AsSpan(
-                        0,
-                        _transientBindingOrdinaryDataCount));
-        }
+            D3D12PersistentParameterData data) =>
+            ReferenceEquals(_persistentBindings, bindings) &&
+            ReferenceEquals(_persistentData, data);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool ParameterBindingsEqual(
@@ -713,21 +920,6 @@ public sealed unsafe partial class D3D12Backend
                 return TransientOrdinaryDataEqual(ordinaryData);
             }
             sameTransientShape = false;
-            return PersistentBindingContentEqualSlow(layout, resources, ordinaryData);
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool PersistentBindingContentEqualSlow(
-            VariableLayoutReflection layout,
-            ReadOnlySpan<ResourceBinding> resources,
-            ReadOnlySpan<byte> ordinaryData)
-        {
-            if (_persistentBindings is D3D12PersistentParameterBindings persistent &&
-                _persistentMaterialization is D3D12ParameterMaterialization materialization)
-            {
-                return persistent.Layout == layout &&
-                    materialization.ContentEquals(resources, ordinaryData);
-            }
             return false;
         }
 
@@ -765,10 +957,10 @@ public sealed unsafe partial class D3D12Backend
 
         internal void RememberPersistentBindings(
             D3D12PersistentParameterBindings bindings,
-            D3D12ParameterMaterialization materialization)
+            D3D12PersistentParameterData data)
         {
             _persistentBindings = bindings;
-            _persistentMaterialization = materialization;
+            _persistentData = data;
             _hasTransientBindings = false;
         }
 
@@ -810,7 +1002,7 @@ public sealed unsafe partial class D3D12Backend
             _transientBindingOrdinaryDataCount = bindings.OrdinaryData.Length;
             _hasTransientBindings = true;
             _persistentBindings = null;
-            _persistentMaterialization = null;
+            _persistentData = null;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -850,6 +1042,16 @@ public sealed unsafe partial class D3D12Backend
             uint index)
         {
             int slot = EnsureRootStateCapacity(rootParameter);
+            SetRootTablePrepared(rootParameter, heap, index, slot);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SetRootTablePrepared(
+            uint rootParameter,
+            ParameterHeap heap,
+            uint index,
+            int slot)
+        {
             RootTableState next = new(heap, index);
             if (_rootTableSet[slot] && _rootTables[slot] == next)
                 return;
@@ -864,8 +1066,46 @@ public sealed unsafe partial class D3D12Backend
             if (address == 0)
                 throw new ArgumentOutOfRangeException(nameof(address));
             int slot = EnsureRootStateCapacity(rootParameter);
+            SetRootConstantBufferPrepared(rootParameter, address, slot);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal void SetRootConstantBufferPrepared(uint rootParameter, ulong address)
+        {
+            if (address == 0)
+                throw new ArgumentOutOfRangeException(nameof(address));
+            int slot = checked((int)rootParameter);
+            SetRootConstantBufferPrepared(rootParameter, address, slot);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private void SetRootConstantBufferPrepared(
+            uint rootParameter,
+            ulong address,
+            int slot)
+        {
             if (_rootConstantBufferSet[slot] && _rootConstantBuffers[slot] == address)
                 return;
+            D3D12CommandListFastCalls.SetRootConstantBufferView(
+                List,
+                _computeRootBindings,
+                rootParameter,
+                address);
+            _rootConstantBuffers[slot] = address;
+            _rootConstantBufferSet[slot] = true;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        internal void SetPersistentRootConstantBufferPrepared(
+            uint rootParameter,
+            ulong address)
+        {
+            int slot = checked((int)rootParameter);
+            if (_rootConstantBufferSet[slot] &&
+                _rootConstantBuffers[slot] == address)
+            {
+                return;
+            }
             D3D12CommandListFastCalls.SetRootConstantBufferView(
                 List,
                 _computeRootBindings,
@@ -920,39 +1160,34 @@ public sealed unsafe partial class D3D12Backend
         private int EnsureRootStateCapacity(uint rootParameter)
         {
             int required = checked((int)rootParameter + 1);
-            if (_rootTables.Length < required)
-            {
-                int capacity = Math.Max(8, _rootTables.Length);
-                while (capacity < required)
-                    capacity = checked(capacity * 2);
-                Array.Resize(ref _rootTables, capacity);
-                Array.Resize(ref _rootTableSet, capacity);
-                Array.Resize(ref _rootConstantBuffers, capacity);
-                Array.Resize(ref _rootConstantBufferSet, capacity);
-                Array.Resize(ref _rootConstants, capacity);
-                Array.Resize(ref _rootConstantsSet, capacity);
-            }
+            if (required > 64)
+                throw new ArgumentOutOfRangeException(nameof(rootParameter));
             if (_rootStateLength < required)
                 _rootStateLength = required;
             return checked((int)rootParameter);
         }
 
         internal void ApplyPersistentBlock(
-            D3D12ParameterBlockLayout layout,
-            D3D12PersistentParameterBindings bindings,
-            D3D12ParameterMaterialization materialization)
+            NativeParameterBinding layout,
+            uint resourceBase,
+            uint samplerBase,
+            D3D12PersistentParameterData data)
         {
-            foreach (BlockLeafBinding leaf in layout.Leaves)
+            if (layout.ResourceTable is D3D12BoundedTable resource)
             {
-                if (leaf.Unbounded)
-                    continue;
-                uint first = leaf.Heap == ParameterHeap.Resource
-                    ? bindings.ResourceBaseIndex
-                    : bindings.SamplerBaseIndex;
-                SetRootTable(
-                    leaf.RootParameterIndex,
-                    leaf.Heap,
-                    checked(first + leaf.HeapOffset));
+                SetRootTablePrepared(
+                    resource.RootParameterIndex,
+                    ParameterHeap.Resource,
+                    resourceBase,
+                    checked((int)resource.RootParameterIndex));
+            }
+            if (layout.SamplerTable is D3D12BoundedTable sampler)
+            {
+                SetRootTablePrepared(
+                    sampler.RootParameterIndex,
+                    ParameterHeap.Sampler,
+                    samplerBase,
+                    checked((int)sampler.RootParameterIndex));
             }
             if (layout.OrdinaryRoot is OrdinaryRootBinding ordinary)
             {
@@ -961,35 +1196,39 @@ public sealed unsafe partial class D3D12Backend
                     SetRootConstants(
                         ordinary.RootParameterIndex,
                         ordinary.ConstantCount,
-                        materialization.OrdinaryData);
+                        data.OrdinaryData);
                 }
                 else
                 {
-                    SetRootConstantBuffer(
+                    SetRootConstantBufferPrepared(
                         ordinary.RootParameterIndex,
-                        materialization.OrdinaryAddress);
+                        data.OrdinaryAddress);
                 }
             }
         }
 
         internal void ApplyTransientBlock(
-            D3D12ParameterBlockLayout layout,
+            NativeParameterBinding layout,
             uint resourceBase,
             uint samplerBase,
             ReadOnlySpan<byte> ordinaryData,
             ulong ordinaryAddress)
         {
-            foreach (BlockLeafBinding leaf in layout.Leaves)
+            if (layout.ResourceTable is D3D12BoundedTable resource)
             {
-                if (leaf.Unbounded)
-                    continue;
-                uint first = leaf.Heap == ParameterHeap.Resource
-                    ? resourceBase
-                    : samplerBase;
-                SetRootTable(
-                    leaf.RootParameterIndex,
-                    leaf.Heap,
-                    checked(first + leaf.HeapOffset));
+                SetRootTablePrepared(
+                    resource.RootParameterIndex,
+                    ParameterHeap.Resource,
+                    resourceBase,
+                    checked((int)resource.RootParameterIndex));
+            }
+            if (layout.SamplerTable is D3D12BoundedTable sampler)
+            {
+                SetRootTablePrepared(
+                    sampler.RootParameterIndex,
+                    ParameterHeap.Sampler,
+                    samplerBase,
+                    checked((int)sampler.RootParameterIndex));
             }
             if (layout.OrdinaryRoot is OrdinaryRootBinding ordinary)
             {
@@ -1009,7 +1248,7 @@ public sealed unsafe partial class D3D12Backend
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal void ApplyTransientOrdinaryData(
-            D3D12ParameterBlockLayout layout,
+            NativeParameterBinding layout,
             ReadOnlySpan<byte> ordinaryData)
         {
             if (layout.OrdinaryRoot is not OrdinaryRootBinding ordinary)
@@ -1064,6 +1303,8 @@ public sealed unsafe partial class D3D12Backend
                 return;
             }
 
+            PrepareOrdinaryData(16);
+            PrepareBindingStorage(0, 16);
             ulong address = Recording.WriteOrdinaryData16(ref data);
             SetTransientRootConstantBuffer(rootParameter, address);
 
@@ -1082,9 +1323,8 @@ public sealed unsafe partial class D3D12Backend
                 _transientBindingOrdinaryDataCount = 16;
                 _hasTransientBindings = true;
                 _persistentBindings = null;
-                _persistentMaterialization = null;
+                _persistentData = null;
             }
-            Recording.RecordTransientBindingSetter();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1094,16 +1334,14 @@ public sealed unsafe partial class D3D12Backend
         {
             if (!_hasTransientBindings &&
                 _persistentBindings is D3D12PersistentParameterBindings persistent &&
-                _persistentMaterialization is D3D12ParameterMaterialization materialization &&
+                _persistentData is D3D12PersistentParameterData persistentData &&
                 persistent.Layout == layout &&
-                materialization.ContentEquals(
+                persistentData.ContentEquals(
                     ReadOnlySpan<ResourceBinding>.Empty,
                     MemoryMarshal.CreateReadOnlySpan(ref data, 16)))
             {
                 return true;
             }
-            if (_transientBindingOrdinaryData.Length < 16)
-                Array.Resize(ref _transientBindingOrdinaryData, 16);
             return false;
         }
 
@@ -1127,24 +1365,16 @@ public sealed unsafe partial class D3D12Backend
                 address);
             _rootConstantBuffers[slot] = address;
             _rootConstantBufferSet[slot] = true;
-            if (_rootStateLength <= slot)
-                _rootStateLength = checked(slot + 1);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void SetTransientRootConstantBufferSlow(uint rootParameter, ulong address) =>
             SetRootConstantBuffer(rootParameter, address);
 
-        internal uint AllocateTransientDescriptors(ParameterHeap heap, uint count) =>
-            Recording.AllocateDescriptors(heap, count);
-
         internal (uint ResourceBase, uint SamplerBase) AllocateTransientDescriptorPair(
             uint resourceCount,
             uint samplerCount) =>
             Recording.AllocateDescriptorPair(resourceCount, samplerCount);
-
-        internal void PrepareTransientBindingCaptures(ReadOnlySpan<ResourceBinding> bindings) =>
-            Recording.PrepareBindingCaptures(bindings);
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal D3D12OrdinaryDataReservation ReserveTransientOrdinaryData(ulong size) =>
@@ -1154,14 +1384,14 @@ public sealed unsafe partial class D3D12Backend
             ParameterHeap heap,
             uint index,
             in ResourceBinding binding,
-            ResourceBindingType expectedType) =>
-            Recording.CopyDescriptor(heap, index, binding, expectedType);
+            in DescriptorSlotDesc expectedSlot) =>
+            Recording.CopyDescriptor(heap, index, binding, expectedSlot);
 
-        internal void Capture(D3D12ParameterMaterialization materialization) =>
-            Recording.Capture(materialization);
-
-        internal void CaptureObject(GraphicsObject value) =>
-            Recording.CaptureObject(value);
+        internal void CopyPersistentDescriptor(
+            ParameterHeap heap,
+            uint index,
+            DescriptorRecord record) =>
+            Recording.CopyPersistentDescriptor(heap, index, record);
 
         internal void Capture(in ResourceBinding binding)
         {
@@ -1185,7 +1415,6 @@ public sealed unsafe partial class D3D12Backend
                 case Sampler value:
                     INativeDescriptor descriptor = (INativeDescriptor)value;
                     Recording.Capture(
-                        value,
                         descriptor.NativeDescriptor,
                         resource: null);
                     break;
@@ -1207,48 +1436,38 @@ public sealed unsafe partial class D3D12Backend
             uint index)
         {
             GpuDescriptorHandle handle = Recording.GetGpuHandle(heap, index);
-            if (Pipeline.Type is PipelineType.Compute or
-                PipelineType.RayTracing or PipelineType.WorkGraph)
-                List->SetComputeRootDescriptorTable(rootParameter, handle);
-            else
-                List->SetGraphicsRootDescriptorTable(rootParameter, handle);
+            D3D12CommandListFastCalls.SetRootDescriptorTable(
+                List,
+                Pipeline.Type is PipelineType.Compute or
+                    PipelineType.RayTracing or PipelineType.WorkGraph,
+                rootParameter,
+                handle);
         }
     }
 
     private sealed partial class D3D12CommandSlot
     {
-        private readonly HashSet<D3D12ParameterMaterialization> _capturedParameterData =
+        private readonly HashSet<D3D12PersistentParameterData> _capturedParameterData =
             new(ReferenceEqualityComparer.Instance);
         private readonly List<D3D12OrdinaryDataChunk> _ordinaryDataChunks = [];
         private int _ordinaryDataCursor;
         private D3D12OrdinaryDataChunk? _ordinaryDataCurrent;
         private ID3D12DescriptorHeap* _resourceArena;
         private ID3D12DescriptorHeap* _samplerArena;
+        private bool _usesPrivateDescriptorArena;
+        private uint _initialResourceDescriptorCapacity;
+        private uint _initialSamplerDescriptorCapacity;
         private uint _resourceCapacity;
         private uint _samplerCapacity;
         private uint _resourceUsed;
         private uint _samplerUsed;
         private ulong _descriptorArenaVersion;
+        private bool _descriptorArenaReady;
         private bool _descriptorHeapsBound;
+        private bool _resourceArenaContainsGeneration;
+        private bool _samplerArenaContainsGeneration;
 
         internal ulong DescriptorArenaVersion => _descriptorArenaVersion;
-
-        internal void PrepareBindingCaptures(ReadOnlySpan<ResourceBinding> bindings)
-        {
-            _automaticCaptures?.PrepareCapacity(bindings.Length);
-            int swapchainCapacity = _swapchainUses.Count;
-
-            foreach (ref readonly ResourceBinding binding in bindings)
-            {
-                object? value = binding.Value;
-                if (value is null)
-                    continue;
-                if (value is TextureSrv or TextureUav)
-                    swapchainCapacity = checked(swapchainCapacity + 1);
-            }
-
-            _swapchainUses.EnsureCapacity(swapchainCapacity);
-        }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal D3D12OrdinaryDataReservation ReserveOrdinaryData(ulong size)
@@ -1316,12 +1535,45 @@ public sealed unsafe partial class D3D12Backend
             ulong capacity = Math.Max(64UL * 1024UL, alignedSize);
             D3D12OrdinaryDataChunk created = D3D12OrdinaryDataChunk.Create(
                 _context.NativeDevice,
+                _context.NativeNodeMask,
                 capacity);
             _ordinaryDataChunks.Add(created);
             if (!created.TryReserve(alignedSize, out ulong createdOffset))
                 throw new InvalidOperationException("A new ordinary-data chunk is too small.");
             _ordinaryDataCurrent = created;
             return new D3D12OrdinaryDataReservation(created, createdOffset, alignedSize);
+        }
+
+        internal void PrepareOrdinaryDataCapacity(ulong size)
+        {
+            if (size == 0)
+                return;
+            ulong alignedSize = checked(((size + 255UL) / 256UL) * 256UL);
+            D3D12OrdinaryDataChunk? current = _ordinaryDataCurrent;
+            if (current is not null && current.TryReserve(alignedSize, out _))
+                return;
+
+            int cursor = _ordinaryDataCursor;
+            while (cursor < _ordinaryDataChunks.Count)
+            {
+                D3D12OrdinaryDataChunk candidate = _ordinaryDataChunks[cursor];
+                if (candidate.TryReserve(alignedSize, out _))
+                {
+                    _ordinaryDataCursor = cursor;
+                    _ordinaryDataCurrent = candidate;
+                    return;
+                }
+                cursor++;
+            }
+
+            _ordinaryDataChunks.EnsureCapacity(checked(_ordinaryDataChunks.Count + 1));
+            D3D12OrdinaryDataChunk created = D3D12OrdinaryDataChunk.Create(
+                _context.NativeDevice,
+                _context.NativeNodeMask,
+                Math.Max(64UL * 1024UL, alignedSize));
+            _ordinaryDataChunks.Add(created);
+            _ordinaryDataCursor = _ordinaryDataChunks.Count - 1;
+            _ordinaryDataCurrent = created;
         }
 
         internal void ResetOrdinaryDataArena()
@@ -1336,6 +1588,7 @@ public sealed unsafe partial class D3D12Backend
                     capacity = checked(capacity * 2);
                 D3D12OrdinaryDataChunk consolidated = D3D12OrdinaryDataChunk.Create(
                     _context.NativeDevice,
+                    _context.NativeNodeMask,
                     capacity);
                 foreach (D3D12OrdinaryDataChunk chunk in _ordinaryDataChunks)
                     chunk.Release();
@@ -1352,54 +1605,228 @@ public sealed unsafe partial class D3D12Backend
                 : _ordinaryDataChunks[0];
         }
 
-        internal void ResetDescriptorArena(in CommandRecordingDesc description)
+        internal void ResetDescriptorArenaState(in CommandRecordingDesc description)
         {
-            DescriptorGeneration generation = DescriptorGeneration;
+            ValidateCapacity(
+                ParameterHeap.Resource,
+                Math.Max(1u, description.InitialResourceDescriptorCapacity));
+            ValidateCapacity(
+                ParameterHeap.Sampler,
+                Math.Max(1u, description.InitialSamplerDescriptorCapacity));
+            _initialResourceDescriptorCapacity =
+                description.InitialResourceDescriptorCapacity;
+            _initialSamplerDescriptorCapacity =
+                description.InitialSamplerDescriptorCapacity;
+            _resourceUsed = 0;
+            _samplerUsed = 0;
+            _descriptorArenaVersion = checked(_descriptorArenaVersion + 1);
+            _descriptorArenaReady = false;
+            _descriptorHeapsBound = false;
+            _resourceArenaContainsGeneration = false;
+            _samplerArenaContainsGeneration = false;
+        }
+
+        internal void PrepareDescriptorTables(ReadOnlySpan<DefaultRootTable> tables)
+        {
+            GetDescriptorTableHeaps(
+                tables,
+                out bool needsResources,
+                out bool needsSamplers);
+            if (!needsResources && !needsSamplers)
+                return;
+
+            DescriptorGeneration descriptors = Descriptors;
+            if (!_descriptorArenaReady)
+            {
+                _resourceArenaContainsGeneration |= needsResources;
+                _samplerArenaContainsGeneration |= needsSamplers;
+                return;
+            }
+
+            bool replaceResources =
+                needsResources && !_resourceArenaContainsGeneration;
+            bool replaceSamplers =
+                needsSamplers && !_samplerArenaContainsGeneration;
+            if (!replaceResources && !replaceSamplers)
+                return;
+
+            ReplaceDescriptorArenaHeaps(
+                descriptors,
+                replaceResources,
+                replaceSamplers);
+        }
+
+        private static void GetDescriptorTableHeaps(
+            ReadOnlySpan<DefaultRootTable> tables,
+            out bool resources,
+            out bool samplers)
+        {
+            resources = false;
+            samplers = false;
+            foreach (ref readonly DefaultRootTable table in tables)
+            {
+                if (table.Heap == ParameterHeap.Resource)
+                    resources = true;
+                else
+                    samplers = true;
+            }
+        }
+
+        private void ReplaceDescriptorArenaHeaps(
+            DescriptorGeneration descriptors,
+            bool replaceResources,
+            bool replaceSamplers)
+        {
+            uint resourcePrefix = replaceResources
+                ? descriptors.ResourceCount
+                : _resourceUsed;
+            uint samplerPrefix = replaceSamplers
+                ? descriptors.SamplerCount
+                : _samplerUsed;
+            uint resourceRequired = replaceResources
+                ? Math.Max(
+                    1u,
+                    checked(
+                        resourcePrefix +
+                        _initialResourceDescriptorCapacity))
+                : _resourceCapacity;
+            uint samplerRequired = replaceSamplers
+                ? Math.Max(
+                    1u,
+                    checked(
+                        samplerPrefix +
+                        _initialSamplerDescriptorCapacity))
+                : _samplerCapacity;
+            uint resourceCapacity = replaceResources
+                ? Math.Max(_resourceCapacity, resourceRequired)
+                : _resourceCapacity;
+            uint samplerCapacity = replaceSamplers
+                ? Math.Max(_samplerCapacity, samplerRequired)
+                : _samplerCapacity;
+            ValidateCapacity(ParameterHeap.Resource, resourceCapacity);
+            ValidateCapacity(ParameterHeap.Sampler, samplerCapacity);
+            int replacedHeapCount =
+                (replaceResources && _resourceArena is not null ? 1 : 0) +
+                (replaceSamplers && _samplerArena is not null ? 1 : 0);
+            PrepareTransientObjects(replacedHeapCount);
+            ulong nextVersion = checked(_descriptorArenaVersion + 1);
+
+            ID3D12DescriptorHeap* resourceReplacement = null;
+            ID3D12DescriptorHeap* samplerReplacement = null;
+            try
+            {
+                if (replaceResources)
+                {
+                    resourceReplacement = CreateShaderVisibleHeap(
+                        ParameterHeap.Resource,
+                        resourceCapacity);
+                }
+                if (replaceSamplers)
+                {
+                    samplerReplacement = CreateShaderVisibleHeap(
+                        ParameterHeap.Sampler,
+                        samplerCapacity);
+                }
+                if (replaceResources)
+                {
+                    descriptors.CopyResourceTo(
+                        _context.NativeDevice,
+                        resourceReplacement);
+                }
+                if (replaceSamplers)
+                {
+                    descriptors.CopySamplerTo(
+                        _context.NativeDevice,
+                        samplerReplacement);
+                }
+
+                if (replaceResources)
+                {
+                    ID3D12DescriptorHeap* previous = _resourceArena;
+                    _resourceArena = resourceReplacement;
+                    _resourceCapacity = resourceCapacity;
+                    _resourceUsed = resourcePrefix;
+                    _resourceArenaContainsGeneration = true;
+                    resourceReplacement = null;
+                    if (previous is not null)
+                        _transientObjects.Add((nint)previous);
+                }
+                if (replaceSamplers)
+                {
+                    ID3D12DescriptorHeap* previous = _samplerArena;
+                    _samplerArena = samplerReplacement;
+                    _samplerCapacity = samplerCapacity;
+                    _samplerUsed = samplerPrefix;
+                    _samplerArenaContainsGeneration = true;
+                    samplerReplacement = null;
+                    if (previous is not null)
+                        _transientObjects.Add((nint)previous);
+                }
+                _descriptorArenaVersion = nextVersion;
+                _descriptorHeapsBound = false;
+                _context.InvalidateParameterBindingState();
+            }
+            finally
+            {
+                if (samplerReplacement is not null)
+                    _ = samplerReplacement->Release();
+                if (resourceReplacement is not null)
+                    _ = resourceReplacement->Release();
+            }
+        }
+
+        private void EnsureDescriptorArenaReady()
+        {
+            if (_descriptorArenaReady)
+                return;
+            bool rebind = _descriptorHeapsBound;
+            DescriptorGeneration? descriptors =
+                _resourceArenaContainsGeneration ||
+                _samplerArenaContainsGeneration
+                    ? Descriptors
+                    : null;
+            uint resourcePrefix = _resourceArenaContainsGeneration
+                ? descriptors!.ResourceCount
+                : 0;
+            uint samplerPrefix = _samplerArenaContainsGeneration
+                ? descriptors!.SamplerCount
+                : 0;
             uint resourceRequired = checked(
-                generation.ResourceCount + description.InitialResourceDescriptorCapacity);
+                resourcePrefix + _initialResourceDescriptorCapacity);
             uint samplerRequired = checked(
-                generation.SamplerCount + description.InitialSamplerDescriptorCapacity);
+                samplerPrefix + _initialSamplerDescriptorCapacity);
             EnsureResetHeaps(
                 Math.Max(1u, resourceRequired),
                 Math.Max(1u, samplerRequired));
-            generation.CopyTo(
-                _context.NativeDevice,
-                _resourceArena,
-                _samplerArena);
-            _resourceUsed = generation.ResourceCount;
-            _samplerUsed = generation.SamplerCount;
-            _descriptorArenaVersion = checked(_descriptorArenaVersion + 1);
-            _descriptorHeapsBound = false;
-        }
-
-        internal void ValidateDescriptorArenaCapacity(in CommandRecordingDesc description)
-        {
-            DescriptorGeneration generation = DescriptorGeneration;
-            uint resourceRequired = checked(
-                generation.ResourceCount + description.InitialResourceDescriptorCapacity);
-            uint samplerRequired = checked(
-                generation.SamplerCount + description.InitialSamplerDescriptorCapacity);
-            ValidateCapacity(ParameterHeap.Resource, Math.Max(1u, resourceRequired));
-            ValidateCapacity(ParameterHeap.Sampler, Math.Max(1u, samplerRequired));
-        }
-
-        internal uint AllocateDescriptors(ParameterHeap heap, uint count)
-        {
-            if (count == 0)
-                throw new ArgumentOutOfRangeException(nameof(count));
-            (uint resourceBase, uint samplerBase) = heap == ParameterHeap.Resource
-                ? AllocateDescriptorPair(count, 0)
-                : AllocateDescriptorPair(0, count);
-            return heap == ParameterHeap.Resource ? resourceBase : samplerBase;
+            if (_resourceArenaContainsGeneration)
+                descriptors!.CopyResourceTo(_context.NativeDevice, _resourceArena);
+            if (_samplerArenaContainsGeneration)
+                descriptors!.CopySamplerTo(_context.NativeDevice, _samplerArena);
+            _resourceUsed = resourcePrefix;
+            _samplerUsed = samplerPrefix;
+            _descriptorArenaReady = true;
+            if (rebind)
+            {
+                BindDescriptorHeaps();
+                _context.ReapplyRootTables();
+            }
         }
 
         internal (uint ResourceBase, uint SamplerBase) AllocateDescriptorPair(
             uint resourceCount,
             uint samplerCount)
         {
+            if (resourceCount == 0 && samplerCount == 0)
+                return (0, 0);
             uint resourceRequired = checked(_resourceUsed + resourceCount);
             uint samplerRequired = checked(_samplerUsed + samplerCount);
-            EnsureRecordingCapacity(resourceRequired, samplerRequired);
+            if (!_descriptorArenaReady ||
+                resourceRequired > _resourceCapacity ||
+                samplerRequired > _samplerCapacity)
+            {
+                throw new InvalidOperationException(
+                    "Descriptor capacity must be prepared before allocation.");
+            }
 
             uint resourceBase = _resourceUsed;
             uint samplerBase = _samplerUsed;
@@ -1412,7 +1839,7 @@ public sealed unsafe partial class D3D12Backend
             ParameterHeap heap,
             uint index,
             in ResourceBinding binding,
-            ResourceBindingType expectedType)
+            in DescriptorSlotDesc expectedSlot)
         {
             DescriptorHeapType nativeType = heap == ParameterHeap.Resource
                 ? DescriptorHeapType.CbvSrvUav
@@ -1436,12 +1863,48 @@ public sealed unsafe partial class D3D12Backend
             }
             else if (binding.Value is null)
             {
-                WriteNullDescriptor(_context.NativeDevice, nativeType, expectedType, destination);
+                WriteTypedNullDescriptor(
+                    _context.NativeDevice,
+                    expectedSlot,
+                    destination);
             }
             else
             {
                 throw new ArgumentException("The binding is not a D3D12 descriptor.", nameof(binding));
             }
+        }
+
+        internal void CopyPersistentDescriptor(
+            ParameterHeap heap,
+            uint index,
+            DescriptorRecord record)
+        {
+            DescriptorHeapType nativeType = heap == ParameterHeap.Resource
+                ? DescriptorHeapType.CbvSrvUav
+                : DescriptorHeapType.Sampler;
+            ID3D12DescriptorHeap* destinationHeap = heap == ParameterHeap.Resource
+                ? _resourceArena
+                : _samplerArena;
+            CpuDescriptorHandle start =
+                destinationHeap->GetCPUDescriptorHandleForHeapStart();
+            uint increment = _context.NativeDevice.Native
+                ->GetDescriptorHandleIncrementSize(nativeType);
+            CpuDescriptorHandle destination = new(
+                start.Ptr + checked((nuint)(index * increment)));
+            if (record.Source is DescriptorLease source)
+            {
+                _context.NativeDevice.Native->CopyDescriptorsSimple(
+                    1,
+                    destination,
+                    source.Cpu,
+                    nativeType);
+                return;
+            }
+            WriteTypedNullDescriptor(
+                _context.NativeDevice,
+                record.Slot,
+                destination,
+                allowDummySampler: true);
         }
 
         internal GpuDescriptorHandle GetGpuHandle(ParameterHeap heap, uint index)
@@ -1450,9 +1913,20 @@ public sealed unsafe partial class D3D12Backend
             DescriptorHeapType nativeType = heap == ParameterHeap.Resource
                 ? DescriptorHeapType.CbvSrvUav
                 : DescriptorHeapType.Sampler;
-            ID3D12DescriptorHeap* descriptorHeap = heap == ParameterHeap.Resource
-                ? _resourceArena
-                : _samplerArena;
+            ID3D12DescriptorHeap* descriptorHeap;
+            if (_descriptorArenaReady)
+            {
+                descriptorHeap = heap == ParameterHeap.Resource
+                    ? _resourceArena
+                    : _samplerArena;
+            }
+            else
+            {
+                DescriptorGeneration descriptors = Descriptors;
+                descriptorHeap = heap == ParameterHeap.Resource
+                    ? descriptors.ResourceHeap
+                    : descriptors.SamplerHeap;
+            }
             GpuDescriptorHandle start =
                 descriptorHeap->GetGPUDescriptorHandleForHeapStart();
             uint increment = _context.NativeDevice.Native
@@ -1461,20 +1935,9 @@ public sealed unsafe partial class D3D12Backend
                 start.Ptr + checked((ulong)index * increment));
         }
 
-        internal void Capture(D3D12ParameterMaterialization materialization)
-        {
-            foreach (D3D12SwapchainImageLease image in materialization.SwapchainImages)
-                CaptureSwapchainUse(image);
-            if (!_capturedParameterData.Add(materialization))
-                materialization.Release();
-        }
-
-        internal void CaptureObject(GraphicsObject value)
-            => _automaticCaptures?.CaptureObject(value);
-
         internal void ReleaseBindingTransients()
         {
-            foreach (D3D12ParameterMaterialization value in _capturedParameterData)
+            foreach (D3D12PersistentParameterData value in _capturedParameterData)
                 value.Release();
             _capturedParameterData.Clear();
         }
@@ -1496,7 +1959,14 @@ public sealed unsafe partial class D3D12Backend
                 _ = resource->Release();
             _resourceCapacity = 0;
             _samplerCapacity = 0;
+            _resourceUsed = 0;
+            _samplerUsed = 0;
+            _initialResourceDescriptorCapacity = 0;
+            _initialSamplerDescriptorCapacity = 0;
+            _descriptorArenaReady = false;
             _descriptorHeapsBound = false;
+            _resourceArenaContainsGeneration = false;
+            _samplerArenaContainsGeneration = false;
         }
 
         private void EnsureResetHeaps(uint resourceRequired, uint samplerRequired)
@@ -1562,6 +2032,10 @@ public sealed unsafe partial class D3D12Backend
             if (!replaceResource && !replaceSampler)
                 return;
             bool rebind = _descriptorHeapsBound;
+            int retainedHeapCount =
+                (replaceResource && _resourceArena is not null ? 1 : 0) +
+                (replaceSampler && _samplerArena is not null ? 1 : 0);
+            PrepareTransientObjects(retainedHeapCount);
 
             uint resourceCapacity = replaceResource
                 ? GrowCapacity(ParameterHeap.Resource, _resourceCapacity, resourceRequired)
@@ -1596,12 +2070,6 @@ public sealed unsafe partial class D3D12Backend
                     _samplerArena,
                     samplerReplacement,
                     _samplerUsed);
-
-                int retainedHeapCount =
-                    (replaceResource && _resourceArena is not null ? 1 : 0) +
-                    (replaceSampler && _samplerArena is not null ? 1 : 0);
-                _transientObjects.EnsureCapacity(
-                    checked(_transientObjects.Count + retainedHeapCount));
 
                 if (replaceResource)
                 {
@@ -1672,14 +2140,16 @@ public sealed unsafe partial class D3D12Backend
                     : DescriptorHeapType.Sampler,
                 count,
                 DescriptorHeapFlags.ShaderVisible,
-                _context.NativeDevice.EnabledNodeMask);
+                _context.NativeNodeMask);
             ID3D12DescriptorHeap* result = null;
             Guid iid = ID3D12DescriptorHeap.Guid;
-            NativeCall.ThrowIfFailed(
+            ThrowIfFailed(
+                _context.NativeDevice,
                 _context.NativeDevice.Native->CreateDescriptorHeap(
                     &description,
                     &iid,
                     (void**)&result),
+                NativeOperationType.Ordinary,
                 "ID3D12Device::CreateDescriptorHeap(command arena)");
             return result;
         }
@@ -1692,12 +2162,15 @@ public sealed unsafe partial class D3D12Backend
 
         private void BindDescriptorHeaps()
         {
+            DescriptorGeneration? descriptors = _descriptorArenaReady
+                ? null
+                : Descriptors;
             ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2]
             {
-                _resourceArena,
-                _samplerArena,
+                _descriptorArenaReady ? _resourceArena : descriptors!.ResourceHeap,
+                _descriptorArenaReady ? _samplerArena : descriptors!.SamplerHeap,
             };
-            List->SetDescriptorHeaps(2, heaps);
+            D3D12CommandListFastCalls.SetDescriptorHeaps(List, 2, heaps);
             _descriptorHeapsBound = true;
         }
 
@@ -1716,45 +2189,4 @@ public sealed unsafe partial class D3D12Backend
             : _context.NativeDevice.Capabilities.Limits.SamplerDescriptorCapacity;
     }
 
-    private static void WriteNullDescriptor(
-        D3D12Device device,
-        DescriptorHeapType heap,
-        ResourceBindingType type,
-        CpuDescriptorHandle destination)
-    {
-        if (heap == DescriptorHeapType.Sampler)
-        {
-            Silk.NET.Direct3D12.SamplerDesc sampler = new()
-            {
-                Filter = Filter.MinMagMipPoint,
-                AddressU = TextureAddressMode.Clamp,
-                AddressV = TextureAddressMode.Clamp,
-                AddressW = TextureAddressMode.Clamp,
-                ComparisonFunc = ComparisonFunc.Always,
-                MaxAnisotropy = 1,
-                MaxLOD = float.MaxValue,
-            };
-            device.Native->CreateSampler(&sampler, destination);
-            return;
-        }
-
-        switch (type)
-        {
-            case ResourceBindingType.BufferUav:
-            case ResourceBindingType.TextureUav:
-                device.Native->CreateUnorderedAccessView(null, null, null, destination);
-                break;
-            case ResourceBindingType.ConstantBuffer:
-                device.Native->CreateConstantBufferView(null, destination);
-                break;
-            case ResourceBindingType.None:
-            case ResourceBindingType.BufferSrv:
-            case ResourceBindingType.TextureSrv:
-            case ResourceBindingType.AccelerationStructure:
-                device.Native->CreateShaderResourceView(null, null, destination);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(type));
-        }
-    }
 }
