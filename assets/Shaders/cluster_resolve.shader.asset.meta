@@ -2,27 +2,27 @@
   "asset_guid": "842453b7-81b6-54d6-8be0-352acbba2c73",
   "source_guid": "a37a154e-1fff-46ee-a0e8-7c599ba77ec0",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "2f0f3023d7b82a274df2ca7f5239494a14813ae6b8d4e2314ea269e4b292908e",
+  "content_fingerprint": "d65c038e90b3251217b7fbc4ca166549200beabfb41783c4ee3b976945a8d8a3",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
-      "hash": "e5d3d6a3071851206acedb4e36b872347918f8ee1390ec04684fb1517db31366"
+      "hash": "6329207495348a09ec5c85a3adb88613d104bcd67d125e82a45fb6dc26d2506d"
     },
     {
       "path": "assets/Shaders/cluster_instance_properties.slang",
-      "hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
+      "hash": "ba3fa8bcbef6cc98a007b09cd82563cc2e1840a51041a02b4d805950abb074d8"
     },
     {
       "path": "assets/Shaders/cluster_resolve.slang",
-      "hash": "56fc8c8b2a13321f5c776ff9235b707e4dcb4b34b37624d76120df850e313ffb"
+      "hash": "9b84b35395a9e6fd4e526724406f9877e3f4fe71de1474730248f0e9a2f6f72c"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "630000735cfb610901de645ddbebb5993498434fa1e403ce1b30938788bc9bd8"
+      "hash": "b25fa485e008b5faf4d960ff596d765632474709f693af65eef11b4dd9f4ca07"
     },
     {
       "path": "assets/Shaders/common.slang",
-      "hash": "a93b99723ef3481ca2f236ebef37c85b125e61b520a942c2112a610ef9a40baa"
+      "hash": "f81e8163471b33ca43a9aa2d6db7d382630d695b08845f8a0bad976738d5a19a"
     },
     {
       "path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -30,16 +30,16 @@
     },
     {
       "path": "assets/Shaders/render_instance_properties.slang",
-      "hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
+      "hash": "33eb01451d41f3ff6649fdd438a416ca212ec3c0128e9d36e20ac5c374234f54"
     },
     {
       "path": "assets/Shaders/render_instance_transform.slang",
-      "hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
+      "hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",
-      "hash": "892f4220f921406aaf9fc82b0c454bf0a747636fe0a183cd72a0dce3d5115204"
+      "hash": "9ac8a2c65f0c73853c275ba4a523aff7c343ca914fc702754fae0db58c90cbfe"
     }
   ],
-  "importer_version": 24
+  "importer_version": 25
 }

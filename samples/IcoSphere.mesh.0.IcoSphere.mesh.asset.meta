@@ -2,15 +2,15 @@
   "asset_guid": "7c2bd842-d3a3-5616-a385-b8f2918c3daf",
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
   "sub_asset_key": "mesh:0:IcoSphere",
-  "content_fingerprint": "23a3319ca8087563299625018ca8da3b04119ed0fe8ae505f240c15cd91d0772",
+  "content_fingerprint": "8ccc867e7afb9369e763da9b604b86ffde4774c7d9d96edb4ff12d42c33e9b5b",
   "dependencies": [
     {
       "path": "assets/Materials/DefaultPBR.material.asset",
-      "hash": "748e662c465b831eb7a23e4b734c2b076121061219f9ca3c217f35732fd7c5e6"
+      "hash": "8a36c03b29c722501dcb4f06d3e8d092a31371eb10b960483cbd6cadca8545a2"
     },
     {
       "path": "assets/Materials/TestUnlit_1.material.asset",
-      "hash": "6935bbe2e6ee7463016acf155f602d6a73e559ebee3fe12b9e16d0f7222a26d7"
+      "hash": "0023fd07e0701db58ba715c6ab88bf836e3692ab1eeea4053fbee9ec083fd68d"
     },
     {
       "path": "samples/IcoSphere.glb",

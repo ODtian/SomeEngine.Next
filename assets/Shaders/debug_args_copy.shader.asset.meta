@@ -2,12 +2,12 @@
   "asset_guid": "c93cba86-7cff-5bb5-8aae-5932cc7d273c",
   "source_guid": "9f9b2f7d-dbbf-42cf-8059-060b49711fb6",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "cae7b771b3f0032fe3d3540723a14adaf3d12aa72b3ac8101f5a26ed9766e9e9",
+  "content_fingerprint": "d19c2b8430e1b68f8612218ca9d3a056051a4cf9bd006c2f8d21cd82c49078aa",
   "dependencies": [
     {
       "path": "assets/Shaders/debug_args_copy.slang",
-      "hash": "a42564ec96f5f4b9c433f38a8ea14f178e1962742e985146df7b4423c34a0a2e"
+      "hash": "13bff8658f5bb9be229140c99751351b935f09765314917121cfaa3b91e8e672"
     }
   ],
-  "importer_version": 24
+  "importer_version": 25
 }
