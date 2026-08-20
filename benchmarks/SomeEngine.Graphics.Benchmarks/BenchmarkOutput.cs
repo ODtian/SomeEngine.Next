@@ -24,12 +24,16 @@ internal static class BenchmarkOutput
         string outputSha256,
         string shaderManifestSha256,
         BarrierEvidence[] barriers,
-        NativeSetterEvidence nativeSetters)
+        CommandWorkloadEvidence? workloadEvidence = null)
     {
         double[] cpu = samples.Select(static sample => sample.CpuMicroseconds).ToArray();
         double[] gpu = samples
             .Where(static sample => sample.GpuMicroseconds.HasValue)
             .Select(static sample => sample.GpuMicroseconds!.Value)
+            .ToArray();
+        double[] postCloseCleanup = samples
+            .Where(static sample => sample.PostCloseCleanupMicroseconds.HasValue)
+            .Select(static sample => sample.PostCloseCleanupMicroseconds!.Value)
             .ToArray();
         RunDisposition disposition = profile == BenchmarkProfile.VendorCertification
             ? RunDisposition.Passed
@@ -40,6 +44,10 @@ internal static class BenchmarkOutput
                 "Reduced-count WARP functional workload executed; not performance evidence.",
             BenchmarkProfile.FastDiagnostic =>
                 "Fast hardware diagnostic workload executed; never vendor-certification evidence.",
+            BenchmarkProfile.DeveloperProbe =>
+                "Developer probe workload executed; exploratory only, non-gating, and never vendor-certification evidence.",
+            BenchmarkProfile.RepresentativeCpuFrame =>
+                "Public-source representative CPU frame workload executed with one public Draw call per draw and without Queue submission.",
             BenchmarkProfile.VendorCertification => "Fixed vendor workload executed.",
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         };
@@ -56,8 +64,11 @@ internal static class BenchmarkOutput
             outputSha256,
             shaderManifestSha256,
             barriers,
-            nativeSetters,
             MetricDistribution.From(cpu),
-            gpu.Length == 0 ? null : MetricDistribution.From(gpu));
+            gpu.Length == 0 ? null : MetricDistribution.From(gpu),
+            postCloseCleanup.Length == 0
+                ? null
+                : MetricDistribution.From(postCloseCleanup),
+            workloadEvidence);
     }
 }

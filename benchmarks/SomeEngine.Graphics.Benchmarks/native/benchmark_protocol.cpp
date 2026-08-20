@@ -20,7 +20,7 @@ namespace
 [[noreturn]] void usage(const std::string& message)
 {
     throw std::invalid_argument(message +
-        " Usage: native-runner --profile <warp|diagnose|certify> --variant native-cpp "
+        " Usage: native-runner --profile <warp|diagnose|certify|representative> --variant native-cpp "
         "--adapter <low>:<high> --process-index <n> --warmup <n> --samples <n> "
         "--draws <n> --barriers <n> --shader-dir <path> --output <path>");
 }
@@ -80,6 +80,8 @@ const char* workload_name(workload_kind value)
     case workload_kind::state_suppression: return "stateSuppression10000";
     case workload_kind::explicit_barrier: return "explicitBarrier4096";
     case workload_kind::three_queue_present: return "threeQueuePresent";
+    case workload_kind::representative_frame_serial: return "representativeFrameSerial";
+    case workload_kind::representative_frame_parallel: return "representativeFrameParallel";
     }
     return "emptySubmit";
 }
@@ -191,8 +193,10 @@ configuration parse_arguments(int argc, wchar_t** argv)
         result.selected_profile = profile::diagnostic;
     else if (profile_value == L"certify")
         result.selected_profile = profile::certification;
+    else if (profile_value == L"representative")
+        result.selected_profile = profile::representative;
     else
-        usage("--profile must be warp, diagnose, or certify.");
+        usage("--profile must be warp, diagnose, certify, or representative.");
     if (require(L"--variant") != L"native-cpp")
         usage("This executable only implements --variant native-cpp.");
     const std::wstring adapter = require(L"--adapter");
@@ -336,6 +340,26 @@ metric_distribution summarize(const std::vector<frame_sample>& samples, bool gpu
         values.back()};
 }
 
+std::optional<metric_distribution> summarize_post_close_cleanup(
+    const std::vector<frame_sample>& samples)
+{
+    std::vector<double> values;
+    values.reserve(samples.size());
+    for (const auto& sample : samples)
+    {
+        if (sample.post_close_cleanup_microseconds.has_value())
+            values.push_back(*sample.post_close_cleanup_microseconds);
+    }
+    if (values.empty())
+        return std::nullopt;
+    std::ranges::sort(values);
+    return metric_distribution{
+        percentile_r7(values, 0.50),
+        percentile_r7(values, 0.95),
+        percentile_r7(values, 0.99),
+        values.back()};
+}
+
 workload_run complete_workload(
     const configuration& config,
     workload_kind kind,
@@ -364,6 +388,9 @@ workload_run complete_workload(
     case profile::certification:
         result.reason = "Fixed vendor workload executed.";
         break;
+    case profile::representative:
+        result.reason = "Public-source representative CPU frame workload executed without Queue submission.";
+        break;
     }
     result.warmup_frames = config.warmup_frames;
     result.measured_frames = config.measured_frames;
@@ -376,8 +403,11 @@ workload_run complete_workload(
     result.barriers = std::move(barriers);
     result.setters = setters;
     result.cpu = summarize(result.samples, false);
-    if (kind != workload_kind::empty_submit)
+    if (kind != workload_kind::empty_submit &&
+        kind != workload_kind::representative_frame_serial &&
+        kind != workload_kind::representative_frame_parallel)
         result.gpu = summarize(result.samples, true);
+    result.post_close_cleanup = summarize_post_close_cleanup(result.samples);
     return result;
 }
 
@@ -391,6 +421,8 @@ const char* workload_pascal(workload_kind value)
     case workload_kind::state_suppression: return "StateSuppression10000";
     case workload_kind::explicit_barrier: return "ExplicitBarrier4096";
     case workload_kind::three_queue_present: return "ThreeQueuePresent";
+    case workload_kind::representative_frame_serial: return "RepresentativeFrameSerial";
+    case workload_kind::representative_frame_parallel: return "RepresentativeFrameParallel";
     }
     return "EmptySubmit";
 }
@@ -443,6 +475,8 @@ void write_process_json(const std::filesystem::path& path, const process_run& ru
     output << ",\n      \"commit\": "; json_string(output, environment.build.commit);
     output << ",\n      \"worktreeDirty\": " << (environment.build.worktree_dirty ? "true" : "false")
            << ",\n      \"toolchain\": "; json_string(output, environment.build.toolchain);
+    output << ",\n      \"commandConstructionBoundary\": ";
+    json_string(output, environment.build.command_construction_boundary);
     output << "\n    }\n  },\n  \"workloads\": [";
 
     for (std::size_t workload_index = 0; workload_index < run.workloads.size(); ++workload_index)
@@ -467,7 +501,12 @@ void write_process_json(const std::filesystem::path& path, const process_run& ru
                    << ", \"gpuMicroseconds\": ";
             if (sample.gpu_microseconds.has_value()) output << *sample.gpu_microseconds; else output << "null";
             output << ", \"managedAllocatedBytes\": 0, \"etwAllocationEvents\": 0, \"completionValue\": "
-                   << sample.completion_value << "}";
+                   << sample.completion_value
+                   << ", \"postCloseCleanupStopwatchTicks\": ";
+            if (sample.post_close_cleanup_ticks.has_value()) output << *sample.post_close_cleanup_ticks; else output << "null";
+            output << ", \"postCloseCleanupMicroseconds\": ";
+            if (sample.post_close_cleanup_microseconds.has_value()) output << *sample.post_close_cleanup_microseconds; else output << "null";
+            output << "}";
         }
         output << (item.samples.empty() ? "" : "\n      ") << "],\n      \"calibrations\": [";
         for (std::size_t calibration_index = 0; calibration_index < item.calibrations.size(); ++calibration_index)
@@ -502,7 +541,30 @@ void write_process_json(const std::filesystem::path& path, const process_run& ru
                << ", \"persistentBindingSetters\": " << item.setters.persistent_binding
                << ", \"viewportSetters\": " << item.setters.viewport
                << ", \"scissorSetters\": " << item.setters.scissor
-               << ", \"drawCalls\": " << item.setters.draws << "},\n      \"cpu\": ";
+               << ", \"drawCalls\": " << item.setters.draws << "},\n      \"workloadEvidence\": ";
+        if (!item.workload_evidence.has_value())
+        {
+            output << "null";
+        }
+        else
+        {
+            const auto& evidence = *item.workload_evidence;
+            output << "{\"objectPacketCount\": " << evidence.object_packet_count
+                   << ", \"logicalDrawRequests\": " << evidence.logical_draw_requests
+                   << ", \"logicalMaterialBindingRequests\": "
+                   << evidence.logical_material_binding_requests
+                   << ", \"nativeDrawCommands\": " << evidence.native_draw_commands
+                   << ", \"nativeMaterialBindingCommands\": "
+                   << evidence.native_material_binding_commands
+                   << ", \"commandListResetCount\": " << evidence.command_list_reset_count
+                   << ", \"commandListCloseCount\": " << evidence.command_list_close_count
+                   << ", \"barrierCommands\": " << evidence.barrier_commands
+                   << ", \"workerCount\": " << evidence.worker_count
+                   << ", \"drawCallShape\": ";
+            json_string(output, evidence.draw_call_shape);
+            output << "}";
+        }
+        output << ",\n      \"cpu\": ";
         const auto write_metric = [&](const std::optional<metric_distribution>& metric)
         {
             if (!metric.has_value()) { output << "null"; return; }
@@ -512,6 +574,8 @@ void write_process_json(const std::filesystem::path& path, const process_run& ru
         write_metric(item.cpu);
         output << ",\n      \"gpu\": ";
         write_metric(item.gpu);
+        output << ",\n      \"postCloseCleanup\": ";
+        write_metric(item.post_close_cleanup);
         output << "\n    }";
     }
     output << (run.workloads.empty() ? "" : "\n  ") << "]\n}\n";

@@ -16,12 +16,38 @@ add_executable(SomeEngine.Graphics.NativeBenchmarks
   main.cpp
   benchmark_protocol.cpp
   native_d3d12.cpp)
+set(SOMEENGINE_REPRESENTATIVE_MODE "Full" CACHE STRING
+    "Representative workload mode: Full, Uniform, PerDrawBindings, BindingsOnly, Fixed, State, or Lifecycle")
+set_property(CACHE SOMEENGINE_REPRESENTATIVE_MODE PROPERTY STRINGS
+  Full Uniform PerDrawBindings BindingsOnly Fixed State Lifecycle)
 target_compile_features(SomeEngine.Graphics.NativeBenchmarks PRIVATE cxx_std_20)
 target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
   UNICODE
   _UNICODE
   WIN32_LEAN_AND_MEAN
   NOMINMAX)
+if(SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "Uniform")
+  target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
+    REPRESENTATIVE_UNIFORM_MATERIAL)
+elseif(SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "Fixed")
+  target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
+    REPRESENTATIVE_FIXED_ONLY)
+elseif(SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "State")
+  target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
+    REPRESENTATIVE_STATE_ONLY)
+elseif(SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "Lifecycle")
+  target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
+    REPRESENTATIVE_LIFECYCLE_ONLY)
+elseif(SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "BindingsOnly")
+  target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
+    REPRESENTATIVE_BINDINGS_ONLY)
+elseif(SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "PerDrawBindings")
+  target_compile_definitions(SomeEngine.Graphics.NativeBenchmarks PRIVATE
+    REPRESENTATIVE_PER_DRAW_BINDINGS)
+elseif(NOT SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "Full")
+  message(FATAL_ERROR
+    "SOMEENGINE_REPRESENTATIVE_MODE must be Full, Uniform, PerDrawBindings, BindingsOnly, Fixed, State, or Lifecycle")
+endif()
 target_compile_options(SomeEngine.Graphics.NativeBenchmarks PRIVATE
   /W4
   /WX

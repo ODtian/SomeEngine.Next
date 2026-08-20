@@ -13,6 +13,7 @@ enum class profile
     warp,
     diagnostic,
     certification,
+    representative,
 };
 
 enum class disposition
@@ -31,6 +32,8 @@ enum class workload_kind
     state_suppression,
     explicit_barrier,
     three_queue_present,
+    representative_frame_serial,
+    representative_frame_parallel,
 };
 
 enum class queue_kind
@@ -71,6 +74,8 @@ struct frame_sample
     double cpu_microseconds = 0;
     std::optional<double> gpu_microseconds;
     std::uint64_t completion_value = 0;
+    std::optional<std::int64_t> post_close_cleanup_ticks;
+    std::optional<double> post_close_cleanup_microseconds;
 };
 
 struct barrier_evidence
@@ -89,6 +94,20 @@ struct setter_evidence
     int viewport = 0;
     int scissor = 0;
     int draws = 0;
+};
+
+struct command_workload_evidence
+{
+    int object_packet_count = 0;
+    int logical_draw_requests = 0;
+    int logical_material_binding_requests = 0;
+    int native_draw_commands = 0;
+    int native_material_binding_commands = 0;
+    int command_list_reset_count = 0;
+    int command_list_close_count = 0;
+    int barrier_commands = 0;
+    int worker_count = 0;
+    std::string draw_call_shape;
 };
 
 struct metric_distribution
@@ -116,6 +135,8 @@ struct workload_run
     setter_evidence setters;
     std::optional<metric_distribution> cpu;
     std::optional<metric_distribution> gpu;
+    std::optional<metric_distribution> post_close_cleanup;
+    std::optional<command_workload_evidence> workload_evidence;
 };
 
 struct build_identity
@@ -128,6 +149,7 @@ struct build_identity
     std::string commit;
     bool worktree_dirty = false;
     std::string toolchain;
+    std::string command_construction_boundary = "native-close";
 };
 
 struct runtime_environment

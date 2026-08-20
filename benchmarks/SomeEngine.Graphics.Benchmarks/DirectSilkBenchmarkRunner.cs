@@ -14,7 +14,7 @@ using NativeViewport = Silk.NET.Direct3D12.Viewport;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal static unsafe class DirectSilkBenchmarkRunner
+internal static unsafe partial class DirectSilkBenchmarkRunner
 {
     private const ulong TextureByteSize =
         FixedGraphicsProtocol.RenderWidth * FixedGraphicsProtocol.RenderHeight * 4UL;
@@ -25,6 +25,12 @@ internal static unsafe class DirectSilkBenchmarkRunner
 
     internal static ProcessRun Run(in WorkerConfiguration configuration)
     {
+        ReceiverVariant variant = configuration.Variant;
+        if (variant is not ReceiverVariant.DirectSilk and not ReceiverVariant.DirectSilkDefault)
+            throw new ArgumentOutOfRangeException(nameof(configuration));
+        bool fastCalls =
+            variant == ReceiverVariant.DirectSilk &&
+            !configuration.DefaultDirectCalls;
         try
         {
             (byte[] vertex, byte[] pixel, byte[] compute, string manifest) =
@@ -39,46 +45,58 @@ internal static unsafe class DirectSilkBenchmarkRunner
                 context.Adapter,
                 validationEnabled: false,
                 dredEnabled: false,
-                ".NET 10 / Silk.NET 2.23.0 direct D3D12");
+                fastCalls
+                    ? ".NET 10 / Silk.NET 2.23.0 compile-time direct D3D12"
+                    : ".NET 10 / Silk.NET 2.23.0 default direct D3D12");
             if (configuration.Profile == BenchmarkProfile.VendorCertification &&
                 (environment.ValidationEnabled || environment.DredEnabled || environment.CaptureToolLoaded))
             {
                 return new ProcessRun(
-                    ReceiverVariant.DirectSilk,
+                    variant,
                     RunDisposition.Unexecuted,
                     "Validation, DRED, or a capture tool is enabled.",
                     environment,
                     []);
             }
 
-            WorkloadRun[] workloads = configuration.Profile == BenchmarkProfile.FastDiagnostic
-                ?
-                [
-                    RunDraw(context, manifest, configuration, GraphicsWorkload.PersistentDraw10000),
-                    RunDraw(context, manifest, configuration, GraphicsWorkload.TransientDraw10000),
-                    RunDraw(context, manifest, configuration, GraphicsWorkload.StateSuppression10000),
-                ]
-                :
-                [
-                    RunEmptySubmit(context, manifest, configuration),
-                    RunDraw(context, manifest, configuration, GraphicsWorkload.PersistentDraw10000),
-                    RunDraw(context, manifest, configuration, GraphicsWorkload.TransientDraw10000),
-                    RunDraw(context, manifest, configuration, GraphicsWorkload.StateSuppression10000),
-                    RunExplicitBarriers(context, manifest, configuration),
-                    RunThreeQueuePresent(context, manifest, configuration),
-                ];
+            WorkerConfiguration selectedConfiguration = configuration;
+            WorkloadRun[] workloads = configuration.Workloads.ToArray().Select(workload => workload switch
+            {
+                GraphicsWorkload.EmptySubmit => RunEmptySubmit(context, manifest, selectedConfiguration),
+                GraphicsWorkload.PersistentDraw10000 or GraphicsWorkload.TransientDraw10000 or GraphicsWorkload.StateSuppression10000 =>
+                    RunDraw(context, manifest, selectedConfiguration, workload, fastCalls),
+                GraphicsWorkload.ExplicitBarrier4096 =>
+                    RunExplicitBarriers(context, manifest, selectedConfiguration, fastCalls),
+                GraphicsWorkload.ThreeQueuePresent =>
+                    RunThreeQueuePresent(context, manifest, selectedConfiguration, fastCalls),
+                GraphicsWorkload.RepresentativeFrameSerial or GraphicsWorkload.RepresentativeFrameParallel =>
+                    RunRepresentativeFrame(
+                        context,
+                        manifest,
+                        selectedConfiguration,
+                        workload,
+                        fastCalls),
+                _ => throw new ArgumentOutOfRangeException(nameof(workload)),
+            }).ToArray();
             RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
                 ? RunDisposition.Passed
                 : RunDisposition.FunctionalOnly;
             return new ProcessRun(
-                ReceiverVariant.DirectSilk,
+                variant,
                 disposition,
                 configuration.Profile switch
                 {
                     BenchmarkProfile.WarpFunctional =>
                         "All reduced-count direct Silk D3D12 workloads executed on WARP; not performance evidence.",
-                    BenchmarkProfile.FastDiagnostic =>
-                        "The three draw-only direct Silk D3D12 diagnostics executed; never vendor-certification evidence.",
+                    BenchmarkProfile.FastDiagnostic => fastCalls
+                        ? "The three draw-only compile-time Silk.NET direct D3D12 diagnostics executed; never vendor-certification evidence."
+                        : "The three draw-only default Silk D3D12 diagnostics executed; never vendor-certification evidence.",
+                    BenchmarkProfile.DeveloperProbe => fastCalls
+                        ? "Selected compile-time Silk.NET direct D3D12 developer probe workloads executed; exploratory only and never certification evidence."
+                        : "Selected default Silk D3D12 developer probe workloads executed; exploratory only and never certification evidence.",
+                    BenchmarkProfile.RepresentativeCpuFrame => fastCalls
+                        ? "Compile-time Silk.NET direct D3D12 representative CPU frame workloads executed without Queue submission."
+                        : "Default Silk D3D12 representative CPU frame workloads executed without Queue submission.",
                     BenchmarkProfile.VendorCertification =>
                         "All fixed direct Silk D3D12 workloads executed.",
                     _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
@@ -89,10 +107,12 @@ internal static unsafe class DirectSilkBenchmarkRunner
         catch (Exception exception)
         {
             return new ProcessRun(
-                ReceiverVariant.DirectSilk,
+                variant,
                 RunDisposition.Failed,
                 exception.ToString(),
-                BenchmarkEnvironment.Unavailable(configuration.ProcessIndex, ".NET/Silk direct D3D12"),
+                BenchmarkEnvironment.Unavailable(
+                    configuration.ProcessIndex,
+                    fastCalls ? ".NET compile-time Silk.NET direct D3D12" : ".NET default Silk.NET direct D3D12"),
                 []);
         }
     }
@@ -142,15 +162,15 @@ internal static unsafe class DirectSilkBenchmarkRunner
             [],
             BenchmarkOutput.FixedHash(GraphicsWorkload.EmptySubmit, shaderManifest),
             shaderManifest,
-            [],
-            default);
+            []);
     }
 
     private static WorkloadRun RunDraw(
         DirectSilkContext context,
         string shaderManifest,
         in WorkerConfiguration configuration,
-        GraphicsWorkload workload)
+        GraphicsWorkload workload,
+        bool fastCalls)
     {
         NativeBuffer* target = null;
         NativeBuffer* persistent = null;
@@ -202,6 +222,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                     queryReadback,
                     workload,
                     configuration.DrawCount,
+                    fastCalls,
                     ref initialized,
                     allocations,
                     frame);
@@ -219,6 +240,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                     queryReadback,
                     workload,
                     configuration.DrawCount,
+                    fastCalls,
                     ref initialized,
                     allocations,
                     frame);
@@ -232,12 +254,6 @@ internal static unsafe class DirectSilkBenchmarkRunner
                 new(0, "TextureBarrier", 0, 1, null),
                 new(1, "TextureBarrier", 1, 1, null),
             ];
-            NativeSetterEvidence setters = new(
-                PipelineSetters: 1,
-                PersistentBindingSetters: workload == GraphicsWorkload.TransientDraw10000 ? 0 : 1,
-                ViewportSetters: 1,
-                ScissorSetters: 1,
-                DrawCalls: configuration.DrawCount);
             return BenchmarkOutput.Complete(
                 workload,
                 configuration.Profile,
@@ -249,8 +265,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                 calibrations,
                 outputHash,
                 shaderManifest,
-                barriers,
-                setters);
+                barriers);
         }
         finally
         {
@@ -278,6 +293,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
         NativeBuffer* queryReadback,
         GraphicsWorkload workload,
         int drawCount,
+        bool fastCalls,
         ref bool initialized,
         AllocationEventCounter allocations,
         int frameIndex)
@@ -300,7 +316,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
             target,
             initialized ? NativeResourceStates.CopySource : NativeResourceStates.Common,
             NativeResourceStates.RenderTarget);
-        list->ResourceBarrier(1, &first);
+        RecordResourceBarrier(list, &first, fastCalls);
         NativeViewport viewport = new(
             0,
             0,
@@ -342,31 +358,27 @@ internal static unsafe class DirectSilkBenchmarkRunner
             persistentAddress = persistent->GetGPUVirtualAddress();
             if (suppressState)
                 stateShadow.SetPersistentBinding(persistentAddress);
+            else if (fastCalls)
+                DirectD3D12FastCalls.SetGraphicsRootConstantBufferView(list, 0, persistentAddress);
             else
                 list->SetGraphicsRootConstantBufferView(0, persistentAddress);
         }
-        for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
-        {
-            if (workload == GraphicsWorkload.TransientDraw10000)
-            {
-                list->SetGraphicsRootConstantBufferView(
-                    0,
-                    transient->GetGPUVirtualAddress() + checked((ulong)drawIndex * ConstantBufferAlignment));
-            }
-            else if (suppressState)
-            {
-                stateShadow.SetPipeline(context.GraphicsPipeline, context.GraphicsRoot);
-                stateShadow.SetPersistentBinding(persistentAddress);
-                stateShadow.SetViewport(viewport);
-                stateShadow.SetScissor(scissor);
-            }
-            list->DrawInstanced(3, 1, 0, 0);
-        }
+        RecordDraws(
+            list,
+            context,
+            transient,
+            workload,
+            drawCount,
+            fastCalls,
+            persistentAddress,
+            viewport,
+            scissor,
+            ref stateShadow);
         NativeBarrier second = DirectSilkContext.Transition(
             target,
             NativeResourceStates.RenderTarget,
             NativeResourceStates.CopySource);
-        list->ResourceBarrier(1, &second);
+        RecordResourceBarrier(list, &second, fastCalls);
         list->EndQuery(queryHeap, NativeQueryType.Timestamp, 1);
         list->ResolveQueryData(queryHeap, NativeQueryType.Timestamp, 0, 2, queryReadback, 0);
         ulong completion = context.Graphics.Execute();
@@ -391,10 +403,132 @@ internal static unsafe class DirectSilkBenchmarkRunner
             calibration);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static void RecordResourceBarrier(
+        ID3D12GraphicsCommandList* list,
+        NativeBarrier* barrier,
+        bool fastCalls)
+    {
+        if (fastCalls)
+            DirectD3D12FastCalls.ResourceBarrier(list, 1, barrier);
+        else
+            list->ResourceBarrier(1, barrier);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void RecordDraws(
+        ID3D12GraphicsCommandList* list,
+        DirectSilkContext context,
+        NativeBuffer* transient,
+        GraphicsWorkload workload,
+        int drawCount,
+        bool fastCalls,
+        ulong persistentAddress,
+        in NativeViewport viewport,
+        in Box2D<int> scissor,
+        ref DirectStateShadow stateShadow)
+    {
+        switch (workload)
+        {
+            case GraphicsWorkload.PersistentDraw10000:
+                RecordRepeatedDraws(list, drawCount, fastCalls);
+                return;
+            case GraphicsWorkload.TransientDraw10000:
+                RecordTransientDraws(list, transient, drawCount, fastCalls);
+                return;
+            case GraphicsWorkload.StateSuppression10000:
+                RecordSuppressedDraws(
+                    list,
+                    context,
+                    persistentAddress,
+                    viewport,
+                    scissor,
+                    drawCount,
+                    fastCalls,
+                    ref stateShadow);
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(workload));
+        }
+    }
+
+    private static void RecordRepeatedDraws(
+        ID3D12GraphicsCommandList* list,
+        int drawCount,
+        bool fastCalls)
+    {
+        if (fastCalls)
+        {
+            for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
+                DirectD3D12FastCalls.DrawInstanced(list, 3, 1, 0, 0);
+            return;
+        }
+
+        for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
+            list->DrawInstanced(3, 1, 0, 0);
+    }
+
+    private static void RecordTransientDraws(
+        ID3D12GraphicsCommandList* list,
+        NativeBuffer* transient,
+        int drawCount,
+        bool fastCalls)
+    {
+        if (transient is null)
+            throw new InvalidOperationException("The transient draw workload has no upload Buffer.");
+        ulong baseAddress = transient->GetGPUVirtualAddress();
+        if (fastCalls)
+        {
+            for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
+            {
+                DirectD3D12FastCalls.SetGraphicsRootConstantBufferView(
+                    list,
+                    0,
+                    baseAddress + checked((ulong)drawIndex * ConstantBufferAlignment));
+                DirectD3D12FastCalls.DrawInstanced(list, 3, 1, 0, 0);
+            }
+            return;
+        }
+
+        for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
+        {
+            list->SetGraphicsRootConstantBufferView(
+                0,
+                baseAddress + checked((ulong)drawIndex * ConstantBufferAlignment));
+            list->DrawInstanced(3, 1, 0, 0);
+        }
+    }
+
+    private static void RecordSuppressedDraws(
+        ID3D12GraphicsCommandList* list,
+        DirectSilkContext context,
+        ulong persistentAddress,
+        in NativeViewport viewport,
+        in Box2D<int> scissor,
+        int drawCount,
+        bool fastCalls,
+        ref DirectStateShadow stateShadow)
+    {
+        for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
+        {
+            stateShadow.SetPipeline(context.GraphicsPipeline, context.GraphicsRoot);
+            stateShadow.SetPersistentBinding(persistentAddress);
+            stateShadow.SetViewport(viewport);
+            stateShadow.SetScissor(scissor);
+            if (fastCalls)
+                DirectD3D12FastCalls.DrawInstanced(list, 3, 1, 0, 0);
+            else
+                list->DrawInstanced(3, 1, 0, 0);
+        }
+    }
+
     private static WorkloadRun RunExplicitBarriers(
         DirectSilkContext context,
         string shaderManifest,
-        in WorkerConfiguration configuration)
+        in WorkerConfiguration configuration,
+        bool fastCalls)
     {
         ID3D12QueryHeap* queryHeap = null;
         NativeBuffer* queryReadback = null;
@@ -406,7 +540,16 @@ internal static unsafe class DirectSilkBenchmarkRunner
             var calibrations = new CalibrationRecord[configuration.MeasuredFrames];
             using var allocations = new AllocationEventCounter();
             for (int frame = 0; frame < configuration.WarmupFrames; frame++)
-                _ = ExecuteBarrierFrame(context, queryHeap, queryReadback, configuration.BarrierCount, allocations, frame);
+            {
+                _ = ExecuteBarrierFrame(
+                    context,
+                    queryHeap,
+                    queryReadback,
+                    configuration.BarrierCount,
+                    fastCalls,
+                    allocations,
+                    frame);
+            }
             for (int frame = 0; frame < samples.Length; frame++)
             {
                 FrameMeasurement measurement = ExecuteBarrierFrame(
@@ -414,6 +557,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                     queryHeap,
                     queryReadback,
                     configuration.BarrierCount,
+                    fastCalls,
                     allocations,
                     frame);
                 samples[frame] = measurement.Sample;
@@ -433,8 +577,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                 calibrations,
                 BenchmarkOutput.FixedHash(GraphicsWorkload.ExplicitBarrier4096, shaderManifest),
                 shaderManifest,
-                evidence,
-                new NativeSetterEvidence(1, 0, 0, 0, 0));
+                evidence);
         }
         finally
         {
@@ -448,6 +591,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
         ID3D12QueryHeap* queryHeap,
         NativeBuffer* queryReadback,
         int barrierCount,
+        bool fastCalls,
         AllocationEventCounter allocations,
         int frameIndex)
     {
@@ -472,14 +616,30 @@ internal static unsafe class DirectSilkBenchmarkRunner
                 NumBarriers = 1,
                 Anonymous = new BarrierGroupUnion { PGlobalBarriers = &barrier },
             };
-            for (int index = 0; index < barrierCount; index++)
-                context.Compute.EnhancedList->Barrier(1, &group);
+            if (fastCalls)
+            {
+                for (int index = 0; index < barrierCount; index++)
+                    DirectD3D12FastCalls.Barrier(context.Compute.EnhancedList, 1, &group);
+            }
+            else
+            {
+                for (int index = 0; index < barrierCount; index++)
+                    context.Compute.EnhancedList->Barrier(1, &group);
+            }
         }
         else
         {
             NativeBarrier barrier = DirectSilkContext.UavBarrier();
-            for (int index = 0; index < barrierCount; index++)
-                list->ResourceBarrier(1, &barrier);
+            if (fastCalls)
+            {
+                for (int index = 0; index < barrierCount; index++)
+                    DirectD3D12FastCalls.ResourceBarrier(list, 1, &barrier);
+            }
+            else
+            {
+                for (int index = 0; index < barrierCount; index++)
+                    list->ResourceBarrier(1, &barrier);
+            }
         }
         list->SetPipelineState(context.ComputePipeline);
         list->SetComputeRootSignature(context.ComputeRoot);
@@ -510,7 +670,8 @@ internal static unsafe class DirectSilkBenchmarkRunner
     private static WorkloadRun RunThreeQueuePresent(
         DirectSilkContext context,
         string shaderManifest,
-        in WorkerConfiguration configuration)
+        in WorkerConfiguration configuration,
+        bool fastCalls)
     {
         NativeBuffer* target = null;
         NativeBuffer* persistent = null;
@@ -564,6 +725,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                     graphicsQuery,
                     copyTimestamp,
                     graphicsTimestamp,
+                    fastCalls,
                     ref initialized,
                     allocations,
                     frame);
@@ -583,6 +745,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                     graphicsQuery,
                     copyTimestamp,
                     graphicsTimestamp,
+                    fastCalls,
                     ref initialized,
                     allocations,
                     frame);
@@ -616,8 +779,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
                 calibrations,
                 outputHash,
                 shaderManifest,
-                evidence,
-                new NativeSetterEvidence(1, 1, 1, 1, 1));
+                evidence);
         }
         finally
         {
@@ -651,6 +813,7 @@ internal static unsafe class DirectSilkBenchmarkRunner
         ID3D12QueryHeap* graphicsQuery,
         NativeBuffer* copyTimestamp,
         NativeBuffer* graphicsTimestamp,
+        bool fastCalls,
         ref bool initialized,
         AllocationEventCounter allocations,
         int frameIndex)
@@ -668,13 +831,13 @@ internal static unsafe class DirectSilkBenchmarkRunner
             work,
             NativeResourceStates.Common,
             NativeResourceStates.CopyDest);
-        copyList->ResourceBarrier(1, &copyAcquire);
+        RecordResourceBarrier(copyList, &copyAcquire, fastCalls);
         copyList->CopyBufferRegion(work, 0, upload, 0, 256);
         NativeBarrier copyRelease = DirectSilkContext.Transition(
             work,
             NativeResourceStates.CopyDest,
             NativeResourceStates.Common);
-        copyList->ResourceBarrier(1, &copyRelease);
+        RecordResourceBarrier(copyList, &copyRelease, fastCalls);
         copyList->ResolveQueryData(copyQuery, NativeQueryType.Timestamp, 0, 1, copyTimestamp, 0);
         ulong copyCompletion = context.Copy.Execute();
 
@@ -684,15 +847,18 @@ internal static unsafe class DirectSilkBenchmarkRunner
             work,
             NativeResourceStates.Common,
             NativeResourceStates.NonPixelShaderResource);
-        computeList->ResourceBarrier(1, &computeAcquire);
+        RecordResourceBarrier(computeList, &computeAcquire, fastCalls);
         computeList->SetPipelineState(context.ComputePipeline);
         computeList->SetComputeRootSignature(context.ComputeRoot);
-        computeList->Dispatch(1, 1, 1);
+        if (fastCalls)
+            DirectD3D12FastCalls.Dispatch(computeList, 1, 1, 1);
+        else
+            computeList->Dispatch(1, 1, 1);
         NativeBarrier computeRelease = DirectSilkContext.Transition(
             work,
             NativeResourceStates.NonPixelShaderResource,
             NativeResourceStates.Common);
-        computeList->ResourceBarrier(1, &computeRelease);
+        RecordResourceBarrier(computeList, &computeRelease, fastCalls);
         ulong computeCompletion = context.Compute.Execute();
 
         context.Graphics.WaitGpu(context.Compute, computeCompletion);
@@ -701,18 +867,18 @@ internal static unsafe class DirectSilkBenchmarkRunner
             work,
             NativeResourceStates.Common,
             NativeResourceStates.CopySource);
-        graphicsList->ResourceBarrier(1, &graphicsAcquire);
+        RecordResourceBarrier(graphicsList, &graphicsAcquire, fastCalls);
         graphicsList->CopyBufferRegion(sink, 0, work, 0, 256);
         NativeBarrier workReturn = DirectSilkContext.Transition(
             work,
             NativeResourceStates.CopySource,
             NativeResourceStates.Common);
-        graphicsList->ResourceBarrier(1, &workReturn);
+        RecordResourceBarrier(graphicsList, &workReturn, fastCalls);
         NativeBarrier targetToRender = DirectSilkContext.Transition(
             target,
             initialized ? NativeResourceStates.CopySource : NativeResourceStates.Common,
             NativeResourceStates.RenderTarget);
-        graphicsList->ResourceBarrier(1, &targetToRender);
+        RecordResourceBarrier(graphicsList, &targetToRender, fastCalls);
         NativeViewport viewport = new(
             0,
             0,
@@ -732,29 +898,42 @@ internal static unsafe class DirectSilkBenchmarkRunner
         clear[3] = 1;
         graphicsList->SetPipelineState(context.GraphicsPipeline);
         graphicsList->SetGraphicsRootSignature(context.GraphicsRoot);
-        graphicsList->SetGraphicsRootConstantBufferView(0, persistent->GetGPUVirtualAddress());
+        if (fastCalls)
+        {
+            DirectD3D12FastCalls.SetGraphicsRootConstantBufferView(
+                graphicsList,
+                0,
+                persistent->GetGPUVirtualAddress());
+        }
+        else
+        {
+            graphicsList->SetGraphicsRootConstantBufferView(0, persistent->GetGPUVirtualAddress());
+        }
         graphicsList->RSSetViewports(1, &viewport);
         graphicsList->RSSetScissorRects(1, &scissor);
         graphicsList->IASetPrimitiveTopology(D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist);
         graphicsList->OMSetRenderTargets(1, &rtv, false, null);
         graphicsList->ClearRenderTargetView(rtv, clear, 0, null);
-        graphicsList->DrawInstanced(3, 1, 0, 0);
+        if (fastCalls)
+            DirectD3D12FastCalls.DrawInstanced(graphicsList, 3, 1, 0, 0);
+        else
+            graphicsList->DrawInstanced(3, 1, 0, 0);
         NativeBarrier targetToCopy = DirectSilkContext.Transition(
             target,
             NativeResourceStates.RenderTarget,
             NativeResourceStates.CopySource);
-        graphicsList->ResourceBarrier(1, &targetToCopy);
+        RecordResourceBarrier(graphicsList, &targetToCopy, fastCalls);
         NativeBarrier swapchainToCopy = DirectSilkContext.Transition(
             backBuffer,
             NativeResourceStates.Present,
             NativeResourceStates.CopyDest);
-        graphicsList->ResourceBarrier(1, &swapchainToCopy);
+        RecordResourceBarrier(graphicsList, &swapchainToCopy, fastCalls);
         graphicsList->CopyResource(backBuffer, target);
         NativeBarrier swapchainToPresent = DirectSilkContext.Transition(
             backBuffer,
             NativeResourceStates.CopyDest,
             NativeResourceStates.Present);
-        graphicsList->ResourceBarrier(1, &swapchainToPresent);
+        RecordResourceBarrier(graphicsList, &swapchainToPresent, fastCalls);
         graphicsList->EndQuery(graphicsQuery, NativeQueryType.Timestamp, 0);
         graphicsList->ResolveQueryData(graphicsQuery, NativeQueryType.Timestamp, 0, 1, graphicsTimestamp, 0);
         ulong graphicsCompletion = context.Graphics.Execute();

@@ -3,6 +3,17 @@ using System.Text.Json.Serialization;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    UseStringEnumConverter = true,
+    WriteIndented = false)]
+[JsonSerializable(typeof(ProcessRun))]
+[JsonSerializable(typeof(GraphicsBenchmarkReport))]
+[JsonSerializable(typeof(ShaderManifest))]
+internal partial class ProcessRunJsonContext : JsonSerializerContext
+{
+}
+
 internal readonly record struct BuildIdentity(
     string ExecutablePath,
     string ExecutableSha256,
@@ -11,7 +22,8 @@ internal readonly record struct BuildIdentity(
     string Configuration,
     string Commit,
     bool WorktreeDirty,
-    string Toolchain);
+    string Toolchain,
+    string CommandConstructionBoundary = "public-end-return");
 
 internal readonly record struct RuntimeEnvironment(
     string OperatingSystem,
@@ -50,7 +62,9 @@ internal readonly record struct FrameSample(
     double? GpuMicroseconds,
     long ManagedAllocatedBytes,
     long EtwAllocationEvents,
-    ulong CompletionValue);
+    ulong CompletionValue,
+    long? PostCloseCleanupStopwatchTicks = null,
+    double? PostCloseCleanupMicroseconds = null);
 
 internal readonly record struct BarrierEvidence(
     int PublicOrdinal,
@@ -59,12 +73,17 @@ internal readonly record struct BarrierEvidence(
     int NativeExpansionCount,
     string? ExpansionReason);
 
-internal readonly record struct NativeSetterEvidence(
-    int PipelineSetters,
-    int PersistentBindingSetters,
-    int ViewportSetters,
-    int ScissorSetters,
-    int DrawCalls);
+internal readonly record struct CommandWorkloadEvidence(
+    int ObjectPacketCount,
+    int LogicalDrawRequests,
+    int LogicalMaterialBindingRequests,
+    int NativeDrawCommands,
+    int NativeMaterialBindingCommands,
+    int CommandListResetCount,
+    int CommandListCloseCount,
+    int BarrierCommands,
+    int WorkerCount,
+    string DrawCallShape);
 
 internal sealed record WorkloadRun(
     GraphicsWorkload Workload,
@@ -79,9 +98,10 @@ internal sealed record WorkloadRun(
     string OutputSha256,
     string ShaderManifestSha256,
     BarrierEvidence[] Barriers,
-    NativeSetterEvidence NativeSetters,
     MetricDistribution? Cpu,
-    MetricDistribution? Gpu);
+    MetricDistribution? Gpu,
+    MetricDistribution? PostCloseCleanup = null,
+    CommandWorkloadEvidence? WorkloadEvidence = null);
 
 internal sealed record ProcessRun(
     ReceiverVariant Variant,
@@ -108,7 +128,7 @@ internal sealed record WorkloadGateEvidence(
     string OutputSha256,
     string ShaderManifestSha256,
     BarrierEvidence[] Barriers,
-    NativeSetterEvidence NativeSetters)
+    double[] PostCloseCleanupSamples)
 {
     internal static WorkloadGateEvidence Create(WorkloadRun run)
     {
@@ -137,7 +157,10 @@ internal sealed record WorkloadGateEvidence(
             run.OutputSha256,
             run.ShaderManifestSha256,
             run.Barriers,
-            run.NativeSetters);
+            run.Samples
+                .Where(static sample => sample.PostCloseCleanupMicroseconds.HasValue)
+                .Select(static sample => sample.PostCloseCleanupMicroseconds!.Value)
+                .ToArray());
     }
 }
 
@@ -213,12 +236,27 @@ internal sealed record DiagnosticBiasResult(
     double VariantSpreadPercent,
     double ResidualRmsPercent);
 
+internal sealed record PairedBlockDiagnostic(
+    int ProcessIndex,
+    GraphicsWorkload Workload,
+    ReceiverVariant BaselineVariant,
+    int BaselinePosition,
+    ReceiverVariant CandidateVariant,
+    int CandidatePosition,
+    double DeltaMicrosecondsPerCall,
+    double DeltaPercent,
+    double BaselineP95OverP50,
+    double CandidateP95OverP50);
+
 internal sealed record GateResult(
     RunDisposition Disposition,
     string Reason,
     GateIssue[] Issues,
     ComparisonResult[] Comparisons,
-    DiagnosticBiasResult[] Diagnostics);
+    DiagnosticBiasResult[] Diagnostics)
+{
+    public PairedBlockDiagnostic[] PairedDiagnostics { get; init; } = [];
+}
 
 internal sealed record GraphicsBenchmarkReport(
     string Schema,
@@ -231,18 +269,6 @@ internal sealed record GraphicsBenchmarkReport(
     RawProcessEvidence[] RawEvidence,
     GateResult Gate)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-    };
-
-    private static readonly JsonSerializerOptions ProcessJsonOptions = new(JsonOptions)
-    {
-        WriteIndented = false,
-    };
-
     internal void Write(string path)
     {
         string? directory = Path.GetDirectoryName(path);
@@ -253,20 +279,25 @@ internal sealed record GraphicsBenchmarkReport(
             FileMode.Create,
             FileAccess.Write,
             FileShare.None);
-        JsonSerializer.Serialize(stream, this, JsonOptions);
+        JsonSerializer.Serialize(
+            stream,
+            this,
+            ProcessRunJsonContext.Default.GraphicsBenchmarkReport);
     }
 
     internal static GraphicsBenchmarkReport Read(string path)
     {
         using FileStream stream = File.OpenRead(path);
-        return JsonSerializer.Deserialize<GraphicsBenchmarkReport>(stream, JsonOptions)
+        return JsonSerializer.Deserialize(
+            stream,
+            ProcessRunJsonContext.Default.GraphicsBenchmarkReport)
             ?? throw new InvalidDataException($"'{path}' does not contain a graphics benchmark report.");
     }
 
     internal static ProcessRun ReadProcess(string path)
     {
         using FileStream stream = File.OpenRead(path);
-        return JsonSerializer.Deserialize<ProcessRun>(stream, ProcessJsonOptions)
+        return JsonSerializer.Deserialize(stream, ProcessRunJsonContext.Default.ProcessRun)
             ?? throw new InvalidDataException($"'{path}' does not contain a graphics process result.");
     }
 
@@ -280,6 +311,6 @@ internal sealed record GraphicsBenchmarkReport(
             FileMode.Create,
             FileAccess.Write,
             FileShare.None);
-        JsonSerializer.Serialize(stream, run, ProcessJsonOptions);
+        JsonSerializer.Serialize(stream, run, ProcessRunJsonContext.Default.ProcessRun);
     }
 }

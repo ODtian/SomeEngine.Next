@@ -18,7 +18,9 @@ internal static class BenchmarkWorker
             options.DrawCount,
             options.BarrierCount,
             options.ShaderDirectory,
-            options.OutputPath);
+            options.OutputPath,
+            options.Workloads.Length == 0 ? null : options.Workloads,
+            options.DefaultDirectCalls);
         SchedulingResult scheduling = BenchmarkEnvironment.EstablishScheduling(options.Profile);
         ProcessRun run;
         if (!scheduling.Established)
@@ -34,9 +36,10 @@ internal static class BenchmarkWorker
         {
             run = variant switch
             {
-                ReceiverVariant.GenericRhi or ReceiverVariant.InterfaceRhi =>
+                ReceiverVariant.InterfaceReceiver =>
                     RhiBenchmarkRunner.Run(configuration),
-                ReceiverVariant.DirectSilk => DirectSilkBenchmarkRunner.Run(configuration),
+                ReceiverVariant.DirectSilk or ReceiverVariant.DirectSilkDefault =>
+                    DirectSilkBenchmarkRunner.Run(configuration),
                 _ => throw new ArgumentOutOfRangeException(nameof(variant)),
             };
         }

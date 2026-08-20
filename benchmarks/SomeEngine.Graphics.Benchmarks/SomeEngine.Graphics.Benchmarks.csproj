@@ -6,12 +6,37 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRhiBenchmarkTiming)' == 'true'">
+    <DefineConstants>$(DefineConstants);SOMEENGINE_RHI_BENCHMARK_TIMING</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'Uniform'">
+    <DefineConstants>$(DefineConstants);REPRESENTATIVE_UNIFORM_MATERIAL</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'Fixed'">
+    <DefineConstants>$(DefineConstants);REPRESENTATIVE_FIXED_ONLY</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'State'">
+    <DefineConstants>$(DefineConstants);REPRESENTATIVE_STATE_ONLY</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'Lifecycle'">
+    <DefineConstants>$(DefineConstants);REPRESENTATIVE_LIFECYCLE_ONLY</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'BindingsOnly'">
+    <DefineConstants>$(DefineConstants);REPRESENTATIVE_BINDINGS_ONLY</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'PerDrawBindings'">
+    <DefineConstants>$(DefineConstants);REPRESENTATIVE_PER_DRAW_BINDINGS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineDisableRepresentativeAllocationMeasurement)' == 'true'">
+    <DefineConstants>$(DefineConstants);SOMEENGINE_DISABLE_REPRESENTATIVE_ALLOCATION_MEASUREMENT</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+                      ReferenceOutputAssembly="false"
+                      GlobalPropertiesToRemove="PublishAot"
+                      AdditionalProperties="PublishAot=false" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="../../external/SlangShaderSharp/runtimes/win-x64/native/slang-compiler.dll"

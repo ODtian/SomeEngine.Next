@@ -8,7 +8,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Graphics.Benchmarks;
 
-internal static class RhiBenchmarkRunner
+internal static partial class RhiBenchmarkRunner
 {
     private static readonly TimeSpan GpuTimeout = TimeSpan.FromSeconds(30);
     private static readonly ResourceBinding[] NoResources = [];
@@ -20,8 +20,7 @@ internal static class RhiBenchmarkRunner
         {
             return configuration.Variant switch
             {
-                ReceiverVariant.GenericRhi => RunGeneric(configuration),
-                ReceiverVariant.InterfaceRhi => RunInterface(configuration),
+                ReceiverVariant.InterfaceReceiver => RunInterfaceReceiver(configuration),
                 _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
             };
         }
@@ -36,28 +35,18 @@ internal static class RhiBenchmarkRunner
         }
     }
 
-    private static ProcessRun RunGeneric(in WorkerConfiguration configuration)
+    private static ProcessRun RunInterfaceReceiver(in WorkerConfiguration configuration)
     {
-        D3D12Backend backend = new();
-        using var graphics = new Graphics<D3D12Backend>(backend);
-        return RunCore<GenericRhiDispatch, GenericRhiDispatch>(
-            new GenericRhiDispatch(graphics),
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        return RunCore<InterfaceReceiverDispatch, InterfaceReceiverDispatch>(
+            new InterfaceReceiverDispatch(backend),
             backend,
-            configuration);
-    }
-
-    private static ProcessRun RunInterface(in WorkerConfiguration configuration)
-    {
-        using IGraphicsBackend backend = new D3D12Backend();
-        return RunCore<InterfaceRhiDispatch, InterfaceRhiDispatch>(
-            new InterfaceRhiDispatch(backend),
-            (D3D12Backend)backend,
             configuration);
     }
 
     private static ProcessRun RunCore<TReceiver, TDispatch>(
         TReceiver receiver,
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         in WorkerConfiguration configuration)
         where TDispatch : struct, IRhiDispatch<TReceiver>
     {
@@ -70,7 +59,6 @@ internal static class RhiBenchmarkRunner
         ];
         using Device device = backend.CreateDevice(new DeviceDesc(
             adapter.Id,
-            RetirementType.Automatic,
             queueDescriptions,
             requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.CalibratedTimestamps,
             label: $"{configuration.Variant} benchmark device"));
@@ -92,7 +80,6 @@ internal static class RhiBenchmarkRunner
                 environment,
                 []);
         }
-
         using BenchmarkShaderProgram shader = BenchmarkShaders.Open(configuration.ShaderDirectory);
         Format[] colorFormats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
@@ -129,26 +116,30 @@ internal static class RhiBenchmarkRunner
         WriteTint(persistentData, 1, 1, 1, 1);
         using PersistentParameterBindings persistentBindings = backend.CreatePersistentParameterBindings(
             device,
+            graphicsPipeline,
             new ParameterBlockBindings(globalLayout, NoResources, persistentData),
             "benchmark persistent tint");
-        backend.PublishDescriptors(device);
-
-        WorkloadRun[] workloads = configuration.Profile == BenchmarkProfile.FastDiagnostic
-            ?
-            [
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.PersistentDraw10000),
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.TransientDraw10000),
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.StateSuppression10000),
-            ]
-            :
-            [
-                RunEmptySubmit<TReceiver, TDispatch>(receiver, backend, device, shader.ManifestSha256, configuration),
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.PersistentDraw10000),
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.TransientDraw10000),
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, configuration, GraphicsWorkload.StateSuppression10000),
-                RunExplicitBarriers<TReceiver, TDispatch>(receiver, backend, device, computePipeline, shader.ManifestSha256, configuration),
-                RunThreeQueuePresent<TReceiver, TDispatch>(receiver, backend, device, graphicsPipeline, computePipeline, persistentBindings, shader.ManifestSha256, configuration),
-            ];
+        WorkerConfiguration selectedConfiguration = configuration;
+        WorkloadRun[] workloads = configuration.Workloads.ToArray().Select(RunSelected).ToArray();
+        WorkloadRun RunSelected(GraphicsWorkload workload) => workload switch
+        {
+            GraphicsWorkload.EmptySubmit => RunEmptySubmit<TReceiver, TDispatch>(receiver, backend, device, shader.ManifestSha256, selectedConfiguration),
+            GraphicsWorkload.PersistentDraw10000 or GraphicsWorkload.TransientDraw10000 or GraphicsWorkload.StateSuppression10000 =>
+                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, selectedConfiguration, workload),
+            GraphicsWorkload.ExplicitBarrier4096 => RunExplicitBarriers<TReceiver, TDispatch>(receiver, backend, device, computePipeline, shader.ManifestSha256, selectedConfiguration),
+            GraphicsWorkload.ThreeQueuePresent => RunThreeQueuePresent<TReceiver, TDispatch>(receiver, backend, device, graphicsPipeline, computePipeline, persistentBindings, shader.ManifestSha256, selectedConfiguration),
+            GraphicsWorkload.RepresentativeFrameSerial or GraphicsWorkload.RepresentativeFrameParallel =>
+                RunRepresentativeFrame<TReceiver, TDispatch>(
+                    receiver,
+                    backend,
+                    device,
+                    graphicsPipeline,
+                    globalLayout,
+                    shader.ManifestSha256,
+                    selectedConfiguration,
+                    workload),
+            _ => throw new ArgumentOutOfRangeException(nameof(workload)),
+        };
         RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
             ? RunDisposition.Passed
             : RunDisposition.FunctionalOnly;
@@ -161,6 +152,10 @@ internal static class RhiBenchmarkRunner
                     "All reduced-count RHI workloads executed on WARP; not performance evidence.",
                 BenchmarkProfile.FastDiagnostic =>
                     "The three draw-only RHI diagnostics executed; never vendor-certification evidence.",
+                BenchmarkProfile.DeveloperProbe =>
+                    "Selected RHI developer probe workloads executed; exploratory only and never certification evidence.",
+                BenchmarkProfile.RepresentativeCpuFrame =>
+                    "The public-source representative CPU frame workloads executed; non-rendering performance evidence.",
                 BenchmarkProfile.VendorCertification => "All fixed RHI workloads executed.",
                 _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
             },
@@ -170,7 +165,7 @@ internal static class RhiBenchmarkRunner
 
     private static WorkloadRun RunEmptySubmit<TReceiver, TDispatch>(
         TReceiver receiver,
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         string shaderManifest,
         in WorkerConfiguration configuration)
@@ -221,13 +216,12 @@ internal static class RhiBenchmarkRunner
             [],
             BenchmarkOutput.FixedHash(GraphicsWorkload.EmptySubmit, shaderManifest),
             shaderManifest,
-            [],
-            default);
+            []);
     }
 
     private static WorkloadRun RunDraw<TReceiver, TDispatch>(
         TReceiver receiver,
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         D3D12Diagnostics diagnostics,
         Device device,
         Pipeline pipeline,
@@ -291,13 +285,13 @@ internal static class RhiBenchmarkRunner
         bool initialized = false;
         var samples = new FrameSample[configuration.MeasuredFrames];
         var calibrations = new CalibrationRecord[configuration.MeasuredFrames];
-        D3D12CommandStatistics statistics = default;
         using var allocations = new AllocationEventCounter();
 
         for (int frame = 0; frame < configuration.WarmupFrames; frame++)
         {
             _ = ExecuteDrawFrame<TReceiver, TDispatch>(
                 receiver,
+                backend,
                 diagnostics,
                 device,
                 queue,
@@ -327,6 +321,7 @@ internal static class RhiBenchmarkRunner
         {
             FrameMeasurement measurement = ExecuteDrawFrame<TReceiver, TDispatch>(
                 receiver,
+                backend,
                 diagnostics,
                 device,
                 queue,
@@ -353,10 +348,6 @@ internal static class RhiBenchmarkRunner
                 frame);
             samples[frame] = measurement.Sample;
             calibrations[frame] = ToCalibration(QueueType.Graphics, frame, measurement.Calibration);
-            if (frame == 0)
-                statistics = measurement.CommandStatistics;
-            else if (statistics != measurement.CommandStatistics)
-                throw new InvalidDataException("Native command setter counts changed between stable frames.");
         }
 
         string outputHash = ReadTextureHash<TReceiver, TDispatch>(
@@ -371,12 +362,6 @@ internal static class RhiBenchmarkRunner
             new(0, nameof(TextureBarrier), 0, 1, null),
             new(1, nameof(TextureBarrier), 1, 1, null),
         ];
-        NativeSetterEvidence setters = new(
-            statistics.PipelineSetters,
-            statistics.PersistentBindingSetters,
-            statistics.ViewportSetters,
-            statistics.ScissorSetters,
-            DrawCalls: configuration.DrawCount);
         return BenchmarkOutput.Complete(
             workload,
             configuration.Profile,
@@ -388,12 +373,12 @@ internal static class RhiBenchmarkRunner
             calibrations,
             outputHash,
             shaderManifest,
-            barriers,
-            setters);
+            barriers);
     }
 
-    private static FrameMeasurement ExecuteDrawFrame<TReceiver, TDispatch>(
+    private static unsafe FrameMeasurement ExecuteDrawFrame<TReceiver, TDispatch>(
         TReceiver receiver,
+        IGraphicsBackend backend,
         D3D12Diagnostics diagnostics,
         Device device,
         Queue queue,
@@ -431,74 +416,73 @@ internal static class RhiBenchmarkRunner
         }
         TDispatch.Begin(receiver, context, recording);
         TDispatch.WriteTimestamp(receiver, context, queries, 0);
-        TextureBarrier first = new(
-            target,
-            targetRange,
-            initialized ? PipelineSync.Copy : PipelineSync.None,
-            PipelineSync.RenderTarget,
-            initialized ? ResourceAccess.CopySource : ResourceAccess.NoAccess,
-            ResourceAccess.RenderTarget,
-            initialized ? TextureLayout.CopySource : TextureLayout.Undefined,
-            TextureLayout.RenderTarget);
-        TDispatch.Barrier(receiver, context, first);
-        TDispatch.SetPipeline(receiver, context, pipeline);
-        TDispatch.SetViewports(receiver, context, viewports);
-        TDispatch.SetScissors(receiver, context, scissors);
-        if (workload is GraphicsWorkload.PersistentDraw10000 or GraphicsWorkload.StateSuppression10000)
-            TDispatch.SetPersistentBindings(receiver, context, persistent);
-        RenderingDesc rendering = new(
-            colors,
-            null,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight);
-        TDispatch.BeginRendering(receiver, context, rendering);
-        switch (workload)
-        {
-            case GraphicsWorkload.PersistentDraw10000:
-                TDispatch.DrawRepeated(receiver, context, draw, drawCount);
-                break;
-            case GraphicsWorkload.TransientDraw10000:
-                TDispatch.DrawTransientPackets(
-                    receiver,
-                    context,
-                    layout,
-                    transientPackets,
-                    draw,
-                    drawCount);
-                break;
-            case GraphicsWorkload.StateSuppression10000:
-                TDispatch.DrawWithRedundantState(
-                    receiver,
-                    context,
-                    pipeline,
-                    persistent,
-                    viewports,
-                    scissors,
-                    draw,
-                    drawCount);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(workload));
-        }
-        TDispatch.EndRendering(receiver, context);
-        TextureBarrier second = new(
-            target,
-            targetRange,
-            PipelineSync.RenderTarget,
-            PipelineSync.Copy,
-            ResourceAccess.RenderTarget,
-            ResourceAccess.CopySource,
-            TextureLayout.RenderTarget,
-            TextureLayout.CopySource);
-        TDispatch.Barrier(receiver, context, second);
-        TDispatch.WriteTimestamp(receiver, context, queries, 1);
+            TextureBarrier first = new(
+                target,
+                targetRange,
+                initialized ? PipelineSync.Copy : PipelineSync.None,
+                PipelineSync.RenderTarget,
+                initialized ? ResourceAccess.CopySource : ResourceAccess.NoAccess,
+                ResourceAccess.RenderTarget,
+                initialized ? TextureLayout.CopySource : TextureLayout.Undefined,
+                TextureLayout.RenderTarget);
+            TDispatch.Barrier(receiver, context, first);
+            TDispatch.SetPipeline(receiver, context, pipeline);
+            TDispatch.SetViewports(receiver, context, viewports);
+            TDispatch.SetScissors(receiver, context, scissors);
+            if (workload is GraphicsWorkload.PersistentDraw10000 or GraphicsWorkload.StateSuppression10000)
+                TDispatch.SetPersistentBindings(receiver, context, persistent);
+            RenderingDesc rendering = new(
+                colors,
+                null,
+                FixedGraphicsProtocol.RenderWidth,
+                FixedGraphicsProtocol.RenderHeight);
+            TDispatch.BeginRendering(receiver, context, rendering);
+            switch (workload)
+            {
+                case GraphicsWorkload.PersistentDraw10000:
+                    TDispatch.DrawRepeated(receiver, context, draw, drawCount);
+                    break;
+                case GraphicsWorkload.TransientDraw10000:
+                    TDispatch.DrawTransientPackets(
+                        receiver,
+                        context,
+                        layout,
+                        transientPackets,
+                        draw,
+                        drawCount);
+                    break;
+                case GraphicsWorkload.StateSuppression10000:
+                    TDispatch.DrawWithRedundantState(
+                        receiver,
+                        context,
+                        pipeline,
+                        persistent,
+                        viewports,
+                        scissors,
+                        draw,
+                        drawCount);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(workload));
+            }
+            TDispatch.EndRendering(receiver, context);
+            TextureBarrier second = new(
+                target,
+                targetRange,
+                PipelineSync.RenderTarget,
+                PipelineSync.Copy,
+                ResourceAccess.RenderTarget,
+                ResourceAccess.CopySource,
+                TextureLayout.RenderTarget,
+                TextureLayout.CopySource);
+            TDispatch.Barrier(receiver, context, second);
+            TDispatch.WriteTimestamp(receiver, context, queries, 1);
         TDispatch.ResolveQueries(receiver, context, queries, 0, 2, queryReadback, queryRange);
         RecordedCommands recorded = TDispatch.End(receiver, context);
         OneCommands[0] = recorded;
         QueueSubmitDesc submit = new([], [], OneCommands, [], []);
         QueueCompletion completion = TDispatch.Submit(receiver, queue, submit);
         long stopped = Stopwatch.GetTimestamp();
-        D3D12CommandStatistics commandStatistics = diagnostics.GetCommandStatistics(recorded);
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
         long events = AllocationEventCounter.AttributeIntervalEvents(
             bytes,
@@ -519,13 +503,12 @@ internal static class RhiBenchmarkRunner
                 bytes,
                 events,
                 completion.Value),
-            calibration,
-            commandStatistics);
+            calibration);
     }
 
     private static WorkloadRun RunExplicitBarriers<TReceiver, TDispatch>(
         TReceiver receiver,
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         Pipeline computePipeline,
         string shaderManifest,
@@ -614,8 +597,7 @@ internal static class RhiBenchmarkRunner
             calibrations,
             BenchmarkOutput.FixedHash(GraphicsWorkload.ExplicitBarrier4096, shaderManifest),
             shaderManifest,
-            evidence,
-            new NativeSetterEvidence(1, 0, 0, 0, 0));
+            evidence);
     }
 
     private static FrameMeasurement ExecuteBarrierFrame<TReceiver, TDispatch>(
@@ -675,7 +657,7 @@ internal static class RhiBenchmarkRunner
 
     private static WorkloadRun RunThreeQueuePresent<TReceiver, TDispatch>(
         TReceiver receiver,
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         Pipeline graphicsPipeline,
         Pipeline computePipeline,
@@ -820,8 +802,7 @@ internal static class RhiBenchmarkRunner
             calibrations,
             outputHash,
             shaderManifest,
-            evidence,
-            new NativeSetterEvidence(1, 1, 1, 1, 1));
+            evidence);
     }
 
     private static ThreeQueueMeasurement ExecuteThreeQueueFrame<TReceiver, TDispatch>(
@@ -1056,7 +1037,7 @@ internal static class RhiBenchmarkRunner
 
     private static string ReadTextureHash<TReceiver, TDispatch>(
         TReceiver receiver,
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         Queue queue,
         Texture texture,
@@ -1134,7 +1115,7 @@ internal static class RhiBenchmarkRunner
         value.QueueCounter,
         value.QueueFrequency);
 
-    private static AdapterInfo FindAdapter(D3D12Backend backend, AdapterId id)
+    private static AdapterInfo FindAdapter(IGraphicsBackend backend, AdapterId id)
     {
         AdapterEnumerationOptions options = new(AdapterPreference.HighPerformance, IncludeSoftware: true);
         _ = backend.TryEnumerateAdapters(options, [], out int count);
@@ -1181,8 +1162,7 @@ internal static class RhiBenchmarkRunner
 
     private readonly record struct FrameMeasurement(
         FrameSample Sample,
-        CalibratedTimestampInfo Calibration,
-        D3D12CommandStatistics CommandStatistics = default);
+        CalibratedTimestampInfo Calibration);
 
     private readonly record struct ThreeQueueMeasurement(
         FrameSample Sample,

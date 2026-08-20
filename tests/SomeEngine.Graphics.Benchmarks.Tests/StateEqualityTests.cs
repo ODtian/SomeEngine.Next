@@ -3,18 +3,12 @@ namespace SomeEngine.Graphics.Benchmarks.Tests;
 public sealed class StateEqualityTests
 {
     [Fact]
-    public void BenchmarkDispatchPreservesConcreteReceiverCodeShapes()
+    public void BenchmarkDispatchStoresOnlyThePublicInterfaceReceiver()
     {
-        Assert.True(typeof(GenericRhiDispatch).IsValueType);
-        Assert.True(typeof(InterfaceRhiDispatch).IsValueType);
-        Assert.Equal(
-            typeof(Graphics<Direct3D12.D3D12Backend>),
-            typeof(GenericRhiDispatch).GetField(
-                "_receiver",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.FieldType);
+        Assert.True(typeof(InterfaceReceiverDispatch).IsValueType);
         Assert.Equal(
             typeof(IGraphicsBackend),
-            typeof(InterfaceRhiDispatch).GetField(
+            typeof(InterfaceReceiverDispatch).GetField(
                 "_receiver",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.FieldType);
     }

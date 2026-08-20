@@ -9,6 +9,7 @@ internal enum BenchmarkCommand : byte
     Certify,
     Worker,
     Evaluate,
+    Probe,
 }
 
 internal enum BenchmarkProfile : byte
@@ -16,14 +17,16 @@ internal enum BenchmarkProfile : byte
     WarpFunctional,
     FastDiagnostic,
     VendorCertification,
+    DeveloperProbe,
+    RepresentativeCpuFrame,
 }
 
 internal enum ReceiverVariant : byte
 {
-    GenericRhi,
-    InterfaceRhi,
+    InterfaceReceiver,
     DirectSilk,
     NativeCpp,
+    DirectSilkDefault,
 }
 
 internal enum GraphicsWorkload : byte
@@ -34,6 +37,8 @@ internal enum GraphicsWorkload : byte
     StateSuppression10000,
     ExplicitBarrier4096,
     ThreeQueuePresent,
+    RepresentativeFrameSerial,
+    RepresentativeFrameParallel,
 }
 
 internal enum RunDisposition : byte
@@ -61,6 +66,13 @@ internal static class FixedGraphicsProtocol
     internal const int DiagnosticProcessCount = 4;
     internal const int DiagnosticDrawCount = 10_000;
     internal const int DiagnosticBarrierCount = 0;
+    internal const int ProbeWarmupFrames = 64;
+    internal const int ProbeMeasuredFrames = 256;
+    internal const int ProbeDrawCount = 1_000;
+    internal const int ProbeBarrierCount = 1_000;
+    internal const int RepresentativeWarmupFrames = 4_096;
+    internal const int RepresentativeMeasuredFrames = 4_096;
+    internal const int RepresentativeProcessCount = 5;
     internal const int RenderWidth = 64;
     internal const int RenderHeight = 64;
     internal const string PercentileMethod =
@@ -72,25 +84,32 @@ internal static class FixedGraphicsProtocol
 
     internal static readonly ReceiverVariant[] Variants =
     [
-        ReceiverVariant.GenericRhi,
-        ReceiverVariant.InterfaceRhi,
+        ReceiverVariant.InterfaceReceiver,
         ReceiverVariant.DirectSilk,
         ReceiverVariant.NativeCpp,
     ];
 
-    // The first four rounds form a Latin square, so every receiver occupies
-    // every process position exactly once. The required fifth round repeats
-    // the canonical receiver order and keeps the schedule deterministic.
+    // The first three rounds form a Latin square, so every receiver occupies
+    // every process position exactly once. The required fourth and fifth rounds
+    // continue the same deterministic rotation.
     internal static readonly ReceiverVariant[][] InterleavedRounds =
     [
-        [ReceiverVariant.GenericRhi, ReceiverVariant.InterfaceRhi, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
-        [ReceiverVariant.InterfaceRhi, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp, ReceiverVariant.GenericRhi],
-        [ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp, ReceiverVariant.GenericRhi, ReceiverVariant.InterfaceRhi],
-        [ReceiverVariant.NativeCpp, ReceiverVariant.GenericRhi, ReceiverVariant.InterfaceRhi, ReceiverVariant.DirectSilk],
-        [ReceiverVariant.GenericRhi, ReceiverVariant.InterfaceRhi, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
+        [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
+        [ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp, ReceiverVariant.InterfaceReceiver],
+        [ReceiverVariant.NativeCpp, ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk],
+        [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
+        [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
     ];
 
-    internal static readonly GraphicsWorkload[] Workloads = Enum.GetValues<GraphicsWorkload>();
+    internal static readonly GraphicsWorkload[] Workloads =
+    [
+        GraphicsWorkload.EmptySubmit,
+        GraphicsWorkload.PersistentDraw10000,
+        GraphicsWorkload.TransientDraw10000,
+        GraphicsWorkload.StateSuppression10000,
+        GraphicsWorkload.ExplicitBarrier4096,
+        GraphicsWorkload.ThreeQueuePresent,
+    ];
 
     internal static readonly GraphicsWorkload[] DiagnosticWorkloads =
     [
@@ -99,14 +118,38 @@ internal static class FixedGraphicsProtocol
         GraphicsWorkload.StateSuppression10000,
     ];
 
+    internal static readonly GraphicsWorkload[] ProbeWorkloads =
+    [
+        GraphicsWorkload.PersistentDraw10000,
+    ];
+
+    internal static readonly GraphicsWorkload[] RepresentativeWorkloads =
+    [
+        GraphicsWorkload.RepresentativeFrameSerial,
+        GraphicsWorkload.RepresentativeFrameParallel,
+    ];
+
+    internal static readonly ReceiverVariant[] ProbeVariants =
+    [
+        ReceiverVariant.InterfaceReceiver,
+    ];
+
     internal static ReadOnlySpan<GraphicsWorkload> GetWorkloads(BenchmarkProfile profile) =>
-        profile == BenchmarkProfile.FastDiagnostic ? DiagnosticWorkloads : Workloads;
+        profile switch
+        {
+            BenchmarkProfile.FastDiagnostic => DiagnosticWorkloads,
+            BenchmarkProfile.DeveloperProbe => ProbeWorkloads,
+            BenchmarkProfile.RepresentativeCpuFrame => RepresentativeWorkloads,
+            _ => Workloads,
+        };
 
     internal static int GetProcessCount(BenchmarkProfile profile) => profile switch
     {
         BenchmarkProfile.WarpFunctional => 1,
         BenchmarkProfile.FastDiagnostic => DiagnosticProcessCount,
         BenchmarkProfile.VendorCertification => ProcessCount,
+        BenchmarkProfile.DeveloperProbe => 1,
+        BenchmarkProfile.RepresentativeCpuFrame => RepresentativeProcessCount,
         _ => throw new ArgumentOutOfRangeException(nameof(profile)),
     };
 
@@ -142,11 +185,16 @@ internal readonly record struct WorkerConfiguration(
     int DrawCount,
     int BarrierCount,
     string ShaderDirectory,
-    string OutputPath)
+    string OutputPath,
+    GraphicsWorkload[]? SelectedWorkloads = null,
+    bool DefaultDirectCalls = false)
 {
     internal bool IsCertificationShape => FixedGraphicsProtocol.IsCertificationShape(this);
 
     internal bool IsDiagnosticShape => FixedGraphicsProtocol.IsDiagnosticShape(this);
+
+    internal ReadOnlySpan<GraphicsWorkload> Workloads =>
+        SelectedWorkloads ?? FixedGraphicsProtocol.GetWorkloads(Profile).ToArray();
 }
 
 internal readonly record struct MetricDistribution(
@@ -202,7 +250,9 @@ internal readonly record struct ProtocolSnapshot(
         int measuredFrames,
         int processCount,
         int drawCount,
-        int barrierCount) => new(
+        int barrierCount,
+        GraphicsWorkload[]? selectedWorkloads = null,
+        ReceiverVariant[]? selectedVariants = null) => new(
             warmupFrames,
             measuredFrames,
             processCount,
@@ -212,14 +262,12 @@ internal readonly record struct ProtocolSnapshot(
             FixedGraphicsProtocol.CpuInterval,
             FixedGraphicsProtocol.GpuInterval,
             Enumerable.Range(0, processCount)
-                .Select(static processIndex => FixedGraphicsProtocol
-                    .GetInterleavedRound(processIndex)
-                    .ToArray()
+                .Select(processIndex => (selectedVariants ?? FixedGraphicsProtocol
+                    .GetInterleavedRound(processIndex).ToArray())
                     .Select(static value => value.ToString())
                     .ToArray())
                 .ToArray(),
-            FixedGraphicsProtocol.GetWorkloads(profile)
-                .ToArray()
+            (selectedWorkloads ?? FixedGraphicsProtocol.GetWorkloads(profile).ToArray())
                 .Select(static value => value.ToString())
                 .ToArray());
 }

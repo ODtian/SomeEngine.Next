@@ -6,6 +6,7 @@ namespace SomeEngine.Graphics.Benchmarks;
 
 internal readonly record struct BenchmarkShaderEntry(string Name, SlangStage Stage, string FileName);
 
+[method: System.Text.Json.Serialization.JsonConstructor]
 internal sealed record ShaderManifest(
     string SourceSha256,
     string Profile,
@@ -50,6 +51,7 @@ internal sealed class BenchmarkShaderProgram : IDisposable
 internal static class BenchmarkShaders
 {
     internal const string ManifestFileName = "manifest.json";
+    internal const string ProfileName = "sm_6_0";
     internal const string Source = """
         float4 Tint;
 
@@ -107,6 +109,7 @@ internal static class BenchmarkShaders
     internal static void EmitSharedArtifacts(string directory)
     {
         Directory.CreateDirectory(directory);
+        RepresentativeFrameProfile.EmitSharedArtifacts(directory);
         Compiled compiled = Compile();
         try
         {
@@ -119,14 +122,12 @@ internal static class BenchmarkShaders
             }
             ShaderManifest manifest = new(
                 BenchmarkEnvironment.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(Source)),
-                "sm_6_8",
+                ProfileName,
                 "repository-pinned SlangShaderSharp/Slang 2026.4.2",
                 hashes);
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true,
-            });
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
+                manifest,
+                ProcessRunJsonContext.Default.ShaderManifest);
             WriteIfDifferent(Path.Combine(directory, ManifestFileName), bytes);
         }
         finally
@@ -141,10 +142,7 @@ internal static class BenchmarkShaders
         if (!File.Exists(manifestPath))
             throw new FileNotFoundException("The shared Slang shader manifest is missing.", manifestPath);
         byte[] manifestBytes = File.ReadAllBytes(manifestPath);
-        ShaderManifest manifest = JsonSerializer.Deserialize<ShaderManifest>(manifestBytes, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        }) ?? throw new InvalidDataException("The shared shader manifest is invalid.");
+        ShaderManifest manifest = ReadManifest(manifestBytes);
         string sourceHash = BenchmarkEnvironment.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(Source));
         if (!string.Equals(sourceHash, manifest.SourceSha256, StringComparison.Ordinal))
             throw new InvalidDataException("The shared shader source hash does not match this runner build.");
@@ -183,6 +181,46 @@ internal static class BenchmarkShaders
         }
     }
 
+    private static ShaderManifest ReadManifest(ReadOnlyMemory<byte> bytes)
+    {
+        using JsonDocument document = JsonDocument.Parse(bytes);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("The shared shader manifest root must be an object.");
+
+        string sourceSha256 = ReadRequiredString(root, "sourceSha256");
+        string profile = ReadRequiredString(root, "profile");
+        string compiler = ReadRequiredString(root, "compiler");
+        if (!root.TryGetProperty("entrySha256", out JsonElement entries) ||
+            entries.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("The shared shader manifest entry hashes are invalid.");
+        }
+
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (JsonProperty entry in entries.EnumerateObject())
+        {
+            if (entry.Value.ValueKind != JsonValueKind.String ||
+                entry.Value.GetString() is not string hash ||
+                !hashes.TryAdd(entry.Name, hash))
+            {
+                throw new InvalidDataException("The shared shader manifest contains an invalid entry hash.");
+            }
+        }
+        return new ShaderManifest(sourceSha256, profile, compiler, hashes);
+    }
+
+    private static string ReadRequiredString(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out JsonElement value) ||
+            value.ValueKind != JsonValueKind.String ||
+            value.GetString() is not string result)
+        {
+            throw new InvalidDataException($"The shared shader manifest property '{name}' is invalid.");
+        }
+        return result;
+    }
+
     internal static (byte[] Vertex, byte[] Pixel, byte[] Compute, string ManifestSha256) LoadNativeArtifacts(
         string directory)
     {
@@ -202,7 +240,7 @@ internal static class BenchmarkShaders
         try
         {
             IGlobalSession global = GlobalSession.Value;
-            SlangProfileID profile = global.FindProfile("sm_6_8");
+            SlangProfileID profile = global.FindProfile(ProfileName);
             SessionDesc description = new()
             {
                 Targets =

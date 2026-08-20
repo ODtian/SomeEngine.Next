@@ -53,6 +53,69 @@ public sealed class BenchmarkOptionsTests
     }
 
     [Fact]
+    public void ProbeDefaultsToFastNonGatingInterfaceRhiRun()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse(["probe", "--adapter", "1:0"]);
+
+        Assert.Equal(BenchmarkProfile.DeveloperProbe, options.Profile);
+        Assert.Equal(64, options.WarmupFrames);
+        Assert.Equal(256, options.MeasuredFrames);
+        Assert.Equal(1_000, options.DrawCount);
+        Assert.Equal([ReceiverVariant.InterfaceReceiver], options.Variants);
+        Assert.Equal([GraphicsWorkload.PersistentDraw10000], options.Workloads);
+    }
+
+    [Fact]
+    public void ProbeAcceptsSelectedWorkloadsAndManagedVariants()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "probe", "--adapter", "1:0",
+            "--workloads", "empty-submit,state-suppression",
+            "--variants", "interface-receiver,direct-silk",
+        ]);
+
+        Assert.Equal([GraphicsWorkload.EmptySubmit, GraphicsWorkload.StateSuppression10000], options.Workloads);
+        Assert.Equal([ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk], options.Variants);
+    }
+
+    [Fact]
+    public void ProbeAcceptsDefaultAndOptimizedDirectSilkVariants()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "probe", "--adapter", "1:0",
+            "--variants", "direct-silk-default,direct-silk",
+        ]);
+
+        Assert.Equal(
+            [ReceiverVariant.DirectSilkDefault, ReceiverVariant.DirectSilk],
+            options.Variants);
+    }
+
+    [Fact]
+    public void DiagnoseAcceptsExplicitDefaultDirectMode()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "diagnose",
+            "--adapter", "1:0",
+            "--native-runner", "native.exe",
+            "--direct-mode", "default",
+        ]);
+
+        Assert.True(options.DefaultDirectCalls);
+    }
+
+    [Fact]
+    public void ProbeRejectsNativeCppBecauseItCannotSelectWorkloads()
+    {
+        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+            BenchmarkOptions.Parse([
+                "probe", "--adapter", "1:0", "--variants", "native-cpp",
+            ]));
+
+        Assert.Contains("native-cpp", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnosticRequiresHardwareAdapterAndNativeRunner()
     {
         BenchmarkUsageException missingAdapter = Assert.Throws<BenchmarkUsageException>(() =>
@@ -101,7 +164,7 @@ public sealed class BenchmarkOptionsTests
         BenchmarkOptions options = BenchmarkOptions.Parse([
             "worker",
             "--profile", "diagnose",
-            "--variant", "generic-rhi",
+            "--variant", "interface-receiver",
             "--adapter", "1:0",
             "--barriers", "0",
         ]);
@@ -111,12 +174,33 @@ public sealed class BenchmarkOptionsTests
     }
 
     [Fact]
+    public void RepresentativeWorkerUsesPublicFrameShape()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "worker",
+            "--profile", "representative",
+            "--variant", "interface-receiver",
+            "--adapter", "1:0",
+            "--workloads", "representative-frame-serial,representative-frame-parallel",
+        ]);
+
+        Assert.Equal(BenchmarkProfile.RepresentativeCpuFrame, options.Profile);
+        Assert.Equal(FixedGraphicsProtocol.RepresentativeWarmupFrames, options.WarmupFrames);
+        Assert.Equal(FixedGraphicsProtocol.RepresentativeMeasuredFrames, options.MeasuredFrames);
+        Assert.Equal(RepresentativeFrameProfile.DrawCount, options.DrawCount);
+        Assert.Equal(RepresentativeFrameProfile.BarrierCount, options.BarrierCount);
+        Assert.Equal(
+            [GraphicsWorkload.RepresentativeFrameSerial, GraphicsWorkload.RepresentativeFrameParallel],
+            options.Workloads);
+    }
+
+    [Fact]
     public void ResumeIsRestrictedToHardwareControllers()
     {
         BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
             BenchmarkOptions.Parse(["warp", "--resume", "raw-run"]));
 
-        Assert.Contains("diagnose or certify", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("probe", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

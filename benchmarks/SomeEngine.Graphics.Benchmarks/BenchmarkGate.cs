@@ -10,13 +10,13 @@ internal static class BenchmarkGate
         double P99Absolute,
         double? P99Relative);
 
-    private static readonly Limits GenericVsSilk = new(50, 3, 100, 5, 200, 8);
-    private static readonly Limits GenericVsCpp = new(100, 5, 200, 8, 300, 10);
-    private static readonly Limits InterfaceVsGeneric = new(25, 3, 50, 5, 100, 8);
+    private static readonly Limits InterfaceVsSilk = new(50, 3, 100, 5, 200, 8);
+    private static readonly Limits InterfaceVsCpp = new(100, 5, 200, 8, 300, 10);
+    private static readonly Limits SilkVsCpp = new(50, 3, 100, 5, 200, 8);
     private static readonly Limits GpuLimits = new(20, 1, 50, 2, 100, 3);
-    private static readonly Limits EmptyGenericVsSilk = new(1, null, 2, null, 4, null);
-    private static readonly Limits EmptyGenericVsCpp = new(2, null, 3, null, 6, null);
-    private static readonly Limits EmptyInterfaceVsGeneric = new(0.5, null, 1, null, 2, null);
+    private static readonly Limits EmptyInterfaceVsSilk = new(1, null, 2, null, 4, null);
+    private static readonly Limits EmptyInterfaceVsCpp = new(2, null, 3, null, 6, null);
+    private static readonly Limits EmptySilkVsCpp = new(1, null, 2, null, 4, null);
 
     internal static GateResult Evaluate(
         BenchmarkProfile profile,
@@ -44,46 +44,44 @@ internal static class BenchmarkGate
 
         foreach (GraphicsWorkload workload in FixedGraphicsProtocol.GetWorkloads(profile))
         {
-            WorkloadAggregate? generic = Aggregate(runs, ReceiverVariant.GenericRhi, workload, issues);
-            WorkloadAggregate? throughInterface = Aggregate(runs, ReceiverVariant.InterfaceRhi, workload, issues);
+            WorkloadAggregate? interfaceReceiver = Aggregate(runs, ReceiverVariant.InterfaceReceiver, workload, issues);
             WorkloadAggregate? silk = Aggregate(runs, ReceiverVariant.DirectSilk, workload, issues);
             WorkloadAggregate? cpp = Aggregate(runs, ReceiverVariant.NativeCpp, workload, issues);
-            if (generic is null || throughInterface is null || silk is null || cpp is null)
+            if (interfaceReceiver is null || silk is null || cpp is null)
                 continue;
 
-            RequireEquivalentOutput(workload, generic, throughInterface, silk, cpp, issues);
-            RequireRhiEvidenceIdentity(workload, generic, throughInterface, issues);
+            RequireEquivalentOutput(workload, interfaceReceiver, silk, cpp, issues);
             if (profile != BenchmarkProfile.VendorCertification)
                 continue;
 
             CompareCpu(
-                "Generic RHI vs Direct Silk",
+                "Interface RHI vs Direct Silk",
                 workload,
-                generic.Cpu,
+                interfaceReceiver.Cpu,
                 silk.Cpu,
-                workload == GraphicsWorkload.EmptySubmit ? EmptyGenericVsSilk : GenericVsSilk,
+                workload == GraphicsWorkload.EmptySubmit ? EmptyInterfaceVsSilk : InterfaceVsSilk,
                 comparisons,
                 issues);
             CompareCpu(
-                "Generic RHI vs C++ D3D12",
+                "Interface RHI vs C++ D3D12",
                 workload,
-                generic.Cpu,
+                interfaceReceiver.Cpu,
                 cpp.Cpu,
-                workload == GraphicsWorkload.EmptySubmit ? EmptyGenericVsCpp : GenericVsCpp,
+                workload == GraphicsWorkload.EmptySubmit ? EmptyInterfaceVsCpp : InterfaceVsCpp,
                 comparisons,
                 issues);
             CompareCpu(
-                "Interface RHI vs Generic RHI",
+                "Direct Silk vs C++ D3D12",
                 workload,
-                throughInterface.Cpu,
-                generic.Cpu,
-                workload == GraphicsWorkload.EmptySubmit ? EmptyInterfaceVsGeneric : InterfaceVsGeneric,
+                silk.Cpu,
+                cpp.Cpu,
+                workload == GraphicsWorkload.EmptySubmit ? EmptySilkVsCpp : SilkVsCpp,
                 comparisons,
                 issues);
 
             if (workload != GraphicsWorkload.EmptySubmit)
             {
-                if (generic.Gpu is null || silk.Gpu is null || cpp.Gpu is null)
+                if (interfaceReceiver.Gpu is null || silk.Gpu is null || cpp.Gpu is null)
                 {
                     issues.Add(new GateIssue(
                         "RHI-EVID-GPU-MISSING",
@@ -93,19 +91,19 @@ internal static class BenchmarkGate
                 else
                 {
                     CompareDistribution(
-                        "Generic RHI GPU vs Direct Silk",
+                        "Interface RHI GPU vs Direct Silk",
                         workload,
                         "GPU",
-                        generic.Gpu.Value,
+                        interfaceReceiver.Gpu.Value,
                         silk.Gpu.Value,
                         GpuLimits,
                         comparisons,
                         issues);
                     CompareDistribution(
-                        "Generic RHI GPU vs C++ D3D12",
+                        "Interface RHI GPU vs C++ D3D12",
                         workload,
                         "GPU",
-                        generic.Gpu.Value,
+                        interfaceReceiver.Gpu.Value,
                         cpp.Gpu.Value,
                         GpuLimits,
                         comparisons,
@@ -123,7 +121,7 @@ internal static class BenchmarkGate
             return new GateResult(
                 issues.Count == 0 ? RunDisposition.FunctionalOnly : RunDisposition.Failed,
                 issues.Count == 0
-                    ? "All four receivers are functionally equivalent on WARP; WARP is not vendor performance evidence."
+                    ? "All three receivers are functionally equivalent on WARP; WARP is not vendor performance evidence."
                     : "WARP functional equivalence failed.",
                 [.. issues],
                 [.. comparisons],
@@ -557,20 +555,6 @@ internal static class BenchmarkGate
                     run.Variant,
                     workload));
             }
-            if (workload == GraphicsWorkload.StateSuppression10000)
-            {
-                NativeSetterEvidence setters = result.NativeSetters;
-                if (setters.PipelineSetters > 1 || setters.PersistentBindingSetters > 1 ||
-                    setters.ViewportSetters > 1 || setters.ScissorSetters > 1 ||
-                    setters.DrawCalls != result.DrawCount)
-                {
-                    issues.Add(new GateIssue(
-                        "RHI-EVID-STATE-SUPPRESSION",
-                        $"{run.Variant} did not preserve 10,000 draws while suppressing equal native setters.",
-                        run.Variant,
-                        workload));
-                }
-            }
             if (workload == GraphicsWorkload.ExplicitBarrier4096 &&
                 (result.Barriers.Length != result.BarrierCount ||
                  !HasContiguousOrdinals(result.Barriers)))
@@ -772,48 +756,30 @@ internal static class BenchmarkGate
             gpu.Length == 0 ? null : MetricDistribution.From(gpu),
             hashes.FirstOrDefault() ?? string.Empty,
             selected[0].ShaderManifestSha256,
-            selected[0].Barriers,
-            selected[0].NativeSetters);
+            selected[0].Barriers);
     }
 
     private static void RequireEquivalentOutput(
         GraphicsWorkload workload,
-        WorkloadAggregate generic,
-        WorkloadAggregate throughInterface,
+        WorkloadAggregate interfaceReceiver,
         WorkloadAggregate silk,
         WorkloadAggregate cpp,
         List<GateIssue> issues)
     {
-        string[] hashes = [generic.OutputSha256, throughInterface.OutputSha256, silk.OutputSha256, cpp.OutputSha256];
-        string[] shaders = [generic.ShaderManifestSha256, throughInterface.ShaderManifestSha256, silk.ShaderManifestSha256, cpp.ShaderManifestSha256];
+        string[] hashes = [interfaceReceiver.OutputSha256, silk.OutputSha256, cpp.OutputSha256];
+        string[] shaders = [interfaceReceiver.ShaderManifestSha256, silk.ShaderManifestSha256, cpp.ShaderManifestSha256];
         if (hashes.Any(string.IsNullOrWhiteSpace) || hashes.Distinct(StringComparer.Ordinal).Count() != 1)
         {
             issues.Add(new GateIssue(
                 "RHI-EVID-OUTPUT-HASH",
-                "The four receivers did not produce one exact output hash.",
+                "The three receivers did not produce one exact output hash.",
                 Workload: workload));
         }
         if (shaders.Any(string.IsNullOrWhiteSpace) || shaders.Distinct(StringComparer.Ordinal).Count() != 1)
         {
             issues.Add(new GateIssue(
                 "RHI-EVID-SHADER-IDENTITY",
-                "The four receivers did not consume one Slang-produced DXIL manifest.",
-                Workload: workload));
-        }
-    }
-
-    private static void RequireRhiEvidenceIdentity(
-        GraphicsWorkload workload,
-        WorkloadAggregate generic,
-        WorkloadAggregate throughInterface,
-        List<GateIssue> issues)
-    {
-        if (!generic.Barriers.SequenceEqual(throughInterface.Barriers) ||
-            generic.NativeSetters != throughInterface.NativeSetters)
-        {
-            issues.Add(new GateIssue(
-                "RHI-EVID-RHI-NATIVE-IDENTITY",
-                "Generic and interface RHI did not report identical barrier/native-state evidence.",
+                "The three receivers did not consume one Slang-produced DXIL manifest.",
                 Workload: workload));
         }
     }
@@ -889,8 +855,7 @@ internal static class BenchmarkGate
         MetricDistribution? Gpu,
         string OutputSha256,
         string ShaderManifestSha256,
-        BarrierEvidence[] Barriers,
-        NativeSetterEvidence NativeSetters);
+        BarrierEvidence[] Barriers);
 
     private readonly record struct DiagnosticCell(
         ReceiverVariant Variant,

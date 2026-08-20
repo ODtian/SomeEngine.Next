@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -18,6 +19,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 
 using Microsoft::WRL::ComPtr;
 
@@ -30,6 +32,86 @@ constexpr UINT render_width = 64;
 constexpr UINT render_height = 64;
 constexpr UINT64 texture_byte_size = render_width * render_height * 4ULL;
 constexpr UINT64 constant_buffer_alignment = 256;
+constexpr int representative_object_count = 1'025;
+constexpr int representative_material_count = 40;
+constexpr int representative_worker_count = 3;
+constexpr int representative_command_list_count = 9;
+constexpr int representative_draw_count = representative_object_count * 2;
+constexpr int representative_barrier_count = 4;
+#if defined(REPRESENTATIVE_BINDINGS_ONLY) || defined(REPRESENTATIVE_FIXED_ONLY) || \
+    defined(REPRESENTATIVE_STATE_ONLY) || defined(REPRESENTATIVE_LIFECYCLE_ONLY)
+constexpr int representative_logical_draw_requests = 0;
+#else
+constexpr int representative_logical_draw_requests = representative_draw_count;
+#endif
+#if defined(REPRESENTATIVE_LIFECYCLE_ONLY)
+constexpr int representative_logical_material_binding_requests = 0;
+constexpr int representative_native_material_binding_commands = 0;
+constexpr int representative_state_setter_count = 0;
+#elif defined(REPRESENTATIVE_STATE_ONLY) || defined(REPRESENTATIVE_FIXED_ONLY)
+constexpr int representative_logical_material_binding_requests = representative_worker_count;
+constexpr int representative_native_material_binding_commands = representative_worker_count;
+constexpr int representative_state_setter_count = representative_worker_count * 2;
+#elif defined(REPRESENTATIVE_PER_DRAW_BINDINGS)
+constexpr int representative_logical_material_binding_requests = representative_draw_count;
+constexpr int representative_native_material_binding_commands = 107;
+constexpr int representative_state_setter_count = representative_worker_count * 2;
+#elif defined(REPRESENTATIVE_UNIFORM_MATERIAL)
+constexpr int representative_logical_material_binding_requests = representative_worker_count * 2;
+constexpr int representative_native_material_binding_commands = representative_worker_count * 2;
+constexpr int representative_state_setter_count = representative_worker_count * 2;
+#else
+constexpr int representative_logical_material_binding_requests = 107;
+constexpr int representative_native_material_binding_commands = 107;
+constexpr int representative_state_setter_count = representative_worker_count * 2;
+#endif
+#if defined(REPRESENTATIVE_LIFECYCLE_ONLY) || defined(REPRESENTATIVE_STATE_ONLY)
+constexpr int representative_native_barrier_commands = 0;
+#else
+constexpr int representative_native_barrier_commands = representative_barrier_count;
+#endif
+constexpr UINT64 representative_object_packet_size = 16;
+constexpr UINT64 representative_material_stride = 256;
+constexpr std::string_view representative_material_hash =
+    "4F69D660B527341D446A365853AA7FA8CCD853243853FE22CAB30D0608BB6AF0";
+
+#if defined(REPRESENTATIVE_LIFECYCLE_ONLY)
+constexpr int representative_pipeline_setters = 0;
+constexpr int representative_public_draw_requests = 0;
+constexpr int representative_public_binding_requests = 0;
+constexpr int representative_native_binding_setters = 0;
+constexpr int representative_native_draw_calls = 0;
+#elif defined(REPRESENTATIVE_STATE_ONLY) || defined(REPRESENTATIVE_FIXED_ONLY)
+constexpr int representative_pipeline_setters = representative_worker_count * 2;
+constexpr int representative_public_draw_requests = 0;
+constexpr int representative_public_binding_requests = representative_worker_count;
+constexpr int representative_native_binding_setters = representative_worker_count;
+constexpr int representative_native_draw_calls = 0;
+#elif defined(REPRESENTATIVE_BINDINGS_ONLY)
+constexpr int representative_pipeline_setters = representative_worker_count * 2;
+constexpr int representative_public_draw_requests = 0;
+constexpr int representative_public_binding_requests = 107;
+constexpr int representative_native_binding_setters = 107;
+constexpr int representative_native_draw_calls = 0;
+#elif defined(REPRESENTATIVE_UNIFORM_MATERIAL)
+constexpr int representative_pipeline_setters = representative_worker_count * 2;
+constexpr int representative_public_draw_requests = representative_draw_count;
+constexpr int representative_public_binding_requests = representative_worker_count * 2;
+constexpr int representative_native_binding_setters = representative_worker_count * 2;
+constexpr int representative_native_draw_calls = representative_draw_count;
+#elif defined(REPRESENTATIVE_PER_DRAW_BINDINGS)
+constexpr int representative_pipeline_setters = representative_worker_count * 2;
+constexpr int representative_public_draw_requests = representative_draw_count;
+constexpr int representative_public_binding_requests = representative_draw_count;
+constexpr int representative_native_binding_setters = 107;
+constexpr int representative_native_draw_calls = representative_draw_count;
+#else
+constexpr int representative_pipeline_setters = representative_worker_count * 2;
+constexpr int representative_public_draw_requests = representative_draw_count;
+constexpr int representative_public_binding_requests = 107;
+constexpr int representative_native_binding_setters = 107;
+constexpr int representative_native_draw_calls = representative_draw_count;
+#endif
 
 bool normalized_float_equal(float left, float right) noexcept
 {
@@ -195,6 +277,47 @@ private:
     std::unique_ptr<void, close_handle> event_;
     std::uint64_t next_value_ = 1;
     std::uint64_t frequency_ = 0;
+};
+
+class native_recording_context
+{
+public:
+    explicit native_recording_context(ID3D12Device* device)
+    {
+        check(device->CreateCommandAllocator(
+                  D3D12_COMMAND_LIST_TYPE_DIRECT,
+                  IID_PPV_ARGS(&allocator_)),
+            "ID3D12Device::CreateCommandAllocator(representative)");
+        check(device->CreateCommandList(
+                  0,
+                  D3D12_COMMAND_LIST_TYPE_DIRECT,
+                  allocator_.Get(),
+                  nullptr,
+                  IID_PPV_ARGS(&list_)),
+            "ID3D12Device::CreateCommandList(representative)");
+        check(list_->Close(), "ID3D12GraphicsCommandList::Close(representative initial)");
+    }
+
+    native_recording_context(const native_recording_context&) = delete;
+    native_recording_context& operator=(const native_recording_context&) = delete;
+
+    ID3D12GraphicsCommandList* begin()
+    {
+        check(allocator_->Reset(), "ID3D12CommandAllocator::Reset(representative)");
+        check(list_->Reset(allocator_.Get(), nullptr), "ID3D12GraphicsCommandList::Reset(representative)");
+        return list_.Get();
+    }
+
+    void discard()
+    {
+        check(list_->Close(), "ID3D12GraphicsCommandList::Close(representative discard)");
+    }
+
+    ID3D12GraphicsCommandList7* enhanced_list() const noexcept { return list_.Get(); }
+
+private:
+    ComPtr<ID3D12CommandAllocator> allocator_;
+    ComPtr<ID3D12GraphicsCommandList7> list_;
 };
 
 D3D12_RESOURCE_BARRIER transition(
@@ -677,6 +800,366 @@ private:
     volatile bool has_scissor_{};
 };
 
+std::pair<int, int> representative_worker_range(int worker)
+{
+    if (worker < 0 || worker >= representative_worker_count)
+        throw std::out_of_range("Representative worker index is invalid.");
+    const int base_count = representative_object_count / representative_worker_count;
+    const int remainder = representative_object_count % representative_worker_count;
+    const int count = base_count + (worker < remainder ? 1 : 0);
+    const int start = worker * base_count + std::min(worker, remainder);
+    return {start, count};
+}
+
+void write_representative_object_packets(std::byte* destination, int frame)
+{
+    auto* output = reinterpret_cast<std::int32_t*>(destination);
+    std::int32_t mixed = frame * 31;
+    for (int object = 0; object < representative_object_count; ++object)
+    {
+        *output++ = object;
+        *output++ = frame;
+        *output++ = mixed;
+        *output++ = object ^ frame;
+        mixed += 17;
+    }
+}
+
+using representative_material_addresses =
+    std::array<D3D12_GPU_VIRTUAL_ADDRESS, representative_material_count>;
+
+class representative_material_state
+{
+public:
+    representative_material_state(
+        ID3D12GraphicsCommandList* list,
+        const representative_material_addresses& addresses) noexcept
+        : list_(list), addresses_(addresses.data())
+    {
+    }
+
+    void set_material(int material) noexcept
+    {
+        const auto address = addresses_[material];
+        if (current_ == address)
+            return;
+        list_->SetGraphicsRootConstantBufferView(0, address);
+        current_ = address;
+    }
+
+    void draw() noexcept
+    {
+        list_->DrawInstanced(3, 1, 0, 0);
+    }
+
+private:
+    ID3D12GraphicsCommandList* list_{};
+    const D3D12_GPU_VIRTUAL_ADDRESS* addresses_{};
+    D3D12_GPU_VIRTUAL_ADDRESS current_{};
+};
+
+void record_representative_barriers(
+    ID3D12GraphicsCommandList* list,
+    ID3D12GraphicsCommandList7* enhanced_list,
+    bool enhanced,
+    int count)
+{
+    if (enhanced)
+    {
+        D3D12_GLOBAL_BARRIER barrier{
+            D3D12_BARRIER_SYNC_DRAW,
+            D3D12_BARRIER_SYNC_DRAW,
+            D3D12_BARRIER_ACCESS_CONSTANT_BUFFER,
+            D3D12_BARRIER_ACCESS_CONSTANT_BUFFER};
+        D3D12_BARRIER_GROUP group{};
+        group.Type = D3D12_BARRIER_TYPE_GLOBAL;
+        group.NumBarriers = 1;
+        group.pGlobalBarriers = &barrier;
+        for (int index = 0; index < count; ++index)
+            enhanced_list->Barrier(1, &group);
+        return;
+    }
+
+    auto barrier = uav_barrier();
+    for (int index = 0; index < count; ++index)
+        list->ResourceBarrier(1, &barrier);
+}
+
+void record_representative_main_list(
+    native_recording_context& recording,
+    d3d12_context& context,
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+    int barrier_count,
+    bool clear)
+{
+    (void)context;
+    (void)rtv;
+    (void)barrier_count;
+    (void)clear;
+    auto* list = recording.begin();
+    (void)list;
+#if !defined(REPRESENTATIVE_LIFECYCLE_ONLY) && !defined(REPRESENTATIVE_STATE_ONLY)
+    record_representative_barriers(
+        list,
+        recording.enhanced_list(),
+        context.enhanced_barriers(),
+        barrier_count);
+    if (clear)
+    {
+        const float color[]{0.0625F, 0.125F, 0.25F, 1.0F};
+        list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        list->ClearRenderTargetView(rtv, color, 0, nullptr);
+    }
+#endif
+    recording.discard();
+}
+
+void record_representative_pass(
+    native_recording_context& recording,
+    d3d12_context& context,
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+    const representative_material_addresses& material_addresses,
+    const std::vector<std::byte>& material_sequence,
+    int start,
+    int count,
+    bool scene)
+{
+    (void)context;
+    (void)rtv;
+    (void)material_addresses;
+    (void)material_sequence;
+    (void)start;
+    (void)count;
+    (void)scene;
+    auto* list = recording.begin();
+    (void)list;
+#if !defined(REPRESENTATIVE_LIFECYCLE_ONLY)
+    const D3D12_VIEWPORT viewport{
+        0,
+        0,
+        static_cast<float>(render_width),
+        static_cast<float>(render_height),
+        0,
+        1};
+    const D3D12_RECT scissor{0, 0, render_width, render_height};
+    list->SetPipelineState(context.graphics_pipeline());
+    list->SetGraphicsRootSignature(context.graphics_root());
+    list->RSSetViewports(1, &viewport);
+    list->RSSetScissorRects(1, &scissor);
+    list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+#if !defined(REPRESENTATIVE_STATE_ONLY)
+    list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+#endif
+    representative_material_state state(list, material_addresses);
+#if !defined(REPRESENTATIVE_PER_DRAW_BINDINGS)
+    if (!scene)
+        state.set_material(0);
+#endif
+#if defined(REPRESENTATIVE_FIXED_ONLY) || defined(REPRESENTATIVE_STATE_ONLY)
+    const int end = start;
+#else
+    const int end = start + count;
+#endif
+#if !defined(REPRESENTATIVE_PER_DRAW_BINDINGS)
+    int current_material = -1;
+#endif
+    for (int index = start; index < end; ++index)
+    {
+#if defined(REPRESENTATIVE_PER_DRAW_BINDINGS)
+        const int material = scene
+            ? std::to_integer<unsigned char>(material_sequence[index])
+            : 0;
+        state.set_material(material);
+#else
+        if (scene)
+        {
+#if defined(REPRESENTATIVE_UNIFORM_MATERIAL)
+            const int material = 0;
+#else
+            const int material = std::to_integer<unsigned char>(material_sequence[index]);
+#endif
+            if (material != current_material)
+            {
+                state.set_material(material);
+                current_material = material;
+            }
+        }
+#endif
+#if !defined(REPRESENTATIVE_BINDINGS_ONLY)
+        state.draw();
+#endif
+    }
+#endif
+    recording.discard();
+}
+
+class representative_worker
+{
+public:
+    representative_worker(
+        native_recording_context& shadow,
+        native_recording_context& scene,
+        d3d12_context& context,
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+        const representative_material_addresses& material_addresses,
+        const std::vector<std::byte>& material_sequence,
+        int start,
+        int count)
+        : shadow_(shadow),
+          scene_(scene),
+          context_(context),
+          rtv_(rtv),
+          material_addresses_(material_addresses),
+          material_sequence_(material_sequence),
+          start_(start),
+          count_(count)
+    {
+        shadow_start_ = create_event();
+        shadow_done_ = create_event();
+        scene_start_ = create_event();
+        scene_done_ = create_event();
+        thread_ = std::thread([this] { run(); });
+    }
+
+    representative_worker(const representative_worker&) = delete;
+    representative_worker& operator=(const representative_worker&) = delete;
+
+    ~representative_worker()
+    {
+        stop_.store(true, std::memory_order_release);
+        SetEvent(shadow_start_);
+        SetEvent(scene_start_);
+        if (thread_.joinable())
+            thread_.join();
+        close_event(scene_done_);
+        close_event(scene_start_);
+        close_event(shadow_done_);
+        close_event(shadow_start_);
+    }
+
+    void start_shadow()
+    {
+        failure_ = nullptr;
+        failed_.store(false, std::memory_order_release);
+        signal(shadow_start_);
+    }
+
+    void wait_shadow()
+    {
+        wait(shadow_done_);
+        rethrow_if_failed();
+    }
+
+    void start_scene()
+    {
+        signal(scene_start_);
+    }
+
+    void wait_scene()
+    {
+        wait(scene_done_);
+        rethrow_if_failed();
+    }
+
+private:
+    static HANDLE create_event()
+    {
+        HANDLE result = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (result == nullptr)
+            throw std::runtime_error("CreateEventW(representative) failed.");
+        return result;
+    }
+
+    static void close_event(HANDLE value) noexcept
+    {
+        if (value != nullptr)
+            CloseHandle(value);
+    }
+
+    static void signal(HANDLE value)
+    {
+        if (!SetEvent(value))
+            throw std::runtime_error("SetEvent(representative) failed.");
+    }
+
+    static void wait(HANDLE value)
+    {
+        const DWORD result = WaitForSingleObject(value, 30'000);
+        if (result != WAIT_OBJECT_0)
+            throw std::runtime_error("WaitForSingleObject(representative) failed.");
+    }
+
+    void rethrow_if_failed()
+    {
+        if (failed_.load(std::memory_order_acquire))
+            std::rethrow_exception(failure_);
+    }
+
+    void run() noexcept
+    {
+        while (true)
+        {
+            wait_noexcept(shadow_start_);
+            if (stop_.load(std::memory_order_acquire))
+                return;
+            run_phase(shadow_, false, shadow_done_);
+            if (failed_.load(std::memory_order_acquire))
+                continue;
+            wait_noexcept(scene_start_);
+            if (stop_.load(std::memory_order_acquire))
+                return;
+            run_phase(scene_, true, scene_done_);
+        }
+    }
+
+    static void wait_noexcept(HANDLE value) noexcept
+    {
+        (void)WaitForSingleObject(value, INFINITE);
+    }
+
+    void run_phase(
+        native_recording_context& recording,
+        bool scene,
+        HANDLE completed) noexcept
+    {
+        try
+        {
+            record_representative_pass(
+                recording,
+                context_,
+                rtv_,
+                material_addresses_,
+                material_sequence_,
+                start_,
+                count_,
+                scene);
+        }
+        catch (...)
+        {
+            failure_ = std::current_exception();
+            failed_.store(true, std::memory_order_release);
+        }
+        (void)SetEvent(completed);
+    }
+
+    native_recording_context& shadow_;
+    native_recording_context& scene_;
+    d3d12_context& context_;
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv_{};
+    const representative_material_addresses& material_addresses_;
+    const std::vector<std::byte>& material_sequence_;
+    int start_ = 0;
+    int count_ = 0;
+    HANDLE shadow_start_ = nullptr;
+    HANDLE shadow_done_ = nullptr;
+    HANDLE scene_start_ = nullptr;
+    HANDLE scene_done_ = nullptr;
+    std::thread thread_;
+    std::atomic_bool stop_ = false;
+    std::atomic_bool failed_ = false;
+    std::exception_ptr failure_;
+};
+
 std::string read_texture_hash(d3d12_context& context, ID3D12Resource* texture)
 {
     auto readback = context.create_buffer(texture_byte_size, D3D12_HEAP_TYPE_READBACK,
@@ -710,6 +1193,213 @@ struct frame_measurement
     frame_sample sample;
     calibrated_timestamp calibration;
 };
+
+workload_run run_representative_frame(
+    d3d12_context& context,
+    const configuration& config,
+    const std::string& shader_manifest,
+    workload_kind kind)
+{
+    const bool parallel = kind == workload_kind::representative_frame_parallel;
+    std::vector<std::byte> material_sequence =
+        read_binary_file(config.shader_directory / L"representative-frame-materials.bin");
+    if (material_sequence.size() != representative_object_count ||
+        sha256_bytes(material_sequence.data(), material_sequence.size()) != representative_material_hash)
+    {
+        throw std::runtime_error("The representative material sequence is invalid.");
+    }
+    for (std::byte material : material_sequence)
+    {
+        if (std::to_integer<unsigned char>(material) >= representative_material_count)
+            throw std::runtime_error("The representative material sequence contains an invalid material index.");
+    }
+
+    auto target = context.create_target_texture();
+    auto rtv_heap = context.create_rtv_heap();
+    const auto rtv = context.create_rtv(target.Get(), rtv_heap.Get());
+    auto material_buffer = context.create_buffer(
+        representative_material_count * representative_material_stride,
+        D3D12_HEAP_TYPE_UPLOAD,
+        D3D12_RESOURCE_STATE_GENERIC_READ);
+    auto* material_data = static_cast<std::byte*>(map_write(material_buffer.Get()));
+    for (int material = 0; material < representative_material_count; ++material)
+    {
+        write_tint(
+            material_data + static_cast<std::size_t>(material) * representative_material_stride,
+            static_cast<float>((material * 17) & 255) / 255.0F,
+            static_cast<float>((material * 29 + 31) & 255) / 255.0F,
+            static_cast<float>((material * 43 + 7) & 255) / 255.0F,
+            1.0F);
+    }
+    auto object_buffer = context.create_buffer(
+        representative_object_count * representative_object_packet_size,
+        D3D12_HEAP_TYPE_UPLOAD,
+        D3D12_RESOURCE_STATE_GENERIC_READ);
+    auto* object_data = static_cast<std::byte*>(map_write(object_buffer.Get()));
+    const auto material_base = material_buffer->GetGPUVirtualAddress();
+    representative_material_addresses material_addresses{};
+    auto material_address = material_base;
+    for (auto& address : material_addresses)
+    {
+        address = material_address;
+        material_address += representative_material_stride;
+    }
+
+    std::array<std::unique_ptr<native_recording_context>, representative_command_list_count> recordings;
+    for (auto& recording : recordings)
+        recording = std::make_unique<native_recording_context>(context.device());
+    std::array<std::unique_ptr<representative_worker>, representative_worker_count> workers;
+    if (parallel)
+    {
+        for (int worker = 0; worker < representative_worker_count; ++worker)
+        {
+            const auto [start, count] = representative_worker_range(worker);
+            workers[worker] = std::make_unique<representative_worker>(
+                *recordings[3 + worker],
+                *recordings[6 + worker],
+                context,
+                rtv,
+                material_addresses,
+                material_sequence,
+                start,
+                count);
+        }
+    }
+
+    const auto execute_frame = [&](int frame_index)
+    {
+        const auto started = qpc();
+        write_representative_object_packets(object_data, frame_index);
+        record_representative_main_list(
+            *recordings[0],
+            context,
+            rtv,
+            1,
+            true);
+
+        if (parallel)
+        {
+            for (auto& worker : workers)
+                worker->start_shadow();
+            for (auto& worker : workers)
+                worker->wait_shadow();
+        }
+        else
+        {
+            for (int worker = 0; worker < representative_worker_count; ++worker)
+            {
+                const auto [start, count] = representative_worker_range(worker);
+                record_representative_pass(
+                    *recordings[3 + worker],
+                    context,
+                    rtv,
+                    material_addresses,
+                    material_sequence,
+                    start,
+                    count,
+                    false);
+            }
+        }
+
+        record_representative_main_list(
+            *recordings[1],
+            context,
+            rtv,
+            2,
+            false);
+        if (parallel)
+        {
+            for (auto& worker : workers)
+                worker->start_scene();
+            for (auto& worker : workers)
+                worker->wait_scene();
+        }
+        else
+        {
+            for (int worker = 0; worker < representative_worker_count; ++worker)
+            {
+                const auto [start, count] = representative_worker_range(worker);
+                record_representative_pass(
+                    *recordings[6 + worker],
+                    context,
+                    rtv,
+                    material_addresses,
+                    material_sequence,
+                    start,
+                    count,
+                    true);
+            }
+        }
+
+        record_representative_main_list(
+            *recordings[2],
+            context,
+            rtv,
+            1,
+            false);
+        const auto stopped = qpc();
+        return frame_sample{
+            frame_index,
+            stopped - started,
+            ticks_to_microseconds(stopped - started),
+            std::nullopt,
+            static_cast<std::uint64_t>(frame_index) + 1,
+            0,
+            0.0};
+    };
+
+    for (int frame = 0; frame < config.warmup_frames; ++frame)
+        (void)execute_frame(frame);
+    std::vector<frame_sample> samples;
+    samples.reserve(config.measured_frames);
+    for (int frame = 0; frame < config.measured_frames; ++frame)
+        samples.push_back(execute_frame(frame));
+
+    for (auto& worker : workers)
+        worker.reset();
+    const D3D12_RANGE written{};
+    object_buffer->Unmap(0, &written);
+    material_buffer->Unmap(0, &written);
+    std::vector<barrier_evidence> barriers;
+    if constexpr (representative_native_barrier_commands != 0)
+    {
+        barriers = {
+            {0, "MemoryBarrier", 0, 1, "pre-pass dependency"},
+            {1, "MemoryBarrier", 1, 1, "shadow-to-scene dependency"},
+            {2, "MemoryBarrier", 2, 1, "shadow-to-scene dependency"},
+            {3, "MemoryBarrier", 3, 1, "post-pass dependency"}};
+    }
+    workload_run result = complete_workload(
+        config,
+        kind,
+        representative_logical_draw_requests,
+        representative_native_barrier_commands,
+        std::move(samples),
+        {},
+        std::string(representative_material_hash),
+        shader_manifest,
+        std::move(barriers),
+        {
+            representative_state_setter_count,
+            representative_native_material_binding_commands,
+            representative_state_setter_count,
+            representative_state_setter_count,
+            representative_logical_draw_requests,
+        });
+    result.workload_evidence = command_workload_evidence{
+        representative_object_count,
+        representative_logical_draw_requests,
+        representative_logical_material_binding_requests,
+        representative_logical_draw_requests,
+        representative_native_material_binding_commands,
+        representative_command_list_count,
+        representative_command_list_count,
+        representative_native_barrier_commands,
+        representative_worker_count,
+        "single-call-per-draw",
+    };
+    return result;
+}
 
 workload_run run_empty_submit(
     d3d12_context& context,
@@ -887,7 +1577,8 @@ workload_run run_draw(
         1,
         1,
         config.draw_count};
-    return complete_workload(config, kind, config.draw_count, static_cast<int>(barriers.size()),
+    const int barrier_count = static_cast<int>(barriers.size());
+    return complete_workload(config, kind, config.draw_count, barrier_count,
         std::move(samples), std::move(calibrations), output_hash, shader_manifest,
         std::move(barriers), setters);
 }
@@ -1210,11 +1901,12 @@ workload_run run_three_queue_present(
         {7, "TextureBarrier", 7, 1, std::nullopt},
         {8, "TextureBarrier", 8, 1, std::nullopt},
         {9, "TextureBarrier", 9, 1, std::nullopt}};
+    const int barrier_count = static_cast<int>(barriers.size());
     return complete_workload(
         config,
         workload_kind::three_queue_present,
         1,
-        static_cast<int>(barriers.size()),
+        barrier_count,
         std::move(samples),
         std::move(calibrations),
         output_hash,
@@ -1427,6 +2119,12 @@ std::int64_t establish_scheduling(const configuration& config)
     DWORD_PTR system_mask = 0;
     if (!GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask) || process_mask == 0)
         throw std::runtime_error("GetProcessAffinityMask failed.");
+    if (config.selected_profile == profile::representative)
+    {
+        if (!SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
+            throw std::runtime_error("Representative-frame high-priority policy could not be established.");
+        return static_cast<std::int64_t>(process_mask);
+    }
     const DWORD_PTR selected = std::bit_floor(process_mask);
     const bool affinity_set = SetProcessAffinityMask(GetCurrentProcess(), selected) != FALSE;
     const bool priority_set = SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS) != FALSE;
@@ -1472,6 +2170,25 @@ process_run run_native_d3d12(const configuration& config)
     }
     const std::string shader_manifest = sha256_file(config.shader_directory / "manifest.json");
     std::vector<workload_run> workloads;
+    if (config.selected_profile == profile::representative)
+    {
+        workloads.reserve(2);
+        workloads.push_back(run_representative_frame(
+            context,
+            config,
+            shader_manifest,
+            workload_kind::representative_frame_serial));
+        workloads.push_back(run_representative_frame(
+            context,
+            config,
+            shader_manifest,
+            workload_kind::representative_frame_parallel));
+        return {
+            disposition::functional_only,
+            "The public-source representative native C++ CPU frame workloads executed without Queue submission.",
+            std::move(environment),
+            std::move(workloads)};
+    }
     workloads.reserve(config.selected_profile == profile::diagnostic ? 3 : 6);
     if (config.selected_profile != profile::diagnostic)
         workloads.push_back(run_empty_submit(context, config, shader_manifest));

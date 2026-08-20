@@ -3,7 +3,7 @@ namespace SomeEngine.Graphics.Benchmarks.Tests;
 public sealed class BenchmarkGateTests
 {
     [Fact]
-    public void FixedScheduleBalancesTheFirstFourRoundsAndRecordsTheCanonicalFifth()
+    public void FixedScheduleBalancesTheFirstLatinSquareAndRecordsTheCanonicalFifth()
     {
         Assert.Equal(FixedGraphicsProtocol.ProcessCount, FixedGraphicsProtocol.InterleavedRounds.Length);
         for (int processIndex = 0; processIndex < FixedGraphicsProtocol.ProcessCount; processIndex++)
@@ -16,7 +16,7 @@ public sealed class BenchmarkGateTests
         {
             Assert.Equal(
                 FixedGraphicsProtocol.Variants.Order(),
-                FixedGraphicsProtocol.InterleavedRounds[..4]
+                FixedGraphicsProtocol.InterleavedRounds[..FixedGraphicsProtocol.Variants.Length]
                     .Select(round => round[position])
                     .Order());
         }
@@ -38,7 +38,7 @@ public sealed class BenchmarkGateTests
     }
 
     [Fact]
-    public void FastDiagnosticRecordsFourLatinSquareRoundsAndOnlyDrawWorkloads()
+    public void FastDiagnosticRecordsAThreeReceiverLatinSquareAndOnlyDrawWorkloads()
     {
         ProtocolSnapshot snapshot = GateTestData.DiagnosticProtocol;
 
@@ -47,7 +47,7 @@ public sealed class BenchmarkGateTests
         {
             Assert.Equal(
                 FixedGraphicsProtocol.Variants.Order(),
-                snapshot.InterleavedRounds
+                snapshot.InterleavedRounds[..FixedGraphicsProtocol.Variants.Length]
                     .Select(round => Enum.Parse<ReceiverVariant>(round[position]))
                     .Order());
         }
@@ -184,13 +184,153 @@ public sealed class BenchmarkGateTests
     }
 
     [Fact]
+    public void ProbeEvaluationIsNormalizedAndNeverPassesCertification()
+    {
+        GraphicsWorkload[] workloads = [GraphicsWorkload.StateSuppression10000];
+        ProcessRun interfaceReceiver = GateTestData.CreateProbeRun(
+            ReceiverVariant.InterfaceReceiver,
+            workloads,
+            cpuMicroseconds: 2);
+        ProcessRun direct = GateTestData.CreateProbeRun(
+            ReceiverVariant.DirectSilk,
+            workloads,
+            cpuMicroseconds: 3);
+        ProcessGateEvidence[] evidence =
+        [
+            ProcessGateEvidence.Create(interfaceReceiver, position: 0),
+            ProcessGateEvidence.Create(direct, position: 1),
+        ];
+
+        GateResult result = BenchmarkController.EvaluateProbe(
+            evidence,
+            workloads,
+            FixedGraphicsProtocol.ProbeDrawCount,
+            FixedGraphicsProtocol.ProbeBarrierCount);
+
+        Assert.Equal(RunDisposition.FunctionalOnly, result.Disposition);
+        Assert.NotEqual(RunDisposition.Passed, result.Disposition);
+        Assert.Contains(result.Issues, issue => issue.Code == "RHI-PROBE-NON-GATING");
+        ComparisonResult comparison = Assert.Single(result.Comparisons);
+        Assert.Equal("CPU us/call", comparison.Metric);
+        Assert.Equal(0.001, comparison.DeltaMicroseconds, precision: 12);
+        Assert.False(comparison.Passed);
+    }
+
+    [Fact]
+    public void ProbeEvaluateAdmitsCustomVariantOrderAndRejectsManifestOrderMismatch()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            $"someengine-graphics-probe-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            ReceiverVariant[] variants =
+            [
+                ReceiverVariant.InterfaceReceiver,
+                ReceiverVariant.DirectSilk,
+            ];
+            GraphicsWorkload[] workloads = [GraphicsWorkload.TransientDraw10000];
+            ProtocolSnapshot protocol = ProtocolSnapshot.Create(
+                BenchmarkProfile.DeveloperProbe,
+                FixedGraphicsProtocol.ProbeWarmupFrames,
+                FixedGraphicsProtocol.ProbeMeasuredFrames,
+                processCount: 1,
+                FixedGraphicsProtocol.ProbeDrawCount,
+                FixedGraphicsProtocol.ProbeBarrierCount,
+                workloads,
+                variants);
+            var rawEvidence = new RawProcessEvidence[variants.Length];
+            for (int position = 0; position < variants.Length; position++)
+            {
+                ProcessRun run = GateTestData.CreateProbeRun(
+                    variants[position],
+                    workloads,
+                    cpuMicroseconds: position + 1);
+                string rawPath = Path.Combine(directory, $"probe-{position}.json");
+                GraphicsBenchmarkReport.WriteProcess(rawPath, run);
+                rawEvidence[position] = new RawProcessEvidence(
+                    Path.GetFileName(rawPath),
+                    BenchmarkEnvironment.Sha256File(rawPath),
+                    variants[position],
+                    ProcessIndex: 0,
+                    Position: position);
+            }
+
+            string reportPath = Path.Combine(directory, "probe-report.json");
+            GraphicsBenchmarkReport report = new(
+                FixedGraphicsProtocol.Schema,
+                BenchmarkProfile.DeveloperProbe,
+                RunDisposition.FunctionalOnly,
+                "stored probe gate is not trusted",
+                DateTimeOffset.UnixEpoch,
+                DateTimeOffset.UnixEpoch,
+                protocol,
+                rawEvidence,
+                new GateResult(RunDisposition.Passed, "must be recomputed", [], [], []));
+            report.Write(reportPath);
+            BenchmarkOptions options = BenchmarkOptions.Parse(["evaluate", "--input", reportPath]);
+
+            Assert.Equal(0, BenchmarkController.EvaluateExisting(options));
+
+            string[][] reversed = protocol.InterleavedRounds
+                .Select(static round => round.Reverse().ToArray())
+                .ToArray();
+            (report with { Protocol = protocol with { InterleavedRounds = reversed } }).Write(reportPath);
+            Assert.Equal(3, BenchmarkController.EvaluateExisting(options));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResumeShapeRequiresExactCustomWorkloadOrderingAndCounts()
+    {
+        GraphicsWorkload[] selected =
+        [
+            GraphicsWorkload.StateSuppression10000,
+            GraphicsWorkload.EmptySubmit,
+        ];
+        ProcessRun run = GateTestData.CreateProbeRun(
+            ReceiverVariant.InterfaceReceiver,
+            selected,
+            cpuMicroseconds: 1);
+
+        Assert.True(BenchmarkController.HasReusableProtocolShape(
+            run,
+            BenchmarkProfile.DeveloperProbe,
+            FixedGraphicsProtocol.ProbeWarmupFrames,
+            FixedGraphicsProtocol.ProbeMeasuredFrames,
+            FixedGraphicsProtocol.ProbeDrawCount,
+            FixedGraphicsProtocol.ProbeBarrierCount,
+            selected));
+        Assert.False(BenchmarkController.HasReusableProtocolShape(
+            run,
+            BenchmarkProfile.DeveloperProbe,
+            FixedGraphicsProtocol.ProbeWarmupFrames,
+            FixedGraphicsProtocol.ProbeMeasuredFrames,
+            FixedGraphicsProtocol.ProbeDrawCount,
+            FixedGraphicsProtocol.ProbeBarrierCount,
+            [.. selected.Reverse()]));
+        Assert.False(BenchmarkController.HasReusableProtocolShape(
+            run,
+            BenchmarkProfile.DeveloperProbe,
+            FixedGraphicsProtocol.ProbeWarmupFrames,
+            FixedGraphicsProtocol.ProbeMeasuredFrames,
+            FixedGraphicsProtocol.ProbeDrawCount + 1,
+            FixedGraphicsProtocol.ProbeBarrierCount,
+            selected));
+    }
+
+    [Fact]
     public void CompleteWarpEvidenceIsFunctionalOnlyAndHasNoPerformanceComparisons()
     {
         ProcessRun[] runs = GateTestData.ValidWarpRuns();
         runs[0] = GateTestData.WithCpu(runs[0], 1_000_000);
         runs[1] = GateTestData.WithCpu(runs[1], 0.001);
         runs[2] = GateTestData.WithCpu(runs[2], 0.001);
-        runs[3] = GateTestData.WithCpu(runs[3], 0.001);
 
         GateResult result = BenchmarkGate.Evaluate(
             BenchmarkProfile.WarpFunctional,
@@ -218,9 +358,9 @@ public sealed class BenchmarkGateTests
         Assert.Equal(6, result.Diagnostics.Length);
         Assert.All(result.Diagnostics, diagnostic =>
         {
-            Assert.Equal(4, diagnostic.PositionEffectsPercent.Length);
-            Assert.Equal(4, diagnostic.RoundEffectsPercent.Length);
-            Assert.Equal(4, diagnostic.VariantEffectsPercent.Length);
+            Assert.Equal(FixedGraphicsProtocol.Variants.Length, diagnostic.PositionEffectsPercent.Length);
+            Assert.Equal(FixedGraphicsProtocol.DiagnosticProcessCount, diagnostic.RoundEffectsPercent.Length);
+            Assert.Equal(FixedGraphicsProtocol.Variants.Length, diagnostic.VariantEffectsPercent.Length);
             Assert.True(double.IsFinite(diagnostic.PositionSpreadPercent));
             Assert.True(double.IsFinite(diagnostic.RoundSpreadPercent));
             Assert.True(double.IsFinite(diagnostic.VariantSpreadPercent));
@@ -251,7 +391,7 @@ public sealed class BenchmarkGateTests
         GateResult result = BenchmarkGate.Evaluate(
             BenchmarkProfile.WarpFunctional,
             GateTestData.WarpProtocol,
-            GateTestData.ValidWarpRuns()[..3]);
+            GateTestData.ValidWarpRuns()[..^1]);
 
         Assert.Equal(RunDisposition.Failed, result.Disposition);
         Assert.Contains(result.Issues, issue =>
@@ -262,7 +402,10 @@ public sealed class BenchmarkGateTests
     public void UnexecutedReceiverNeverCountsAsEvidence()
     {
         ProcessRun[] runs = GateTestData.ValidWarpRuns();
-        runs[3] = runs[3] with
+        int nativeIndex = Array.FindIndex(
+            runs,
+            static run => run.Variant == ReceiverVariant.NativeCpp);
+        runs[nativeIndex] = runs[nativeIndex] with
         {
             Disposition = RunDisposition.Unexecuted,
             Reason = "native executable missing",
@@ -300,9 +443,12 @@ public sealed class BenchmarkGateTests
     public void CrossReceiverOutputMismatchFailsClosed()
     {
         ProcessRun[] runs = GateTestData.ValidWarpRuns();
-        WorkloadRun workload = runs[3].Workloads[1];
-        runs[3] = GateTestData.ReplaceWorkload(
-            runs[3],
+        int nativeIndex = Array.FindIndex(
+            runs,
+            static run => run.Variant == ReceiverVariant.NativeCpp);
+        WorkloadRun workload = runs[nativeIndex].Workloads[1];
+        runs[nativeIndex] = GateTestData.ReplaceWorkload(
+            runs[nativeIndex],
             workload with { OutputSha256 = "DIFFERENT" });
 
         GateResult result = BenchmarkGate.Evaluate(
@@ -331,24 +477,21 @@ public sealed class BenchmarkGateTests
     }
 
     [Fact]
-    public void StateSuppressionMustRetainDrawsAndSuppressNativeSetters()
+    public void StateSuppressionMustRetainItsDeclaredDrawCount()
     {
         ProcessRun[] runs = GateTestData.ValidWarpRuns();
         WorkloadRun workload = runs[1].Workloads.Single(value =>
             value.Workload == GraphicsWorkload.StateSuppression10000);
         runs[1] = GateTestData.ReplaceWorkload(
             runs[1],
-            workload with
-            {
-                NativeSetters = workload.NativeSetters with { PipelineSetters = 2 },
-            });
+            workload with { DrawCount = workload.DrawCount - 1 });
 
         GateResult result = BenchmarkGate.Evaluate(
             BenchmarkProfile.WarpFunctional,
             GateTestData.WarpProtocol,
             runs);
 
-        Assert.Contains(result.Issues, issue => issue.Code == "RHI-EVID-STATE-SUPPRESSION");
+        Assert.Contains(result.Issues, issue => issue.Code == "RHI-EVID-DRAW-COUNT");
     }
 
     [Fact]
@@ -446,9 +589,12 @@ public sealed class BenchmarkGateTests
     public void MissingDriverIdentityFailsClosed()
     {
         ProcessRun[] runs = GateTestData.ValidWarpRuns();
-        runs[3] = runs[3] with
+        int nativeIndex = Array.FindIndex(
+            runs,
+            static run => run.Variant == ReceiverVariant.NativeCpp);
+        runs[nativeIndex] = runs[nativeIndex] with
         {
-            Environment = runs[3].Environment with { DriverVersion = "unavailable" },
+            Environment = runs[nativeIndex].Environment with { DriverVersion = "unavailable" },
         };
 
         GateResult result = BenchmarkGate.Evaluate(
@@ -486,6 +632,28 @@ internal static class GateTestData
             .SelectMany(processIndex => FixedGraphicsProtocol.Variants.Select(
                 variant => CreateDiagnosticRun(variant, processIndex)))
             .ToArray();
+
+    internal static ProcessRun CreateProbeRun(
+        ReceiverVariant variant,
+        GraphicsWorkload[] workloads,
+        double cpuMicroseconds)
+    {
+        WorkloadRun[] results = workloads
+            .Select(workload => CreateProbeWorkload(workload, cpuMicroseconds))
+            .ToArray();
+        return new ProcessRun(
+            variant,
+            RunDisposition.FunctionalOnly,
+            "developer probe",
+            CreateEnvironment() with
+            {
+                AdapterName = "Test Hardware Adapter",
+                VendorId = 1,
+                DeviceId = 2,
+                HardwareAccelerated = true,
+            },
+            results);
+    }
 
     internal static ProcessRun WithCpu(ProcessRun run, double microseconds)
     {
@@ -554,12 +722,57 @@ internal static class GateTestData
             MeasuredFrames = FixedGraphicsProtocol.DiagnosticMeasuredFrames,
             DrawCount = FixedGraphicsProtocol.DiagnosticDrawCount,
             Samples = samples,
-            NativeSetters = baseline.NativeSetters with
-            {
-                DrawCalls = FixedGraphicsProtocol.DiagnosticDrawCount,
-            },
             Cpu = MetricDistribution.From(samples.Select(static value => value.CpuMicroseconds).ToArray()),
             Gpu = MetricDistribution.From(samples.Select(static value => value.GpuMicroseconds!.Value).ToArray()),
+        };
+    }
+
+    private static WorkloadRun CreateProbeWorkload(
+        GraphicsWorkload workload,
+        double cpuMicroseconds)
+    {
+        WorkloadRun baseline = CreateWorkload(workload);
+        FrameSample[] samples = Enumerable
+            .Range(0, FixedGraphicsProtocol.ProbeMeasuredFrames)
+            .Select(index => new FrameSample(
+                index,
+                100,
+                cpuMicroseconds,
+                workload == GraphicsWorkload.EmptySubmit ? null : cpuMicroseconds,
+                0,
+                0,
+                checked((ulong)index + 1)))
+            .ToArray();
+        int drawCount = workload switch
+        {
+            GraphicsWorkload.PersistentDraw10000 or
+            GraphicsWorkload.TransientDraw10000 or
+            GraphicsWorkload.StateSuppression10000 => FixedGraphicsProtocol.ProbeDrawCount,
+            GraphicsWorkload.ThreeQueuePresent => 1,
+            _ => 0,
+        };
+        int barrierCount = workload switch
+        {
+            GraphicsWorkload.ExplicitBarrier4096 => FixedGraphicsProtocol.ProbeBarrierCount,
+            GraphicsWorkload.PersistentDraw10000 or
+            GraphicsWorkload.TransientDraw10000 or
+            GraphicsWorkload.StateSuppression10000 => 2,
+            GraphicsWorkload.ThreeQueuePresent => 10,
+            _ => 0,
+        };
+        return baseline with
+        {
+            Reason = "developer probe",
+            WarmupFrames = FixedGraphicsProtocol.ProbeWarmupFrames,
+            MeasuredFrames = FixedGraphicsProtocol.ProbeMeasuredFrames,
+            DrawCount = drawCount,
+            BarrierCount = barrierCount,
+            Samples = samples,
+            OutputSha256 = $"probe-hash-{workload}",
+            Cpu = MetricDistribution.From(samples.Select(static value => value.CpuMicroseconds).ToArray()),
+            Gpu = workload == GraphicsWorkload.EmptySubmit
+                ? null
+                : MetricDistribution.From(samples.Select(static value => value.GpuMicroseconds!.Value).ToArray()),
         };
     }
 
@@ -601,15 +814,6 @@ internal static class GateTestData
                 .ToArray(),
             _ => [],
         };
-        NativeSetterEvidence setters = workload switch
-        {
-            GraphicsWorkload.PersistentDraw10000 => new(1, 1, 1, 1, drawCount),
-            GraphicsWorkload.TransientDraw10000 => new(1, 0, 1, 1, drawCount),
-            GraphicsWorkload.StateSuppression10000 => new(1, 1, 1, 1, drawCount),
-            GraphicsWorkload.ExplicitBarrier4096 => new(1, 0, 0, 0, 0),
-            GraphicsWorkload.ThreeQueuePresent => new(1, 1, 1, 1, 1),
-            _ => default,
-        };
         return new WorkloadRun(
             workload,
             RunDisposition.FunctionalOnly,
@@ -623,7 +827,6 @@ internal static class GateTestData
             $"hash-{workload}",
             "shared-shader",
             barriers,
-            setters,
             MetricDistribution.From(samples.Select(static sample => sample.CpuMicroseconds).ToArray()),
             workload == GraphicsWorkload.EmptySubmit
                 ? null

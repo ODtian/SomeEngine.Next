@@ -22,6 +22,13 @@ internal static class BenchmarkEnvironment
             long available = process.ProcessorAffinity.ToInt64();
             if (available == 0)
                 return new SchedulingResult(false, "The process has no available CPU affinity bits.");
+            if (profile == BenchmarkProfile.RepresentativeCpuFrame)
+            {
+                process.PriorityClass = ProcessPriorityClass.High;
+                return new SchedulingResult(
+                    true,
+                    $"Retained multicore affinity 0x{available:X} at High priority for representative parallel recording.");
+            }
             long selected = SelectHighestAffinityBit(available);
             process.ProcessorAffinity = new nint(selected);
             process.PriorityClass = ProcessPriorityClass.High;
@@ -87,7 +94,12 @@ internal static class BenchmarkEnvironment
                     Environment.GetEnvironmentVariable("BUILD_SOURCEVERSION") ??
                     "unknown",
                 !string.IsNullOrWhiteSpace(ReadGit("status --porcelain")),
-                toolchain));
+                toolchain,
+#if SOMEENGINE_RHI_BENCHMARK_TIMING
+                "native-close"));
+#else
+                "public-end-return"));
+#endif
     }
 
     internal static RuntimeEnvironment Unavailable(int processIndex, string toolchain = "unavailable") => new(
@@ -164,7 +176,16 @@ internal static class BenchmarkEnvironment
         {
             return Path.GetFullPath(processPath);
         }
-        return Path.GetFullPath(Assembly.GetExecutingAssembly().Location);
+        string managedEntry = Path.Combine(
+            AppContext.BaseDirectory,
+            "SomeEngine.Graphics.Benchmarks.dll");
+        if (File.Exists(managedEntry))
+            return Path.GetFullPath(managedEntry);
+        if (!string.IsNullOrWhiteSpace(processPath))
+            return Path.GetFullPath(processPath);
+        return Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "SomeEngine.Graphics.Benchmarks.exe"));
     }
 
     private static long ReadAffinity(Process process)

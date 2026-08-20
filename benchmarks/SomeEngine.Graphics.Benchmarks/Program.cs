@@ -14,6 +14,7 @@ internal static class Program
                 BenchmarkCommand.Certify => BenchmarkController.RunCertification(options),
                 BenchmarkCommand.Worker => BenchmarkWorker.Run(options),
                 BenchmarkCommand.Evaluate => BenchmarkController.EvaluateExisting(options),
+                BenchmarkCommand.Probe => BenchmarkController.RunProbe(options),
                 _ => throw new ArgumentOutOfRangeException(nameof(options.Command)),
             };
         }
