@@ -1750,6 +1750,16 @@ public sealed partial class ValidationLayer
         if (!_pipelineBindingStates.TryGetValue(
                 description.Pipeline, out PipelineBindingValidationState? pipelineBindings))
             Reject("Ownership", "The shader table Pipeline has no binding validation state.", table.Label);
+        if (!update.Resources.IsEmpty &&
+            (!Backend.TryGetCapability(table.Device, out RayTracing? rayTracing) ||
+             rayTracing is null ||
+             !rayTracing.ShaderRecordResourceBindings))
+        {
+            Reject(
+                "RayTracing",
+                "The Device shader-record ABI does not support opaque resource bindings.",
+                table.Label);
+        }
         ValidateRayTracingRecordCounts(description, update, table.Label);
         ValidateRayTracingRecords(
             pipeline,

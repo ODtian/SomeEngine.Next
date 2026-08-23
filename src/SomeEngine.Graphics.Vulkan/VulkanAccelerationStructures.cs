@@ -197,6 +197,13 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanBuffer buffer = RequireBuffer(device, destination.Buffer, nameof(destination));
         BufferRange range = destination.Range.Resolve(buffer.Info.Size);
+        if ((buffer.Info.Usages & BufferUsages.CopyDestination) == 0 ||
+            ((buffer.DeviceAddress + range.Offset) & 255) != 0)
+        {
+            throw new ArgumentException(
+                "Serialized acceleration-structure storage requires CopyDestination usage and 256-byte address alignment.",
+                nameof(destination));
+        }
         VulkanAccelerationStructure structure = RequireAccelerationStructure(device, source, nameof(source));
         command.Capture(buffer);
         command.Capture(structure);
@@ -224,6 +231,13 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanBuffer buffer = RequireBuffer(device, source.Buffer, nameof(source));
         BufferRange range = source.Range.Resolve(buffer.Info.Size);
+        if ((buffer.Info.Usages & BufferUsages.CopySource) == 0 ||
+            ((buffer.DeviceAddress + range.Offset) & 255) != 0)
+        {
+            throw new ArgumentException(
+                "Serialized acceleration-structure input requires CopySource usage and 256-byte address alignment.",
+                nameof(source));
+        }
         VulkanAccelerationStructure structure = RequireAccelerationStructure(device, destination, nameof(destination));
         command.Capture(buffer);
         command.Capture(structure);
@@ -253,7 +267,8 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice device = RequireRayTracingDevice(command.Device);
         VulkanAccelerationStructure structure = RequireAccelerationStructure(device, source, nameof(source));
         VulkanBuffer buffer = RequireBuffer(device, destination, nameof(destination));
-        if (destinationOffset > buffer.Info.Size - Math.Min(buffer.Info.Size, 8) ||
+        if ((buffer.Info.Usages & BufferUsages.QueryResolve) == 0 ||
+            destinationOffset > buffer.Info.Size - Math.Min(buffer.Info.Size, 8) ||
             (destinationOffset & 7) != 0)
             throw new ArgumentOutOfRangeException(nameof(destinationOffset));
         var query = new VulkanAccelerationStructurePropertyQuery(device, ToNative(type));

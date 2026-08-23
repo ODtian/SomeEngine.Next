@@ -128,13 +128,33 @@ internal static unsafe class VulkanFormats
         {
             SType = StructureType.PhysicalDeviceMaintenance4Properties,
         };
+        PhysicalDeviceDescriptorIndexingProperties descriptorIndexing = new()
+        {
+            SType = StructureType.PhysicalDeviceDescriptorIndexingProperties,
+            PNext = &maintenance4,
+        };
         PhysicalDeviceProperties2 properties2 = new()
         {
             SType = StructureType.PhysicalDeviceProperties2,
-            PNext = &maintenance4,
+            PNext = &descriptorIndexing,
         };
         vk.GetPhysicalDeviceProperties2(physicalDevice, &properties2);
         PhysicalDeviceLimits limits = properties2.Properties.Limits;
+        const uint bindlessHeapTypeCount = 9;
+        uint allPoolShare = descriptorIndexing.MaxUpdateAfterBindDescriptorsInAllPools /
+            bindlessHeapTypeCount;
+        uint resourceDescriptorCapacity = MinPositive(
+            1_000_000,
+            allPoolShare,
+            descriptorIndexing.MaxDescriptorSetUpdateAfterBindUniformBuffers,
+            descriptorIndexing.MaxDescriptorSetUpdateAfterBindStorageBuffers,
+            descriptorIndexing.MaxDescriptorSetUpdateAfterBindSampledImages,
+            descriptorIndexing.MaxDescriptorSetUpdateAfterBindStorageImages,
+            extendedFeatures.MaximumDescriptorSetUpdateAfterBindAccelerationStructures);
+        uint samplerDescriptorCapacity = MinPositive(
+            1_000_000,
+            allPoolShare,
+            descriptorIndexing.MaxDescriptorSetUpdateAfterBindSamplers);
         DeviceLimits deviceLimits = new(
             maintenance4.MaxBufferSize,
             limits.MaxImageDimension1D,
@@ -143,8 +163,8 @@ internal static unsafe class VulkanFormats
             limits.MaxImageArrayLayers,
             limits.MaxColorAttachments,
             limits.MaxViewports,
-            Math.Min(limits.MaxDescriptorSetSampledImages, 1_000_000u),
-            limits.MaxDescriptorSetSamplers,
+            resourceDescriptorCapacity,
+            samplerDescriptorCapacity,
             checked((uint)Math.Min(limits.MinUniformBufferOffsetAlignment, uint.MaxValue)),
             checked((uint)Math.Max(limits.OptimalBufferCopyRowPitchAlignment, 1)),
             checked((uint)Math.Max(limits.OptimalBufferCopyOffsetAlignment, 1)));
@@ -152,7 +172,12 @@ internal static unsafe class VulkanFormats
         RhiFormat[] formats = Enum.GetValues<RhiFormat>();
         FormatSupport[] support = new FormatSupport[formats.Length];
         for (int index = 0; index < formats.Length; index++)
-            support[index] = QueryFormat(vk, physicalDevice, formats[index], nativeFeatures);
+            support[index] = QueryFormat(
+                vk,
+                physicalDevice,
+                formats[index],
+                nativeFeatures,
+                extendedFeatures.TransformFeedback);
 
         DynamicStates dynamicStates =
             DynamicStates.Viewport |
@@ -170,18 +195,30 @@ internal static unsafe class VulkanFormats
             deviceLimits,
             supportsBundles: false,
             supportsPipelineStatistics: nativeFeatures.PipelineStatisticsQuery,
-            supportsStreamOutputStatistics: extendedFeatures.TransformFeedback,
+            supportsStreamOutputStatistics:
+                extendedFeatures.TransformFeedback &&
+                extendedFeatures.TransformFeedbackQueries,
             supportsDepthBounds: nativeFeatures.DepthBounds,
             dynamicStates,
             support,
             ShaderTarget.Spirv);
     }
 
+    private static uint MinPositive(params uint[] values)
+    {
+        uint result = uint.MaxValue;
+        foreach (uint value in values)
+            if (value != 0 && value < result)
+                result = value;
+        return result == uint.MaxValue ? 0 : result;
+    }
+
     private static FormatSupport QueryFormat(
         Vk vk,
         VkPhysicalDevice physicalDevice,
         RhiFormat format,
-        in PhysicalDeviceFeatures nativeFeatures)
+        in PhysicalDeviceFeatures nativeFeatures,
+        bool transformFeedback)
     {
         VkFormat native = ToNative(format);
         FormatProperties properties;
@@ -195,8 +232,13 @@ internal static unsafe class VulkanFormats
             features |= FormatFeatures.VertexBuffer;
         if (format is RhiFormat.R16UInt or RhiFormat.R32UInt)
             features |= FormatFeatures.IndexBuffer;
+        if (transformFeedback && IsTransformFeedbackFormat(format))
+            features |= FormatFeatures.StreamOutput;
         if ((optimal & FormatFeatureFlags.SampledImageBit) != 0)
             features |= FormatFeatures.ShaderLoad | FormatFeatures.ShaderSample;
+        if (IsDepthStencil(format) &&
+            (features & FormatFeatures.ShaderSample) != 0)
+            features |= FormatFeatures.ShaderSampleComparison;
         if ((optimal & FormatFeatureFlags.SampledImageFilterLinearBit) != 0)
             features |= FormatFeatures.Mipmaps;
         if ((optimal & FormatFeatureFlags.ColorAttachmentBit) != 0)
@@ -228,13 +270,7 @@ internal static unsafe class VulkanFormats
             features |= FormatFeatures.Texture3D;
             sampleCounts |= ToSampleCounts(threeDimensional.SampleCounts);
         }
-        if ((sampleCounts & ~SampleCounts.One) != 0 &&
-            (features & FormatFeatures.ColorAttachment) != 0)
-        {
-            features |= FormatFeatures.MultisampleColorAttachment |
-                FormatFeatures.MultisampleLoad |
-                FormatFeatures.MultisampleResolve;
-        }
+        features = AddMultisampleFeatures(features, sampleCounts);
         SampleCounts sparseSampleCounts = SampleCounts.None;
         if (TrySparseImage(vk, physicalDevice, native, ImageType.Type2D, out ImageFormatProperties sparse2D))
         {
@@ -248,6 +284,29 @@ internal static unsafe class VulkanFormats
         }
         return new FormatSupport(format, features, sampleCounts, sparseSampleCounts);
     }
+
+    private static FormatFeatures AddMultisampleFeatures(
+        FormatFeatures features,
+        SampleCounts sampleCounts)
+    {
+        if ((sampleCounts & ~SampleCounts.One) == 0)
+            return features;
+        if ((features & FormatFeatures.ShaderLoad) != 0)
+            features |= FormatFeatures.MultisampleLoad;
+        if ((features & FormatFeatures.ColorAttachment) != 0)
+        {
+            features |= FormatFeatures.MultisampleColorAttachment |
+                FormatFeatures.MultisampleResolve;
+        }
+        return features;
+    }
+
+    private static bool IsTransformFeedbackFormat(RhiFormat format) => format is
+        RhiFormat.R32UInt or RhiFormat.R32SInt or RhiFormat.R32Float or
+        RhiFormat.R32G32UInt or RhiFormat.R32G32SInt or RhiFormat.R32G32Float or
+        RhiFormat.R32G32B32Float or
+        RhiFormat.R32G32B32A32UInt or RhiFormat.R32G32B32A32SInt or
+        RhiFormat.R32G32B32A32Float;
 
     private static bool TrySparseImage(
         Vk vk,

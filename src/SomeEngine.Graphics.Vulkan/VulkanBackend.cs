@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace SomeEngine.Graphics.Vulkan;
@@ -32,6 +33,9 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private VkInstance _instance;
     private KhrSurface? _surfaceApi;
     private KhrWin32Surface? _win32SurfaceApi;
+    private ExtDebugUtils? _debugUtilsApi;
+    private DebugUtilsMessengerEXT _debugMessenger;
+    private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
     private int _disposed;
 
     internal VulkanBackend(in VulkanBackendOptions options = default)
@@ -44,12 +48,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
                 !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
                 throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
+            CreateDebugMessenger();
             _adapters = EnumerateAdapters();
         }
         catch
         {
             _surfaceApi?.Dispose();
             _win32SurfaceApi?.Dispose();
+            DestroyDebugMessenger();
             _vk.DestroyInstance(_instance, null);
             _instance = default;
             _vk.Dispose();
@@ -59,6 +65,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 
     internal Vk Api => _vk;
     internal VkInstance Instance => _instance;
+    internal ExtDebugUtils? DebugUtilsApi => _debugUtilsApi;
     internal ReadOnlySpan<AdapterRecord> Adapters => _adapters;
 
     internal bool TryEnumerateAdapters(
@@ -111,6 +118,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             _surfaceApi = null;
             _win32SurfaceApi?.Dispose();
             _win32SurfaceApi = null;
+            DestroyDebugMessenger();
             if (_instance.Handle != 0)
             {
                 _vk.DestroyInstance(_instance, null);
@@ -221,6 +229,63 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             FreeNames(extensionNames, extensions.Count);
             FreeNames(layerNames, layers.Length);
         }
+    }
+
+    private void CreateDebugMessenger()
+    {
+        if (!_options.EnableDebugMessages)
+            return;
+        if (!_vk.TryGetInstanceExtension(
+                _instance,
+                out ExtDebugUtils? debugUtils) ||
+            debugUtils is null)
+            return;
+        _debugUtilsApi = debugUtils;
+        _debugCallback = new PfnDebugUtilsMessengerCallbackEXT(DebugMessage);
+        DebugUtilsMessengerCreateInfoEXT createInfo = new()
+        {
+            SType = StructureType.DebugUtilsMessengerCreateInfoExt,
+            MessageSeverity =
+                DebugUtilsMessageSeverityFlagsEXT.WarningBitExt |
+                DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
+            MessageType =
+                DebugUtilsMessageTypeFlagsEXT.GeneralBitExt |
+                DebugUtilsMessageTypeFlagsEXT.ValidationBitExt |
+                DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
+            PfnUserCallback = _debugCallback,
+        };
+        ThrowIfFailed(
+            debugUtils.CreateDebugUtilsMessenger(
+                _instance,
+                &createInfo,
+                null,
+                out _debugMessenger),
+            "vkCreateDebugUtilsMessengerEXT");
+    }
+
+    private void DestroyDebugMessenger()
+    {
+        if (_debugUtilsApi is not null && _debugMessenger.Handle != 0)
+            _debugUtilsApi.DestroyDebugUtilsMessenger(_instance, _debugMessenger, null);
+        _debugMessenger = default;
+        _debugUtilsApi?.Dispose();
+        _debugUtilsApi = null;
+        _debugCallback = default;
+    }
+
+    private static uint DebugMessage(
+        DebugUtilsMessageSeverityFlagsEXT severity,
+        DebugUtilsMessageTypeFlagsEXT type,
+        DebugUtilsMessengerCallbackDataEXT* data,
+        void* userData)
+    {
+        _ = userData;
+        string message = data is null || data->PMessage is null
+            ? "Vulkan emitted an empty debug message."
+            : Marshal.PtrToStringUTF8((nint)data->PMessage) ??
+                "Vulkan emitted an invalid UTF-8 debug message.";
+        System.Diagnostics.Trace.WriteLine($"Vulkan [{severity}/{type}] {message}");
+        return Vk.False;
     }
 
     private string[] EnumerateInstanceExtensions()

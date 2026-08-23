@@ -41,12 +41,17 @@ internal sealed unsafe partial class VulkanBackend
     internal readonly record struct VulkanSpirvBindingTarget(
         uint Set,
         uint Binding,
-        string? Name = null);
+        string? Name = null,
+        uint SourceSet = uint.MaxValue)
+    {
+        internal uint LogicalSet => SourceSet == uint.MaxValue ? Set : SourceSet;
+    }
 
     private readonly record struct SpirvBindingDecoration(int ValueWord, uint Target);
 
     private readonly record struct ResolvedSpirvBinding(
         int ValueWord,
+        int SetValueWord,
         uint Target,
         uint Set,
         uint LogicalBinding,
@@ -66,6 +71,8 @@ internal sealed unsafe partial class VulkanBackend
             VariableTypes = new uint[bound];
             VariableStorageClasses = new uint[bound];
             DescriptorSets = new uint[bound];
+            DescriptorSetValueWords = new int[bound];
+            Array.Fill(DescriptorSetValueWords, -1);
             Decorations = new SpirvDecorationFlags[bound];
         }
 
@@ -75,6 +82,7 @@ internal sealed unsafe partial class VulkanBackend
         internal uint[] VariableTypes { get; }
         internal uint[] VariableStorageClasses { get; }
         internal uint[] DescriptorSets { get; }
+        internal int[] DescriptorSetValueWords { get; }
         internal SpirvDecorationFlags[] Decorations { get; }
         internal List<SpirvBindingDecoration> Bindings { get; } = [];
         internal Dictionary<uint, string> Names { get; } = [];
@@ -166,7 +174,10 @@ internal sealed unsafe partial class VulkanBackend
             if (decoration == 33 && wordCount >= 4)
                 Bindings.Add(new SpirvBindingDecoration(index + 3, words[index + 1]));
             else if (decoration == 34 && wordCount >= 4)
+            {
                 DescriptorSets[id] = words[index + 3];
+                DescriptorSetValueWords[id] = index + 3;
+            }
             else
                 Decorations[id] |= ToDecorationFlag(decoration);
         }
@@ -205,7 +216,61 @@ internal sealed unsafe partial class VulkanBackend
             bindings,
             targets);
         activeTargets = CollectActiveSpirvTargets(bindings, mappedTargets);
-        return normalized;
+        return AddSpirvAliasingDecorations(normalized, bindings, mappedTargets);
+    }
+
+    private static byte[] AddSpirvAliasingDecorations(
+        byte[] code,
+        ReadOnlySpan<ResolvedSpirvBinding> bindings,
+        ReadOnlySpan<VulkanSpirvBindingTarget> targets)
+    {
+        var aliased = new HashSet<uint>();
+        ResolvedSpirvBinding[] bindingValues = bindings.ToArray();
+        VulkanSpirvBindingTarget[] targetValues = targets.ToArray();
+        foreach (IGrouping<(uint Set, uint Binding), int> group in
+                 Enumerable.Range(0, bindingValues.Length).GroupBy(index => (
+                     targetValues[index].Set,
+                     targetValues[index].Binding)))
+        {
+            if (group.Select(index => bindingValues[index].Target).Distinct().Count() <= 1)
+                continue;
+            foreach (int index in group)
+                aliased.Add(bindingValues[index].Target);
+        }
+        if (aliased.Count == 0)
+            return code;
+        ReadOnlySpan<uint> words = MemoryMarshal.Cast<byte, uint>(code);
+        var existing = new HashSet<uint>();
+        int insertion = -1;
+        for (int index = 5; index < words.Length;)
+        {
+            uint instruction = words[index];
+            int wordCount = checked((int)(instruction >> 16));
+            uint opcode = instruction & 0xffff;
+            if (wordCount <= 0 || index > words.Length - wordCount)
+                throw InvalidSpirv("SPIR-V alias instrumentation found a malformed instruction.");
+            if (opcode == 71 && wordCount >= 3 && words[index + 2] == 20)
+                existing.Add(words[index + 1]);
+            if (insertion < 0 && opcode is >= 19 and <= 39)
+                insertion = index;
+            index += wordCount;
+        }
+        aliased.ExceptWith(existing);
+        if (aliased.Count == 0)
+            return code;
+        if (insertion < 0)
+            throw InvalidSpirv("SPIR-V has no type section for alias instrumentation.");
+        var result = new uint[checked(words.Length + aliased.Count * 3)];
+        words[..insertion].CopyTo(result);
+        int cursor = insertion;
+        foreach (uint target in aliased.Order())
+        {
+            result[cursor++] = (3u << 16) | 71u;
+            result[cursor++] = target;
+            result[cursor++] = 20;
+        }
+        words[insertion..].CopyTo(result.AsSpan(cursor));
+        return MemoryMarshal.AsBytes(result.AsSpan()).ToArray();
     }
 
     private static VulkanSpirvBindingTarget[] CollectActiveSpirvTargets(
@@ -223,7 +288,7 @@ internal sealed unsafe partial class VulkanBackend
             VulkanSpirvBindingTarget target = mappedTargets[index];
             ordered.Add((
                 target,
-                binding.LogicalBinding,
+                target.Binding,
                 binding.LogicalBinding,
                 binding.Target));
         }
@@ -263,6 +328,7 @@ internal sealed unsafe partial class VulkanBackend
                 facts.Decorations);
             result[index] = new ResolvedSpirvBinding(
                 binding.ValueWord,
+                facts.DescriptorSetValueWords[variable],
                 binding.Target,
                 facts.DescriptorSets[variable],
                 words[binding.ValueWord],
@@ -281,7 +347,7 @@ internal sealed unsafe partial class VulkanBackend
             targetGroups =
             targets.ToArray()
                 .GroupBy(static target => (
-                    target.Set,
+                    target.LogicalSet,
                     DecodeDescriptorRegisterClass(target.Binding)))
                 .ToDictionary(
                     static group => group.Key,
@@ -394,7 +460,10 @@ internal sealed unsafe partial class VulkanBackend
     {
         foreach (ResolvedSpirvBinding source in sources)
         {
+            if (source.SetValueWord < 0)
+                throw InvalidSpirv($"SPIR-V descriptor variable %{source.Target} has no DescriptorSet decoration.");
             words[source.ValueWord] = target.Binding;
+            words[source.SetValueWord] = target.Set;
             mapped.Add(source.ValueWord, target);
         }
     }

@@ -74,6 +74,15 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture nativeTexture = RequireTexture(device, texture, nameof(texture));
         if ((nativeTexture.Info.Usages & TextureUsages.ShadingRate) == 0)
             throw new ArgumentException("The Texture requires ShadingRate usage.", nameof(texture));
+        if (nativeTexture.Info.Format != RhiFormat.R8UInt ||
+            nativeTexture.Info.Dimension != TextureDimension.Texture2D ||
+            nativeTexture.Info.SampleCount != 1 ||
+            nativeTexture.Info.ArrayLayerCount != 1)
+        {
+            throw new ArgumentException(
+                "A Vulkan shading-rate image must be one-layer, single-sample R8UInt Texture2D.",
+                nameof(texture));
+        }
         ImageViewCreateInfo createInfo = new()
         {
             SType = StructureType.ImageViewCreateInfo,

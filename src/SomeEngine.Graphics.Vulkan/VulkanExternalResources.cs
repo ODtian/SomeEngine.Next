@@ -23,7 +23,7 @@ internal sealed unsafe partial class VulkanBackend
                 requirements.Size,
                 requirements.MemoryTypeBits,
                 MemoryType.DeviceLocal,
-                NeedsDeviceAddress(desc.Usages),
+                nativeDevice.SupportsBufferDeviceAddress,
                 ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
                 handle.Value);
             ThrowIfFailed(

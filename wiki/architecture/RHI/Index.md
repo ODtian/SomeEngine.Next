@@ -31,6 +31,7 @@ caller may rely on.
 - [[Presentation]] — swapchain configuration, image sequence and expected statuses.
 - [[Advanced-Capabilities]] — sparse, residency, DXR, mesh, VRS, Work Graphs and external interop.
 - [[D3D12-Backend]] — exact Direct3D 12 lowering, allocator, DRED and native access.
+- [[Vulkan-Backend]] — Vulkan 1.3 lowering, SPIR-V binding ABI and native feature mapping.
 - [[Validation-and-Evidence]] — optional validation, behavior tests and performance protocol.
 - [[Implementation]] — module boundaries and implementation invariants.
 - [[Performance-Evidence-2026-08-20]] — current three-receiver, Silk.NET-bound NativeAOT / C++ CPU-frame evidence.

@@ -401,6 +401,7 @@ internal sealed unsafe partial class VulkanBackend
                         CommandPoolResetFlags.None),
                     "vkResetCommandPool");
                 slot.ResetCaptures(desc.InitialCapturedResourceCapacity);
+                ResetRecordingState();
                 CommandBufferBeginInfo begin = new()
                 {
                     SType = StructureType.CommandBufferBeginInfo,
@@ -441,6 +442,7 @@ internal sealed unsafe partial class VulkanBackend
                 slot = _recording
                     ?? throw new InvalidOperationException("The CommandContext is not recording.");
                 _recording = null;
+                ResetRecordingState();
             }
             ReturnSlot(slot);
         }

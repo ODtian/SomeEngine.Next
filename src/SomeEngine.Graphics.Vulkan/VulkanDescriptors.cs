@@ -69,9 +69,32 @@ internal sealed unsafe partial class VulkanBackend
         DescriptorTableType type = slots.IsEmpty || slots[0].Type != ResourceBindingType.Sampler
             ? DescriptorTableType.Resource
             : DescriptorTableType.Sampler;
-        var table = VulkanDescriptorTable.Create(nativeDevice, type, slots, label);
-        nativeDevice.RegisterChild(table);
-        return table;
+        VulkanDescriptorRange range = nativeDevice.BindlessPublisher.Reserve(
+            type,
+            checked((uint)slots.Length));
+        VulkanDescriptorTable? table = null;
+        bool registered = false;
+        try
+        {
+            table = new VulkanDescriptorTable(
+                nativeDevice,
+                type,
+                range,
+                slots,
+                label);
+            nativeDevice.BindlessPublisher.Register(table);
+            registered = true;
+            nativeDevice.RegisterChild(table);
+            return table;
+        }
+        catch
+        {
+            if (registered)
+                nativeDevice.BindlessPublisher.Unregister(table!);
+            else
+                nativeDevice.BindlessPublisher.CancelReservation(type, range);
+            throw;
+        }
     }
 
     internal DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint slot)
@@ -79,7 +102,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDescriptorTable native = RequireDescriptorTable(table, nameof(table));
         if (slot >= native.Count)
             throw new ArgumentOutOfRangeException(nameof(slot));
-        return new DescriptorIndex(native, slot);
+        return new DescriptorIndex(native, checked(native.FirstIndex + slot));
     }
 
     internal void WriteDescriptor(
@@ -96,10 +119,10 @@ internal sealed unsafe partial class VulkanBackend
         uint nodeIndex = uint.MaxValue,
         CancellationToken cancellationToken = default)
     {
-        _ = RequireDevice(device, nameof(device));
+        VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         if (nodeIndex is not uint.MaxValue and not 0)
             throw new ArgumentOutOfRangeException(nameof(nodeIndex));
-        cancellationToken.ThrowIfCancellationRequested();
+        nativeDevice.BindlessPublisher.Publish(cancellationToken);
     }
 
     private VulkanDescriptorGeneration CreateDescriptorGeneration(
@@ -182,11 +205,34 @@ internal sealed unsafe partial class VulkanBackend
         in VulkanDescriptorSlot slot,
         in ResourceBinding value)
     {
-        if (value.IsNull)
-            return;
         DescriptorBufferInfo bufferInfo = default;
         DescriptorImageInfo imageInfo = default;
         VkBufferView texelView = default;
+        if (value.IsNull)
+        {
+            if (!device.ExtendedFeatures.NullDescriptor)
+                return;
+            if (slot.DescriptorType == DescriptorType.AccelerationStructureKhr)
+            {
+                WriteAccelerationStructureDescriptor(
+                    device,
+                    set,
+                    slot.Binding,
+                    slot.ArrayElement,
+                    default);
+                return;
+            }
+            WriteNativeDescriptor(
+                device,
+                set,
+                slot.Binding,
+                slot.ArrayElement,
+                slot.DescriptorType,
+                &bufferInfo,
+                &imageInfo,
+                &texelView);
+            return;
+        }
         switch (value.Value)
         {
             case VulkanAccelerationStructureSrv acceleration:
@@ -631,158 +677,123 @@ internal sealed unsafe partial class VulkanBackend
     private sealed class VulkanDescriptorTable : DescriptorTable
     {
         private readonly VulkanDevice _device;
+        private readonly VulkanDescriptorRange _range;
         private readonly ResourceBinding[] _values;
-        private VkDescriptorSetLayout _layout;
-        private VkDescriptorPool _pool;
-        private VkDescriptorSet _set;
 
-        private VulkanDescriptorTable(
+        internal VulkanDescriptorTable(
             VulkanDevice device,
             DescriptorTableType type,
+            in VulkanDescriptorRange range,
             ReadOnlySpan<DescriptorSlotDesc> slots,
             string? label)
             : base(device, type, 0, slots, label)
         {
             _device = device;
+            _range = range;
             _values = new ResourceBinding[slots.Length];
+            for (int index = 0; index < slots.Length; index++)
+                if (slots[index].Type != ResourceBindingType.Sampler)
+                    _values[index] = ResourceBinding.Null(slots[index].Type);
         }
 
-        internal static VulkanDescriptorTable Create(
-            VulkanDevice device,
-            DescriptorTableType type,
-            ReadOnlySpan<DescriptorSlotDesc> slots,
-            string? label)
-        {
-            var result = new VulkanDescriptorTable(device, type, slots, label);
-            result.CreateNative();
-            return result;
-        }
+        internal uint FirstIndex => _range.First;
+        internal VulkanDescriptorRange Range => _range;
 
         internal void Write(uint slot, in ResourceBinding value)
         {
             if (slot >= Count)
                 throw new ArgumentOutOfRangeException(nameof(slot));
-            DescriptorSlotDesc shape = GetSlotDesc(slot);
-            if (value.Type != shape.Type)
-                throw new ArgumentException($"Descriptor slot {slot} requires {shape.Type}.", nameof(value));
-            ResourceBinding previous = _values[slot];
-            if (value.Value is IVulkanRetained next)
-                next.RetainNative();
-            try
-            {
-                VulkanDescriptorSlot nativeSlot = new(
-                    value.Type,
-                    ToDescriptorType(value.Type, shape),
-                    0,
-                    BindingFor(value.Type),
-                    slot,
-                    shape,
-                    null);
-                _device.Backend.WriteResourceDescriptor(_device, _set, nativeSlot, value);
-                _values[slot] = value;
-            }
-            catch
-            {
-                if (value.Value is IVulkanRetained failedValue)
-                    failedValue.ReleaseNative();
-                throw;
-            }
-            if (previous.Value is IVulkanRetained old)
-                old.ReleaseNative();
+            ValidateTableDescriptor(
+                _device,
+                GetSlotDesc(slot),
+                value);
+            _device.BindlessPublisher.Write(this, slot, value);
+        }
+
+        internal ResourceBinding GetStagedValue(uint slot) =>
+            _values[checked((int)slot)];
+
+        internal ResourceBinding ExchangeStagedValue(
+            uint slot,
+            in ResourceBinding value)
+        {
+            ref ResourceBinding target = ref _values[checked((int)slot)];
+            ResourceBinding previous = target;
+            target = value;
+            return previous;
+        }
+
+        internal ResourceBinding[] ClearStagedValues()
+        {
+            ResourceBinding[] values = _values.ToArray();
+            Array.Clear(_values);
+            return values;
         }
 
         internal override void Release(bool fromParent)
         {
-            for (int index = _values.Length - 1; index >= 0; index--)
-                if (_values[index].Value is IVulkanRetained value)
-                    value.ReleaseNative();
-            if (_pool.Handle != 0)
-                _device.Backend.Api.DestroyDescriptorPool(_device.Native, _pool, null);
-            if (_layout.Handle != 0)
-                _device.Backend.Api.DestroyDescriptorSetLayout(_device.Native, _layout, null);
-            _set = default;
-            _pool = default;
-            _layout = default;
+            _device.BindlessPublisher.Unregister(this);
             _device.UnregisterChild(this);
         }
+    }
 
-        private void CreateNative()
+    private static void ValidateTableDescriptor(
+        VulkanDevice device,
+        in DescriptorSlotDesc shape,
+        in ResourceBinding value)
+    {
+        if (value.Type != shape.Type)
+            throw new ArgumentException($"Descriptor slot requires {shape.Type}.", nameof(value));
+        if (value.IsNull)
         {
-            ResourceBindingType[] types = Slots
-                .ToArray()
-                .Select(static slot => slot.Type)
-                .Distinct()
-                .ToArray();
-            DescriptorSetLayoutBinding[] bindings = new DescriptorSetLayoutBinding[types.Length];
-            DescriptorPoolSize[] sizes = new DescriptorPoolSize[types.Length];
-            for (int index = 0; index < types.Length; index++)
-            {
-                DescriptorSlotDesc representative = Slots.ToArray().First(slot => slot.Type == types[index]);
-                DescriptorType descriptorType = ToDescriptorType(types[index], representative);
-                bindings[index] = new DescriptorSetLayoutBinding(
-                    BindingFor(types[index]),
-                    descriptorType,
-                    Count,
-                    ShaderStageFlags.All,
-                    null);
-                sizes[index] = new DescriptorPoolSize(descriptorType, Count);
-            }
-            fixed (DescriptorSetLayoutBinding* bindingPointer = bindings)
-            fixed (DescriptorPoolSize* sizePointer = sizes)
-            {
-                DescriptorSetLayoutCreateInfo layoutInfo = new()
-                {
-                    SType = StructureType.DescriptorSetLayoutCreateInfo,
-                    BindingCount = checked((uint)bindings.Length),
-                    PBindings = bindingPointer,
-                };
-                VkDescriptorSetLayout layout = default;
-                ThrowIfFailed(
-                    _device.Backend.Api.CreateDescriptorSetLayout(_device.Native, &layoutInfo, null, &layout),
-                    "vkCreateDescriptorSetLayout(bindless table)");
-                _layout = layout;
-                DescriptorPoolCreateInfo poolInfo = new()
-                {
-                    SType = StructureType.DescriptorPoolCreateInfo,
-                    MaxSets = 1,
-                    PoolSizeCount = checked((uint)sizes.Length),
-                    PPoolSizes = sizePointer,
-                };
-                VkDescriptorPool pool = default;
-                ThrowIfFailed(
-                    _device.Backend.Api.CreateDescriptorPool(_device.Native, &poolInfo, null, &pool),
-                    "vkCreateDescriptorPool(bindless table)");
-                _pool = pool;
-                DescriptorSetAllocateInfo allocateInfo = new()
-                {
-                    SType = StructureType.DescriptorSetAllocateInfo,
-                    DescriptorPool = _pool,
-                    DescriptorSetCount = 1,
-                    PSetLayouts = &layout,
-                };
-                VkDescriptorSet set = default;
-                ThrowIfFailed(
-                    _device.Backend.Api.AllocateDescriptorSets(_device.Native, &allocateInfo, &set),
-                    "vkAllocateDescriptorSets(bindless table)");
-                _set = set;
-            }
+            if (shape.Type == ResourceBindingType.Sampler)
+                throw new ArgumentException("A Sampler descriptor cannot be null.", nameof(value));
+            return;
         }
-
-        private static uint BindingFor(ResourceBindingType type) => type switch
+        value.Value!.ThrowIfDisposed();
+        bool valid = value.Value switch
         {
-            ResourceBindingType.ConstantBuffer => 0,
-            ResourceBindingType.BufferSrv => 1,
-            ResourceBindingType.BufferUav => 2,
-            ResourceBindingType.TextureSrv => 3,
-            ResourceBindingType.TextureUav => 4,
-            ResourceBindingType.Sampler => 5,
-            ResourceBindingType.AccelerationStructure => 6,
-            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+            VulkanBufferCbv cbv =>
+                shape.Type == ResourceBindingType.ConstantBuffer &&
+                ReferenceEquals(cbv.Device, device),
+            VulkanBufferSrv srv =>
+                shape.Type == ResourceBindingType.BufferSrv &&
+                ReferenceEquals(srv.Device, device) &&
+                srv.Description.Format == shape.Format &&
+                srv.Description.StructureStride == shape.StructureStride,
+            VulkanBufferUav uav =>
+                shape.Type == ResourceBindingType.BufferUav &&
+                ReferenceEquals(uav.Device, device) &&
+                uav.Description.Format == shape.Format &&
+                uav.Description.StructureStride == shape.StructureStride &&
+                (uav.Description.CounterBuffer is not null) == shape.HasCounter,
+            VulkanTextureSrv srv =>
+                shape.Type == ResourceBindingType.TextureSrv &&
+                ReferenceEquals(srv.Device, device) &&
+                srv.Description.Format == shape.Format &&
+                srv.Description.Dimension == shape.TextureDimension &&
+                srv.Description.Range.Aspects == shape.Aspects,
+            VulkanTextureUav uav =>
+                shape.Type == ResourceBindingType.TextureUav &&
+                ReferenceEquals(uav.Device, device) &&
+                uav.Description.Format == shape.Format &&
+                uav.Description.Dimension == shape.TextureDimension &&
+                uav.Description.Range.Aspects == shape.Aspects,
+            VulkanSampler sampler =>
+                shape.Type == ResourceBindingType.Sampler &&
+                ReferenceEquals(sampler.Device, device),
+            VulkanAccelerationStructureSrv acceleration =>
+                shape.Type == ResourceBindingType.AccelerationStructure &&
+                ReferenceEquals(acceleration.Device, device),
+            _ => false,
         };
+        if (!valid)
+            throw new ArgumentException("The descriptor value does not match the Vulkan table slot shape.", nameof(value));
+    }
 
-        private static DescriptorType ToDescriptorType(
-            ResourceBindingType type,
-            in DescriptorSlotDesc shape) => type switch
+    private static DescriptorType ToDescriptorType(
+        ResourceBindingType type,
+        in DescriptorSlotDesc shape) => type switch
         {
             ResourceBindingType.ConstantBuffer => DescriptorType.UniformBuffer,
             ResourceBindingType.BufferSrv => shape.Format.HasValue
@@ -794,8 +805,8 @@ internal sealed unsafe partial class VulkanBackend
             ResourceBindingType.TextureSrv => DescriptorType.SampledImage,
             ResourceBindingType.TextureUav => DescriptorType.StorageImage,
             ResourceBindingType.Sampler => DescriptorType.Sampler,
-            ResourceBindingType.AccelerationStructure => DescriptorType.AccelerationStructureKhr,
+            ResourceBindingType.AccelerationStructure =>
+                DescriptorType.AccelerationStructureKhr,
             _ => throw new ArgumentOutOfRangeException(nameof(type)),
         };
-    }
 }

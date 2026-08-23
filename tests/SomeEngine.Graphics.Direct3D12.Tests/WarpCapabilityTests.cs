@@ -183,6 +183,7 @@ public sealed class WarpCapabilityTests
         Assert.Equal(536_870_912U, rays.MaximumPrimitivesPerBottomLevel);
         Assert.Equal(1_073_741_824U, rays.MaximumRayGenerationShaderThreads);
         Assert.Equal(4_096U, rays.MaximumShaderRecordStride);
+        Assert.True(rays.ShaderRecordResourceBindings);
 
         Assert.True(backend.TryGetCapability(device, out MeshShaders? mesh));
         Assert.NotNull(mesh);

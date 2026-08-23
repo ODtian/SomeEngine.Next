@@ -160,6 +160,14 @@ internal sealed unsafe partial class VulkanBackend
             PipelineRasterizationStateCreateInfo rasterization = CreateRasterization(
                 desc.Rasterizer,
                 desc.DynamicStates);
+            var conservative = CreateConservativeRasterizationState();
+            if (desc.Rasterizer.ConservativeRasterization)
+            {
+                if (!device.ExtendedFeatures.ConservativeRasterization)
+                    throw new NotSupportedException(
+                        "Conservative rasterization requires VK_EXT_conservative_rasterization.");
+                rasterization.PNext = &conservative;
+            }
             PipelineMultisampleStateCreateInfo multisample = new()
             {
                 SType = StructureType.PipelineMultisampleStateCreateInfo,

@@ -9,8 +9,15 @@ internal sealed unsafe partial class VulkanBackend
             throw new ArgumentOutOfRangeException(nameof(desc));
         if (desc.Type != SomeEngine.Graphics.QueryType.Timestamp && desc.QueueType != QueueType.Graphics)
             throw new ArgumentException("Non-timestamp Vulkan queries require a Graphics Queue.", nameof(desc));
-        if (desc.Type == SomeEngine.Graphics.QueryType.StreamOutputStatistics)
-            throw new NotSupportedException("Stream-output queries require VK_EXT_transform_feedback.");
+        if (desc.Type == SomeEngine.Graphics.QueryType.StreamOutputStatistics &&
+            !nativeDevice.ExtendedFeatures.TransformFeedbackQueries)
+            throw new NotSupportedException("The Vulkan Device exposes no transform-feedback queries.");
+        if (desc.Type == SomeEngine.Graphics.QueryType.StreamOutputStatistics &&
+            desc.StreamIndex >= nativeDevice.ExtendedFeatures.MaximumTransformFeedbackStreams)
+            throw new ArgumentOutOfRangeException(nameof(desc));
+        if (desc.Type != SomeEngine.Graphics.QueryType.StreamOutputStatistics &&
+            desc.StreamIndex != 0)
+            throw new ArgumentException("Only stream-output queries select a stream.", nameof(desc));
         QueryPoolCreateInfo createInfo = new()
         {
             SType = StructureType.QueryPoolCreateInfo,
@@ -44,7 +51,19 @@ internal sealed unsafe partial class VulkanBackend
         QueryControlFlags flags = native.Description.Type == SomeEngine.Graphics.QueryType.Occlusion
             ? QueryControlFlags.PreciseBit
             : QueryControlFlags.None;
-        Api.CmdBeginQuery(command.NativeRecording, native.Native, queryIndex, flags);
+        if (native.Description.Type == SomeEngine.Graphics.QueryType.StreamOutputStatistics)
+        {
+            ((VulkanDevice)command.Device).TransformFeedbackApi.CmdBeginQueryIndexed(
+                command.NativeRecording,
+                native.Native,
+                queryIndex,
+                flags,
+                native.Description.StreamIndex);
+        }
+        else
+        {
+            Api.CmdBeginQuery(command.NativeRecording, native.Native, queryIndex, flags);
+        }
     }
 
     private void EndQueryCore(CommandContext context, QueryPool pool, uint queryIndex)
@@ -54,7 +73,18 @@ internal sealed unsafe partial class VulkanBackend
         if (native.Description.Type == SomeEngine.Graphics.QueryType.Timestamp)
             throw new InvalidOperationException("Timestamp queries are written, not ended.");
         command.Capture(native);
-        Api.CmdEndQuery(command.NativeRecording, native.Native, queryIndex);
+        if (native.Description.Type == SomeEngine.Graphics.QueryType.StreamOutputStatistics)
+        {
+            ((VulkanDevice)command.Device).TransformFeedbackApi.CmdEndQueryIndexed(
+                command.NativeRecording,
+                native.Native,
+                queryIndex,
+                native.Description.StreamIndex);
+        }
+        else
+        {
+            Api.CmdEndQuery(command.NativeRecording, native.Native, queryIndex);
+        }
     }
 
     private void WriteTimestampCore(CommandContext context, QueryPool pool, uint queryIndex)
@@ -125,6 +155,8 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.QueryType.Occlusion or SomeEngine.Graphics.QueryType.BinaryOcclusion =>
             Silk.NET.Vulkan.QueryType.Occlusion,
         SomeEngine.Graphics.QueryType.PipelineStatistics => Silk.NET.Vulkan.QueryType.PipelineStatistics,
+        SomeEngine.Graphics.QueryType.StreamOutputStatistics =>
+            Silk.NET.Vulkan.QueryType.TransformFeedbackStreamExt,
         _ => throw new NotSupportedException($"Vulkan QueryType {type} is unsupported."),
     };
 
@@ -133,6 +165,8 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.QueryType.Timestamp or SomeEngine.Graphics.QueryType.Occlusion or
             SomeEngine.Graphics.QueryType.BinaryOcclusion => new QueryResultInfo(8, 8, 8),
         SomeEngine.Graphics.QueryType.PipelineStatistics => new QueryResultInfo(88, 8, 88),
+        SomeEngine.Graphics.QueryType.StreamOutputStatistics =>
+            new QueryResultInfo(16, 8, 16),
         _ => throw new NotSupportedException($"Vulkan QueryType {type} is unsupported."),
     };
 

@@ -64,10 +64,12 @@ internal sealed unsafe partial class VulkanBackend
         private readonly PhysicalDeviceMemoryProperties _memoryProperties;
         private readonly VulkanExtendedFeatureSupport _extendedFeatures;
         private readonly VulkanDescriptorAllocator _descriptorAllocator;
+        private readonly VulkanBindlessPublisher _bindlessPublisher;
         private readonly KhrSwapchain? _swapchainApi;
         private readonly KhrCalibratedTimestamps? _calibratedTimestampsApi;
         private ExtConditionalRendering? _conditionalRenderingApi;
         private ExtTransformFeedback? _transformFeedbackApi;
+        private ExtDeviceGeneratedCommands? _generatedCommandsApi;
         private ExtExtendedDynamicState? _extendedDynamicStateApi;
         private ExtExtendedDynamicState2? _extendedDynamicState2Api;
         private ExtMeshShader? _meshShaderApi;
@@ -103,9 +105,13 @@ internal sealed unsafe partial class VulkanBackend
             backend.Api.GetPhysicalDeviceProperties(physicalDevice, &nativeProperties);
             NonCoherentAtomSize = nativeProperties.Limits.NonCoherentAtomSize;
             TimestampPeriod = nativeProperties.Limits.TimestampPeriod;
+            MaxBoundDescriptorSets = nativeProperties.Limits.MaxBoundDescriptorSets;
+            MaxDrawIndirectCount = nativeProperties.Limits.MaxDrawIndirectCount;
+            MaxVertexOutputComponents = nativeProperties.Limits.MaxVertexOutputComponents;
             SupportsBufferDeviceAddress = bufferDeviceAddress;
             _extendedFeatures = extendedFeatures;
             _descriptorAllocator = new VulkanDescriptorAllocator(this);
+            _bindlessPublisher = new VulkanBindlessPublisher(this);
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0 &&
                 !backend.Api.TryGetDeviceExtension(backend.Instance, native, out _swapchainApi))
                 throw new PlatformNotSupportedException("VK_KHR_swapchain entry points could not be loaded.");
@@ -123,9 +129,13 @@ internal sealed unsafe partial class VulkanBackend
         internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
         internal ulong NonCoherentAtomSize { get; }
         internal float TimestampPeriod { get; }
+        internal uint MaxBoundDescriptorSets { get; }
+        internal uint MaxDrawIndirectCount { get; }
+        internal uint MaxVertexOutputComponents { get; }
         internal bool SupportsBufferDeviceAddress { get; }
         internal VulkanExtendedFeatureSupport ExtendedFeatures => _extendedFeatures;
         internal VulkanDescriptorAllocator DescriptorAllocator => _descriptorAllocator;
+        internal VulkanBindlessPublisher BindlessPublisher => _bindlessPublisher;
         internal KhrSwapchain SwapchainApi => _swapchainApi
             ?? throw new NotSupportedException("The Device was not created with Presentation support.");
         internal KhrCalibratedTimestamps CalibratedTimestampsApi => _calibratedTimestampsApi
@@ -134,6 +144,8 @@ internal sealed unsafe partial class VulkanBackend
             ?? throw new NotSupportedException("VK_EXT_conditional_rendering is unavailable.");
         internal ExtTransformFeedback TransformFeedbackApi => _transformFeedbackApi
             ?? throw new NotSupportedException("VK_EXT_transform_feedback is unavailable.");
+        internal ExtDeviceGeneratedCommands GeneratedCommandsApi => _generatedCommandsApi
+            ?? throw new NotSupportedException("VK_EXT_device_generated_commands is unavailable.");
         internal ExtExtendedDynamicState ExtendedDynamicStateApi => _extendedDynamicStateApi
             ?? throw new NotSupportedException("VK_EXT_extended_dynamic_state is unavailable.");
         internal ExtExtendedDynamicState2 ExtendedDynamicState2Api => _extendedDynamicState2Api
@@ -314,6 +326,7 @@ internal sealed unsafe partial class VulkanBackend
             }
             foreach (GraphicsObject child in children)
                 child.DisposeFromParent();
+            _bindlessPublisher.Release();
             _descriptorAllocator.Release();
             foreach (VulkanQueue queue in _queues.Values)
                 queue.Release(native);
@@ -323,6 +336,7 @@ internal sealed unsafe partial class VulkanBackend
             _calibratedTimestampsApi?.Dispose();
             _conditionalRenderingApi?.Dispose();
             _transformFeedbackApi?.Dispose();
+            _generatedCommandsApi?.Dispose();
             _extendedDynamicStateApi?.Dispose();
             _extendedDynamicState2Api?.Dispose();
             _meshShaderApi?.Dispose();
@@ -393,7 +407,11 @@ internal sealed unsafe partial class VulkanBackend
                     arguments,
                     argumentBufferAlignment: 4,
                     countBufferAlignment: 4,
-                    maximumCommandCount: uint.MaxValue,
+                    maximumCommandCount: _extendedFeatures.DeviceGeneratedCommands
+                        ? Math.Min(
+                            MaxDrawIndirectCount,
+                            _extendedFeatures.MaximumIndirectSequenceCount)
+                        : MaxDrawIndirectCount,
                     maximumStride: uint.MaxValue - 3));
             }
             if ((enabledFeatures & DeviceFeatures.SparseResources) != 0)
@@ -439,6 +457,13 @@ internal sealed unsafe partial class VulkanBackend
             if (features.TransformFeedback &&
                 !_backend.Api.TryGetDeviceExtension(_backend.Instance, _native, out _transformFeedbackApi))
                 throw new PlatformNotSupportedException("VK_EXT_transform_feedback entry points could not be loaded.");
+            if ((enabledFeatures & DeviceFeatures.IndirectCommands) != 0 &&
+                features.DeviceGeneratedCommands &&
+                !_backend.Api.TryGetDeviceExtension(
+                    _backend.Instance,
+                    _native,
+                    out _generatedCommandsApi))
+                throw new PlatformNotSupportedException("VK_EXT_device_generated_commands entry points could not be loaded.");
             if (features.ExtendedDynamicState &&
                 !_backend.Api.TryGetDeviceExtension(_backend.Instance, _native, out _extendedDynamicStateApi))
                 throw new PlatformNotSupportedException("VK_EXT_extended_dynamic_state entry points could not be loaded.");
@@ -508,28 +533,84 @@ internal sealed unsafe partial class VulkanBackend
                 PNext = &shading,
             };
             _backend.Api.GetPhysicalDeviceProperties2(_physicalDevice, &shadingRoot);
-            var rates = new List<ShadingRate> { ShadingRate.Rate1x1 };
-            if (shading.MaxFragmentSize.Height >= 2) rates.Add(ShadingRate.Rate1x2);
-            if (shading.MaxFragmentSize.Width >= 2) rates.Add(ShadingRate.Rate2x1);
-            if (shading.MaxFragmentSize.Width >= 2 && shading.MaxFragmentSize.Height >= 2) rates.Add(ShadingRate.Rate2x2);
-            if (shading.MaxFragmentSize.Width >= 2 && shading.MaxFragmentSize.Height >= 4) rates.Add(ShadingRate.Rate2x4);
-            if (shading.MaxFragmentSize.Width >= 4 && shading.MaxFragmentSize.Height >= 2) rates.Add(ShadingRate.Rate4x2);
-            if (shading.MaxFragmentSize.Width >= 4 && shading.MaxFragmentSize.Height >= 4) rates.Add(ShadingRate.Rate4x4);
+            ShadingRate[] rates = QueryShadingRates();
             ShadingRateCombiner[] combiners = shading.FragmentShadingRateNonTrivialCombinerOps
                 ? [ShadingRateCombiner.Passthrough, ShadingRateCombiner.Override,
                     ShadingRateCombiner.Minimum, ShadingRateCombiner.Maximum]
                 : [ShadingRateCombiner.Passthrough, ShadingRateCombiner.Override];
             Add(new VariableRateShading(
                 this,
-                rates.ToArray(),
+                rates,
                 combiners,
                 _extendedFeatures.PrimitiveFragmentShadingRate,
                 _extendedFeatures.AttachmentFragmentShadingRate,
-                shading.MaxFragmentSize.Width > 2 || shading.MaxFragmentSize.Height > 2,
+                rates.Any(static rate => rate is
+                    ShadingRate.Rate2x4 or
+                    ShadingRate.Rate4x2 or
+                    ShadingRate.Rate4x4),
                 shading.MinFragmentShadingRateAttachmentTexelSize.Width,
                 shading.MinFragmentShadingRateAttachmentTexelSize.Height));
             AddExternalCapabilities(enabledFeatures);
         }
+
+        private ShadingRate[] QueryShadingRates()
+        {
+            void* address = _backend.Api.GetInstanceProcAddr(
+                _backend.Instance,
+                "vkGetPhysicalDeviceFragmentShadingRatesKHR").Handle;
+            if (address is null)
+            {
+                throw new PlatformNotSupportedException(
+                    "VK_KHR_fragment_shading_rate physical-device entry point is unavailable.");
+            }
+            var getRates = (delegate* unmanaged<
+                VkPhysicalDevice,
+                uint*,
+                PhysicalDeviceFragmentShadingRateKHR*,
+                Result>)address;
+            uint count = 0;
+            ThrowIfFailed(
+                getRates(
+                    _physicalDevice,
+                    &count,
+                    null),
+                "vkGetPhysicalDeviceFragmentShadingRatesKHR(count)");
+            PhysicalDeviceFragmentShadingRateKHR[] native =
+                new PhysicalDeviceFragmentShadingRateKHR[count];
+            for (int index = 0; index < native.Length; index++)
+                native[index].SType = StructureType.PhysicalDeviceFragmentShadingRateKhr;
+            fixed (PhysicalDeviceFragmentShadingRateKHR* pointer = native)
+            {
+                ThrowIfFailed(
+                    getRates(
+                        _physicalDevice,
+                        &count,
+                        pointer),
+                    "vkGetPhysicalDeviceFragmentShadingRatesKHR(data)");
+            }
+            return native
+                .Where(static value =>
+                    (value.SampleCounts & SampleCountFlags.Count1Bit) != 0)
+                .Select(static value => ToShadingRate(value.FragmentSize))
+                .Where(static value => value.HasValue)
+                .Select(static value => value!.Value)
+                .Distinct()
+                .Order()
+                .ToArray();
+        }
+
+        private static ShadingRate? ToShadingRate(Extent2D size) =>
+            (size.Width, size.Height) switch
+            {
+                (1, 1) => ShadingRate.Rate1x1,
+                (1, 2) => ShadingRate.Rate1x2,
+                (2, 1) => ShadingRate.Rate2x1,
+                (2, 2) => ShadingRate.Rate2x2,
+                (2, 4) => ShadingRate.Rate2x4,
+                (4, 2) => ShadingRate.Rate4x2,
+                (4, 4) => ShadingRate.Rate4x4,
+                _ => null,
+            };
 
         private void AddExternalCapabilities(DeviceFeatures enabledFeatures)
         {
@@ -578,11 +659,15 @@ internal sealed unsafe partial class VulkanBackend
                 tier11 ? RayTracingTier.Tier1_1 : RayTracingTier.Tier1_0,
                 pipelineRayTracing: true,
                 inlineRayQuery: _extendedFeatures.RayQuery,
-                indirectDispatch: _extendedFeatures.RayTracingPipelineTraceRaysIndirect,
+                // The portable DispatchRays packet carries a ShaderTable object separately;
+                // Vulkan's direct indirect command only supplies dimensions, so the RHI cannot
+                // expose this until its indirect packet has a portable shader-table identity.
+                indirectDispatch: false,
                 accelerationStructureUpdate: true,
                 compaction: true,
                 serialization: true,
                 stateObjectAdditions: false,
+                shaderRecordResourceBindings: false,
                 pipeline.MaxRayRecursionDepth,
                 maximumPayloadSize: uint.MaxValue,
                 pipeline.MaxRayHitAttributeSize,
@@ -604,6 +689,28 @@ internal sealed unsafe partial class VulkanBackend
         {
             if (features.ConditionalRendering) extensions.Add(ConditionalRenderingExtension);
             if (features.TransformFeedback) extensions.Add(TransformFeedbackExtension);
+            if (features.ConservativeRasterization)
+                extensions.Add(
+                    VulkanExtendedFeatureSupport.ConservativeRasterizationExtensionName);
+            if (features.VertexAttributeInstanceRateDivisor ||
+                features.VertexAttributeInstanceRateZeroDivisor)
+            {
+                extensions.Add(
+                    VulkanExtendedFeatureSupport.VertexAttributeDivisorExtensionName);
+            }
+            if (features.CustomBorderColorWithoutFormat)
+            {
+                extensions.Add(
+                    VulkanExtendedFeatureSupport.CustomBorderColorExtensionName);
+            }
+            if ((enabledFeatures & DeviceFeatures.IndirectCommands) != 0 &&
+                features.DeviceGeneratedCommands)
+            {
+                extensions.Add(
+                    VulkanExtendedFeatureSupport.DeviceGeneratedCommandsExtensionName);
+            }
+            if (features.NullDescriptor)
+                extensions.Add(VulkanExtendedFeatureSupport.Robustness2ExtensionName);
             if (features.ExtendedDynamicState) extensions.Add(ExtendedDynamicStateExtension);
             if (features.ExtendedDynamicState2) extensions.Add(ExtendedDynamicState2Extension);
             if ((enabledFeatures & DeviceFeatures.MeshShaders) != 0) extensions.Add(MeshShaderExtension);
@@ -628,6 +735,10 @@ internal sealed unsafe partial class VulkanBackend
             DeviceFeatures enabledDeviceFeatures,
             out PhysicalDeviceConditionalRenderingFeaturesEXT conditional,
             out PhysicalDeviceTransformFeedbackFeaturesEXT transform,
+            out PhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor,
+            out PhysicalDeviceCustomBorderColorFeaturesEXT customBorder,
+            out PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT generatedCommands,
+            out PhysicalDeviceRobustness2FeaturesEXT robustness2,
             out PhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic,
             out PhysicalDeviceExtendedDynamicState2FeaturesEXT dynamic2,
             out PhysicalDeviceMeshShaderFeaturesEXT mesh,
@@ -646,7 +757,34 @@ internal sealed unsafe partial class VulkanBackend
             {
                 SType = StructureType.PhysicalDeviceTransformFeedbackFeaturesExt,
                 TransformFeedback = available.TransformFeedback,
-                GeometryStreams = available.TransformFeedback,
+                GeometryStreams = available.GeometryStreams,
+            };
+            divisor = new PhysicalDeviceVertexAttributeDivisorFeaturesEXT
+            {
+                SType = StructureType.PhysicalDeviceVertexAttributeDivisorFeaturesExt,
+                VertexAttributeInstanceRateDivisor =
+                    available.VertexAttributeInstanceRateDivisor,
+                VertexAttributeInstanceRateZeroDivisor =
+                    available.VertexAttributeInstanceRateZeroDivisor,
+            };
+            customBorder = new PhysicalDeviceCustomBorderColorFeaturesEXT
+            {
+                SType = StructureType.PhysicalDeviceCustomBorderColorFeaturesExt,
+                CustomBorderColors = available.CustomBorderColorWithoutFormat,
+                CustomBorderColorWithoutFormat =
+                    available.CustomBorderColorWithoutFormat,
+            };
+            generatedCommands = new PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT
+            {
+                SType = StructureType.PhysicalDeviceDeviceGeneratedCommandsFeaturesExt,
+                DeviceGeneratedCommands =
+                    (enabledDeviceFeatures & DeviceFeatures.IndirectCommands) != 0 &&
+                    available.DeviceGeneratedCommands,
+            };
+            robustness2 = new PhysicalDeviceRobustness2FeaturesEXT
+            {
+                SType = StructureType.PhysicalDeviceRobustness2FeaturesExt,
+                NullDescriptor = available.NullDescriptor,
             };
             dynamic = new PhysicalDeviceExtendedDynamicStateFeaturesEXT
             {
@@ -675,6 +813,9 @@ internal sealed unsafe partial class VulkanBackend
             {
                 SType = StructureType.PhysicalDeviceAccelerationStructureFeaturesKhr,
                 AccelerationStructure = (enabledDeviceFeatures & DeviceFeatures.RayTracing) != 0 && available.AccelerationStructure,
+                DescriptorBindingAccelerationStructureUpdateAfterBind =
+                    (enabledDeviceFeatures & DeviceFeatures.RayTracing) != 0 &&
+                    available.DescriptorBindingAccelerationStructureUpdateAfterBind,
             };
             rayTracing = new PhysicalDeviceRayTracingPipelineFeaturesKHR
             {
@@ -690,6 +831,21 @@ internal sealed unsafe partial class VulkanBackend
             void* chain = features13.PNext;
             Prepend(ref chain, ref conditional, available.ConditionalRendering);
             Prepend(ref chain, ref transform, available.TransformFeedback);
+            Prepend(
+                ref chain,
+                ref divisor,
+                available.VertexAttributeInstanceRateDivisor ||
+                available.VertexAttributeInstanceRateZeroDivisor);
+            Prepend(
+                ref chain,
+                ref customBorder,
+                available.CustomBorderColorWithoutFormat);
+            Prepend(
+                ref chain,
+                ref generatedCommands,
+                (enabledDeviceFeatures & DeviceFeatures.IndirectCommands) != 0 &&
+                available.DeviceGeneratedCommands);
+            Prepend(ref chain, ref robustness2, available.NullDescriptor);
             Prepend(ref chain, ref dynamic, available.ExtendedDynamicState);
             Prepend(ref chain, ref dynamic2, available.ExtendedDynamicState2);
             Prepend(ref chain, ref mesh, (enabledDeviceFeatures & DeviceFeatures.MeshShaders) != 0);
@@ -747,6 +903,10 @@ internal sealed unsafe partial class VulkanBackend
                     enabledDeviceFeatures,
                     out PhysicalDeviceConditionalRenderingFeaturesEXT conditional,
                     out PhysicalDeviceTransformFeedbackFeaturesEXT transform,
+                    out PhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor,
+                    out PhysicalDeviceCustomBorderColorFeaturesEXT customBorder,
+                    out PhysicalDeviceDeviceGeneratedCommandsFeaturesEXT generatedCommands,
+                    out PhysicalDeviceRobustness2FeaturesEXT robustness2,
                     out PhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic,
                     out PhysicalDeviceExtendedDynamicState2FeaturesEXT dynamic2,
                     out PhysicalDeviceMeshShaderFeaturesEXT mesh,
@@ -793,11 +953,15 @@ internal sealed unsafe partial class VulkanBackend
             DescriptorBindingStorageImageUpdateAfterBind = available.DescriptorBindingStorageImageUpdateAfterBind,
             DescriptorBindingStorageBufferUpdateAfterBind = available.DescriptorBindingStorageBufferUpdateAfterBind,
             DescriptorBindingUniformBufferUpdateAfterBind = available.DescriptorBindingUniformBufferUpdateAfterBind,
+            DescriptorBindingUniformTexelBufferUpdateAfterBind = available.DescriptorBindingUniformTexelBufferUpdateAfterBind,
+            DescriptorBindingStorageTexelBufferUpdateAfterBind = available.DescriptorBindingStorageTexelBufferUpdateAfterBind,
             DescriptorBindingUpdateUnusedWhilePending = available.DescriptorBindingUpdateUnusedWhilePending,
             ShaderSampledImageArrayNonUniformIndexing = available.ShaderSampledImageArrayNonUniformIndexing,
             ShaderStorageImageArrayNonUniformIndexing = available.ShaderStorageImageArrayNonUniformIndexing,
             ShaderStorageBufferArrayNonUniformIndexing = available.ShaderStorageBufferArrayNonUniformIndexing,
             ShaderUniformBufferArrayNonUniformIndexing = available.ShaderUniformBufferArrayNonUniformIndexing,
+            ShaderUniformTexelBufferArrayNonUniformIndexing = available.ShaderUniformTexelBufferArrayNonUniformIndexing,
+            ShaderStorageTexelBufferArrayNonUniformIndexing = available.ShaderStorageTexelBufferArrayNonUniformIndexing,
             DrawIndirectCount = available.DrawIndirectCount,
             BufferDeviceAddress = available.BufferDeviceAddress,
             ScalarBlockLayout = available.ScalarBlockLayout,
@@ -846,6 +1010,20 @@ internal sealed unsafe partial class VulkanBackend
                 throw new PlatformNotSupportedException("Vulkan synchronization2 is required.");
             if (!features13.DynamicRendering)
                 throw new PlatformNotSupportedException("Vulkan dynamic rendering is required.");
+            if (!features12.DescriptorIndexing ||
+                !features12.RuntimeDescriptorArray ||
+                !features12.DescriptorBindingPartiallyBound ||
+                !features12.DescriptorBindingSampledImageUpdateAfterBind ||
+                !features12.DescriptorBindingStorageImageUpdateAfterBind ||
+                !features12.DescriptorBindingStorageBufferUpdateAfterBind ||
+                !features12.DescriptorBindingUniformBufferUpdateAfterBind ||
+                !features12.DescriptorBindingUniformTexelBufferUpdateAfterBind ||
+                !features12.DescriptorBindingStorageTexelBufferUpdateAfterBind ||
+                !features12.DescriptorBindingUpdateUnusedWhilePending)
+            {
+                throw new PlatformNotSupportedException(
+                    "SomeEngine's Vulkan backend requires descriptor-indexing update-after-bind support.");
+            }
         }
 
         private static DeviceFeatures GetSupportedFeatures(
@@ -864,9 +1042,7 @@ internal sealed unsafe partial class VulkanBackend
                 supported |= DeviceFeatures.CalibratedTimestamps;
             if (extended.MeshShader)
                 supported |= DeviceFeatures.MeshShaders;
-            if (extended.PipelineFragmentShadingRate ||
-                extended.PrimitiveFragmentShadingRate ||
-                extended.AttachmentFragmentShadingRate)
+            if (extended.PipelineFragmentShadingRate)
                 supported |= DeviceFeatures.VariableRateShading;
             if (extended.AccelerationStructure && extended.RayTracingPipeline &&
                 extensions.Contains(DeferredHostOperationsExtension))

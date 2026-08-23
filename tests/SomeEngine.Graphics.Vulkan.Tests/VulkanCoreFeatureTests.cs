@@ -2,6 +2,7 @@ namespace SomeEngine.Graphics.Vulkan.Tests;
 
 using SlangShaderSharp;
 using Xunit;
+using Xunit.Sdk;
 
 public sealed class VulkanCoreFeatureTests
 {
@@ -126,6 +127,131 @@ public sealed class VulkanCoreFeatureTests
         using RecordedCommands commands = backend.End(context);
         QueueCompletion completion = backend.Submit(queue, new QueueSubmitDesc([], [], [commands], [], []));
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public void Counted_indirect_dispatch_executes_device_generated_sequences()
+    {
+        const string source = """
+            RWStructuredBuffer<uint> outputValues;
+            [shader("compute")]
+            [numthreads(1, 1, 1)]
+            void computeMain(uint3 id : SV_DispatchThreadID)
+            {
+                InterlockedAdd(outputValues[0], 1);
+            }
+            """;
+        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+            source,
+            ("computeMain", SlangStage.Compute));
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            default,
+            queues,
+            optionalFeatures: DeviceFeatures.IndirectCommands));
+        using Pipeline pipeline = backend.CreateComputePipeline(
+            device,
+            new ComputePipelineDesc(shader.Program, shader.Entries[0]));
+        using Buffer arguments = backend.CreateBuffer(
+            device,
+            new BufferDesc(36, BufferUsages.Indirect),
+            MemoryType.Upload);
+        using (MappedBuffer mapped = backend.Map(arguments, MapType.Write, BufferRange.Whole))
+        {
+            mapped.Bytes.Clear();
+            for (int command = 0; command < 2; command++)
+            {
+                int offset = command * 12;
+                BitConverter.TryWriteBytes(mapped.Bytes[offset..], 1u);
+                BitConverter.TryWriteBytes(mapped.Bytes[(offset + 4)..], 1u);
+                BitConverter.TryWriteBytes(mapped.Bytes[(offset + 8)..], 1u);
+            }
+            mapped.Flush(mapped.Range);
+        }
+        using Buffer count = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.Indirect),
+            MemoryType.Upload);
+        using (MappedBuffer mapped = backend.Map(count, MapType.Write, BufferRange.Whole))
+        {
+            BitConverter.TryWriteBytes(mapped.Bytes, 2u);
+            mapped.Flush(mapped.Range);
+        }
+        using Buffer output = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+        using BufferUav outputUav = backend.CreateBufferUav(
+            device,
+            new BufferUavDesc(
+                output,
+                BufferRange.Whole,
+                StructureStride: sizeof(uint)));
+        using Buffer readback = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        IndirectCommandLayout? layout = null;
+        try
+        {
+            layout = backend.CreateIndirectCommandLayout(
+                device,
+                new IndirectCommandLayoutDesc(
+                    [new IndirectArgumentDesc(IndirectArgumentType.Dispatch)],
+                    12,
+                    pipeline));
+        }
+        catch (NotSupportedException)
+        {
+            throw SkipException.ForSkip(
+                "The Vulkan adapter does not expose VK_EXT_device_generated_commands.");
+        }
+        using (layout)
+        using (CommandContext context = backend.CreateCommandContext(
+                   device,
+                   new CommandContextDesc(QueueType.Graphics, 0, 1)))
+        {
+            backend.Begin(context);
+            backend.Barrier(context, new BufferBarrier(
+                output,
+                PipelineSync.None,
+                PipelineSync.ComputeShading,
+                ResourceAccess.NoAccess,
+                ResourceAccess.UnorderedAccess));
+            backend.SetPipeline(context, pipeline);
+            backend.SetTransientParameterBindings(
+                context,
+                new ParameterBlockBindings(
+                    globals,
+                    [ResourceBinding.WritableBuffer(outputUav)],
+                    []));
+            backend.ExecuteIndirect(
+                context,
+                layout,
+                new BufferRegion(arguments, BufferRange.Whole),
+                3,
+                new BufferRegion(count, BufferRange.Whole));
+            backend.Barrier(context, new BufferBarrier(
+                output,
+                PipelineSync.ComputeShading,
+                PipelineSync.Copy,
+                ResourceAccess.UnorderedAccess,
+                ResourceAccess.CopySource));
+            backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 4));
+            using RecordedCommands commands = backend.End(context);
+            Queue queue = backend.GetQueue(device, QueueType.Graphics);
+            QueueCompletion completion = backend.Submit(
+                queue,
+                new QueueSubmitDesc([], [], [commands], [], []));
+            Assert.Equal(
+                WaitStatus.Completed,
+                backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
+            using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
+            mapped.Invalidate(mapped.Range);
+            Assert.Equal(2u, BitConverter.ToUInt32(mapped.Bytes));
+        }
     }
 
     [Fact]

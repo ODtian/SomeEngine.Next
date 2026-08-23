@@ -1,6 +1,8 @@
 namespace SomeEngine.Graphics.Vulkan.Tests;
 
+using System.Numerics;
 using Xunit;
+using Xunit.Sdk;
 
 public sealed class VulkanResourceTests
 {
@@ -90,5 +92,31 @@ public sealed class VulkanResourceTests
         Assert.Same(texture, uav.Resource);
         Assert.Same(texture, attachment.Resource);
         Assert.Equal(FilterType.Linear, sampler.Description.MinFilter);
+    }
+
+    [Fact]
+    public void Custom_border_color_extension_creates_sampler()
+    {
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
+        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
+        SamplerDesc description = new(
+            FilterType.Linear,
+            FilterType.Linear,
+            FilterType.Linear,
+            AddressType.ClampToBorder,
+            AddressType.ClampToBorder,
+            AddressType.ClampToBorder,
+            BorderColor: new Vector4(0.125f, 0.25f, 0.5f, 0.75f));
+        try
+        {
+            using Sampler sampler = backend.CreateSampler(device, description);
+            Assert.Equal(description.BorderColor, sampler.Description.BorderColor);
+        }
+        catch (NotSupportedException)
+        {
+            throw SkipException.ForSkip(
+                "The Vulkan adapter does not expose formatless custom border colors.");
+        }
     }
 }

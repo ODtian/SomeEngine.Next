@@ -882,6 +882,7 @@ internal sealed unsafe partial class D3D12Backend
                 compaction: true,
                 serialization: true,
                 stateObjectAdditions: tier11,
+                shaderRecordResourceBindings: true,
                 maximumRecursionDepth: 31,
                 maximumPayloadSize: uint.MaxValue,
                 maximumAttributeSize: 32,

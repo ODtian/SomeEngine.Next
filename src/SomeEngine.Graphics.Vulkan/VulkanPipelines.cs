@@ -13,6 +13,9 @@ internal sealed unsafe partial class VulkanBackend
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ValidateGraphicsPipeline(nativeDevice, desc);
         ShaderReflection reflection = GetProgramReflection(desc.Program);
+        VulkanStreamOutputPlan? streamOutput = desc.HasStreamOutput
+            ? VulkanStreamOutputPlan.Create(nativeDevice, desc.Vertex, desc.StreamOutput)
+            : null;
         EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
@@ -20,7 +23,13 @@ internal sealed unsafe partial class VulkanBackend
             entries,
             desc.StaticSamplers);
         CompiledSpirv vertex = CompileSpirv(
-            desc.Program, reflection, layout, desc.Vertex, SlangStage.Vertex, "vertex");
+            desc.Program,
+            reflection,
+            layout,
+            desc.Vertex,
+            SlangStage.Vertex,
+            "vertex",
+            streamOutput);
         CompiledSpirv pixel = CompileSpirv(
             desc.Program, reflection, layout, desc.Pixel, SlangStage.Fragment, "fragment");
         layout.ActivateEntryBindings(
@@ -197,6 +206,9 @@ internal sealed unsafe partial class VulkanBackend
         VkPipelineCache cache)
     {
         VertexInputBindingDescription[] bindings = CreateVertexBindings(desc.VertexBuffers);
+        VertexInputBindingDivisorDescription[] divisors = CreateVertexDivisors(
+            device,
+            desc.VertexBuffers);
         VertexInputAttributeDescription[] attributes = CreateVertexAttributes(desc.VertexAttributes);
         PipelineColorBlendAttachmentState[] blendAttachments = CreateBlendAttachments(
             desc.Blend,
@@ -207,19 +219,20 @@ internal sealed unsafe partial class VulkanBackend
         DynamicState[] dynamicStates = CreateDynamicStates(desc.DynamicStates);
         uint sampleMask = desc.Multisample.SampleMask;
         fixed (VertexInputBindingDescription* bindingPointer = bindings)
+        fixed (VertexInputBindingDivisorDescription* divisorPointer = divisors)
         fixed (VertexInputAttributeDescription* attributePointer = attributes)
         fixed (PipelineColorBlendAttachmentState* blendPointer = blendAttachments)
         fixed (VkFormat* colorFormatPointer = colorFormats)
         fixed (DynamicState* dynamicPointer = dynamicStates)
         {
-            PipelineVertexInputStateCreateInfo vertexInput = new()
-            {
-                SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = checked((uint)bindings.Length),
-                PVertexBindingDescriptions = bindingPointer,
-                VertexAttributeDescriptionCount = checked((uint)attributes.Length),
-                PVertexAttributeDescriptions = attributePointer,
-            };
+            VulkanVertexInputState vertexInput = default;
+            vertexInput.Initialize(
+                bindingPointer,
+                bindings.Length,
+                attributePointer,
+                attributes.Length,
+                divisorPointer,
+                divisors.Length);
             PipelineInputAssemblyStateCreateInfo assembly = new()
             {
                 SType = StructureType.PipelineInputAssemblyStateCreateInfo,
@@ -233,6 +246,11 @@ internal sealed unsafe partial class VulkanBackend
                 ScissorCount = 1,
             };
             PipelineRasterizationStateCreateInfo rasterization = CreateRasterization(desc.Rasterizer, desc.DynamicStates);
+            if (desc.HasStreamOutput && !desc.StreamOutput.RasterizedStreamIndex.HasValue)
+                rasterization.RasterizerDiscardEnable = true;
+            var conservative = CreateConservativeRasterizationState();
+            if (desc.Rasterizer.ConservativeRasterization)
+                rasterization.PNext = &conservative;
             PipelineMultisampleStateCreateInfo multisample = new()
             {
                 SType = StructureType.PipelineMultisampleStateCreateInfo,
@@ -275,7 +293,7 @@ internal sealed unsafe partial class VulkanBackend
                 PNext = &rendering,
                 StageCount = 2,
                 PStages = stages,
-                PVertexInputState = &vertexInput,
+                PVertexInputState = &vertexInput.Native,
                 PInputAssemblyState = &assembly,
                 PViewportState = &viewport,
                 PRasterizationState = &rasterization,
@@ -304,14 +322,70 @@ internal sealed unsafe partial class VulkanBackend
         var result = new VertexInputBindingDescription[source.Length];
         for (int index = 0; index < result.Length; index++)
         {
-            if (source[index].InstanceStepRate != 1)
-                throw new NotSupportedException("Vertex InstanceStepRate other than one requires VK_EXT_vertex_attribute_divisor.");
             result[index] = new VertexInputBindingDescription(
                 source[index].BufferIndex,
                 source[index].Stride,
                 source[index].PerInstance ? VertexInputRate.Instance : VertexInputRate.Vertex);
         }
         return result;
+    }
+
+    private struct VulkanVertexInputState
+    {
+        internal PipelineVertexInputStateCreateInfo Native;
+        private PipelineVertexInputDivisorStateCreateInfoEXT _divisor;
+
+        internal unsafe void Initialize(
+            VertexInputBindingDescription* bindings,
+            int bindingCount,
+            VertexInputAttributeDescription* attributes,
+            int attributeCount,
+            VertexInputBindingDivisorDescription* divisors,
+            int divisorCount)
+        {
+            _divisor = new PipelineVertexInputDivisorStateCreateInfoEXT
+            {
+                SType = StructureType.PipelineVertexInputDivisorStateCreateInfoExt,
+                VertexBindingDivisorCount = checked((uint)divisorCount),
+                PVertexBindingDivisors = divisors,
+            };
+            Native = new PipelineVertexInputStateCreateInfo
+            {
+                SType = StructureType.PipelineVertexInputStateCreateInfo,
+                PNext = divisorCount == 0 ? null : Unsafe.AsPointer(ref _divisor),
+                VertexBindingDescriptionCount = checked((uint)bindingCount),
+                PVertexBindingDescriptions = bindings,
+                VertexAttributeDescriptionCount = checked((uint)attributeCount),
+                PVertexAttributeDescriptions = attributes,
+            };
+        }
+    }
+
+    private static VertexInputBindingDivisorDescription[] CreateVertexDivisors(
+        VulkanDevice device,
+        ReadOnlySpan<VertexBufferLayout> source)
+    {
+        var result = new List<VertexInputBindingDivisorDescription>();
+        foreach (ref readonly VertexBufferLayout layout in source)
+        {
+            if (!layout.PerInstance || layout.InstanceStepRate == 1)
+                continue;
+            bool supported = layout.InstanceStepRate == 0
+                ? device.ExtendedFeatures.VertexAttributeInstanceRateZeroDivisor
+                : device.ExtendedFeatures.VertexAttributeInstanceRateDivisor &&
+                    layout.InstanceStepRate <=
+                        device.ExtendedFeatures.MaximumVertexAttributeDivisor;
+            if (!supported)
+            {
+                throw new NotSupportedException(
+                    "The requested vertex instance step rate requires " +
+                    "VK_EXT_vertex_attribute_divisor support.");
+            }
+            result.Add(new VertexInputBindingDivisorDescription(
+                layout.BufferIndex,
+                layout.InstanceStepRate));
+        }
+        return result.ToArray();
     }
 
     private static VertexInputAttributeDescription[] CreateVertexAttributes(
@@ -356,7 +430,8 @@ internal sealed unsafe partial class VulkanBackend
         VulkanPipelineLayoutState layout,
         EntryPointReflection entry,
         SlangStage expectedStage,
-        string role)
+        string role,
+        VulkanStreamOutputPlan? streamOutput = null)
     {
         if (entry == EntryPointReflection.Null || entry.Stage != expectedStage)
             throw new ArgumentException($"The {role} entry point has the wrong Slang stage.", nameof(entry));
@@ -384,10 +459,10 @@ internal sealed unsafe partial class VulkanBackend
                     checked((int)code.GetBufferSize())),
                 layout.GetSpirvTargets(entry),
                 out VulkanSpirvBindingTarget[] activeTargets);
-            return new CompiledSpirv(
-                bytes,
-                FindSpirvEntryPointName(bytes, entry.Name),
-                activeTargets);
+            string entryName = FindSpirvEntryPointName(bytes, entry.Name);
+            if (streamOutput is not null)
+                bytes = ApplySpirvStreamOutput(bytes, entryName, streamOutput);
+            return new CompiledSpirv(bytes, entryName, activeTargets);
         }
         finally
         {
@@ -473,11 +548,13 @@ internal sealed unsafe partial class VulkanBackend
             desc.Attachments.ColorFormats.Length != desc.Blend.Attachments.Length)
             throw new ArgumentException("Blend attachment count must match color attachment count.", nameof(desc));
         if (desc.Rasterizer.ConservativeRasterization)
-            throw new NotSupportedException("Conservative rasterization requires VK_EXT_conservative_rasterization.");
+        {
+            if (!device.ExtendedFeatures.ConservativeRasterization)
+                throw new NotSupportedException(
+                    "Conservative rasterization requires VK_EXT_conservative_rasterization.");
+        }
         if ((desc.DynamicStates & ~device.Capabilities.SupportedDynamicStates) != 0)
             throw new NotSupportedException("The Vulkan Device does not support every requested dynamic state.");
-        if (desc.HasStreamOutput)
-            throw new NotSupportedException("Graphics stream output requires VK_EXT_transform_feedback.");
     }
 
     private static PipelineRasterizationStateCreateInfo CreateRasterization(
@@ -505,6 +582,14 @@ internal sealed unsafe partial class VulkanBackend
         DepthBiasSlopeFactor = state.SlopeScaledDepthBias,
         LineWidth = 1,
     };
+
+    private static PipelineRasterizationConservativeStateCreateInfoEXT
+        CreateConservativeRasterizationState() => new()
+        {
+            SType = StructureType.PipelineRasterizationConservativeStateCreateInfoExt,
+            ConservativeRasterizationMode =
+                ConservativeRasterizationModeEXT.OverestimateExt,
+        };
 
     private static PipelineDepthStencilStateCreateInfo CreateDepthStencil(in DepthStencilState state) => new()
     {
@@ -664,6 +749,10 @@ internal sealed unsafe partial class VulkanBackend
         private readonly DynamicStates _dynamicStates;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
+        private readonly StreamOutputElement[] _streamOutputElements;
+        private readonly uint[] _streamOutputStrides;
+        private readonly uint? _rasterizedStreamIndex;
+        private readonly bool _hasStreamOutput;
 
         internal GraphicsPipelineSnapshot(in GraphicsPipelineDesc desc)
         {
@@ -685,8 +774,16 @@ internal sealed unsafe partial class VulkanBackend
             _dynamicStates = desc.DynamicStates;
             _label = desc.Label;
             _staticSamplers = desc.StaticSamplers.ToArray();
-            if (desc.HasStreamOutput)
-                throw new NotSupportedException("Asynchronous Vulkan stream-output pipeline creation is not initialized.");
+            _hasStreamOutput = desc.HasStreamOutput;
+            _streamOutputElements = desc.HasStreamOutput
+                ? desc.StreamOutput.Elements.ToArray()
+                : [];
+            _streamOutputStrides = desc.HasStreamOutput
+                ? desc.StreamOutput.BufferStrides.ToArray()
+                : [];
+            _rasterizedStreamIndex = desc.HasStreamOutput
+                ? desc.StreamOutput.RasterizedStreamIndex
+                : null;
         }
 
         internal Pipeline Create(
@@ -696,23 +793,52 @@ internal sealed unsafe partial class VulkanBackend
         {
             BlendState blend = new(_blendAttachments, _independentBlend, _logicOperation);
             AttachmentFormatSignature attachments = new(_colorFormats, _depthFormat, _multisample.SampleCount);
-            GraphicsPipelineDesc desc = new(
-                _program,
-                _vertex,
-                _pixel,
-                _vertexBuffers,
-                _vertexAttributes,
-                _topology,
-                _stripCut,
-                _rasterizer,
-                _multisample,
-                _depthStencil,
-                blend,
-                attachments,
-                _dynamicStates,
-                _label,
-                _staticSamplers);
-            return backend.CreateGraphicsPipeline(device, desc, cache);
+            if (_hasStreamOutput)
+            {
+                StreamOutputState streamOutput = new(
+                    _streamOutputElements,
+                    _streamOutputStrides,
+                    _rasterizedStreamIndex);
+                return backend.CreateGraphicsPipeline(
+                    device,
+                    new GraphicsPipelineDesc(
+                    _program,
+                    _vertex,
+                    _pixel,
+                    _vertexBuffers,
+                    _vertexAttributes,
+                    _topology,
+                    _stripCut,
+                    _rasterizer,
+                    _multisample,
+                    _depthStencil,
+                    blend,
+                    attachments,
+                    streamOutput,
+                    _dynamicStates,
+                    _label,
+                    _staticSamplers),
+                    cache);
+            }
+            return backend.CreateGraphicsPipeline(
+                device,
+                new GraphicsPipelineDesc(
+                    _program,
+                    _vertex,
+                    _pixel,
+                    _vertexBuffers,
+                    _vertexAttributes,
+                    _topology,
+                    _stripCut,
+                    _rasterizer,
+                    _multisample,
+                    _depthStencil,
+                    blend,
+                    attachments,
+                    _dynamicStates,
+                    _label,
+                    _staticSamplers),
+                cache);
         }
     }
 

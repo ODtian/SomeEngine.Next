@@ -580,7 +580,9 @@ internal sealed unsafe partial class VulkanBackend
                         throw new ArgumentOutOfRangeException(nameof(update.ParameterBlocks));
                     RayTracingLocalParameterBlock block = update.ParameterBlocks[checked((int)parameterIndex)];
                     if (block.Layout == VariableLayoutReflection.Null || block.ResourceCount != 0)
-                        throw new NotSupportedException("Vulkan shader records currently require concrete ordinary-only local parameter blocks.");
+                        throw new NotSupportedException(
+                            "Vulkan shader records expose ordinary bytes only; opaque resources " +
+                            "must be addressed through global bindless descriptor indices.");
                     if (block.OrdinaryDataOffset > update.OrdinaryData.Length ||
                         block.OrdinaryDataSize > update.OrdinaryData.Length - block.OrdinaryDataOffset)
                         throw new ArgumentOutOfRangeException(nameof(update.OrdinaryData));
@@ -604,7 +606,10 @@ internal sealed unsafe partial class VulkanBackend
                 update.Hit.Length != desc.HitRecordCount ||
                 update.Callable.Length != desc.CallableRecordCount ||
                 !update.Resources.IsEmpty)
-                throw new ArgumentException("The Vulkan ShaderTable update does not match its declared record counts or contains unsupported local resources.", nameof(update));
+                throw new ArgumentException(
+                    "The Vulkan ShaderTable update does not match its declared record counts " +
+                    "or contains opaque local resources.",
+                    nameof(update));
         }
 
         private static StridedDeviceAddressRegionKHR Region(

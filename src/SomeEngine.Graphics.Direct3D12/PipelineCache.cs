@@ -1136,6 +1136,7 @@ internal sealed unsafe partial class D3D12Backend
             writer.Write(rayTracing.Compaction);
             writer.Write(rayTracing.Serialization);
             writer.Write(rayTracing.StateObjectAdditions);
+            writer.Write(rayTracing.ShaderRecordResourceBindings);
             writer.Write(rayTracing.MaximumRecursionDepth);
             writer.Write(rayTracing.MaximumPayloadSize);
             writer.Write(rayTracing.MaximumAttributeSize);

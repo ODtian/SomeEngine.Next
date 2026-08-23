@@ -182,6 +182,7 @@ public sealed class VulkanAdvancedStateTests
         Assert.True(rayTracing.MaximumRecursionDepth > 0);
         Assert.True(rayTracing.MaximumShaderRecordStride > 0);
         Assert.True(rayTracing.ScratchAlignment > 0);
+        Assert.False(rayTracing.ShaderRecordResourceBindings);
     }
 
     [Fact]
@@ -367,5 +368,129 @@ public sealed class VulkanAdvancedStateTests
         using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
         mapped.Invalidate(mapped.Range);
         Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes));
+    }
+
+    [Fact]
+    public void Khr_shader_record_ordinary_entry_parameters_execute()
+    {
+        const string source = """
+            RWStructuredBuffer<uint> outputValues;
+            struct CallablePayload { uint value; };
+            [shader("raygeneration")]
+            void rayGenerationMain()
+            {
+                CallablePayload payload = { 0 };
+                CallShader(0, payload);
+            }
+            [shader("callable")]
+            void callableMain(
+                inout CallablePayload payload,
+                uniform uint recordValue)
+            {
+                outputValues[0] = recordValue;
+            }
+            """;
+        using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
+            source,
+            ("rayGenerationMain", SlangStage.RayGeneration),
+            ("callableMain", SlangStage.Callable));
+        EntryPointReflection rayGeneration = shader.Entries[0];
+        EntryPointReflection callable = shader.Entries[1];
+        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            default,
+            queues,
+            requiredFeatures: DeviceFeatures.RayTracing));
+        using Pipeline pipeline = backend.CreateRayTracingPipeline(
+            device,
+            new RayTracingPipelineDesc(
+                shader.Program,
+                [rayGeneration],
+                [],
+                [callable],
+                [],
+                1,
+                4,
+                8));
+        using RayTracingShaderTable table = backend.CreateRayTracingShaderTable(
+            device,
+            new RayTracingShaderTableDesc(pipeline, 1, 0, 0, 1, 64));
+        using Buffer output = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+        using BufferUav outputUav = backend.CreateBufferUav(
+            device,
+            new BufferUavDesc(
+                output,
+                BufferRange.Whole,
+                StructureStride: sizeof(uint)));
+        using Buffer readback = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        RayTracingShaderRecord rayRecord = RayTracingShaderRecord.Entry(
+            rayGeneration,
+            0,
+            1);
+        RayTracingShaderRecord callableRecord = RayTracingShaderRecord.Entry(
+            callable,
+            1,
+            1);
+        RayTracingLocalParameterBlock[] locals =
+        [
+            new(rayGeneration.VarLayout, 0, 0, 0, 0),
+            new(callable.VarLayout, 0, 0, 0, sizeof(uint)),
+        ];
+        byte[] ordinary = BitConverter.GetBytes(73u);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        backend.Begin(context);
+        backend.SetPipeline(context, pipeline);
+        backend.SetTransientParameterBindings(
+            context,
+            new ParameterBlockBindings(
+                globals,
+                [ResourceBinding.WritableBuffer(outputUav)],
+                []));
+        backend.UpdateRayTracingShaderTable(
+            context,
+            table,
+            new RayTracingShaderTableUpdate(
+                [rayRecord],
+                [],
+                [],
+                [callableRecord],
+                locals,
+                [],
+                ordinary));
+        backend.Barrier(context, new BufferBarrier(
+            output,
+            PipelineSync.None,
+            PipelineSync.RayTracing,
+            ResourceAccess.NoAccess,
+            ResourceAccess.UnorderedAccess));
+        backend.DispatchRays(context, new DispatchRaysDesc(table, 1));
+        backend.Barrier(context, new BufferBarrier(
+            output,
+            PipelineSync.RayTracing,
+            PipelineSync.Copy,
+            ResourceAccess.UnorderedAccess,
+            ResourceAccess.CopySource));
+        backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 4));
+        using RecordedCommands commands = backend.End(context);
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        QueueCompletion completion = backend.Submit(
+            queue,
+            new QueueSubmitDesc([], [], [commands], [], []));
+        Assert.Equal(
+            WaitStatus.Completed,
+            backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
+        using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
+        mapped.Invalidate(mapped.Range);
+        Assert.Equal(73u, BitConverter.ToUInt32(mapped.Bytes));
     }
 }

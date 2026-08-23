@@ -65,9 +65,45 @@ internal sealed unsafe partial class VulkanBackend
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
         VulkanPipeline native = RequirePipeline((VulkanDevice)command.Device, pipeline, nameof(pipeline));
         PipelineBindPoint bindPoint = ToBindPoint(native.Type);
-        Api.CmdBindPipeline(command.NativeRecording, bindPoint, native.Native);
-        command.SetCurrentPipeline(native);
-        command.Capture(native);
+        ReadOnlySpan<VulkanBindlessSetBinding> bindings = native.Layout.BindlessBindings;
+        VulkanBindlessSnapshot? snapshot = bindings.IsEmpty
+            ? null
+            : ((VulkanDevice)command.Device).BindlessPublisher.Acquire(bindings);
+        try
+        {
+            Api.CmdBindPipeline(command.NativeRecording, bindPoint, native.Native);
+            if (snapshot is not null)
+                BindBindlessDescriptors(command, native, bindPoint, snapshot);
+            command.SetCurrentPipeline(native);
+            command.Capture(native);
+            if (snapshot is not null)
+                command.Capture(snapshot);
+        }
+        finally
+        {
+            snapshot?.ReleaseNative();
+        }
+    }
+
+    private void BindBindlessDescriptors(
+        VulkanCommandContext command,
+        VulkanPipeline pipeline,
+        PipelineBindPoint bindPoint,
+        VulkanBindlessSnapshot snapshot)
+    {
+        foreach (ref readonly VulkanBoundDescriptorSet binding in snapshot.Sets.AsSpan())
+        {
+            VkDescriptorSet set = binding.Native;
+            Api.CmdBindDescriptorSets(
+                command.NativeRecording,
+                bindPoint,
+                pipeline.Layout.Native,
+                binding.Set,
+                1,
+                &set,
+                0,
+                null);
+        }
     }
 
     internal void SetPersistentParameterBindings(
@@ -172,6 +208,10 @@ internal sealed unsafe partial class VulkanBackend
             return;
         if (!device.ExtendedFeatures.TransformFeedback)
             throw new NotSupportedException("VK_EXT_transform_feedback is unavailable.");
+        if (firstSlot > device.ExtendedFeatures.MaximumTransformFeedbackBuffers ||
+            bindings.Length >
+                device.ExtendedFeatures.MaximumTransformFeedbackBuffers - firstSlot)
+            throw new ArgumentOutOfRangeException(nameof(firstSlot));
         VkBuffer[] buffers = new VkBuffer[bindings.Length];
         ulong[] offsets = new ulong[bindings.Length];
         ulong[] sizes = new ulong[bindings.Length];
@@ -180,6 +220,10 @@ internal sealed unsafe partial class VulkanBackend
         for (int index = 0; index < bindings.Length; index++)
         {
             VulkanBuffer buffer = RequireBuffer(device, bindings[index].Buffer, nameof(bindings));
+            if ((buffer.Info.Usages & BufferUsages.StreamOutput) == 0)
+                throw new ArgumentException(
+                    "A transform-feedback Buffer requires StreamOutput usage.",
+                    nameof(bindings));
             BufferRange range = new BufferRange(bindings[index].Offset, bindings[index].Size)
                 .Resolve(buffer.Info.Size);
             buffers[index] = buffer.Native;
@@ -189,7 +233,10 @@ internal sealed unsafe partial class VulkanBackend
             if (bindings[index].FilledSizeBuffer is RhiBuffer publicCounter)
             {
                 VulkanBuffer counter = RequireBuffer(device, publicCounter, nameof(bindings));
-                if (bindings[index].FilledSizeOffset > counter.Info.Size - Math.Min(counter.Info.Size, 4))
+                if ((counter.Info.Usages & BufferUsages.StreamOutput) == 0 ||
+                    (bindings[index].FilledSizeOffset & 3) != 0 ||
+                    counter.Info.Size < sizeof(uint) ||
+                    bindings[index].FilledSizeOffset > counter.Info.Size - sizeof(uint))
                     throw new ArgumentOutOfRangeException(nameof(bindings));
                 counters[index] = counter.Native;
                 counterOffsets[index] = bindings[index].FilledSizeOffset;
@@ -216,7 +263,10 @@ internal sealed unsafe partial class VulkanBackend
                 counterPointer,
                 counterOffsetPointer);
         }
-        command.BeginTransformFeedback(firstSlot, checked((uint)bindings.Length));
+        command.BeginTransformFeedback(
+            firstSlot,
+            counters,
+            counterOffsets);
     }
 
     internal void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports)
@@ -362,17 +412,48 @@ internal sealed unsafe partial class VulkanBackend
 
     internal void BeginEvent(CommandContext context, ReadOnlySpan<byte> utf8Label)
     {
-        _ = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        if (DebugUtilsApi is not { } debugUtils)
+            return;
+        Span<byte> terminated = utf8Label.Length < 256
+            ? stackalloc byte[utf8Label.Length + 1]
+            : new byte[utf8Label.Length + 1];
+        utf8Label.CopyTo(terminated);
+        fixed (byte* labelName = terminated)
+        {
+            DebugUtilsLabelEXT label = new()
+            {
+                SType = StructureType.DebugUtilsLabelExt,
+                PLabelName = labelName,
+            };
+            debugUtils.CmdBeginDebugUtilsLabel(command.NativeRecording, &label);
+        }
     }
 
     internal void EndEvent(CommandContext context)
     {
-        _ = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        DebugUtilsApi?.CmdEndDebugUtilsLabel(command.NativeRecording);
     }
 
     internal void SetMarker(CommandContext context, ReadOnlySpan<byte> utf8Label)
     {
-        _ = RequireCommandContext(context, nameof(context));
+        VulkanCommandContext command = RequireCommandContext(context, nameof(context));
+        if (DebugUtilsApi is not { } debugUtils)
+            return;
+        Span<byte> terminated = utf8Label.Length < 256
+            ? stackalloc byte[utf8Label.Length + 1]
+            : new byte[utf8Label.Length + 1];
+        utf8Label.CopyTo(terminated);
+        fixed (byte* labelName = terminated)
+        {
+            DebugUtilsLabelEXT label = new()
+            {
+                SType = StructureType.DebugUtilsLabelExt,
+                PLabelName = labelName,
+            };
+            debugUtils.CmdInsertDebugUtilsLabel(command.NativeRecording, &label);
+        }
     }
 
     private void BindDescriptorGeneration(
@@ -556,28 +637,39 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private uint _transformFeedbackFirst;
-        private uint _transformFeedbackCount;
+        private VkBuffer[] _transformFeedbackCounters = [];
+        private ulong[] _transformFeedbackCounterOffsets = [];
         private bool _transformFeedback;
         private bool _conditionalRendering;
 
-        internal void BeginTransformFeedback(uint first, uint count)
+        internal void BeginTransformFeedback(
+            uint first,
+            VkBuffer[] counters,
+            ulong[] counterOffsets)
         {
             _transformFeedback = true;
             _transformFeedbackFirst = first;
-            _transformFeedbackCount = count;
+            _transformFeedbackCounters = counters;
+            _transformFeedbackCounterOffsets = counterOffsets;
         }
 
         internal void EndTransformFeedbackIfActive()
         {
             if (!_transformFeedback)
                 return;
-            ((VulkanDevice)Device).TransformFeedbackApi.CmdEndTransformFeedback(
-                NativeRecording,
-                _transformFeedbackFirst,
-                _transformFeedbackCount,
-                null,
-                null);
+            fixed (VkBuffer* counterPointer = _transformFeedbackCounters)
+            fixed (ulong* offsetPointer = _transformFeedbackCounterOffsets)
+            {
+                ((VulkanDevice)Device).TransformFeedbackApi.CmdEndTransformFeedback(
+                    NativeRecording,
+                    _transformFeedbackFirst,
+                    checked((uint)_transformFeedbackCounters.Length),
+                    counterPointer,
+                    offsetPointer);
+            }
             _transformFeedback = false;
+            _transformFeedbackCounters = [];
+            _transformFeedbackCounterOffsets = [];
         }
 
         internal void BeginConditionalRendering() => _conditionalRendering = true;
@@ -594,6 +686,19 @@ internal sealed unsafe partial class VulkanBackend
         {
             EndTransformFeedbackIfActive();
             EndConditionalRenderingIfActive();
+        }
+
+        internal void ResetRecordingState()
+        {
+            _currentPipeline = null;
+            _rendering = false;
+            _transformFeedback = false;
+            _transformFeedbackFirst = 0;
+            _transformFeedbackCounters = [];
+            _transformFeedbackCounterOffsets = [];
+            _conditionalRendering = false;
+            _shadingRateAttachment = default;
+            _shadingRateTexelSize = default;
         }
     }
 }

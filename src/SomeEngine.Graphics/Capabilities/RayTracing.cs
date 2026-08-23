@@ -32,6 +32,7 @@ public sealed class RayTracing : DeviceCapability
         bool compaction,
         bool serialization,
         bool stateObjectAdditions,
+        bool shaderRecordResourceBindings,
         uint maximumRecursionDepth,
         uint maximumPayloadSize,
         uint maximumAttributeSize,
@@ -54,6 +55,7 @@ public sealed class RayTracing : DeviceCapability
         Compaction = compaction;
         Serialization = serialization;
         StateObjectAdditions = stateObjectAdditions;
+        ShaderRecordResourceBindings = shaderRecordResourceBindings;
         MaximumRecursionDepth = maximumRecursionDepth;
         MaximumPayloadSize = maximumPayloadSize;
         MaximumAttributeSize = maximumAttributeSize;
@@ -76,6 +78,12 @@ public sealed class RayTracing : DeviceCapability
     public bool Compaction { get; }
     public bool Serialization { get; }
     public bool StateObjectAdditions { get; }
+    /// <summary>
+    /// Whether shader-table records may contain opaque resource and sampler bindings in addition
+    /// to ordinary bytes. Vulkan shader records only expose ordinary bytes; DXR local root
+    /// signatures can also expose descriptor tables.
+    /// </summary>
+    public bool ShaderRecordResourceBindings { get; }
     public uint MaximumRecursionDepth { get; }
     public uint MaximumPayloadSize { get; }
     public uint MaximumAttributeSize { get; }

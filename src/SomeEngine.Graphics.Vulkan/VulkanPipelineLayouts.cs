@@ -9,17 +9,21 @@ internal sealed unsafe partial class VulkanBackend
         private readonly VulkanDevice _device;
         private VkPipelineLayout _native;
         private VkDescriptorSetLayout[] _setLayouts;
+        private bool[] _ownedSetLayouts;
         private VkSampler[] _staticSamplers;
         private readonly VariableLayoutReflection _globalLayout;
         private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _sourceBlocks;
         private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _effectiveBlocks;
         private readonly Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> _spirvTargets;
+        private readonly VulkanBindlessSetBinding[] _bindlessBindings;
 
         internal VulkanPipelineLayoutState(
             VulkanDevice device,
             VkPipelineLayout native,
             VkDescriptorSetLayout[] setLayouts,
+            bool[] ownedSetLayouts,
             VkSampler[] staticSamplers,
+            VulkanBindlessSetBinding[] bindlessBindings,
             VariableLayoutReflection globalLayout,
             Dictionary<VariableLayoutReflection, VulkanBlockLayout> blocks,
             Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> spirvTargets)
@@ -27,7 +31,9 @@ internal sealed unsafe partial class VulkanBackend
             _device = device;
             _native = native;
             _setLayouts = setLayouts;
+            _ownedSetLayouts = ownedSetLayouts;
             _staticSamplers = staticSamplers;
+            _bindlessBindings = bindlessBindings;
             _globalLayout = globalLayout;
             _sourceBlocks = blocks;
             _effectiveBlocks = new Dictionary<VariableLayoutReflection, VulkanBlockLayout>(blocks);
@@ -38,6 +44,8 @@ internal sealed unsafe partial class VulkanBackend
         internal IReadOnlyDictionary<VariableLayoutReflection, VulkanBlockLayout> Blocks =>
             _effectiveBlocks;
         internal ReadOnlySpan<VkDescriptorSetLayout> SetLayouts => _setLayouts;
+        internal ReadOnlySpan<VulkanBindlessSetBinding> BindlessBindings =>
+            _bindlessBindings;
 
         internal ReadOnlySpan<VulkanSpirvBindingTarget> GetSpirvTargets(
             EntryPointReflection entry) =>
@@ -149,13 +157,17 @@ internal sealed unsafe partial class VulkanBackend
             _native = default;
             if (native.Handle != 0)
                 _device.Backend.Api.DestroyPipelineLayout(_device.Native, native, null);
-            foreach (VkDescriptorSetLayout layout in _setLayouts)
-                if (layout.Handle != 0)
-                    _device.Backend.Api.DestroyDescriptorSetLayout(_device.Native, layout, null);
+            for (int index = 0; index < _setLayouts.Length; index++)
+                if (_ownedSetLayouts[index] && _setLayouts[index].Handle != 0)
+                    _device.Backend.Api.DestroyDescriptorSetLayout(
+                        _device.Native,
+                        _setLayouts[index],
+                        null);
             foreach (VkSampler sampler in _staticSamplers)
                 if (sampler.Handle != 0)
                     _device.Backend.Api.DestroySampler(_device.Native, sampler, null);
             _setLayouts = [];
+            _ownedSetLayouts = [];
             _staticSamplers = [];
         }
     }
@@ -266,6 +278,7 @@ internal sealed unsafe partial class VulkanBackend
         private readonly Dictionary<VariableLayoutReflection, VulkanBlockLayout> _blocks = [];
         private readonly HashSet<VariableLayoutReflection> _inProgress = [];
         private readonly List<PushConstantRange> _pushConstants = [];
+        private readonly List<UnboundedBindingBuild> _unboundedBindings = [];
         private readonly Dictionary<VariableReflection, SamplerDesc> _staticSamplerDescriptions = [];
         private readonly HashSet<VariableReflection> _resolvedStaticSamplers = [];
         private readonly List<VkSampler> _nativeStaticSamplers = [];
@@ -428,16 +441,15 @@ internal sealed unsafe partial class VulkanBackend
                         category);
                     nint reflectedCount = dataLayout.GetDescriptorSetDescriptorRangeDescriptorCount(setIndex, descriptorRange);
                     bool unbounded = unchecked((nuint)reflectedCount) == Slang.UnboundedSize;
-                    uint count = unbounded
-                        ? DescriptorCapacity(descriptorType)
-                        : checked((uint)reflectedCount);
+                    uint count = unbounded ? 0 : checked((uint)reflectedCount);
                     VariableReflection declaration = dataLayout.GetBindingRangeLeafVariable(bindingRange);
-                    spirvTargets.Add(new VulkanSpirvBindingTarget(
+                    var spirvTarget = new VulkanSpirvBindingTarget(
                         set,
                         binding,
                         declaration == VariableReflection.Null
                             ? null
-                            : declaration.Name));
+                            : declaration.Name);
+                    spirvTargets.Add(spirvTarget);
                     SamplerDesc samplerDescription = default;
                     bool staticSampler = bindingType == ResourceBindingType.Sampler &&
                         declaration != VariableReflection.Null &&
@@ -450,6 +462,15 @@ internal sealed unsafe partial class VulkanBackend
                         immutableSampler = CreateStaticSampler(samplerDescription);
                         _resolvedStaticSamplers.Add(declaration);
                     }
+                    if (unbounded)
+                    {
+                        _unboundedBindings.Add(new UnboundedBindingBuild(
+                            spirvTarget,
+                            VulkanBindlessPublisher.ResolveKind(
+                                bindingType,
+                                descriptorType)));
+                        continue;
+                    }
                     AddSetBinding(
                         set,
                         binding,
@@ -459,7 +480,7 @@ internal sealed unsafe partial class VulkanBackend
                         DescriptorBindingFlags.PartiallyBoundBit,
                         immutableSampler);
                     usedSets.Add(set);
-                    if (unbounded || staticSampler)
+                    if (staticSampler)
                         continue;
                     DescriptorSlotDesc shape = ResolveDescriptorSlot(leaf, bindingType);
                     for (uint element = 0; element < count; element++)
@@ -569,14 +590,42 @@ internal sealed unsafe partial class VulkanBackend
             VariableLayoutReflection global,
             ReadOnlySpan<EntryPointReflection> entries)
         {
+            VulkanBindlessSetBinding[] bindlessBindings = AssignBindlessSets();
             Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> spirvTargets =
                 CreateSpirvTargetMap(global, entries);
-            uint setCount = _sets.Count == 0 ? 0 : checked(_sets.Keys.Max() + 1);
+            uint maximumSet = 0;
+            bool hasSets = false;
+            if (_sets.Count != 0)
+            {
+                maximumSet = _sets.Keys.Max();
+                hasSets = true;
+            }
+            if (bindlessBindings.Length != 0)
+            {
+                maximumSet = hasSets
+                    ? Math.Max(maximumSet, bindlessBindings.Max(static value => value.Set))
+                    : bindlessBindings.Max(static value => value.Set);
+                hasSets = true;
+            }
+            uint setCount = hasSets ? checked(maximumSet + 1) : 0;
             VkDescriptorSetLayout[] setLayouts = new VkDescriptorSetLayout[setCount];
+            bool[] ownedSetLayouts = new bool[setCount];
+            Dictionary<uint, VulkanBindlessKind> bindlessBySet = bindlessBindings
+                .ToDictionary(static value => value.Set, static value => value.Kind);
             try
             {
                 for (uint set = 0; set < setCount; set++)
-                    setLayouts[set] = CreateSetLayout(_sets.GetValueOrDefault(set));
+                {
+                    if (bindlessBySet.TryGetValue(set, out VulkanBindlessKind kind))
+                    {
+                        setLayouts[set] = _device.BindlessPublisher.GetLayout(kind);
+                    }
+                    else
+                    {
+                        setLayouts[set] = CreateSetLayout(_sets.GetValueOrDefault(set));
+                        ownedSetLayouts[set] = true;
+                    }
+                }
                 PushConstantRange[] pushConstants = MergePushConstants(_pushConstants);
                 fixed (VkDescriptorSetLayout* setPointer = setLayouts)
                 fixed (PushConstantRange* pushPointer = pushConstants)
@@ -597,7 +646,9 @@ internal sealed unsafe partial class VulkanBackend
                         _device,
                         native,
                         setLayouts,
+                        ownedSetLayouts,
                         _nativeStaticSamplers.ToArray(),
+                        bindlessBindings,
                         global,
                         _blocks,
                         spirvTargets);
@@ -605,15 +656,72 @@ internal sealed unsafe partial class VulkanBackend
             }
             catch
             {
-                foreach (VkDescriptorSetLayout layout in setLayouts)
-                    if (layout.Handle != 0)
-                        _device.Backend.Api.DestroyDescriptorSetLayout(_device.Native, layout, null);
+                for (int index = 0; index < setLayouts.Length; index++)
+                    if (ownedSetLayouts[index] && setLayouts[index].Handle != 0)
+                        _device.Backend.Api.DestroyDescriptorSetLayout(
+                            _device.Native,
+                            setLayouts[index],
+                            null);
                 foreach (VkSampler sampler in _nativeStaticSamplers)
                     if (sampler.Handle != 0)
                         _device.Backend.Api.DestroySampler(_device.Native, sampler, null);
                 _nativeStaticSamplers.Clear();
                 throw;
             }
+        }
+
+        private VulkanBindlessSetBinding[] AssignBindlessSets()
+        {
+            if (_unboundedBindings.Count == 0)
+                return [];
+            Dictionary<VulkanSpirvBindingTarget, VulkanBindlessKind> declarations = [];
+            foreach (UnboundedBindingBuild declaration in _unboundedBindings)
+            {
+                if (declarations.TryGetValue(
+                        declaration.Source,
+                        out VulkanBindlessKind existing) &&
+                    existing != declaration.Kind)
+                {
+                    throw new GraphicsException(
+                        GraphicsError.PipelineCreation,
+                        "A Slang unbounded descriptor declaration has incompatible Vulkan types.");
+                }
+                declarations[declaration.Source] = declaration.Kind;
+            }
+            uint nextSet = _sets.Count == 0 ? 0 : checked(_sets.Keys.Max() + 1);
+            VulkanBindlessKind[] kinds = declarations.Values.Distinct().Order().ToArray();
+            if (nextSet > _device.MaxBoundDescriptorSets ||
+                kinds.Length > _device.MaxBoundDescriptorSets - nextSet)
+            {
+                throw new GraphicsException(
+                    GraphicsError.PipelineCreation,
+                    "The Vulkan Pipeline requires more descriptor sets than the Device supports.");
+            }
+            Dictionary<VulkanBindlessKind, uint> sets = [];
+            var result = new VulkanBindlessSetBinding[kinds.Length];
+            for (int index = 0; index < kinds.Length; index++)
+            {
+                uint set = checked(nextSet + (uint)index);
+                sets.Add(kinds[index], set);
+                result[index] = new VulkanBindlessSetBinding(set, kinds[index]);
+            }
+            Dictionary<VulkanSpirvBindingTarget, VulkanSpirvBindingTarget> replacements =
+                declarations.ToDictionary(
+                    static pair => pair.Key,
+                    pair => new VulkanSpirvBindingTarget(
+                        sets[pair.Value],
+                        VulkanBindlessPublisher.BindingFor(pair.Value),
+                        pair.Key.Name,
+                        pair.Key.LogicalSet));
+            foreach (VulkanBlockLayout block in _blocks.Values)
+            {
+                for (int index = 0; index < block.SpirvTargets.Length; index++)
+                    if (replacements.TryGetValue(
+                            block.SpirvTargets[index],
+                            out VulkanSpirvBindingTarget replacement))
+                        block.SpirvTargets[index] = replacement;
+            }
+            return result;
         }
 
         private Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> CreateSpirvTargetMap(
@@ -734,10 +842,6 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        private uint DescriptorCapacity(DescriptorType type) => type == DescriptorType.Sampler
-            ? _device.Capabilities.Limits.SamplerDescriptorCapacity
-            : _device.Capabilities.Limits.ResourceDescriptorCapacity;
-
         private VkSampler CreateStaticSampler(in SamplerDesc desc)
         {
             ValidateSampler(desc);
@@ -759,8 +863,14 @@ internal sealed unsafe partial class VulkanBackend
                 CompareOp = ToNative(desc.Comparison.GetValueOrDefault()),
                 MinLod = desc.MinimumLod,
                 MaxLod = desc.MaximumLod,
-                BorderColor = ToNativeBorderColor(desc.BorderColor),
             };
+            SamplerCustomBorderColorCreateInfoEXT customBorder = default;
+            createInfo.BorderColor = ConfigureBorderColor(
+                _device,
+                desc.BorderColor,
+                ref customBorder);
+            if (customBorder.SType != 0)
+                createInfo.PNext = &customBorder;
             VkSampler native = default;
             ThrowIfFailed(
                 _device.Backend.Api.CreateSampler(_device.Native, &createInfo, null, &native),
@@ -1000,5 +1110,9 @@ internal sealed unsafe partial class VulkanBackend
             internal DescriptorBindingFlags Flags { get; set; } = flags;
             internal VkSampler ImmutableSampler { get; } = immutableSampler;
         }
+
+        private readonly record struct UnboundedBindingBuild(
+            VulkanSpirvBindingTarget Source,
+            VulkanBindlessKind Kind);
     }
 }

@@ -112,7 +112,7 @@ internal sealed unsafe partial class VulkanBackend
                 requirements.Size,
                 requirements.MemoryTypeBits,
                 memoryType,
-                deviceAddress: NeedsDeviceAddress(desc.Usages),
+                deviceAddress: nativeDevice.SupportsBufferDeviceAddress,
                 externalHandleTypes: (desc.Usages & BufferUsages.Shareable) != 0
                     ? ExternalMemoryHandleTypeFlags.OpaqueWin32Bit
                     : ExternalMemoryHandleTypeFlags.None);
@@ -383,9 +383,15 @@ internal sealed unsafe partial class VulkanBackend
             CompareOp = ToNative(desc.Comparison.GetValueOrDefault()),
             MinLod = desc.MinimumLod,
             MaxLod = desc.MaximumLod,
-            BorderColor = ToNativeBorderColor(desc.BorderColor),
             UnnormalizedCoordinates = false,
         };
+        SamplerCustomBorderColorCreateInfoEXT customBorder = default;
+        createInfo.BorderColor = ConfigureBorderColor(
+            nativeDevice,
+            desc.BorderColor,
+            ref customBorder);
+        if (customBorder.SType != 0)
+            createInfo.PNext = &customBorder;
         VkSampler native = default;
         ThrowIfFailed(
             Api.CreateSampler(nativeDevice.Native, &createInfo, null, &native),
@@ -494,13 +500,21 @@ internal sealed unsafe partial class VulkanBackend
         return native;
     }
 
-    private static BufferCreateInfo CreateBufferInfo(VulkanDevice device, in BufferDesc desc) => new()
+    private static BufferCreateInfo CreateBufferInfo(
+        VulkanDevice device,
+        in BufferDesc desc)
     {
-        SType = StructureType.BufferCreateInfo,
-        Size = desc.Size,
-        Usage = ToNative(desc.Usages),
-        SharingMode = SharingMode.Exclusive,
-    };
+        BufferUsageFlags usage = ToNative(desc.Usages);
+        if (device.SupportsBufferDeviceAddress)
+            usage |= BufferUsageFlags.ShaderDeviceAddressBit;
+        return new BufferCreateInfo
+        {
+            SType = StructureType.BufferCreateInfo,
+            Size = desc.Size,
+            Usage = usage,
+            SharingMode = SharingMode.Exclusive,
+        };
+    }
 
     private VkImage CreateNativeImage(
         VulkanDevice device,
@@ -712,7 +726,6 @@ internal sealed unsafe partial class VulkanBackend
             !float.IsFinite(desc.MinimumLod) || float.IsNaN(desc.MaximumLod) ||
             desc.MaximumLod < desc.MinimumLod)
             throw new ArgumentOutOfRangeException(nameof(desc));
-        _ = ToNativeBorderColor(desc.BorderColor);
     }
 
     private VulkanHeap RequireHeap(VulkanDevice device, RhiHeap heap, string parameterName)
@@ -770,7 +783,10 @@ internal sealed unsafe partial class VulkanBackend
         if ((usages & BufferUsages.ShaderWrite) != 0) result |= BufferUsageFlags.StorageBufferBit | BufferUsageFlags.StorageTexelBufferBit | BufferUsageFlags.ShaderDeviceAddressBit;
         if ((usages & BufferUsages.Vertex) != 0) result |= BufferUsageFlags.VertexBufferBit;
         if ((usages & BufferUsages.Index) != 0) result |= BufferUsageFlags.IndexBufferBit;
-        if ((usages & (BufferUsages.Indirect | BufferUsages.Predication)) != 0) result |= BufferUsageFlags.IndirectBufferBit;
+        if ((usages & (BufferUsages.Indirect | BufferUsages.Predication)) != 0)
+            result |= BufferUsageFlags.IndirectBufferBit;
+        if ((usages & BufferUsages.Indirect) != 0)
+            result |= BufferUsageFlags.ShaderDeviceAddressBit;
         if ((usages & BufferUsages.AccelerationStructure) != 0) result |= BufferUsageFlags.AccelerationStructureStorageBitKhr | BufferUsageFlags.ShaderDeviceAddressBit;
         if ((usages & BufferUsages.AccelerationStructureInput) != 0) result |= BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr | BufferUsageFlags.ShaderDeviceAddressBit;
         if ((usages & BufferUsages.StreamOutput) != 0) result |= BufferUsageFlags.TransformFeedbackBufferBitExt | BufferUsageFlags.TransformFeedbackCounterBufferBitExt;
@@ -806,10 +822,6 @@ internal sealed unsafe partial class VulkanBackend
         if ((usages & TextureUsages.Shareable) != 0) result |= HeapFlags.Shareable;
         return result;
     }
-
-    private static bool NeedsDeviceAddress(BufferUsages usages) =>
-        (usages & (BufferUsages.ShaderWrite | BufferUsages.AccelerationStructure |
-            BufferUsages.AccelerationStructureInput)) != 0;
 
     private static ImageType ToNative(TextureDimension dimension) => dimension switch
     {
@@ -891,13 +903,30 @@ internal sealed unsafe partial class VulkanBackend
         _ => throw new ArgumentOutOfRangeException(nameof(comparison)),
     };
 
-    private static BorderColor ToNativeBorderColor(in Vector4 color)
+    private static BorderColor ConfigureBorderColor(
+        VulkanDevice device,
+        in Vector4 color,
+        ref SamplerCustomBorderColorCreateInfoEXT custom)
     {
         if (color == Vector4.Zero) return BorderColor.FloatTransparentBlack;
         if (color == new Vector4(0, 0, 0, 1)) return BorderColor.FloatOpaqueBlack;
         if (color == Vector4.One) return BorderColor.FloatOpaqueWhite;
-        throw new NotSupportedException(
-            "The Vulkan adapter requires VK_EXT_custom_border_color for this Sampler border color.");
+        if (!device.ExtendedFeatures.CustomBorderColorWithoutFormat)
+        {
+            throw new NotSupportedException(
+                "The Vulkan adapter requires VK_EXT_custom_border_color for this Sampler border color.");
+        }
+        custom = new SamplerCustomBorderColorCreateInfoEXT
+        {
+            SType = StructureType.SamplerCustomBorderColorCreateInfoExt,
+            CustomBorderColor = new ClearColorValue(
+                color.X,
+                color.Y,
+                color.Z,
+                color.W),
+            Format = VkFormat.Undefined,
+        };
+        return BorderColor.FloatCustomExt;
     }
 
     internal static ulong AlignUp(ulong value, ulong alignment) =>
