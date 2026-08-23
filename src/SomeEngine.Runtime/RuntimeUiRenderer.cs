@@ -436,7 +436,8 @@ internal sealed class RuntimeUiRenderer : IDisposable
             [
                 new LiveShaderEntry("VSMain", LiveShaderStage.Vertex),
                 new LiveShaderEntry("PSMain", LiveShaderStage.Pixel),
-            ]);
+            ],
+            _device.Capabilities.ShaderTarget);
         SomeEngine.Graphics.VertexAttribute[] attributes =
         [
             new(0, 0, Format.R32G32Float, 0),

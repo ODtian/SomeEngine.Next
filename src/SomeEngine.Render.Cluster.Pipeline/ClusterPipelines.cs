@@ -82,7 +82,8 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
         {
             program = LiveShaderProgram.Link(
                 shader,
-                [new LiveShaderEntry(entryPoint, LiveShaderStage.Compute)]);
+                [new LiveShaderEntry(entryPoint, LiveShaderStage.Compute)],
+                device.Capabilities.ShaderTarget);
             pipeline = backend.CreateComputePipeline(
                 device,
                 new ComputePipelineDesc(
@@ -138,7 +139,8 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 [
                     new LiveShaderEntry(vertexEntryPoint, LiveShaderStage.Vertex),
                     new LiveShaderEntry(pixelEntryPoint, LiveShaderStage.Pixel),
-                ]);
+                ],
+                device.Capabilities.ShaderTarget);
             var multisample = new MultisampleState(sampleCount, sampleMask, alphaToCoverage);
             var blend = new BlendState(
                 blendAttachments,

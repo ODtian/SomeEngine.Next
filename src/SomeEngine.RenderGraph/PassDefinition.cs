@@ -63,9 +63,10 @@ public ref struct PassDefinition
     {
         GraphBufferAccessId access = mode switch
         {
+            GraphAccessMode.Read => Read(view, sync),
             GraphAccessMode.Write => Write(view, sync, coverage, resultContents),
             GraphAccessMode.ReadWrite => ReadWrite(view, sync, resultContents),
-            _ => throw new ArgumentException("A Buffer UAV binding must be Write or ReadWrite.", nameof(mode)),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
         AddParameterBinding(GraphParameterResourceBinding.WritableBuffer(
             view, sync, mode, coverage, resultContents));
@@ -92,9 +93,10 @@ public ref struct PassDefinition
     {
         GraphTextureAccessId access = mode switch
         {
+            GraphAccessMode.Read => Read(view, sync, layout),
             GraphAccessMode.Write => Write(view, sync, coverage, resultContents, layout),
             GraphAccessMode.ReadWrite => ReadWrite(view, sync, resultContents, layout),
-            _ => throw new ArgumentException("A Texture UAV binding must be Write or ReadWrite.", nameof(mode)),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
         AddParameterBinding(GraphParameterResourceBinding.StorageTexture(
             view, sync, mode, coverage, resultContents, layout));

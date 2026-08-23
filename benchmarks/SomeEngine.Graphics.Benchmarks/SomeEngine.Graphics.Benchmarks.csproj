@@ -34,6 +34,7 @@
                       GlobalPropertiesToRemove="PublishAot"
                       AdditionalProperties="PublishAot=false" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Vulkan/SomeEngine.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>

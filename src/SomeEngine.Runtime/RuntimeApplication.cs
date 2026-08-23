@@ -5,6 +5,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Vulkan;
 using SomeEngine.Graphics.Validation;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
@@ -65,7 +66,11 @@ internal static class RuntimeApplication
             assets.WaitAsync(uiShaderHandle).AsTask()).ConfigureAwait(false);
 
         using var window = new NativeWindow(boot.Title, boot.Width, boot.Height);
-        using IGraphicsBackend backend = CreateBackend(options.DeviceValidation);
+        if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
+            throw new ArgumentException("The WARP adapter is available only with the D3D12 backend.");
+        using IGraphicsBackend backend = CreateBackend(
+            options.GraphicsBackend,
+            options.DeviceValidation);
         AdapterInfo adapter = SelectAdapter(backend, useWarp);
         DeviceQueueDesc[] queues =
         [
@@ -110,9 +115,18 @@ internal static class RuntimeApplication
             forceHardwareRaster: useWarp);
     }
 
-    private static IGraphicsBackend CreateBackend(bool validation)
+    private static IGraphicsBackend CreateBackend(
+        RuntimeGraphicsBackend graphicsBackend,
+        bool validation)
     {
-        IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        IGraphicsBackend backend = graphicsBackend switch
+        {
+            RuntimeGraphicsBackend.Direct3D12 => D3D12GraphicsBackend.Create(),
+            RuntimeGraphicsBackend.Vulkan => VulkanGraphicsBackend.Create(new VulkanBackendOptions(
+                EnableValidation: validation,
+                EnableDebugMessages: validation)),
+            _ => throw new ArgumentOutOfRangeException(nameof(graphicsBackend)),
+        };
         if (!validation)
             return backend;
         try
@@ -133,13 +147,13 @@ internal static class RuntimeApplication
             IncludeSoftware: useWarp);
         _ = backend.TryEnumerateAdapters(options, [], out int requiredCount);
         if (requiredCount == 0)
-            throw new NotSupportedException("No Direct3D 12 adapter satisfies the Runtime request.");
+            throw new NotSupportedException("No graphics adapter satisfies the Runtime request.");
         var adapters = new AdapterInfo[requiredCount];
         if (!backend.TryEnumerateAdapters(options, adapters, out int confirmedCount) ||
             confirmedCount != adapters.Length)
         {
             throw new InvalidOperationException(
-                "The Direct3D 12 adapter set changed while Runtime selected a Device.");
+                "The graphics adapter set changed while Runtime selected a Device.");
         }
 
         if (useWarp)
@@ -591,9 +605,12 @@ internal static class RuntimeApplication
                         $"{frameMetrics.PhaseTwoHardwareClusters} HW, " +
                         $"rasterBatches={frameMetrics.RasterBatches} total/" +
                         $"{frameMetrics.SoftwareRasterBatches} SW, " +
+                        $"shadeBin={frameMetrics.ShadeBinPixels}, " +
                         $"shadePixels={frameMetrics.ShadedPixels}, " +
                         $"deformBins={frameMetrics.BinnedDeformClusters}, " +
                         $"cachedClusters={frameMetrics.CachedDeformClusters}, " +
+                        $"swDebug={frameMetrics.SoftwareRasterDebugRecords}, " +
+                        $"visProbe={frameMetrics.VisibilityProbePixels}/64, " +
                         $"deformCache={frameMetrics.DeformCacheBytes}/" +
                         $"{frameMetrics.DeformCacheCapacityBytes} bytes.");
                     uint visibleClusters = checked(
@@ -681,32 +698,39 @@ internal static class RuntimeApplication
             try
             {
                 RenderGraphFrame graphFrame = graph.BeginFrame();
-                if (reportMilestones)
-                    Console.WriteLine("First frame: recording render systems.");
-                GraphTextureId presentation = graphFrame.Import(image, graphicsQueue);
-                systems.Update(frame, graphFrame);
-                ui.Record(ref graphFrame, presentation, width, height);
-                outputVerifier?.Record(ref graphFrame, presentation);
-                if (reportMilestones)
-                    Console.WriteLine("First frame: analyzing and submitting render graph.");
-
-                int submittedQueueCount = graphFrame.Execute(completionSlots);
-                int completionCount = CompactCompletions(
-                    completionSlots,
-                    completions,
-                    submittedQueueCount);
-                ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
-                renderer.Commit(execution);
-                rendererCommitted = true;
-                ui.Commit(execution);
-                uiCommitted = true;
-                frame.Complete(execution);
-                if (outputVerifier is not null)
+                try
                 {
-                    Wait(backend, execution, window);
-                    frameOutput = outputVerifier.Read();
+                    if (reportMilestones)
+                        Console.WriteLine("First frame: recording render systems.");
+                    GraphTextureId presentation = graphFrame.Import(image, graphicsQueue);
+                    systems.Update(frame, graphFrame);
+                    ui.Record(ref graphFrame, presentation, width, height);
+                    outputVerifier?.Record(ref graphFrame, presentation, graphicsQueue);
+                    if (reportMilestones)
+                        Console.WriteLine("First frame: analyzing and submitting render graph.");
+
+                    int submittedQueueCount = graphFrame.Execute(completionSlots);
+                    int completionCount = CompactCompletions(
+                        completionSlots,
+                        completions,
+                        submittedQueueCount);
+                    ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
+                    renderer.Commit(execution);
+                    rendererCommitted = true;
+                    ui.Commit(execution);
+                    uiCommitted = true;
+                    frame.Complete(execution);
+                    if (outputVerifier is not null)
+                    {
+                        Wait(backend, execution, window);
+                        frameOutput = outputVerifier.Read();
+                    }
+                    return frameOutput;
                 }
-                return frameOutput;
+                finally
+                {
+                    graphFrame.Dispose();
+                }
             }
             catch
             {

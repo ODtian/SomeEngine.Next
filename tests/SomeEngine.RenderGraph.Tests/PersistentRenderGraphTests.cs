@@ -76,6 +76,84 @@ public sealed class PersistentRenderGraphTests
     }
 
     [Fact]
+    public void SameQueueDependenciesInheritCrossQueueWavesAndCompletionsAreCompact()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using Buffer readback = support.Backend.CreateBuffer(
+            support.Device,
+            new BufferDesc(64, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue, support.ComputeQueue, support.CopyQueue]);
+
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId gate = edit.CreateTransientBuffer(new BufferDesc(
+                64,
+                BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId value = edit.CreateTransientBuffer(new BufferDesc(
+                64,
+                BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId readbackId = edit.RegisterExternalBuffer(
+                readback,
+                [Endpoint(readback, support.CopyQueue, ResourceContentState.Undefined)]);
+            _ = AddClear(edit, "wave gate", support.CopyQueue, gate, 1);
+            GraphPassId delayed = edit.AddCopyPass<DependentClearState, byte>(
+                "cross-queue delayed clear",
+                PassQueueSelection.Exact(support.ComputeQueue),
+                new DependentClearState(gate, value, 333),
+                default,
+                static (ref PassDefinition access, ref DependentClearState state) =>
+                {
+                    _ = access.Read(
+                        state.Gate,
+                        new BufferRange(0, 64),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopySource);
+                    _ = access.Write(
+                        state.Buffer,
+                        new BufferRange(0, 64),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        WriteCoverage.Complete);
+                },
+                static (ref CopyPassCommandScope commands,
+                    in DependentClearState state,
+                    in byte _) => commands.ClearBuffer(
+                        commands.GetBuffer(state.Buffer),
+                        new BufferRange(0, 64),
+                        state.Value));
+            _ = AddClear(edit, "same-queue successor", support.ComputeQueue, value, 444);
+            GraphPassId observe = AddCopy(
+                edit,
+                "observe wave order",
+                support.CopyQueue,
+                new CopyState(value, readbackId, 64));
+            edit.OrderAfter(observe, delayed);
+            edit.Commit();
+        }
+
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        int submitted;
+        using (RenderGraphFrame frame = graph.BeginFrame())
+            submitted = frame.Execute(completions);
+        Assert.Equal(2, submitted);
+        Assert.NotEqual(default, completions[0]);
+        Assert.NotEqual(default, completions[1]);
+        Assert.Equal(default, completions[2]);
+        support.Wait(completions.AsSpan(0, submitted));
+
+        using MappedBuffer mapping = support.Backend.Map(
+            readback,
+            MapType.Read,
+            new BufferRange(0, 64));
+        mapping.Invalidate(new BufferRange(0, 64));
+        Assert.Equal(444u, BitConverter.ToUInt32(mapping.Bytes));
+    }
+
+    [Fact]
     public void DeclaredExternalSlotsBindPerFrameResources()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -829,14 +907,14 @@ public sealed class PersistentRenderGraphTests
             static (ref CopyPassCommandScope commands, in CopyState copy, in byte _) =>
                 RecordCopy(ref commands, copy));
 
-    private static void AddClear(
+    private static GraphPassId AddClear(
         RenderGraphEdit edit,
         string label,
         Queue queue,
         GraphBufferId buffer,
         uint value)
     {
-        _ = edit.AddCopyPass<ClearState, byte>(
+        return edit.AddCopyPass<ClearState, byte>(
             label,
             PassQueueSelection.Exact(queue),
             new ClearState(buffer, value),
@@ -919,6 +997,11 @@ public sealed class PersistentRenderGraphTests
         ulong Size);
 
     private readonly record struct ClearState(GraphBufferId Buffer, uint Value);
+
+    private readonly record struct DependentClearState(
+        GraphBufferId Gate,
+        GraphBufferId Buffer,
+        uint Value);
 
     private readonly record struct ObservationState(int[] Destination);
 

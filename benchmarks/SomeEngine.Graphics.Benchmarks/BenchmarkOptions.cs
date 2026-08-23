@@ -4,6 +4,12 @@ namespace SomeEngine.Graphics.Benchmarks;
 
 internal sealed class BenchmarkUsageException(string message) : Exception(message);
 
+internal enum GraphicsBackendKind : byte
+{
+    Direct3D12,
+    Vulkan,
+}
+
 internal sealed record BenchmarkOptions(
     BenchmarkCommand Command,
     BenchmarkProfile Profile,
@@ -24,7 +30,8 @@ internal sealed record BenchmarkOptions(
     bool DefaultDirectCalls,
     ReceiverVariant[] Variants,
     GraphicsWorkload[] Workloads,
-    int[] GraphicsCpuResourceCounts)
+    int[] GraphicsCpuResourceCounts,
+    GraphicsBackendKind GraphicsBackend)
 {
     internal const string Usage = """
         Usage:
@@ -33,7 +40,7 @@ internal sealed record BenchmarkOptions(
           SomeEngine.Graphics.Benchmarks diagnose --adapter <low>:<high> [--direct-mode <optimized|default>] [--output <report.json>] --native-runner <exe> [--managed-runner <exe>] [--resume <raw-directory>]
           SomeEngine.Graphics.Benchmarks certify --adapter <low>:<high> [--output <report.json>] --native-runner <exe> [--managed-runner <exe>] [--resume <raw-directory>]
           SomeEngine.Graphics.Benchmarks evaluate --input <report.json>
-          SomeEngine.Graphics.Benchmarks graph-cpu --adapter <low>:<high> [--resource-counts <25,50,...,200>] [--output <report.json>] [--warmup <minimum-frames>] [--samples <frames>]
+          SomeEngine.Graphics.Benchmarks graph-cpu --backend <d3d12|vulkan> --adapter <low>:<high> [--resource-counts <25,50,...,200>] [--output <report.json>] [--warmup <minimum-frames>] [--samples <frames>]
           SomeEngine.Graphics.Benchmarks worker --profile <warp|probe|diagnose|certify|representative> --variant <interface-receiver|direct-silk|direct-silk-default> --adapter <low>:<high> --process-index <n> --shader-dir <path> --output <path> [--direct-mode <optimized|default>] [internal count options]
         """;
 
@@ -140,6 +147,12 @@ internal sealed record BenchmarkOptions(
             _ => throw new BenchmarkUsageException(
                 "--direct-mode must be either 'optimized' or 'default'."),
         };
+        GraphicsBackendKind graphicsBackend = Normalize(Get(values, "backend") ?? "d3d12") switch
+        {
+            "d3d12" or "direct3d12" => GraphicsBackendKind.Direct3D12,
+            "vulkan" => GraphicsBackendKind.Vulkan,
+            _ => throw new BenchmarkUsageException("--backend must be either 'd3d12' or 'vulkan'."),
+        };
 
         ValidateKnown(values);
         if (command == BenchmarkCommand.Worker && (variant is null || adapterText is null))
@@ -175,6 +188,8 @@ internal sealed record BenchmarkOptions(
         }
         if (command == BenchmarkCommand.Warp && adapterText is not null)
             throw new BenchmarkUsageException("warp selects the D3D12 WARP adapter automatically; --adapter is not valid.");
+        if (Get(values, "backend") is not null && command != BenchmarkCommand.GraphCpu)
+            throw new BenchmarkUsageException("--backend is valid only with graph-cpu.");
         if (command == BenchmarkCommand.Certify &&
             (warmup != FixedGraphicsProtocol.WarmupFrames ||
              measured != FixedGraphicsProtocol.MeasuredFrames ||
@@ -212,7 +227,8 @@ internal sealed record BenchmarkOptions(
             defaultDirectCalls,
             ParseVariants(Get(values, "variants"), command),
             ParseWorkloads(Get(values, "workloads"), command),
-            ParseGraphicsCpuResourceCounts(Get(values, "resource-counts"), command));
+            ParseGraphicsCpuResourceCounts(Get(values, "resource-counts"), command),
+            graphicsBackend);
     }
 
     private static BenchmarkCommand ParseCommand(string value) => Normalize(value) switch
@@ -367,7 +383,7 @@ internal sealed record BenchmarkOptions(
         string[] known =
         [
             "output", "adapter", "variant", "process-index", "warmup", "samples",
-            "draws", "barriers", "shader-dir", "native-runner", "managed-runner", "input", "profile", "resume", "variants", "workloads", "direct-mode", "resource-counts",
+            "draws", "barriers", "shader-dir", "native-runner", "managed-runner", "input", "profile", "resume", "variants", "workloads", "direct-mode", "resource-counts", "backend",
         ];
         foreach (string key in values.Keys)
         {

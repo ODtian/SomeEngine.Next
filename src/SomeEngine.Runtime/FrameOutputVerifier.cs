@@ -72,9 +72,11 @@ internal sealed class FrameOutputVerifier : IDisposable
 
     internal void Record(
         ref RenderGraphFrame graph,
-        GraphTextureId source)
+        GraphTextureId source,
+        Queue presentationQueue)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(presentationQueue);
         GraphBufferId destination = graph.Import(
             _readback,
             [new BufferBoundaryState(
@@ -92,7 +94,7 @@ internal sealed class FrameOutputVerifier : IDisposable
             checked((uint)_height));
         _ = graph.AddCopyPass(
             "Verify runtime frame output",
-            PassQueueSelection.AnyOfType(QueueType.Copy),
+            PassQueueSelection.Exact(presentationQueue),
             passData,
             default,
             static (ref PassDefinition access, ref ReadbackPassData data) =>

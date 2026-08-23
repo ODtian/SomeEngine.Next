@@ -100,6 +100,18 @@ public sealed class BenchmarkOptionsTests
 
         Assert.Equal(BenchmarkProfile.GraphicsCpuDevelopment, options.Profile);
         Assert.Equal([200], options.GraphicsCpuResourceCounts);
+        Assert.Equal(GraphicsBackendKind.Direct3D12, options.GraphicsBackend);
+    }
+
+    [Fact]
+    public void GraphCpuAcceptsTheVulkanBackend()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "graph-cpu", "--adapter", "1:0",
+            "--backend", "vulkan",
+        ]);
+
+        Assert.Equal(GraphicsBackendKind.Vulkan, options.GraphicsBackend);
     }
 
     [Fact]

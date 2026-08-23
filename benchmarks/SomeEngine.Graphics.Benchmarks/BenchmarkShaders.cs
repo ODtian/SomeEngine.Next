@@ -181,6 +181,27 @@ internal static class BenchmarkShaders
         }
     }
 
+    internal static BenchmarkShaderProgram OpenVulkan()
+    {
+        Compiled compiled = Compile(SlangCompileTarget.Spirv);
+        try
+        {
+            string identity = BenchmarkEnvironment.Sha256Bytes(
+                System.Text.Encoding.UTF8.GetBytes(Source + "\nspirv/glsl_460"));
+            return new BenchmarkShaderProgram(
+                compiled.Owned,
+                compiled.Program,
+                compiled.Reflection,
+                compiled.ReflectedEntries,
+                identity);
+        }
+        catch
+        {
+            Release(compiled.Owned);
+            throw;
+        }
+    }
+
     private static ShaderManifest ReadManifest(ReadOnlyMemory<byte> bytes)
     {
         using JsonDocument document = JsonDocument.Parse(bytes);
@@ -233,22 +254,34 @@ internal static class BenchmarkShaders
             BenchmarkEnvironment.Sha256Bytes(manifest));
     }
 
-    private static Compiled Compile()
+    private static Compiled Compile(SlangCompileTarget target = SlangCompileTarget.Dxil)
     {
         var owned = new List<ComObject>();
         var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
         try
         {
             IGlobalSession global = GlobalSession.Value;
-            SlangProfileID profile = global.FindProfile(ProfileName);
+            SlangProfileID profile = global.FindProfile(
+                target == SlangCompileTarget.Spirv ? "glsl_460" : ProfileName);
             SessionDesc description = new()
             {
                 Targets =
                 [
                     new TargetDesc
                     {
-                        Format = SlangCompileTarget.Dxil,
+                        Format = target,
                         Profile = profile,
+                        Flags = target == SlangCompileTarget.Spirv
+                            ? SlangTargetFlags.GenerateSpirvDirectly
+                            : 0,
+                        CompilerOptionEntries = target == SlangCompileTarget.Spirv
+                            ?
+                            [
+                                new(
+                                    CompilerOptionName.VulkanUseEntryPointName,
+                                    CompilerOptionValue.FromInt(1)),
+                            ]
+                            : [],
                     },
                 ],
                 DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
@@ -314,7 +347,7 @@ internal static class BenchmarkShaders
                 }
                 RequireSuccess(
                     linked.GetEntryPointCode(index, 0, out ISlangBlob blob, out ISlangBlob? diagnostics),
-                    $"Slang DXIL emission '{Entries[index].Name}'",
+                    $"Slang {target} emission '{Entries[index].Name}'",
                     diagnostics);
                 Track(blob);
                 TrackOptional(diagnostics);

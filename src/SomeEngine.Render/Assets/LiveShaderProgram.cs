@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.Render.Assets;
 
@@ -63,7 +64,8 @@ public sealed class LiveShaderProgram : IDisposable
 
     public static LiveShaderProgram Link(
         Shader shader,
-        ReadOnlySpan<LiveShaderEntry> entries)
+        ReadOnlySpan<LiveShaderEntry> entries,
+        ShaderTarget shaderTarget = ShaderTarget.Dxil)
     {
         ArgumentNullException.ThrowIfNull(shader);
         if (entries.IsEmpty)
@@ -86,15 +88,30 @@ public sealed class LiveShaderProgram : IDisposable
         try
         {
             IGlobalSession globalSession = s_globalSession.Value;
-            SlangProfileID profile = globalSession.FindProfile("sm_6_8");
+            SlangCompileTarget target = shaderTarget == ShaderTarget.Spirv
+                ? SlangCompileTarget.Spirv
+                : SlangCompileTarget.Dxil;
+            SlangProfileID profile = globalSession.FindProfile(
+                shaderTarget == ShaderTarget.Spirv ? "glsl_460" : "sm_6_6");
             var sessionDescription = new SessionDesc
             {
                 Targets =
                 [
                     new TargetDesc
                     {
-                        Format = SlangCompileTarget.Dxil,
+                        Format = target,
                         Profile = profile,
+                        Flags = shaderTarget == ShaderTarget.Spirv
+                            ? SlangTargetFlags.GenerateSpirvDirectly
+                            : 0,
+                        CompilerOptionEntries = shaderTarget == ShaderTarget.Spirv
+                            ?
+                            [
+                                new(
+                                    CompilerOptionName.VulkanUseEntryPointName,
+                                    CompilerOptionValue.FromInt(1)),
+                            ]
+                            : [],
                     },
                 ],
                 DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,

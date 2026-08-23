@@ -40,11 +40,13 @@
   <Project Path="src\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
   <Project Path="src\SomeEngine.Graphics.Validation\SomeEngine.Graphics.Validation.csproj" />
   <Project Path="src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
+  <Project Path="src\SomeEngine.Graphics.Vulkan\SomeEngine.Graphics.Vulkan.csproj" />
   <Project Path="src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
   <Project Path="src\SomeEngine.RenderGraph.Diagnostics\SomeEngine.RenderGraph.Diagnostics.csproj" />
   <Project Path="tests\SomeEngine.RenderGraph.Tests\SomeEngine.RenderGraph.Tests.csproj" />
   <Project Path="tests\SomeEngine.Graphics.Tests\SomeEngine.Graphics.Tests.csproj" />
   <Project Path="tests\SomeEngine.Graphics.Direct3D12.Tests\SomeEngine.Graphics.Direct3D12.Tests.csproj" />
+  <Project Path="tests\SomeEngine.Graphics.Vulkan.Tests\SomeEngine.Graphics.Vulkan.Tests.csproj" />
   <Project Path="tests\SomeEngine.Graphics.Benchmarks.Tests\SomeEngine.Graphics.Benchmarks.Tests.csproj" />
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />

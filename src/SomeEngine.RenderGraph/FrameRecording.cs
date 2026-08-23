@@ -98,6 +98,7 @@ internal sealed partial class FrameExecutor
                 if (!_submittedQueues[queueSlot]) continue;
                 destination[count++] = destination[queueSlot];
             }
+            destination.Slice(count, _submittedQueues.Length - count).Clear();
             return count;
         }
         catch
@@ -119,15 +120,23 @@ internal sealed partial class FrameExecutor
             Queue queue = _passes[pass].Queue!;
             foreach (int predecessor in _predecessors[pass])
             {
-                if (!_live[predecessor] || ReferenceEquals(_passes[predecessor].Queue, queue))
-                    continue;
-                value = Math.Max(value, _waveByPass[predecessor] + 1);
+                if (!_live[predecessor]) continue;
+                int queueCrossing = ReferenceEquals(_passes[predecessor].Queue, queue)
+                    ? 0
+                    : 1;
+                value = Math.Max(
+                    value,
+                    _waveByPass[predecessor] + queueCrossing);
             }
             foreach (int predecessor in _physicalPredecessors[pass])
             {
-                if (!_live[predecessor] || ReferenceEquals(_passes[predecessor].Queue, queue))
-                    continue;
-                value = Math.Max(value, _waveByPass[predecessor] + 1);
+                if (!_live[predecessor]) continue;
+                int queueCrossing = ReferenceEquals(_passes[predecessor].Queue, queue)
+                    ? 0
+                    : 1;
+                value = Math.Max(
+                    value,
+                    _waveByPass[predecessor] + queueCrossing);
             }
             _waveByPass[pass] = value;
             maximum = Math.Max(maximum, value);
@@ -545,7 +554,16 @@ internal sealed partial class FrameExecutor
                 row.ParameterLayout,
                 bindings,
                 row.ParameterOrdinaryData ?? []);
-            _frame.Backend.SetTransientParameterBindings(context, block);
+            try
+            {
+                _frame.Backend.SetTransientParameterBindings(context, block);
+            }
+            catch (Exception failure)
+            {
+                throw new InvalidOperationException(
+                    $"RenderGraph Pass '{row.Label}' failed to bind shader parameters.",
+                    failure);
+            }
         }
         finally
         {

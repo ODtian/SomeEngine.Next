@@ -84,10 +84,16 @@ public sealed partial class ClusterRendererSystem
             Phase2CandidateArgs = frame.Phase2CandidateArgs,
             Phase2DrawArgs = frame.Phase2DrawArgs,
             RasterReserve = frame.RasterReserveCounters,
+            ShadeCount = frame.ShadeBinCounts,
             ShadeReserve = frame.ShadeReserveCounters,
             DeformReserve = frame.DeformReserveCounters,
             CacheAllocation = frame.CacheAllocationCounter,
             SoftwareDebug = frame.SoftwareDebug,
+            Visibility = frame.VisBuffer,
+            VisibilityProbeX = checked((uint)Math.Max(
+                0,
+                frame.Width / 2 - VisibilityProbePixelCount / 2)),
+            VisibilityProbeY = checked((uint)(frame.Height / 2)),
             Destination = frame.FrameMetricsReadback,
         };
         _ = graph.AddCopyPass(
@@ -104,10 +110,17 @@ public sealed partial class ClusterRendererSystem
                 Read(ref access, data.Phase2CandidateArgs, 0, 12);
                 Read(ref access, data.Phase2DrawArgs, 0, 16);
                 Read(ref access, data.RasterReserve, 2 * sizeof(uint), 2 * sizeof(uint));
+                Read(ref access, data.ShadeCount, 0, sizeof(uint));
                 Read(ref access, data.ShadeReserve, 0, sizeof(uint));
                 Read(ref access, data.DeformReserve, sizeof(uint), sizeof(uint));
                 Read(ref access, data.CacheAllocation, 0, 2 * sizeof(uint));
                 Read(ref access, data.SoftwareDebug, 0, sizeof(uint));
+                _ = access.Read(
+                    data.Visibility,
+                    new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                    PipelineSync.Copy,
+                    ResourceAccess.CopySource,
+                    TextureLayout.CopySource);
                 _ = access.Write(data.Destination,
                     new BufferRange(0, FrameMetricsReadbackByteSize),
                     PipelineSync.Copy,
@@ -633,6 +646,7 @@ public sealed partial class ClusterRendererSystem
                     ScreenWidth = checked((uint)frame.Width),
                     ScreenHeight = checked((uint)frame.Height),
                     MaxBins = frame.MaterialCount,
+                    DebugDump = _options.EnableFrameMetricsReadback ? 1u : 0u,
                     CurrentBin = bin,
                 },
                 phaseOne

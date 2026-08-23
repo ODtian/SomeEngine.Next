@@ -4,6 +4,7 @@ using System.Numerics;
 using SlangShaderSharp;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
+using SomeEngine.Graphics.Vulkan;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
 using Queue = SomeEngine.Graphics.Queue;
@@ -67,7 +68,7 @@ internal static class RenderGraphCpuBenchmark
     internal static int Run(BenchmarkOptions options)
     {
         if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("The real D3D12 RenderGraph CPU benchmark requires Windows.");
+            throw new PlatformNotSupportedException("The real RenderGraph CPU benchmark requires Windows in this build.");
         if (!options.AdapterSpecified)
             throw new BenchmarkUsageException("graph-cpu requires an explicit hardware --adapter LUID.");
         if (options.MeasuredFrames < FixedGraphicsProtocol.GraphicsCpuMeasuredFrames)
@@ -78,18 +79,26 @@ internal static class RenderGraphCpuBenchmark
 
         DateTimeOffset started = DateTimeOffset.UtcNow;
         Directory.CreateDirectory(options.ShaderDirectory);
-        BenchmarkShaders.EmitSharedArtifacts(options.ShaderDirectory);
+        if (options.GraphicsBackend == GraphicsBackendKind.Direct3D12)
+            BenchmarkShaders.EmitSharedArtifacts(options.ShaderDirectory);
 
-        IGraphicsBackend nativeBackend = D3D12GraphicsBackend.Create(new D3D12BackendOptions(
-            new D3D12ValidationOptions(
-                DisableGpuBasedValidation: true,
-                DisableSynchronizedQueueValidation: true,
-                DisableDred: true),
-            UseQueueSpecificCommonLayouts: true));
         bool diagnosticValidation = string.Equals(
             Environment.GetEnvironmentVariable("SOMEENGINE_GRAPH_CPU_VALIDATION"),
             "1",
             StringComparison.Ordinal);
+        IGraphicsBackend nativeBackend = options.GraphicsBackend switch
+        {
+            GraphicsBackendKind.Direct3D12 => D3D12GraphicsBackend.Create(new D3D12BackendOptions(
+                new D3D12ValidationOptions(
+                    DisableGpuBasedValidation: true,
+                    DisableSynchronizedQueueValidation: true,
+                    DisableDred: true),
+                UseQueueSpecificCommonLayouts: true)),
+            GraphicsBackendKind.Vulkan => VulkanGraphicsBackend.Create(new VulkanBackendOptions(
+                EnableValidation: diagnosticValidation,
+                EnableDebugMessages: diagnosticValidation)),
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
         using IGraphicsBackend backend = diagnosticValidation
             ? new ValidationLayer(
                 nativeBackend,
@@ -106,13 +115,13 @@ internal static class RenderGraphCpuBenchmark
             [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: DeviceFeatures.IndirectCommands,
             label: "Dagor Enlisted source-derived graphics CPU benchmark"));
-        if (!backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics) || diagnostics is null)
+        D3D12Diagnostics? diagnostics = null;
+        if (options.GraphicsBackend == GraphicsBackendKind.Direct3D12 &&
+            (!backend.TryGetCapability(device, out diagnostics) || diagnostics is null))
             throw new InvalidOperationException("The D3D12 diagnostics capability is unavailable.");
-        if (!diagnosticValidation &&
-            (diagnostics.DebugLayerEnabled ||
-             diagnostics.GpuBasedValidationEnabled ||
-             diagnostics.SynchronizedQueueValidationEnabled ||
-             diagnostics.DredEnabled))
+        if (!diagnosticValidation && diagnostics is not null &&
+            (diagnostics.DebugLayerEnabled || diagnostics.GpuBasedValidationEnabled ||
+             diagnostics.SynchronizedQueueValidationEnabled || diagnostics.DredEnabled))
         {
             throw new InvalidOperationException(
                 "Validation or DRED is enabled. Disable it before collecting CPU performance evidence.");
@@ -121,7 +130,7 @@ internal static class RenderGraphCpuBenchmark
         WorkerConfiguration environmentConfiguration = new(
             BenchmarkProfile.GraphicsCpuDevelopment,
             ReceiverVariant.InterfaceReceiver,
-            options.AdapterId,
+            adapter.Id,
             0,
             options.WarmupFrames,
             options.MeasuredFrames,
@@ -133,10 +142,14 @@ internal static class RenderGraphCpuBenchmark
             environmentConfiguration,
             adapter,
             validationEnabled: diagnosticValidation,
-            dredEnabled: diagnostics.DredEnabled,
-            ".NET 10 / SomeEngine RenderGraph / Silk.NET D3D12");
+            dredEnabled: diagnostics?.DredEnabled ?? false,
+            options.GraphicsBackend == GraphicsBackendKind.Vulkan
+                ? ".NET 10 / SomeEngine RenderGraph / Silk.NET Vulkan 1.3"
+                : ".NET 10 / SomeEngine RenderGraph / Silk.NET D3D12");
 
-        using BenchmarkShaderProgram shader = BenchmarkShaders.Open(options.ShaderDirectory);
+        using BenchmarkShaderProgram shader = options.GraphicsBackend == GraphicsBackendKind.Vulkan
+            ? BenchmarkShaders.OpenVulkan()
+            : BenchmarkShaders.Open(options.ShaderDirectory);
         using Pipeline graphicsPipeline = CreateGraphicsPipeline(backend, device, shader);
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
@@ -186,7 +199,8 @@ internal static class RenderGraphCpuBenchmark
                     resourceCount,
                     seed,
                     options.WarmupFrames,
-                    options.MeasuredFrames);
+                    options.MeasuredFrames,
+                    options.GraphicsBackend);
                 Console.WriteLine(
                     $"{results[index].Case}: P50 {results[index].Cpu.P50:F1} us, " +
                     $"P95 {results[index].Cpu.P95:F1} us, P99 {results[index].Cpu.P99:F1} us, " +
@@ -237,7 +251,8 @@ internal static class RenderGraphCpuBenchmark
         int resourceCount,
         uint seed,
         int minimumWarmupFrames,
-        int measuredFrames)
+        int measuredFrames,
+        GraphicsBackendKind graphicsBackend)
     {
         using var graph = new RenderGraph.RenderGraph(
             backend,
@@ -318,10 +333,10 @@ internal static class RenderGraphCpuBenchmark
                 1,
                 1,
                 false,
-                true,
+                graphicsBackend == GraphicsBackendKind.Direct3D12,
                 statistics.LogicalTransientBytes,
                 statistics.PhysicalTransientBytes),
-            "Immediately before RenderGraph.BeginFrame through real D3D12 command-list close and Queue.Submit return; frame-slot GPU wait is outside.",
+            $"Immediately before RenderGraph.BeginFrame through real {graphicsBackend} command-buffer close and Queue.Submit return; frame-slot GPU wait is outside.",
             minimumWarmupFrames,
             measurement.Warmup.Length,
             measurement.PlateauReached,
@@ -1041,6 +1056,12 @@ internal static class RenderGraphCpuBenchmark
             confirmed != adapters.Length)
         {
             throw new InvalidOperationException("The adapter set changed during enumeration.");
+        }
+        if (id.IsDefault)
+        {
+            foreach (ref readonly AdapterInfo adapter in adapters.AsSpan())
+                if (adapter.Type == AdapterType.Discrete) return adapter;
+            if (adapters.Length != 0) return adapters[0];
         }
         foreach (ref readonly AdapterInfo adapter in adapters.AsSpan())
             if (adapter.Id == id) return adapter;

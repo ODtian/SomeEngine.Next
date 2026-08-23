@@ -81,39 +81,7 @@ internal sealed unsafe partial class D3D12Backend
             }
 
             if (desc.DepthStencil is DepthStencilAttachmentDesc depthStencilAttachment)
-            {
-                ClearFlags clearFlags = 0;
-                if (depthStencilAttachment.DepthLoad == LoadType.Clear)
-                    clearFlags |= ClearFlags.Depth;
-                else if (depthStencilAttachment.DepthLoad == LoadType.Discard)
-                    EmitDiscardResource(
-                        command,
-                        command.RenderingDepthStencilResource!,
-                        command.RenderingDepthStencilRange with
-                        {
-                            Aspects = TextureAspects.Depth,
-                        });
-                if (depthStencilAttachment.StencilLoad == LoadType.Clear)
-                    clearFlags |= ClearFlags.Stencil;
-                else if (depthStencilAttachment.StencilLoad == LoadType.Discard)
-                    EmitDiscardResource(
-                        command,
-                        command.RenderingDepthStencilResource!,
-                        command.RenderingDepthStencilRange with
-                        {
-                            Aspects = TextureAspects.Stencil,
-                        });
-                if (clearFlags != 0)
-                {
-                    command.List->ClearDepthStencilView(
-                        depthStencil,
-                        clearFlags,
-                        depthStencilAttachment.ClearDepth,
-                        depthStencilAttachment.ClearStencil,
-                        0,
-                        null);
-                }
-            }
+                ApplyDepthStencilLoad(command, depthStencilAttachment, depthStencil);
 
             command.CommitRenderingState();
         }
@@ -122,6 +90,40 @@ internal sealed unsafe partial class D3D12Backend
             command.CancelRenderingState();
             throw;
         }
+    }
+
+    private void ApplyDepthStencilLoad(
+        D3D12CommandContext command,
+        in DepthStencilAttachmentDesc attachment,
+        CpuDescriptorHandle descriptor)
+    {
+        ClearFlags clearFlags = 0;
+        TextureSubresourceRange range = command.RenderingDepthStencilRange;
+        bool hasDepth = (range.Aspects & TextureAspects.Depth) != 0;
+        bool hasStencil = (range.Aspects & TextureAspects.Stencil) != 0;
+        if (hasDepth && attachment.DepthLoad == LoadType.Clear)
+            clearFlags |= ClearFlags.Depth;
+        else if (hasDepth && attachment.DepthLoad == LoadType.Discard)
+            EmitDiscardResource(
+                command,
+                command.RenderingDepthStencilResource!,
+                range with { Aspects = TextureAspects.Depth });
+        if (hasStencil && attachment.StencilLoad == LoadType.Clear)
+            clearFlags |= ClearFlags.Stencil;
+        else if (hasStencil && attachment.StencilLoad == LoadType.Discard)
+            EmitDiscardResource(
+                command,
+                command.RenderingDepthStencilResource!,
+                range with { Aspects = TextureAspects.Stencil });
+        if (clearFlags == 0)
+            return;
+        command.List->ClearDepthStencilView(
+            descriptor,
+            clearFlags,
+            attachment.ClearDepth,
+            attachment.ClearStencil,
+            0,
+            null);
     }
 
     private int PrepareRenderingDescription(
@@ -282,13 +284,19 @@ internal sealed unsafe partial class D3D12Backend
 
         D3D12TextureResource resource = command.RequireAttachment(depth.View);
         TextureSubresourceRange range = depth.View.Description.Range;
-        if (depth.DepthLoad == LoadType.Discard || depth.DepthStore == StoreType.Discard)
+        bool hasDepth = (range.Aspects & TextureAspects.Depth) != 0;
+        bool hasStencil = (range.Aspects & TextureAspects.Stencil) != 0;
+        bool discardDepth = hasDepth &&
+            (depth.DepthLoad == LoadType.Discard || depth.DepthStore == StoreType.Discard);
+        bool discardStencil = hasStencil &&
+            (depth.StencilLoad == LoadType.Discard || depth.StencilStore == StoreType.Discard);
+        if (discardDepth)
         {
             ValidateDiscardView(
                 resource,
                 range with { Aspects = TextureAspects.Depth });
         }
-        if (depth.StencilLoad == LoadType.Discard || depth.StencilStore == StoreType.Discard)
+        if (discardStencil)
         {
             ValidateDiscardView(
                 resource,
@@ -297,8 +305,8 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareRenderingDepthStencil(
             resource,
             range,
-            depth.DepthStore == StoreType.Discard,
-            depth.StencilStore == StoreType.Discard);
+            hasDepth && depth.DepthStore == StoreType.Discard,
+            hasStencil && depth.StencilStore == StoreType.Discard);
     }
 
     public void EndRendering(CommandContext context)

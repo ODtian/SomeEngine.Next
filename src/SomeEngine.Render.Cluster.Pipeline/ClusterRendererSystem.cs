@@ -724,18 +724,29 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             ReadUInt32(bytes, Phase2DrawArgsReadbackOffset + 2 * sizeof(uint)),
             ReadUInt32(bytes, RasterReserveReadbackOffset),
             ReadUInt32(bytes, RasterReserveReadbackOffset + sizeof(uint)),
+            ReadUInt32(bytes, ShadeBinCountReadbackOffset),
             ReadUInt32(bytes, ShadeReserveReadbackOffset),
             ReadUInt32(bytes, DeformReserveReadbackOffset),
             ReadUInt32(bytes, CachedDeformClustersReadbackOffset),
             ReadUInt32(bytes, CacheAllocationReadbackOffset),
             _options.DeformCacheBytes,
-            ReadUInt32(bytes, SoftwareDebugReadbackOffset));
+            ReadUInt32(bytes, SoftwareDebugReadbackOffset),
+            CountNonZeroVisibilityProbe(bytes));
         _frameMetricReadbackFrames[generation] = 0;
         _frameMetricReadbackPending[generation] = false;
     }
 
     private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, sizeof(uint)));
+
+    private static uint CountNonZeroVisibilityProbe(ReadOnlySpan<byte> bytes)
+    {
+        uint result = 0;
+        for (int index = 0; index < VisibilityProbePixelCount; index++)
+            if (ReadUInt32(bytes, VisibilityProbeReadbackOffset + index * sizeof(uint)) != 0)
+                result++;
+        return result;
+    }
 
     private void ReadMappedBuffer(Buffer source, Span<byte> destination)
     {

@@ -22,4 +22,24 @@ public sealed class RuntimeStartupOptionsConsumerTests
         Assert.True(options.WaitForPipelineWarmup);
         Assert.True(options.SkipSwapchainPresent);
     }
+
+    [Theory]
+    [InlineData("--graphics-backend", "vulkan")]
+    [InlineData("--backend", "VULKAN")]
+    public void ParseSelectsTheVulkanBackend(string option, string value)
+    {
+        RuntimeStartupOptions options = RuntimeStartupOptions.Parse([option, value]);
+
+        Assert.Equal(RuntimeGraphicsBackend.Vulkan, options.GraphicsBackend);
+    }
+
+    [Fact]
+    public void ParseUsesD3D12ByDefaultAndRejectsUnknownBackends()
+    {
+        Assert.Equal(
+            RuntimeGraphicsBackend.Direct3D12,
+            RuntimeStartupOptions.Parse([]).GraphicsBackend);
+        Assert.Throws<ArgumentException>(() =>
+            RuntimeStartupOptions.Parse(["--graphics-backend", "metal"]));
+    }
 }

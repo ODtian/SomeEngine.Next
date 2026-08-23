@@ -24,7 +24,12 @@ public sealed partial class ClusterRendererSystem
     internal const int CacheAllocationReadbackOffset = 80;
     internal const int CachedDeformClustersReadbackOffset = 84;
     internal const int SoftwareDebugReadbackOffset = 88;
-    internal const int FrameMetricsReadbackByteSize = 92;
+    internal const int ShadeBinCountReadbackOffset = 92;
+    internal const int VisibilityProbeReadbackOffset = 512;
+    internal const int VisibilityProbePixelCount = 64;
+    internal const int VisibilityProbeRowPitch = VisibilityProbePixelCount * sizeof(uint);
+    internal const int FrameMetricsReadbackByteSize =
+        VisibilityProbeReadbackOffset + VisibilityProbeRowPitch;
     private const uint MaxBinnedEntriesPerCluster = 9;
     private const uint ClusterVertexCapacity = 64;
     private const int RasterBinStride = 32;
@@ -280,7 +285,8 @@ public sealed partial class ClusterRendererSystem
             1,
             1,
             Format.R32UInt,
-            TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
+            TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment |
+            TextureUsages.CopySource,
             label: "Cluster visibility buffer"));
         frame.Depth = graph.CreateTexture(new TextureDesc(
             TextureDimension.Texture2D,

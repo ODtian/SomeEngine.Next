@@ -13,9 +13,11 @@ public readonly record struct ClusterFrameMetrics(
     uint PhaseTwoHardwareClusters,
     uint RasterBatches,
     uint SoftwareRasterBatches,
+    uint ShadeBinPixels,
     uint ShadedPixels,
     uint BinnedDeformClusters,
     uint CachedDeformClusters,
     uint DeformCacheBytes,
     ulong DeformCacheCapacityBytes,
-    uint SoftwareRasterDebugRecords);
+    uint SoftwareRasterDebugRecords,
+    uint VisibilityProbePixels);

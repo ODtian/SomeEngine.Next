@@ -3,6 +3,12 @@ using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Runtime;
 
+public enum RuntimeGraphicsBackend : byte
+{
+    Direct3D12,
+    Vulkan,
+}
+
 public sealed record RuntimeStartupOptions(
     int FrameLimit,
     bool WindowVSync,
@@ -16,6 +22,7 @@ public sealed record RuntimeStartupOptions(
     string? RenderDocCapture,
     uint RenderDocFrame,
     bool DeviceValidation,
+    RuntimeGraphicsBackend GraphicsBackend,
     bool DynamicScene,
     bool AsyncCompute,
     ProfilerOptions Profiler)
@@ -60,6 +67,10 @@ public sealed record RuntimeStartupOptions(
                 enableSwitches: ["--gpu-validation", "--rhi-validation"],
                 disableSwitches: ["--no-gpu-validation", "--no-rhi-validation"],
                 defaultValue: false),
+            GraphicsBackend: ParseGraphicsBackend(
+                ReadOptionalValue(args, "--graphics-backend") ??
+                ReadOptionalValue(args, "--backend") ??
+                "d3d12"),
             DynamicScene: ReadBooleanOption(
                 args,
                 enableSwitches: ["--dynamic-scene"],
@@ -72,6 +83,14 @@ public sealed record RuntimeStartupOptions(
                 defaultValue: true),
             Profiler: SomeEngine.Core.Diagnostics.Profiler.ParseOptions(args));
     }
+
+    private static RuntimeGraphicsBackend ParseGraphicsBackend(string value) =>
+        value.Trim().ToLowerInvariant() switch
+        {
+            "d3d12" or "direct3d12" => RuntimeGraphicsBackend.Direct3D12,
+            "vulkan" => RuntimeGraphicsBackend.Vulkan,
+            _ => throw new ArgumentException("--graphics-backend requires 'd3d12' or 'vulkan'."),
+        };
 
     private static int ReadPositive(string[] args, string optionName, int defaultValue)
     {

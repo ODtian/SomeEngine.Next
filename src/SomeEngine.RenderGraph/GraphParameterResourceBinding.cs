@@ -259,7 +259,7 @@ public readonly struct GraphParameterResourceBinding
 
     private static void ValidateStorageMode(GraphAccessMode mode)
     {
-        if (mode is not (GraphAccessMode.Write or GraphAccessMode.ReadWrite))
+        if (!Enum.IsDefined(mode))
             throw new ArgumentOutOfRangeException(nameof(mode));
     }
 }

@@ -558,13 +558,9 @@ internal sealed partial class FrameExecutor
     private void PrepareReaderScratch(int count)
     {
         if (_readerScratch.Length < count)
-        {
-            int previous = _readerScratch.Length;
             EnsureCapacity(ref _readerScratch, count);
-            for (int index = previous; index < _readerScratch.Length; index++)
-                _readerScratch[index] = [];
-        }
-        for (int index = 0; index < count; index++) _readerScratch[index].Clear();
+        for (int index = 0; index < count; index++)
+            (_readerScratch[index] ??= []).Clear();
     }
 
     private int BuildQueryCoordinates(in FrameQueryPool pool, List<int> accesses)

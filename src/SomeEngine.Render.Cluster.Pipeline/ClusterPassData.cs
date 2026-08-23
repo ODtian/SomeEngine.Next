@@ -313,10 +313,14 @@ internal struct ClusterFrameMetricsReadbackParameters
     internal GraphBufferId Phase2CandidateArgs;
     internal GraphBufferId Phase2DrawArgs;
     internal GraphBufferId RasterReserve;
+    internal GraphBufferId ShadeCount;
     internal GraphBufferId ShadeReserve;
     internal GraphBufferId DeformReserve;
     internal GraphBufferId CacheAllocation;
     internal GraphBufferId SoftwareDebug;
+    internal GraphTextureId Visibility;
+    internal uint VisibilityProbeX;
+    internal uint VisibilityProbeY;
     internal GraphBufferId Destination;
 
     internal static void Record(
@@ -340,6 +344,9 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
             parameters.Destination, ClusterRendererSystem.RasterReserveReadbackOffset,
             2 * sizeof(uint));
+        Copy(ref commands, parameters.ShadeCount, 0,
+            parameters.Destination, ClusterRendererSystem.ShadeBinCountReadbackOffset,
+            sizeof(uint));
         Copy(ref commands, parameters.ShadeReserve, 0,
             parameters.Destination, ClusterRendererSystem.ShadeReserveReadbackOffset,
             sizeof(uint));
@@ -352,6 +359,23 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.SoftwareDebug, 0,
             parameters.Destination, ClusterRendererSystem.SoftwareDebugReadbackOffset,
             sizeof(uint));
+        Buffer destination = commands.GetBuffer(parameters.Destination);
+        Texture visibility = commands.GetTexture(parameters.Visibility);
+        commands.CopyTextureToBuffer(new BufferTextureCopy(
+            destination,
+            ClusterRendererSystem.VisibilityProbeReadbackOffset,
+            ClusterRendererSystem.VisibilityProbeRowPitch,
+            1,
+            visibility,
+            0,
+            0,
+            TextureAspects.Color,
+            parameters.VisibilityProbeX,
+            parameters.VisibilityProbeY,
+            0,
+            ClusterRendererSystem.VisibilityProbePixelCount,
+            1,
+            1));
     }
 
     private static void Copy(
