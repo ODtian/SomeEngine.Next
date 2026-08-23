@@ -7,16 +7,12 @@ namespace SomeEngine.Runtime;
 internal static class RuntimeWait
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(2);
-    private static int s_admittedCpuIntervalActive;
-    private static long s_admittedCpuTaskWaitCalls;
 
     internal static T Task<T>(Task<T> task, NativeWindow window, TimeSpan timeout)
     {
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(window);
         ValidateTimeout(timeout);
-        if (Volatile.Read(ref s_admittedCpuIntervalActive) != 0)
-            Interlocked.Increment(ref s_admittedCpuTaskWaitCalls);
         var elapsed = Stopwatch.StartNew();
         while (!task.IsCompleted)
         {
@@ -25,21 +21,6 @@ internal static class RuntimeWait
                 throw new TimeoutException("The runtime operation did not complete before its timeout.");
         }
         return task.GetAwaiter().GetResult();
-    }
-
-    internal static void BeginAdmittedCpuInterval()
-    {
-        if (Volatile.Read(ref s_admittedCpuIntervalActive) != 0)
-            throw new InvalidOperationException("A Runtime wait interval is already active.");
-        Interlocked.Exchange(ref s_admittedCpuTaskWaitCalls, 0);
-        Volatile.Write(ref s_admittedCpuIntervalActive, 1);
-    }
-
-    internal static long EndAdmittedCpuInterval()
-    {
-        if (Interlocked.Exchange(ref s_admittedCpuIntervalActive, 0) == 0)
-            throw new InvalidOperationException("No Runtime wait interval is active.");
-        return Interlocked.Read(ref s_admittedCpuTaskWaitCalls);
     }
 
     internal static void Position(

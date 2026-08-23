@@ -462,6 +462,45 @@ public readonly record struct QueueAcquire(
     ResourceAccess Access,
     TextureLayout? Layout);
 
+/// <summary>
+/// Groups independent barriers that occur at one command-stream boundary.
+/// </summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>
+/// <para><b>Ownership:</b> Stack-only description or view; it owns no referenced RHI object and receiver calls consume every Span synchronously.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; borrowed storage remains caller-owned.</para>
+/// <para>Barriers in one batch must not depend on another barrier in the same batch; use separate calls when ordering is required.</para>
+/// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
+/// </remarks>
+public readonly ref struct BarrierBatch
+{
+    public BarrierBatch(
+        ReadOnlySpan<MemoryBarrier> memoryBarriers,
+        ReadOnlySpan<QueueAcquire> queueAcquires,
+        ReadOnlySpan<BufferBarrier> bufferBarriers,
+        ReadOnlySpan<TextureBarrier> textureBarriers,
+        ReadOnlySpan<QueueRelease> queueReleases)
+    {
+        MemoryBarriers = memoryBarriers;
+        QueueAcquires = queueAcquires;
+        BufferBarriers = bufferBarriers;
+        TextureBarriers = textureBarriers;
+        QueueReleases = queueReleases;
+    }
+
+    public ReadOnlySpan<MemoryBarrier> MemoryBarriers { get; }
+    public ReadOnlySpan<QueueAcquire> QueueAcquires { get; }
+    public ReadOnlySpan<BufferBarrier> BufferBarriers { get; }
+    public ReadOnlySpan<TextureBarrier> TextureBarriers { get; }
+    public ReadOnlySpan<QueueRelease> QueueReleases { get; }
+    public bool IsEmpty =>
+        MemoryBarriers.IsEmpty &&
+        QueueAcquires.IsEmpty &&
+        BufferBarriers.IsEmpty &&
+        TextureBarriers.IsEmpty &&
+        QueueReleases.IsEmpty;
+}
+
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
 /// <para><b>Ownership:</b> Pure managed value; copying it does not transfer ownership of any referenced RHI object.</para>

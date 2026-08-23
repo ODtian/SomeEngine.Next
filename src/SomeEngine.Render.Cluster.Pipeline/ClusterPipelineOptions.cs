@@ -25,7 +25,7 @@ public sealed record ClusterPipelineOptions
 
     public float SoftwareRasterAreaThreshold { get; init; } = 2_000.0f;
 
-    public bool EnableDiagnosticsReadback { get; init; }
+    public bool EnableFrameMetricsReadback { get; init; }
 
     internal void Validate()
     {

@@ -71,47 +71,65 @@ internal sealed class FrameOutputVerifier : IDisposable
     }
 
     internal void Record(
-        global::SomeEngine.RenderGraph.RenderGraph graph,
-        in TextureHandle source)
+        ref RenderGraphFrame graph,
+        GraphTextureId source)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(graph);
-        BufferHandle destination = graph.Import(
+        GraphBufferId destination = graph.Import(
             _readback,
-            GraphResourceUsage.CopyDestination,
-            GraphResourceUsage.CopyDestination,
-            contentsAvailable: false);
-        using IUnsafeRenderGraphBuilder builder =
-            graph.AddUnsafePass<ReadbackPassData>(
-                "Verify runtime frame output",
-                out ReadbackPassData passData);
-        passData.Source = source;
-        passData.Destination = destination;
-        passData.Copy = new GraphBufferTextureCopy(
+            [new BufferBoundaryState(
+                new BufferRange(0, _readback.Info.Size),
+                _readback.InitialSync,
+                _readback.InitialAccess,
+                ResourceContentState.Undefined)]);
+        ReadbackPassData passData = new(
+            source,
+            destination,
             _footprint.Offset,
             _footprint.RowPitch,
             _footprint.RowCount,
-            new GraphTextureRegion(
-                0,
-                0,
-                TextureAspects.Color,
-                0,
-                0,
-                0,
-                checked((uint)_width),
-                checked((uint)_height)));
-        builder.UseTexture(
-            source,
-            GraphResourceUsage.CopySource,
-            GraphAccess.Read);
-        builder.UseBuffer(
-            destination,
-            GraphResourceUsage.CopyDestination,
-            GraphAccess.WriteAll,
-            new BufferRange(0, _footprint.TotalSize));
-        builder.SetRenderFunc<ReadbackPassData>(
-            static (data, context) =>
-                context.CopyTextureToBuffer(data.Source, data.Destination, data.Copy));
+            checked((uint)_width),
+            checked((uint)_height));
+        _ = graph.AddCopyPass(
+            "Verify runtime frame output",
+            PassQueueSelection.AnyOfType(QueueType.Copy),
+            passData,
+            default,
+            static (ref PassDefinition access, ref ReadbackPassData data) =>
+            {
+                _ = access.Read(
+                    data.Source,
+                    new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                    PipelineSync.Copy,
+                    ResourceAccess.CopySource,
+                    TextureLayout.CopySource);
+                _ = access.Write(
+                    data.Destination,
+                    new BufferRange(0, data.TotalSize),
+                    PipelineSync.Copy,
+                    ResourceAccess.CopyDestination,
+                    WriteCoverage.Complete);
+            },
+            static (ref CopyPassCommandScope commands, in ReadbackPassData data) =>
+            {
+                Buffer destinationBuffer = commands.GetBuffer(data.Destination);
+                Texture sourceTexture = commands.GetTexture(data.Source);
+                commands.CopyTextureToBuffer(new BufferTextureCopy(
+                    destinationBuffer,
+                    data.Offset,
+                    data.RowPitch,
+                    data.RowCount,
+                    sourceTexture,
+                    0,
+                    0,
+                    TextureAspects.Color,
+                    0,
+                    0,
+                    0,
+                    data.Width,
+                    data.Height,
+                    1));
+            });
     }
 
     internal FrameOutputMetrics Read()
@@ -212,11 +230,16 @@ internal sealed class FrameOutputVerifier : IDisposable
         _disposed = true;
     }
 
-    private sealed class ReadbackPassData
+    private readonly record struct ReadbackPassData(
+        GraphTextureId Source,
+        GraphBufferId Destination,
+        ulong Offset,
+        uint RowPitch,
+        uint RowCount,
+        uint Width,
+        uint Height)
     {
-        internal TextureHandle Source { get; set; }
-        internal BufferHandle Destination { get; set; }
-        internal GraphBufferTextureCopy Copy { get; set; }
+        internal ulong TotalSize => checked((ulong)RowPitch * RowCount);
     }
 }
 

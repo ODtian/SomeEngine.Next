@@ -10,8 +10,98 @@ namespace SomeEngine.Graphics.Benchmarks;
 [JsonSerializable(typeof(ProcessRun))]
 [JsonSerializable(typeof(GraphicsBenchmarkReport))]
 [JsonSerializable(typeof(ShaderManifest))]
+[JsonSerializable(typeof(GraphicsCpuBenchmarkReport))]
 internal partial class ProcessRunJsonContext : JsonSerializerContext
 {
+}
+
+internal enum GraphicsCpuWorkload : byte
+{
+    DagorEnlistedHighWatermark,
+}
+
+internal readonly record struct GraphicsCpuSourceIdentity(
+    string Project,
+    string Revision,
+    string Path,
+    string Url);
+
+internal readonly record struct GraphicsCpuWorkloadShape(
+    uint Seed,
+    int PassCount,
+    int ResourceCount,
+    int BufferCount,
+    int TextureCount,
+    int AccessCount,
+    int DependencyCount,
+    int BarrierCount,
+    int BarrierBoundaryCount,
+    int BufferBarrierCount,
+    int TextureBarrierCount,
+    int QueueTransferBarrierCount,
+    int AliasingBarrierCount,
+    int SplitBarrierPairCount,
+    int RasterPassCount,
+    int ComputePassCount,
+    int CopyPassCount,
+    int ControlPassCount,
+    int DirectDrawCalls,
+    int ExecuteIndirectDrawCalls,
+    int IndirectDrawCommands,
+    int DirectDispatchCalls,
+    int ExecuteIndirectDispatchCalls,
+    int CopyCommands,
+    int QueueCount,
+    int SubmissionCount,
+    int FrameSlotCount,
+    bool SplitBarriersEnabled,
+    bool QueueSpecificCommonLayouts,
+    ulong LogicalTransientBytes,
+    ulong PhysicalTransientBytes);
+
+internal readonly record struct GraphicsCpuFrameSample(
+    int FrameIndex,
+    long CpuStopwatchTicks,
+    double CpuMicroseconds,
+    int CompletionCount);
+
+internal sealed record GraphicsCpuWorkloadResult(
+    GraphicsCpuWorkload Workload,
+    string Case,
+    string EvidenceLabel,
+    GraphicsCpuSourceIdentity Source,
+    GraphicsCpuWorkloadShape Shape,
+    string TimingBoundary,
+    int MinimumWarmupFrames,
+    int ActualWarmupFrames,
+    bool WarmupPlateauReached,
+    GraphicsCpuFrameSample[] WarmupSamples,
+    GraphicsCpuFrameSample[] Samples,
+    MetricDistribution Cpu,
+    double P95LimitMicroseconds,
+    bool P95Passed);
+
+internal sealed record GraphicsCpuBenchmarkReport(
+    string Schema,
+    string Disposition,
+    string Reason,
+    DateTimeOffset StartedUtc,
+    DateTimeOffset CompletedUtc,
+    RuntimeEnvironment Environment,
+    string StandardPath,
+    GraphicsCpuWorkloadResult[] Workloads)
+{
+    internal void Write(string path)
+    {
+        string? directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+        using FileStream stream = new(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        JsonSerializer.Serialize(
+            stream,
+            this,
+            ProcessRunJsonContext.Default.GraphicsCpuBenchmarkReport);
+    }
 }
 
 internal readonly record struct BuildIdentity(

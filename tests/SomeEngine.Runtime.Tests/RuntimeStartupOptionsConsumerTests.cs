@@ -13,8 +13,7 @@ public sealed class RuntimeStartupOptionsConsumerTests
             "--present-interval", "0",
             "--pipeline-budget", "8",
             "--wait-pipelines",
-            "--skip-present",
-            "--benchmark-outer-only"]);
+            "--skip-present"]);
 
         Assert.Equal(3, options.FrameLimit);
         Assert.False(options.WindowVSync);
@@ -22,6 +21,5 @@ public sealed class RuntimeStartupOptionsConsumerTests
         Assert.Equal(8, options.PipelineWarmupBudget);
         Assert.True(options.WaitForPipelineWarmup);
         Assert.True(options.SkipSwapchainPresent);
-        Assert.True(options.BenchmarkOuterOnly);
     }
 }

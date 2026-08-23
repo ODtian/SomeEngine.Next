@@ -17,11 +17,10 @@ internal sealed class ClusterRenderHistory : IDisposable
     private readonly Texture[] _scene = new Texture[2];
     private readonly Texture[] _motion = new Texture[2];
     private readonly Texture[] _depth = new Texture[2];
-    private readonly QueueCompletion[][] _readiness = [[], []];
-    private readonly GraphResourceUsage[] _hiZStates = new GraphResourceUsage[2];
-    private readonly GraphResourceUsage[] _sceneStates = new GraphResourceUsage[2];
-    private readonly GraphResourceUsage[] _motionStates = new GraphResourceUsage[2];
-    private readonly GraphResourceUsage[] _depthStates = new GraphResourceUsage[2];
+    private readonly TextureBoundaryState[] _hiZEndpoints = new TextureBoundaryState[2];
+    private readonly TextureBoundaryState[] _sceneEndpoints = new TextureBoundaryState[2];
+    private readonly TextureBoundaryState[] _motionEndpoints = new TextureBoundaryState[2];
+    private readonly TextureBoundaryState[] _depthEndpoints = new TextureBoundaryState[2];
     private readonly bool[] _slotContentsAvailable = new bool[2];
     private bool _disposed;
     private bool _hasPreviousView;
@@ -54,19 +53,25 @@ internal sealed class ClusterRenderHistory : IDisposable
     internal Texture CurrentMotion => _motion[_writeIndex];
     internal Texture PreviousDepth => _depth[PreviousIndex];
     internal Texture CurrentDepth => _depth[_writeIndex];
-    internal QueueCompletion[] PreviousReadiness => _readiness[PreviousIndex];
-    internal QueueCompletion[] CurrentReadiness => _readiness[_writeIndex];
     internal bool PreviousContentsAvailable => _slotContentsAvailable[PreviousIndex];
     internal bool CurrentContentsAvailable => _slotContentsAvailable[_writeIndex];
     internal bool RequiresInitialization => !PreviousContentsAvailable;
-    internal GraphResourceUsage PreviousHiZState => _hiZStates[PreviousIndex];
-    internal GraphResourceUsage CurrentHiZState => _hiZStates[_writeIndex];
-    internal GraphResourceUsage PreviousSceneState => _sceneStates[PreviousIndex];
-    internal GraphResourceUsage CurrentSceneState => _sceneStates[_writeIndex];
-    internal GraphResourceUsage PreviousMotionState => _motionStates[PreviousIndex];
-    internal GraphResourceUsage CurrentMotionState => _motionStates[_writeIndex];
-    internal GraphResourceUsage PreviousDepthState => _depthStates[PreviousIndex];
-    internal GraphResourceUsage CurrentDepthState => _depthStates[_writeIndex];
+    internal ReadOnlySpan<TextureBoundaryState> PreviousHiZEndpoints =>
+        _hiZEndpoints.AsSpan(PreviousIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> CurrentHiZEndpoints =>
+        _hiZEndpoints.AsSpan(_writeIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> PreviousSceneEndpoints =>
+        _sceneEndpoints.AsSpan(PreviousIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> CurrentSceneEndpoints =>
+        _sceneEndpoints.AsSpan(_writeIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> PreviousMotionEndpoints =>
+        _motionEndpoints.AsSpan(PreviousIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> CurrentMotionEndpoints =>
+        _motionEndpoints.AsSpan(_writeIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> PreviousDepthEndpoints =>
+        _depthEndpoints.AsSpan(PreviousIndex, 1);
+    internal ReadOnlySpan<TextureBoundaryState> CurrentDepthEndpoints =>
+        _depthEndpoints.AsSpan(_writeIndex, 1);
 
     private int PreviousIndex => 1 - _writeIndex;
 
@@ -108,7 +113,10 @@ internal sealed class ClusterRenderHistory : IDisposable
         var scene = new Texture[2];
         var motion = new Texture[2];
         var depth = new Texture[2];
-        var created = new List<Texture>();
+        var hiZEndpoints = new TextureBoundaryState[2];
+        var sceneEndpoints = new TextureBoundaryState[2];
+        var motionEndpoints = new TextureBoundaryState[2];
+        var depthEndpoints = new TextureBoundaryState[2];
         try
         {
             for (int index = 0; index < 2; index++)
@@ -124,7 +132,6 @@ internal sealed class ClusterRenderHistory : IDisposable
                     Format.R32Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
                     label: $"Cluster HiZ history {index}"));
-                created.Add(hiZ[index]);
 
                 scene[index] = Create(new TextureDesc(
                     TextureDimension.Texture2D,
@@ -137,7 +144,6 @@ internal sealed class ClusterRenderHistory : IDisposable
                     Format.R16G16B16A16Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopyDestination,
                     label: $"Cluster scene history {index}"));
-                created.Add(scene[index]);
 
                 motion[index] = Create(new TextureDesc(
                     TextureDimension.Texture2D,
@@ -150,7 +156,6 @@ internal sealed class ClusterRenderHistory : IDisposable
                     Format.R16G16Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopyDestination,
                     label: $"Cluster motion history {index}"));
-                created.Add(motion[index]);
 
                 depth[index] = Create(new TextureDesc(
                     TextureDimension.Texture2D,
@@ -163,14 +168,32 @@ internal sealed class ClusterRenderHistory : IDisposable
                     Format.D32Float,
                     TextureUsages.Sampled | TextureUsages.DepthStencilAttachment | TextureUsages.CopyDestination,
                     label: $"Cluster depth history {index}"));
-                created.Add(depth[index]);
+            }
+
+            for (int index = 0; index < 2; index++)
+            {
+                hiZEndpoints[index] = InitialEndpoint(hiZ[index], TextureAspects.Color);
+                sceneEndpoints[index] = InitialEndpoint(scene[index], TextureAspects.Color);
+                motionEndpoints[index] = InitialEndpoint(motion[index], TextureAspects.Color);
+                depthEndpoints[index] = InitialEndpoint(depth[index], TextureAspects.Depth);
             }
         }
-        catch
+        catch (Exception primary)
         {
-            foreach (Texture handle in created)
+            List<Exception>? cleanupFailures = null;
+            for (int index = 1; index >= 0; index--)
             {
-                handle.Dispose();
+                TryDispose(depth[index], ref cleanupFailures);
+                TryDispose(motion[index], ref cleanupFailures);
+                TryDispose(scene[index], ref cleanupFailures);
+                TryDispose(hiZ[index], ref cleanupFailures);
+            }
+            if (cleanupFailures is not null)
+            {
+                cleanupFailures.Insert(0, primary);
+                throw new AggregateException(
+                    "Cluster history resize failed and cleanup also reported failures.",
+                    cleanupFailures);
             }
             throw;
         }
@@ -180,12 +203,10 @@ internal sealed class ClusterRenderHistory : IDisposable
         scene.CopyTo(_scene, 0);
         motion.CopyTo(_motion, 0);
         depth.CopyTo(_depth, 0);
-        _readiness[0] = [];
-        _readiness[1] = [];
-        Array.Fill(_hiZStates, GraphResourceUsage.Common);
-        Array.Fill(_sceneStates, GraphResourceUsage.Common);
-        Array.Fill(_motionStates, GraphResourceUsage.Common);
-        Array.Fill(_depthStates, GraphResourceUsage.Common);
+        hiZEndpoints.CopyTo(_hiZEndpoints, 0);
+        sceneEndpoints.CopyTo(_sceneEndpoints, 0);
+        motionEndpoints.CopyTo(_motionEndpoints, 0);
+        depthEndpoints.CopyTo(_depthEndpoints, 0);
         _slotContentsAvailable[0] = false;
         _slotContentsAvailable[1] = false;
         _width = width;
@@ -208,12 +229,36 @@ internal sealed class ClusterRenderHistory : IDisposable
             throw new InvalidOperationException("Cluster history was not initialized.");
         if (!_pending)
             throw new InvalidOperationException("No authored Cluster history frame is waiting for commit.");
-        QueueCompletion[] fences = completions.ToArray();
+        QueueCompletion graphicsCompletion = FindGraphicsCompletion(completions);
+        int writeIndex = _writeIndex;
         int previousIndex = PreviousIndex;
-        _readiness[_writeIndex] = fences;
-        _readiness[previousIndex] = fences.ToArray();
-        PublishSlot(_writeIndex);
-        PublishSlot(previousIndex);
+        TextureBoundaryState writeHiZ = ShaderReadEndpoint(
+            _hiZ[writeIndex], TextureAspects.Color, graphicsCompletion);
+        TextureBoundaryState writeScene = ShaderReadEndpoint(
+            _scene[writeIndex], TextureAspects.Color, graphicsCompletion);
+        TextureBoundaryState writeMotion = ShaderReadEndpoint(
+            _motion[writeIndex], TextureAspects.Color, graphicsCompletion);
+        TextureBoundaryState writeDepth = ShaderReadEndpoint(
+            _depth[writeIndex], TextureAspects.Depth, graphicsCompletion);
+        TextureBoundaryState previousHiZ = ShaderReadEndpoint(
+            _hiZ[previousIndex], TextureAspects.Color, graphicsCompletion);
+        TextureBoundaryState previousScene = ShaderReadEndpoint(
+            _scene[previousIndex], TextureAspects.Color, graphicsCompletion);
+        TextureBoundaryState previousMotion = ShaderReadEndpoint(
+            _motion[previousIndex], TextureAspects.Color, graphicsCompletion);
+        TextureBoundaryState previousDepth = ShaderReadEndpoint(
+            _depth[previousIndex], TextureAspects.Depth, graphicsCompletion);
+
+        _hiZEndpoints[writeIndex] = writeHiZ;
+        _sceneEndpoints[writeIndex] = writeScene;
+        _motionEndpoints[writeIndex] = writeMotion;
+        _depthEndpoints[writeIndex] = writeDepth;
+        _hiZEndpoints[previousIndex] = previousHiZ;
+        _sceneEndpoints[previousIndex] = previousScene;
+        _motionEndpoints[previousIndex] = previousMotion;
+        _depthEndpoints[previousIndex] = previousDepth;
+        _slotContentsAvailable[writeIndex] = true;
+        _slotContentsAvailable[previousIndex] = true;
         _previousView = _pendingView;
         _previousProjection = _pendingProjection;
         _hasPreviousView = true;
@@ -236,13 +281,38 @@ internal sealed class ClusterRenderHistory : IDisposable
         _pending = false;
     }
 
-    private void PublishSlot(int slot)
+    private static TextureBoundaryState InitialEndpoint(Texture texture, TextureAspects aspects) =>
+        new(
+            FullRange(texture, aspects),
+            texture.InitialSync,
+            texture.InitialAccess,
+            texture.InitialLayout,
+            ResourceContentState.Undefined);
+
+    private static TextureBoundaryState ShaderReadEndpoint(
+        Texture texture,
+        TextureAspects aspects,
+        QueueCompletion completion) =>
+        new(
+            FullRange(texture, aspects),
+            PipelineSync.AllShading,
+            ResourceAccess.ShaderResource,
+            TextureLayout.ShaderResource,
+            ResourceContentState.Defined,
+            completion.Queue,
+            completion);
+
+    private static TextureSubresourceRange FullRange(Texture texture, TextureAspects aspects) =>
+        new(0, texture.Info.MipLevelCount, 0, texture.Info.ArrayLayerCount, aspects);
+
+    private static QueueCompletion FindGraphicsCompletion(ReadOnlySpan<QueueCompletion> completions)
     {
-        _hiZStates[slot] = GraphResourceUsage.ShaderResource;
-        _sceneStates[slot] = GraphResourceUsage.ShaderResource;
-        _motionStates[slot] = GraphResourceUsage.ShaderResource;
-        _depthStates[slot] = GraphResourceUsage.ShaderResource;
-        _slotContentsAvailable[slot] = true;
+        foreach (ref readonly QueueCompletion completion in completions)
+        {
+            if (completion.Queue.Type == QueueType.Graphics)
+                return completion;
+        }
+        throw new InvalidOperationException("Cluster history requires a Graphics Queue completion.");
     }
 
     private Texture Create(in TextureDesc description)
@@ -267,6 +337,14 @@ internal sealed class ClusterRenderHistory : IDisposable
         handle?.Dispose();
     }
 
+    private static void TryDispose(IDisposable? value, ref List<Exception>? failures)
+    {
+        if (value is null)
+            return;
+        try { value.Dispose(); }
+        catch (Exception failure) { (failures ??= []).Add(failure); }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -276,11 +354,10 @@ internal sealed class ClusterRenderHistory : IDisposable
         Array.Clear(_scene);
         Array.Clear(_motion);
         Array.Clear(_depth);
-        Array.Clear(_readiness);
-        Array.Fill(_hiZStates, GraphResourceUsage.Common);
-        Array.Fill(_sceneStates, GraphResourceUsage.Common);
-        Array.Fill(_motionStates, GraphResourceUsage.Common);
-        Array.Fill(_depthStates, GraphResourceUsage.Common);
+        Array.Clear(_hiZEndpoints);
+        Array.Clear(_sceneEndpoints);
+        Array.Clear(_motionEndpoints);
+        Array.Clear(_depthEndpoints);
         _slotContentsAvailable[0] = false;
         _slotContentsAvailable[1] = false;
         ClearPending();

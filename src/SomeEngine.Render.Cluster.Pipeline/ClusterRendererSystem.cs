@@ -31,14 +31,14 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     private readonly RenderInstancePropertyLayout _instanceLayout;
     private readonly ClusterMaterialTable _materialTable;
     private readonly AssetHandle<ClusterShaders> _configuration;
-    private readonly ClusterRenderTargetSource _targets;
+    private readonly ClusterRenderTargetMailbox _targetMailbox;
     private readonly ClusterPipelineOptions _options;
     private QueryHandle _viewQuery;
     private QueryHandle _directionalQuery;
     private QueryHandle _pointQuery;
     private QueryHandle _spotQuery;
-    private ClusterShaderLibrary? _shaders;
-    private ClusterMaterialRuntime? _materials;
+    private ClusterPipelineSet? _pipelines;
+    private ClusterMaterialGpuBindings? _materialBindings;
     private ClusterRenderHistory? _history;
     private IndirectCommandLayout? _dispatchIndirectLayout;
     private IndirectCommandLayout? _drawIndirectLayout;
@@ -47,10 +47,10 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterEpochId[] _pageFaultReadbackEpochs =
         new ClusterEpochId[ReadbackGenerationCount];
     private readonly bool[] _pageFaultReadbackPending = new bool[ReadbackGenerationCount];
-    private readonly Buffer?[] _diagnosticsReadbacks = new Buffer?[ReadbackGenerationCount];
-    private byte[] _diagnosticsReadbackBytes = [];
-    private readonly ulong[] _diagnosticsReadbackFrames = new ulong[ReadbackGenerationCount];
-    private readonly bool[] _diagnosticsReadbackPending = new bool[ReadbackGenerationCount];
+    private readonly Buffer?[] _frameMetricReadbacks = new Buffer?[ReadbackGenerationCount];
+    private byte[] _frameMetricReadbackBytes = [];
+    private readonly ulong[] _frameMetricReadbackFrames = new ulong[ReadbackGenerationCount];
+    private readonly bool[] _frameMetricReadbackPending = new bool[ReadbackGenerationCount];
     private readonly QueueCompletion[][] _readbackFences = [[], []];
     private readonly ulong[] _readbackSequences = new ulong[ReadbackGenerationCount];
     private readonly Buffer?[] _lightBuffers = new Buffer?[ReadbackGenerationCount];
@@ -67,11 +67,11 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     private int _lightStructureDirectionalCount = -1;
     private int _lightStructurePointCount = -1;
     private int _lightStructureSpotCount = -1;
-    private ulong _diagnosticsSubmittedFrame;
+    private ulong _frameMetricsSubmittedFrame;
     private ulong _nextReadbackSequence;
     private int _readbackWriteGeneration = -1;
     private int _preferredReadbackGeneration;
-    private ClusterFrameDiagnostics? _latestFrameDiagnostics;
+    private ClusterFrameMetrics? _latestFrameMetrics;
     private Format _outputFormat;
     private ClusterEpochId _pendingReadbackEpoch;
     private ulong _pendingReplayGeneration;
@@ -88,7 +88,7 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         RenderInstancePropertyLayout instanceLayout,
         ClusterMaterialTable materialTable,
         AssetHandle<ClusterShaders> configuration,
-        ClusterRenderTargetSource targets,
+        ClusterRenderTargetMailbox targetMailbox,
         ClusterPipelineOptions? options = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -101,7 +101,7 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         if (!configuration.IsValid)
             throw new ArgumentException("The Cluster render configuration must be valid.", nameof(configuration));
         _configuration = configuration;
-        _targets = targets ?? throw new ArgumentNullException(nameof(targets));
+        _targetMailbox = targetMailbox ?? throw new ArgumentNullException(nameof(targetMailbox));
         _options = options ?? new ClusterPipelineOptions();
     }
 
@@ -180,8 +180,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The full Cluster renderer was not created.");
         if (_hasPendingFrame)
             throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
-        ClusterRenderTarget target = _targets.GetRequired();
-        EnsureRuntime(in target);
+        ClusterRenderTarget target = _targetMailbox.TakeRequired();
+        EnsureRendererEpoch(in target);
         _resources.PumpStreaming();
 
         RenderInstanceBatches<RenderInstanceSingleGroup>? current = _instances.Current;
@@ -194,7 +194,7 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialSnapshot materialSnapshot = _materialTable.Current;
         if (materialSnapshot.MaterialCount == 0)
             throw new InvalidOperationException("The Cluster scene has no published materials.");
-        _materials!.Synchronize(materialSnapshot);
+        _materialBindings!.EnsureBindings(materialSnapshot);
 
         ViewCollector viewCollector = _viewCollector;
         LightCollector lights = _lightCollector;
@@ -236,7 +236,7 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
                 batch,
                 _instanceLayout);
             EnsurePageFaultReadback(binding.PageFaultCapacity);
-            EnsureDiagnosticsReadback();
+            EnsureFrameMetricsReadback();
             if (_readbackWriteGeneration < 0)
                 _readbackWriteGeneration = AcquireReadbackGeneration();
             bool replayRequested = _resources.TryGetFaultReplayRequest(out ulong replayGeneration);
@@ -273,7 +273,7 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
                 _pendingReplayGeneration = replayGeneration;
                 _hasPendingFrame = true;
 
-                global::SomeEngine.RenderGraph.RenderGraph graph = context.Graph;
+                RenderGraphFrame graph = context.Graph;
                 RecordFrame(
                     ref graph,
                     in target,
@@ -305,17 +305,25 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         if (!_hasPendingFrame)
             throw new InvalidOperationException("No authored Cluster frame is waiting for commit.");
         int generation = RequireReadbackWriteGeneration();
-        QueueCompletion[] fences = completions.ToArray();
+        QueueCompletion[] fences = _readbackFences[generation];
+        if (fences.Length != completions.Length)
+            fences = new QueueCompletion[completions.Length];
+        completions.CopyTo(fences);
+        ulong readbackSequence = checked(_nextReadbackSequence + 1);
+        ulong frameMetricsSequence = _options.EnableFrameMetricsReadback
+            ? checked(_frameMetricsSubmittedFrame + 1)
+            : _frameMetricsSubmittedFrame;
         _history!.Commit(fences);
         _readbackFences[generation] = fences;
-        _readbackSequences[generation] = checked(++_nextReadbackSequence);
+        _nextReadbackSequence = readbackSequence;
+        _readbackSequences[generation] = readbackSequence;
         _pageFaultReadbackEpochs[generation] = _pendingReadbackEpoch;
         _pageFaultReadbackPending[generation] = true;
-        if (_options.EnableDiagnosticsReadback)
+        if (_options.EnableFrameMetricsReadback)
         {
-            _diagnosticsSubmittedFrame = checked(_diagnosticsSubmittedFrame + 1);
-            _diagnosticsReadbackFrames[generation] = _diagnosticsSubmittedFrame;
-            _diagnosticsReadbackPending[generation] = true;
+            _frameMetricsSubmittedFrame = frameMetricsSequence;
+            _frameMetricReadbackFrames[generation] = frameMetricsSequence;
+            _frameMetricReadbackPending[generation] = true;
         }
         _preferredReadbackGeneration = 1 - generation;
         if (_pendingReplay)
@@ -349,8 +357,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         Release(ref _pointQuery, context.World, ref failures);
         Release(ref _directionalQuery, context.World, ref failures);
         Release(ref _viewQuery, context.World, ref failures);
-        Dispose(ref _materials, ref failures);
-        Dispose(ref _shaders, ref failures);
+        Dispose(ref _materialBindings, ref failures);
+        Dispose(ref _pipelines, ref failures);
         Dispose(ref _history, ref failures);
         Dispose(ref _dispatchIndirectLayout, ref failures);
         Dispose(ref _drawIndirectLayout, ref failures);
@@ -365,14 +373,14 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             _pageFaultReadbackEpochs[generation] = default;
             _pageFaultReadbackPending[generation] = false;
 
-            if (_diagnosticsReadbacks[generation] is { } diagnosticsReadback)
+            if (_frameMetricReadbacks[generation] is { } frameMetricReadback)
             {
-                try { diagnosticsReadback.Dispose(); }
+                try { frameMetricReadback.Dispose(); }
                 catch (Exception failure) { (failures ??= []).Add(failure); }
             }
-            _diagnosticsReadbacks[generation] = null;
-            _diagnosticsReadbackFrames[generation] = 0;
-            _diagnosticsReadbackPending[generation] = false;
+            _frameMetricReadbacks[generation] = null;
+            _frameMetricReadbackFrames[generation] = 0;
+            _frameMetricReadbackPending[generation] = false;
             _readbackFences[generation] = [];
             _readbackSequences[generation] = 0;
 
@@ -395,21 +403,21 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         _lightStructurePointCount = -1;
         _lightStructureSpotCount = -1;
         _pageFaultReadbackBytes = [];
-        _diagnosticsReadbackBytes = [];
-        _diagnosticsSubmittedFrame = 0;
+        _frameMetricReadbackBytes = [];
+        _frameMetricsSubmittedFrame = 0;
         _nextReadbackSequence = 0;
         _readbackWriteGeneration = -1;
         _preferredReadbackGeneration = 0;
-        _latestFrameDiagnostics = null;
+        _latestFrameMetrics = null;
         ClearPendingFrame();
         _created = false;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
     }
 
-    private void EnsureRuntime(in ClusterRenderTarget target)
+    private void EnsureRendererEpoch(in ClusterRenderTarget target)
     {
-        if (_shaders is not null)
+        if (_pipelines is not null)
         {
             if (_outputFormat != target.Format)
             {
@@ -419,51 +427,59 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             return;
         }
 
-        ClusterShaderLibrary? shaders = null;
-        ClusterMaterialRuntime? materials = null;
+        ClusterPipelineSet? pipelines = null;
+        ClusterMaterialGpuBindings? materialBindings = null;
         ClusterRenderHistory? history = null;
         IndirectCommandLayout? dispatchIndirectLayout = null;
         IndirectCommandLayout? drawIndirectLayout = null;
+        IndirectArgumentDesc[] dispatchArguments =
+            [new(IndirectArgumentType.Dispatch)];
+        IndirectArgumentDesc[] drawArguments =
+            [new(IndirectArgumentType.Draw)];
         try
         {
-            shaders = new ClusterShaderLibrary(
+            pipelines = new ClusterPipelineSet(
                 _backend,
                 _device,
                 _assets,
                 _configuration,
                 target.Format);
-            materials = new ClusterMaterialRuntime(_backend, _device, _assets, shaders);
+            materialBindings = new ClusterMaterialGpuBindings(_backend, _device, _assets);
             history = new ClusterRenderHistory(_backend, _device);
-            IndirectArgumentDesc[] dispatchArguments =
-                [new(IndirectArgumentType.Dispatch)];
             dispatchIndirectLayout = _backend.CreateIndirectCommandLayout(
                 _device,
                 new IndirectCommandLayoutDesc(
                     dispatchArguments,
                     ClusterIndirectAbi.DispatchStride,
                     label: "Cluster dispatch indirect layout"));
-            IndirectArgumentDesc[] drawArguments =
-                [new(IndirectArgumentType.Draw)];
             drawIndirectLayout = _backend.CreateIndirectCommandLayout(
                 _device,
                 new IndirectCommandLayoutDesc(
                     drawArguments,
                     ClusterIndirectAbi.DrawStride,
                     label: "Cluster draw indirect layout"));
-            _shaders = shaders;
-            _materials = materials;
+            _pipelines = pipelines;
+            _materialBindings = materialBindings;
             _history = history;
             _dispatchIndirectLayout = dispatchIndirectLayout;
             _drawIndirectLayout = drawIndirectLayout;
             _outputFormat = target.Format;
         }
-        catch
+        catch (Exception primary)
         {
-            drawIndirectLayout?.Dispose();
-            dispatchIndirectLayout?.Dispose();
-            history?.Dispose();
-            materials?.Dispose();
-            shaders?.Dispose();
+            List<Exception>? cleanupFailures = null;
+            Dispose(ref drawIndirectLayout, ref cleanupFailures);
+            Dispose(ref dispatchIndirectLayout, ref cleanupFailures);
+            Dispose(ref history, ref cleanupFailures);
+            Dispose(ref materialBindings, ref cleanupFailures);
+            Dispose(ref pipelines, ref cleanupFailures);
+            if (cleanupFailures is not null)
+            {
+                cleanupFailures.Insert(0, primary);
+                throw new AggregateException(
+                    "Cluster renderer-epoch construction failed and cleanup also reported failures.",
+                    cleanupFailures);
+            }
             throw;
         }
     }
@@ -481,17 +497,10 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             return;
         }
 
-        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
-        {
-            _pageFaultReadbacks[generation] = _backend.CreateBuffer(
-                _device,
-                new BufferDesc(
-                    checked((ulong)byteCount),
-                    BufferUsages.CopyDestination,
-                    $"Cluster page-fault readback {generation}"),
-                MemoryType.Readback);
-        }
-        _pageFaultReadbackBytes = new byte[byteCount];
+        _pageFaultReadbackBytes = CreateReadbackBuffers(
+            _pageFaultReadbacks,
+            byteCount,
+            "Cluster page-fault readback");
     }
 
     private int AcquireReadbackGeneration() =>
@@ -595,8 +604,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             _pageFaultReadbackEpochs[generation] = default;
             _pageFaultReadbackPending[generation] = false;
 
-            if (_diagnosticsReadbackPending[generation])
-                DrainDiagnosticsReadback(generation);
+            if (_frameMetricReadbackPending[generation])
+                DrainFrameMetricsReadback(generation);
         }
     }
 
@@ -621,47 +630,90 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     /// Reads counters from the latest frame. The caller must have completed its GPU frame before
     /// requesting CPU-visible diagnostics.
     /// </summary>
-    public ClusterFrameDiagnostics CaptureFrameDiagnostics()
+    public ClusterFrameMetrics CaptureFrameMetrics()
     {
-        if (!_created || !_options.EnableDiagnosticsReadback)
+        if (!_created || !_options.EnableFrameMetricsReadback)
         {
             throw new InvalidOperationException(
-                "Cluster frame diagnostics are not enabled for this renderer epoch.");
+                "Cluster frame metrics are not enabled for this renderer epoch.");
         }
         DrainCompletedReadbacks();
-        return _latestFrameDiagnostics ?? throw new InvalidOperationException(
-            "No completed Cluster frame diagnostics are available.");
+        return _latestFrameMetrics ?? throw new InvalidOperationException(
+            "No completed Cluster frame metrics are available.");
     }
 
-    private void EnsureDiagnosticsReadback()
+    private void EnsureFrameMetricsReadback()
     {
-        if (!_options.EnableDiagnosticsReadback
-            || _diagnosticsReadbacks[0] is not null)
+        if (!_options.EnableFrameMetricsReadback
+            || _frameMetricReadbacks[0] is not null)
             return;
-        for (int generation = 0; generation < ReadbackGenerationCount; generation++)
+        _frameMetricReadbackBytes = CreateReadbackBuffers(
+            _frameMetricReadbacks,
+            FrameMetricsReadbackByteSize,
+            "Cluster frame metrics readback");
+    }
+
+    private byte[] CreateReadbackBuffers(
+        Buffer?[] slots,
+        int byteCount,
+        string label)
+    {
+        if (slots.Length != ReadbackGenerationCount || slots[0] is not null || slots[1] is not null)
+            throw new InvalidOperationException("Cluster readback slots are not empty.");
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteCount);
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+
+        var bytes = new byte[byteCount];
+        Buffer? first = null;
+        Buffer? second = null;
+        try
         {
-            _diagnosticsReadbacks[generation] = _backend.CreateBuffer(
+            first = _backend.CreateBuffer(
                 _device,
                 new BufferDesc(
-                    DiagnosticsReadbackByteSize,
+                    checked((ulong)byteCount),
                     BufferUsages.CopyDestination,
-                    $"Cluster frame diagnostics readback {generation}"),
+                    $"{label} 0"),
+                MemoryType.Readback);
+            second = _backend.CreateBuffer(
+                _device,
+                new BufferDesc(
+                    checked((ulong)byteCount),
+                    BufferUsages.CopyDestination,
+                    $"{label} 1"),
                 MemoryType.Readback);
         }
-        _diagnosticsReadbackBytes = new byte[DiagnosticsReadbackByteSize];
+        catch (Exception primary)
+        {
+            List<Exception>? cleanupFailures = null;
+            Dispose(ref second, ref cleanupFailures);
+            Dispose(ref first, ref cleanupFailures);
+            if (cleanupFailures is not null)
+            {
+                cleanupFailures.Insert(0, primary);
+                throw new AggregateException(
+                    $"{label} creation failed and cleanup also reported failures.",
+                    cleanupFailures);
+            }
+            throw;
+        }
+
+        slots[0] = first;
+        slots[1] = second;
+        return bytes;
     }
 
-    private void DrainDiagnosticsReadback(int generation)
+    private void DrainFrameMetricsReadback(int generation)
     {
-        if (!_diagnosticsReadbackPending[generation])
+        if (!_frameMetricReadbackPending[generation])
             return;
-        Buffer diagnosticsReadback = _diagnosticsReadbacks[generation] is { } value
+        Buffer frameMetricReadback = _frameMetricReadbacks[generation] is { } value
             ? value
-            : throw new InvalidOperationException("Cluster diagnostics readback ownership was lost.");
-        ReadMappedBuffer(diagnosticsReadback, _diagnosticsReadbackBytes);
-        ReadOnlySpan<byte> bytes = _diagnosticsReadbackBytes;
-        _latestFrameDiagnostics = new ClusterFrameDiagnostics(
-            _diagnosticsReadbackFrames[generation],
+            : throw new InvalidOperationException("Cluster frame-metrics readback ownership was lost.");
+        ReadMappedBuffer(frameMetricReadback, _frameMetricReadbackBytes);
+        ReadOnlySpan<byte> bytes = _frameMetricReadbackBytes;
+        _latestFrameMetrics = new ClusterFrameMetrics(
+            _frameMetricReadbackFrames[generation],
             ReadUInt32(bytes, CandidateCountReadbackOffset),
             ReadUInt32(bytes, CandidateArgsReadbackOffset),
             ReadUInt32(bytes, DrawArgsReadbackOffset + sizeof(uint)),
@@ -678,8 +730,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             ReadUInt32(bytes, CacheAllocationReadbackOffset),
             _options.DeformCacheBytes,
             ReadUInt32(bytes, SoftwareDebugReadbackOffset));
-        _diagnosticsReadbackFrames[generation] = 0;
-        _diagnosticsReadbackPending[generation] = false;
+        _frameMetricReadbackFrames[generation] = 0;
+        _frameMetricReadbackPending[generation] = false;
     }
 
     private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>

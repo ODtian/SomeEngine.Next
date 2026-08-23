@@ -18,14 +18,8 @@ public sealed record RuntimeStartupOptions(
     bool DeviceValidation,
     bool DynamicScene,
     bool AsyncCompute,
-    int BenchmarkWarmupFrames,
-    int BenchmarkSampleFrames,
-    string? BenchmarkOutput,
     ProfilerOptions Profiler)
 {
-    public bool BenchmarkEnabled => BenchmarkOutput is not null;
-    public bool BenchmarkOuterOnly { get; init; }
-
     public static RuntimeStartupOptions Parse(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -35,21 +29,7 @@ public sealed record RuntimeStartupOptions(
             enableSwitches: ["--vsync"],
             disableSwitches: ["--no-vsync"],
             defaultValue: true);
-        string? benchmarkOutput = ReadOptionalValue(args, "--benchmark-output");
-        int benchmarkWarmup = ReadPositive(
-            args,
-            "--benchmark-warmup",
-            defaultValue: 8_192);
-        int benchmarkSamples = ReadPositive(
-            args,
-            "--benchmark-samples",
-            defaultValue: 16_384);
-        int frameLimit = benchmarkOutput is null
-            ? ReadPositive(args, "--frames", defaultValue: 0)
-            : checked(
-                benchmarkWarmup +
-                benchmarkSamples +
-                ((benchmarkSamples & 1) == 0 ? 2 : 1));
+        int frameLimit = ReadPositive(args, "--frames", defaultValue: 0);
 
         return new RuntimeStartupOptions(
             FrameLimit: frameLimit,
@@ -90,17 +70,7 @@ public sealed record RuntimeStartupOptions(
                 enableSwitches: ["--async-compute"],
                 disableSwitches: ["--no-async-compute"],
                 defaultValue: true),
-            BenchmarkWarmupFrames: benchmarkWarmup,
-            BenchmarkSampleFrames: benchmarkSamples,
-            BenchmarkOutput: benchmarkOutput,
-            Profiler: SomeEngine.Core.Diagnostics.Profiler.ParseOptions(args))
-        {
-            BenchmarkOuterOnly = ReadBooleanOption(
-                args,
-                enableSwitches: ["--benchmark-outer-only"],
-                disableSwitches: ["--benchmark-breakdown"],
-                defaultValue: false),
-        };
+            Profiler: SomeEngine.Core.Diagnostics.Profiler.ParseOptions(args));
     }
 
     private static int ReadPositive(string[] args, string optionName, int defaultValue)

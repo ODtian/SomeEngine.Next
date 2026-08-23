@@ -92,6 +92,55 @@ public sealed class BenchmarkOptionsTests
     }
 
     [Fact]
+    public void GraphCpuDefaultsToTheFixedHighWatermarkCase()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "graph-cpu", "--adapter", "1:0",
+        ]);
+
+        Assert.Equal(BenchmarkProfile.GraphicsCpuDevelopment, options.Profile);
+        Assert.Equal([200], options.GraphicsCpuResourceCounts);
+    }
+
+    [Fact]
+    public void GraphCpuAcceptsAUniqueSortedOfficialResourceSubset()
+    {
+        BenchmarkOptions options = BenchmarkOptions.Parse([
+            "graph-cpu", "--adapter", "1:0",
+            "--resource-counts", "200,75,200",
+        ]);
+
+        Assert.Equal([75, 200], options.GraphicsCpuResourceCounts);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("30")]
+    [InlineData("225")]
+    [InlineData("invalid")]
+    public void GraphCpuRejectsResourceCountsOutsideTheOfficialSweep(string value)
+    {
+        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+            BenchmarkOptions.Parse([
+                "graph-cpu", "--adapter", "1:0",
+                "--resource-counts", value,
+            ]));
+
+        Assert.Contains("resource count", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GraphCpuResourceSelectionIsNotAcceptedByOtherCommands()
+    {
+        BenchmarkUsageException exception = Assert.Throws<BenchmarkUsageException>(() =>
+            BenchmarkOptions.Parse([
+                "warp", "--resource-counts", "25",
+            ]));
+
+        Assert.Contains("graph-cpu", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnoseAcceptsExplicitDefaultDirectMode()
     {
         BenchmarkOptions options = BenchmarkOptions.Parse([

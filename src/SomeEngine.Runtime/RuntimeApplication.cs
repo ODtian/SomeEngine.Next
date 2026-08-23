@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
-using System.Reflection;
-using System.Text;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS;
@@ -16,7 +13,6 @@ using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
-using SomeEngine.RenderGraph.Diagnostics;
 using Texture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Runtime;
@@ -282,12 +278,23 @@ internal static class RuntimeApplication
         _ = prepareSystems.Add(materialSystem);
         _ = prepareSystems.Add(instanceSystem);
 
-        var targets = new ClusterRenderTargetSource();
+        var targetMailbox = new ClusterRenderTargetMailbox();
         ClusterRendererSystem renderer = CreateRenderer();
         RenderFrameSystems frameSystems = CreateFrameSystems(renderer);
+        Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
+        Queue computeQueue = backend.GetQueue(device, QueueType.Compute);
+        Queue copyQueue = backend.GetQueue(device, QueueType.Copy);
+        using var renderGraph = new global::SomeEngine.RenderGraph.RenderGraph(
+            backend,
+            device,
+            [graphicsQueue, computeQueue, copyQueue],
+            new RenderGraphDesc(
+                MaximumFramesInFlight: 3,
+                Label: "SomeEngine Runtime Render Graph"));
+        var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
+        var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
         RuntimeUiRenderer? ui = null;
-        bool admittedCpuIntervalActive = false;
         var input = new RuntimeInput();
         int width = boot.Width;
         int height = boot.Height;
@@ -301,12 +308,12 @@ internal static class RuntimeApplication
             ClusterRenderFeature.InstanceLayout,
             materialTable,
             rendererHandle,
-            targets,
+            targetMailbox,
             new ClusterPipelineOptions
             {
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
-                EnableDiagnosticsReadback = options.VerifyFrameOutput,
+                EnableFrameMetricsReadback = options.VerifyFrameOutput,
             });
 
         RenderFrameSystems CreateFrameSystems(ClusterRendererSystem system)
@@ -333,177 +340,23 @@ internal static class RuntimeApplication
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
                 $"renderer={rendererHandle.AssetId}.");
-            if (options.BenchmarkEnabled)
-                ValidateBenchmarkConfiguration(options, device, scene);
-            long[] benchmarkCpuTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkDxgiAdmissionTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkResourceAdmissionTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAllocatedBytes = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkGen0Collections = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkDeviceWaitCalls = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkDeviceWaitTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkTaskWaitCalls = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCommandAllocatorCreations = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCommandAllocatorResets = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAdmissionFenceQueries = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAdmissionWaitCalls = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAdmissionBlockingWaitCalls = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAdmissionWaitTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkInstanceAvailableGenerations = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkReadbackAvailableGenerations = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkUiAvailableGenerations = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkGraphicsCommandAllocators = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkComputeCommandAllocators = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            int[] benchmarkCopyCommandAllocators = options.BenchmarkEnabled
-                ? new int[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkFrontendTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkSceneExtractTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkPrepareTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkTargetPublishTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkGraphFrameTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkGraphAuthorTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkGraphCloseTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerContentsTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerLivenessTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerValidationTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerDependencyTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerBarrierTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerPlacementTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCompilerExecutionTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAcquisitionSetupTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAcquisitionHeapTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAcquisitionResourceTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAcquisitionViewTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkAcquisitionBindlessTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCommandEncodingTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCommandSubmitTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkCommandCleanupTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkDiagnosticsTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            long[] benchmarkPresentTicks = options.BenchmarkEnabled
-                ? new long[options.BenchmarkSampleFrames]
-                : [];
-            int benchmarkSampleIndex = 0;
             long runtimeStarted = Stopwatch.GetTimestamp();
             long previousFrameTimestamp = Stopwatch.GetTimestamp();
             int frameIndex = 0;
             bool animateScene = options.DynamicScene;
             bool debugUiOpen = true;
             FrameOutputMetrics? verifiedOutput = null;
-            RenderGraphSnapshot? benchmarkGraphBefore = null;
-            RenderGraphSnapshot? benchmarkGraphAfter = null;
-            int benchmarkSampleEnd = options.BenchmarkEnabled
-                ? checked(options.BenchmarkWarmupFrames + options.BenchmarkSampleFrames)
-                : 0;
-            int benchmarkVerificationFrame = options.BenchmarkEnabled
-                ? checked(
-                    benchmarkSampleEnd +
-                    ((options.BenchmarkSampleFrames & 1) == 0 ? 1 : 0))
-                : 0;
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
-                long admissionStarted = options.BenchmarkEnabled
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
-                bool measureFrame = options.BenchmarkEnabled &&
-                    frameIndex >= options.BenchmarkWarmupFrames &&
-                    frameIndex < benchmarkSampleEnd;
-                bool collectBenchmarkBreakdown =
-                    measureFrame && !options.BenchmarkOuterOnly;
                 bool instanceAdmitted = instances.TryAdmitFrameResources(
-                    out int instanceAvailableGenerations,
+                    out _,
                     out QueueCompletion[] instanceRetirementFences);
                 bool readbackAdmitted = renderer.TryAdmitFrameResources(
-                    out int readbackAvailableGenerations,
+                    out _,
                     out QueueCompletion[] readbackRetirementFences);
                 bool uiAdmitted = ui.TryAdmitFrameResources(
-                    out int uiAvailableGenerations,
+                    out _,
                     out QueueCompletion[] uiRetirementFences);
-                long dxgiAdmitted = 0;
                 long admissionWaitStarted = Environment.TickCount64;
                 while (!instanceAdmitted ||
                        !readbackAdmitted ||
@@ -532,55 +385,27 @@ internal static class RuntimeApplication
                     if (!instanceAdmitted)
                     {
                         instanceAdmitted = instances.TryAdmitFrameResources(
-                            out instanceAvailableGenerations,
+                            out _,
                             out instanceRetirementFences);
                     }
                     if (!readbackAdmitted)
                     {
                         readbackAdmitted = renderer.TryAdmitFrameResources(
-                            out readbackAvailableGenerations,
+                            out _,
                             out readbackRetirementFences);
                     }
                     if (!uiAdmitted)
                     {
                         uiAdmitted = ui.TryAdmitFrameResources(
-                            out uiAvailableGenerations,
+                            out _,
                             out uiRetirementFences);
                     }
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
-                int graphicsCommandAllocators = 0;
-                int computeCommandAllocators = 0;
-                int copyCommandAllocators = 0;
-                long admissionFenceQueries = 0;
-                long admissionWaitCalls = 0;
-                long admissionBlockingWaitCalls = 0;
-                long admissionWaitTicks = 0;
-                long resourcesAdmitted = options.BenchmarkEnabled
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
-                long allocatedBefore = 0;
-                int gen0Before = 0;
-                long cpuStarted = 0;
-                if (measureFrame)
-                {
-                    RuntimeWait.BeginAdmittedCpuInterval();
-                    admittedCpuIntervalActive = true;
-                    allocatedBefore = GC.GetTotalAllocatedBytes(precise: false);
-                    gen0Before = GC.CollectionCount(0);
-                    cpuStarted = Stopwatch.GetTimestamp();
-                }
                 input.BeginFrame();
                 if (!window.PumpMessages())
-                {
-                    if (measureFrame)
-                    {
-                        throw new InvalidOperationException(
-                            "The benchmark window closed inside an admitted CPU sample.");
-                    }
                     break;
-                }
                 while (window.TryReadEvent(out NativeWindowEvent windowEvent))
                 {
                     input.Process(windowEvent);
@@ -588,11 +413,6 @@ internal static class RuntimeApplication
                 }
                 if (input.WasKeyPressed(RuntimeInput.KeyEscape))
                 {
-                    if (measureFrame)
-                    {
-                        throw new InvalidOperationException(
-                            "The benchmark received an escape request inside an admitted CPU sample.");
-                    }
                     window.RequestClose();
                     continue;
                 }
@@ -600,11 +420,6 @@ internal static class RuntimeApplication
                     debugUiOpen = !debugUiOpen;
                 if (window.IsMinimized)
                 {
-                    if (measureFrame)
-                    {
-                        throw new InvalidOperationException(
-                            "The benchmark window became minimized inside an admitted CPU sample.");
-                    }
                     window.WaitForEvents(TimeSpan.FromMilliseconds(16));
                     previousFrameTimestamp = Stopwatch.GetTimestamp();
                     continue;
@@ -627,10 +442,7 @@ internal static class RuntimeApplication
                         : null;
                 }
 
-                long currentFrameTimestamp =
-                    measureFrame && options.BenchmarkOuterOnly
-                        ? cpuStarted
-                        : Stopwatch.GetTimestamp();
+                long currentFrameTimestamp = Stopwatch.GetTimestamp();
                 float deltaSeconds = Math.Clamp(
                     (float)Stopwatch.GetElapsedTime(previousFrameTimestamp, currentFrameTimestamp).TotalSeconds,
                     1.0f / 1000.0f,
@@ -662,9 +474,6 @@ internal static class RuntimeApplication
                         viewFrame.JitterPixels,
                         scene.Camera.Position,
                         window.HasFocus));
-                long frontendCompleted = collectBenchmarkBreakdown
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: extracting scene.");
@@ -676,9 +485,6 @@ internal static class RuntimeApplication
                             currentFrameTimestamp).TotalSeconds);
                 }
                 extraction.Extract(mainWorld);
-                long sceneExtractCompleted = collectBenchmarkBreakdown
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: preparing streamed meshes.");
                 // The receiver and RenderGraph have one coordinator-thread owner. Asset I/O
@@ -701,30 +507,17 @@ internal static class RuntimeApplication
                 if (reportMilestones)
                     Console.WriteLine("First frame: publishing prepare systems.");
                 Prepare(prepareSystems, coordinator);
-                long prepareCompleted = collectBenchmarkBreakdown
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage image = AcquireImage(backend, swapchain, window);
                 Texture imageTexture = image.Texture;
-                if (options.BenchmarkEnabled)
-                    dxgiAdmitted = Stopwatch.GetTimestamp();
-                targets.Publish(new ClusterRenderTarget(
-                    imageTexture,
-                    width,
-                    height,
-                    PresentationFormat));
-                long targetPublished = collectBenchmarkBreakdown
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
-                bool captureBenchmarkGraph = options.BenchmarkEnabled &&
-                    (frameIndex == options.BenchmarkWarmupFrames - 1 ||
-                     frameIndex == benchmarkVerificationFrame);
-                long graphStarted = targetPublished;
-                RenderGraphSnapshot? benchmarkGraph = ExecuteFrame(
+                targetMailbox.Publish(new ClusterRenderTarget(imageTexture));
+                FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
-                    device,
+                    renderGraph,
+                    graphicsQueue,
+                    graphCompletionSlots,
+                    graphCompletions,
                     coordinator,
                     frameSystems,
                     renderer,
@@ -734,152 +527,20 @@ internal static class RuntimeApplication
                     height,
                     window,
                     reportMilestones,
-                    captureBenchmarkGraph,
-                    collectBenchmarkBreakdown,
-                    outputVerifier,
-                    out FrameOutputMetrics? frameOutput,
-                    out long graphAuthorTicks,
-                    out InvocationCpuTimings graphTimings);
-                long graphCompleted = collectBenchmarkBreakdown
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
-                if (frameIndex == options.BenchmarkWarmupFrames - 1)
-                    benchmarkGraphBefore = benchmarkGraph;
-                else if (frameIndex == benchmarkVerificationFrame)
-                    benchmarkGraphAfter = benchmarkGraph;
+                    outputVerifier);
                 if (frameOutput is FrameOutputMetrics output)
                     verifiedOutput = output;
 
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
-                long diagnosticsCompleted = collectBenchmarkBreakdown
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
                 PresentStatus present = backend.Present(
                     backend.GetQueue(device, QueueType.Graphics),
                     image);
-                if (present == PresentStatus.Occluded && measureFrame)
-                {
-                    throw new InvalidOperationException(
-                        "The benchmark swapchain became occluded inside an admitted CPU sample.");
-                }
                 if (present == PresentStatus.Occluded)
                     window.WaitForEvents(TimeSpan.FromMilliseconds(16));
                 else if (present == PresentStatus.OutOfDate)
                     ReconfigureSwapchain(backend, swapchain, options, width, height);
 
-                if (measureFrame)
-                {
-                    long cpuEnded = Stopwatch.GetTimestamp();
-                    long allocatedAfter = GC.GetTotalAllocatedBytes(precise: false);
-                    int gen0After = GC.CollectionCount(0);
-                    long taskWaitCalls = RuntimeWait.EndAdmittedCpuInterval();
-                    long deviceWaitCalls = 0;
-                    long blockingDeviceWaitCalls = 0;
-                    long deviceWaitTicks = 0;
-                    long commandAllocatorCreations = 0;
-                    long commandAllocatorResets = 0;
-                    admittedCpuIntervalActive = false;
-                    if (deviceWaitCalls != 0 ||
-                        blockingDeviceWaitCalls != 0 ||
-                        taskWaitCalls != 0 ||
-                        commandAllocatorCreations != 0 ||
-                        commandAllocatorResets != 0)
-                    {
-                        throw new InvalidOperationException(
-                            "The admitted CPU benchmark interval performed a forbidden wait or " +
-                            "command-allocator lifecycle operation: " +
-                            $"deviceWaitCalls={deviceWaitCalls}, " +
-                            $"blockingDeviceWaitCalls={blockingDeviceWaitCalls}, " +
-                            $"taskWaitCalls={taskWaitCalls}, " +
-                            $"commandAllocatorCreations={commandAllocatorCreations}, " +
-                            $"commandAllocatorResets={commandAllocatorResets}.");
-                    }
-
-                    int sample = benchmarkSampleIndex++;
-                    benchmarkCpuTicks[sample] = cpuEnded - cpuStarted;
-                    benchmarkDxgiAdmissionTicks[sample] = dxgiAdmitted == 0
-                        ? 0
-                        : dxgiAdmitted - prepareCompleted;
-                    benchmarkResourceAdmissionTicks[sample] = resourcesAdmitted - admissionStarted;
-                    benchmarkAllocatedBytes[sample] = allocatedAfter - allocatedBefore;
-                    benchmarkGen0Collections[sample] = gen0After - gen0Before;
-                    benchmarkDeviceWaitCalls[sample] = deviceWaitCalls;
-                    benchmarkDeviceWaitTicks[sample] = deviceWaitTicks;
-                    benchmarkTaskWaitCalls[sample] = taskWaitCalls;
-                    benchmarkCommandAllocatorCreations[sample] =
-                        commandAllocatorCreations;
-                    benchmarkCommandAllocatorResets[sample] =
-                        commandAllocatorResets;
-                    benchmarkAdmissionFenceQueries[sample] =
-                        admissionFenceQueries;
-                    benchmarkAdmissionWaitCalls[sample] = admissionWaitCalls;
-                    benchmarkAdmissionBlockingWaitCalls[sample] =
-                        admissionBlockingWaitCalls;
-                    benchmarkAdmissionWaitTicks[sample] = admissionWaitTicks;
-                    benchmarkInstanceAvailableGenerations[sample] =
-                        instanceAvailableGenerations;
-                    benchmarkReadbackAvailableGenerations[sample] =
-                        readbackAvailableGenerations;
-                    benchmarkUiAvailableGenerations[sample] =
-                        uiAvailableGenerations;
-                    benchmarkGraphicsCommandAllocators[sample] =
-                        graphicsCommandAllocators;
-                    benchmarkComputeCommandAllocators[sample] =
-                        computeCommandAllocators;
-                    benchmarkCopyCommandAllocators[sample] =
-                        copyCommandAllocators;
-                    if (collectBenchmarkBreakdown)
-                    {
-                        benchmarkFrontendTicks[sample] =
-                            frontendCompleted - cpuStarted;
-                        benchmarkSceneExtractTicks[sample] =
-                            sceneExtractCompleted - frontendCompleted;
-                        benchmarkPrepareTicks[sample] =
-                            prepareCompleted - sceneExtractCompleted;
-                        benchmarkTargetPublishTicks[sample] =
-                            targetPublished - prepareCompleted;
-                        benchmarkGraphFrameTicks[sample] =
-                            graphCompleted - graphStarted;
-                        benchmarkGraphAuthorTicks[sample] = graphAuthorTicks;
-                        benchmarkGraphCloseTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Close);
-                        benchmarkCompilerContentsTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Contents);
-                        benchmarkCompilerLivenessTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Liveness);
-                        benchmarkCompilerValidationTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Validation);
-                        benchmarkCompilerDependencyTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Dependencies);
-                        benchmarkCompilerBarrierTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Barrier);
-                        benchmarkCompilerPlacementTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Placement);
-                        benchmarkCompilerExecutionTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Compiler.Execution);
-                        benchmarkAcquisitionSetupTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Acquisition.Setup);
-                        benchmarkAcquisitionHeapTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Acquisition.Heaps);
-                        benchmarkAcquisitionResourceTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Acquisition.Resources);
-                        benchmarkAcquisitionViewTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Acquisition.Views);
-                        benchmarkAcquisitionBindlessTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Acquisition.Bindless);
-                        benchmarkCommandEncodingTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Commands.Encoding);
-                        benchmarkCommandSubmitTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Commands.Submit);
-                        benchmarkCommandCleanupTicks[sample] =
-                            DurationToStopwatchTicks(graphTimings.Commands.Cleanup);
-                        benchmarkDiagnosticsTicks[sample] =
-                            diagnosticsCompleted - graphCompleted;
-                        benchmarkPresentTicks[sample] =
-                            cpuEnded - diagnosticsCompleted;
-                    }
-                }
                 frameIndex++;
             }
 
@@ -916,38 +577,38 @@ internal static class RuntimeApplication
                         $"({output.MaxDifferentX},{output.MaxDifferentY}) " +
                         $"[{output.DifferentWidth}x{output.DifferentHeight}], " +
                         $"hash={output.Hash:X16}.");
-                    ClusterFrameDiagnostics frameDiagnostics = renderer.CaptureFrameDiagnostics();
+                    ClusterFrameMetrics frameMetrics = renderer.CaptureFrameMetrics();
                     Console.WriteLine(
-                        $"Cluster frame {frameDiagnostics.FrameIndex}: " +
+                        $"Cluster frame {frameMetrics.FrameIndex}: " +
                         $"materials={materialTable.Current.MaterialCount}, " +
-                        $"candidates={frameDiagnostics.CandidateCount}/" +
-                        $"{frameDiagnostics.CandidateDispatchGroups} groups, " +
-                        $"phase1={frameDiagnostics.PhaseOneSoftwareClusters} SW+" +
-                        $"{frameDiagnostics.PhaseOneHardwareClusters} HW, " +
-                        $"phase2Candidates={frameDiagnostics.PhaseTwoCandidateCount}/" +
-                        $"{frameDiagnostics.PhaseTwoDispatchGroups} groups, " +
-                        $"phase2={frameDiagnostics.PhaseTwoSoftwareClusters} SW+" +
-                        $"{frameDiagnostics.PhaseTwoHardwareClusters} HW, " +
-                        $"rasterBatches={frameDiagnostics.RasterBatches} total/" +
-                        $"{frameDiagnostics.SoftwareRasterBatches} SW, " +
-                        $"shadePixels={frameDiagnostics.ShadedPixels}, " +
-                        $"deformBins={frameDiagnostics.BinnedDeformClusters}, " +
-                        $"cachedClusters={frameDiagnostics.CachedDeformClusters}, " +
-                        $"deformCache={frameDiagnostics.DeformCacheBytes}/" +
-                        $"{frameDiagnostics.DeformCacheCapacityBytes} bytes.");
+                        $"candidates={frameMetrics.CandidateCount}/" +
+                        $"{frameMetrics.CandidateDispatchGroups} groups, " +
+                        $"phase1={frameMetrics.PhaseOneSoftwareClusters} SW+" +
+                        $"{frameMetrics.PhaseOneHardwareClusters} HW, " +
+                        $"phase2Candidates={frameMetrics.PhaseTwoCandidateCount}/" +
+                        $"{frameMetrics.PhaseTwoDispatchGroups} groups, " +
+                        $"phase2={frameMetrics.PhaseTwoSoftwareClusters} SW+" +
+                        $"{frameMetrics.PhaseTwoHardwareClusters} HW, " +
+                        $"rasterBatches={frameMetrics.RasterBatches} total/" +
+                        $"{frameMetrics.SoftwareRasterBatches} SW, " +
+                        $"shadePixels={frameMetrics.ShadedPixels}, " +
+                        $"deformBins={frameMetrics.BinnedDeformClusters}, " +
+                        $"cachedClusters={frameMetrics.CachedDeformClusters}, " +
+                        $"deformCache={frameMetrics.DeformCacheBytes}/" +
+                        $"{frameMetrics.DeformCacheCapacityBytes} bytes.");
                     uint visibleClusters = checked(
-                        frameDiagnostics.PhaseOneSoftwareClusters +
-                        frameDiagnostics.PhaseOneHardwareClusters +
-                        frameDiagnostics.PhaseTwoSoftwareClusters +
-                        frameDiagnostics.PhaseTwoHardwareClusters);
+                        frameMetrics.PhaseOneSoftwareClusters +
+                        frameMetrics.PhaseOneHardwareClusters +
+                        frameMetrics.PhaseTwoSoftwareClusters +
+                        frameMetrics.PhaseTwoHardwareClusters);
                     bool clusterOutputHealthy =
-                        frameDiagnostics.CandidateCount != 0 &&
+                        frameMetrics.CandidateCount != 0 &&
                         visibleClusters != 0 &&
-                        frameDiagnostics.ShadedPixels != 0 &&
-                        frameDiagnostics.BinnedDeformClusters != 0 &&
-                        frameDiagnostics.CachedDeformClusters != 0 &&
-                        frameDiagnostics.DeformCacheBytes is > 0 &&
-                        frameDiagnostics.DeformCacheBytes <= frameDiagnostics.DeformCacheCapacityBytes;
+                        frameMetrics.ShadedPixels != 0 &&
+                        frameMetrics.BinnedDeformClusters != 0 &&
+                        frameMetrics.CachedDeformClusters != 0 &&
+                        frameMetrics.DeformCacheBytes is > 0 &&
+                        frameMetrics.DeformCacheBytes <= frameMetrics.DeformCacheCapacityBytes;
                     if (!output.HasSubstantialCoverage || !clusterOutputHealthy)
                     {
                         throw new InvalidOperationException(
@@ -956,73 +617,10 @@ internal static class RuntimeApplication
                     }
                 }
             }
-            if (options.BenchmarkEnabled)
-            {
-                if (benchmarkSampleIndex != options.BenchmarkSampleFrames)
-                {
-                    throw new InvalidOperationException(
-                        $"The benchmark captured {benchmarkSampleIndex} samples; " +
-                        $"{options.BenchmarkSampleFrames} were required.");
-                }
-                WriteAndValidateBenchmarkGraphs(
-                    options,
-                    benchmarkGraphBefore,
-                    benchmarkGraphAfter);
-                WriteBenchmark(
-                    options,
-                    device,
-                    scene,
-                    benchmarkCpuTicks,
-                    benchmarkDxgiAdmissionTicks,
-                    benchmarkResourceAdmissionTicks,
-                    benchmarkAllocatedBytes,
-                    benchmarkGen0Collections,
-                    benchmarkDeviceWaitCalls,
-                    benchmarkDeviceWaitTicks,
-                    benchmarkTaskWaitCalls,
-                    benchmarkCommandAllocatorCreations,
-                    benchmarkCommandAllocatorResets,
-                    benchmarkAdmissionFenceQueries,
-                    benchmarkAdmissionWaitCalls,
-                    benchmarkAdmissionBlockingWaitCalls,
-                    benchmarkAdmissionWaitTicks,
-                    benchmarkInstanceAvailableGenerations,
-                    benchmarkReadbackAvailableGenerations,
-                    benchmarkUiAvailableGenerations,
-                    benchmarkGraphicsCommandAllocators,
-                    benchmarkComputeCommandAllocators,
-                    benchmarkCopyCommandAllocators,
-                    benchmarkFrontendTicks,
-                    benchmarkSceneExtractTicks,
-                    benchmarkPrepareTicks,
-                    benchmarkTargetPublishTicks,
-                    benchmarkGraphFrameTicks,
-                    benchmarkGraphAuthorTicks,
-                    benchmarkGraphCloseTicks,
-                    benchmarkCompilerContentsTicks,
-                    benchmarkCompilerLivenessTicks,
-                    benchmarkCompilerValidationTicks,
-                    benchmarkCompilerDependencyTicks,
-                    benchmarkCompilerBarrierTicks,
-                    benchmarkCompilerPlacementTicks,
-                    benchmarkCompilerExecutionTicks,
-                    benchmarkAcquisitionSetupTicks,
-                    benchmarkAcquisitionHeapTicks,
-                    benchmarkAcquisitionResourceTicks,
-                    benchmarkAcquisitionViewTicks,
-                    benchmarkAcquisitionBindlessTicks,
-                    benchmarkCommandEncodingTicks,
-                    benchmarkCommandSubmitTicks,
-                    benchmarkCommandCleanupTicks,
-                    benchmarkDiagnosticsTicks,
-                    benchmarkPresentTicks);
-            }
             Console.WriteLine($"SomeEngine runtime completed {frameIndex} frame(s).");
         }
         finally
         {
-            if (admittedCpuIntervalActive)
-                _ = RuntimeWait.EndAdmittedCpuInterval();
             outputVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
             ui?.Dispose();
@@ -1046,9 +644,12 @@ internal static class RuntimeApplication
         }
     }
 
-    private static RenderGraphSnapshot? ExecuteFrame(
+    private static FrameOutputMetrics? ExecuteFrame(
         IGraphicsBackend backend,
-        Device device,
+        global::SomeEngine.RenderGraph.RenderGraph graph,
+        Queue graphicsQueue,
+        QueueCompletion[] completionSlots,
+        QueueCompletion[] completions,
         RenderFrameCoordinator coordinator,
         RenderFrameSystems systems,
         ClusterRendererSystem renderer,
@@ -1058,16 +659,8 @@ internal static class RuntimeApplication
         int height,
         NativeWindow window,
         bool reportMilestones,
-        bool captureGraphSnapshot,
-        bool collectBenchmarkTimings,
-        FrameOutputVerifier? outputVerifier,
-        out FrameOutputMetrics? frameOutput,
-        out long graphAuthorTicks,
-        out InvocationCpuTimings graphTimings)
+        FrameOutputVerifier? outputVerifier)
     {
-        graphAuthorTicks = 0;
-        graphTimings = default;
-        frameOutput = null;
         if (!coordinator.TryBeginFrame(out RenderFrame? frame))
         {
             RenderFrameSynchronizationDiagnostics state = coordinator.CaptureDiagnostics();
@@ -1081,38 +674,28 @@ internal static class RuntimeApplication
 
         using (frame)
         {
-            using global::SomeEngine.RenderGraph.RenderGraph graph = new(backend, device);
+            FrameOutputMetrics? frameOutput = null;
             bool rendererCommitted = false;
             bool uiCommitted = false;
+            completionSlots.AsSpan().Clear();
             try
             {
-                long authorStarted = collectBenchmarkTimings
-                    ? Stopwatch.GetTimestamp()
-                    : 0;
+                RenderGraphFrame graphFrame = graph.BeginFrame();
                 if (reportMilestones)
                     Console.WriteLine("First frame: recording render systems.");
-                TextureHandle presentation = graph.Import(image);
-                systems.Update(frame, graph);
-                ui.Record(graph, image.Texture, width, height);
-                outputVerifier?.Record(graph, presentation);
-                if (collectBenchmarkTimings)
-                    graphAuthorTicks = Stopwatch.GetTimestamp() - authorStarted;
+                GraphTextureId presentation = graphFrame.Import(image, graphicsQueue);
+                systems.Update(frame, graphFrame);
+                ui.Record(ref graphFrame, presentation, width, height);
+                outputVerifier?.Record(ref graphFrame, presentation);
                 if (reportMilestones)
-                    Console.WriteLine("First frame: compiling and submitting render graph.");
-                RenderGraphSnapshot? snapshot = null;
-                QueueCompletion[] execution;
-                if (captureGraphSnapshot)
-                {
-                    execution = graph.ExecuteWithSnapshot(out snapshot);
-                }
-                else if (collectBenchmarkTimings)
-                {
-                    execution = graph.ExecuteForBenchmark(out graphTimings);
-                }
-                else
-                {
-                    execution = graph.Execute();
-                }
+                    Console.WriteLine("First frame: analyzing and submitting render graph.");
+
+                int submittedQueueCount = graphFrame.Execute(completionSlots);
+                int completionCount = CompactCompletions(
+                    completionSlots,
+                    completions,
+                    submittedQueueCount);
+                ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
                 renderer.Commit(execution);
                 rendererCommitted = true;
                 ui.Commit(execution);
@@ -1123,58 +706,56 @@ internal static class RuntimeApplication
                     Wait(backend, execution, window);
                     frameOutput = outputVerifier.Read();
                 }
-                return snapshot;
+                return frameOutput;
             }
-            catch (RenderGraphExecutionException failure)
+            catch
             {
-                if (!frame.IsClosed && failure.PublishedFences.Length != 0)
+                int completionCount = CompactCompletions(
+                    completionSlots,
+                    completions,
+                    expectedCount: null);
+                if (completionCount != 0)
                 {
-                    frame.Complete(failure.PublishedFences);
-                    Wait(backend, failure.PublishedFences, window);
+                    ReadOnlySpan<QueueCompletion> accepted = completions.AsSpan(0, completionCount);
+                    if (!rendererCommitted)
+                    {
+                        renderer.Commit(accepted);
+                        rendererCommitted = true;
+                    }
+                    if (!uiCommitted)
+                    {
+                        ui.Commit(accepted);
+                        uiCommitted = true;
+                    }
+                    if (!frame.IsClosed) frame.Complete(accepted);
                 }
                 throw;
             }
             finally
             {
-                if (!rendererCommitted)
-                    renderer.Discard();
-                if (!uiCommitted)
-                    ui.Discard();
+                if (!rendererCommitted) renderer.Discard();
+                if (!uiCommitted) ui.Discard();
             }
         }
     }
 
-    private static void WriteAndValidateBenchmarkGraphs(
-        RuntimeStartupOptions options,
-        RenderGraphSnapshot? before,
-        RenderGraphSnapshot? after)
+    private static int CompactCompletions(
+        ReadOnlySpan<QueueCompletion> source,
+        Span<QueueCompletion> destination,
+        int? expectedCount)
     {
-        if (before is null || after is null)
+        int count = 0;
+        foreach (ref readonly QueueCompletion completion in source)
+        {
+            if (completion == default) continue;
+            destination[count++] = completion;
+        }
+        if (expectedCount.HasValue && count != expectedCount.Value)
         {
             throw new InvalidOperationException(
-                "The benchmark did not capture both excluded boundary graph snapshots.");
+                $"RenderGraph reported {expectedCount.Value} submitted Queues, but {count} completion slots were valid.");
         }
-        string output = Path.GetFullPath(options.BenchmarkOutput!);
-        string? directory = Path.GetDirectoryName(output);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-        File.WriteAllText(
-            output + ".graph-before.json",
-            RenderGraphSnapshotJson.Serialize(before));
-        File.WriteAllText(
-            output + ".graph-after.json",
-            RenderGraphSnapshotJson.Serialize(after));
-        IReadOnlyList<string> differences = RenderGraphSnapshotDiff.Compare(
-            before,
-            after,
-            compareQueuePositionValues: false);
-        File.WriteAllLines(output + ".graph-diff.txt", differences);
-        if (differences.Count != 0)
-        {
-            throw new InvalidOperationException(
-                "The canonical Runtime graph changed across the measured interval: " +
-                string.Join("; ", differences));
-        }
+        return count;
     }
 
     private static void Wait(
@@ -1234,337 +815,6 @@ internal static class RuntimeApplication
         cluster.Dispose();
         instances.Dispose();
     }
-
-    private static void ValidateBenchmarkConfiguration(
-        RuntimeStartupOptions options,
-        Device device,
-        RuntimeScene scene)
-    {
-        RequireDisabledOptimizationsForLoadedEngineAssemblies();
-
-        RequireDisabledRuntimeFeature(
-            "tiered compilation",
-            "DOTNET_TieredCompilation",
-            "COMPlus_TieredCompilation");
-        RequireDisabledRuntimeFeature(
-            "ReadyToRun",
-            "DOTNET_ReadyToRun",
-            "COMPlus_ReadyToRun");
-
-        if (!device.Adapter.HardwareAccelerated ||
-            !device.Adapter.Name.Contains("RTX 3080", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                $"The benchmark requires a hardware RTX 3080; the active adapter is '{device.Adapter.Name}'.");
-        }
-        if (options.DeviceValidation)
-            throw new InvalidOperationException("The benchmark requires D3D12 validation to be disabled.");
-        if (scene.MeshInstanceCount != 1_024)
-        {
-            throw new InvalidOperationException(
-                $"The benchmark requires exactly 1,024 scene instances; found {scene.MeshInstanceCount}.");
-        }
-        if (!options.DynamicScene)
-            throw new InvalidOperationException("The benchmark requires the dynamic Default Runtime scene.");
-        if (!options.AsyncCompute)
-            throw new InvalidOperationException("The benchmark requires async compute to remain enabled.");
-        if (!options.WindowVSync || options.PresentSyncInterval != 1)
-            throw new InvalidOperationException("The benchmark requires FIFO Present(1).");
-        if (options.SkipSwapchainPresent)
-            throw new InvalidOperationException("The benchmark cannot skip swapchain presentation.");
-        if (options.VerifyFrameOutput)
-        {
-            throw new InvalidOperationException(
-                "Per-frame output readback waits are excluded from the performance process; " +
-                "use the benchmark's boundary output verification instead.");
-        }
-        if (options.RenderDocCapture is not null)
-            throw new InvalidOperationException("RenderDoc capture must be disabled during benchmark sampling.");
-        if (options.Profiler.EnableTracy)
-            throw new InvalidOperationException("The benchmark requires the external profiler to be disabled.");
-    }
-
-    private static void RequireDisabledOptimizationsForLoadedEngineAssemblies()
-    {
-        var invalid = new List<string>();
-        foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            string? name = assembly.GetName().Name;
-            if (name is null ||
-                !name.StartsWith("SomeEngine.", StringComparison.Ordinal))
-            {
-                continue;
-            }
-            DebuggableAttribute? debugging =
-                assembly.GetCustomAttribute<DebuggableAttribute>();
-            if (debugging is not null &&
-                (debugging.DebuggingFlags &
-                 DebuggableAttribute.DebuggingModes.DisableOptimizations) != 0)
-            {
-                continue;
-            }
-            invalid.Add(name);
-        }
-        if (invalid.Count == 0)
-            return;
-        invalid.Sort(StringComparer.Ordinal);
-        throw new InvalidOperationException(
-            "The benchmark requires every loaded SomeEngine assembly to be built with " +
-            $"Optimize=false; invalid assemblies: {string.Join(", ", invalid)}.");
-    }
-
-    private static void RequireDisabledRuntimeFeature(
-        string feature,
-        string dotnetVariable,
-        string compatibilityVariable)
-    {
-        string? dotnet = Environment.GetEnvironmentVariable(dotnetVariable);
-        string? compatibility = Environment.GetEnvironmentVariable(compatibilityVariable);
-        if ((dotnet is null && compatibility is null) ||
-            (dotnet is not null && !string.Equals(dotnet, "0", StringComparison.Ordinal)) ||
-            (compatibility is not null &&
-                !string.Equals(compatibility, "0", StringComparison.Ordinal)))
-        {
-            throw new InvalidOperationException(
-                $"The benchmark requires {feature} to be explicitly disabled with " +
-                $"{dotnetVariable}=0 or {compatibilityVariable}=0.");
-        }
-    }
-
-    private static void WriteBenchmark(
-        RuntimeStartupOptions options,
-        Device device,
-        RuntimeScene scene,
-        long[] cpuTicks,
-        long[] dxgiAdmissionTicks,
-        long[] resourceAdmissionTicks,
-        long[] allocatedBytes,
-        int[] gen0Collections,
-        long[] deviceWaitCalls,
-        long[] deviceWaitTicks,
-        long[] taskWaitCalls,
-        long[] commandAllocatorCreations,
-        long[] commandAllocatorResets,
-        long[] admissionFenceQueries,
-        long[] admissionWaitCalls,
-        long[] admissionBlockingWaitCalls,
-        long[] admissionWaitTicks,
-        int[] instanceAvailableGenerations,
-        int[] readbackAvailableGenerations,
-        int[] uiAvailableGenerations,
-        int[] graphicsCommandAllocators,
-        int[] computeCommandAllocators,
-        int[] copyCommandAllocators,
-        long[] frontendTicks,
-        long[] sceneExtractTicks,
-        long[] prepareTicks,
-        long[] targetPublishTicks,
-        long[] graphFrameTicks,
-        long[] graphAuthorTicks,
-        long[] graphCloseTicks,
-        long[] compilerContentsTicks,
-        long[] compilerLivenessTicks,
-        long[] compilerValidationTicks,
-        long[] compilerDependencyTicks,
-        long[] compilerBarrierTicks,
-        long[] compilerPlacementTicks,
-        long[] compilerExecutionTicks,
-        long[] acquisitionSetupTicks,
-        long[] acquisitionHeapTicks,
-        long[] acquisitionResourceTicks,
-        long[] acquisitionViewTicks,
-        long[] acquisitionBindlessTicks,
-        long[] commandEncodingTicks,
-        long[] commandSubmitTicks,
-        long[] commandCleanupTicks,
-        long[] diagnosticsTicks,
-        long[] presentTicks)
-    {
-        string[] criticalPathNames =
-        [
-            "frontend_ticks",
-            "scene_extract_ticks",
-            "prepare_ticks",
-            "target_publish_ticks",
-            "graph_frame_ticks",
-            "graph_author_ticks",
-            "graph_close_ticks",
-            "compiler_contents_ticks",
-            "compiler_liveness_ticks",
-            "compiler_validation_ticks",
-            "compiler_dependencies_ticks",
-            "compiler_barriers_ticks",
-            "compiler_placement_ticks",
-            "compiler_execution_ticks",
-            "acquisition_setup_ticks",
-            "acquisition_heaps_ticks",
-            "acquisition_resources_ticks",
-            "acquisition_views_ticks",
-            "acquisition_bindless_ticks",
-            "command_encoding_ticks",
-            "command_submit_ticks",
-            "command_cleanup_ticks",
-            "diagnostics_ticks",
-            "present_ticks",
-        ];
-        long[][] criticalPathColumns =
-        [
-            frontendTicks,
-            sceneExtractTicks,
-            prepareTicks,
-            targetPublishTicks,
-            graphFrameTicks,
-            graphAuthorTicks,
-            graphCloseTicks,
-            compilerContentsTicks,
-            compilerLivenessTicks,
-            compilerValidationTicks,
-            compilerDependencyTicks,
-            compilerBarrierTicks,
-            compilerPlacementTicks,
-            compilerExecutionTicks,
-            acquisitionSetupTicks,
-            acquisitionHeapTicks,
-            acquisitionResourceTicks,
-            acquisitionViewTicks,
-            acquisitionBindlessTicks,
-            commandEncodingTicks,
-            commandSubmitTicks,
-            commandCleanupTicks,
-            diagnosticsTicks,
-            presentTicks,
-        ];
-        string path = Path.GetFullPath(options.BenchmarkOutput!);
-        string? directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
-        using (var writer = new StreamWriter(
-            path,
-            append: false,
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
-        {
-            writer.WriteLine("# schema=SomeEngine.Runtime.CpuEndToEnd.v2");
-            writer.WriteLine($"# timestamp_utc={DateTimeOffset.UtcNow:O}");
-            writer.WriteLine($"# stopwatch_frequency={Stopwatch.Frequency}");
-            writer.WriteLine($"# process_id={Environment.ProcessId}");
-            writer.WriteLine($"# adapter={device.Adapter.Name}");
-            writer.WriteLine($"# driver={device.Adapter.DriverVersion}");
-            writer.WriteLine("# api=Direct3D12");
-            writer.WriteLine($"# scene_instances={scene.MeshInstanceCount}");
-            writer.WriteLine($"# warmup_frames={options.BenchmarkWarmupFrames}");
-            writer.WriteLine($"# sample_frames={options.BenchmarkSampleFrames}");
-            writer.WriteLine(
-                $"# timing_mode={(options.BenchmarkOuterOnly ? "outer-only" : "breakdown")}");
-            writer.WriteLine("# configuration=Debug;Optimize=false;TieredCompilation=0;" +
-                "ReadyToRun=0;FIFO Present(1);buffers=3;maximum_frame_latency=2;" +
-                "dynamic_scene=true;async_compute=true");
-            writer.Write(
-                "sample,cpu_ticks,cpu_ms,dxgi_admission_ticks,dxgi_admission_ms," +
-                "resource_admission_ticks,resource_admission_ms,allocated_bytes,gen0_collections," +
-                "device_wait_calls,device_wait_ticks,task_wait_calls," +
-                "command_allocator_creations,command_allocator_resets," +
-                "admission_fence_queries,admission_wait_calls," +
-                "admission_blocking_wait_calls,admission_wait_ticks," +
-                "instance_available_generations,readback_available_generations," +
-                "ui_available_generations,graphics_available_command_allocators," +
-                "compute_available_command_allocators,copy_available_command_allocators");
-            foreach (string name in criticalPathNames)
-            {
-                writer.Write(',');
-                writer.Write(name);
-            }
-            writer.WriteLine();
-            for (int index = 0; index < cpuTicks.Length; index++)
-            {
-                writer.Write(index.ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(cpuTicks[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(TicksToMilliseconds(cpuTicks[index]).ToString("R", CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(dxgiAdmissionTicks[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(TicksToMilliseconds(dxgiAdmissionTicks[index]).ToString("R", CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(resourceAdmissionTicks[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(TicksToMilliseconds(resourceAdmissionTicks[index]).ToString("R", CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(allocatedBytes[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(gen0Collections[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(deviceWaitCalls[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(deviceWaitTicks[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(taskWaitCalls[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(commandAllocatorCreations[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(commandAllocatorResets[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(admissionFenceQueries[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(admissionWaitCalls[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(admissionBlockingWaitCalls[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(admissionWaitTicks[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(instanceAvailableGenerations[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(readbackAvailableGenerations[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(uiAvailableGenerations[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(graphicsCommandAllocators[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(computeCommandAllocators[index].ToString(CultureInfo.InvariantCulture));
-                writer.Write(',');
-                writer.Write(copyCommandAllocators[index].ToString(CultureInfo.InvariantCulture));
-                foreach (long[] column in criticalPathColumns)
-                {
-                    writer.Write(',');
-                    writer.Write(column[index].ToString(CultureInfo.InvariantCulture));
-                }
-                writer.WriteLine();
-            }
-        }
-
-        long[] ordered = (long[])cpuTicks.Clone();
-        Array.Sort(ordered);
-        double p50 = TicksToMilliseconds(Percentile(ordered, 0.50));
-        double p95 = TicksToMilliseconds(Percentile(ordered, 0.95));
-        double p99 = TicksToMilliseconds(Percentile(ordered, 0.99));
-        double maximum = TicksToMilliseconds(ordered[^1]);
-        long thresholdTicks = checked((Stopwatch.Frequency + 999L) / 1_000L);
-        int failures = 0;
-        foreach (long sample in cpuTicks)
-        {
-            if (sample >= thresholdTicks)
-                failures++;
-        }
-        Console.WriteLine(
-            $"CPU E2E raw benchmark: samples={cpuTicks.Length}, " +
-            $"p50={p50:F4} ms, p95={p95:F4} ms, p99={p99:F4} ms, " +
-            $"max={maximum:F4} ms, >=1ms={failures}, output={path}.");
-    }
-
-    private static long Percentile(long[] ordered, double percentile)
-    {
-        int index = checked((int)Math.Ceiling(percentile * ordered.Length) - 1);
-        return ordered[Math.Clamp(index, 0, ordered.Length - 1)];
-    }
-
-    private static double TicksToMilliseconds(long ticks) =>
-        ticks * (1_000.0 / Stopwatch.Frequency);
-
-    private static long DurationToStopwatchTicks(TimeSpan elapsed) =>
-        checked((long)Math.Round(
-            elapsed.TotalSeconds * Stopwatch.Frequency,
-            MidpointRounding.AwayFromZero));
 
     private static string FindContentRoot()
     {

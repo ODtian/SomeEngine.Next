@@ -15,13 +15,6 @@
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph.Diagnostics/SomeEngine.RenderGraph.Diagnostics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Serialization/SomeEngine.Serialization.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Render/SomeEngine.Render.csproj" />
-    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="true" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../assets/Shaders/hello_triangle.shader.asset"

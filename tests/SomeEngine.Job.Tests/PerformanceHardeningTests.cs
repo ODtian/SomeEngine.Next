@@ -68,6 +68,77 @@ public sealed class PerformanceHardeningTests
     }
 
     [Fact]
+    public void UnclaimedLatencyWorkCanBeReclaimedAndTheSlotReused()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 1 });
+        using var workerStarted = new ManualResetEventSlim();
+        using var workerGate = new ManualResetEventSlim();
+        JobHandle blocker = JobSystem.Schedule(
+            new HardeningJobs.BlockingIncrementJob(workerStarted, workerGate));
+        int[] observed = [0];
+        try
+        {
+            Assert.True(workerStarted.Wait(TimeSpan.FromSeconds(1)));
+            Assert.True(JobSystem.TryHandoffLatencyWork(
+                observed,
+                static (state, value) => Volatile.Write(ref ((int[])state!)[0], value),
+                11,
+                JobPriority.High,
+                out long reclaimedSequence));
+            Assert.True(JobSystem.TryReclaimLatencyWork(reclaimedSequence));
+            Assert.Equal(0, Volatile.Read(ref observed[0]));
+        }
+        finally
+        {
+            workerGate.Set();
+            blocker.Complete();
+        }
+
+        Assert.True(JobSystem.TryHandoffLatencyWork(
+            observed,
+            static (state, value) => Volatile.Write(ref ((int[])state!)[0], value),
+            23,
+            JobPriority.High,
+            out long reusedSequence));
+        JobSystem.JoinLatencyWork(reusedSequence);
+        Assert.Equal(23, Volatile.Read(ref observed[0]));
+    }
+
+    [Fact]
+    public void ClaimedLatencyWorkCannotBeReclaimed()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 1 });
+        using var started = new ManualResetEventSlim();
+        using var gate = new ManualResetEventSlim();
+
+        long sequence = 0;
+        bool handedOff = false;
+        try
+        {
+            handedOff = JobSystem.TryHandoffLatencyWork(
+                (started, gate),
+                static (state, _) =>
+                {
+                    var signals = ((ManualResetEventSlim Started, ManualResetEventSlim Gate))state!;
+                    signals.Started.Set();
+                    signals.Gate.Wait();
+                },
+                0,
+                JobPriority.High,
+                out sequence);
+            Assert.True(handedOff);
+            Assert.True(started.Wait(TimeSpan.FromSeconds(1)));
+            Assert.False(JobSystem.TryReclaimLatencyWork(sequence));
+        }
+        finally
+        {
+            gate.Set();
+            if (handedOff)
+                JobSystem.JoinLatencyWork(sequence);
+        }
+    }
+
+    [Fact]
     public void DefaultAndCustomConfigInitializeRuntime()
     {
         JobSystem.Initialize(JobRuntimeConfig.Default);

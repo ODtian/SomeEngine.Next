@@ -163,10 +163,7 @@ internal sealed unsafe partial class D3D12Backend
             // the old contents unnecessary; it does not promise a write flush. The
             // after entries deliberately remain NO_ACCESS/UNDEFINED; a later
             // ordinary barrier declares the real first use.
-            foreach (ref readonly AliasingResource resource in barrier.Before)
-                EncodeEnhancedAliasing(command, resource, activate: false);
-            foreach (ref readonly AliasingResource resource in barrier.After)
-                EncodeEnhancedAliasing(command, resource, activate: true);
+            EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After);
             return;
         }
 
@@ -348,6 +345,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         ResolveEnhancedTextureLayouts(
             command.QueueType,
+            command.NativeBackend.UseQueueSpecificCommonLayouts,
             layoutBefore,
             layoutAfter,
             out BarrierLayout nativeLayoutBefore,
@@ -506,11 +504,22 @@ internal sealed unsafe partial class D3D12Backend
 
     private static void ResolveEnhancedTextureLayouts(
         QueueType queueType,
+        bool queueSpecificCommonLayouts,
         TextureLayout layoutBefore,
         TextureLayout layoutAfter,
         out BarrierLayout nativeLayoutBefore,
         out BarrierLayout nativeLayoutAfter)
     {
+        if (queueSpecificCommonLayouts && queueType != QueueType.Copy)
+        {
+            nativeLayoutBefore = ToQueueSpecificBarrierLayout(
+                queueType,
+                layoutBefore);
+            nativeLayoutAfter = ToQueueSpecificBarrierLayout(
+                queueType,
+                layoutAfter);
+            return;
+        }
         if (queueType != QueueType.Copy)
         {
             nativeLayoutBefore = ToBarrierLayout(layoutBefore);
@@ -540,6 +549,20 @@ internal sealed unsafe partial class D3D12Backend
         throw new InvalidOperationException(
             "A Copy CommandContext cannot perform Texture layout transitions. " +
             "Transfer the Texture through QueueRelease/QueueAcquire so the Copy queue sees COMMON.");
+    }
+
+    private static BarrierLayout ToQueueSpecificBarrierLayout(
+        QueueType queueType,
+        TextureLayout layout)
+    {
+        if (layout != TextureLayout.General)
+            return ToBarrierLayout(layout);
+        return queueType switch
+        {
+            QueueType.Graphics => BarrierLayout.DirectQueueCommon,
+            QueueType.Compute => BarrierLayout.ComputeQueueCommon,
+            _ => BarrierLayout.Common,
+        };
     }
 
     private static bool IsCopyQueueCommonLayout(TextureLayout layout) => layout is
@@ -612,6 +635,305 @@ internal sealed unsafe partial class D3D12Backend
                 TextureLayout.Undefined,
                 state.Discard ? TextureBarrierFlags.Discard : TextureBarrierFlags.None);
         }
+    }
+
+    private void EncodeEnhancedAliasingBatch(
+        D3D12CommandContext command,
+        ReadOnlySpan<AliasingResource> resources,
+        bool activate)
+    {
+        if (resources.IsEmpty)
+            return;
+
+        int bufferCount = 0;
+        int textureResourceCount = 0;
+        foreach (ref readonly AliasingResource resource in resources)
+        {
+            if (resource.Resource is Texture)
+                textureResourceCount++;
+            else
+                bufferCount++;
+        }
+
+        int maximumTextureBarrierCount = checked(textureResourceCount * 3);
+        if (checked(bufferCount + maximumTextureBarrierCount) >
+            MaximumStackBatchedBarrierCount)
+        {
+            foreach (ref readonly AliasingResource resource in resources)
+                EncodeEnhancedAliasing(command, resource, activate);
+            return;
+        }
+
+        NativeBufferBarrier* nativeBuffers =
+            stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)];
+        NativeTextureBarrier* nativeTextures =
+            stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)];
+        EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
+        BarrierSync syncBefore = ToBarrierSync(state.SyncBefore);
+        BarrierSync syncAfter = ToBarrierSync(state.SyncAfter);
+        TextureBarrierFlags flags = state.Discard
+            ? TextureBarrierFlags.Discard
+            : TextureBarrierFlags.None;
+        int bufferDestination = 0;
+        int textureDestination = 0;
+
+        foreach (ref readonly AliasingResource resource in resources)
+        {
+            if (resource.Resource is Buffer publicBuffer)
+            {
+                D3D12Buffer buffer = RequireBuffer(publicBuffer);
+                command.Capture(buffer);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
+                    syncBefore,
+                    syncAfter,
+                    state.AccessBefore,
+                    state.AccessAfter,
+                    buffer.Native,
+                    0,
+                    buffer.Info.Size);
+                continue;
+            }
+
+            if (resource.Resource is AccelerationStructure publicStructure)
+            {
+                D3D12AccelerationStructure structure =
+                    RequireAccelerationStructure(publicStructure);
+                D3D12Buffer storage = structure.Storage;
+                command.Capture(structure);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
+                    syncBefore,
+                    syncAfter,
+                    state.AccessBefore,
+                    state.AccessAfter,
+                    storage.Native,
+                    0,
+                    storage.Info.Size);
+                continue;
+            }
+
+            D3D12TextureResource texture = RequireTexture((Texture)resource.Resource);
+            command.Capture(texture);
+            TextureSubresourceRange range = resource.TextureRange ??
+                new TextureSubresourceRange(
+                    0,
+                    texture.Info.MipLevelCount,
+                    0,
+                    texture.Info.ArrayLayerCount,
+                    DefaultBarrierAspects(texture.Info.Format));
+            textureDestination = AppendEnhancedTextureBarriers(
+                command,
+                texture,
+                range,
+                syncBefore,
+                syncAfter,
+                state.AccessBefore,
+                state.AccessAfter,
+                TextureLayout.Undefined,
+                TextureLayout.Undefined,
+                flags,
+                nativeTextures,
+                textureDestination);
+        }
+
+        EmitEnhancedBarrierGroups(
+            command,
+            null,
+            0,
+            nativeBuffers,
+            bufferDestination,
+            nativeTextures,
+            textureDestination);
+    }
+
+    private void EncodeEnhancedAliasingBatches(
+        D3D12CommandContext command,
+        ReadOnlySpan<AliasingResource> before,
+        ReadOnlySpan<AliasingResource> after)
+    {
+        CountEnhancedAliasingResources(before, out int beforeBuffers, out int beforeTextures);
+        CountEnhancedAliasingResources(after, out int afterBuffers, out int afterTextures);
+        int beforeMaximumTextures = checked(beforeTextures * 3);
+        int afterMaximumTextures = checked(afterTextures * 3);
+        if (checked(beforeBuffers + beforeMaximumTextures + afterBuffers + afterMaximumTextures) >
+            MaximumStackBatchedBarrierCount)
+        {
+            EncodeEnhancedAliasingBatch(command, before, activate: false);
+            EncodeEnhancedAliasingBatch(command, after, activate: true);
+            return;
+        }
+
+        NativeBufferBarrier* nativeBeforeBuffers =
+            stackalloc NativeBufferBarrier[Math.Max(beforeBuffers, 1)];
+        NativeTextureBarrier* nativeBeforeTextures =
+            stackalloc NativeTextureBarrier[Math.Max(beforeMaximumTextures, 1)];
+        NativeBufferBarrier* nativeAfterBuffers =
+            stackalloc NativeBufferBarrier[Math.Max(afterBuffers, 1)];
+        NativeTextureBarrier* nativeAfterTextures =
+            stackalloc NativeTextureBarrier[Math.Max(afterMaximumTextures, 1)];
+        AppendEnhancedAliasingResources(
+            command,
+            before,
+            activate: false,
+            nativeBeforeBuffers,
+            out int beforeBufferCount,
+            nativeBeforeTextures,
+            out int beforeTextureCount);
+        AppendEnhancedAliasingResources(
+            command,
+            after,
+            activate: true,
+            nativeAfterBuffers,
+            out int afterBufferCount,
+            nativeAfterTextures,
+            out int afterTextureCount);
+
+        BarrierGroup* groups = stackalloc BarrierGroup[4];
+        int groupCount = 0;
+        AppendEnhancedAliasingGroup(
+            groups,
+            ref groupCount,
+            BarrierType.Buffer,
+            nativeBeforeBuffers,
+            beforeBufferCount,
+            null);
+        AppendEnhancedAliasingGroup(
+            groups,
+            ref groupCount,
+            BarrierType.Texture,
+            null,
+            beforeTextureCount,
+            nativeBeforeTextures);
+        AppendEnhancedAliasingGroup(
+            groups,
+            ref groupCount,
+            BarrierType.Buffer,
+            nativeAfterBuffers,
+            afterBufferCount,
+            null);
+        AppendEnhancedAliasingGroup(
+            groups,
+            ref groupCount,
+            BarrierType.Texture,
+            null,
+            afterTextureCount,
+            nativeAfterTextures);
+        D3D12CommandListFastCalls.Barrier(
+            command.List,
+            checked((uint)groupCount),
+            groups);
+    }
+
+    private static void CountEnhancedAliasingResources(
+        ReadOnlySpan<AliasingResource> resources,
+        out int bufferCount,
+        out int textureCount)
+    {
+        bufferCount = 0;
+        textureCount = 0;
+        foreach (ref readonly AliasingResource resource in resources)
+        {
+            if (resource.Resource is Texture)
+                textureCount++;
+            else
+                bufferCount++;
+        }
+    }
+
+    private void AppendEnhancedAliasingResources(
+        D3D12CommandContext command,
+        ReadOnlySpan<AliasingResource> resources,
+        bool activate,
+        NativeBufferBarrier* nativeBuffers,
+        out int bufferDestination,
+        NativeTextureBarrier* nativeTextures,
+        out int textureDestination)
+    {
+        EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
+        BarrierSync syncBefore = ToBarrierSync(state.SyncBefore);
+        BarrierSync syncAfter = ToBarrierSync(state.SyncAfter);
+        TextureBarrierFlags flags = state.Discard
+            ? TextureBarrierFlags.Discard
+            : TextureBarrierFlags.None;
+        bufferDestination = 0;
+        textureDestination = 0;
+        foreach (ref readonly AliasingResource resource in resources)
+        {
+            if (resource.Resource is Buffer publicBuffer)
+            {
+                D3D12Buffer buffer = RequireBuffer(publicBuffer);
+                command.Capture(buffer);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
+                    syncBefore,
+                    syncAfter,
+                    state.AccessBefore,
+                    state.AccessAfter,
+                    buffer.Native,
+                    0,
+                    buffer.Info.Size);
+                continue;
+            }
+
+            if (resource.Resource is AccelerationStructure publicStructure)
+            {
+                D3D12AccelerationStructure structure =
+                    RequireAccelerationStructure(publicStructure);
+                D3D12Buffer storage = structure.Storage;
+                command.Capture(structure);
+                nativeBuffers[bufferDestination++] = new NativeBufferBarrier(
+                    syncBefore,
+                    syncAfter,
+                    state.AccessBefore,
+                    state.AccessAfter,
+                    storage.Native,
+                    0,
+                    storage.Info.Size);
+                continue;
+            }
+
+            D3D12TextureResource texture = RequireTexture((Texture)resource.Resource);
+            command.Capture(texture);
+            TextureSubresourceRange range = resource.TextureRange ??
+                new TextureSubresourceRange(
+                    0,
+                    texture.Info.MipLevelCount,
+                    0,
+                    texture.Info.ArrayLayerCount,
+                    DefaultBarrierAspects(texture.Info.Format));
+            textureDestination = AppendEnhancedTextureBarriers(
+                command,
+                texture,
+                range,
+                syncBefore,
+                syncAfter,
+                state.AccessBefore,
+                state.AccessAfter,
+                TextureLayout.Undefined,
+                TextureLayout.Undefined,
+                flags,
+                nativeTextures,
+                textureDestination);
+        }
+    }
+
+    private static void AppendEnhancedAliasingGroup(
+        BarrierGroup* groups,
+        ref int groupCount,
+        BarrierType type,
+        NativeBufferBarrier* buffers,
+        int count,
+        NativeTextureBarrier* textures)
+    {
+        if (count == 0)
+            return;
+        groups[groupCount++] = type == BarrierType.Buffer
+            ? new BarrierGroup(
+                BarrierType.Buffer,
+                checked((uint)count),
+                pBufferBarriers: buffers)
+            : new BarrierGroup(
+                BarrierType.Texture,
+                checked((uint)count),
+                pTextureBarriers: textures);
     }
 
     internal static EnhancedAliasingBarrierState GetEnhancedAliasingBarrierState(
@@ -772,6 +1094,7 @@ internal sealed unsafe partial class D3D12Backend
             ResourceAccess.RayTracingAccelerationStructureRead |
             ResourceAccess.RayTracingAccelerationStructureWrite)) != 0;
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     private static void ResolveBarrierSyncs(
         PipelineSync syncBefore,
         PipelineSync syncAfter,
@@ -779,7 +1102,7 @@ internal sealed unsafe partial class D3D12Backend
         out BarrierSync nativeSyncBefore,
         out BarrierSync nativeSyncAfter)
     {
-        if (!Enum.IsDefined(phase))
+        if ((uint)phase > (uint)BarrierPhase.End)
             throw new ArgumentOutOfRangeException(nameof(phase));
         nativeSyncBefore = phase == BarrierPhase.End
             ? BarrierSync.Split
@@ -985,6 +1308,7 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     internal static BarrierLayout ToBarrierLayout(TextureLayout layout) => layout switch
     {
         TextureLayout.Undefined => BarrierLayout.Undefined,

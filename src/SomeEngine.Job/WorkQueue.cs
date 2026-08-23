@@ -31,6 +31,8 @@ internal interface IWorkQueue : IDisposable
 
     void JoinLatencyWork(long sequence);
 
+    bool TryReclaimLatencyWork(long sequence);
+
     void Pulse();
 }
 
@@ -323,6 +325,34 @@ internal sealed class WorkQueue : IWorkQueue
             Monitor.Pulse(_queueLock);
         }
         failure?.Throw();
+    }
+
+    public bool TryReclaimLatencyWork(long sequence)
+    {
+        if (sequence <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sequence));
+
+        lock (_queueLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_latencyRequestedSequence != sequence ||
+                _latencyJoinedSequence >= sequence)
+            {
+                throw new InvalidOperationException(
+                    "Latency work has already been joined or superseded.");
+            }
+            if (_latencyClaimedSequence == sequence)
+                return false;
+
+            _latencyClaimedSequence = sequence;
+            _latencyCompletedSequence = sequence;
+            _latencyJoinedSequence = sequence;
+            _latencyState = null;
+            _latencyAction = null;
+            _latencyFailure = null;
+            Monitor.PulseAll(_queueLock);
+            return true;
+        }
     }
 
     private void FinishDrain(

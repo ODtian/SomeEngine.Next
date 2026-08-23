@@ -89,7 +89,8 @@ public ref struct RenderFrameSystemContext
 {
     private readonly RenderInstanceStorageSystem _instances;
     private readonly RenderFrame? _frame;
-    private global::SomeEngine.RenderGraph.RenderGraph? _graph;
+    private RenderGraphFrame _graph;
+    private bool _hasGraph;
     private uint _lastSystemVersion;
     private uint _currentSystemVersion;
 
@@ -103,7 +104,8 @@ public ref struct RenderFrameSystemContext
         World = world;
         _instances = instances;
         _frame = frame;
-        _graph = null;
+        _graph = default;
+        _hasGraph = false;
         _lastSystemVersion = lastSystemVersion;
         _currentSystemVersion = currentSystemVersion;
     }
@@ -112,12 +114,13 @@ public ref struct RenderFrameSystemContext
         RenderWorld world,
         RenderInstanceStorageSystem instances,
         RenderFrame frame,
-        global::SomeEngine.RenderGraph.RenderGraph graph)
+        RenderGraphFrame graph)
     {
         World = world;
         _instances = instances;
         _frame = frame;
         _graph = graph;
+        _hasGraph = true;
         _lastSystemVersion = 0;
         _currentSystemVersion = 0;
     }
@@ -134,11 +137,11 @@ public ref struct RenderFrameSystemContext
     /// The one linear graph recording shared by every frame system in registration order.
     /// System callbacks may add resources and passes but must not consume or dispose the builder.
     /// </summary>
-    public readonly global::SomeEngine.RenderGraph.RenderGraph Graph
+    public readonly RenderGraphFrame Graph
     {
         get
         {
-            if (_graph is null || !_graph.IsValid)
+            if (!_hasGraph)
             {
                 throw new InvalidOperationException(
                     "A render graph is not active during this lifecycle callback.");
@@ -340,11 +343,9 @@ public sealed class RenderFrameSystems : IDisposable
 
     public void Disable(int index) => _systems.Disable(index);
 
-    public void Update(RenderFrame frame, global::SomeEngine.RenderGraph.RenderGraph graph)
+    public void Update(RenderFrame frame, RenderGraphFrame graph)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        if (!graph.IsValid)
-            throw new ArgumentException("The render graph builder is not active.", nameof(graph));
         _driver.Enter(frame);
         try
         {
@@ -379,7 +380,7 @@ public sealed class RenderFrameSystems : IDisposable
             ref RenderFrameSystemContext context) =>
             context.SetSystemVersion(slot.LastSystemVersion, slot.CurrentSystemVersion);
 
-        internal RenderFrameSystemContext CreateRecordingContext(global::SomeEngine.RenderGraph.RenderGraph graph) =>
+        internal RenderFrameSystemContext CreateRecordingContext(RenderGraphFrame graph) =>
             new(
                 world,
                 instances,

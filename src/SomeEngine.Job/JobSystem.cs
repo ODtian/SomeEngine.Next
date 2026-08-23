@@ -272,6 +272,11 @@ public static partial class JobSystem
         Current.JoinLatencyWork(sequence);
     }
 
+    internal static bool TryReclaimLatencyWork(long sequence)
+    {
+        return Current.TryReclaimLatencyWork(sequence);
+    }
+
     internal static JobSubmissionScope EnterSubmissionScope(IJobSubmissionObserver observer)
     {
         return JobSubmissionTracker.Enter(observer);

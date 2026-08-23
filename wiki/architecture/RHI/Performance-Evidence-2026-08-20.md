@@ -16,7 +16,7 @@ Both the product helper in `SomeEngine.Graphics.Direct3D12` and the Direct C# ba
 
 Two IL-shape tests fail if either helper emits `calli`; they also prove that the Draw helper calls the corresponding Silk.NET method. NativeAOT may inline a generated Silk wrapper as an ordinary compiler optimization, but repository code does not replace or bypass that wrapper.
 
-The internal `D3D12Backend` implementation still exists because it implements `IGraphicsBackend`. It is not a product receiver alternative. Under `SOMEENGINE_RHI_BENCHMARK_TIMING`, the interface implementation also satisfies an internal `IBenchmarkCommandTiming` contract used only to split native Close from cleanup. The benchmark project does not reference the concrete backend type, and all timed command calls still go through `IGraphicsBackend`.
+The internal `D3D12Backend` implementation exists because it implements `IGraphicsBackend`; it is not a product receiver alternative. The product no longer exposes a benchmark-only command-timing contract. Managed benchmark calls use the ordinary `IGraphicsBackend` lifecycle, including the complete public `End` operation.
 
 ## Fixed workload and timing boundary
 
@@ -34,7 +34,7 @@ Every measured representative frame contains:
 
 `Full` performs 107 public persistent-binding requests and 107 native root-CBV setters. `PerDrawBindings` performs 2,050 public binding requests while ordinary state suppression keeps the native root-CBV setter count at 107. No public or benchmark Draw batching is permitted.
 
-The timer begins before object-packet generation and stops after the ninth native Close. Post-Close capture activation, registration, release and state reset remain outside this interval.
+The timer begins before object-packet generation and stops after the ninth public `End` returns, so the command-finalization work observable through the normal product API remains inside the interval.
 
 Each adapter used:
 

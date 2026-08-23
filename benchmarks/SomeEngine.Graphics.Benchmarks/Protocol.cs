@@ -10,6 +10,7 @@ internal enum BenchmarkCommand : byte
     Worker,
     Evaluate,
     Probe,
+    GraphCpu,
 }
 
 internal enum BenchmarkProfile : byte
@@ -19,6 +20,7 @@ internal enum BenchmarkProfile : byte
     VendorCertification,
     DeveloperProbe,
     RepresentativeCpuFrame,
+    GraphicsCpuDevelopment,
 }
 
 internal enum ReceiverVariant : byte
@@ -73,6 +75,8 @@ internal static class FixedGraphicsProtocol
     internal const int RepresentativeWarmupFrames = 4_096;
     internal const int RepresentativeMeasuredFrames = 4_096;
     internal const int RepresentativeProcessCount = 5;
+    internal const int GraphicsCpuMinimumWarmupFrames = 1_024;
+    internal const int GraphicsCpuMeasuredFrames = 1_024;
     internal const int RenderWidth = 64;
     internal const int RenderHeight = 64;
     internal const string PercentileMethod =

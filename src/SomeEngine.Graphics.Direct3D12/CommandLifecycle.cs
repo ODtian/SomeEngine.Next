@@ -3,14 +3,6 @@ using Silk.NET.Direct3D12;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-internal interface IBenchmarkCommandTiming
-{
-    void CloseCommandsForBenchmark(CommandContext context);
-    RecordedCommands FinishCommandsForBenchmark(CommandContext context);
-}
-#endif
-
 internal sealed unsafe partial class D3D12Backend
 {
     public CommandContext CreateCommandContext(
@@ -42,15 +34,6 @@ internal sealed unsafe partial class D3D12Backend
 
     public RecordedCommands End(CommandContext context) =>
         RequireCommandContext(context, nameof(context)).EndCommands();
-
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-    void IBenchmarkCommandTiming.CloseCommandsForBenchmark(CommandContext context) =>
-        RequireCommandContext(context, nameof(context)).CloseCommandsForBenchmark();
-
-    RecordedCommands IBenchmarkCommandTiming.FinishCommandsForBenchmark(
-        CommandContext context) =>
-        RequireCommandContext(context, nameof(context)).FinishCommandsForBenchmark();
-#endif
 
     public RecordedBundle EndBundle(CommandContext context) =>
         RequireCommandContext(context, nameof(context)).EndBundle();
@@ -480,10 +463,6 @@ internal sealed unsafe partial class D3D12Backend
         private D3D12CommandSlot? _recording;
         private ID3D12GraphicsCommandList10* _activeList;
         private ulong _nextSequence = 1;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-        private ulong _benchmarkCloseSequence;
-        private bool _benchmarkClosePending;
-#endif
 
         internal D3D12CommandContext(
             D3D12Device device,
@@ -742,48 +721,6 @@ internal sealed unsafe partial class D3D12Backend
             return FinishClosedCommands(slot, sequence);
         }
 
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-        internal void CloseCommandsForBenchmark()
-        {
-            _device.ThrowIfUnavailable();
-            RequireRenderingClosed();
-            if (_benchmarkClosePending)
-            {
-                throw new InvalidOperationException(
-                    "The benchmark command close is already pending finalization.");
-            }
-            D3D12CommandSlot slot = Recording;
-            ulong sequence = AllocateSequence();
-            ThrowIfFailed(
-                _device,
-                slot.List->Close(),
-                NativeOperationType.Ordinary,
-                "ID3D12GraphicsCommandList::Close(benchmark)");
-            _benchmarkCloseSequence = sequence;
-            _benchmarkClosePending = true;
-        }
-
-        internal RecordedCommands FinishCommandsForBenchmark()
-        {
-            if (!_benchmarkClosePending)
-            {
-                throw new InvalidOperationException(
-                    "No benchmark command close is pending finalization.");
-            }
-            D3D12CommandSlot slot = Recording;
-            ulong sequence = _benchmarkCloseSequence;
-            try
-            {
-                return FinishClosedCommands(slot, sequence);
-            }
-            finally
-            {
-                _benchmarkCloseSequence = 0;
-                _benchmarkClosePending = false;
-            }
-        }
-#endif
-
         private RecordedCommands FinishClosedCommands(
             D3D12CommandSlot slot,
             ulong sequence)
@@ -854,15 +791,7 @@ internal sealed unsafe partial class D3D12Backend
             _device.ThrowIfUnavailable();
             RequireRenderingClosed();
             D3D12CommandSlot slot = Recording;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            bool alreadyClosed = _benchmarkClosePending;
-            _benchmarkCloseSequence = 0;
-            _benchmarkClosePending = false;
-            if (!alreadyClosed)
-                _ = slot.List->Close();
-#else
             _ = slot.List->Close();
-#endif
             _recording = null;
             _activeList = null;
             slot.ReleaseEncodingReferences();
@@ -875,19 +804,11 @@ internal sealed unsafe partial class D3D12Backend
         internal void MarkDeviceLost()
         {
             D3D12CommandSlot? recording;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            bool alreadyClosed = false;
-#endif
             lock (_gate)
             {
                 recording = _recording;
                 if (recording is not null)
                 {
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                    alreadyClosed = _benchmarkClosePending;
-                    _benchmarkCloseSequence = 0;
-                    _benchmarkClosePending = false;
-#endif
                     _recording = null;
                     _activeList = null;
                     ResetEncodingState();
@@ -895,12 +816,7 @@ internal sealed unsafe partial class D3D12Backend
             }
             if (recording is not null)
             {
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                if (!alreadyClosed)
-                    _ = recording.List->Close();
-#else
                 _ = recording.List->Close();
-#endif
                 recording.ReleaseEncodingReferences();
                 recording.CompleteUse();
             }
@@ -921,19 +837,11 @@ internal sealed unsafe partial class D3D12Backend
         {
             D3D12CommandSlot? recording;
             bool discardExecutable;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            bool alreadyClosed = false;
-#endif
             lock (_gate)
             {
                 recording = _recording;
                 if (recording is not null)
                 {
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                    alreadyClosed = _benchmarkClosePending;
-                    _benchmarkCloseSequence = 0;
-                    _benchmarkClosePending = false;
-#endif
                     _recording = null;
                     _activeList = null;
                     ResetEncodingState();
@@ -943,12 +851,7 @@ internal sealed unsafe partial class D3D12Backend
             }
             if (recording is not null)
             {
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                if (!alreadyClosed)
-                    _ = recording.List->Close();
-#else
                 _ = recording.List->Close();
-#endif
                 recording.ReleaseEncodingReferences();
                 recording.CompleteUse();
             }

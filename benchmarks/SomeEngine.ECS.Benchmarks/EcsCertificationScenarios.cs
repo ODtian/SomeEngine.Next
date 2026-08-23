@@ -745,7 +745,7 @@ internal static partial class EcsBenchmarkSuite
         }
     }
 
-    private sealed class MixedFrameExecution : IBenchmarkExecution, IDisposable
+    private sealed class MixedRenderGraphFrameState : IBenchmarkExecution, IDisposable
     {
         private readonly int _entityCount;
         private readonly SerializationRegistry _registry = new SerializationRegistry()
@@ -754,7 +754,7 @@ internal static partial class EcsBenchmarkSuite
         private MemoryStream? _stream;
         private World? _loaded;
 
-        internal MixedFrameExecution(int entityCount)
+        internal MixedRenderGraphFrameState(int entityCount)
         {
             _entityCount = entityCount;
             World = new World(entityCount);

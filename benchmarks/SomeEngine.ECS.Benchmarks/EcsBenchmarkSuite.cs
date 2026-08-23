@@ -236,7 +236,7 @@ internal static partial class EcsBenchmarkSuite
                 $"mixed-frame-update-snapshot-load-{countLabel}",
                 entityCount,
                 OperationsPerSample: checked(entityCount * 3),
-                () => new MixedFrameExecution(entityCount)),
+                () => new MixedRenderGraphFrameState(entityCount)),
         };
         if (includeDurablePersistence)
         {

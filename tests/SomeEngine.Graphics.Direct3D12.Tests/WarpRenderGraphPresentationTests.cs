@@ -46,37 +46,52 @@ public sealed class WarpRenderGraphPresentationTests
                 new SwapchainAcquireOptions(TimeSpan.FromSeconds(2), PreserveContents: false),
                 out SwapchainImage image));
 
-        QueueCompletion[] completions;
-        using (var graph = new SomeEngine.RenderGraph.RenderGraph(backend, device))
+        Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
+        using var graph = new SomeEngine.RenderGraph.RenderGraph(
+            backend,
+            device,
+            [graphicsQueue]);
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        int completionCount;
+        using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            TextureHandle target = graph.Import(image);
-            TextureViewHandle targetView = graph.CreateTextureView(
+            GraphTextureId target = frame.Import(image, graphicsQueue);
+            TextureInfo texture = image.Texture.Info;
+            TextureSubresourceRange range = new(
+                0,
+                texture.MipLevelCount,
+                0,
+                texture.ArrayLayerCount,
+                TextureAspects.Color);
+            GraphColorAttachmentViewId targetView = frame.CreateColorAttachmentView(
                 target,
-                null,
-                GraphTextureViewUsage.ColorAttachment,
-                name: "validated graph backbuffer view");
-            using (IRasterRenderGraphBuilder builder = graph.AddRasterRenderPass<ClearPassData>(
-                       "clear validated swapchain image",
-                       out _))
-            {
-                builder.SetRenderAttachment(
-                    targetView,
-                    0,
-                    GraphAccess.WriteAll,
+                range,
+                texture.Format,
+                TextureViewDimension.Texture2D,
+                "validated graph backbuffer view");
+            _ = frame.AddRasterPass(
+                "clear validated swapchain image",
+                PassQueueSelection.Exact(graphicsQueue),
+                new ClearPassData(targetView),
+                default,
+                static (ref PassDefinition access, ref ClearPassData data) =>
+                    access.ColorAttachment(
+                        0,
+                        data.Target,
                     LoadType.Clear,
-                    new Vector4(0.125f, 0.25f, 0.5f, 1));
-                builder.SetRenderFunc<ClearPassData>(static (_, _) => { });
-            }
-            completions = graph.Execute();
+                        StoreType.Store,
+                        WriteCoverage.Complete,
+                        new Vector4(0.125f, 0.25f, 0.5f, 1)),
+                static (ref RasterPassCommandScope _, in ClearPassData _) => { });
+            completionCount = frame.Execute(completions);
         }
 
         Assert.Equal(SwapchainImageStatus.Submitted, image.Status);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        PresentStatus status = backend.Present(queue, image);
+        PresentStatus status = backend.Present(graphicsQueue, image);
         Assert.Contains(
             status,
             new[] { PresentStatus.Success, PresentStatus.Suboptimal, PresentStatus.Occluded });
-        foreach (ref readonly QueueCompletion completion in completions.AsSpan())
+        foreach (ref readonly QueueCompletion completion in completions.AsSpan(0, completionCount))
         {
             Assert.Equal(
                 WaitStatus.Completed,
@@ -85,7 +100,5 @@ public sealed class WarpRenderGraphPresentationTests
         backend.CollectCompleted(device);
     }
 
-    private sealed class ClearPassData
-    {
-    }
+    private readonly record struct ClearPassData(GraphColorAttachmentViewId Target);
 }

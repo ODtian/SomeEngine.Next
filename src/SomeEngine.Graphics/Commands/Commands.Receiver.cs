@@ -17,6 +17,19 @@ public partial interface IGraphicsBackend
     void Barrier(CommandContext context, in AliasingBarrier barrier);
     void Barrier(CommandContext context, in QueueRelease barrier);
     void Barrier(CommandContext context, in QueueAcquire barrier);
+    void Barrier(CommandContext context, in BarrierBatch barriers)
+    {
+        foreach (ref readonly MemoryBarrier barrier in barriers.MemoryBarriers)
+            Barrier(context, barrier);
+        foreach (ref readonly QueueAcquire barrier in barriers.QueueAcquires)
+            Barrier(context, barrier);
+        foreach (ref readonly BufferBarrier barrier in barriers.BufferBarriers)
+            Barrier(context, barrier);
+        foreach (ref readonly TextureBarrier barrier in barriers.TextureBarriers)
+            Barrier(context, barrier);
+        foreach (ref readonly QueueRelease barrier in barriers.QueueReleases)
+            Barrier(context, barrier);
+    }
 
     void CopyBuffer(CommandContext context, in BufferCopy copy);
     void CopyBufferToTexture(CommandContext context, in BufferTextureCopy copy);

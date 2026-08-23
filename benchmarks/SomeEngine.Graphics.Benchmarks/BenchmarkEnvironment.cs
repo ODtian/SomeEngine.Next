@@ -95,11 +95,7 @@ internal static class BenchmarkEnvironment
                     "unknown",
                 !string.IsNullOrWhiteSpace(ReadGit("status --porcelain")),
                 toolchain,
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                "native-close"));
-#else
                 "public-end-return"));
-#endif
     }
 
     internal static RuntimeEnvironment Unavailable(int processIndex, string toolchain = "unavailable") => new(

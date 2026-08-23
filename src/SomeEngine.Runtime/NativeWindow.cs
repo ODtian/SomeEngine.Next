@@ -279,12 +279,12 @@ internal sealed class NativeWindow : IDisposable
                 PostQuitMessage(0);
                 return 0;
             case MessageNcDestroy:
-            {
-                nint result = DefWindowProcW(windowHandle, message, wParam, lParam);
-                _ = SetWindowLongPtrW(windowHandle, WindowUserData, 0);
-                Handle = 0;
-                return result;
-            }
+                {
+                    nint result = DefWindowProcW(windowHandle, message, wParam, lParam);
+                    _ = SetWindowLongPtrW(windowHandle, WindowUserData, 0);
+                    Handle = 0;
+                    return result;
+                }
             case MessageSize:
                 IsMinimized = wParam == SizeMinimized;
                 if (!IsMinimized)
@@ -309,27 +309,27 @@ internal sealed class NativeWindow : IDisposable
                 _events.Enqueue(NativeWindowEvent.FocusChanged(false));
                 return 0;
             case MessageDpiChanged:
-            {
-                uint dpi = UnsignedLowWord(wParam);
-                DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
-                if (lParam != 0)
                 {
-                    NativeRect suggested = Marshal.PtrToStructure<NativeRect>(lParam);
-                    if (!SetWindowPos(
-                            windowHandle,
-                            0,
-                            suggested.Left,
-                            suggested.Top,
-                            checked(suggested.Right - suggested.Left),
-                            checked(suggested.Bottom - suggested.Top),
-                            SetPositionNoActivate | SetPositionNoZOrder))
+                    uint dpi = UnsignedLowWord(wParam);
+                    DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
+                    if (lParam != 0)
                     {
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Applying WM_DPICHANGED failed.");
+                        NativeRect suggested = Marshal.PtrToStructure<NativeRect>(lParam);
+                        if (!SetWindowPos(
+                                windowHandle,
+                                0,
+                                suggested.Left,
+                                suggested.Top,
+                                checked(suggested.Right - suggested.Left),
+                                checked(suggested.Bottom - suggested.Top),
+                                SetPositionNoActivate | SetPositionNoZOrder))
+                        {
+                            throw new Win32Exception(Marshal.GetLastWin32Error(), "Applying WM_DPICHANGED failed.");
+                        }
                     }
+                    _events.Enqueue(NativeWindowEvent.DpiChanged(DpiScale));
+                    return 0;
                 }
-                _events.Enqueue(NativeWindowEvent.DpiChanged(DpiScale));
-                return 0;
-            }
             case MessageKeyDown:
             case MessageSystemKeyDown:
                 EnqueueKey(wParam, lParam, isDown: true);
@@ -374,24 +374,24 @@ internal sealed class NativeWindow : IDisposable
                 return 0;
             case MessageXButtonDown:
             case MessageXButtonUp:
-            {
-                NativeMouseButton button = UnsignedHighWord(wParam) == 1
-                    ? NativeMouseButton.X1
-                    : NativeMouseButton.X2;
-                EnqueueMouseButton(windowHandle, button, message == MessageXButtonDown, lParam);
-                return 1;
-            }
+                {
+                    NativeMouseButton button = UnsignedHighWord(wParam) == 1
+                        ? NativeMouseButton.X1
+                        : NativeMouseButton.X2;
+                    EnqueueMouseButton(windowHandle, button, message == MessageXButtonDown, lParam);
+                    return 1;
+                }
             case MessageMouseWheel:
             case MessageMouseHorizontalWheel:
-            {
-                var point = new NativePoint(SignedLowWord(lParam), SignedHighWord(lParam));
-                _ = ScreenToClient(windowHandle, ref point);
-                float amount = SignedHighWord(wParam) / 120.0f;
-                _events.Enqueue(message == MessageMouseWheel
-                    ? NativeWindowEvent.MouseWheel(point.X, point.Y, 0.0f, amount)
-                    : NativeWindowEvent.MouseWheel(point.X, point.Y, amount, 0.0f));
-                return 0;
-            }
+                {
+                    var point = new NativePoint(SignedLowWord(lParam), SignedHighWord(lParam));
+                    _ = ScreenToClient(windowHandle, ref point);
+                    float amount = SignedHighWord(wParam) / 120.0f;
+                    _events.Enqueue(message == MessageMouseWheel
+                        ? NativeWindowEvent.MouseWheel(point.X, point.Y, 0.0f, amount)
+                        : NativeWindowEvent.MouseWheel(point.X, point.Y, amount, 0.0f));
+                    return 0;
+                }
             case MessageEraseBackground:
                 return 1;
             case MessagePaint:

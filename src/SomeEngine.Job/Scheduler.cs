@@ -107,6 +107,9 @@ internal sealed partial class Scheduler : IDisposable
         _workQueue.JoinLatencyWork(sequence);
     }
 
+    internal bool TryReclaimLatencyWork(long sequence) =>
+        _workQueue.TryReclaimLatencyWork(sequence);
+
     internal JobHandle Schedule<T>(in T job, JobHandle dependency)
         where T : struct, IJob
     {

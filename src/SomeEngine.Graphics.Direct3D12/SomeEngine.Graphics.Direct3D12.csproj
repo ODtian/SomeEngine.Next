@@ -10,9 +10,6 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Description>Direct3D12 Graphics backend adapter.</Description>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(SomeEngineRhiBenchmarkTiming)' == 'true'">
-    <DefineConstants>$(DefineConstants);SOMEENGINE_RHI_BENCHMARK_TIMING</DefineConstants>
-  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
   </ItemGroup>

@@ -25,7 +25,7 @@ public sealed class ClusterMaterialTable
     public const uint FieldCount = 3;
 
     private ClusterMaterialSnapshot _current = ClusterMaterialSnapshot.Empty;
-    private ulong _version;
+    private ulong _topologyVersion;
 
     public ClusterMaterialSnapshot Current => Volatile.Read(ref _current);
 
@@ -39,11 +39,11 @@ public sealed class ClusterMaterialTable
         {
             if (current.HasSameEntityMappings(snapshot))
                 return;
-            snapshot.SetVersion(current.Version);
+            snapshot.SetTopologyVersion(current.TopologyVersion);
             Volatile.Write(ref _current, snapshot);
             return;
         }
-        snapshot.SetVersion(checked(++_version));
+        snapshot.SetTopologyVersion(checked(++_topologyVersion));
         Volatile.Write(ref _current, snapshot);
     }
 }
@@ -53,13 +53,13 @@ public sealed class ClusterMaterialSnapshot
     internal static ClusterMaterialSnapshot Empty { get; } =
         new([], [], [], 2, [], []);
 
-    private readonly MaterialSequence[] _sequences;
+    private readonly ClusterMaterialSequence[] _sequences;
     private readonly int[] _entityGenerations;
     private readonly uint[] _entityOffsets;
-    private ulong _version;
+    private ulong _topologyVersion;
 
     internal ClusterMaterialSnapshot(
-        MaterialSequence[] sequences,
+        ClusterMaterialSequence[] sequences,
         AssetHandle<Material>[] materials,
         uint[] slotWords,
         uint slotCapacity)
@@ -68,7 +68,7 @@ public sealed class ClusterMaterialSnapshot
     }
 
     internal ClusterMaterialSnapshot(
-        MaterialSequence[] sequences,
+        ClusterMaterialSequence[] sequences,
         AssetHandle<Material>[] materials,
         uint[] slotWords,
         uint slotCapacity,
@@ -83,7 +83,7 @@ public sealed class ClusterMaterialSnapshot
         SlotCapacity = slotCapacity;
     }
 
-    public ulong Version => _version;
+    public ulong TopologyVersion => _topologyVersion;
 
     public IReadOnlyList<AssetHandle<Material>> Materials { get; }
 
@@ -93,7 +93,7 @@ public sealed class ClusterMaterialSnapshot
 
     public uint MaterialCount => checked((uint)Materials.Count);
 
-    internal void SetVersion(ulong version) => _version = version;
+    internal void SetTopologyVersion(ulong version) => _topologyVersion = version;
 
     internal bool HasSameTopology(ClusterMaterialSnapshot other)
     {
@@ -112,8 +112,8 @@ public sealed class ClusterMaterialSnapshot
 
         for (int index = 0; index < _sequences.Length; index++)
         {
-            MaterialSequence left = _sequences[index];
-            MaterialSequence right = other._sequences[index];
+            ClusterMaterialSequence left = _sequences[index];
+            ClusterMaterialSequence right = other._sequences[index];
             if (left.Offset != right.Offset ||
                 !left.Materials.AsSpan().SequenceEqual(right.Materials))
             {
@@ -155,14 +155,9 @@ public sealed class ClusterMaterialSnapshot
     }
 }
 
-internal sealed class MaterialSequence(
-    AssetHandle<Material>[] materials,
-    uint offset)
-{
-    internal AssetHandle<Material>[] Materials { get; } = materials;
-
-    internal uint Offset { get; } = offset;
-}
+internal readonly record struct ClusterMaterialSequence(
+    AssetHandle<Material>[] Materials,
+    uint Offset);
 
 /// <summary>Publishes material bins before the Cluster instance producer writes slot offsets.</summary>
 public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
@@ -239,7 +234,7 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
 
     private sealed class SnapshotBuilder
     {
-        private readonly List<MaterialSequence> _sequences = [];
+        private readonly List<ClusterMaterialSequence> _sequences = [];
         private readonly List<AssetHandle<Material>> _materials = [];
         private readonly Dictionary<AssetHandle<Material>, uint> _bins = [];
         private readonly List<uint[]> _sequenceBins = [];
@@ -265,7 +260,7 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
 
         private uint ResolveSequence(ReadOnlySpan<RenderMaterialBinding> bindings)
         {
-            foreach (MaterialSequence sequence in _sequences)
+            foreach (ClusterMaterialSequence sequence in _sequences)
             {
                 if (sequence.Materials.Length != bindings.Length)
                     continue;
@@ -302,7 +297,7 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
             }
             uint offset = checked((uint)_usedSlots);
             _usedSlots = checked(_usedSlots + bindings.Length);
-            _sequences.Add(new MaterialSequence(handles, offset));
+            _sequences.Add(new ClusterMaterialSequence(handles, offset));
             _sequenceBins.Add(bins);
             return offset;
         }

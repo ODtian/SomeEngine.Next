@@ -26,7 +26,8 @@ public readonly record struct D3D12ValidationOptions(
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct D3D12BackendOptions(
-    D3D12ValidationOptions Validation = default);
+    D3D12ValidationOptions Validation = default,
+    bool UseQueueSpecificCommonLayouts = false);
 
 /// <summary>
 /// Creates the Direct3D 12 implementation behind the product-wide
@@ -58,9 +59,6 @@ public static class D3D12GraphicsBackend
 internal sealed unsafe partial class D3D12Backend :
     IGraphicsBackend,
     INativeValidationControl
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-    , IBenchmarkCommandTiming
-#endif
 {
     private const int ENoInterface = unchecked((int)0x80004002);
     private const int DxgiErrorUnsupported = unchecked((int)0x887A0004);
@@ -95,6 +93,9 @@ internal sealed unsafe partial class D3D12Backend :
     private bool _dredEnabled;
     private bool _deviceCreated;
     private D3D12Device? _diagnosticDevice;
+
+    internal bool UseQueueSpecificCommonLayouts =>
+        _options.UseQueueSpecificCommonLayouts;
 
     internal D3D12Backend(in D3D12BackendOptions options = default)
         : this(options, null)

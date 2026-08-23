@@ -48,6 +48,8 @@ internal static class BenchmarkOutput
                 "Developer probe workload executed; exploratory only, non-gating, and never vendor-certification evidence.",
             BenchmarkProfile.RepresentativeCpuFrame =>
                 "Public-source representative CPU frame workload executed with one public Draw call per draw and without Queue submission.",
+            BenchmarkProfile.GraphicsCpuDevelopment =>
+                "Public-source RenderGraph plus RHI development workload executed with real D3D12 commands and Queue submission.",
             BenchmarkProfile.VendorCertification => "Fixed vendor workload executed.",
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         };

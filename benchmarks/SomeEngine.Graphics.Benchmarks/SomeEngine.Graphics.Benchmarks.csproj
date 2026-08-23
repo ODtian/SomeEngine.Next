@@ -6,9 +6,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(SomeEngineRhiBenchmarkTiming)' == 'true'">
-    <DefineConstants>$(DefineConstants);SOMEENGINE_RHI_BENCHMARK_TIMING</DefineConstants>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(SomeEngineRepresentativeMode)' == 'Uniform'">
     <DefineConstants>$(DefineConstants);REPRESENTATIVE_UNIFORM_MATERIAL</DefineConstants>
   </PropertyGroup>
@@ -37,6 +34,8 @@
                       GlobalPropertiesToRemove="PublishAot"
                       AdditionalProperties="PublishAot=false" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="../../external/SlangShaderSharp/runtimes/win-x64/native/slang-compiler.dll"

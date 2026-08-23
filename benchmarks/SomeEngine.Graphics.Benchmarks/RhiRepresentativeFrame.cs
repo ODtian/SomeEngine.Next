@@ -382,9 +382,6 @@ internal static partial class RhiBenchmarkRunner
         long stopped;
         long cleanupStarted = 0;
         long cleanupStopped = 0;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-        uint closedMask = 0;
-#endif
         try
         {
             RepresentativeFrameProfile.WriteObjectPacketsUnchecked(objectBytes, frameIndex);
@@ -396,9 +393,6 @@ internal static partial class RhiBenchmarkRunner
                 recording,
                 barrierCount: 1,
                 clear: true);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            closedMask |= 1u << 0;
-#endif
 
             if (parallel)
             {
@@ -407,9 +401,6 @@ internal static partial class RhiBenchmarkRunner
                 for (int worker = 0; worker < workers.Length; worker++)
                 {
                     commands[3 + worker] = workers[worker].WaitShadow();
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                    closedMask |= 1u << (3 + worker);
-#endif
                 }
                 workerBytes += SumWorkerAllocations(workers);
             }
@@ -431,9 +422,6 @@ internal static partial class RhiBenchmarkRunner
                         start,
                         count,
                         scene: false);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                    closedMask |= 1u << (3 + worker);
-#endif
                 }
             }
 
@@ -445,9 +433,6 @@ internal static partial class RhiBenchmarkRunner
                 recording,
                 barrierCount: 2,
                 clear: false);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            closedMask |= 1u << 1;
-#endif
 
             if (parallel)
             {
@@ -456,9 +441,6 @@ internal static partial class RhiBenchmarkRunner
                 for (int worker = 0; worker < workers.Length; worker++)
                 {
                     commands[6 + worker] = workers[worker].WaitScene();
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                    closedMask |= 1u << (6 + worker);
-#endif
                 }
                 workerBytes += SumWorkerAllocations(workers);
             }
@@ -480,9 +462,6 @@ internal static partial class RhiBenchmarkRunner
                         start,
                         count,
                         scene: true);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                    closedMask |= 1u << (6 + worker);
-#endif
                 }
             }
 
@@ -494,9 +473,6 @@ internal static partial class RhiBenchmarkRunner
                 recording,
                 barrierCount: 1,
                 clear: false);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            closedMask |= 1u << 2;
-#endif
             stopped = Stopwatch.GetTimestamp();
         }
         finally
@@ -504,17 +480,10 @@ internal static partial class RhiBenchmarkRunner
             cleanupStarted = Stopwatch.GetTimestamp();
             try
             {
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-                FinishRepresentativeCommands<TReceiver, TDispatch>(
-                    receiver,
-                    contexts,
-                    commands,
-                    closedMask);
-#endif
+                DisposeRecordedCommands(commands);
             }
             finally
             {
-                DisposeRecordedCommands(commands);
                 cleanupStopped = Stopwatch.GetTimestamp();
             }
         }
@@ -568,12 +537,7 @@ internal static partial class RhiBenchmarkRunner
                 rendering = false;
             }
 #endif
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            TDispatch.CloseCommandsForBenchmark(receiver, context);
-            RecordedCommands result = default;
-#else
             RecordedCommands result = TDispatch.End(receiver, context);
-#endif
             return result;
         }
         catch
@@ -698,12 +662,7 @@ internal static partial class RhiBenchmarkRunner
 #endif
 #endif
             phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-            TDispatch.CloseCommandsForBenchmark(receiver, context);
-            RecordedCommands result = default;
-#else
             RecordedCommands result = TDispatch.End(receiver, context);
-#endif
             if (timing is not null)
                 timing[5] += Stopwatch.GetTimestamp() - phaseStarted;
             return result;
@@ -716,34 +675,6 @@ internal static partial class RhiBenchmarkRunner
             throw;
         }
     }
-
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-    private static void FinishRepresentativeCommands<TReceiver, TDispatch>(
-        TReceiver receiver,
-        CommandContext[] contexts,
-        RecordedCommands[] commands,
-        uint closedMask)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
-    {
-        ExceptionDispatchInfo? failure = null;
-        for (int index = 0; index < commands.Length; index++)
-        {
-            if ((closedMask & (1u << index)) == 0)
-                continue;
-            try
-            {
-                commands[index] = TDispatch.FinishCommandsForBenchmark(
-                    receiver,
-                    contexts[index]);
-            }
-            catch (Exception exception)
-            {
-                failure ??= ExceptionDispatchInfo.Capture(exception);
-            }
-        }
-        failure?.Throw();
-    }
-#endif
 
     private static void DisposeRecordedCommands(RecordedCommands[] commands)
     {

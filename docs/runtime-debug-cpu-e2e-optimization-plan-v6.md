@@ -112,24 +112,17 @@ input / window / UI
 
 ### 1.3 最终计时实现
 
-最终证书只能使用：
+原先内嵌在正式 Runtime 的 benchmark 命令行模式已经退役。后续证书只能由独立
+benchmark 可执行程序生成，不得为了采样在产品主循环、RHI 或 RenderGraph 中保留专用
+接口、计数器或条件编译路径。独立程序的最终计时要求：
 
-```text
---benchmark-outer-only
-```
-
-该模式要求：
-
-- sampled frame 走普通 `graph.Execute()`；
+- sampled frame 走普通产品执行入口；
 - measured interval 内只有一个外层开始 timestamp 和一个外层结束 timestamp；
 - sampled frame 的正常 frame-time 计算复用外层开始 timestamp，不再读取第三次顶层 timestamp；
-- sampled frame 不调用 `ExecuteForBenchmark`；
 - 不读取 component timestamps；
 - component tick 列全部为零；
 - 原始 tick 预分配存储，进程退出后才输出 CSV 与统计量；
 - Graph snapshot 只在排除于 samples 的边界帧生成。
-
-`--benchmark-breakdown` 或默认 breakdown 模式只用于定位，不得签发最终证书。
 
 ## 2. 不可协商的架构边界
 
@@ -659,19 +652,8 @@ submission token/future/packet/result；不得保存到 backend 或下一 invoca
 
 ## 10. 最终性能证书
 
-每个进程使用：
-
-```powershell
-$env:DOTNET_TieredCompilation='0'
-$env:COMPlus_TieredCompilation='0'
-$env:DOTNET_ReadyToRun='0'
-$env:COMPlus_ReadyToRun='0'
-dotnet src/SomeEngine.Runtime/bin/Debug/net10.0/SomeEngine.Runtime.dll `
-  --benchmark-output <raw.csv> `
-  --benchmark-warmup 8192 `
-  --benchmark-samples 16384 `
-  --benchmark-outer-only
-```
+旧的 `SomeEngine.Runtime --benchmark-*` 运行配方已经删除，不得重新引入。性能证书应由
+`benchmarks/` 下的独立可执行程序生成，并通过普通公开产品入口驱动被测代码。
 
 证书必须记录：
 

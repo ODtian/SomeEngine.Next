@@ -1,17 +1,11 @@
 using System.Numerics;
 using SlangShaderSharp;
-using SomeEngine.Graphics.Direct3D12;
-
 namespace SomeEngine.Graphics.Benchmarks;
 
 internal interface IRhiDispatch<TReceiver>
 {
     static abstract void Begin(TReceiver receiver, CommandContext context, in CommandRecordingDesc description);
     static abstract RecordedCommands End(TReceiver receiver, CommandContext context);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-    static abstract void CloseCommandsForBenchmark(TReceiver receiver, CommandContext context);
-    static abstract RecordedCommands FinishCommandsForBenchmark(TReceiver receiver, CommandContext context);
-#endif
     static abstract void Discard(TReceiver receiver, CommandContext context);
     static abstract void Barrier(TReceiver receiver, CommandContext context, in MemoryBarrier barrier);
     static abstract void Barrier(TReceiver receiver, CommandContext context, in BufferBarrier barrier);
@@ -48,26 +42,16 @@ internal interface IRhiDispatch<TReceiver>
 internal readonly struct InterfaceReceiverDispatch : IRhiDispatch<InterfaceReceiverDispatch>
 {
     private readonly IGraphicsBackend _receiver;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-    private readonly IBenchmarkCommandTiming _benchmarkTiming;
-#endif
     private static readonly ResourceBinding[] EmptyResources = [];
 
     internal InterfaceReceiverDispatch(IGraphicsBackend receiver)
     {
         _receiver = receiver;
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-        _benchmarkTiming = (IBenchmarkCommandTiming)receiver;
-#endif
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static void Begin(InterfaceReceiverDispatch receiver, CommandContext context, in CommandRecordingDesc description) => receiver._receiver.Begin(context, description);
     public static RecordedCommands End(InterfaceReceiverDispatch receiver, CommandContext context) => receiver._receiver.End(context);
-#if SOMEENGINE_RHI_BENCHMARK_TIMING
-    public static void CloseCommandsForBenchmark(InterfaceReceiverDispatch receiver, CommandContext context) => receiver._benchmarkTiming.CloseCommandsForBenchmark(context);
-    public static RecordedCommands FinishCommandsForBenchmark(InterfaceReceiverDispatch receiver, CommandContext context) => receiver._benchmarkTiming.FinishCommandsForBenchmark(context);
-#endif
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static void Discard(InterfaceReceiverDispatch receiver, CommandContext context) => receiver._receiver.Discard(context);
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]

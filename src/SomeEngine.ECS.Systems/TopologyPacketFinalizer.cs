@@ -545,8 +545,8 @@ internal static class TopologyStablePacketCapture
         for (int matchIndex = 0; matchIndex < matches.Length; matchIndex++)
         {
             QueryArchetypeMatch match = matches[matchIndex];
-            if (!match.TryGetAccess(parentComponentId, out QueryColumnAccess firstPassAccess) ||
-                !firstPassAccess.Access.CanWrite())
+            if (!match.TryGetAccess(parentComponentId, out QueryColumnAccess firstPassDefinition) ||
+                !firstPassDefinition.Access.CanWrite())
             {
                 throw new InvalidOperationException(
                     $"{typeof(Parent<TDomain>).Name} was not declared for query write access.");
