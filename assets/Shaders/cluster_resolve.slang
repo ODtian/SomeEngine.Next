@@ -93,12 +93,6 @@ void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
         float l = float(lodLevel) / 10.0;
         color = float3(l, 1.0 - l, 0.0);
     }
-    else if (Uniforms.DebugMode == 3) // SW/HW raster debug view
-    {
-        bool isSW = IsVisBufferSWRaster(visData);
-        // Pure classification color: blue = SW rasterized, red = HW rasterized.
-        color = isSW ? float3(0.05, 0.25, 1.0) : float3(1.0, 0.10, 0.05);
-    }
     else if (Uniforms.DebugMode == 0) // Normal shading (face normal fallback)
     {
         color = faceNormal * 0.5 + 0.5;

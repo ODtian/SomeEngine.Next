@@ -358,9 +358,6 @@ void WritePixel(int2 pixel, float depth, uint visData)
     // Normal-Z depth (near=0, far=1) flipped to reversed-Z for InterlockedMax + clear-to-0.
     float depthReversed = 1.0 - depth;
     uint depthBits = asuint(depthReversed);
-    // SW/HW debug view: set bit 31 to mark as SW-rasterized pixel
-    if ((Uniforms.DebugDump & 0x2) != 0)
-        visData = MarkVisBufferSWRaster(visData);
     uint oldDepth;
     InterlockedMax(DepthUAV[pixel], depthBits, oldDepth);
     if (depthBits > oldDepth)
@@ -427,14 +424,10 @@ struct PixelRasterTask : IWaveTask
         float depthReversed = 1.0 - depth;
         uint depthBits = asuint(depthReversed);
         uint oldDepth;
-        // SW/HW debug view: set bit 31 to mark as SW-rasterized pixel
-        uint finalVisData = srcVisData;
-        if ((Uniforms.DebugDump & 0x2) != 0)
-            finalVisData = MarkVisBufferSWRaster(finalVisData);
         InterlockedMax(DepthUAV[int2(px, py)], depthBits, oldDepth);
         if (depthBits > oldDepth)
         {
-            VisBuffer[int2(px, py)] = finalVisData;
+            VisBuffer[int2(px, py)] = srcVisData;
         }
     }
 };
