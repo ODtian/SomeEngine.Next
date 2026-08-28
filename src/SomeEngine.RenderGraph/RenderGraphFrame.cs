@@ -47,6 +47,11 @@ public ref struct RenderGraphFrame
         Texture texture,
         scoped ReadOnlySpan<TextureBoundaryState> boundaryStates) =>
         State.BindExternalTexture(slot, texture, boundaryStates);
+    public void BindExternalTexture(
+        GraphTextureId slot,
+        in SwapchainImage image,
+        Queue presentQueue) =>
+        State.BindExternalTexture(slot, image, presentQueue);
 
     public GraphBufferId CreateBuffer(in BufferDesc description, MemoryType memoryType = MemoryType.DeviceLocal) =>
         State.AddBuffer(description, memoryType, RenderGraphResourceOwnership.GraphOwned,

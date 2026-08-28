@@ -180,6 +180,42 @@ internal sealed class RenderGraphFrameState
             throw new ArgumentException("The Texture belongs to another Device.", nameof(texture));
         _textureBindings[slot.Value] = (texture, boundaryStates.ToArray());
     }
+    internal void BindExternalTexture(
+        GraphTextureId slot,
+        in SwapchainImage image,
+        Queue presentQueue)
+    {
+        EnsureAuthoring();
+        ArgumentNullException.ThrowIfNull(presentQueue);
+        if (image.Status != SwapchainImageStatus.Acquired)
+            throw new InvalidOperationException("Only an acquired SwapchainImage can enter the graph.");
+        if (!ReferenceEquals(presentQueue.Device, Graph.Device))
+            throw new ArgumentException("The present Queue belongs to another Device.", nameof(presentQueue));
+        if (_swapchainImages.Any(item => item.Identity.Equals(slot.Value)))
+            throw new InvalidOperationException("The external swapchain slot is already bound.");
+
+        Texture texture = image.Texture;
+        TextureSubresourceRange range = new(
+            0,
+            texture.Info.MipLevelCount,
+            0,
+            texture.Info.ArrayLayerCount,
+            TextureFormatRules.Aspects(texture.Info.Format));
+        BindExternalTexture(
+            slot,
+            texture,
+            [new TextureBoundaryState(
+                range,
+                image.InitialSync,
+                image.InitialAccess,
+                image.InitialLayout,
+                image.InitialLayout == TextureLayout.Undefined
+                    ? ResourceContentState.Undefined
+                    : ResourceContentState.Defined,
+                presentQueue,
+                null)]);
+        _swapchainImages.Add((slot.Value, image, presentQueue));
+    }
 
     internal GraphBufferId AddBuffer(
         in BufferDesc description,

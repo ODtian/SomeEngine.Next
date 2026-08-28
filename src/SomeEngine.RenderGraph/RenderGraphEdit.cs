@@ -1,6 +1,6 @@
 namespace SomeEngine.RenderGraph;
 
-public ref struct RenderGraphEdit
+public ref partial struct RenderGraphEdit
 {
     private RenderGraph? _graph;
     private readonly long _token;
