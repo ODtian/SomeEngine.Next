@@ -41,9 +41,9 @@ public sealed class RenderInstanceArchitectureTests
     {
         ConstructorInfo constructor = Assert.Single(
             typeof(RenderMeshInstanceSet)
-                .GetConstructors(BindingFlags.Public | BindingFlags.Instance)
-                .Where(static candidate => candidate.GetParameters().Any(static parameter =>
-                    parameter.ParameterType == typeof(IRenderInstanceSource))));
+                .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+            static candidate => candidate.GetParameters().Any(static parameter =>
+                parameter.ParameterType == typeof(IRenderInstanceSource)));
 
         Assert.DoesNotContain(constructor.GetParameters(), static parameter =>
             typeof(Delegate).IsAssignableFrom(parameter.ParameterType));

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace SomeEngine.Render.Instances;
 
 /// <summary>
@@ -12,7 +14,6 @@ public sealed class RenderInstanceUpdate : IDisposable
     private readonly RenderInstanceBuffer _buffer;
     private readonly List<ICommand> _commands = [];
     private int? _count;
-    private bool _committed;
     private bool _disposed;
 
     internal RenderInstanceUpdate(RenderInstanceBuffer buffer)
@@ -110,8 +111,7 @@ public sealed class RenderInstanceUpdate : IDisposable
     public void Commit()
     {
         ThrowIfClosed();
-        _buffer.Commit(this, _count, _commands);
-        _committed = true;
+        _buffer.CommitUpdate(_count, _commands);
         _disposed = true;
         _commands.Clear();
     }
@@ -144,36 +144,30 @@ public sealed class RenderInstanceUpdate : IDisposable
         }
 
         public void Apply(RenderInstanceBuffer buffer) =>
-            buffer.SetRange(property, start, values);
+            buffer.ApplyRange(property, start, values);
     }
 
     private sealed class SparseCommand<T> : ICommand
         where T : unmanaged
     {
-        private readonly RangeCommand<T>[] _runs;
+        private readonly ResolvedRenderInstanceProperty<T> _property;
+        private readonly int[] _indices;
+        private readonly T[] _values;
         private readonly int _lastIndex;
 
         internal SparseCommand(
             ResolvedRenderInstanceProperty<T> property,
             SparseValue<T>[] values)
         {
+            _property = property;
             _lastIndex = values[^1].Index;
-            var runs = new List<RangeCommand<T>>();
-            int first = 0;
-            while (first < values.Length)
+            _indices = new int[values.Length];
+            _values = new T[values.Length];
+            for (int index = 0; index < values.Length; index++)
             {
-                int end = first + 1;
-                while (end < values.Length && values[end].Index == values[end - 1].Index + 1)
-                    end++;
-
-                int runLength = end - first;
-                var run = new T[runLength];
-                for (int index = 0; index < runLength; index++)
-                    run[index] = values[first + index].Value;
-                runs.Add(new RangeCommand<T>(property, values[first].Index, run));
-                first = end;
+                _indices[index] = values[index].Index;
+                _values[index] = values[index].Value;
             }
-            _runs = [.. runs];
         }
 
         public void Validate(int count)
@@ -182,11 +176,8 @@ public sealed class RenderInstanceUpdate : IDisposable
                 throw new ArgumentOutOfRangeException(nameof(count));
         }
 
-        public void Apply(RenderInstanceBuffer buffer)
-        {
-            for (int index = 0; index < _runs.Length; index++)
-                _runs[index].Apply(buffer);
-        }
+        public void Apply(RenderInstanceBuffer buffer) =>
+            buffer.ApplySparse(_property, _indices, _values);
     }
 
     private readonly record struct SparseValue<T>(int Index, T Value)
@@ -195,8 +186,6 @@ public sealed class RenderInstanceUpdate : IDisposable
     private void ThrowIfClosed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_committed)
-            throw new InvalidOperationException("The render-instance update has already been committed.");
     }
 }
 
@@ -217,12 +206,10 @@ public sealed partial class RenderInstanceBuffer
         }
     }
 
-    internal void Commit(
-        RenderInstanceUpdate owner,
+    internal void CommitUpdate(
         int? requestedCount,
         IReadOnlyList<RenderInstanceUpdate.ICommand> commands)
     {
-        ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(commands);
         _gate.EnterWriteLock();
         try
@@ -260,5 +247,32 @@ public sealed partial class RenderInstanceBuffer
         {
             _gate.ExitWriteLock();
         }
+    }
+
+    internal void ApplyRange<T>(
+        ResolvedRenderInstanceProperty<T> property,
+        int start,
+        ReadOnlySpan<T> values)
+        where T : unmanaged
+    {
+        Column column = RequireColumn(property);
+        MemoryMarshal.AsBytes(values).CopyTo(column.Range(start, values.Length));
+        if (!values.IsEmpty)
+            RecordProperty(property.Ordinal, new RenderInstanceRange(start, values.Length));
+    }
+
+    internal void ApplySparse<T>(
+        ResolvedRenderInstanceProperty<T> property,
+        ReadOnlySpan<int> indices,
+        ReadOnlySpan<T> values)
+        where T : unmanaged
+    {
+        Column column = RequireColumn(property);
+        for (int index = 0; index < indices.Length; index++)
+            MemoryMarshal.Write(column.Element(indices[index]), in values[index]);
+        if (indices.IsEmpty)
+            return;
+        _revision = checked(_revision + 1ul);
+        _changes.RecordSparse(_revision, property.Ordinal, indices);
     }
 }

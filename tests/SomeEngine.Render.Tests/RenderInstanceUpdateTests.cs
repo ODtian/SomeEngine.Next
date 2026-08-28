@@ -102,8 +102,8 @@ public sealed class RenderInstanceUpdateTests
         Assert.Equal(Transform(0.0f), buffer.Get(current, 2));
         Assert.Equal(Transform(30.0f), buffer.Get(current, 3));
         using RenderInstanceSourceSnapshot snapshot = buffer.Capture(previousRevision);
-        RenderInstancePropertyChange changed = Assert.Single(snapshot.Changes.Properties);
-        Assert.Equal(new RenderInstanceRange(1, 3), changed.Range);
+        RenderInstanceSparsePropertyChange changed = Assert.Single(snapshot.Changes.SparseProperties);
+        Assert.Equal([1, 3], changed.Indices.ToArray());
     }
 
     [Fact]

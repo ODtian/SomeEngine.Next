@@ -19,7 +19,7 @@ public sealed class RenderInstanceStorageUpdateTests
         ResolvedRenderInstanceProperty<uint> firstUpdate =
             firstOnly.Resolve<uint>(first.Key);
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend);
         using var coordinator = new RenderFrameCoordinator(backend, device);
         RenderWorld world = new();

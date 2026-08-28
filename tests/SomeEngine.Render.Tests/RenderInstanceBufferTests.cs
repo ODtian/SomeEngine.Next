@@ -137,8 +137,8 @@ public sealed class RenderInstanceBufferTests
 
         using (RenderInstanceUpdate update = buffer.BeginUpdate())
         {
-            update.Set(contract.Current, 1, Transform(7.0f));
-            update.Set(
+            update.Write(contract.Current, 1, Transform(7.0f));
+            update.Write(
                 contract.Previous,
                 1,
                 new RenderPreviousTransform(Transform(6.0f)));
@@ -149,8 +149,10 @@ public sealed class RenderInstanceBufferTests
 
             Assert.Equal(baseline, buffer.Revision);
             Assert.Equal(default, buffer.Get(contract.Current, 1));
-            Assert.Equal(baseline + 1ul, update.Commit());
+            update.Commit();
         }
+
+        Assert.Equal(baseline + 1ul, buffer.Revision);
 
         Assert.Equal(Transform(7.0f), buffer.Get(contract.Current, 1));
         Assert.Equal(
@@ -177,7 +179,7 @@ public sealed class RenderInstanceBufferTests
     }
 
     [Fact]
-    public void TransactionRollbackAndOptimisticConflictNeverPublishPartialValues()
+    public void TransactionRollbackAndConcurrentWritesNeverPublishPartialValues()
     {
         TestContract contract = CreateContract();
         using var buffer = new RenderInstanceBuffer(contract.Layout, capacity: 2);
@@ -185,15 +187,15 @@ public sealed class RenderInstanceBufferTests
 
         ulong beforeRollback = buffer.Revision;
         using (RenderInstanceUpdate update = buffer.BeginUpdate())
-            update.Set(contract.Current, 0, Transform(9.0f));
+            update.Write(contract.Current, 0, Transform(9.0f));
         Assert.Equal(beforeRollback, buffer.Revision);
         Assert.Equal(default, buffer.Get(contract.Current, 0));
 
-        using RenderInstanceUpdate stale = buffer.BeginUpdate();
-        stale.Set(contract.Current, 0, Transform(3.0f));
+        using RenderInstanceUpdate updateAfterExternalWrite = buffer.BeginUpdate();
+        updateAfterExternalWrite.Write(contract.Current, 0, Transform(3.0f));
         buffer.Set(contract.Current, 1, Transform(4.0f));
-        Assert.Throws<InvalidOperationException>(() => stale.Commit());
-        Assert.Equal(default, buffer.Get(contract.Current, 0));
+        updateAfterExternalWrite.Commit();
+        Assert.Equal(Transform(3.0f), buffer.Get(contract.Current, 0));
         Assert.Equal(Transform(4.0f), buffer.Get(contract.Current, 1));
     }
 
@@ -207,11 +209,12 @@ public sealed class RenderInstanceBufferTests
 
         using (RenderInstanceUpdate update = buffer.BeginUpdate())
         {
-            int start = update.AddRange(2);
+            int start = buffer.Count;
+            update.SetCount(start + 2);
             Assert.Equal(2, start);
-            update.Set(contract.Current, 2, Transform(2.0f));
-            update.Set(contract.Current, 3, Transform(3.0f));
-            _ = update.Commit();
+            update.Write(contract.Current, 2, Transform(2.0f));
+            update.Write(contract.Current, 3, Transform(3.0f));
+            update.Commit();
         }
 
         Assert.Equal(4, buffer.Count);
