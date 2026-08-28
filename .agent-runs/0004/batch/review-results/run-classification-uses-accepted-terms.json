@@ -1,4 +1,0 @@
-{
-  "pass": true,
-  "comment": "Run artifacts use the accepted completed, incomplete and out-of-scope classifications. ECS, Job, RenderWorld, Cluster renderer integration and the old repository remain outside run 0004 and are excluded from scoped commits."
-}

@@ -1,4 +1,0 @@
-{
-  "pass": true,
-  "comment": "Portable APIs expose no Vortice/DXGI types, FL12_0+SM6.2 traditional binding remains the baseline, and full D3D12 tests pass 66/66 with zero skips. WARP validates indirect/query/RG output; the input-desktop hardware lane validates visible FIFO/tearing presentation, HDR query or explicit rejection, occlusion and device removal."
-}

@@ -1,4 +1,0 @@
-{
-  "pass": true,
-  "comment": "PassParameters/ShaderParameters generation pairs against cooked ShaderAsset reflection before compile, emits exact access/view/packing/binding glue and leaves no execute-time reflection or field-name lookup. The real WARP generated-binding test writes and reads a device-local storage buffer without manual bind-group construction; Assets and RG suites pass 105/105 and 145/145."
-}
