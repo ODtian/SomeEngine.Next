@@ -410,9 +410,13 @@ public sealed class ClusterShaderAbiTests
         var modules = new Dictionary<string, IModule>(StringComparer.OrdinalIgnoreCase);
         foreach (ClusterShaderOperation operation in operations)
         {
+            IList<ShaderRef> entries = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders);
+            Assert.NotEmpty(entries);
+            ShaderRef first = entries[0];
             Assert.True(
-                AssetGuid.TryParse(operation.Shader?.ShaderGuid, out AssetGuid shaderGuid),
+                AssetGuid.TryParse(first.AssetGuid, out AssetGuid shaderGuid),
                 $"Operation {operation.Role} has no Shader asset identity.");
+            Assert.All(entries, entry => Assert.Equal(first.AssetGuid, entry.AssetGuid));
             AssetHandle<Shader> shaderHandle = loader.Load(new AssetId<Shader>(shaderGuid));
             await loader.WaitAsync(shaderHandle);
 
@@ -444,31 +448,21 @@ public sealed class ClusterShaderAbiTests
                 modules.Add(sourcePath, module);
             }
 
-            if (!string.IsNullOrWhiteSpace(operation.ComputeEntryPoint))
+            foreach (ShaderRef entry in entries)
             {
                 AssertConfiguredEntryPointCompiles(
                     session,
                     module,
                     sourcePath,
-                    operation.ComputeEntryPoint,
-                    SlangStage.Compute,
-                    targetCount);
-            }
-            else
-            {
-                AssertConfiguredEntryPointCompiles(
-                    session,
-                    module,
-                    sourcePath,
-                    Assert.IsType<string>(operation.VertexEntryPoint),
-                    SlangStage.Vertex,
-                    targetCount);
-                AssertConfiguredEntryPointCompiles(
-                    session,
-                    module,
-                    sourcePath,
-                    Assert.IsType<string>(operation.PixelEntryPoint),
-                    SlangStage.Fragment,
+                    Assert.IsType<string>(entry.EntryPoint),
+                    entry.Stage switch
+                    {
+                        ShaderStage.Compute => SlangStage.Compute,
+                        ShaderStage.Vertex => SlangStage.Vertex,
+                        ShaderStage.Pixel => SlangStage.Fragment,
+                        _ => throw new InvalidDataException(
+                            $"Cluster operation {operation.Role} uses unsupported stage {entry.Stage}."),
+                    },
                     targetCount);
             }
         }

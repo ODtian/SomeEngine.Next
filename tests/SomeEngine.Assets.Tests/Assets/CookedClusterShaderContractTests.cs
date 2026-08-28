@@ -61,11 +61,13 @@ public sealed class CookedClusterShaderContractTests
         ClusterShaderOperation operation = Assert.Single(
             configuration.Operations!,
             candidate => candidate.Role == role);
-        Assert.False(string.IsNullOrWhiteSpace(operation.ComputeEntryPoint));
-        Assert.True(AssetGuid.TryParse(operation.Shader?.ShaderGuid, out AssetGuid shaderGuid));
+        ShaderRef shaderRef = Assert.Single(operation.Shaders!);
+        Assert.Equal(ShaderStage.Compute, shaderRef.Stage);
+        Assert.False(string.IsNullOrWhiteSpace(shaderRef.EntryPoint));
+        Assert.True(AssetGuid.TryParse(shaderRef.AssetGuid, out AssetGuid shaderGuid));
         Assert.True(manifest.TryGetAsset(shaderGuid, out AssetManifestRecord shaderRecord));
         Shader shader = await Shader.ReadAsync(Path.Combine(root, shaderRecord.Path));
-        return (shader, operation.ComputeEntryPoint!);
+        return (shader, shaderRef.EntryPoint!);
     }
 
     private static string[] ResourceNames(Shader shader, string entryPoint)

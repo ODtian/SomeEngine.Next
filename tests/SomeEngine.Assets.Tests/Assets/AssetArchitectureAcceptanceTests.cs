@@ -187,7 +187,9 @@ public sealed class AssetArchitectureAcceptanceTests
         Assert.Equal(24, loadedCluster.Operations?.Count);
         Assert.All(
             loadedCluster.Operations!,
-            operation => Assert.Equal(shaderGuid.ToFlatString(), operation.Shader?.ShaderGuid));
+            operation => Assert.All(
+                operation.Shaders!,
+                shader => Assert.Equal(shaderGuid.ToFlatString(), shader.AssetGuid)));
         Assert.Equal(instance.AssetGuid, loadedInstance.AssetGuid);
         Assert.Equal(parentGuid.ToFlatString(), loadedInstance.ParentGuid);
     }
@@ -389,19 +391,39 @@ public sealed class AssetArchitectureAcceptanceTests
         var result = new ClusterShaderOperation
         {
             Role = role,
-            Shader = new ShaderAssetRef { ShaderGuid = shaderGuid },
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.SoftwareDepthMerge
             or ClusterShaderOperationRole.TemporalResolve
             or ClusterShaderOperationRole.ToneMapAndPresent)
         {
-            result.VertexEntryPoint = "vertex";
-            result.PixelEntryPoint = "pixel";
+            result.Shaders =
+            [
+                new ShaderRef
+                {
+                    AssetGuid = shaderGuid,
+                    EntryPoint = "vertex",
+                    Stage = ShaderStage.Vertex,
+                },
+                new ShaderRef
+                {
+                    AssetGuid = shaderGuid,
+                    EntryPoint = "pixel",
+                    Stage = ShaderStage.Pixel,
+                },
+            ];
         }
         else
         {
-            result.ComputeEntryPoint = "compute";
+            result.Shaders =
+            [
+                new ShaderRef
+                {
+                    AssetGuid = shaderGuid,
+                    EntryPoint = "compute",
+                    Stage = ShaderStage.Compute,
+                },
+            ];
         }
         return result;
     }

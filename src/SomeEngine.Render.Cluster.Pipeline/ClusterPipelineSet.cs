@@ -195,25 +195,19 @@ internal sealed class ClusterPipelineSet : IDisposable
         string name)
     {
         ClusterShaderOperation operation = GetOperation(operations, role);
-        if (string.IsNullOrWhiteSpace(operation.ComputeEntryPoint)
-            || !string.IsNullOrWhiteSpace(operation.VertexEntryPoint)
-            || !string.IsNullOrWhiteSpace(operation.PixelEntryPoint))
-        {
-            throw new InvalidDataException(
-                $"Cluster shader operation '{role}' is not a compute operation.");
-        }
+        ShaderRef compute = GetShader(operation, role, ShaderStage.Compute);
 
         ownedPipelines.EnsureCapacity(checked(ownedPipelines.Count + 1));
         ClusterComputePipeline? created = null;
         try
         {
-            using (AssetRead<Shader> shaderRead = LoadShaderRead(assets, operation.Shader, role))
+            using (AssetRead<Shader> shaderRead = LoadShaderRead(assets, compute, role))
             {
                 created = ClusterComputePipeline.Create(
                     backend,
                     device,
                     shaderRead.Value,
-                    operation.ComputeEntryPoint,
+                    compute.EntryPoint!,
                     name);
             }
             ownedPipelines.Add(created);
@@ -252,26 +246,25 @@ internal sealed class ClusterPipelineSet : IDisposable
         bool alphaToCoverage)
     {
         ClusterShaderOperation operation = GetOperation(operations, role);
-        if (!string.IsNullOrWhiteSpace(operation.ComputeEntryPoint)
-            || string.IsNullOrWhiteSpace(operation.VertexEntryPoint)
-            || string.IsNullOrWhiteSpace(operation.PixelEntryPoint))
-        {
-            throw new InvalidDataException(
-                $"Cluster shader operation '{role}' is not a raster operation.");
-        }
+        ShaderRef vertex = GetShader(operation, role, ShaderStage.Vertex);
+        ShaderRef pixel = GetShader(operation, role, ShaderStage.Pixel);
+        AssetGuid vertexGuid = GetShaderGuid(vertex, role);
+        AssetGuid pixelGuid = GetShaderGuid(pixel, role);
+        if (vertexGuid != pixelGuid)
+            throw new InvalidDataException($"Cluster shader operation '{role}' spans shader assets.");
 
         ownedPipelines.EnsureCapacity(checked(ownedPipelines.Count + 1));
         ClusterRasterPipeline? created = null;
         try
         {
-            using (AssetRead<Shader> shaderRead = LoadShaderRead(assets, operation.Shader, role))
+            using (AssetRead<Shader> shaderRead = LoadShaderRead(assets, vertex, role))
             {
                 created = ClusterRasterPipeline.Create(
                     backend,
                     device,
                     shaderRead.Value,
-                    operation.VertexEntryPoint,
-                    operation.PixelEntryPoint,
+                    vertex.EntryPoint!,
+                    pixel.EntryPoint!,
                     colorFormats,
                     depthStencilFormat,
                     rasterizerState,
@@ -310,15 +303,51 @@ internal sealed class ClusterPipelineSet : IDisposable
 
     private static AssetRead<Shader> LoadShaderRead(
         AssetLoader assets,
-        ShaderAssetRef? reference,
+        ShaderRef reference,
         ClusterShaderOperationRole role)
     {
-        if (!AssetGuid.TryParse(reference?.ShaderGuid, out AssetGuid guid) || guid.IsEmpty)
-            throw new InvalidDataException($"Cluster shader operation '{role}' has no shader.");
+        AssetGuid guid = GetShaderGuid(reference, role);
         AssetHandle<Shader> handle = assets.Load(new AssetId<Shader>(guid));
         if (handle.LoadState != AssetLoadState.Ready)
             assets.WaitAsync(handle).AsTask().GetAwaiter().GetResult();
         return assets.Read(handle);
+    }
+
+    private static ShaderRef GetShader(
+        ClusterShaderOperation operation,
+        ClusterShaderOperationRole role,
+        ShaderStage stage)
+    {
+        IList<ShaderRef> shaders = operation.Shaders
+            ?? throw new InvalidDataException(
+                $"Cluster shader operation '{role}' has no shader entries.");
+        ShaderRef? result = null;
+        foreach (ShaderRef shader in shaders)
+        {
+            if (shader is null || shader.Stage != stage)
+                continue;
+            if (result is not null)
+            {
+                throw new InvalidDataException(
+                    $"Cluster shader operation '{role}' repeats the {stage} stage.");
+            }
+            result = shader;
+        }
+        if (result is null || string.IsNullOrWhiteSpace(result.EntryPoint))
+        {
+            throw new InvalidDataException(
+                $"Cluster shader operation '{role}' has no {stage} shader entry.");
+        }
+        return result;
+    }
+
+    private static AssetGuid GetShaderGuid(
+        ShaderRef shader,
+        ClusterShaderOperationRole role)
+    {
+        if (!AssetGuid.TryParse(shader.AssetGuid, out AssetGuid guid) || guid.IsEmpty)
+            throw new InvalidDataException($"Cluster shader operation '{role}' has no shader asset.");
+        return guid;
     }
 
     private static Dictionary<ClusterShaderOperationRole, ClusterShaderOperation> IndexOperations(
@@ -343,25 +372,35 @@ internal sealed class ClusterPipelineSet : IDisposable
                 throw new InvalidDataException(
                     "Cluster render asset contains an invalid shader-operation role.");
             }
-            if (!AssetGuid.TryParse(operation.Shader?.ShaderGuid, out AssetGuid shaderGuid) ||
-                shaderGuid.IsEmpty)
-            {
-                throw new InvalidDataException(
-                    $"Cluster shader operation '{operation.Role}' has no shader.");
-            }
-
             bool isRaster = IsRasterOperation(operation.Role);
-            bool validShape = isRaster
-                ? string.IsNullOrWhiteSpace(operation.ComputeEntryPoint) &&
-                    !string.IsNullOrWhiteSpace(operation.VertexEntryPoint) &&
-                    !string.IsNullOrWhiteSpace(operation.PixelEntryPoint)
-                : !string.IsNullOrWhiteSpace(operation.ComputeEntryPoint) &&
-                    string.IsNullOrWhiteSpace(operation.VertexEntryPoint) &&
-                    string.IsNullOrWhiteSpace(operation.PixelEntryPoint);
+            IList<ShaderRef>? shaders = operation.Shaders;
+            bool validShape = shaders is not null && (isRaster
+                ? shaders.Count == 2 &&
+                    shaders.Count(shader => shader is not null && shader.Stage == ShaderStage.Vertex) == 1 &&
+                    shaders.Count(shader => shader is not null && shader.Stage == ShaderStage.Pixel) == 1
+                : shaders.Count == 1 &&
+                    shaders[0] is not null &&
+                    shaders[0].Stage == ShaderStage.Compute);
             if (!validShape)
             {
                 throw new InvalidDataException(
-                    $"Cluster shader operation '{operation.Role}' has an invalid entry-point shape.");
+                    $"Cluster shader operation '{operation.Role}' has an invalid shader-stage set.");
+            }
+            AssetGuid? shaderGuid = null;
+            foreach (ShaderRef shader in shaders!)
+            {
+                AssetGuid current = GetShaderGuid(shader, operation.Role);
+                if (string.IsNullOrWhiteSpace(shader.EntryPoint))
+                {
+                    throw new InvalidDataException(
+                        $"Cluster shader operation '{operation.Role}' has an empty entry point.");
+                }
+                if (shaderGuid.HasValue && shaderGuid.Value != current)
+                {
+                    throw new InvalidDataException(
+                        $"Cluster shader operation '{operation.Role}' spans shader assets.");
+                }
+                shaderGuid = current;
             }
             if (!result.TryAdd(operation.Role, operation))
             {

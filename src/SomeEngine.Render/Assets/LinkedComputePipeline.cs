@@ -5,12 +5,12 @@ using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns one linked compute entry point and the RHI pipeline created from it.</summary>
-public sealed class LinkedComputeKernel : IDisposable
+/// <summary>Owns one linked compute entry point and its RHI pipeline.</summary>
+public sealed class LinkedComputePipeline : IDisposable
 {
     private bool _disposed;
 
-    private LinkedComputeKernel(LiveShaderProgram program, GraphicsPipeline pipeline)
+    private LinkedComputePipeline(LiveShaderProgram program, GraphicsPipeline pipeline)
     {
         Program = program;
         Pipeline = pipeline;
@@ -19,33 +19,34 @@ public sealed class LinkedComputeKernel : IDisposable
     public LiveShaderProgram Program { get; }
     public GraphicsPipeline Pipeline { get; }
 
-    public static LinkedComputeKernel Create(
+    public static LinkedComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
         AssetLoader assets,
-        ComputeKernelRef? kernel,
+        ShaderRef? shader,
         string label)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(assets);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        if (kernel is null ||
-            string.IsNullOrWhiteSpace(kernel.EntryPoint) ||
-            !AssetGuid.TryParse(kernel.Shader?.ShaderGuid, out AssetGuid shaderGuid) ||
+        if (shader is null ||
+            shader.Stage != ShaderStage.Compute ||
+            string.IsNullOrWhiteSpace(shader.EntryPoint) ||
+            !AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid) ||
             shaderGuid.IsEmpty)
         {
             throw new InvalidDataException(
-                $"Compute kernel '{label}' has no valid shader entry point.");
+                $"Compute pipeline '{label}' has no valid shader entry.");
         }
         AssetHandle<Shader> handle = assets.Load(new AssetId<Shader>(shaderGuid));
         if (handle.LoadState != AssetLoadState.Ready)
             assets.WaitAsync(handle).AsTask().GetAwaiter().GetResult();
         using AssetRead<Shader> read = assets.Read(handle);
-        return Create(backend, device, read.Value, kernel.EntryPoint, label);
+        return Create(backend, device, read.Value, shader.EntryPoint, label);
     }
 
-    public static LinkedComputeKernel Create(
+    public static LinkedComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
         Shader shader,
@@ -70,7 +71,7 @@ public sealed class LinkedComputeKernel : IDisposable
                     program.Program,
                     program.GetEntryPoint(0),
                     label));
-            return new LinkedComputeKernel(program, pipeline);
+            return new LinkedComputePipeline(program, pipeline);
         }
         catch (Exception primary)
         {
@@ -81,7 +82,7 @@ public sealed class LinkedComputeKernel : IDisposable
             {
                 cleanupFailures.Insert(0, primary);
                 throw new AggregateException(
-                    $"Compute kernel '{label}' construction failed and cleanup also reported failures.",
+                    $"Compute pipeline '{label}' construction failed and cleanup also reported failures.",
                     cleanupFailures);
             }
             throw;

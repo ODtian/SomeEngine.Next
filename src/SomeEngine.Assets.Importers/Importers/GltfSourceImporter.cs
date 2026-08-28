@@ -621,8 +621,14 @@ public sealed partial class GltfSourceImporter
     {
         return new PassEntry
         {
-            ShaderGuid = pass.ShaderGuid,
-            EntryPoint = pass.EntryPoint,
+            Shader = pass.Shader is null
+                ? null
+                : new ShaderRef
+                {
+                    AssetGuid = pass.Shader.AssetGuid,
+                    EntryPoint = pass.Shader.EntryPoint,
+                    Stage = pass.Shader.Stage,
+                },
             Tags =
                 pass.Tags?.Select(tag => new TagEntry { Name = tag.Name, Value = tag.Value })
                     .ToList()

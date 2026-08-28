@@ -50,12 +50,16 @@ internal sealed class RuntimeUiRenderer : IDisposable
         NativeWindow window,
         AssetLoader assets,
         AssetHandle<Shader> shaderHandle,
+        string vertexEntryPoint,
+        string pixelEntryPoint,
         Format outputFormat)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _window = window ?? throw new ArgumentNullException(nameof(window));
         ArgumentNullException.ThrowIfNull(assets);
+        ArgumentException.ThrowIfNullOrWhiteSpace(vertexEntryPoint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pixelEntryPoint);
         if (!shaderHandle.IsValid || shaderHandle.LoadState != AssetLoadState.Ready)
             throw new ArgumentException("The Runtime ImGui shader must be ready.", nameof(shaderHandle));
 
@@ -77,7 +81,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
             io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
 
             _shaderRead = assets.Read(shaderHandle);
-            CreatePipeline(_shaderRead.Value, outputFormat);
+            CreatePipeline(_shaderRead.Value, vertexEntryPoint, pixelEntryPoint, outputFormat);
             UploadFontAtlas(io);
             _fontSampler = _backend.CreateSampler(_device, new SamplerDesc(
                 FilterType.Linear,
@@ -429,13 +433,17 @@ internal sealed class RuntimeUiRenderer : IDisposable
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
     }
 
-    private void CreatePipeline(Shader shader, Format outputFormat)
+    private void CreatePipeline(
+        Shader shader,
+        string vertexEntryPoint,
+        string pixelEntryPoint,
+        Format outputFormat)
     {
         _program = LiveShaderProgram.Link(
             shader,
             [
-                new LiveShaderEntry("VSMain", LiveShaderStage.Vertex),
-                new LiveShaderEntry("PSMain", LiveShaderStage.Pixel),
+                new LiveShaderEntry(vertexEntryPoint, LiveShaderStage.Vertex),
+                new LiveShaderEntry(pixelEntryPoint, LiveShaderStage.Pixel),
             ],
             _device.Capabilities.ShaderTarget);
         SomeEngine.Graphics.VertexAttribute[] attributes =

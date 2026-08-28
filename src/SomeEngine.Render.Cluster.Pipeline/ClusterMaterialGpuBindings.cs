@@ -169,10 +169,14 @@ internal sealed class ClusterMaterialGpuBindings : IDisposable
                 bool selectedCached = false;
                 foreach (PassEntry pass in material.Passes ?? [])
                 {
-                    if (!AssetGuid.TryParse(pass.ShaderGuid, out AssetGuid shaderGuid) || shaderGuid.IsEmpty)
+                    ShaderRef? shader = pass.Shader;
+                    if (shader is null ||
+                        shader.Stage != ShaderStage.Compute ||
+                        !AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid) ||
+                        shaderGuid.IsEmpty)
                         continue;
                     using AssetRead<Shader> shaderRead = LoadShaderRead(shaderGuid);
-                    string? candidate = ResolveShadeEntry(shaderRead.Value, pass.EntryPoint);
+                    string? candidate = ResolveShadeEntry(shaderRead.Value, shader.EntryPoint);
                     if (candidate is null)
                         continue;
                     bool candidateCached = IsTarget(

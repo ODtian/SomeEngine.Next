@@ -9,7 +9,14 @@ public partial class Material
         if (Passes is not null)
         {
             for (int index = 0; index < Passes.Count; index++)
-                AddRequired(result, Passes[index]?.ShaderGuid, path, $"Passes[{index}].ShaderGuid");
+            {
+                AssetGuid shader = ShaderRef.Require(
+                    Passes[index]?.Shader,
+                    $"Material asset '{path}'",
+                    $"Passes[{index}].Shader");
+                if (!result.Contains(shader))
+                    result.Add(shader);
+            }
         }
         if (Textures is not null)
         {

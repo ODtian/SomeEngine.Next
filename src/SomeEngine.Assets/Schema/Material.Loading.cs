@@ -17,7 +17,10 @@ public partial class Material
         {
             foreach (PassEntry pass in passes)
             {
-                AssetGuid shaderGuid = RequireGuid(pass.ShaderGuid, "Pass.ShaderGuid");
+                AssetGuid shaderGuid = ShaderRef.Require(
+                    pass.Shader,
+                    "Material",
+                    "Pass.Shader");
                 _ = await context.LoadDependencyAsync(new AssetId<Shader>(shaderGuid)).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
             }
@@ -45,7 +48,10 @@ public partial class Material
                 PassEntry? pass = passes[index];
                 if (pass is null)
                     throw new InvalidDataException($"Material pass {index} is null.");
-                _ = RequireGuid(pass.ShaderGuid, $"Passes[{index}].ShaderGuid");
+                _ = ShaderRef.Require(
+                    pass.Shader,
+                    "Material",
+                    $"Passes[{index}].Shader");
             }
         }
 

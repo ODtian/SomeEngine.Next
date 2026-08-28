@@ -468,7 +468,18 @@ public sealed class AssetProjectTests
             {
                 AssetGuid = materialGuid.ToFlatString(),
                 Name = "DanglingMaterial",
-                Passes = [new PassEntry { ShaderGuid = missingShaderGuid.ToFlatString() }],
+                Passes =
+                [
+                    new PassEntry
+                    {
+                        Shader = new ShaderRef
+                        {
+                            AssetGuid = missingShaderGuid.ToFlatString(),
+                            EntryPoint = "main",
+                            Stage = ShaderStage.Compute,
+                        },
+                    },
+                ],
                 Textures = [],
                 Scalars = [],
             }, materialAssetPath);

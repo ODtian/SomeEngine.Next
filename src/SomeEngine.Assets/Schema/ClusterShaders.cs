@@ -25,19 +25,40 @@ public partial class ClusterShaders
             if (!roles.Add(operation.Role))
                 throw Invalid(path, $"{field}.Role '{operation.Role}' is duplicated.");
 
-            bool hasCompute = !string.IsNullOrWhiteSpace(operation.ComputeEntryPoint);
-            bool hasVertex = !string.IsNullOrWhiteSpace(operation.VertexEntryPoint);
-            bool hasPixel = !string.IsNullOrWhiteSpace(operation.PixelEntryPoint);
-            bool isCompute = hasCompute && !hasVertex && !hasPixel;
-            bool isRaster = !hasCompute && hasVertex && hasPixel;
+            IList<ShaderRef> shaders = operation.Shaders
+                ?? throw Invalid(path, $"{field}.Shaders is missing.");
+            bool isCompute =
+                shaders.Count == 1 &&
+                shaders[0] is not null &&
+                shaders[0].Stage == ShaderStage.Compute;
+            bool isRaster =
+                shaders.Count == 2 &&
+                shaders.Count(shader => shader is not null && shader.Stage == ShaderStage.Vertex) == 1 &&
+                shaders.Count(shader => shader is not null && shader.Stage == ShaderStage.Pixel) == 1;
             if (!isCompute && !isRaster)
             {
                 throw Invalid(
                     path,
-                    $"{field} must declare either one compute entry point or one vertex/pixel pair.");
+                    $"{field}.Shaders must contain either one compute entry or one vertex/pixel pair.");
             }
 
-            AddRequired(result, operation.Shader?.ShaderGuid, path, $"{field}.Shader");
+            AssetGuid? operationShader = null;
+            for (int shaderIndex = 0; shaderIndex < shaders.Count; shaderIndex++)
+            {
+                AssetGuid shader = ShaderRef.Require(
+                    shaders[shaderIndex],
+                    $"Cluster render asset '{path}'",
+                    $"{field}.Shaders[{shaderIndex}]");
+                if (operationShader.HasValue && operationShader.Value != shader)
+                {
+                    throw Invalid(
+                        path,
+                        $"{field}.Shaders must reference entry points from one shader asset.");
+                }
+                operationShader = shader;
+                if (!result.Contains(shader))
+                    result.Add(shader);
+            }
         }
 
         foreach (ClusterShaderOperationRole role in Enum.GetValues<ClusterShaderOperationRole>())
@@ -48,20 +69,6 @@ public partial class ClusterShaders
 
         result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
         return result;
-    }
-
-    private static void AddRequired(
-        List<AssetGuid> result,
-        string? value,
-        string path,
-        string field)
-    {
-        if (!global::SomeEngine.Assets.AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
-        {
-            throw Invalid(path, $"{field} has invalid Shader GUID '{value}'.");
-        }
-        if (!result.Contains(guid))
-            result.Add(guid);
     }
 
     private static InvalidDataException Invalid(string path, string message)

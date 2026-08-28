@@ -21,7 +21,18 @@ public sealed class MaterialDependencyValidationTests
         {
             AssetGuid = materialGuid.ToFlatString(),
             Name = "late invalid",
-            Passes = [new PassEntry { ShaderGuid = shaderGuid.ToFlatString() }],
+            Passes =
+            [
+                new PassEntry
+                {
+                    Shader = new ShaderRef
+                    {
+                        AssetGuid = shaderGuid.ToFlatString(),
+                        EntryPoint = "main",
+                        Stage = ShaderStage.Compute,
+                    },
+                },
+            ],
             Textures =
             [
                 new TextureBinding { Name = "valid", TextureGuid = textureGuid.ToFlatString() },

@@ -37,7 +37,18 @@ public sealed class AssetWriterAcceptanceTests
         var asset = new Material
         {
             Name = "invalid",
-            Passes = [new PassEntry { ShaderGuid = "not-a-guid" }],
+            Passes =
+            [
+                new PassEntry
+                {
+                    Shader = new ShaderRef
+                    {
+                        AssetGuid = "not-a-guid",
+                        EntryPoint = "main",
+                        Stage = ShaderStage.Compute,
+                    },
+                },
+            ],
             Textures = [],
             Scalars = [],
         };
@@ -45,7 +56,7 @@ public sealed class AssetWriterAcceptanceTests
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
             project.CreateAsset(relativePath, asset));
 
-        Assert.Contains("Passes[0].ShaderGuid", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Passes[0].Shader.AssetGuid", error.Message, StringComparison.Ordinal);
         Assert.Equal(original, File.ReadAllBytes(fullPath));
         Assert.Empty(project.Manifest.Assets);
 

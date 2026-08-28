@@ -533,21 +533,7 @@ public sealed partial class ClusterShaderOperation
 
 
     public ClusterShaderOperationRole Role { get; set; }
-    public ShaderAssetRef? Shader { get; set; }
-    public string? ComputeEntryPoint { get; set; }
-    public string? VertexEntryPoint { get; set; }
-    public string? PixelEntryPoint { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderAssetRef
-{
-    public ShaderAssetRef()
-    {
-    }
-
-
-    public string? ShaderGuid { get; set; }
+    public IList<ShaderRef>? Shaders { get; set; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
@@ -869,8 +855,7 @@ public partial class PassEntry
     }
 
 
-    public string? ShaderGuid { get; set; }
-    public string? EntryPoint { get; set; }
+    public ShaderRef? Shader { get; set; }
     public IList<TagEntry>? Tags { get; set; }
     public IList<ComponentEntry>? Components { get; set; }
 }

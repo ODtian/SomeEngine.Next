@@ -69,7 +69,7 @@ public class GltfSourceImporterTests
             Mesh eyesAsset = await Mesh.ReadAsync(eyesMesh.OutputPath);
             AssetMeta? bodyMeshMeta = AssetMetaFiles.TryLoad(bodyMesh.OutputPath);
 
-            Assert.Equal(LitShaderGuid, maskedAsset.Passes![0].ShaderGuid);
+            Assert.Equal(LitShaderGuid, maskedAsset.Passes![0].Shader?.AssetGuid);
             Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "masked");
             Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "two_sided");
             Assert.DoesNotContain(maskedAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
@@ -85,7 +85,7 @@ public class GltfSourceImporterTests
             Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "AlphaCutoff");
             Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "EmissiveFactor");
 
-            Assert.Equal(UnlitShaderGuid, transparentAsset.Passes![0].ShaderGuid);
+            Assert.Equal(UnlitShaderGuid, transparentAsset.Passes![0].Shader?.AssetGuid);
             Assert.Contains(transparentAsset.Passes[0].Tags!, tag => tag.Name == "translucent");
             Assert.DoesNotContain(transparentAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
 
@@ -225,7 +225,12 @@ public class GltfSourceImporterTests
             [
                 new PassEntry
                 {
-                    ShaderGuid = shaderGuid,
+                    Shader = new ShaderRef
+                    {
+                        AssetGuid = shaderGuid,
+                        EntryPoint = "main",
+                        Stage = ShaderStage.Compute,
+                    },
                     Tags =
                     [
                         new TagEntry { Name = "opaque" },

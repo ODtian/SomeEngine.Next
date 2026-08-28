@@ -49,42 +49,42 @@ public sealed class VirtualShadowMap : IDisposable
         IGraphicsBackend backend,
         Device device,
         AssetLoader assets,
-        AssetHandle<VirtualShadowMapAlgorithm> algorithm,
+        AssetHandle<VirtualShadowMapShaders> shaders,
         VirtualShadowMapSettings settings)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         ArgumentNullException.ThrowIfNull(assets);
-        if (!algorithm.IsValid || algorithm.LoadState != AssetLoadState.Ready)
-            throw new ArgumentException("The virtual-shadow algorithm must be ready.", nameof(algorithm));
+        if (!shaders.IsValid || shaders.LoadState != AssetLoadState.Ready)
+            throw new ArgumentException("The virtual-shadow shader asset must be ready.", nameof(shaders));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         settings.Validate();
         _views = new VirtualShadowView[settings.MaxShadowViews];
         _committedViews = new VirtualShadowView[settings.MaxShadowViews];
 
-        LinkedComputeKernel? markPages = null;
-        LinkedComputeKernel? allocatePages = null;
-        LinkedComputeKernel? clearPages = null;
+        LinkedComputePipeline? markPages = null;
+        LinkedComputePipeline? allocatePages = null;
+        LinkedComputePipeline? clearPages = null;
         Buffer? pageTable = null;
         Buffer? pageAllocator = null;
         Buffer? physicalPageOwners = null;
         Texture? atlas = null;
         try
         {
-            using AssetRead<VirtualShadowMapAlgorithm> read = assets.Read(algorithm);
-            markPages = LinkedComputeKernel.Create(
+            using AssetRead<VirtualShadowMapShaders> read = assets.Read(shaders);
+            markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
                 assets,
                 read.Value.MarkPages,
                 "Virtual shadow receiver page marking");
-            allocatePages = LinkedComputeKernel.Create(
+            allocatePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
                 assets,
                 read.Value.AllocatePages,
                 "Virtual shadow physical-page allocation");
-            clearPages = LinkedComputeKernel.Create(
+            clearPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
                 assets,
@@ -148,9 +148,9 @@ public sealed class VirtualShadowMap : IDisposable
             throw;
         }
 
-        PageMarkKernel = markPages;
-        PageAllocateKernel = allocatePages;
-        PageClearKernel = clearPages;
+        PageMarkPipeline = markPages;
+        PageAllocatePipeline = allocatePages;
+        PageClearPipeline = clearPages;
         _pageTable = pageTable;
         _pageAllocator = pageAllocator;
         _physicalPageOwners = physicalPageOwners;
@@ -175,9 +175,9 @@ public sealed class VirtualShadowMap : IDisposable
     }
 
     public VirtualShadowMapSettings Settings { get; }
-    public LinkedComputeKernel PageMarkKernel { get; }
-    public LinkedComputeKernel PageAllocateKernel { get; }
-    public LinkedComputeKernel PageClearKernel { get; }
+    public LinkedComputePipeline PageMarkPipeline { get; }
+    public LinkedComputePipeline PageAllocatePipeline { get; }
+    public LinkedComputePipeline PageClearPipeline { get; }
     public bool RequiresInitialization => !_initialized;
     public bool RequiresCacheReset => _pendingCacheReset;
     public bool UsesPageGranularTransformInvalidation =>
@@ -504,9 +504,9 @@ public sealed class VirtualShadowMap : IDisposable
         TryDispose(_physicalPageOwners, ref failures);
         TryDispose(_pageAllocator, ref failures);
         TryDispose(_pageTable, ref failures);
-        TryDispose(PageClearKernel, ref failures);
-        TryDispose(PageAllocateKernel, ref failures);
-        TryDispose(PageMarkKernel, ref failures);
+        TryDispose(PageClearPipeline, ref failures);
+        TryDispose(PageAllocatePipeline, ref failures);
+        TryDispose(PageMarkPipeline, ref failures);
         Array.Clear(_pageTableEndpoint);
         Array.Clear(_allocatorEndpoint);
         Array.Clear(_physicalPageOwnersEndpoint);

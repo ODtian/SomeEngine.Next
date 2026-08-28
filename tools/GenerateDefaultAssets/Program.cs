@@ -304,8 +304,7 @@ static AssetGuid GenerateMaterialTemplate(
             [
                 new PassEntry
                 {
-                    ShaderGuid = shadeShaderGuid.ToFlatString(),
-                    EntryPoint = shadeEntryPoint,
+                    Shader = Shader(shadeShaderGuid, shadeEntryPoint, ShaderStage.Compute),
                     Tags = [new TagEntry { Name = "opaque" }],
                 },
             ],
@@ -541,9 +540,17 @@ static void GenerateRuntimeConfiguration(
             Name = "Default Runtime",
             SceneGuid = sceneGuid.ToFlatString(),
             ClusterRendererGuid = clusterRendererGuid.ToFlatString(),
-            UiShaderGuid = ResolveRequired(
-                project,
-                "assets/Shaders/imgui.slang").ToFlatString(),
+            UiShaders =
+            [
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/imgui.slang"),
+                    "VSMain",
+                    ShaderStage.Vertex),
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/imgui.slang"),
+                    "PSMain",
+                    ShaderStage.Pixel),
+            ],
             WindowWidth = 1280,
             WindowHeight = 720,
         });
@@ -552,10 +559,12 @@ static void GenerateRuntimeConfiguration(
 
 static SceneVector3 Vector(float x, float y, float z) => new() { X = x, Y = y, Z = z };
 
-static ShaderAssetRef ShaderRef(AssetGuid shaderGuid)
+static ShaderRef Shader(AssetGuid shaderGuid, string entryPoint, ShaderStage stage)
     => new()
     {
-        ShaderGuid = shaderGuid.ToFlatString(),
+        AssetGuid = shaderGuid.ToFlatString(),
+        EntryPoint = entryPoint,
+        Stage = stage,
     };
 
 static ClusterShaderOperation ComputeOperation(
@@ -565,8 +574,7 @@ static ClusterShaderOperation ComputeOperation(
     => new()
     {
         Role = role,
-        Shader = ShaderRef(shaderGuid),
-        ComputeEntryPoint = entryPoint,
+        Shaders = [Shader(shaderGuid, entryPoint, ShaderStage.Compute)],
     };
 
 static ClusterShaderOperation RasterOperation(
@@ -577,9 +585,11 @@ static ClusterShaderOperation RasterOperation(
     => new()
     {
         Role = role,
-        Shader = ShaderRef(shaderGuid),
-        VertexEntryPoint = vertexEntryPoint,
-        PixelEntryPoint = pixelEntryPoint,
+        Shaders =
+        [
+            Shader(shaderGuid, vertexEntryPoint, ShaderStage.Vertex),
+            Shader(shaderGuid, pixelEntryPoint, ShaderStage.Pixel),
+        ],
     };
 
 static AssetGuid ResolveRequired(AssetProject project, string sourcePath) =>

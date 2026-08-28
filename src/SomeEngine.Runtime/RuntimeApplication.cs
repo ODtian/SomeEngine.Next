@@ -47,10 +47,14 @@ internal static class RuntimeApplication
         using (AssetRead<RuntimeConfiguration> read = assets.Read(configurationHandle))
         {
             RuntimeConfiguration value = read.Value;
+            (AssetGuid uiShader, string uiVertexEntry, string uiPixelEntry) =
+                ParseUiShaders(value.UiShaders);
             boot = new BootConfiguration(
                 ParseGuid(value.SceneGuid, nameof(value.SceneGuid)),
                 ParseGuid(value.ClusterRendererGuid, nameof(value.ClusterRendererGuid)),
-                ParseGuid(value.UiShaderGuid, nameof(value.UiShaderGuid)),
+                uiShader,
+                uiVertexEntry,
+                uiPixelEntry,
                 checked((int)value.WindowWidth),
                 checked((int)value.WindowHeight),
                 string.IsNullOrWhiteSpace(value.Name) ? "SomeEngine" : value.Name);
@@ -348,6 +352,8 @@ internal static class RuntimeApplication
                 window,
                 assets,
                 uiShaderHandle,
+                boot.UiVertexEntry,
+                boot.UiPixelEntry,
                 PresentationFormat);
             Console.WriteLine(
                 $"Runtime configuration '{boot.Title}' loaded from {contentRootLabel(FindContentRoot())}; " +
@@ -869,12 +875,43 @@ internal static class RuntimeApplication
         return guid;
     }
 
+    private static (AssetGuid Shader, string VertexEntry, string PixelEntry) ParseUiShaders(
+        IList<ShaderRef>? shaders)
+    {
+        if (shaders is not { Count: 2 })
+            throw new InvalidDataException("Runtime UI requires one vertex and one pixel shader entry.");
+
+        ShaderRef? vertex = null;
+        ShaderRef? pixel = null;
+        foreach (ShaderRef shader in shaders)
+        {
+            if (shader is null)
+                throw new InvalidDataException("Runtime UI contains a null shader entry.");
+            if (shader.Stage == ShaderStage.Vertex && vertex is null)
+                vertex = shader;
+            else if (shader.Stage == ShaderStage.Pixel && pixel is null)
+                pixel = shader;
+            else
+                throw new InvalidDataException("Runtime UI requires one vertex and one pixel shader entry.");
+        }
+
+        AssetGuid vertexGuid = ParseGuid(vertex!.AssetGuid, "UiShaders.Vertex.AssetGuid");
+        AssetGuid pixelGuid = ParseGuid(pixel!.AssetGuid, "UiShaders.Pixel.AssetGuid");
+        if (vertexGuid != pixelGuid)
+            throw new InvalidDataException("Runtime UI shader entries must use one shader asset.");
+        if (string.IsNullOrWhiteSpace(vertex.EntryPoint) || string.IsNullOrWhiteSpace(pixel.EntryPoint))
+            throw new InvalidDataException("Runtime UI shader entry points are missing.");
+        return (vertexGuid, vertex.EntryPoint, pixel.EntryPoint);
+    }
+
     private static string contentRootLabel(string value) => Path.GetFullPath(value);
 
     private readonly record struct BootConfiguration(
         AssetGuid Scene,
         AssetGuid Renderer,
         AssetGuid UiShader,
+        string UiVertexEntry,
+        string UiPixelEntry,
         int Width,
         int Height,
         string Title);

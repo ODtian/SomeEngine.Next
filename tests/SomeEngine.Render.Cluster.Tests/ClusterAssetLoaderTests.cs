@@ -48,7 +48,8 @@ public sealed class ClusterAssetLoaderTests
         {
             ClusterShaderOperation operation = shaders.Operations![index];
             Assert.Equal(roles[index], operation.Role);
-            Assert.True(AssetGuid.TryParse(operation.Shader?.ShaderGuid, out AssetGuid shaderGuid));
+            ShaderRef shader = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders)[0];
+            Assert.True(AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid));
             Assert.True(loader.TryFind(shaderGuid, out AssetHandle<Shader> handle));
             using AssetRead<Shader> read = loader.Read(handle);
             Assert.Equal($"cluster-{index}", read.Value.Name);
@@ -65,7 +66,7 @@ public sealed class ClusterAssetLoaderTests
         AssetGuid valid = AssetGuid.New();
         ClusterShaders root = CreateClusterRoot(Enumerable.Repeat(valid, 24).ToArray());
         root.AssetGuid = clusterGuid.ToFlatString();
-        root.Operations![^1].Shader!.ShaderGuid = "not-a-guid";
+        root.Operations![^1].Shaders![0].AssetGuid = "not-a-guid";
         AssetWriter.Write(BinaryDocumentWriter.Create(root), fullPath);
 
         var manifest = new AssetManifest();
@@ -135,19 +136,39 @@ public sealed class ClusterAssetLoaderTests
         var result = new ClusterShaderOperation
         {
             Role = role,
-            Shader = new ShaderAssetRef { ShaderGuid = guid.ToFlatString() },
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.SoftwareDepthMerge
             or ClusterShaderOperationRole.TemporalResolve
             or ClusterShaderOperationRole.ToneMapAndPresent)
         {
-            result.VertexEntryPoint = "vertex";
-            result.PixelEntryPoint = "pixel";
+            result.Shaders =
+            [
+                new ShaderRef
+                {
+                    AssetGuid = guid.ToFlatString(),
+                    EntryPoint = "vertex",
+                    Stage = ShaderStage.Vertex,
+                },
+                new ShaderRef
+                {
+                    AssetGuid = guid.ToFlatString(),
+                    EntryPoint = "pixel",
+                    Stage = ShaderStage.Pixel,
+                },
+            ];
         }
         else
         {
-            result.ComputeEntryPoint = "compute";
+            result.Shaders =
+            [
+                new ShaderRef
+                {
+                    AssetGuid = guid.ToFlatString(),
+                    EntryPoint = "compute",
+                    Stage = ShaderStage.Compute,
+                },
+            ];
         }
         return result;
     }
