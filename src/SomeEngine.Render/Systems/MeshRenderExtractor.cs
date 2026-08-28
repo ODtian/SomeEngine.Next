@@ -5,6 +5,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;
+using SomeEngine.Render.Instances;
 using SomeEngine.Render.Materials;
 
 namespace SomeEngine.Render.Systems;
@@ -13,79 +14,106 @@ namespace SomeEngine.Render.Systems;
 internal sealed class MeshRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<MeshSnapshot> _snapshots = [];
+    private readonly List<InstancedSnapshot> _instancedSnapshots = [];
     private readonly List<AssetHandle<Material>> _materials = [];
-    private readonly HashSet<Entity> _sources = [];
+    private readonly HashSet<Entity> _meshSources = [];
+    private readonly HashSet<Entity> _instancedSources = [];
 
     public void DeclareReads(RenderExtractionQuery query)
     {
         query.ReadOptional<WorldTransform>();
         query.ReadOptional<MeshInstance>();
+        query.ReadOptional<InstancedMesh>();
         query.ReadOptionalBuffer<MeshMaterialBinding>();
     }
 
     public void Reset()
     {
         _snapshots.Clear();
+        _instancedSnapshots.Clear();
         _materials.Clear();
-        _sources.Clear();
+        _meshSources.Clear();
+        _instancedSources.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
     {
-        if (!chunk.TryRead<WorldTransform>(out ReadOnlySpan<WorldTransform> transforms) ||
-            !chunk.TryRead<MeshInstance>(out ReadOnlySpan<MeshInstance> meshes))
-        {
+        if (!chunk.TryRead<WorldTransform>(out ReadOnlySpan<WorldTransform> transforms))
             return;
-        }
+
+        bool hasMeshes = chunk.TryRead<MeshInstance>(out ReadOnlySpan<MeshInstance> meshes);
+        bool hasInstancedMeshes =
+            chunk.TryRead<InstancedMesh>(out ReadOnlySpan<InstancedMesh> instancedMeshes);
+        if (!hasMeshes && !hasInstancedMeshes)
+            return;
 
         ReadOnlySpan<Entity> entities = chunk.Entities;
         bool hasMaterialBuffer = chunk.HasBuffer<MeshMaterialBinding>();
         for (int row = 0; row < entities.Length; row++)
         {
             Entity source = entities[row];
-            int materialOffset = _materials.Count;
-            int materialCount = 0;
-            if (hasMaterialBuffer)
+            if (hasMeshes)
             {
-                ReadOnlySpan<MeshMaterialBinding> bindings =
-                    chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
-                materialCount = bindings.Length;
-                for (int index = 0; index < bindings.Length; index++)
-                    _materials.Add(bindings[index].Material);
+                int materialOffset = _materials.Count;
+                int materialCount = 0;
+                if (hasMaterialBuffer)
+                {
+                    ReadOnlySpan<MeshMaterialBinding> bindings =
+                        chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
+                    materialCount = bindings.Length;
+                    for (int index = 0; index < bindings.Length; index++)
+                        _materials.Add(bindings[index].Material);
+                }
+
+                _snapshots.Add(new MeshSnapshot(
+                    source,
+                    new RenderTransform(transforms[row].Qvvs),
+                    meshes[row].Mesh,
+                    meshes[row].BoundsExpansion,
+                    hasMaterialBuffer,
+                    materialOffset,
+                    materialCount,
+                    MeshChanged: true,
+                    MaterialsChanged: true));
+                _meshSources.Add(source);
             }
 
-            _snapshots.Add(new MeshSnapshot(
-                source,
-                new RenderTransform(transforms[row].Qvvs),
-                meshes[row].Mesh,
-                meshes[row].BoundsExpansion,
-                hasMaterialBuffer,
-                materialOffset,
-                materialCount,
-                MeshChanged: true,
-                MaterialsChanged: true));
-            _sources.Add(source);
+            if (hasInstancedMeshes)
+            {
+                _instancedSnapshots.Add(new InstancedSnapshot(
+                    source,
+                    new RenderTransform(transforms[row].Qvvs),
+                    instancedMeshes[row].Resource,
+                    Changed: true));
+                _instancedSources.Add(source);
+            }
         }
     }
 
     internal bool CollectChanges(QueryChunkView chunk)
     {
-        if (!chunk.Has<WorldTransform>() ||
-            !chunk.TryRead<MeshInstance>(out ReadOnlySpan<MeshInstance> meshes))
-        {
+        if (!chunk.Has<WorldTransform>())
             return false;
-        }
 
-        bool meshChunkChanged =
+        bool hasMeshes = chunk.TryRead<MeshInstance>(out ReadOnlySpan<MeshInstance> meshes);
+        bool hasInstancedMeshes =
+            chunk.TryRead<InstancedMesh>(out ReadOnlySpan<InstancedMesh> instancedMeshes);
+        if (!hasMeshes && !hasInstancedMeshes)
+            return false;
+
+        bool meshChunkChanged = hasMeshes &&
             chunk.HasChangedSinceLastSystemVersion<MeshInstance>();
         bool hasMaterialBuffer = chunk.HasBuffer<MeshMaterialBinding>();
         bool materialChunkChanged =
             hasMaterialBuffer &&
             chunk.HasBufferChangedSinceLastSystemVersion<MeshMaterialBinding>();
-        if (!meshChunkChanged && !materialChunkChanged)
+        bool instancedChunkChanged = hasInstancedMeshes &&
+            chunk.HasChangedSinceLastSystemVersion<InstancedMesh>();
+        if (!meshChunkChanged && !materialChunkChanged && !instancedChunkChanged)
             return false;
 
         int firstSnapshot = _snapshots.Count;
+        int firstInstancedSnapshot = _instancedSnapshots.Count;
         ReadOnlySpan<Entity> entities = chunk.Entities;
         for (int row = 0; row < entities.Length; row++)
         {
@@ -95,34 +123,46 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
             bool materialsChanged =
                 materialChunkChanged &&
                 chunk.RowBufferChangedSinceLastSystemVersion<MeshMaterialBinding>(row);
-            if (!meshChanged && !materialsChanged)
-                continue;
-
-            int materialOffset = _materials.Count;
-            int materialCount = 0;
-            if (materialsChanged)
+            if (meshChanged || materialsChanged)
             {
-                ReadOnlySpan<MeshMaterialBinding> bindings =
-                    chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
-                materialCount = bindings.Length;
-                for (int index = 0; index < bindings.Length; index++)
-                    _materials.Add(bindings[index].Material);
+                int materialOffset = _materials.Count;
+                int materialCount = 0;
+                if (materialsChanged)
+                {
+                    ReadOnlySpan<MeshMaterialBinding> bindings =
+                        chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
+                    materialCount = bindings.Length;
+                    for (int index = 0; index < bindings.Length; index++)
+                        _materials.Add(bindings[index].Material);
+                }
+
+                MeshInstance mesh = meshes[row];
+                _snapshots.Add(new MeshSnapshot(
+                    entities[row],
+                    default,
+                    mesh.Mesh,
+                    mesh.BoundsExpansion,
+                    hasMaterialBuffer,
+                    materialOffset,
+                    materialCount,
+                    meshChanged,
+                    materialsChanged));
             }
 
-            MeshInstance mesh = meshes[row];
-            _snapshots.Add(new MeshSnapshot(
-                entities[row],
-                default,
-                mesh.Mesh,
-                mesh.BoundsExpansion,
-                hasMaterialBuffer,
-                materialOffset,
-                materialCount,
-                meshChanged,
-                materialsChanged));
+            bool instancedChanged = instancedChunkChanged &&
+                chunk.RowChangedSinceLastSystemVersion<InstancedMesh>(row);
+            if (instancedChanged)
+            {
+                _instancedSnapshots.Add(new InstancedSnapshot(
+                    entities[row],
+                    default,
+                    instancedMeshes[row].Resource,
+                    Changed: true));
+            }
         }
 
-        return _snapshots.Count != firstSnapshot;
+        return _snapshots.Count != firstSnapshot ||
+            _instancedSnapshots.Count != firstInstancedSnapshot;
     }
 
     public void Apply(RenderExtractionContext context)
@@ -133,23 +173,40 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
             Entity entity = context.RetainMirror(snapshot.Source);
             context.UpsertTransform(entity, snapshot.Transform);
             context.Upsert(entity, new RenderInstance());
-            context.Upsert(entity, new RenderMesh(snapshot.Mesh, snapshot.BoundsExpansion));
+            context.Upsert(entity, new RenderMesh(
+                snapshot.Mesh,
+                snapshot.BoundsExpansion));
             SyncMaterials(context.World, snapshot, entity, allowStructuralChanges: true);
+        }
+
+        for (int index = 0; index < _instancedSnapshots.Count; index++)
+        {
+            InstancedSnapshot snapshot = _instancedSnapshots[index];
+            Entity entity = context.RetainMirror(snapshot.Source);
+            context.UpsertTransform(entity, snapshot.Transform);
+            context.Upsert(entity, new RenderInstancedMesh(snapshot.Resource));
         }
 
         IReadOnlyList<RenderMirror> mirrors = context.Mirrors;
         for (int index = 0; index < mirrors.Count; index++)
         {
             RenderMirror mirror = mirrors[index];
-            if (_sources.Contains(mirror.Source))
-                continue;
-
-            context.RemoveIfExists<RenderTransform>(mirror.RenderEntity);
-            context.RemoveIfExists<RenderPreviousTransform>(mirror.RenderEntity);
-            context.RemoveIfExists<RenderInstance>(mirror.RenderEntity);
-            context.RemoveIfExists<RenderMesh>(mirror.RenderEntity);
-            if (context.World.HasBuffer<RenderMaterialBinding>(mirror.RenderEntity))
-                context.World.RemoveBuffer<RenderMaterialBinding>(mirror.RenderEntity);
+            bool retainedMesh = _meshSources.Contains(mirror.Source);
+            bool retainedInstanced = _instancedSources.Contains(mirror.Source);
+            if (!retainedMesh)
+            {
+                context.RemoveIfExists<RenderInstance>(mirror.RenderEntity);
+                context.RemoveIfExists<RenderMesh>(mirror.RenderEntity);
+                if (context.World.HasBuffer<RenderMaterialBinding>(mirror.RenderEntity))
+                    context.World.RemoveBuffer<RenderMaterialBinding>(mirror.RenderEntity);
+            }
+            if (!retainedInstanced)
+                context.RemoveIfExists<RenderInstancedMesh>(mirror.RenderEntity);
+            if (!retainedMesh && !retainedInstanced)
+            {
+                context.RemoveIfExists<RenderTransform>(mirror.RenderEntity);
+                context.RemoveIfExists<RenderPreviousTransform>(mirror.RenderEntity);
+            }
         }
     }
 
@@ -163,7 +220,9 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
             {
                 context.UpdateExisting(
                     entity,
-                    new RenderMesh(snapshot.Mesh, snapshot.BoundsExpansion));
+                    new RenderMesh(
+                        snapshot.Mesh,
+                        snapshot.BoundsExpansion));
             }
             if (snapshot.MaterialsChanged)
             {
@@ -173,6 +232,14 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
                     entity,
                     allowStructuralChanges: false);
             }
+        }
+
+
+        for (int index = 0; index < _instancedSnapshots.Count; index++)
+        {
+            InstancedSnapshot snapshot = _instancedSnapshots[index];
+            Entity entity = context.RequireMirror(snapshot.Source);
+            context.UpdateExisting(entity, new RenderInstancedMesh(snapshot.Resource));
         }
     }
 
@@ -191,6 +258,14 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
                     $"Render mirror {entity} has no material buffer for changed source " +
                     $"{snapshot.Source}.");
             }
+        }
+
+
+        for (int index = 0; index < _instancedSnapshots.Count; index++)
+        {
+            InstancedSnapshot snapshot = _instancedSnapshots[index];
+            Entity entity = context.RequireMirror(snapshot.Source);
+            context.RequireExisting<RenderInstancedMesh>(entity);
         }
     }
 
@@ -277,6 +352,12 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
         int MaterialCount,
         bool MeshChanged,
         bool MaterialsChanged);
+
+    private readonly record struct InstancedSnapshot(
+        Entity Source,
+        RenderTransform Transform,
+        RenderMeshInstanceHandle Resource,
+        bool Changed);
 
     private readonly record struct MaterialSlice(
         List<AssetHandle<Material>> Values,

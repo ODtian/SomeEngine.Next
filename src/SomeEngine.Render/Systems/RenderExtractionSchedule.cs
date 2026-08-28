@@ -53,6 +53,25 @@ public sealed class RenderExtractionSystems : IDisposable
         }
     }
 
+    /// <summary>
+    /// Resolves the persistent RenderWorld mirror for one authoritative main-world entity after
+    /// extraction. This is intended for render-facing resources that keep a small prototype or
+    /// template entity while storing the actual instance population outside ECS.
+    /// </summary>
+    public Entity RequireMirror(Entity source)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_extractionActive)
+            {
+                throw new InvalidOperationException(
+                    "Render mirrors cannot be resolved while extraction is active.");
+            }
+            return _context.RequireMirror(source);
+        }
+    }
+
     /// <summary>Adds a feature-owned extractor before the first source snapshot is compiled.</summary>
     public void Add(IRenderExtractionSystem system)
     {
@@ -238,9 +257,10 @@ public sealed class RenderExtractionSystems : IDisposable
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
-            bool hasMesh = chunk.Has<MeshInstance>();
+            bool hasSpatialMesh =
+                chunk.Has<MeshInstance>() || chunk.Has<InstancedMesh>();
             bool hasTransform = chunk.Has<WorldTransform>();
-            if (hasMesh && hasTransform &&
+            if (hasSpatialMesh && hasTransform &&
                 chunk.HasChangedSinceLastSystemVersion<WorldTransform>())
             {
                 _context.CollectTransformChanges(chunk);
@@ -551,7 +571,7 @@ public sealed class RenderExtractionContext : IDisposable
         if (!_transformChangesActive)
             throw new InvalidOperationException("Transform extraction is not active.");
         if (!chunk.TryRead<WorldTransform>(out ReadOnlySpan<WorldTransform> transforms) ||
-            !chunk.Has<MeshInstance>())
+            (!chunk.Has<MeshInstance>() && !chunk.Has<InstancedMesh>()))
         {
             return;
         }
