@@ -34,6 +34,12 @@ internal sealed partial class Scheduler
         internal List<ScopeOwnedResource> ScopeOwnedResources { get; } = [];
         internal List<ScopeOwnedResource> ScopeOwnedResourceDispatchBuffer { get; } = [];
 
+        internal void RecordFirstFault(ExceptionDispatchInfo fault)
+        {
+            ArgumentNullException.ThrowIfNull(fault);
+            Interlocked.CompareExchange(ref Fault, fault, null);
+        }
+
         internal void Reset(int pendingWork, int pendingDependencies, bool scheduleDependenciesSealed)
         {
             Version++;

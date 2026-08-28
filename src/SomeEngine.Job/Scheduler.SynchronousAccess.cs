@@ -51,7 +51,7 @@ internal sealed partial class Scheduler
 
     internal void ReleaseSynchronousAccess(JobHandle handle)
     {
-        if (!_execution.CompleteItem(handle, itemFault: null, out bool workFinished) || !workFinished)
+        if (!_execution.CompleteItems(handle, 1, itemFault: null, out bool workFinished) || !workFinished)
             return;
 
         TryReleaseWorkDependencies(handle);

@@ -16,6 +16,13 @@ public readonly struct JobRuntimeStats
         long managedPayloadWarnings,
         long resourceConflictChecks,
         long resourceConflictCheckSteps,
+        long readyTicketsPublished,
+        long readyTicketsExecuted,
+        long workerSpinWaits,
+        long workerParks,
+        long workerWakeups,
+        long readyLatencyAverageNanoseconds,
+        long readyLatencyMaxNanoseconds,
         int queueHighWater,
         int completionStateHighWater,
         int resourceStateHighWater)
@@ -33,6 +40,13 @@ public readonly struct JobRuntimeStats
         ManagedPayloadWarnings = managedPayloadWarnings;
         ResourceConflictChecks = resourceConflictChecks;
         ResourceConflictCheckSteps = resourceConflictCheckSteps;
+        ReadyTicketsPublished = readyTicketsPublished;
+        ReadyTicketsExecuted = readyTicketsExecuted;
+        WorkerSpinWaits = workerSpinWaits;
+        WorkerParks = workerParks;
+        WorkerWakeups = workerWakeups;
+        ReadyLatencyAverageNanoseconds = readyLatencyAverageNanoseconds;
+        ReadyLatencyMaxNanoseconds = readyLatencyMaxNanoseconds;
         QueueHighWater = queueHighWater;
         CompletionStateHighWater = completionStateHighWater;
         ResourceStateHighWater = resourceStateHighWater;
@@ -63,6 +77,20 @@ public readonly struct JobRuntimeStats
     public long ResourceConflictChecks { get; }
 
     public long ResourceConflictCheckSteps { get; }
+
+    public long ReadyTicketsPublished { get; }
+
+    public long ReadyTicketsExecuted { get; }
+
+    public long WorkerSpinWaits { get; }
+
+    public long WorkerParks { get; }
+
+    public long WorkerWakeups { get; }
+
+    public long ReadyLatencyAverageNanoseconds { get; }
+
+    public long ReadyLatencyMaxNanoseconds { get; }
 
     public int QueueHighWater { get; }
 

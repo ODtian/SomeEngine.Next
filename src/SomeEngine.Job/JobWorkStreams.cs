@@ -1,10 +1,13 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
 internal abstract class WorkStream
 {
-    internal abstract bool MakeReady(int slot, int maxDrainers, int priorityIndex);
+    internal abstract int MakeReady(int slot, int maxDrainers, int priorityIndex);
 
     internal abstract int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex);
 
@@ -15,7 +18,31 @@ internal abstract class WorkStream
         int maxItems,
         int priorityIndex,
         int maxDrainers,
+        out int retiredItems,
         out bool hasMoreWork);
+}
+
+internal readonly struct WorkItemExecutionResult
+{
+    internal WorkItemExecutionResult(
+        bool retire,
+        int completedWorkItems,
+        int faultedWorkItems = 0,
+        ExceptionDispatchInfo? fault = null)
+    {
+        Retire = retire;
+        CompletedWorkItems = completedWorkItems;
+        FaultedWorkItems = faultedWorkItems;
+        Fault = fault;
+    }
+
+    internal bool Retire { get; }
+
+    internal int CompletedWorkItems { get; }
+
+    internal int FaultedWorkItems { get; }
+
+    internal ExceptionDispatchInfo? Fault { get; }
 }
 
 internal interface IWorkStreamItem<TSelf>
@@ -23,7 +50,11 @@ internal interface IWorkStreamItem<TSelf>
 {
     static abstract JobHandle GetState(in TSelf item);
 
-    static abstract void Execute(ref TSelf item);
+    static abstract bool AllowBatchDrain { get; }
+
+    static abstract WorkItemExecutionResult Execute(ref TSelf item);
+
+    static abstract int Abandon(ref TSelf item);
 
     static abstract void Release(ref TSelf item);
 }
@@ -45,8 +76,7 @@ internal sealed class WorkStream<TItem> : WorkStream
     private readonly Lock _sync = new();
     private readonly List<Slot> _slots = [default];
     private readonly Stack<int> _freeSlots = new();
-    private readonly Queue<int>[] _readySlots;
-    private readonly int[] _firstReadySlots = new int[JobPriorityOrder.Count];
+    private readonly ConcurrentQueue<TItem>[] _readyItems;
     private readonly int[] _scheduledDrainers = new int[JobPriorityOrder.Count];
     private int _firstFreeSlot;
 
@@ -55,10 +85,10 @@ internal sealed class WorkStream<TItem> : WorkStream
 
     private WorkStream()
     {
-        _readySlots = new Queue<int>[JobPriorityOrder.Count];
-        for (int i = 0; i < _readySlots.Length; i++)
+        _readyItems = new ConcurrentQueue<TItem>[JobPriorityOrder.Count];
+        for (int i = 0; i < _readyItems.Length; i++)
         {
-            _readySlots[i] = new Queue<int>();
+            _readyItems[i] = new ConcurrentQueue<TItem>();
         }
     }
 
@@ -78,24 +108,8 @@ internal sealed class WorkStream<TItem> : WorkStream
 
     internal int PrepareReady(in TItem item, int maxDrainers, int priorityIndex)
     {
-        lock (_sync)
-        {
-            int slotIndex = RentSlotIndex();
-            Slot slot = _slots[slotIndex];
-            slot.InUse = true;
-            slot.Ready = true;
-            slot.Item = item;
-            _slots[slotIndex] = slot;
-            EnqueueReadySlot(slotIndex, priorityIndex);
-
-            if (!CanScheduleAnotherDrainer(maxDrainers, priorityIndex))
-            {
-                return 0;
-            }
-
-            _scheduledDrainers[priorityIndex]++;
-            return 1;
-        }
+        _readyItems[priorityIndex].Enqueue(item);
+        return TryReserveDrainer(maxDrainers, priorityIndex) ? 1 : 0;
     }
 
     internal int PrepareMany<TSource>(Span<int> slots, ref TSource source)
@@ -126,64 +140,40 @@ internal sealed class WorkStream<TItem> : WorkStream
             throw new ArgumentOutOfRangeException(nameof(count));
         }
 
-        lock (_sync)
+        for (int i = 0; i < count; i++)
+            _readyItems[priorityIndex].Enqueue(source.Create(i));
+
+        int drainerCount = 0;
+        while (drainerCount < count && TryReserveDrainer(maxDrainers, priorityIndex))
         {
-            bool useFirstReadySlot = count == 1;
-            for (int i = 0; i < count; i++)
-            {
-                int slotIndex = RentSlotIndex();
-                Slot slot = _slots[slotIndex];
-                slot.InUse = true;
-                slot.Ready = true;
-                slot.Item = source.Create(i);
-                _slots[slotIndex] = slot;
-                if (useFirstReadySlot)
-                {
-                    EnqueueReadySlot(slotIndex, priorityIndex);
-                }
-                else
-                {
-                    _readySlots[priorityIndex].Enqueue(slotIndex);
-                }
-            }
-
-            int drainerCount = 0;
-            while (drainerCount < count && CanScheduleAnotherDrainer(maxDrainers, priorityIndex))
-            {
-                _scheduledDrainers[priorityIndex]++;
-                drainerCount++;
-            }
-
-            return drainerCount;
+            drainerCount++;
         }
+
+        return drainerCount;
     }
 
-    internal override bool MakeReady(int slot, int maxDrainers, int priorityIndex)
+    internal override int MakeReady(int slot, int maxDrainers, int priorityIndex)
     {
+        TItem item;
         lock (_sync)
         {
             if (slot <= 0 || slot >= _slots.Count)
             {
-                return false;
+                return 0;
             }
 
             Slot entry = _slots[slot];
-            if (!entry.InUse || entry.Ready)
+            if (!entry.InUse)
             {
-                return false;
+                return 0;
             }
 
-            entry.Ready = true;
-            _slots[slot] = entry;
-            EnqueueReadySlot(slot, priorityIndex);
-            if (!CanScheduleAnotherDrainer(maxDrainers, priorityIndex))
-            {
-                return false;
-            }
-
-            _scheduledDrainers[priorityIndex]++;
-            return true;
+            item = entry.Item;
+            ReleaseSlot(slot, ref entry);
         }
+
+        _readyItems[priorityIndex].Enqueue(item);
+        return TryReserveDrainer(maxDrainers, priorityIndex) ? 1 : 0;
     }
 
     internal override int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex)
@@ -196,7 +186,6 @@ internal sealed class WorkStream<TItem> : WorkStream
         lock (_sync)
         {
             int readyCount = 0;
-            bool useFirstReadySlot = count == 1;
             for (int i = 0; i < count; i++)
             {
                 int slot = slots[i];
@@ -206,30 +195,20 @@ internal sealed class WorkStream<TItem> : WorkStream
                 }
 
                 Slot entry = _slots[slot];
-                if (!entry.InUse || entry.Ready)
+                if (!entry.InUse)
                 {
                     continue;
                 }
 
-                entry.Ready = true;
-                _slots[slot] = entry;
-                if (useFirstReadySlot)
-                {
-                    EnqueueReadySlot(slot, priorityIndex);
-                }
-                else
-                {
-                    _readySlots[priorityIndex].Enqueue(slot);
-                }
+                TItem item = entry.Item;
+                ReleaseSlot(slot, ref entry);
+                _readyItems[priorityIndex].Enqueue(item);
                 readyCount++;
             }
 
             int drainerCount = 0;
-            while (drainerCount < readyCount && CanScheduleAnotherDrainer(maxDrainers, priorityIndex))
-            {
-                _scheduledDrainers[priorityIndex]++;
+            while (drainerCount < readyCount && TryReserveDrainer(maxDrainers, priorityIndex))
                 drainerCount++;
-            }
 
             return drainerCount;
         }
@@ -260,35 +239,52 @@ internal sealed class WorkStream<TItem> : WorkStream
         int maxItems,
         int priorityIndex,
         int maxDrainers,
+        out int retiredItems,
         out bool hasMoreWork)
     {
         BeginDrain(priorityIndex);
-        int claimed = Drain(scheduler, maxItems, priorityIndex);
+        int claimed = Drain(scheduler, maxItems, priorityIndex, out retiredItems);
         hasMoreWork = FinishDrain(maxDrainers, priorityIndex);
         return claimed;
     }
 
-    private int Drain(Scheduler scheduler, int maxItems, int priorityIndex)
+    private int Drain(Scheduler scheduler, int maxItems, int priorityIndex, out int retiredItems)
     {
         int claimed = 0;
+        retiredItems = 0;
         int limit = maxItems <= 0 ? DrainQuantum : maxItems;
         if (!TryTakeReady(out TItem item, out bool hasMoreReady, priorityIndex))
         {
             return 0;
         }
 
-        claimed++;
-        scheduler.ExecuteStreamItem(ref item);
-        if (hasMoreReady && claimed < limit)
+        WorkItemExecutionResult result = scheduler.ExecuteStreamItem(ref item);
+        claimed += result.CompletedWorkItems;
+        if (result.Retire)
+            retiredItems++;
+        else
+            RequeueReady(item, priorityIndex);
+
+        if (TItem.AllowBatchDrain && hasMoreReady && retiredItems < limit)
         {
-            claimed += DrainReadyBatch(scheduler, limit - claimed, priorityIndex);
+            claimed += DrainReadyBatch(
+                scheduler,
+                limit - retiredItems,
+                priorityIndex,
+                out int batchRetiredItems);
+            retiredItems += batchRetiredItems;
         }
 
         return claimed;
     }
 
-    private int DrainReadyBatch(Scheduler scheduler, int limit, int priorityIndex)
+    private int DrainReadyBatch(
+        Scheduler scheduler,
+        int limit,
+        int priorityIndex,
+        out int retiredItems)
     {
+        retiredItems = 0;
         TItem[]? items = s_drainBuffer;
         if (items is null || items.Length < limit)
         {
@@ -296,90 +292,63 @@ internal sealed class WorkStream<TItem> : WorkStream
             s_drainBuffer = items;
         }
 
-        int claimed = TakeReadyBatch(items, limit, priorityIndex);
+        int itemCount = TakeReadyBatch(items, limit, priorityIndex);
+        int completedWorkItems = 0;
         try
         {
-            for (int i = 0; i < claimed; i++)
+            for (int i = 0; i < itemCount; i++)
             {
-                scheduler.ExecuteStreamItem(ref items[i]);
+                WorkItemExecutionResult result = scheduler.ExecuteStreamItem(ref items[i]);
+                completedWorkItems += result.CompletedWorkItems;
+                if (result.Retire)
+                    retiredItems++;
+                else
+                    RequeueReady(items[i], priorityIndex);
             }
         }
         finally
         {
             if (ContainsReferences)
             {
-                Array.Clear(items, 0, claimed);
+                Array.Clear(items, 0, itemCount);
             }
         }
 
-        return claimed;
+        return completedWorkItems;
+    }
+
+    private void RequeueReady(in TItem item, int priorityIndex)
+    {
+        _readyItems[priorityIndex].Enqueue(item);
     }
 
     private void BeginDrain(int priorityIndex)
     {
-        lock (_sync)
-        {
-            if (_scheduledDrainers[priorityIndex] > 0)
-            {
-                _scheduledDrainers[priorityIndex]--;
-            }
-        }
+        int remaining = Interlocked.Decrement(ref _scheduledDrainers[priorityIndex]);
+        Debug.Assert(remaining >= 0, "Scheduled work-stream drainer count underflowed.");
+        if (remaining < 0)
+            Interlocked.Exchange(ref _scheduledDrainers[priorityIndex], 0);
     }
 
     private bool FinishDrain(int maxDrainers, int priorityIndex)
     {
-        lock (_sync)
-        {
-            if (CanScheduleAnotherDrainer(maxDrainers, priorityIndex))
-            {
-                _scheduledDrainers[priorityIndex]++;
-                return true;
-            }
-
-            return false;
-        }
+        return TryReserveDrainer(maxDrainers, priorityIndex);
     }
 
-    private bool CanScheduleAnotherDrainer(int maxDrainers, int priorityIndex)
+    private bool TryReserveDrainer(int maxDrainers, int priorityIndex)
     {
         int limit = Math.Max(1, maxDrainers);
-        return HasReadySlots(priorityIndex) && _scheduledDrainers[priorityIndex] < limit;
-    }
-
-    private bool HasReadySlots(int priorityIndex)
-    {
-        return _firstReadySlots[priorityIndex] != 0 || _readySlots[priorityIndex].Count != 0;
-    }
-
-    private void EnqueueReadySlot(int slot, int priorityIndex)
-    {
-        if (_firstReadySlots[priorityIndex] == 0)
+        while (!_readyItems[priorityIndex].IsEmpty)
         {
-            _firstReadySlots[priorityIndex] = slot;
-            return;
+            int current = Volatile.Read(ref _scheduledDrainers[priorityIndex]);
+            if (current >= limit)
+                return false;
+            if (Interlocked.CompareExchange(
+                    ref _scheduledDrainers[priorityIndex],
+                    current + 1,
+                    current) == current)
+                return true;
         }
-
-        _readySlots[priorityIndex].Enqueue(slot);
-    }
-
-    private bool TryDequeueReadySlot(out int slot, int priorityIndex)
-    {
-        if (_firstReadySlots[priorityIndex] != 0)
-        {
-            slot = _firstReadySlots[priorityIndex];
-            _firstReadySlots[priorityIndex] = _readySlots[priorityIndex].Count != 0
-                ? _readySlots[priorityIndex].Dequeue()
-                : 0;
-            return true;
-        }
-
-        if (_readySlots[priorityIndex].Count != 0)
-        {
-            slot = _readySlots[priorityIndex].Dequeue();
-            return true;
-        }
-
-        slot = 0;
         return false;
     }
 
@@ -399,105 +368,22 @@ internal sealed class WorkStream<TItem> : WorkStream
 
     private bool TryTakeReady(out TItem item, out bool hasMoreReady, int priorityIndex)
     {
-        lock (_sync)
-        {
-            if (_firstReadySlots[priorityIndex] == 0)
-            {
-                while (_readySlots[priorityIndex].Count > 0)
-                {
-                    int slotIndex = _readySlots[priorityIndex].Dequeue();
-                    if (slotIndex <= 0 || slotIndex >= _slots.Count)
-                    {
-                        continue;
-                    }
-
-                    Slot slot = _slots[slotIndex];
-                    if (!slot.InUse || !slot.Ready)
-                    {
-                        continue;
-                    }
-
-                    item = slot.Item;
-                    ReleaseSlot(slotIndex, ref slot);
-                    hasMoreReady = _readySlots[priorityIndex].Count > 0;
-                    return true;
-                }
-            }
-
-            while (TryDequeueReadySlot(out int slotIndex, priorityIndex))
-            {
-                if (slotIndex <= 0 || slotIndex >= _slots.Count)
-                {
-                    continue;
-                }
-
-                Slot slot = _slots[slotIndex];
-                if (!slot.InUse || !slot.Ready)
-                {
-                    continue;
-                }
-
-                item = slot.Item;
-                ReleaseSlot(slotIndex, ref slot);
-                hasMoreReady = HasReadySlots(priorityIndex);
-                return true;
-            }
-        }
-
-        item = default;
-        hasMoreReady = false;
-        return false;
+        bool found = _readyItems[priorityIndex].TryDequeue(out TItem dequeued);
+        item = dequeued;
+        hasMoreReady = !_readyItems[priorityIndex].IsEmpty;
+        return found;
     }
 
     private int TakeReadyBatch(TItem[] items, int limit, int priorityIndex)
     {
         int claimed = 0;
-        lock (_sync)
+        while (claimed < limit &&
+               _readyItems[priorityIndex].TryDequeue(out TItem item))
         {
-            if (_firstReadySlots[priorityIndex] == 0)
-                return TakeQueuedReadySlots(items, limit, priorityIndex);
-
-            while (claimed < limit && TryDequeueReadySlot(out var slotIndex, priorityIndex))
-            {
-                if (TryClaimReadySlot(slotIndex, out var item))
-                    items[claimed++] = item;
-            }
+            items[claimed++] = item;
         }
 
         return claimed;
-    }
-
-    private int TakeQueuedReadySlots(TItem[] items, int limit, int priorityIndex)
-    {
-        int claimed = 0;
-        while (claimed < limit && _readySlots[priorityIndex].Count > 0)
-        {
-            int slotIndex = _readySlots[priorityIndex].Dequeue();
-            if (TryClaimReadySlot(slotIndex, out var item))
-                items[claimed++] = item;
-        }
-
-        return claimed;
-    }
-
-    private bool TryClaimReadySlot(int slotIndex, out TItem item)
-    {
-        if (slotIndex <= 0 || slotIndex >= _slots.Count)
-        {
-            item = default!;
-            return false;
-        }
-
-        Slot slot = _slots[slotIndex];
-        if (!slot.InUse || !slot.Ready)
-        {
-            item = default!;
-            return false;
-        }
-
-        item = slot.Item;
-        ReleaseSlot(slotIndex, ref slot);
-        return true;
     }
 
     private void ReleaseSlot(int slotIndex, ref Slot slot)
@@ -545,9 +431,17 @@ internal struct ScheduledJob<T> : IWorkStreamItem<ScheduledJob<T>>
         return item._state;
     }
 
-    public static void Execute(ref ScheduledJob<T> item)
+    public static bool AllowBatchDrain => true;
+
+    public static WorkItemExecutionResult Execute(ref ScheduledJob<T> item)
     {
         item._job.Execute();
+        return new WorkItemExecutionResult(retire: true, completedWorkItems: 1);
+    }
+
+    public static int Abandon(ref ScheduledJob<T> item)
+    {
+        return 1;
     }
 
     public static void Release(ref ScheduledJob<T> item)
@@ -556,66 +450,182 @@ internal struct ScheduledJob<T> : IWorkStreamItem<ScheduledJob<T>>
     }
 }
 
-internal readonly struct ScheduledParallelJobSource<T> : IWorkStreamItemSource<ScheduledParallelJob<T>>
+internal readonly struct ScheduledParallelTokenSource<T> : IWorkStreamItemSource<ScheduledParallelToken<T>>
     where T : struct, IJobParallelFor
 {
-    private readonly T _job;
+    private readonly ParallelJobGroup<T> _group;
     private readonly JobHandle _state;
-    private readonly int _length;
-    private readonly int _batchSize;
 
-    internal ScheduledParallelJobSource(in T job, JobHandle state, int length, int batchSize)
+    internal ScheduledParallelTokenSource(ParallelJobGroup<T> group, JobHandle state)
     {
-        _job = job;
+        _group = group;
         _state = state;
-        _length = length;
-        _batchSize = batchSize;
     }
 
-    public ScheduledParallelJob<T> Create(int batchIndex)
+    public ScheduledParallelToken<T> Create(int index)
     {
-        int start = batchIndex * _batchSize;
-        int end = Math.Min(start + _batchSize, _length);
-        return new ScheduledParallelJob<T>(_job, _state, start, end);
+        _ = index;
+        _group.AddTokenReference();
+        return new ScheduledParallelToken<T>(_group, _state);
     }
 }
 
-internal struct ScheduledParallelJob<T> : IWorkStreamItem<ScheduledParallelJob<T>>
+internal struct ScheduledParallelToken<T> : IWorkStreamItem<ScheduledParallelToken<T>>
     where T : struct, IJobParallelFor
 {
-    private T _job;
-    private readonly int _start;
-    private readonly int _end;
+    private ParallelJobGroup<T>? _group;
     private JobHandle _state;
 
-    internal ScheduledParallelJob(
-        in T job,
-        JobHandle state,
-        int start,
-        int end)
+    internal ScheduledParallelToken(ParallelJobGroup<T> group, JobHandle state)
     {
-        _job = job;
+        _group = group;
         _state = state;
-        _start = start;
-        _end = end;
     }
 
-    public static JobHandle GetState(in ScheduledParallelJob<T> item)
+    public static JobHandle GetState(in ScheduledParallelToken<T> item)
     {
         return item._state;
     }
 
-    public static void Execute(ref ScheduledParallelJob<T> item)
+    // Re-queue after a bounded claim quantum so newly-arrived higher-priority work can preempt a
+    // large low-priority parallel dispatch. Generic WorkStream batching is disabled because a
+    // single drainer must not capture every token for the same parallel group.
+    public static bool AllowBatchDrain => false;
+
+    public static WorkItemExecutionResult Execute(ref ScheduledParallelToken<T> item)
     {
-        for (int index = item._start; index < item._end; index++)
-        {
-            item._job.Execute(index);
-        }
+        ParallelJobGroup<T> group = item._group
+            ?? throw new InvalidOperationException("Parallel work token has no group.");
+        return group.ExecuteClaimQuantum();
     }
 
-    public static void Release(ref ScheduledParallelJob<T> item)
+    public static int Abandon(ref ScheduledParallelToken<T> item)
     {
+        return item._group?.AbandonUnclaimedBatches() ?? 0;
+    }
+
+    public static void Release(ref ScheduledParallelToken<T> item)
+    {
+        ParallelJobGroup<T>? group = item._group;
         item = default;
+        group?.ReleaseReference();
+    }
+}
+
+internal sealed class ParallelJobGroup<T>
+    where T : struct, IJobParallelFor
+{
+    private const int ClaimQuantum = 16;
+    private static readonly ConcurrentStack<ParallelJobGroup<T>> Pool = new();
+
+    private T _job;
+    private int _length;
+    private int _batchSize;
+    private int _batchCount;
+    private int _nextBatch;
+    private int _references;
+    private bool _measureCost;
+
+    private ParallelJobGroup()
+    {
+    }
+
+    internal static ParallelJobGroup<T> Rent(
+        in T job,
+        int length,
+        int batchSize,
+        int batchCount,
+        bool measureCost)
+    {
+        if (!Pool.TryPop(out ParallelJobGroup<T>? group))
+            group = new ParallelJobGroup<T>();
+
+        group._job = job;
+        group._length = length;
+        group._batchSize = batchSize;
+        group._batchCount = batchCount;
+        group._nextBatch = 0;
+        group._references = 1; // scheduling owner; prepared tokens add their own references
+        group._measureCost = measureCost;
+        return group;
+    }
+
+    internal void AddTokenReference()
+    {
+        Interlocked.Increment(ref _references);
+    }
+
+    internal void ReleaseReference()
+    {
+        if (Interlocked.Decrement(ref _references) != 0)
+            return;
+
+        _job = default;
+        _length = 0;
+        _batchSize = 0;
+        _batchCount = 0;
+        _nextBatch = 0;
+        _measureCost = false;
+        Pool.Push(this);
+    }
+
+    internal WorkItemExecutionResult ExecuteClaimQuantum()
+    {
+        int completed = 0;
+        int faulted = 0;
+        int processedItems = 0;
+        ExceptionDispatchInfo? firstFault = null;
+        long startedAt = _measureCost ? Stopwatch.GetTimestamp() : 0;
+
+        while (completed < ClaimQuantum)
+        {
+            int batchIndex = Interlocked.Increment(ref _nextBatch) - 1;
+            if (batchIndex >= _batchCount)
+                break;
+
+            int start = batchIndex * _batchSize;
+            int end = Math.Min(start + _batchSize, _length);
+            processedItems += end - start;
+            T batchJob = _job; // preserve the previous one-job-copy-per-batch semantics
+            try
+            {
+                for (int index = start; index < end; index++)
+                    batchJob.Execute(index);
+            }
+            catch (Exception exception)
+            {
+                firstFault ??= ExceptionDispatchInfo.Capture(exception);
+                faulted++;
+            }
+
+            completed++;
+        }
+
+        if (_measureCost && completed > 0)
+        {
+            ParallelBatchSizer<T>.Record(
+                Stopwatch.GetTimestamp() - startedAt,
+                processedItems);
+        }
+
+        bool exhausted = Volatile.Read(ref _nextBatch) >= _batchCount;
+        return new WorkItemExecutionResult(
+            retire: exhausted,
+            completedWorkItems: completed,
+            faulted,
+            firstFault);
+    }
+
+    internal int AbandonUnclaimedBatches()
+    {
+        while (true)
+        {
+            int next = Volatile.Read(ref _nextBatch);
+            if (next >= _batchCount)
+                return 0;
+            if (Interlocked.CompareExchange(ref _nextBatch, _batchCount, next) == next)
+                return _batchCount - next;
+        }
     }
 }
 

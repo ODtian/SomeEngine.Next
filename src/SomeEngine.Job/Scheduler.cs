@@ -384,10 +384,20 @@ internal sealed partial class Scheduler : IDisposable
         if (length <= 0)
             return dependency;
 
+        bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
+        int resolvedBatchSize = automaticBatch
+            ? ParallelBatchSizer<T>.Resolve(
+                length,
+                _config.WorkerCount,
+                _config.AutoBatchTargetMicroseconds,
+                _config.AutoBatchMaxTilesPerWorker)
+            : batchSize;
+
         JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
 
-        int batchCount = CalculateParallelBatchCount(length, batchSize);
+        int batchCount = CalculateParallelBatchCount(length, resolvedBatchSize);
         _workQueue.EnsureItemCapacity(batchCount);
+        int tokenCount = CalculateParallelTokenCount(batchCount);
         bool hasResourceAccesses = accesses.Length != 0;
         bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
         bool deferResourceActivation =
@@ -399,7 +409,8 @@ internal sealed partial class Scheduler : IDisposable
         ResourceAccessReservation reservation = ResourceAccessReservation.Empty;
         WorkBatch work = default;
         int[]? slots = null;
-        WorkStream<ScheduledParallelJob<T>>? stream = null;
+        WorkStream<ScheduledParallelToken<T>>? stream = null;
+        ParallelJobGroup<T>? group = null;
         int preparedSlots = 0;
         try
         {
@@ -421,13 +432,16 @@ internal sealed partial class Scheduler : IDisposable
                 reservation,
                 options,
                 length,
-                batchSize,
+                resolvedBatchSize,
                 batchCount,
+                tokenCount,
+                automaticBatch,
                 hasScheduleDependencies,
                 deferResourceActivation,
                 ref work,
                 ref slots,
                 ref stream,
+                ref group,
                 ref preparedSlots);
             _counters.Scheduled(lane);
             return state;
@@ -437,7 +451,7 @@ internal sealed partial class Scheduler : IDisposable
             try
             {
                 CancelReservation(reservation);
-                CleanupParallelUnscheduled(work, stream, slots, preparedSlots);
+                CleanupParallelUnscheduled(work, stream, slots, group, preparedSlots);
                 ReleaseAccessesIfRegistered(registration);
                 if (state.Index != 0)
                     CancelUnscheduledState(state);
@@ -453,7 +467,7 @@ internal sealed partial class Scheduler : IDisposable
     private JobPayloadLane BeginParallelSchedule<T>(JobScheduleOptions options, int batchSize)
         where T : struct, IJobParallelFor
     {
-        if (batchSize <= 0)
+        if (batchSize <= 0 && batchSize != JobScheduleOptions.AutomaticBatchSize)
             throw new ArgumentOutOfRangeException(nameof(batchSize), InvalidBatchSizeMessage);
 
         ValidatePriority(options);
@@ -474,26 +488,56 @@ internal sealed partial class Scheduler : IDisposable
         int length,
         int batchSize,
         int batchCount,
+        int tokenCount,
+        bool automaticBatch,
         bool hasScheduleDependencies,
         bool deferResourceActivation,
         ref WorkBatch work,
         ref int[]? slots,
-        ref WorkStream<ScheduledParallelJob<T>>? stream,
+        ref WorkStream<ScheduledParallelToken<T>>? stream,
+        ref ParallelJobGroup<T>? group,
         ref int preparedSlots)
         where T : struct, IJobParallelFor
     {
-        stream = WorkStream<ScheduledParallelJob<T>>.Instance;
-        ScheduledParallelJobSource<T> source = new(job, state, length, batchSize);
+        stream = WorkStream<ScheduledParallelToken<T>>.Instance;
+        group = ParallelJobGroup<T>.Rent(
+            job,
+            length,
+            batchSize,
+            batchCount,
+            measureCost: automaticBatch);
+        ScheduledParallelTokenSource<T> source = new(group, state);
         if (!hasScheduleDependencies)
         {
-            _workQueue.EnqueueReadyMany(stream, batchCount, ref source, options.Priority);
+            try
+            {
+                _workQueue.EnqueueReadyMany(
+                    stream,
+                    tokenCount,
+                    batchCount,
+                    ref source,
+                    options.Priority);
+            }
+            finally
+            {
+                group.ReleaseReference();
+                group = null;
+            }
             return;
         }
 
-        slots = ArrayPool<int>.Shared.Rent(batchCount);
-        preparedSlots = stream.PrepareMany(slots.AsSpan(0, batchCount), ref source);
-        work = WorkBatch.CreateArray(stream, slots, batchCount, pooledSlotsArray: true, options.Priority);
+        slots = ArrayPool<int>.Shared.Rent(tokenCount);
+        preparedSlots = stream.PrepareMany(slots.AsSpan(0, tokenCount), ref source);
+        work = WorkBatch.CreateArray(
+            stream,
+            slots,
+            preparedSlots,
+            batchCount,
+            pooledSlotsArray: true,
+            options.Priority);
         slots = null;
+        group.ReleaseReference();
+        group = null;
         if (deferResourceActivation)
         {
             RegisterDeferredResourceScheduleDependency(
@@ -508,8 +552,9 @@ internal sealed partial class Scheduler : IDisposable
 
     private static void CleanupParallelUnscheduled<T>(
         WorkBatch work,
-        WorkStream<ScheduledParallelJob<T>>? stream,
+        WorkStream<ScheduledParallelToken<T>>? stream,
         int[]? slots,
+        ParallelJobGroup<T>? group,
         int preparedSlots)
         where T : struct, IJobParallelFor
     {
@@ -527,6 +572,7 @@ internal sealed partial class Scheduler : IDisposable
 
         if (slots is not null)
             ArrayPool<int>.Shared.Return(slots);
+        group?.ReleaseReference();
     }
 
 }
@@ -563,6 +609,11 @@ internal sealed partial class Scheduler
     private static int CalculateParallelBatchCount(int length, int batchSize)
     {
         return ((length - 1) / batchSize) + 1;
+    }
+
+    private int CalculateParallelTokenCount(int batchCount)
+    {
+        return Math.Min(batchCount, Math.Max(1, _config.WorkerCount + 1));
     }
 
 }

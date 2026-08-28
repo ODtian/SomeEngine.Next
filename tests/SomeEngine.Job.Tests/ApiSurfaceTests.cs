@@ -169,7 +169,8 @@ public sealed class ApiSurfaceTests
         Assert.Contains(internalTypes, type => type.Name == "WorkStream`1");
         Assert.Contains(internalTypes, type => type.Name == "IWorkStreamItem`1");
         Assert.Contains(internalTypes, type => type.Name == "ScheduledJob`1");
-        Assert.Contains(internalTypes, type => type.Name == "ScheduledParallelJob`1");
+        Assert.Contains(internalTypes, type => type.Name == "ScheduledParallelToken`1");
+        Assert.Contains(internalTypes, type => type.Name == "ParallelJobGroup`1");
     }
 
     [Fact]

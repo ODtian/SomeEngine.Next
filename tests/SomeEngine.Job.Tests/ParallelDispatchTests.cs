@@ -59,12 +59,64 @@ public sealed class ParallelDispatchTests
     }
 
     [Fact]
+    public void AutomaticBatchSizeUsesBoundedTileDensity()
+    {
+        JobSystem.ResetForTesting(new JobRuntimeConfig
+        {
+            WorkerCount = 2,
+            MaxQueuedWorkItems = 8,
+            MaxCompletionStates = 8,
+            MaxResourceStates = 4,
+            AutoBatchMaxTilesPerWorker = 4
+        });
+        var values = new int[1_000];
+
+        JobSystem.ScheduleParallel(
+            new ParallelJobs.AutoMarkIndexJob(values),
+            values.Length,
+            JobScheduleOptions.AutomaticBatchSize).Complete();
+
+        Assert.All(values, value => Assert.Equal(1, value));
+    }
+
+    [Fact]
+    public void ParallelJobGetsFreshStructCopyForEveryLogicalBatch()
+    {
+        var observedCalls = new int[8];
+
+        JobSystem.ScheduleParallel(
+            new ParallelJobs.MutableBatchStateJob(observedCalls),
+            observedCalls.Length,
+            batchSize: 2).Complete();
+
+        Assert.Equal([1, 2, 1, 2, 1, 2, 1, 2], observedCalls);
+    }
+
+    [Fact]
+    public void FaultedParallelBatchDoesNotPreventOtherBatchesFromRunning()
+    {
+        var attempted = new int[8];
+        JobHandle handle = JobSystem.ScheduleParallel(
+            new ParallelJobs.ThrowAtBatchStartJob(attempted),
+            attempted.Length,
+            batchSize: 2);
+
+        Assert.Throws<InvalidOperationException>(() => handle.Complete());
+
+        for (int i = 0; i < attempted.Length; i += 2)
+            Assert.Equal(1, attempted[i]);
+    }
+
+    [Fact]
     public void InvalidBatchSizeThrows()
     {
         var values = new int[1];
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 0));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, -2));
     }
 
     [Fact]
@@ -117,6 +169,55 @@ public sealed class ParallelDispatchTests
             public void Execute(int index)
             {
                 Interlocked.Increment(ref _values[index]);
+            }
+        }
+
+        internal readonly struct AutoMarkIndexJob : IJobParallelFor
+        {
+            private readonly int[] _values;
+
+            internal AutoMarkIndexJob(int[] values)
+            {
+                _values = values;
+            }
+
+            public void Execute(int index)
+            {
+                Interlocked.Increment(ref _values[index]);
+            }
+        }
+
+        internal struct MutableBatchStateJob : IJobParallelFor
+        {
+            private readonly int[] _observedCalls;
+            private int _callsInBatch;
+
+            internal MutableBatchStateJob(int[] observedCalls)
+            {
+                _observedCalls = observedCalls;
+                _callsInBatch = 0;
+            }
+
+            public void Execute(int index)
+            {
+                _observedCalls[index] = ++_callsInBatch;
+            }
+        }
+
+        internal readonly struct ThrowAtBatchStartJob : IJobParallelFor
+        {
+            private readonly int[] _attempted;
+
+            internal ThrowAtBatchStartJob(int[] attempted)
+            {
+                _attempted = attempted;
+            }
+
+            public void Execute(int index)
+            {
+                _attempted[index] = 1;
+                if ((index & 1) == 0)
+                    throw new InvalidOperationException("batch failed");
             }
         }
 

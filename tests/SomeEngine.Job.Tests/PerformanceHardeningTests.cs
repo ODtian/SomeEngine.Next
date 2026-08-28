@@ -166,6 +166,18 @@ public sealed class PerformanceHardeningTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = -1 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            JobSystem.Initialize(new JobRuntimeConfig { WorkerSpinCount = -1 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            JobSystem.Initialize(new JobRuntimeConfig
+            {
+                WorkerSpinCount = 128,
+                BusyWorkerSpinCount = 64
+            }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            JobSystem.Initialize(new JobRuntimeConfig { AutoBatchTargetMicroseconds = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            JobSystem.Initialize(new JobRuntimeConfig { AutoBatchMaxTilesPerWorker = 0 }));
 
         JobSystem.Schedule(new HardeningJobs.IncrementJob()).Complete();
         Assert.Equal(2, HardeningJobs.Counter);
@@ -293,6 +305,10 @@ public sealed class PerformanceHardeningTests
         Assert.Equal(1, stats.FaultedWorkItems);
         Assert.Equal(2, stats.RefFreeJobs);
         Assert.Equal(1, stats.RefContainingJobs);
+        Assert.Equal(3, stats.ReadyTicketsPublished);
+        Assert.Equal(3, stats.ReadyTicketsExecuted);
+        Assert.True(stats.ReadyLatencyAverageNanoseconds >= 0);
+        Assert.True(stats.ReadyLatencyMaxNanoseconds >= stats.ReadyLatencyAverageNanoseconds);
         Assert.True(stats.QueueHighWater >= 1);
         Assert.True(stats.CompletionStateHighWater >= 1);
     }

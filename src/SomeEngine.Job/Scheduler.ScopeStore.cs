@@ -76,7 +76,7 @@ internal sealed partial class Scheduler
 
                 if (childFault is not null)
                 {
-                    parentState.Fault ??= childFault;
+                    parentState.RecordFirstFault(childFault);
                 }
 
                 parentState.PendingChildren--;

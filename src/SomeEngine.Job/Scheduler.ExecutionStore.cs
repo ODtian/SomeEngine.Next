@@ -96,34 +96,48 @@ internal sealed partial class Scheduler
             }
         }
 
-        public bool CompleteItem(
+        public bool CompleteItems(
             JobHandle handle,
+            int completedWorkItems,
             ExceptionDispatchInfo? itemFault,
             out bool workFinished)
         {
             workFinished = false;
+            if (completedWorkItems <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(completedWorkItems));
+            }
+
             CompletionState? state = GetState(handle);
             if (state is null)
             {
                 return false;
             }
 
-            lock (state.Sync)
+            // PendingWork accounts for every published logical work item. A state cannot be
+            // completed or recycled while one of those items still owns its count, so the hot
+            // completion path needs no state monitor. The last finisher alone enters the locked
+            // resource/continuation dispatch path through CompleteStreamItems.
+            if (!Volatile.Read(ref state.InUse)
+                || Volatile.Read(ref state.Version) != handle.Version
+                || Volatile.Read(ref state.Completed))
             {
-                if (!state.InUse || state.Version != handle.Version || state.Completed)
-                {
-                    return false;
-                }
-
-                if (itemFault is not null)
-                {
-                    state.Fault ??= itemFault;
-                }
-
-                state.PendingWork--;
-                workFinished = state.PendingWork == 0;
-                return true;
+                return false;
             }
+
+            if (itemFault is not null)
+            {
+                state.RecordFirstFault(itemFault);
+            }
+
+            int remaining = Interlocked.Add(ref state.PendingWork, -completedWorkItems);
+            if (remaining < 0)
+            {
+                throw new InvalidOperationException("Completion state pending-work count underflowed.");
+            }
+
+            workFinished = remaining == 0;
+            return true;
         }
 
         public WorkRelease BeginWork(JobHandle handle)

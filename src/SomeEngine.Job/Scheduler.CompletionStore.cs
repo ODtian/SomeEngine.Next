@@ -206,7 +206,7 @@ internal sealed partial class Scheduler
             {
                 if (state.InUse && state.Version == handle.Version)
                 {
-                    state.Fault ??= fault;
+                    state.RecordFirstFault(fault);
                 }
             }
         }
@@ -223,7 +223,7 @@ internal sealed partial class Scheduler
             {
                 if (state.InUse && state.Version == handle.Version && !state.Completed)
                 {
-                    state.Fault ??= fault;
+                    state.RecordFirstFault(fault);
                     state.PendingWork = 0;
                 }
             }

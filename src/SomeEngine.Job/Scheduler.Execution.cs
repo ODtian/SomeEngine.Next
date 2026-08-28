@@ -5,31 +5,37 @@ namespace SomeEngine.Job;
 
 internal sealed partial class Scheduler
 {
-    internal void ExecuteStreamItem<TItem>(ref TItem item)
+    internal WorkItemExecutionResult ExecuteStreamItem<TItem>(ref TItem item)
         where TItem : struct, IWorkStreamItem<TItem>
     {
         JobHandle handle = TItem.GetState(item);
         if (!_execution.CanExecute(handle))
         {
+            int abandonedWorkItems = TItem.Abandon(ref item);
             TItem.Release(ref item);
-            return;
+            return new WorkItemExecutionResult(
+                retire: true,
+                completedWorkItems: abandonedWorkItems);
         }
 
         ScopeToken previousScope = s_currentScope;
         ScopeToken nextScope = ScopeToken.FromHandle(handle);
         JobExecutionContext.Enter();
         s_currentScope = nextScope;
-        ExceptionDispatchInfo? fault = null;
+        WorkItemExecutionResult result;
 
         try
         {
-            _counters.Executed();
-            TItem.Execute(ref item);
+            result = TItem.Execute(ref item);
         }
         catch (Exception ex)
         {
-            fault = ExceptionDispatchInfo.Capture(ex);
-            _counters.Faulted();
+            int canceledWorkItems = TItem.Abandon(ref item);
+            result = new WorkItemExecutionResult(
+                retire: true,
+                completedWorkItems: canceledWorkItems,
+                faultedWorkItems: 1,
+                ExceptionDispatchInfo.Capture(ex));
         }
         finally
         {
@@ -43,13 +49,26 @@ internal sealed partial class Scheduler
             }
         }
 
-        TItem.Release(ref item);
-        CompleteStreamItem(handle, fault);
+        _counters.Executed(result.CompletedWorkItems);
+        _counters.Faulted(result.FaultedWorkItems);
+
+        if (result.Retire)
+            TItem.Release(ref item);
+        if (result.CompletedWorkItems > 0)
+            CompleteStreamItems(handle, result.CompletedWorkItems, result.Fault);
+        return result;
     }
 
-    private void CompleteStreamItem(JobHandle handle, ExceptionDispatchInfo? itemFault)
+    private void CompleteStreamItems(
+        JobHandle handle,
+        int completedWorkItems,
+        ExceptionDispatchInfo? itemFault)
     {
-        if (_execution.CompleteItem(handle, itemFault, out bool workFinished) && workFinished)
+        if (_execution.CompleteItems(
+                handle,
+                completedWorkItems,
+                itemFault,
+                out bool workFinished) && workFinished)
         {
             TryReleaseWorkDependencies(handle);
             TryCompleteState(handle);

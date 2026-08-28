@@ -58,8 +58,9 @@ internal sealed partial class Scheduler
     {
         bool CanExecute(JobHandle handle);
 
-        bool CompleteItem(
+        bool CompleteItems(
             JobHandle handle,
+            int completedWorkItems,
             ExceptionDispatchInfo? itemFault,
             out bool workFinished);
 

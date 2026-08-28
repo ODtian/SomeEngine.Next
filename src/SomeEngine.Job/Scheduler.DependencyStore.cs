@@ -115,7 +115,7 @@ internal sealed partial class Scheduler
             if (dependencyFault is null)
                 return;
 
-            state.Fault ??= dependencyFault;
+            state.RecordFirstFault(dependencyFault);
             if (cancelPendingWorkOnFault)
                 state.PendingWork = 0;
         }
