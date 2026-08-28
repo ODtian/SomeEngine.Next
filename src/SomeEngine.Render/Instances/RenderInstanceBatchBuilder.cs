@@ -40,6 +40,12 @@ public interface IRenderInstanceBatchSource<TGroupKey>
 public interface IRenderInstanceBatchComposer<TGroupKey>
     where TGroupKey : notnull
 {
+    /// <summary>
+    /// Enables the one-row-per-entity fast path. Fan-out composers return false so CountGroups
+    /// remains authoritative even when every generated row shares one group key.
+    /// </summary>
+    bool OneInstancePerEntity => true;
+
     /// <summary>Reports packet-level invalidation relative to the owning system version.</summary>
     RenderInstanceChanges GetChanges(
         ReadOnlyQueryPacket packet,
@@ -314,7 +320,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                     return;
 
                 bool singleGroup =
-                    typeof(TGroupKey) == typeof(RenderInstanceSingleGroup);
+                    typeof(TGroupKey) == typeof(RenderInstanceSingleGroup) &&
+                    _composer.OneInstancePerEntity;
                 if ((changes & RenderInstanceChanges.Structure) != 0
                     || (!singleGroup && !ValidateCurrent(ref packets, current)))
                 {
@@ -398,7 +405,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         in TComposer composer)
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
-        if (typeof(TGroupKey) == typeof(RenderInstanceSingleGroup))
+        if (typeof(TGroupKey) == typeof(RenderInstanceSingleGroup) &&
+            composer.OneInstancePerEntity)
         {
             RebuildSingleGroup(context, ref packets, in composer);
             return;
@@ -1044,7 +1052,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             ReadOnlyQueryPacket packet)
         {
             TComposer local = composer;
-            if (typeof(TGroupKey) == typeof(RenderInstanceSingleGroup))
+            if (typeof(TGroupKey) == typeof(RenderInstanceSingleGroup) &&
+                local.OneInstancePerEntity)
             {
                 TGroupKey key = default!;
                 local.WritePacket(

@@ -45,6 +45,17 @@ public sealed class RenderInstancePropertyLayoutBuilder
         }
     }
 
+    internal void Include(RenderInstancePropertyDescriptor property)
+    {
+        EnsureMutable();
+        ArgumentNullException.ThrowIfNull(property);
+        RenderInstancePropertyRegistration registration = RegisterDeclaration(
+            property.CloneDeclaration(),
+            property.Contributors[0]);
+        for (int index = 1; index < property.Contributors.Count; index++)
+            registration.Contributors.Add(property.Contributors[index]);
+    }
+
     public RenderInstancePropertyLayout Freeze()
     {
         _layout ??= RenderInstancePropertyLayout.Create(_properties.Values);

@@ -91,6 +91,17 @@ public sealed class RenderInstancePropertyLayout : IEquatable<RenderInstanceProp
     public bool Contains(RenderInstancePropertyKey key) =>
         key.IsValid && _propertiesByKey.ContainsKey(key);
 
+    internal RenderInstancePropertyDescriptor Require(
+        RenderInstancePropertyKey key,
+        string parameterName)
+    {
+        if (!key.IsValid)
+            throw new ArgumentException("The property key is uninitialized.", parameterName);
+        if (!_propertiesByKey.TryGetValue(key, out RenderInstancePropertyDescriptor? descriptor))
+            throw new ArgumentException($"Property '{key}' is not part of this metadata contract.", parameterName);
+        return descriptor;
+    }
+
     internal RenderInstancePropertyDescriptor RequireCompatible(
         RenderInstancePropertyDescriptor property,
         string parameterName)
