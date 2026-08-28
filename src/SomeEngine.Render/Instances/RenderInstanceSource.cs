@@ -54,7 +54,7 @@ public readonly record struct RenderInstanceSparsePropertyChange(
 /// affect row membership/count. Value changes remain keyed by the same canonical property
 /// identities used by layout linking; the instance system does not invent semantic channels.
 /// </summary>
-public sealed class RenderInstanceChangeSet
+internal sealed class RenderInstanceChangeSet
 {
     private static readonly ReadOnlyCollection<RenderInstancePropertyChange> s_emptyProperties =
         Array.AsReadOnly(Array.Empty<RenderInstancePropertyChange>());
@@ -131,7 +131,7 @@ public sealed class RenderInstanceChangeSet
 /// property contract is immutable. Implementations may own columns, stream pages, or generate
 /// values procedurally; consumers observe only coherent snapshots.
 /// </summary>
-public interface IRenderInstanceSource
+internal interface IRenderInstanceSource
 {
     RenderInstancePropertyLayout Layout { get; }
 
@@ -145,7 +145,7 @@ public interface IRenderInstanceSource
 }
 
 /// <summary>Coherent read lease over one source revision.</summary>
-public abstract class RenderInstanceSourceSnapshot : IDisposable
+internal abstract class RenderInstanceSourceSnapshot : IDisposable
 {
     protected RenderInstanceSourceSnapshot(
         RenderInstancePropertyLayout layout,
@@ -209,7 +209,7 @@ public abstract class RenderInstanceSourceSnapshot : IDisposable
 /// Fills an arbitrary logical range using only the source's declared write capability. Property
 /// meaning remains with the contributor that declared the canonical property contract.
 /// </summary>
-public delegate void RenderInstanceSourceWriter(
+internal delegate void RenderInstanceSourceWriter(
     int sourceStart,
     RenderInstanceWriteSlice destination);
 
@@ -217,7 +217,7 @@ public delegate void RenderInstanceSourceWriter(
 /// General procedural/streaming source. Grids, particles, vegetation, imported arrays, and tools
 /// are ordinary producers of this contract rather than renderer-recognized source kinds.
 /// </summary>
-public sealed class RenderInstanceProceduralSource : IRenderInstanceSource
+internal sealed class RenderInstanceProceduralSource : IRenderInstanceSource
 {
     private readonly object _gate = new();
     private readonly RenderInstanceChangeJournal _changes;
@@ -500,6 +500,29 @@ internal sealed class RenderInstanceChangeJournal
         return result.Count == 0 && sparseResult.Count == 0
             ? RenderInstanceChangeSet.None
             : new RenderInstanceChangeSet(false, [.. result], [.. sparseResult]);
+    }
+
+    /// <summary>
+    /// Re-labels all entries created by one externally atomic update with its single published
+    /// revision. Callers hold the owning source write lock, so consumers can never observe the
+    /// intermediate revision labels.
+    /// </summary>
+    internal void CollapseAfter(ulong previousRevision, ulong committedRevision)
+    {
+        if (committedRevision <= previousRevision)
+            throw new ArgumentOutOfRangeException(nameof(committedRevision));
+        if (_records.Count == 0)
+            return;
+
+        Entry[] entries = [.. _records];
+        _records.Clear();
+        for (int index = 0; index < entries.Length; index++)
+        {
+            Entry entry = entries[index];
+            _records.Enqueue(entry.Revision > previousRevision
+                ? entry with { Revision = committedRevision }
+                : entry);
+        }
     }
 
     private RenderInstanceChangeSet Full(int count, bool structureChanged)

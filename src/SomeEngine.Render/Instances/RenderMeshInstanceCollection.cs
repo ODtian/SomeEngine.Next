@@ -170,7 +170,7 @@ public sealed class RenderMeshInstanceCollection : IDisposable
     /// Captures collection membership and one coherent revision of every live set. Mutations after
     /// this call do not alter the returned membership or set snapshots.
     /// </summary>
-    public RenderMeshInstanceCollectionSnapshot Capture(
+    internal RenderMeshInstanceCollectionSnapshot Capture(
         IReadOnlyDictionary<RenderMeshInstanceHandle, ulong>? previousDataRevisions = null)
     {
         lock (_gate)
@@ -209,7 +209,7 @@ public sealed class RenderMeshInstanceCollection : IDisposable
     /// Captures collection membership and shared draw state without acquiring any per-instance
     /// source-data leases.
     /// </summary>
-    public RenderMeshInstanceSharedCollectionSnapshot CaptureShared()
+    internal RenderMeshInstanceSharedCollectionSnapshot CaptureShared()
     {
         lock (_gate)
         {
@@ -300,16 +300,16 @@ public sealed class RenderMeshInstanceCollection : IDisposable
         uint Generation);
 }
 
-public readonly record struct RenderMeshInstanceEntrySnapshot(
+internal readonly record struct RenderMeshInstanceEntrySnapshot(
     RenderMeshInstanceHandle Handle,
     RenderMeshInstanceSnapshot Snapshot);
 
-public readonly record struct RenderMeshInstanceSharedEntrySnapshot(
+internal readonly record struct RenderMeshInstanceSharedEntrySnapshot(
     RenderMeshInstanceHandle Handle,
     RenderMeshInstanceSharedSnapshot Snapshot);
 
 /// <summary>Immutable membership and shared-state snapshot with no source-data leases.</summary>
-public sealed class RenderMeshInstanceSharedCollectionSnapshot
+internal sealed class RenderMeshInstanceSharedCollectionSnapshot
 {
     private readonly RenderMeshInstanceSharedEntrySnapshot[] _entries;
 
@@ -327,7 +327,7 @@ public sealed class RenderMeshInstanceSharedCollectionSnapshot
 }
 
 /// <summary>Owned coherent snapshot of one collection revision.</summary>
-public sealed class RenderMeshInstanceCollectionSnapshot : IDisposable
+internal sealed class RenderMeshInstanceCollectionSnapshot : IDisposable
 {
     private RenderMeshInstanceEntrySnapshot[]? _entries;
 

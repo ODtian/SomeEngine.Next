@@ -412,7 +412,7 @@ public sealed partial class RenderInstanceBuffer : IRenderInstanceSource, IDispo
         }
     }
 
-    public RenderInstanceSourceSnapshot Capture(ulong previousRevision = 0ul)
+    internal RenderInstanceSourceSnapshot Capture(ulong previousRevision = 0ul)
     {
         _gate.EnterReadLock();
         try
@@ -428,6 +428,9 @@ public sealed partial class RenderInstanceBuffer : IRenderInstanceSource, IDispo
             throw;
         }
     }
+
+    RenderInstanceSourceSnapshot IRenderInstanceSource.Capture(ulong previousRevision) =>
+        Capture(previousRevision);
 
     public void Dispose()
     {

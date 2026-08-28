@@ -7,7 +7,7 @@ using SomeEngine.Render.Components;
 namespace SomeEngine.Render.Instances;
 
 /// <summary>Convenience writer for the Render-core spatial property pair.</summary>
-public delegate void RenderMeshInstanceWriter(
+internal delegate void RenderMeshInstanceWriter(
     int sourceStart,
     Span<RenderTransform> current,
     Span<RenderPreviousTransform> previous);
@@ -40,7 +40,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// Creates a transform-only procedural set. This is a convenience over the generic property
     /// source, not a renderer-recognized procedural source kind.
     /// </summary>
-    public RenderMeshInstanceSet(
+    internal RenderMeshInstanceSet(
         AssetHandle<Mesh> mesh,
         IReadOnlyList<AssetHandle<Material>> materials,
         int instanceCount,
@@ -61,7 +61,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// Creates a set over any compatible instance-property source. Ownership is explicit because
     /// sources may be shared by tools, streaming systems, or several scene objects.
     /// </summary>
-    public RenderMeshInstanceSet(
+    internal RenderMeshInstanceSet(
         AssetHandle<Mesh> mesh,
         IReadOnlyList<AssetHandle<Material>> materials,
         IRenderInstanceSource source,
@@ -130,7 +130,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     public IReadOnlyList<AssetHandle<Material>> Materials =>
         Read(static set => set._materials);
 
-    public IRenderInstanceSource Source => Read(static set => set._source);
+    internal IRenderInstanceSource Source => Read(static set => set._source);
 
     public RenderInstanceBuffer? Buffer => Read(
         static set => set._source as RenderInstanceBuffer);
@@ -201,7 +201,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     }
 
     /// <summary>Atomically replaces the logical source observed by future snapshots.</summary>
-    public void SetSource(IRenderInstanceSource source, bool ownsSource = false)
+    internal void SetSource(IRenderInstanceSource source, bool ownsSource = false)
     {
         source = ValidateSource(source);
         IDisposable? dispose = null;
@@ -228,7 +228,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     }
 
     /// <summary>Replaces the source with a transform-only procedural population.</summary>
-    public void SetData(
+    internal void SetData(
         int instanceCount,
         RenderMeshInstanceWriter writer,
         RenderMeshInstanceUpdateMode? updateMode = null)
@@ -254,7 +254,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// publish property-local revisions themselves; other source implementations own their own
     /// invalidation contract.
     /// </summary>
-    public void Invalidate()
+    internal void Invalidate()
     {
         lock (_gate)
         {
@@ -265,7 +265,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     }
 
     /// <summary>Acquires one coherent shared-state and data-source revision.</summary>
-    public RenderMeshInstanceSnapshot Capture(ulong previousDataRevision = 0ul)
+    internal RenderMeshInstanceSnapshot Capture(ulong previousDataRevision = 0ul)
     {
         lock (_gate)
         {
@@ -293,7 +293,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// Captures only shared draw state. This does not acquire a source-data read lease and is used
     /// by material/pipeline registries that do not inspect per-instance values.
     /// </summary>
-    public RenderMeshInstanceSharedSnapshot CaptureShared()
+    internal RenderMeshInstanceSharedSnapshot CaptureShared()
     {
         lock (_gate)
         {
@@ -416,7 +416,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
 }
 
 /// <summary>Immutable shared draw state of one instanced-mesh resource.</summary>
-public readonly record struct RenderMeshInstanceSharedSnapshot(
+internal readonly record struct RenderMeshInstanceSharedSnapshot(
     AssetHandle<Mesh> Mesh,
     IReadOnlyList<AssetHandle<Material>> Materials,
     float BoundsExpansion,
@@ -424,7 +424,7 @@ public readonly record struct RenderMeshInstanceSharedSnapshot(
     ulong Revision);
 
 /// <summary>One coherent logical revision of a <see cref="RenderMeshInstanceSet"/>.</summary>
-public sealed class RenderMeshInstanceSnapshot : IDisposable
+internal sealed class RenderMeshInstanceSnapshot : IDisposable
 {
     private RenderInstanceSourceSnapshot? _source;
 

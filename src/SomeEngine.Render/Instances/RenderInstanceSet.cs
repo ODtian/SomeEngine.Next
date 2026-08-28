@@ -166,11 +166,6 @@ internal sealed class RenderInstanceSet :
         lock (_gate)
         {
             ThrowIfDisposed();
-            if (instanceCount != 0 && _pending.Writer is null)
-            {
-                throw new InvalidOperationException(
-                    "A non-empty render-instance set requires a writer.");
-            }
             if (instanceCount == _pending.Count)
                 return;
             RenderInstanceSetWriter? writer = _fullWriter;
