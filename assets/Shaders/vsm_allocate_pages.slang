@@ -92,6 +92,24 @@ bool TryEvictPhysicalPage(
             continue;
         }
 
+        // The old virtual mapping is locked before the physical owner changes. Therefore no
+        // observable state can contain a new owner while the old virtual page still resolves to
+        // this physical page. A failed owner claim restores the old mapping before retrying.
+        uint expectedMapping = PackVirtualShadowPage(candidate + 1u);
+        bool lockedOldMapping = false;
+        if (oldOwner < PageAllocation.PageTableEntryCount)
+        {
+            uint observedMapping;
+            InterlockedCompareExchange(
+                ShadowPageTable[oldOwner].x,
+                expectedMapping,
+                VSM_PAGE_LOCKED,
+                observedMapping);
+            if (observedMapping != expectedMapping)
+                continue;
+            lockedOldMapping = true;
+        }
+
         uint latestOwner;
         InterlockedCompareExchange(
             PhysicalPageOwners[candidate],
@@ -99,16 +117,27 @@ bool TryEvictPhysicalPage(
             ownerPageTableIndex,
             latestOwner);
         if (latestOwner != oldOwner)
-            continue;
-
-        if (oldOwner < PageAllocation.PageTableEntryCount)
         {
-            uint ignored;
+            if (lockedOldMapping)
+            {
+                uint ignoredRestore;
+                InterlockedCompareExchange(
+                    ShadowPageTable[oldOwner].x,
+                    VSM_PAGE_LOCKED,
+                    expectedMapping,
+                    ignoredRestore);
+            }
+            continue;
+        }
+
+        if (lockedOldMapping)
+        {
+            uint ignoredClear;
             InterlockedCompareExchange(
                 ShadowPageTable[oldOwner].x,
-                PackVirtualShadowPage(candidate + 1u),
+                VSM_PAGE_LOCKED,
                 VSM_PAGE_UNMAPPED,
-                ignored);
+                ignoredClear);
         }
         physicalPage = candidate;
         return true;
