@@ -74,10 +74,11 @@ internal struct ClusterShadeBinUniforms
     internal uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 384)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 448)]
 internal struct ClusterShadeUniforms
 {
     internal Matrix4x4 ViewProj;
+    internal Matrix4x4 ClipToWorld;
     internal Matrix4x4 View;
     internal Matrix4x4 PrevViewProj;
     internal Matrix4x4 MotionViewProj;

@@ -11,43 +11,28 @@ ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer PageHeap;
 StructuredBuffer<uint3> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
+#if CLUSTER_CULL_PHASE == 1
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWByteAddressBuffer DrawArgs;                // IndirectArgs: must stay raw, layout = CullDrawArgs
+RWByteAddressBuffer DrawArgs;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> VisibleClusters;
 Texture2D<float> HiZTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint3> Phase2CandidateClusters;
+RWStructuredBuffer<uint3> NextCandidates;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> Phase2CandidateCount;
+RWStructuredBuffer<uint> NextCandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWByteAddressBuffer Phase2DrawArgs;          // IndirectArgs: must stay raw, layout = CullDrawArgs
+RWByteAddressBuffer NextCandidateArgs;
+#elif CLUSTER_CULL_PHASE == 2
+ByteAddressBuffer DrawArgs;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint4> VisibleClusters;
+Texture2D<float> HiZTexture;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWByteAddressBuffer Phase2CandidateArgs;     // IndirectArgs: must stay raw
-
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void clear_main_phase1(uint3 tid : SV_DispatchThreadID)
-{
-    if (tid.x != 0 || tid.y != 0 || tid.z != 0)
-        return;
-
-    StoreCullDrawArgs(DrawArgs, 0u, CullDrawArgs(96, 0, 0));
-    DrawArgs.Store(12, 0u);
-    Phase2CandidateCount[0] = 0;
-    StoreDispatchArgs(Phase2CandidateArgs, 0u, DispatchArgs(0, 1, 1));
-}
-
-[shader("compute")]
-[numthreads(1, 1, 1)]
-void clear_main_phase2(uint3 tid : SV_DispatchThreadID)
-{
-    if (tid.x != 0 || tid.y != 0 || tid.z != 0)
-        return;
-
-    StoreCullDrawArgs(Phase2DrawArgs, 0u, CullDrawArgs(96, 0, 0));
-    Phase2DrawArgs.Store(12, 0u);
-}
+RWByteAddressBuffer PhaseDrawArgs;
+#else
+#error CLUSTER_CULL_PHASE must be 1 or 2
+#endif
 
 float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
 {
@@ -109,7 +94,7 @@ GPUCluster LoadCluster(uint pageOffset, uint clusterIndex)
 bool PassesLODFilter(GPUCluster cluster, RenderInstanceTransform t)
 {
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
-    float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
+    float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
     float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
     float lodError = DecodeClusterLODError(cluster);
@@ -316,6 +301,7 @@ bool ShouldUseSWRaster(float2 minUv, float2 maxUv)
     return area < Uniforms.SoftwareRasterAreaThreshold;
 }
 
+#if CLUSTER_CULL_PHASE == 1
 void AppendVisible(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
 {
     uint totalIdx;
@@ -341,18 +327,19 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
     }
 }
 
-void AppendPhase2Candidate(uint pageOffset, uint clusterID, uint instanceID)
+void AppendCandidate(uint pageOffset, uint clusterID, uint instanceID)
 {
     uint outIdx;
-    InterlockedAdd(Phase2CandidateCount[0], 1, outIdx);
+    InterlockedAdd(NextCandidateCount[0], 1, outIdx);
     if (outIdx >= Uniforms.MaxCandidates)
         return;
 
     uint groups = (outIdx + 64) / 64;
     uint unused;
-    Phase2CandidateArgs.InterlockedMax(0, groups, unused);
-    Phase2CandidateClusters[outIdx] = uint3(pageOffset, clusterID, instanceID);
+    NextCandidateArgs.InterlockedMax(0, groups, unused);
+    NextCandidates[outIdx] = uint3(pageOffset, clusterID, instanceID);
 }
+#endif
 
 bool LoadAndFilterCandidate(
     uint threadId,
@@ -392,15 +379,17 @@ bool LoadAndFilterCandidate(
             instanceID));
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
-    float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
+    float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
     float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
     float lodError = DecodeClusterLODError(cluster);
     return lodError * Uniforms.LodScale <= Uniforms.LodThreshold * clusterDist;
 }
 
+#if CLUSTER_CULL_PHASE == 1
+[shader("compute")]
 [numthreads(64, 1, 1)]
-void main_phase1(uint3 dispatchThreadID: SV_DispatchThreadID)
+void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
 {
     uint pageOffset;
     uint clusterID;
@@ -413,7 +402,7 @@ void main_phase1(uint3 dispatchThreadID: SV_DispatchThreadID)
 
     if (Uniforms.HasPrevHistory == 0)
     {
-        AppendPhase2Candidate(pageOffset, clusterID, instanceID);
+        AppendCandidate(pageOffset, clusterID, instanceID);
         return;
     }
 
@@ -421,7 +410,7 @@ void main_phase1(uint3 dispatchThreadID: SV_DispatchThreadID)
     bool occluded = IsOccludedByHiZ(cluster, t, boundsExpansion, true, minUv, maxUv);
     if (occluded)
     {
-        AppendPhase2Candidate(pageOffset, clusterID, instanceID);
+        AppendCandidate(pageOffset, clusterID, instanceID);
     }
     else
     {
@@ -429,8 +418,8 @@ void main_phase1(uint3 dispatchThreadID: SV_DispatchThreadID)
         AppendVisible(pageOffset, clusterID, instanceID, isSW);
     }
 }
+#elif CLUSTER_CULL_PHASE == 2
 
-// HiZ follow-up cull: use Phase2DrawArgs for own counts, read Phase1's counts for global offset
 void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
 {
     uint localIdx;
@@ -440,14 +429,14 @@ void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID, bool 
     uint phase1Count = phase1SWCount + phase1HWCount;
 
     uint totalIdx;
-    Phase2DrawArgs.InterlockedAdd(12, 1, totalIdx);
+    PhaseDrawArgs.InterlockedAdd(12, 1, totalIdx);
     if (phase1Count + totalIdx >= Uniforms.MaxCandidates)
         return;
 
     if (isSW)
     {
         // Phase2 SW: write after Phase1 SW (CullDrawArgs.SWCount at byte 4)
-        Phase2DrawArgs.InterlockedAdd(4, 1, localIdx);
+        PhaseDrawArgs.InterlockedAdd(4, 1, localIdx);
         uint globalIdx = phase1SWCount + localIdx;
         if (globalIdx < Uniforms.MaxCandidates)
             VisibleClusters[globalIdx] = uint4(pageOffset, clusterID, instanceID, 0);
@@ -455,15 +444,16 @@ void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID, bool 
     else
     {
         // Phase2 HW: write before Phase1 HW (CullDrawArgs.HWCount at byte 8)
-        Phase2DrawArgs.InterlockedAdd(8, 1, localIdx);
+        PhaseDrawArgs.InterlockedAdd(8, 1, localIdx);
         uint hwIdx = Uniforms.MaxCandidates - 1 - phase1HWCount - localIdx;
         if (localIdx < Uniforms.MaxCandidates)
             VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, 0);
     }
 }
 
+[shader("compute")]
 [numthreads(64, 1, 1)]
-void main_phase2(uint3 dispatchThreadID: SV_DispatchThreadID)
+void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
 {
     uint pageOffset;
     uint clusterID;
@@ -482,3 +472,4 @@ void main_phase2(uint3 dispatchThreadID: SV_DispatchThreadID)
         AppendVisiblePhase2(pageOffset, clusterID, instanceID, isSW);
     }
 }
+#endif

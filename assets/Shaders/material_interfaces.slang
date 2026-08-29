@@ -2,6 +2,7 @@
 #define MATERIAL_INTERFACES_SLANG
 
 #include "material_vertex_interfaces.slang"
+#include "triangle_surface.slang"
 
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
@@ -16,6 +17,7 @@ interface ISurfaceEvaluate<TVE : IMaterialVertex>
         uniform TVE eval,
         uint2 pixelCoord,
         uint instanceID,
+        SurfaceEval surface,
         float3 bary,
         TVE.DeformedVertex v0,
         TVE.DeformedVertex v1,
@@ -27,6 +29,7 @@ interface ISurfaceEvaluate<TVE : IMaterialVertex>
         uint debugMode,
         uint2 pixelCoord,
         uint instanceID,
+        SurfaceEval surface,
         float3 bary,
         TVE.DeformedVertex v0,
         TVE.DeformedVertex v1,

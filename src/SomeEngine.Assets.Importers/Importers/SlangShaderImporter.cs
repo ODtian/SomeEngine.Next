@@ -502,6 +502,7 @@ public static partial class SlangShaderImporter
             ? MapStage(entryReflection.Stage)
             : ShaderStage.Vertex;
         var entryResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
+        CollectGlobalMaterialResources(reflection, state.Metadata);
         HashSet<string> materialResourceNames = EntryPointMaterialResources(entryReflection, state.Metadata);
         CollectGlobalResources(reflection, stage, entryResources, backendName, materialResourceNames);
         CollectEntryPointResources(entryReflection, stage, entryResources, backendName);
@@ -584,6 +585,14 @@ public static partial class SlangShaderImporter
         }
 
         return names;
+    }
+
+    private static void CollectGlobalMaterialResources(
+        ShaderReflection reflection,
+        ShaderMetadata metadata)
+    {
+        for (uint parameterIndex = 0; parameterIndex < reflection.ParameterCount; parameterIndex++)
+            SlangMaterialMeta.BindEntry(reflection.GetParameterByIndex(parameterIndex), metadata);
     }
 
     private static void CollectGlobalResources(

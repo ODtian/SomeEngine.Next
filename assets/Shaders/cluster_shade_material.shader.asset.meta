@@ -2,7 +2,7 @@
   "asset_guid": "e4eb98e0-2dcb-57d4-a7bb-bcb52ecae5bd",
   "source_guid": "a1c81b5d-fbd1-4e0f-96f9-8dc68fc48766",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "ea41e7d2972c61bfea74ba9490aa128d846754a56fda3690a1d9b1815ff206f7",
+  "content_fingerprint": "09e5acdb984e775893506b0e8a754633267231fe57cc2498ba3bb043fe77e096",
   "dependencies": [
     {
       "path": "assets/Shaders/brdf.slang",
@@ -18,11 +18,11 @@
     },
     {
       "path": "assets/Shaders/cluster_shade_material.slang",
-      "hash": "855b27e6585c8d1996496e97bb6f67de356d6f71087ec7dc331a04510483bd70"
+      "hash": "c3d4eb04662227a005d32257d306e3670c912980f43024f2cc475219f0d3216e"
     },
     {
       "path": "assets/Shaders/cluster_shade_pipeline.slang",
-      "hash": "ea3c7a9148e615738dece0be7cf645019d25256184ca0a1db4bb78ada23e3c55"
+      "hash": "aa20d988cc6d5c00c0798d576429fcdce60e508b591c7395f895b42589b181c2"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
@@ -38,7 +38,7 @@
     },
     {
       "path": "assets/Shaders/material_interfaces.slang",
-      "hash": "ae874afa644ce78f806bdec6ef6798d7e58448eaa2e46e364df0de80def1249d"
+      "hash": "68bb95e3584f2b6b80aa8045b8a10ef5f888b1c977ffedab98996fa07750fe95"
     },
     {
       "path": "assets/Shaders/material_vertex_interfaces.slang",
@@ -54,11 +54,19 @@
     },
     {
       "path": "assets/Shaders/standard_pbr.slang",
-      "hash": "5a63fc5c47489304439bbdf31bd8c2559c02bd113cd2e2b38acc91881158415d"
+      "hash": "1511ca1258abf62172216d72715acc13253be7262864c71741565cca1a040493"
+    },
+    {
+      "path": "assets/Shaders/triangle_surface.slang",
+      "hash": "5250a026a8aa68731bfb46de8027959484f4c1d7f41588c6e30dd62fd5bc6a05"
+    },
+    {
+      "path": "assets/Shaders/triangle_surface_inverse.slang",
+      "hash": "984e55d217290877d08e04066308bb60fef5988e9dc756f446cf6483c77359a6"
     },
     {
       "path": "assets/Shaders/vertex_evaluate.slang",
-      "hash": "c0825ecee76c8b24386c95d33c9ae8867177d0eed1f6b4188562787b5775137b"
+      "hash": "2c95e3f6ee406854c92de41a618fd186222f103938fc041daf18371aea5fc9b6"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",

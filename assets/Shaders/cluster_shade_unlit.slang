@@ -17,6 +17,7 @@ struct UnlitPixelContext
 UnlitPixelContext BuildUnlitPixelContext(
     uint2 pixelCoord,
     uint instanceID,
+    SurfaceEval surface,
     float3 bary,
     StaticVertexEval.DeformedVertex v0,
     StaticVertexEval.DeformedVertex v1,
@@ -25,8 +26,8 @@ UnlitPixelContext BuildUnlitPixelContext(
     UnlitPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
     ctx.instanceID = instanceID;
-    ctx.worldNormal = normalize(bary.x * v0.worldNormal + bary.y * v1.worldNormal + bary.z * v2.worldNormal);
-    ctx.uv0 = bary.x * v0.uv0 + bary.y * v1.uv0 + bary.z * v2.uv0;
+    ctx.worldNormal = surface.Normal;
+    ctx.uv0 = surface.TexCoord;
     return ctx;
 }
 
@@ -39,6 +40,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         uniform StaticVertexEval eval,
         uint2 pixelCoord,
         uint instanceID,
+        SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
@@ -48,6 +50,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
             instanceID,
+            surface,
             bary,
             v0,
             v1,
@@ -64,6 +67,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         uint debugMode,
         uint2 pixelCoord,
         uint instanceID,
+        SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
@@ -79,6 +83,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
             instanceID,
+            surface,
             bary,
             v0,
             v1,
@@ -99,7 +104,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
 
         if (debugMode == 11)
         {
-            float3 pos = bary.x * v0.position + bary.y * v1.position + bary.z * v2.position;
+            float3 pos = surface.Position;
             float3 basePos = bary.x * v0.basePosition + bary.y * v1.basePosition + bary.z * v2.basePosition;
             outputColor[pixelCoord] = float4(abs(pos - basePos) * 3.0, 1.0);
             return;
@@ -109,20 +114,24 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
     }
 };
 
+UnlitMaterial Material;
+
 [MaterialTarget("cluster.shade")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CSUnlitShade(uint3 tid : SV_DispatchThreadID, uniform UnlitMaterial material)
+void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
 {
     StaticVertexEval vertexEval;
-    CSShade(vertexEval, material, tid);
+    LinearSurface surface = MakeLinearSurface();
+    CSShade(vertexEval, surface, Material, tid);
 }
 
 [MaterialTarget("cluster.shade.cached")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CSUnlitShadeCached(uint3 tid : SV_DispatchThreadID, uniform UnlitMaterial material)
+void CSUnlitShadeCached(uint3 tid : SV_DispatchThreadID)
 {
     StaticVertexEval vertexEval;
-    CSShadeFromCache(vertexEval, material, tid);
+    LinearSurface surface = MakeLinearSurface();
+    CSShadeFromCache(vertexEval, surface, Material, tid);
 }

@@ -508,19 +508,52 @@ internal sealed partial class FrameExecutor
 
     private void RecordPassCommands(int pass, GraphPassKind kind, CommandContext context)
     {
-        RecordBefore(pass, context);
-        if (kind == GraphPassKind.Raster)
+        ref readonly FramePass row = ref _passes[pass];
+        try
         {
-            RenderingDesc description = BuildRasterRendering(pass);
-            _frame.Backend.BeginRendering(context, description);
-            InvokePass(pass, context);
-            _frame.Backend.EndRendering(context);
+            RecordBefore(pass, context);
         }
-        else
+        catch (Exception failure)
         {
-            InvokePass(pass, context);
+            throw new InvalidOperationException(
+                $"RenderGraph Pass '{row.Label}' failed to record its incoming barriers on " +
+                $"the {row.Queue?.Type.ToString() ?? "unassigned"} queue: {failure.Message}",
+                failure);
         }
-        RecordAfter(pass, context);
+
+        try
+        {
+            if (kind == GraphPassKind.Raster)
+            {
+                RenderingDesc description = BuildRasterRendering(pass);
+                _frame.Backend.BeginRendering(context, description);
+                InvokePass(pass, context);
+                _frame.Backend.EndRendering(context);
+            }
+            else
+            {
+                InvokePass(pass, context);
+            }
+        }
+        catch (Exception failure)
+        {
+            throw new InvalidOperationException(
+                $"RenderGraph Pass '{row.Label}' failed to record commands on " +
+                $"the {row.Queue?.Type.ToString() ?? "unassigned"} queue: {failure.Message}",
+                failure);
+        }
+
+        try
+        {
+            RecordAfter(pass, context);
+        }
+        catch (Exception failure)
+        {
+            throw new InvalidOperationException(
+                $"RenderGraph Pass '{row.Label}' failed to record its outgoing barriers on " +
+                $"the {row.Queue?.Type.ToString() ?? "unassigned"} queue: {failure.Message}",
+                failure);
+        }
     }
 
     private void InvokePass(int pass, CommandContext context)

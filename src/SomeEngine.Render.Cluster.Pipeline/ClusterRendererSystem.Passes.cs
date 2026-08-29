@@ -168,13 +168,13 @@ public sealed partial class ClusterRendererSystem
             CreateConstantBufferView(graph, uniforms), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.Bvh, stride: 64), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.CandidateArgs), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CandidateArgs), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.CandidateClusters, CandidateStride),
             PipelineSync.ComputeShading, GraphAccessMode.Write));
@@ -202,39 +202,41 @@ public sealed partial class ClusterRendererSystem
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.Phase2CandidateArgs), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.Phase2DrawArgs), PipelineSync.ComputeShading));
         ClusterDispatchParameters clear = new(new DispatchArguments(1, 1, 1));
-        _ = AddComputePass(ref graph, "Clear Cluster phase-one cull",
-            _pipelines!.CullClearPhase1, clear, bindingCount, ClusterDispatchParameters.Record);
+        _ = AddComputePass(ref graph, "Reset Cluster cull",
+            _pipelines!.CullReset, clear, bindingCount, ClusterDispatchParameters.Record);
 
         bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, uniforms), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.DrawArgs), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
-            PipelineSync.ComputeShading, GraphAccessMode.Write));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.CandidateClusters, CandidateStride),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.Phase2CandidateClusters, CandidateStride),
-            PipelineSync.ComputeShading, GraphAccessMode.Write));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.CandidateCount, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.Phase2CandidateCount, sizeof(uint)),
-            PipelineSync.ComputeShading));
+            CreateStorageBufferView(graph, frame.DrawArgs), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
+            PipelineSync.ComputeShading, GraphAccessMode.Write));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.SampledTexture(
             CreateSampledTextureView(graph, frame.PreviousHiZ, Format.R32Float, null),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.Phase2CandidateClusters, CandidateStride),
+            PipelineSync.ComputeShading, GraphAccessMode.Write));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.Phase2CandidateCount, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.Phase2CandidateArgs), PipelineSync.ComputeShading));
@@ -255,33 +257,26 @@ public sealed partial class ClusterRendererSystem
         GraphBufferId uniforms)
     {
         int bindingCount = 0;
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.Phase2DrawArgs), PipelineSync.ComputeShading));
-        ClusterDispatchParameters clear = new(new DispatchArguments(1, 1, 1));
-        _ = AddComputePass(ref graph, "Clear Cluster phase-two cull",
-            _pipelines!.CullClearPhase2, clear, bindingCount, ClusterDispatchParameters.Record);
-
-        bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, uniforms), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.DrawArgs), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-            CreateStorageBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
-            PipelineSync.ComputeShading, GraphAccessMode.Write));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.Phase2CandidateClusters, CandidateStride),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.Phase2CandidateCount, sizeof(uint)),
             PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.DrawArgs), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
+            PipelineSync.ComputeShading, GraphAccessMode.Write));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.SampledTexture(
             CreateSampledTextureView(graph, frame.CurrentHiZ, Format.R32Float, null),
             PipelineSync.ComputeShading));
@@ -289,7 +284,7 @@ public sealed partial class ClusterRendererSystem
             CreateStorageBufferView(graph, frame.Phase2DrawArgs), PipelineSync.ComputeShading));
         ClusterIndirectDispatchParameters cull = new(
             RequireDispatchIndirectLayout(), frame.Phase2CandidateArgs, 0);
-        _ = AddComputePass(ref graph, "Cluster phase-two cull", _pipelines.CullPhase2,
+        _ = AddComputePass(ref graph, "Cluster phase-two cull", _pipelines!.CullPhase2,
             cull, bindingCount,
             static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                 _ = access.Read(data.Arguments,
@@ -562,35 +557,26 @@ public sealed partial class ClusterRendererSystem
                     : "Cluster phase two deform bin uniforms");
             ulong indirectOffset = checked((ulong)bin * ClusterIndirectAbi.DispatchBytes);
             int bindingCount = 0;
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+                CreateReadOnlyBufferView(graph, frame.InstanceData),
+                PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(
                     graph,
                     frame.InstanceProperties,
                     frame.InstancePropertiesRange),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.InstanceData),
-                PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.DeformCache),
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
+                CreateConstantBufferView(graph, pushConstants),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(graph, frame.PageHeap),
-                PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.CacheOffsets, sizeof(uint)),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
                     graph,
                     frame.VisibleClusters,
                     VisibleClusterStride),
-                PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(
-                    graph,
-                    frame.CacheAllocationCounter,
-                    sizeof(uint)),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
@@ -604,8 +590,17 @@ public sealed partial class ClusterRendererSystem
                     frame.DeformBinMeta,
                     DeformBinStride),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
-                CreateConstantBufferView(graph, pushConstants),
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+                CreateStorageBufferView(graph, frame.DeformCache),
+                PipelineSync.ComputeShading));
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+                CreateStorageBufferView(graph, frame.CacheOffsets, sizeof(uint)),
+                PipelineSync.ComputeShading));
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+                CreateStorageBufferView(
+                    graph,
+                    frame.CacheAllocationCounter,
+                    sizeof(uint)),
                 PipelineSync.ComputeShading));
             ClusterIndirectDispatchParameters passData = new(
                 RequireDispatchIndirectLayout(),
@@ -655,40 +650,26 @@ public sealed partial class ClusterRendererSystem
             ulong indirectOffset = checked(
                 (ulong)(frame.MaterialCount + bin) * ClusterIndirectAbi.DispatchBytes);
             int bindingCount = 0;
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+                CreateReadOnlyBufferView(graph, frame.InstanceData),
+                PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(
                     graph,
                     frame.InstanceProperties,
                     frame.InstancePropertiesRange),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.InstanceData),
-                PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
-                CreateStorageTextureView(
-                    graph,
-                    frame.VisBuffer,
-                    Format.R32UInt,
-                    null),
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
+                CreateConstantBufferView(graph, pushConstants),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(graph, frame.PageHeap),
-                PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
-                CreateStorageTextureView(
-                    graph,
-                    frame.SoftwareDepth,
-                    Format.R32UInt,
-                    null),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
                     graph,
                     frame.VisibleClusters,
                     VisibleClusterStride),
-                PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(graph, frame.SoftwareDebug),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
@@ -714,6 +695,20 @@ public sealed partial class ClusterRendererSystem
                         1,
                         TextureAspects.Depth)),
                 PipelineSync.ComputeShading));
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
+                CreateStorageTextureView(
+                    graph,
+                    frame.VisBuffer,
+                    Format.R32UInt,
+                    null),
+                PipelineSync.ComputeShading));
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
+                CreateStorageTextureView(
+                    graph,
+                    frame.SoftwareDepth,
+                    Format.R32UInt,
+                    null),
+                PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(graph, frame.DeformCache),
                 PipelineSync.ComputeShading));
@@ -723,8 +718,8 @@ public sealed partial class ClusterRendererSystem
                     frame.CacheOffsets,
                     sizeof(uint)),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
-                CreateConstantBufferView(graph, pushConstants),
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+                CreateStorageBufferView(graph, frame.SoftwareDebug),
                 PipelineSync.ComputeShading));
             ClusterIndirectDispatchParameters passData = new(
                 RequireDispatchIndirectLayout(),
@@ -842,23 +837,23 @@ public sealed partial class ClusterRendererSystem
             ulong offset = checked((ulong)bin * ClusterIndirectAbi.DrawBytes);
             ClusterRasterPipeline pipeline = _pipelines!.HardwareRaster;
             int bindingCount = 0;
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+                CreateReadOnlyBufferView(graph, frame.InstanceData),
+                PipelineSync.AllShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(
                     graph,
                     frame.InstanceProperties,
                     frame.InstancePropertiesRange),
                 PipelineSync.AllShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.InstanceData),
-                PipelineSync.AllShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(graph, drawUniforms),
                 PipelineSync.AllShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.PageHeap),
-                PipelineSync.AllShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(graph, dispatchUniforms),
+                PipelineSync.AllShading));
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+                CreateReadOnlyBufferView(graph, frame.PageHeap),
                 PipelineSync.AllShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
@@ -1183,6 +1178,8 @@ public sealed partial class ClusterRendererSystem
             ClusterDispatchParameters.Record, asyncCompute: true);
 
         Matrix4x4 viewProjection = view.View * view.Projection;
+        if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 clipToWorld))
+            throw new InvalidOperationException("The Cluster shade projection is not invertible.");
         GraphBufferId resolveUniforms = UploadUniform(
             ref graph,
             new ClusterResolveUniforms
@@ -1194,26 +1191,33 @@ public sealed partial class ClusterRendererSystem
             },
             "Cluster resolve uniforms");
         bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(
                 graph, frame.InstanceProperties, frame.InstancePropertiesRange),
-            PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
-            CreateStorageTextureView(
-                graph, frame.SceneColor, Format.R16G16B16A16Float, null),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, resolveUniforms), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.SampledTexture(
             CreateSampledTextureView(graph, frame.VisBuffer, Format.R32UInt, null),
             PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.SampledTexture(
+            CreateSampledTextureView(
+                graph,
+                frame.Depth,
+                Format.D32Float,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth)),
+            PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
+            CreateStorageTextureView(
+                graph, frame.SceneColor, Format.R16G16B16A16Float, null),
+            PipelineSync.ComputeShading));
         ClusterDispatchParameters resolve = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
         _ = AddComputePass(ref graph, "Resolve Cluster visibility background",
@@ -1234,6 +1238,7 @@ public sealed partial class ClusterRendererSystem
                 new ClusterShadeUniforms
                 {
                     ViewProj = viewProjection,
+                    ClipToWorld = clipToWorld,
                     View = view.View,
                     PrevViewProj = previousViewProjection,
                     MotionViewProj = viewProjection,
@@ -1291,15 +1296,11 @@ public sealed partial class ClusterRendererSystem
             },
             "Cluster explicit motion vector uniforms");
         bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(
                 graph, frame.InstanceProperties, frame.InstancePropertiesRange),
-            PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
-            CreateStorageTextureView(
-                graph, frame.MotionVectors, Format.R16G16Float, null),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, motionUniforms), PipelineSync.ComputeShading));
@@ -1311,6 +1312,10 @@ public sealed partial class ClusterRendererSystem
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
+            CreateStorageTextureView(
+                graph, frame.MotionVectors, Format.R16G16Float, null),
+            PipelineSync.ComputeShading));
         ClusterDispatchParameters motion = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
         _ = AddComputePass(ref graph, "Cluster explicit motion vectors",
@@ -1326,27 +1331,16 @@ public sealed partial class ClusterRendererSystem
         bool standard)
     {
         int count = 0;
+        AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(
                 graph, frame.InstanceProperties, frame.InstancePropertiesRange),
             PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
-        AddBinding(ref count, GraphParameterResourceBinding.StorageTexture(
-            CreateStorageTextureView(
-                graph, frame.SceneColor, Format.R16G16B16A16Float, null),
-            PipelineSync.ComputeShading));
-        if (standard)
-            AddBinding(ref count, GraphParameterResourceBinding.SampledWith(_materialBindings!.MaterialSampler));
+            CreateReadOnlyBufferView(graph, material.Scalars), PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, uniforms), PipelineSync.ComputeShading));
-        AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, material.Scalars), PipelineSync.ComputeShading));
-        AddBinding(ref count, GraphParameterResourceBinding.StorageTexture(
-            CreateStorageTextureView(
-                graph, frame.MotionVectors, Format.R16G16Float, null),
-            PipelineSync.ComputeShading));
-        AddBinding(ref count, GraphParameterResourceBinding.SampledWith(material.Binding.Sampler));
 
         if (standard)
         {
@@ -1356,9 +1350,6 @@ public sealed partial class ClusterRendererSystem
             AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(graph, frame.LightBuffer, LightStride),
                 PipelineSync.ComputeShading));
-            AddBinding(ref count, GraphParameterResourceBinding.ConstantBuffer(
-                CreateConstantBufferView(graph, frame.LightGridUniforms),
-                PipelineSync.ComputeShading));
             AddBinding(ref count, GraphParameterResourceBinding.SampledTexture(
                 CreateSampledTextureView(
                     graph,
@@ -1366,6 +1357,11 @@ public sealed partial class ClusterRendererSystem
                     Format.R8G8B8A8UNorm,
                     null,
                     TextureViewDimension.Texture2DArray),
+                PipelineSync.ComputeShading));
+            AddBinding(ref count, GraphParameterResourceBinding.SampledWith(
+                _materialBindings!.MaterialSampler));
+            AddBinding(ref count, GraphParameterResourceBinding.ConstantBuffer(
+                CreateConstantBufferView(graph, frame.LightGridUniforms),
                 PipelineSync.ComputeShading));
             AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(graph, frame.LightGrid, 8),
@@ -1387,11 +1383,26 @@ public sealed partial class ClusterRendererSystem
         AddBinding(ref count, GraphParameterResourceBinding.SampledTexture(
             CreateSampledTextureView(graph, frame.VisBuffer, Format.R32UInt, null),
             PipelineSync.ComputeShading));
+        AddBinding(ref count, GraphParameterResourceBinding.SampledTexture(
+            CreateSampledTextureView(
+                graph,
+                frame.Depth,
+                Format.D32Float,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth)),
+            PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
             PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddBinding(ref count, GraphParameterResourceBinding.StorageTexture(
+            CreateStorageTextureView(
+                graph, frame.SceneColor, Format.R16G16B16A16Float, null),
+            PipelineSync.ComputeShading));
+        AddBinding(ref count, GraphParameterResourceBinding.StorageTexture(
+            CreateStorageTextureView(
+                graph, frame.MotionVectors, Format.R16G16Float, null),
+            PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.DeformCache), PipelineSync.ComputeShading));
         AddBinding(ref count, GraphParameterResourceBinding.ReadOnlyBuffer(
@@ -1409,6 +1420,7 @@ public sealed partial class ClusterRendererSystem
                 CreateSampledTextureView(graph, material.Arm, null, null),
                 PipelineSync.ComputeShading));
         }
+        AddBinding(ref count, GraphParameterResourceBinding.SampledWith(material.Binding.Sampler));
         return count;
     }
 
@@ -1502,7 +1514,7 @@ public sealed partial class ClusterRendererSystem
             frame.Height);
         _ = graph.AddCopyPass(
             "Update Cluster temporal histories",
-            PassQueueSelection.AnyOfType(QueueType.Copy),
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
             passData,
             default,
             (ref PassDefinition access, ref ClusterHistoryCopyParameters data) =>

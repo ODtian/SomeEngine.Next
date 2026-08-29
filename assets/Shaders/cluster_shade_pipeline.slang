@@ -3,10 +3,12 @@
 
 #include "vertex_evaluate.slang"
 #include "material_interfaces.slang"
+#include "triangle_surface_inverse.slang"
 
 struct ShadeUniforms
 {
     float4x4 ViewProj;
+    float4x4 ClipToWorld;
     float4x4 View;
     float4x4 PrevViewProj;
     float4x4 MotionViewProj;
@@ -73,6 +75,7 @@ StructuredBuffer<uint> BinOffsets;
 StructuredBuffer<uint> BinCounts;
 
 Texture2D<uint> VisBuffer;
+Texture2D<float> DepthBuffer;
 
 StructuredBuffer<DrawRequest> VisibleClusters;
 ByteAddressBuffer PageHeap;
@@ -295,12 +298,6 @@ void loadPreviousTriangleVertices<TVE : IVertexEvaluate>(
     out TVE.DeformedVertex v1,
     out TVE.DeformedVertex v2)
 {
-    if (useDeformCache)
-    {
-        readCachedPreviousTriangleVertices(evaluator, tri, DeformCache, CacheOffsets, v0, v1, v2);
-        return;
-    }
-
     evaluatePreviousTriangleVertices(evaluator, tri, v0, v1, v2);
 }
 
@@ -336,12 +333,67 @@ float3 computeTriangleBarycentric<TVE : IVertexEvaluate>(
     return ComputePerspectiveBarycentric(float2(pixelCoord) + 0.5, sp0, sp1, sp2);
 }
 
-void writeMotionVector<TVE : IVertexEvaluate>(
+SurfaceVertex MakeSurfaceVertex<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
-    uint2 pixelCoord,
+    TVE.DeformedVertex value)
+{
+    SurfaceVertex result;
+    result.Position = evaluator.getPosition(value);
+    result.Normal = evaluator.getNormal(value);
+    result.TexCoord = evaluator.getTexCoord0(value);
+    return result;
+}
+
+Triangle MakeSurfaceTriangle<TVE : IVertexEvaluate>(
+    uniform TVE evaluator,
     TVE.DeformedVertex v0,
     TVE.DeformedVertex v1,
-    TVE.DeformedVertex v2,
+    TVE.DeformedVertex v2)
+{
+    return MakeTriangle(
+        MakeSurfaceVertex(evaluator, v0),
+        MakeSurfaceVertex(evaluator, v1),
+        MakeSurfaceVertex(evaluator, v2));
+}
+
+float3 ReconstructWorldPosition(uint2 pixelCoord)
+{
+    float2 uv = (float2(pixelCoord) + 0.5) /
+        float2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    float depth = DepthBuffer.Load(int3(pixelCoord, 0));
+    float4 world = mul(
+        float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0),
+        Uniforms.ClipToWorld);
+    return abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
+}
+
+SurfaceBarycentrics ResolveBarycentrics<
+    TVE : IVertexEvaluate,
+    TSurface : ITriangleSurface>(
+    uniform TVE evaluator,
+    uniform TSurface surface,
+    uint2 pixelCoord,
+    Triangle triangle,
+    TVE.DeformedVertex v0,
+    TVE.DeformedVertex v1,
+    TVE.DeformedVertex v2)
+{
+    float3 seed = computeTriangleBarycentric(evaluator, pixelCoord, v0, v1, v2);
+    return ResolveTriangleSurface(
+        surface,
+        triangle,
+        ReconstructWorldPosition(pixelCoord),
+        seed,
+        Uniforms.ViewProj,
+        uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight));
+}
+
+void writeMotionVector<TVE : IVertexEvaluate, TSurface : ITriangleSurface>(
+    uniform TVE evaluator,
+    uniform TSurface surface,
+    uint2 pixelCoord,
+    float3 barycentric,
+    Triangle currentTriangle,
     TVE.DeformedVertex previousV0,
     TVE.DeformedVertex previousV1,
     TVE.DeformedVertex previousV2)
@@ -352,15 +404,13 @@ void writeMotionVector<TVE : IVertexEvaluate>(
         return;
     }
 
-    float3 bary = computeTriangleBarycentric(evaluator, pixelCoord, v0, v1, v2);
-    float3 currentPosition =
-        bary.x * evaluator.getPosition(v0) +
-        bary.y * evaluator.getPosition(v1) +
-        bary.z * evaluator.getPosition(v2);
-    float3 previousPosition =
-        bary.x * evaluator.getPosition(previousV0) +
-        bary.y * evaluator.getPosition(previousV1) +
-        bary.z * evaluator.getPosition(previousV2);
+    Triangle previousTriangle = MakeSurfaceTriangle(
+        evaluator,
+        previousV0,
+        previousV1,
+        previousV2);
+    float3 currentPosition = surface.position(currentTriangle, barycentric);
+    float3 previousPosition = surface.position(previousTriangle, barycentric);
 
     float4 currentClip = mul(float4(currentPosition, 1.0), Uniforms.MotionViewProj);
     float4 previousClip = mul(float4(previousPosition, 1.0), Uniforms.PrevMotionViewProj);
@@ -374,8 +424,12 @@ void writeMotionVector<TVE : IVertexEvaluate>(
     OutputMotionVectors[pixelCoord] = clipToUv(currentClip) - clipToUv(previousClip);
 }
 
-void CSShadeCore<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
+void CSShadeCore<
+    TVE : IVertexEvaluate,
+    TSurface : ITriangleSurface,
+    TMaterial : ISurfaceEvaluate<TVE>>(
     uniform TVE vertexEval,
+    uniform TSurface surface,
     uniform TMaterial material,
     uint3 tid,
     bool useDeformCache)
@@ -396,7 +450,19 @@ void CSShadeCore<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
     TVE.DeformedVertex v2;
     loadTriangleVertices(vertexEval, tri, useDeformCache, v0, v1, v2);
 
-    float3 bary = computeTriangleBarycentric(vertexEval, pixelCoord, v0, v1, v2);
+    Triangle triangle = MakeSurfaceTriangle(vertexEval, v0, v1, v2);
+    SurfaceBarycentrics coordinates = ResolveBarycentrics(
+        vertexEval,
+        surface,
+        pixelCoord,
+        triangle,
+        v0,
+        v1,
+        v2);
+    float3 bary = coordinates.Valid != 0u
+        ? coordinates.Value
+        : computeTriangleBarycentric(vertexEval, pixelCoord, v0, v1, v2);
+    SurfaceEval surfaceEval = surface.eval(triangle, bary);
 
     if (Uniforms.DebugMode != 0)
     {
@@ -405,6 +471,7 @@ void CSShadeCore<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
             Uniforms.DebugMode,
             pixelCoord,
             tri.instanceID,
+            surfaceEval,
             bary,
             v0,
             v1,
@@ -418,6 +485,7 @@ void CSShadeCore<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
         vertexEval,
         pixelCoord,
         tri.instanceID,
+        surfaceEval,
         bary,
         v0,
         v1,
@@ -430,7 +498,15 @@ void CSShadeCore<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
         TVE.DeformedVertex previousV1;
         TVE.DeformedVertex previousV2;
         loadPreviousTriangleVertices(vertexEval, tri, useDeformCache, previousV0, previousV1, previousV2);
-        writeMotionVector(vertexEval, pixelCoord, v0, v1, v2, previousV0, previousV1, previousV2);
+        writeMotionVector(
+            vertexEval,
+            surface,
+            pixelCoord,
+            bary,
+            triangle,
+            previousV0,
+            previousV1,
+            previousV2);
     }
     else
     {
@@ -438,20 +514,28 @@ void CSShadeCore<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
     }
 }
 
-void CSShade<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
+void CSShade<
+    TVE : IVertexEvaluate,
+    TSurface : ITriangleSurface,
+    TMaterial : ISurfaceEvaluate<TVE>>(
     uniform TVE vertexEval,
+    uniform TSurface surface,
     uniform TMaterial material,
     uint3 tid)
 {
-    CSShadeCore(vertexEval, material, tid, false);
+    CSShadeCore(vertexEval, surface, material, tid, false);
 }
 
-void CSShadeFromCache<TVE : IVertexEvaluate, TMaterial : ISurfaceEvaluate<TVE>>(
+void CSShadeFromCache<
+    TVE : IVertexEvaluate,
+    TSurface : ITriangleSurface,
+    TMaterial : ISurfaceEvaluate<TVE>>(
     uniform TVE vertexEval,
+    uniform TSurface surface,
     uniform TMaterial material,
     uint3 tid)
 {
-    CSShadeCore(vertexEval, material, tid, true);
+    CSShadeCore(vertexEval, surface, material, tid, true);
 }
 
 #endif

@@ -42,9 +42,9 @@ public sealed class CookedClusterShaderContractTests
                 "DrawArgs",
                 "VisibleClusters",
                 "HiZTexture",
-                "Phase2CandidateClusters",
-                "Phase2CandidateCount",
-                "Phase2CandidateArgs"),
+                "NextCandidates",
+                "NextCandidateCount",
+                "NextCandidateArgs"),
             ResourceNames(cull, entryPoint));
     }
 

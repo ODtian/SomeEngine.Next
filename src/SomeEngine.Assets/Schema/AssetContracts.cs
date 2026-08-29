@@ -499,9 +499,8 @@ public enum ClusterShaderOperationRole : byte
 {
     None = 0,
     BvhTraversal = 1,
-    CullPhaseOneReset = 2,
+    CullReset = 2,
     CullPhaseOne = 3,
-    CullPhaseTwoReset = 4,
     CullPhaseTwo = 5,
     RasterDeformBinningReset = 6,
     RasterDeformBinningCount = 7,

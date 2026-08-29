@@ -184,7 +184,7 @@ public sealed class AssetArchitectureAcceptanceTests
 
         Assert.Equal(cluster.AssetGuid, loadedCluster.AssetGuid);
         Assert.Equal(cluster.Name, loadedCluster.Name);
-        Assert.Equal(24, loadedCluster.Operations?.Count);
+        Assert.Equal(cluster.Operations?.Count, loadedCluster.Operations?.Count);
         Assert.All(
             loadedCluster.Operations!,
             operation => Assert.All(

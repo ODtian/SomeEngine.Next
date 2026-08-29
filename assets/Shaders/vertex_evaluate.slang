@@ -82,6 +82,9 @@ interface IVertexEvaluate : IMaterialVertex
 {
     DeformedVertex evaluate(VertexEvalContext ctx);
     float3 getPosition(DeformedVertex v);
+    float3 getNormal(DeformedVertex v);
+    float4 getTangent(DeformedVertex v);
+    float2 getTexCoord0(DeformedVertex v);
 
     uint getCacheByteSize(uint vertexCount);
     void writeCache(
@@ -133,6 +136,21 @@ struct StaticVertexEval : IVertexEvaluate
     float3 getPosition(DeformedVertex v)
     {
         return v.position;
+    }
+
+    float3 getNormal(DeformedVertex v)
+    {
+        return v.worldNormal;
+    }
+
+    float4 getTangent(DeformedVertex v)
+    {
+        return v.worldTangent;
+    }
+
+    float2 getTexCoord0(DeformedVertex v)
+    {
+        return v.uv0;
     }
 
     uint getCacheByteSize(uint vertexCount)
@@ -224,6 +242,21 @@ struct WaveVertexEval : IVertexEvaluate
     float3 getPosition(DeformedVertex v)
     {
         return v.position;
+    }
+
+    float3 getNormal(DeformedVertex v)
+    {
+        return v.worldNormal;
+    }
+
+    float4 getTangent(DeformedVertex v)
+    {
+        return v.worldTangent;
+    }
+
+    float2 getTexCoord0(DeformedVertex v)
+    {
+        return v.uv0;
     }
 
     uint getCacheByteSize(uint vertexCount)

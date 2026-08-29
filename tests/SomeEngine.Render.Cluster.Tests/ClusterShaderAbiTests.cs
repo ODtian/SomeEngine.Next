@@ -405,7 +405,10 @@ public sealed class ClusterShaderAbiTests
         using AssetRead<ClusterShaders> configurationRead = loader.Read(configurationHandle);
         IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
             configurationRead.Value.Operations);
-        Assert.Equal(24, operations.Count);
+        Assert.Equal(
+            Enum.GetValues<ClusterShaderOperationRole>()
+                .Count(static role => role != ClusterShaderOperationRole.None),
+            operations.Count);
 
         var modules = new Dictionary<string, IModule>(StringComparer.OrdinalIgnoreCase);
         foreach (ClusterShaderOperation operation in operations)

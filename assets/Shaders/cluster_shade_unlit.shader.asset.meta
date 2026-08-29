@@ -2,7 +2,7 @@
   "asset_guid": "77261b58-8f75-5ad6-8fee-d7490a8cf873",
   "source_guid": "7842851d-de0f-4d7d-8386-12b37a99d845",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "bca221091da171dd844ccc6ccdad341ac1fd6358471843022d8ae886e266237d",
+  "content_fingerprint": "5fee2aeff1b87b8e5bfc2e080e4a56da4131d3bce33d49f8af079168a3797f73",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
@@ -14,11 +14,11 @@
     },
     {
       "path": "assets/Shaders/cluster_shade_pipeline.slang",
-      "hash": "ea3c7a9148e615738dece0be7cf645019d25256184ca0a1db4bb78ada23e3c55"
+      "hash": "aa20d988cc6d5c00c0798d576429fcdce60e508b591c7395f895b42589b181c2"
     },
     {
       "path": "assets/Shaders/cluster_shade_unlit.slang",
-      "hash": "e98da65101eee43ceb34d4c3eb83b30906d2c7f59ac5643786470b098f993cef"
+      "hash": "27cbb5f4c8cb2be637de54bdeee2b8a4d8ac6932df6d68922109dfa83139c194"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
@@ -34,7 +34,7 @@
     },
     {
       "path": "assets/Shaders/material_interfaces.slang",
-      "hash": "ae874afa644ce78f806bdec6ef6798d7e58448eaa2e46e364df0de80def1249d"
+      "hash": "68bb95e3584f2b6b80aa8045b8a10ef5f888b1c977ffedab98996fa07750fe95"
     },
     {
       "path": "assets/Shaders/material_vertex_interfaces.slang",
@@ -49,8 +49,16 @@
       "hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
     },
     {
+      "path": "assets/Shaders/triangle_surface.slang",
+      "hash": "5250a026a8aa68731bfb46de8027959484f4c1d7f41588c6e30dd62fd5bc6a05"
+    },
+    {
+      "path": "assets/Shaders/triangle_surface_inverse.slang",
+      "hash": "984e55d217290877d08e04066308bb60fef5988e9dc756f446cf6483c77359a6"
+    },
+    {
       "path": "assets/Shaders/vertex_evaluate.slang",
-      "hash": "c0825ecee76c8b24386c95d33c9ae8867177d0eed1f6b4188562787b5775137b"
+      "hash": "2c95e3f6ee406854c92de41a618fd186222f103938fc041daf18371aea5fc9b6"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",

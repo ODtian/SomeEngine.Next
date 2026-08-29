@@ -11,8 +11,9 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// </summary>
 internal sealed class ClusterPipelineSet : IDisposable
 {
-    private const int RequiredPipelineCount =
-        (int)ClusterShaderOperationRole.ToneMapAndPresent;
+    private static readonly int RequiredPipelineCount = Enum
+        .GetValues<ClusterShaderOperationRole>()
+        .Count(static role => role != ClusterShaderOperationRole.None);
 
     private readonly List<ClusterPipeline> _pipelines = [];
     private bool _disposed;
@@ -70,9 +71,8 @@ internal sealed class ClusterPipelineSet : IDisposable
                         alphaToCoverage);
 
                 Traversal = Compute(ClusterShaderOperationRole.BvhTraversal, "Cluster BVH traversal");
-                CullClearPhase1 = Compute(ClusterShaderOperationRole.CullPhaseOneReset, "Cluster cull phase-one clear");
+                CullReset = Compute(ClusterShaderOperationRole.CullReset, "Cluster cull reset");
                 CullPhase1 = Compute(ClusterShaderOperationRole.CullPhaseOne, "Cluster cull phase one");
-                CullClearPhase2 = Compute(ClusterShaderOperationRole.CullPhaseTwoReset, "Cluster cull phase-two clear");
                 CullPhase2 = Compute(ClusterShaderOperationRole.CullPhaseTwo, "Cluster cull phase two");
 
                 RasterDeformBinReset = Compute(
@@ -161,9 +161,8 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 
     internal ClusterComputePipeline Traversal { get; }
-    internal ClusterComputePipeline CullClearPhase1 { get; }
+    internal ClusterComputePipeline CullReset { get; }
     internal ClusterComputePipeline CullPhase1 { get; }
-    internal ClusterComputePipeline CullClearPhase2 { get; }
     internal ClusterComputePipeline CullPhase2 { get; }
     internal ClusterComputePipeline RasterDeformBinReset { get; }
     internal ClusterComputePipeline RasterDeformBinCount { get; }

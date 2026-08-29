@@ -64,7 +64,10 @@ public sealed class ClusterAssetLoaderTests
         string relativePath = "assets/pipelines/invalid.clusterrender.asset";
         string fullPath = Path.Combine(directory.Path, relativePath.Replace('/', Path.DirectorySeparatorChar));
         AssetGuid valid = AssetGuid.New();
-        ClusterShaders root = CreateClusterRoot(Enumerable.Repeat(valid, 24).ToArray());
+        int operationCount = Enum.GetValues<ClusterShaderOperationRole>()
+            .Count(static role => role != ClusterShaderOperationRole.None);
+        ClusterShaders root = CreateClusterRoot(
+            Enumerable.Repeat(valid, operationCount).ToArray());
         root.AssetGuid = clusterGuid.ToFlatString();
         root.Operations![^1].Shaders![0].AssetGuid = "not-a-guid";
         AssetWriter.Write(BinaryDocumentWriter.Create(root), fullPath);
@@ -85,7 +88,7 @@ public sealed class ClusterAssetLoaderTests
             new AssetId<ClusterShaders>(clusterGuid));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
             () => loader.WaitAsync(handle).AsTask());
-        Assert.Contains("Operations[23].Shader", error.Message);
+        Assert.Contains($"Operations[{operationCount - 1}].Shader", error.Message);
         Assert.Equal(0, storage.DependencyResolutions);
     }
 

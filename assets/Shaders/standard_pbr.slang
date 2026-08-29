@@ -50,6 +50,7 @@ float SampleLightCookie(GPULight light, float3 surfacePosition)
 StandardPBRPixelContext BuildStandardPBRPixelContext(
     uint2 pixelCoord,
     uint instanceID,
+    SurfaceEval surface,
     float3 bary,
     StaticVertexEval.DeformedVertex v0,
     StaticVertexEval.DeformedVertex v1,
@@ -58,11 +59,11 @@ StandardPBRPixelContext BuildStandardPBRPixelContext(
     StandardPBRPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
     ctx.instanceID = instanceID;
-    ctx.surfacePosition = bary.x * v0.position + bary.y * v1.position + bary.z * v2.position;
-    ctx.worldNormal = normalize(bary.x * v0.worldNormal + bary.y * v1.worldNormal + bary.z * v2.worldNormal);
+    ctx.surfacePosition = surface.Position;
+    ctx.worldNormal = surface.Normal;
     float3 tangent = normalize(bary.x * v0.worldTangent.xyz + bary.y * v1.worldTangent.xyz + bary.z * v2.worldTangent.xyz);
     ctx.worldTangent = float4(tangent, v0.worldTangent.w);
-    ctx.uv0 = bary.x * v0.uv0 + bary.y * v1.uv0 + bary.z * v2.uv0;
+    ctx.uv0 = surface.TexCoord;
     return ctx;
 }
 
@@ -78,6 +79,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         uniform StaticVertexEval eval,
         uint2 pixelCoord,
         uint instanceID,
+        SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
@@ -87,6 +89,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         StandardPBRPixelContext ctx = BuildStandardPBRPixelContext(
             pixelCoord,
             instanceID,
+            surface,
             bary,
             v0,
             v1,
@@ -205,6 +208,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         uint debugMode,
         uint2 pixelCoord,
         uint instanceID,
+        SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
@@ -220,6 +224,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         StandardPBRPixelContext ctx = BuildStandardPBRPixelContext(
             pixelCoord,
             instanceID,
+            surface,
             bary,
             v0,
             v1,
@@ -240,7 +245,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
 
         if (debugMode == 11)
         {
-            float3 pos = bary.x * v0.position + bary.y * v1.position + bary.z * v2.position;
+            float3 pos = surface.Position;
             float3 basePos = bary.x * v0.basePosition + bary.y * v1.basePosition + bary.z * v2.basePosition;
             float3 delta = abs(pos - basePos) * 3.0;
             outputColor[pixelCoord] = float4(delta, 1.0);

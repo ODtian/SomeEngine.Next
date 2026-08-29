@@ -30,17 +30,6 @@ uint SlotBin(
     return ValidBin(key, maxBins);
 }
 
-uint SlotBin(
-    StructuredBuffer<uint> slots,
-    uint instanceID,
-    uint field,
-    uint capacity,
-    uint maxBins)
-{
-    uint slotOffset = GetClusterMaterialSlotOffset(instanceID);
-    return SlotBin(slots, slotOffset, 0u, field, capacity, maxBins);
-}
-
 void WriteDispatch(
     RWByteAddressBuffer args,
     uint row,
