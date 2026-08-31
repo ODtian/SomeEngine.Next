@@ -640,11 +640,11 @@ public ref partial struct RenderGraphEdit
 
     internal void SetPassParameterBlock(
         in GraphIdentity pass,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         ReadOnlySpan<byte> ordinaryData)
     {
         GraphPass row = Staging.Passes.Get(pass);
-        if (row.ParameterLayout != VariableLayoutReflection.Null)
+        if (row.ParameterLayout != ShaderVariableLayout.Null)
             throw new InvalidOperationException("The Pass parameter block is already assigned.");
         row.ParameterLayout = layout;
         row.ParameterOrdinaryData = ordinaryData.ToArray();

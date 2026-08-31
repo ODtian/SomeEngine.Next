@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,6 +9,7 @@ using SlangShaderSharp;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using Schema = global::SomeEngine.Assets.Schema;
+using SlangProgram = SlangShaderSharp.ShaderProgram;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -290,7 +290,7 @@ public static partial class SlangShaderImporter
             AssetGuid = context.AssetGuid.ToFlatString(),
             Name = name,
             ImportTrace = CreateImportTrace(context, fingerprint, dependencies),
-            Variants = [],
+            Programs = [],
             EntryPointAttributes = [],
             Reflections = [],
             EntryPointReflections = [],
@@ -402,38 +402,32 @@ public static partial class SlangShaderImporter
     private static void CollectEntryPoints(ShaderImportState state)
     {
         int entryPointCount = state.Module.GetDefinedEntryPointCount();
+        if (entryPointCount == 0)
+            throw new InvalidDataException("A cooked shader module must define at least one entry point.");
+
+        var entries = new CookedEntryPoint[entryPointCount];
+        var components = new IComponentType[checked(entryPointCount + 1)];
+        components[0] = state.Module;
         for (int index = 0; index < entryPointCount; index++)
         {
-            if (!TryCreateLinkedEntryPoint(state, index, out LinkedEntryPoint linkedEntryPoint))
-            {
-                continue;
-            }
-
-            AddCompiledVariants(state, linkedEntryPoint);
-            AddEntryPointReflections(state, linkedEntryPoint);
-            AddMaterialScalarLayouts(state, linkedEntryPoint.LinkedProgram);
+            state.Module.GetDefinedEntryPoint(index, out IEntryPoint entryPoint);
+            state.Lifetime.Track(entryPoint);
+            entries[index] = new CookedEntryPoint(
+                entryPoint,
+                SlangEntryMeta.Read(entryPoint.GetFunctionReflection()));
+            components[index + 1] = entryPoint;
         }
-    }
 
-    private static bool TryCreateLinkedEntryPoint(
-        ShaderImportState state,
-        int index,
-        out LinkedEntryPoint linkedEntryPoint)
-    {
-        linkedEntryPoint = default;
-        state.Module.GetDefinedEntryPoint(index, out IEntryPoint entryPoint);
-        state.Lifetime.Track(entryPoint);
-        List<SlangEntryMeta.Attr> attributes = SlangEntryMeta.Read(entryPoint.GetFunctionReflection());
         state.Session.CreateCompositeComponentType(
-            [state.Module, entryPoint],
+            components,
             out IComponentType? composedProgram,
             out ISlangBlob? diagnostics);
         state.Lifetime.Track(composedProgram);
         state.Lifetime.Track(diagnostics);
         if (composedProgram == null)
         {
-            Console.WriteLine($"Warning: Failed to compose entry point {index}: {GetString(diagnostics)}");
-            return false;
+            throw new InvalidDataException(
+                $"Failed to compose cooked shader program: {GetString(diagnostics)}");
         }
 
         composedProgram.Link(out IComponentType? linkedProgram, out ISlangBlob? linkDiagnostics);
@@ -441,53 +435,83 @@ public static partial class SlangShaderImporter
         state.Lifetime.Track(linkDiagnostics);
         if (linkedProgram == null)
         {
-            Console.WriteLine($"Warning: Failed to link entry point {index}: {GetString(linkDiagnostics)}");
-            return false;
+            throw new InvalidDataException(
+                $"Failed to link cooked shader program: {GetString(linkDiagnostics)}");
         }
 
-        linkedEntryPoint = new LinkedEntryPoint(entryPoint, linkedProgram, attributes);
-        return true;
+        AddMaterialScalarLayouts(state, linkedProgram);
+        AddCookedPrograms(state, linkedProgram, entries);
     }
 
-    private static void AddEntryPointReflections(
+    private static void AddCookedPrograms(
         ShaderImportState state,
-        LinkedEntryPoint linkedEntryPoint)
+        IComponentType linkedProgram,
+        ReadOnlySpan<CookedEntryPoint> entries)
     {
         for (int targetIndex = 0; targetIndex < state.Targets.Length; targetIndex++)
         {
-            ShaderReflection reflection = linkedEntryPoint.LinkedProgram.GetLayout(
+            ShaderReflection reflection = linkedProgram.GetLayout(
                 (nint)targetIndex,
                 out ISlangBlob? diagnostics);
             state.Lifetime.Track(diagnostics);
             if (reflection == ShaderReflection.Null)
-            {
-                continue;
-            }
+                throw new InvalidDataException(
+                    $"Failed to obtain cooked shader layout for target {targetIndex}: " +
+                    GetString(diagnostics));
 
-            SlangResult metadataResult = linkedEntryPoint.LinkedProgram.GetEntryPointMetadata(
-                0,
-                targetIndex,
-                out IMetadata metadata,
-                out ISlangBlob? metadataDiagnostics);
-            state.Lifetime.Track(metadata);
-            state.Lifetime.Track(metadataDiagnostics);
-            if (metadataResult.Failed)
+            string backend = BackendName(state.Targets[targetIndex]);
+            SlangProgram program = SlangProgram.Capture(linkedProgram, targetIndex, backend);
+            byte[] payload = program.ToArray();
+            int programIndex = state.Asset.Programs!.Count;
+            state.Asset.Programs.Add(new CookedShaderProgram
+            {
+                Backend = backend,
+                Data = payload,
+                Program = program,
+                ContentHash = Convert.ToHexString(SHA256.HashData(payload)),
+            });
+
+            if (reflection.EntryPointCount != checked((nuint)entries.Length) ||
+                program.EntryPoints.Count != entries.Length)
             {
                 throw new InvalidDataException(
-                    $"Failed to obtain compiled entry-point metadata for target {targetIndex}: "
-                        + GetString(metadataDiagnostics));
-            }
-            if (metadata is null)
-            {
-                throw new InvalidDataException(
-                    $"Slang returned no compiled entry-point metadata for target {targetIndex}.");
+                    $"Cooked target {targetIndex} exposes {reflection.EntryPointCount} native and " +
+                    $"{program.EntryPoints.Count} detached entries; expected {entries.Length}.");
             }
 
-            AddEntryPointReflection(
-                state,
-                BackendName(state.Targets[targetIndex]),
-                reflection,
-                metadata);
+            for (int entryIndex = 0; entryIndex < entries.Length; entryIndex++)
+            {
+                SlangResult metadataResult = linkedProgram.GetEntryPointMetadata(
+                    entryIndex,
+                    targetIndex,
+                    out IMetadata metadata,
+                    out ISlangBlob? metadataDiagnostics);
+                state.Lifetime.Track(metadata);
+                state.Lifetime.Track(metadataDiagnostics);
+                if (metadataResult.Failed || metadata is null)
+                {
+                    throw new InvalidDataException(
+                        $"Failed to obtain compiled entry-point metadata for target {targetIndex}, " +
+                        $"entry {entryIndex}: {GetString(metadataDiagnostics)}");
+                }
+
+                AddEntryPointReflection(
+                    state,
+                    backend,
+                    reflection,
+                    reflection.GetEntryPointByIndex(checked((nuint)entryIndex)),
+                    metadata);
+                AddEntryPointAttributes(
+                    state.Asset,
+                    programIndex,
+                    entryIndex,
+                    entries[entryIndex].Attributes);
+                AddEntryPointMetadata(
+                    state.Asset,
+                    programIndex,
+                    entryIndex,
+                    entries[entryIndex].Attributes);
+            }
         }
     }
 
@@ -495,9 +519,9 @@ public static partial class SlangShaderImporter
         ShaderImportState state,
         string backendName,
         ShaderReflection reflection,
+        EntryPointReflection entryReflection,
         IMetadata metadata)
     {
-        EntryPointReflection entryReflection = reflection.GetEntryPointByIndex(0);
         ShaderStage stage = entryReflection.Stage != SlangStage.None
             ? MapStage(entryReflection.Stage)
             : ShaderStage.Vertex;
@@ -654,70 +678,10 @@ public static partial class SlangShaderImporter
             state.Metadata);
     }
 
-    private static void AddCompiledVariants(
-        ShaderImportState state,
-        LinkedEntryPoint linkedEntryPoint)
-    {
-        ShaderReflection baseReflection = linkedEntryPoint.LinkedProgram.GetLayout(
-            0,
-            out ISlangBlob? diagnostics);
-        state.Lifetime.Track(diagnostics);
-        if (baseReflection == ShaderReflection.Null)
-        {
-            baseReflection = linkedEntryPoint.LinkedProgram.GetLayout(1, out diagnostics);
-            state.Lifetime.Track(diagnostics);
-        }
-
-        EntryPointReflection entryPointReflection = baseReflection.GetEntryPointByIndex(0);
-        for (int targetIndex = 0; targetIndex < state.Targets.Length; targetIndex++)
-        {
-            AddCompiledVariant(state, linkedEntryPoint, entryPointReflection, targetIndex);
-        }
-    }
-
-    private static void AddCompiledVariant(
-        ShaderImportState state,
-        LinkedEntryPoint linkedEntryPoint,
-        EntryPointReflection entryPointReflection,
-        int targetIndex)
-    {
-        linkedEntryPoint.LinkedProgram.GetEntryPointCode(0, targetIndex, out var codeBlob, out var diagnostics);
-        state.Lifetime.Track(codeBlob);
-        state.Lifetime.Track(diagnostics);
-        if (codeBlob == null)
-        {
-            Console.WriteLine($"Warning: Failed to get code for target {targetIndex}: {GetString(diagnostics)}");
-            return;
-        }
-
-        int variantIndex = state.Asset.Variants!.Count;
-        byte[] rawBytes = GetBytes(codeBlob);
-        state.Asset.Variants.Add(CreateBytecode(state.Targets[targetIndex], entryPointReflection, rawBytes));
-        AddEntryPointAttributes(state.Asset, variantIndex, linkedEntryPoint.Attributes);
-        AddEntryPointMetadata(state.Asset, variantIndex, linkedEntryPoint.Attributes);
-    }
-
-    private static ShaderBytecode CreateBytecode(
-        TargetDesc target,
-        EntryPointReflection entryPointReflection,
-        byte[] rawBytes)
-    {
-        byte[] contentHash = target.Format == SlangCompileTarget.Spirv
-            ? ComputeSpirvSemanticHash(rawBytes)
-            : SHA256.HashData(rawBytes);
-        return new ShaderBytecode
-        {
-            Backend = BackendName(target),
-            Stage = MapStage(entryPointReflection.Stage),
-            EntryPoint = entryPointReflection.Name,
-            Data = rawBytes,
-            ContentHash = Convert.ToHexString(contentHash),
-        };
-    }
-
     private static void AddEntryPointAttributes(
         Schema.Shader asset,
-        int variantIndex,
+        int programIndex,
+        int entryPointIndex,
         IReadOnlyList<SlangEntryMeta.Attr> attributes)
     {
         for (int attributeIndex = 0; attributeIndex < attributes.Count; attributeIndex++)
@@ -725,7 +689,8 @@ public static partial class SlangShaderImporter
             asset.EntryPointAttributes!.Add(
                 new Schema.ShaderEntryPointAttribute
                 {
-                    VariantIndex = variantIndex,
+                    ProgramIndex = programIndex,
+                    EntryPointIndex = entryPointIndex,
                     Name = attributes[attributeIndex].Name,
                     Args = attributes[attributeIndex].Args.Count == 0
                         ? []
@@ -736,10 +701,14 @@ public static partial class SlangShaderImporter
 
     private static void AddEntryPointMetadata(
         Schema.Shader asset,
-        int variantIndex,
+        int programIndex,
+        int entryPointIndex,
         IReadOnlyList<SlangEntryMeta.Attr> attributes)
     {
-        ShaderEntryPointMetadata? entryPointMetadata = SlangEntryMeta.Create(variantIndex, attributes);
+        ShaderEntryPointMetadata? entryPointMetadata = SlangEntryMeta.Create(
+            programIndex,
+            entryPointIndex,
+            attributes);
         if (entryPointMetadata != null)
         {
             asset.EntryPointMetadata!.Add(entryPointMetadata);
@@ -836,9 +805,8 @@ public static partial class SlangShaderImporter
         Dictionary<string, Dictionary<SlangBindingMap.ResourceKey, uint>> BackendResourceMaps,
         List<string> MaterialScalarTypes);
 
-    private readonly record struct LinkedEntryPoint(
+    private readonly record struct CookedEntryPoint(
         IEntryPoint EntryPoint,
-        IComponentType LinkedProgram,
         IReadOnlyList<SlangEntryMeta.Attr> Attributes);
 
     private static SlangShaderCookProfile ResolveProfile(SourceMeta sourceMeta, string filePath)
@@ -904,62 +872,6 @@ public static partial class SlangShaderImporter
                 (int)blob.GetBufferSize()
             );
         }
-    }
-
-    private static byte[] GetBytes(ISlangBlob blob)
-    {
-        unsafe
-        {
-            var span = new ReadOnlySpan<byte>(blob.GetBufferPointer(), (int)blob.GetBufferSize());
-            return span.ToArray();
-        }
-    }
-
-    /// <summary>
-    /// Strip OpName (5) and OpMemberName (6) instructions from SPIR-V bytecode.
-    /// These instructions encode debug variable/member names but don't affect
-    /// execution semantics. Removing them ensures identical logic with different
-    /// variable names produces the same content hash.
-    /// SPIR-V binary format: header (5 words) + instructions.
-    /// Each instruction: word0 = (wordCount &lt;&lt; 16) | opcode, followed by (wordCount-1) words.
-    /// </summary>
-    private static byte[] ComputeSpirvSemanticHash(ReadOnlySpan<byte> spirv)
-    {
-        if (spirv.Length < 20)
-            return SHA256.HashData(spirv);
-
-        const ushort OpName = 5;
-        const ushort OpMemberName = 6;
-        const int HeaderWords = 5;
-
-        ReadOnlySpan<uint> words = MemoryMarshal.Cast<byte, uint>(spirv);
-        // Validate SPIR-V magic number
-        if (words[0] != 0x07230203)
-            return SHA256.HashData(spirv);
-
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(spirv[..(HeaderWords * sizeof(uint))]);
-
-        // Process instructions, skip OpName and OpMemberName
-        int pos = HeaderWords;
-        while (pos < words.Length)
-        {
-            uint instrWord = words[pos];
-            ushort opcode = (ushort)(instrWord & 0xFFFF);
-            ushort wordCount = (ushort)(instrWord >> 16);
-
-            if (wordCount == 0)
-                break; // Malformed
-            if (pos + wordCount > words.Length)
-                break;
-
-            if (opcode != OpName && opcode != OpMemberName)
-                hash.AppendData(spirv.Slice(pos * sizeof(uint), wordCount * sizeof(uint)));
-
-            pos += wordCount;
-        }
-
-        return hash.GetHashAndReset();
     }
 
 }

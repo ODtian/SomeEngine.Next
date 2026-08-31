@@ -7,6 +7,6 @@ namespace SomeEngine.Assets;
 public static class AssetFormatVersions
 {
     public const string SlangShaderImporterName = "SlangShaderImporter";
-    public const uint SlangShaderImporterVersion = 25;
-    public const uint ShaderAssetSchemaVersion = 7;
+    public const uint SlangShaderImporterVersion = 26;
+    public const uint ShaderAssetSchemaVersion = 8;
 }

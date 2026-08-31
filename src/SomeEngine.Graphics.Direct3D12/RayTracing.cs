@@ -130,13 +130,13 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ValidateRayTracingPipelineDescription(nativeDevice, desc);
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        IComponentType program = desc.Program;
+        ShaderProgram program = desc.Program;
         StaticSamplerBinding[] staticSamplers = desc.StaticSamplers.ToArray();
-        ShaderReflection reflection = GetProgramReflection(program);
+        ShaderProgramLayout reflection = GetProgramReflection(program);
         int localRootCapacity = checked(
             desc.RayGeneration.Length + desc.Miss.Length +
             desc.Callable.Length + desc.HitGroups.Length);
-        var shaderExports = new Dictionary<string, EntryPointReflection>(
+        var shaderExports = new Dictionary<string, ShaderEntryPoint>(
             localRootCapacity,
             StringComparer.Ordinal);
         var records = new List<D3D12RayTracingExport>(localRootCapacity);
@@ -145,7 +145,7 @@ internal sealed unsafe partial class D3D12Backend
         var identifiers = new byte[localRootCapacity][];
         for (int index = 0; index < identifiers.Length; index++)
             identifiers[index] = new byte[32];
-        var entryExports = new Dictionary<EntryPointReflection, D3D12RayTracingExport>(
+        var entryExports = new Dictionary<ShaderEntryPoint, D3D12RayTracingExport>(
             checked(desc.RayGeneration.Length + desc.Miss.Length + desc.Callable.Length));
         var hitGroupExports = new Dictionary<string, D3D12RayTracingExport>(
             desc.HitGroups.Length,
@@ -171,7 +171,7 @@ internal sealed unsafe partial class D3D12Backend
                 identifiers,
                 hitGroups);
 
-            EntryPointReflection[] allEntries = GetOrderedRayTracingEntries(
+            ShaderEntryPoint[] allEntries = GetOrderedRayTracingEntries(
                 reflection,
                 shaderExports.Values);
             CompiledProgramLibrary library = CompileProgramLibrary(
@@ -236,10 +236,10 @@ internal sealed unsafe partial class D3D12Backend
 
     private void AddAllRayTracingExports(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
+        ShaderProgramLayout reflection,
         in RayTracingPipelineDesc desc,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers,
-        Dictionary<string, EntryPointReflection> shaderExports,
+        Dictionary<string, ShaderEntryPoint> shaderExports,
         HashSet<string> stateObjectNames,
         List<D3D12RayTracingExport> records,
         List<D3D12RootSignatureState> localRoots,
@@ -300,19 +300,19 @@ internal sealed unsafe partial class D3D12Backend
 
     private void AddRayTracingEntries(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
-        ReadOnlySpan<EntryPointReflection> entries,
+        ShaderProgramLayout reflection,
+        ReadOnlySpan<ShaderEntryPoint> entries,
         SlangStage stage,
         RayRecordType type,
         string role,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers,
-        Dictionary<string, EntryPointReflection> shaderExports,
+        Dictionary<string, ShaderEntryPoint> shaderExports,
         HashSet<string> stateObjectNames,
         List<D3D12RayTracingExport> records,
         List<D3D12RootSignatureState> localRoots,
         byte[][] identifiers)
     {
-        foreach (EntryPointReflection entry in entries)
+        foreach (ShaderEntryPoint entry in entries)
         {
             string name = AddRayTracingShader(
                 reflection,
@@ -331,7 +331,7 @@ internal sealed unsafe partial class D3D12Backend
             records.Add(new D3D12RayTracingExport(
                 name,
                 entry,
-                entry.VarLayout == VariableLayoutReflection.Null
+                entry.VarLayout == ShaderVariableLayout.Null
                     ? []
                     : [entry.VarLayout],
                 local,
@@ -342,10 +342,10 @@ internal sealed unsafe partial class D3D12Backend
 
     private void AddRayTracingHitGroups(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
+        ShaderProgramLayout reflection,
         ReadOnlySpan<RayTracingHitGroup> descriptions,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers,
-        Dictionary<string, EntryPointReflection> shaderExports,
+        Dictionary<string, ShaderEntryPoint> shaderExports,
         HashSet<string> stateObjectNames,
         List<D3D12RayTracingExport> records,
         List<D3D12RootSignatureState> localRoots,
@@ -361,7 +361,7 @@ internal sealed unsafe partial class D3D12Backend
                     "Ray-tracing state-object export names must be unique.",
                     "desc");
             }
-            var members = new List<EntryPointReflection>(3);
+            var members = new List<ShaderEntryPoint>(3);
             string? closest = AddRayTracingHitMember(
                 reflection,
                 hitGroup.ClosestHit,
@@ -395,9 +395,9 @@ internal sealed unsafe partial class D3D12Backend
                     "A ray-tracing hit group must contain at least one shader.",
                     "desc");
             }
-            VariableLayoutReflection[] layouts = members
+            ShaderVariableLayout[] layouts = members
                 .Select(static member => member.VarLayout)
-                .Where(static layout => layout != VariableLayoutReflection.Null)
+                .Where(static layout => layout != ShaderVariableLayout.Null)
                 .Distinct()
                 .ToArray();
             D3D12RootSignatureState local = CompileTrackedRayTracingLocalRoot(
@@ -408,7 +408,7 @@ internal sealed unsafe partial class D3D12Backend
                 localRoots);
             records.Add(new D3D12RayTracingExport(
                 hitGroup.Name,
-                EntryPointReflection.Null,
+                ShaderEntryPoint.Null,
                 layouts,
                 local,
                 RayRecordType.Hit,
@@ -425,16 +425,16 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private string? AddRayTracingHitMember(
-        ShaderReflection reflection,
-        EntryPointReflection entry,
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint entry,
         SlangStage stage,
         string role,
-        List<EntryPointReflection> members,
-        Dictionary<string, EntryPointReflection> shaderExports,
+        List<ShaderEntryPoint> members,
+        Dictionary<string, ShaderEntryPoint> shaderExports,
         HashSet<string> stateObjectNames,
         List<D3D12RayTracingExport> records)
     {
-        if (entry == EntryPointReflection.Null)
+        if (entry == ShaderEntryPoint.Null)
             return null;
         members.Add(entry);
         return AddRayTracingShader(
@@ -448,16 +448,16 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private string AddRayTracingShader(
-        ShaderReflection reflection,
-        EntryPointReflection entry,
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint entry,
         SlangStage stage,
         string role,
-        Dictionary<string, EntryPointReflection> shaderExports,
+        Dictionary<string, ShaderEntryPoint> shaderExports,
         HashSet<string> stateObjectNames,
         List<D3D12RayTracingExport> records)
     {
         string name = ValidateStateObjectEntryPoint(reflection, entry, [stage], role);
-        if (shaderExports.TryGetValue(name, out EntryPointReflection existing) &&
+        if (shaderExports.TryGetValue(name, out ShaderEntryPoint? existing) &&
             existing != entry)
         {
             throw new ArgumentException(
@@ -477,8 +477,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private D3D12RootSignatureState CompileTrackedRayTracingLocalRoot(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
-        ReadOnlySpan<EntryPointReflection> entries,
+        ShaderProgramLayout reflection,
+        ReadOnlySpan<ShaderEntryPoint> entries,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers,
         List<D3D12RootSignatureState> localRoots)
     {
@@ -501,15 +501,15 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static EntryPointReflection[] GetOrderedRayTracingEntries(
-        ShaderReflection reflection,
-        IEnumerable<EntryPointReflection> selected)
+    private static ShaderEntryPoint[] GetOrderedRayTracingEntries(
+        ShaderProgramLayout reflection,
+        IEnumerable<ShaderEntryPoint> selected)
     {
-        HashSet<EntryPointReflection> selectedEntries = [.. selected];
-        List<EntryPointReflection> orderedEntries = [];
+        HashSet<ShaderEntryPoint> selectedEntries = [.. selected];
+        List<ShaderEntryPoint> orderedEntries = [];
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
-            EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
+            ShaderEntryPoint entry = reflection.GetEntryPointByIndex(index);
             if (selectedEntries.Contains(entry))
                 orderedEntries.Add(entry);
         }
@@ -518,8 +518,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private D3D12RootSignatureState CompileRayTracingGlobalRootSignature(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
-        ReadOnlySpan<EntryPointReflection> entries,
+        ShaderProgramLayout reflection,
+        ReadOnlySpan<ShaderEntryPoint> entries,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers)
     {
         D3D12RootSignatureBuilder.ValidateStaticSamplers(
@@ -540,15 +540,15 @@ internal sealed unsafe partial class D3D12Backend
     private D3D12RayTracingPipeline MaterializeRayTracingPipeline(
         D3D12Device nativeDevice,
         D3D12PipelineCache? nativeCache,
-        IComponentType program,
+        ShaderProgram program,
         in RayTracingPipelineDesc desc,
         D3D12RootSignatureState global,
         D3D12RootSignatureState[] localRoots,
         CompiledProgramLibrary library,
-        EntryPointReflection[] allEntries,
+        ShaderEntryPoint[] allEntries,
         IReadOnlyList<D3D12RayTracingExport> records,
         IReadOnlyList<RayTracingHitGroupState> hitGroups,
-        Dictionary<EntryPointReflection, D3D12RayTracingExport> entryExports,
+        Dictionary<ShaderEntryPoint, D3D12RayTracingExport> entryExports,
         Dictionary<string, D3D12RayTracingExport> hitGroupExports,
         ref bool rootsTransferred)
     {
@@ -569,7 +569,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12StateObjectProperties* properties = null;
         NativeLease? nativeState = null;
         NativeLease? propertiesLease = null;
-        RetainedSlangProgram? retainedProgram = null;
+        RetainedShaderProgram? retainedProgram = null;
         D3D12RayTracingPipeline? result = null;
         try
         {
@@ -632,7 +632,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice,
         D3D12RootSignatureState global,
         byte[][] replayLibraries,
-        EntryPointReflection[] allEntries,
+        ShaderEntryPoint[] allEntries,
         IReadOnlyList<D3D12RayTracingExport> records,
         IReadOnlyList<RayTracingHitGroupState> hitGroups,
         in RayTracingPipelineDesc desc)
@@ -689,7 +689,7 @@ internal sealed unsafe partial class D3D12Backend
     private static int AddRayTracingLibraries(
         NativeStateObjectArena arena,
         byte[][] replayLibraries,
-        EntryPointReflection[] allEntries,
+        ShaderEntryPoint[] allEntries,
         StateSubobject* subobjects)
     {
         int ordinal = 0;
@@ -836,12 +836,12 @@ internal sealed unsafe partial class D3D12Backend
 
     private static void PopulateRayTracingExportMaps(
         IReadOnlyList<D3D12RayTracingExport> records,
-        Dictionary<EntryPointReflection, D3D12RayTracingExport> entryExports,
+        Dictionary<ShaderEntryPoint, D3D12RayTracingExport> entryExports,
         Dictionary<string, D3D12RayTracingExport> hitGroupExports)
     {
         foreach (D3D12RayTracingExport record in records)
         {
-            if (record.EntryPoint != EntryPointReflection.Null)
+            if (record.EntryPoint != ShaderEntryPoint.Null)
                 entryExports.Add(record.EntryPoint, record);
             if (record.Type == RayRecordType.Hit)
                 hitGroupExports.Add(record.Name, record);
@@ -865,7 +865,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeLease? propertiesLease,
         ID3D12StateObject* stateObject,
         ID3D12StateObjectProperties* properties,
-        RetainedSlangProgram? retainedProgram)
+        RetainedShaderProgram? retainedProgram)
     {
         if (result is not null)
         {
@@ -1734,8 +1734,8 @@ internal sealed unsafe partial class D3D12Backend
     {
         internal D3D12RayTracingExport(
             string name,
-            EntryPointReflection entryPoint,
-            VariableLayoutReflection[] layouts,
+            ShaderEntryPoint entryPoint,
+            ShaderVariableLayout[] layouts,
             D3D12RootSignatureState localRoot,
             RayRecordType type,
             byte[] identifier)
@@ -1749,8 +1749,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal string Name { get; }
-        internal EntryPointReflection EntryPoint { get; }
-        internal VariableLayoutReflection[] Layouts { get; }
+        internal ShaderEntryPoint EntryPoint { get; }
+        internal ShaderVariableLayout[] Layouts { get; }
         internal D3D12RootSignatureState LocalRoot { get; }
         internal RayRecordType Type { get; }
         internal byte[] Identifier { get; }
@@ -1766,7 +1766,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class D3D12RayTracingPipeline : D3D12Pipeline
     {
         private readonly NativeLease _properties;
-        private readonly Dictionary<EntryPointReflection, D3D12RayTracingExport> _entries;
+        private readonly Dictionary<ShaderEntryPoint, D3D12RayTracingExport> _entries;
         private readonly Dictionary<string, D3D12RayTracingExport> _hitGroups;
 
         internal D3D12RayTracingPipeline(
@@ -1775,8 +1775,8 @@ internal sealed unsafe partial class D3D12Backend
             D3D12RootSignatureState root,
             D3D12RootSignatureState[] localRoots,
             NativeLease[] additionalLeases,
-            RetainedSlangProgram program,
-            Dictionary<EntryPointReflection, D3D12RayTracingExport> entries,
+            RetainedShaderProgram program,
+            Dictionary<ShaderEntryPoint, D3D12RayTracingExport> entries,
             Dictionary<string, D3D12RayTracingExport> hitGroups,
             string? label)
             : base(
@@ -1806,7 +1806,7 @@ internal sealed unsafe partial class D3D12Backend
             _hitGroups.Values.Any(value => value.Type == type);
 
         internal D3D12RayTracingExport GetEntry(
-            EntryPointReflection entryPoint,
+            ShaderEntryPoint entryPoint,
             RayRecordType type)
         {
             if (!_entries.TryGetValue(entryPoint, out D3D12RayTracingExport? value) ||
@@ -1836,7 +1836,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class D3D12RayTracingShaderTable : RayTracingShaderTable
     {
         private readonly D3D12Device _device;
-        private RetainedSlangProgram? _program;
+        private RetainedShaderProgram? _program;
         private readonly NativeLease _pipelineState;
 
         internal D3D12RayTracingShaderTable(
@@ -1847,7 +1847,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             _device = device;
             Pipeline = pipeline;
-            RetainedSlangProgram? program = null;
+            RetainedShaderProgram? program = null;
             NativeLease? pipelineState = null;
             try
             {
@@ -2043,7 +2043,7 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     ref readonly RayTracingLocalParameterBlock block = ref blocks[blockIndex];
                     bool expected = false;
-                    foreach (VariableLayoutReflection layout in export.Layouts)
+                    foreach (ShaderVariableLayout layout in export.Layouts)
                         expected |= block.Layout == layout;
                     if (!expected)
                     {

@@ -76,10 +76,10 @@ static async Task<int> RunAsync(string[] args)
         AssetMeta assetMeta = AssetMetaFiles.TryLoad(assetPath)
             ?? throw new InvalidOperationException($"Cooked shader meta '{assetPath}.meta' is missing.");
 
-        int dxilCount = asset.Variants?.Count(static variant =>
-            string.Equals(variant.Backend, "dxil", StringComparison.Ordinal)) ?? 0;
-        int spirvCount = asset.Variants?.Count(static variant =>
-            string.Equals(variant.Backend, "spirv", StringComparison.Ordinal)) ?? 0;
+        int dxilCount = asset.Programs?.Count(static program =>
+            string.Equals(program.Backend, "dxil", StringComparison.Ordinal)) ?? 0;
+        int spirvCount = asset.Programs?.Count(static program =>
+            string.Equals(program.Backend, "spirv", StringComparison.Ordinal)) ?? 0;
         int reflectionCount = asset.EntryPointReflections?.Count ?? 0;
         if (dxilCount == 0 || spirvCount == 0 || reflectionCount == 0)
         {
@@ -95,7 +95,7 @@ static async Task<int> RunAsync(string[] args)
         Console.WriteLine($"dxil-profile={profile.DxilProfile}");
         Console.WriteLine($"spirv-profile={profile.SpirvProfile}");
         Console.WriteLine($"content-fingerprint={assetMeta.ContentFingerprint}");
-        Console.WriteLine($"variants=dxil:{dxilCount},spirv:{spirvCount}");
+        Console.WriteLine($"programs=dxil:{dxilCount},spirv:{spirvCount}");
         Console.WriteLine($"entry-reflections={reflectionCount}");
         Console.WriteLine("storage-open=ok");
         return 0;

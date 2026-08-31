@@ -144,8 +144,8 @@ public sealed class VulkanCoreFeatureTests
         using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
             source,
             ("computeMain", SlangStage.Compute));
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(

@@ -90,23 +90,14 @@ public sealed class ClusterAssetLoaderTests
         => new()
         {
             Name = name,
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "main",
-                    Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
-                    Data = new byte[] { 4, 2, 1 },
-                },
-            ],
+            Programs = [CookedShaderTestProgram.Create()],
             EntryPointReflections =
             [
                 new ShaderEntryPointReflection
                 {
-                    Backend = "test",
-                    EntryPoint = "main",
-                    Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
+                    Backend = "spirv",
+                    EntryPoint = "VSMain",
+                    Stage = SomeEngine.Assets.Schema.ShaderStage.Vertex,
                 },
             ],
         };

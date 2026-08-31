@@ -167,7 +167,7 @@ internal static class WorkGraphValidation
         string? nameOverride) =>
         string.IsNullOrWhiteSpace(nameOverride) ? name : nameOverride;
 
-    internal static string GetEffectiveEntryPointName(EntryPointReflection entryPoint) =>
+    internal static string GetEffectiveEntryPointName(ShaderEntryPoint entryPoint) =>
         GetEffectiveEntryPointName(entryPoint.Name, entryPoint.NameOverride);
 }
 
@@ -180,7 +180,7 @@ internal static class WorkGraphValidation
 public readonly ref struct WorkGraphPipelineDesc
 {
     public WorkGraphPipelineDesc(
-        IComponentType program,
+        ShaderProgram program,
         uint nodeMask = 1,
         string? label = null,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers = default)
@@ -191,7 +191,7 @@ public readonly ref struct WorkGraphPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType Program { get; }
+    public ShaderProgram Program { get; }
     public uint NodeMask { get; }
     public string? Label { get; }
     public ReadOnlySpan<StaticSamplerBinding> StaticSamplers { get; }
@@ -238,7 +238,7 @@ public readonly record struct WorkGraphMemoryRequirements(
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct WorkGraphEntryPointInfo(
-    EntryPointReflection EntryPoint,
+    ShaderEntryPoint EntryPoint,
     uint RecordSize,
     uint RecordAlignment);
 
@@ -275,7 +275,7 @@ public enum WorkGraphDispatchInputMode : byte
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct WorkGraphCpuNodeInput(
-    EntryPointReflection EntryPoint,
+    ShaderEntryPoint EntryPoint,
     uint RecordOffset,
     uint RecordCount,
     uint RecordStride);
@@ -287,7 +287,7 @@ public readonly record struct WorkGraphCpuNodeInput(
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct WorkGraphGpuNodeInput(
-    EntryPointReflection EntryPoint,
+    ShaderEntryPoint EntryPoint,
     BufferRegion Records,
     uint RecordCount,
     uint RecordStride);
@@ -301,7 +301,7 @@ public readonly record struct WorkGraphGpuNodeInput(
 public readonly ref struct WorkGraphDispatchDesc
 {
     public WorkGraphDispatchDesc(
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         ReadOnlySpan<byte> records,
         uint recordCount,
         uint recordStride)
@@ -317,7 +317,7 @@ public readonly ref struct WorkGraphDispatchDesc
     }
 
     public WorkGraphDispatchDesc(
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         in BufferRegion gpuRecords,
         uint recordCount,
         uint recordStride)
@@ -337,7 +337,7 @@ public readonly ref struct WorkGraphDispatchDesc
         ReadOnlySpan<byte> records)
     {
         Mode = WorkGraphDispatchInputMode.MultiNodeCpu;
-        EntryPoint = EntryPointReflection.Null;
+        EntryPoint = ShaderEntryPoint.Null;
         Records = records;
         RecordCount = 0;
         RecordStride = 0;
@@ -349,7 +349,7 @@ public readonly ref struct WorkGraphDispatchDesc
     public WorkGraphDispatchDesc(ReadOnlySpan<WorkGraphGpuNodeInput> nodeInputs)
     {
         Mode = WorkGraphDispatchInputMode.MultiNodeGpu;
-        EntryPoint = EntryPointReflection.Null;
+        EntryPoint = ShaderEntryPoint.Null;
         Records = default;
         RecordCount = 0;
         RecordStride = 0;
@@ -359,7 +359,7 @@ public readonly ref struct WorkGraphDispatchDesc
     }
 
     public WorkGraphDispatchInputMode Mode { get; }
-    public EntryPointReflection EntryPoint { get; }
+    public ShaderEntryPoint EntryPoint { get; }
     public ReadOnlySpan<byte> Records { get; }
     public BufferRegion GpuRecords { get; }
     public uint RecordCount { get; }

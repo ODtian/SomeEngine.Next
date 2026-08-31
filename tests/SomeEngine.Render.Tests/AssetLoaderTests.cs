@@ -20,7 +20,7 @@ namespace SomeEngine.Render.Tests;
 public sealed class AssetLoaderTests
 {
     [Fact]
-    public async Task RequestShaderRejectsMissingSerializedEntryPointReflection()
+    public async Task RequestShaderRejectsMissingSerializedShaderEntryPoint()
     {
         using var directory = new TemporaryDirectory();
         AssetGuid guid = AssetGuid.New();
@@ -195,12 +195,13 @@ public sealed class AssetLoaderTests
             Assert.True(texture.StreamingMetrics!.Snapshot().Requests >= 1);
 
             Shader shader = await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
-            Assert.True(shader.TryVariant(
-                "test",
-                "main",
-                SomeEngine.Assets.Schema.ShaderStage.Compute,
-                out ShaderBytecode shaderVariant));
-            Assert.Equal([4, 2, 1], shaderVariant.Data!.Value.ToArray());
+            Assert.True(shader.TryEntry(
+                "spirv",
+                "VSMain",
+                SomeEngine.Assets.Schema.ShaderStage.Vertex,
+                out _,
+                out var shaderEntry));
+            Assert.True(shaderEntry.Code.Length > 0);
 
             Mesh mesh = await loader.LoadAsync(new AssetId<Mesh>(meshGuid));
             Assert.True(mesh.IsStreamed);
@@ -295,24 +296,15 @@ public sealed class AssetLoaderTests
         {
             AssetGuid = guid.ToFlatString(),
             Name = "stored-shader",
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "main",
-                    Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
-                    Data = new byte[] { 4, 2, 1 },
-                },
-            ],
+            Programs = [CookedShaderTestProgram.Create()],
             EntryPointReflections = includeReflection
                 ?
                 [
                     new ShaderEntryPointReflection
                     {
-                        Backend = "test",
-                        EntryPoint = "main",
-                        Stage = SomeEngine.Assets.Schema.ShaderStage.Compute,
+                        Backend = "spirv",
+                        EntryPoint = "VSMain",
+                        Stage = SomeEngine.Assets.Schema.ShaderStage.Vertex,
                     },
                 ]
                 : [],

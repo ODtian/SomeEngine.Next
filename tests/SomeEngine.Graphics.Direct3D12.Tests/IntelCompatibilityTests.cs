@@ -108,9 +108,9 @@ public sealed class IntelCompatibilityTests
                 new BlendState(blendAttachments),
                 new AttachmentFormatSignature(formats, null),
                 DynamicStates.Viewport | DynamicStates.Scissor));
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        Assert.NotEqual(VariableLayoutReflection.Null, layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        Assert.NotEqual(ShaderVariableLayout.Null, layout);
         byte[] ordinaryData = new byte[16];
         BitConverter.TryWriteBytes(ordinaryData.AsSpan(0, 4), 1f);
         BitConverter.TryWriteBytes(ordinaryData.AsSpan(4, 4), 1f);

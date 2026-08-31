@@ -24,7 +24,7 @@ internal interface IRhiDispatch<TReceiver>
     static abstract void SetScissors(TReceiver receiver, CommandContext context, ReadOnlySpan<ScissorRect> scissors);
     static abstract void Draw(TReceiver receiver, CommandContext context, in DrawArguments arguments);
     static abstract void DrawRepeated(TReceiver receiver, CommandContext context, in DrawArguments arguments, int count);
-    static abstract void DrawTransientPackets(TReceiver receiver, CommandContext context, VariableLayoutReflection layout, byte[] packets, in DrawArguments arguments, int count);
+    static abstract void DrawTransientPackets(TReceiver receiver, CommandContext context, ShaderVariableLayout layout, byte[] packets, in DrawArguments arguments, int count);
     static abstract void DrawWithRedundantState(TReceiver receiver, CommandContext context, Pipeline pipeline, PersistentParameterBindings bindings, Viewport[] viewports, ScissorRect[] scissors, in DrawArguments arguments, int count);
     static abstract void RecordMemoryBarriers(TReceiver receiver, CommandContext context, in MemoryBarrier barrier, int count);
     static abstract void Dispatch(TReceiver receiver, CommandContext context, in DispatchArguments arguments);
@@ -84,7 +84,7 @@ internal readonly struct InterfaceReceiverDispatch : IRhiDispatch<InterfaceRecei
         for (int index = 0; index < count; index++)
             receiver._receiver.Draw(context, stableArguments);
     }
-    public static void DrawTransientPackets(InterfaceReceiverDispatch receiver, CommandContext context, VariableLayoutReflection layout, byte[] packets, in DrawArguments arguments, int count)
+    public static void DrawTransientPackets(InterfaceReceiverDispatch receiver, CommandContext context, ShaderVariableLayout layout, byte[] packets, in DrawArguments arguments, int count)
     {
         DrawArguments stableArguments = arguments;
         for (int index = 0; index < count; index++)

@@ -87,7 +87,11 @@ public sealed class WarpWorkGraphTests
         const string source = """
             import experimental.workgraph;
 
-            struct WorkRecord { uint Value; };
+            struct WorkRecord
+            {
+                uint3 DispatchGrid : SV_DispatchGrid;
+                uint Value;
+            };
 
             [shader("node")]
             [NodeID("renamedNode", 3)]
@@ -103,10 +107,10 @@ public sealed class WarpWorkGraphTests
             "slang_work_graph_attribute_facts",
             source,
             [new("graphMain", SlangStage.Node)]);
-        EntryPointReflection entry = shader.GetEntryPoint(0);
+        EntryPointReflection entry = shader.NativeReflection.GetEntryPointByIndex(0);
         FunctionReflection function = entry.Function;
         Assert.NotEqual(FunctionReflection.Null, function);
-        IGlobalSession globalSession = shader.Program.GetSession().GetGlobalSession();
+        IGlobalSession globalSession = shader.NativeProgram.GetSession().GetGlobalSession();
         AttributeReflection nodeID = function.FindAttributeByName(globalSession, "NodeID")
             ?? AttributeReflection.Null;
         Assert.NotEqual(AttributeReflection.Null, nodeID);
@@ -146,8 +150,8 @@ public sealed class WarpWorkGraphTests
                 new("graphA", SlangStage.Node),
                 new("graphB", SlangStage.Node),
             ]);
-        EntryPointReflection entryA = shader.GetEntryPoint(0);
-        EntryPointReflection entryB = shader.GetEntryPoint(1);
+        ShaderEntryPoint entryA = shader.GetEntryPoint(0);
+        ShaderEntryPoint entryB = shader.GetEntryPoint(1);
         using D3D12Backend backend = CreateBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateWorkGraphPipeline(
@@ -206,10 +210,10 @@ public sealed class WarpWorkGraphTests
                 new("nodeA", SlangStage.Node),
                 new("nodeB", SlangStage.Node),
             ]);
-        EntryPointReflection entryA = shader.GetEntryPoint(0);
-        EntryPointReflection entryB = shader.GetEntryPoint(1);
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderEntryPoint entryA = shader.GetEntryPoint(0);
+        ShaderEntryPoint entryB = shader.GetEntryPoint(1);
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
 
         using D3D12Backend backend = CreateBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -348,8 +352,8 @@ public sealed class WarpWorkGraphTests
             "work_graph_validation_identity_foreign",
             source,
             [new("graphMain", SlangStage.Node)]);
-        EntryPointReflection entry = shader.GetEntryPoint(0);
-        EntryPointReflection foreignEntry = foreign.GetEntryPoint(0);
+        ShaderEntryPoint entry = shader.GetEntryPoint(0);
+        ShaderEntryPoint foreignEntry = foreign.GetEntryPoint(0);
 
         using IGraphicsBackend backend = CreateValidatedBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -418,7 +422,7 @@ public sealed class WarpWorkGraphTests
             "work_graph_state_reset_compute",
             "[shader(\"compute\")] [numthreads(1, 1, 1)] void computeMain() {}",
             [new("computeMain", SlangStage.Compute)]);
-        EntryPointReflection graphEntry = graphShader.GetEntryPoint(0);
+        ShaderEntryPoint graphEntry = graphShader.GetEntryPoint(0);
 
         using D3D12Backend backend = CreateBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);

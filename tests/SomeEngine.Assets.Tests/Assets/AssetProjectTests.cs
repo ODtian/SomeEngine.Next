@@ -258,17 +258,7 @@ public sealed class AssetProjectTests
                     Dependencies = [],
                     ImporterVersion = 1,
                 },
-                Variants =
-                [
-                    new ShaderBytecode
-                    {
-                        Backend = "dxil",
-                        Stage = ShaderStage.Compute,
-                        EntryPoint = "CSMain",
-                        Data = new byte[] { 0x01 },
-                        ContentHash = "stale-cs",
-                    },
-                ],
+                Programs = [],
                 EntryPointAttributes = [],
                 Reflections = [],
                 EntryPointReflections = [],
@@ -449,7 +439,7 @@ public sealed class AssetProjectTests
                 AssetGuid = shaderGuid.ToFlatString(),
                 Name = "ShaderA",
                 Metadata = new ShaderMetadata { Tags = [], MaterialBindings = [] },
-                Variants = [],
+                Programs = [],
                 Reflections = [],
                 ImportTrace = new ImportTrace
                 {

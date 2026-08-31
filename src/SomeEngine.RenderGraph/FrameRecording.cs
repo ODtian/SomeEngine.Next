@@ -568,7 +568,7 @@ internal sealed partial class FrameExecutor
         if (row.Pipeline is not null)
         {
             _frame.Backend.SetPipeline(context, row.Pipeline);
-            if (row.ParameterLayout != VariableLayoutReflection.Null)
+            if (row.ParameterLayout != ShaderVariableLayout.Null)
                 SetParameterBindings(pass, context, row);
         }
         if (row.PersistentCallbacks is not null)

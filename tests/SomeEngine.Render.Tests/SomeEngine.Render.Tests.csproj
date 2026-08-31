@@ -28,4 +28,10 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\assets\Shaders\hello_triangle.shader.asset">
+      <Link>Content\Shaders\hello_triangle.shader.asset</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

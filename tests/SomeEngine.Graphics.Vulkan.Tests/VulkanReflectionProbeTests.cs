@@ -58,9 +58,9 @@ public sealed class VulkanReflectionProbeTests
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
-        VariableLayoutReflection global = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection layout = global.TypeLayout.UnwrapArray();
+        ShaderVariableLayout global = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout layout = global.TypeLayout.UnwrapArray();
         if (layout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             layout = layout.ElementTypeLayout.UnwrapArray();
         var report = new System.Text.StringBuilder();

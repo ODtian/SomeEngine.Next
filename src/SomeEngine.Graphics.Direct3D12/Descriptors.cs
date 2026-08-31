@@ -1646,7 +1646,7 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class D3D12PersistentParameterBindings : PersistentParameterBindings
     {
         private readonly D3D12Device _device;
-        private RetainedSlangProgram? _program;
+        private RetainedShaderProgram? _program;
         private readonly NativeLease _pipelineState;
         private readonly object _gate = new();
         private D3D12PersistentParameterData? _current;
@@ -1656,7 +1656,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             D3D12Pipeline ownerPipeline,
             NativeParameterBinding nativeLayout,
-            VariableLayoutReflection layout,
+            ShaderVariableLayout layout,
             string? label)
             : base(device, layout, label)
         {
@@ -1669,7 +1669,7 @@ internal sealed unsafe partial class D3D12Backend
                 nativeLayout.OrdinaryRoot is { UsesRootConstants: false } ordinary
                     ? ordinary.RootParameterIndex
                     : null;
-            RetainedSlangProgram? program = null;
+            RetainedShaderProgram? program = null;
             NativeLease? pipelineState = null;
             try
             {

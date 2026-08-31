@@ -93,7 +93,7 @@ public sealed class VulkanAdvancedStateTests
             new MeshPipelineDesc(
                 shader.Program,
                 shader.Entries[0],
-                EntryPointReflection.Null,
+                ShaderEntryPoint.Null,
                 shader.Entries[1],
                 new RasterizerState(Cull: CullType.None),
                 new MultisampleState(),
@@ -290,9 +290,9 @@ public sealed class VulkanAdvancedStateTests
         using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
             source,
             ("rayGenerationMain", SlangStage.RayGeneration));
-        EntryPointReflection rayGeneration = shader.Entries[0];
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderEntryPoint rayGeneration = shader.Entries[0];
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -394,10 +394,10 @@ public sealed class VulkanAdvancedStateTests
             source,
             ("rayGenerationMain", SlangStage.RayGeneration),
             ("callableMain", SlangStage.Callable));
-        EntryPointReflection rayGeneration = shader.Entries[0];
-        EntryPointReflection callable = shader.Entries[1];
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderEntryPoint rayGeneration = shader.Entries[0];
+        ShaderEntryPoint callable = shader.Entries[1];
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(

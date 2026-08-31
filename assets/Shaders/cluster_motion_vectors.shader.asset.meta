@@ -2,11 +2,11 @@
   "asset_guid": "23bb6ba2-7516-54b9-aaef-37ae23452a80",
   "source_guid": "a819cf62-7b5a-42c3-8221-21fcd1389b99",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "ca0f2cd154a06e21a4d0c15cb1f81e1eb53ac423fcb75df69236262d358cdaa3",
+  "content_fingerprint": "f05091c6135be64d69ac53744390098d5393aca22423d8dc59c8e5aa4ce57c34",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
-      "hash": "ece93546354e3de857d785c5f4dff7432930a182e3c4bc28395b55ca9a1566ea"
+      "hash": "2c4e323f5a2ba46bdb975b71caa7d00de91a72c96441cc1fc6bbbbd605a2cf03"
     },
     {
       "path": "assets/Shaders/cluster_instance_properties.slang",
@@ -14,11 +14,11 @@
     },
     {
       "path": "assets/Shaders/cluster_motion_vectors.slang",
-      "hash": "8e796586f350e0bf28659bd9a38b474c444e7600e3374496fc780ac21fe99a75"
+      "hash": "af8b1af293e4974ee108047c02c282682c78044ef3a72a3e2d107cb5c22a8037"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "f91e66fd2f0246c2427166b33e66b17fa857b3d0156df061fd1beab311f39994"
+      "hash": "bcbef524988da5b55a5d4c1c48f1a4f4f731d366741d45b86d2cfebc55aa801b"
     },
     {
       "path": "assets/Shaders/common.slang",
@@ -26,7 +26,7 @@
     },
     {
       "path": "assets/Shaders/generated/render_instance_layout.slang",
-      "hash": "cf8fa08c7f1b56d2cfe5e5419fcbf8664c8906c14123109c48d0064d6d65d738"
+      "hash": "ce99ff32845ec3831e1910fea5784d0aface5fe0e18bf3f1f01f1ae96000fb80"
     },
     {
       "path": "assets/Shaders/material_vertex_interfaces.slang",
@@ -42,12 +42,12 @@
     },
     {
       "path": "assets/Shaders/vertex_evaluate.slang",
-      "hash": "038c650ab2f1ffae66e24f3b3a1ef769e34788545ec915ed1d0639669422ee61"
+      "hash": "5635495c159ac93e542210d852b815649a9247ead2c60825a665b171709aa671"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",
       "hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
     }
   ],
-  "importer_version": 25
+  "importer_version": 26
 }

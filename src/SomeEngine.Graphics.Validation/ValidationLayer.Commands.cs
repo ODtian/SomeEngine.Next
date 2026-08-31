@@ -498,7 +498,7 @@ public sealed partial class ValidationLayer
     {
         ContextValidationState state = RequireRecording(context);
         RequirePipeline(state, context, "parameter bindings");
-        VariableLayoutReflection reflectedLayout = RequireParameterBlockLayout(
+        ShaderVariableLayout reflectedLayout = RequireParameterBlockLayout(
             state,
             context,
             bindings.Layout);
@@ -1535,10 +1535,10 @@ public sealed partial class ValidationLayer
         }
     }
 
-    private VariableLayoutReflection RequireParameterBlockLayout(
+    private ShaderVariableLayout RequireParameterBlockLayout(
         ContextValidationState state,
         CommandContext context,
-        SlangShaderSharp.VariableLayoutReflection layout)
+        SlangShaderSharp.ShaderVariableLayout layout)
     {
         Pipeline pipeline;
         lock (state)

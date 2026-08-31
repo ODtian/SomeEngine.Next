@@ -292,7 +292,7 @@ public readonly struct ResourceBinding : IEquatable<ResourceBinding>
 public readonly ref struct ParameterBlockBindings
 {
     public ParameterBlockBindings(
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         ReadOnlySpan<ResourceBinding> resources,
         ReadOnlySpan<byte> ordinaryData)
     {
@@ -301,7 +301,7 @@ public readonly ref struct ParameterBlockBindings
         OrdinaryData = ordinaryData;
     }
 
-    public VariableLayoutReflection Layout { get; }
+    public ShaderVariableLayout Layout { get; }
     public ReadOnlySpan<ResourceBinding> Resources { get; }
     public ReadOnlySpan<byte> OrdinaryData { get; }
 }
@@ -316,12 +316,12 @@ public abstract class PersistentParameterBindings : DeviceResource
 {
     internal PersistentParameterBindings(
         Device device,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         string? label)
         : base(device, label)
     {
         Layout = layout;
     }
 
-    public VariableLayoutReflection Layout { get; }
+    public ShaderVariableLayout Layout { get; }
 }

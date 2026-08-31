@@ -401,7 +401,7 @@ public readonly ref struct AttachmentFormatSignature
 public readonly struct StreamOutputElement
 {
     private StreamOutputElement(
-        VariableLayoutReflection variable,
+        ShaderVariableLayout variable,
         bool gap,
         uint stream,
         byte startComponent,
@@ -416,7 +416,7 @@ public readonly struct StreamOutputElement
         OutputSlot = outputSlot;
     }
 
-    public VariableLayoutReflection Variable { get; }
+    public ShaderVariableLayout Variable { get; }
     public bool IsGap { get; }
     public uint Stream { get; }
     public byte StartComponent { get; }
@@ -424,7 +424,7 @@ public readonly struct StreamOutputElement
     public byte OutputSlot { get; }
 
     public static StreamOutputElement Output(
-        VariableLayoutReflection variable,
+        ShaderVariableLayout variable,
         uint stream,
         byte startComponent,
         byte componentCount,
@@ -435,7 +435,7 @@ public readonly struct StreamOutputElement
         uint stream,
         byte componentCount,
         byte outputSlot) =>
-        new(VariableLayoutReflection.Null, true, stream, 0, componentCount, outputSlot);
+        new(ShaderVariableLayout.Null, true, stream, 0, componentCount, outputSlot);
 }
 
 /// <remarks>
@@ -469,7 +469,7 @@ public readonly ref struct StreamOutputState
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct StaticSamplerBinding(
-    VariableReflection Sampler,
+    ShaderVariable Sampler,
     SamplerDesc Description);
 
 /// <remarks>
@@ -481,9 +481,9 @@ public readonly record struct StaticSamplerBinding(
 public readonly ref struct GraphicsPipelineDesc
 {
     public GraphicsPipelineDesc(
-        IComponentType program,
-        EntryPointReflection vertex,
-        EntryPointReflection pixel,
+        ShaderProgram program,
+        ShaderEntryPoint vertex,
+        ShaderEntryPoint pixel,
         ReadOnlySpan<VertexBufferLayout> vertexBuffers,
         ReadOnlySpan<VertexAttribute> vertexAttributes,
         PrimitiveTopology topology,
@@ -517,9 +517,9 @@ public readonly ref struct GraphicsPipelineDesc
     }
 
     public GraphicsPipelineDesc(
-        IComponentType program,
-        EntryPointReflection vertex,
-        EntryPointReflection pixel,
+        ShaderProgram program,
+        ShaderEntryPoint vertex,
+        ShaderEntryPoint pixel,
         ReadOnlySpan<VertexBufferLayout> vertexBuffers,
         ReadOnlySpan<VertexAttribute> vertexAttributes,
         PrimitiveTopology topology,
@@ -554,9 +554,9 @@ public readonly ref struct GraphicsPipelineDesc
         HasStreamOutput = true;
     }
 
-    public IComponentType Program { get; }
-    public EntryPointReflection Vertex { get; }
-    public EntryPointReflection Pixel { get; }
+    public ShaderProgram Program { get; }
+    public ShaderEntryPoint Vertex { get; }
+    public ShaderEntryPoint Pixel { get; }
     public ReadOnlySpan<VertexBufferLayout> VertexBuffers { get; }
     public ReadOnlySpan<VertexAttribute> VertexAttributes { get; }
     public PrimitiveTopology Topology { get; }
@@ -583,14 +583,14 @@ public readonly ref struct GraphicsPipelineDesc
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct ComputePipelineDesc(
-    IComponentType Program,
-    EntryPointReflection Compute,
+    ShaderProgram Program,
+    ShaderEntryPoint Compute,
     string? Label = null,
     ReadOnlyMemory<StaticSamplerBinding> StaticSamplers = default)
 {
     public void Deconstruct(
-        out IComponentType program,
-        out EntryPointReflection compute,
+        out ShaderProgram program,
+        out ShaderEntryPoint compute,
         out string? label)
     {
         program = Program;
@@ -608,10 +608,10 @@ public readonly record struct ComputePipelineDesc(
 public readonly ref struct MeshPipelineDesc
 {
     public MeshPipelineDesc(
-        IComponentType program,
-        EntryPointReflection mesh,
-        EntryPointReflection amplification,
-        EntryPointReflection pixel,
+        ShaderProgram program,
+        ShaderEntryPoint mesh,
+        ShaderEntryPoint amplification,
+        ShaderEntryPoint pixel,
         in RasterizerState rasterizer,
         in MultisampleState multisample,
         in DepthStencilState depthStencil,
@@ -635,10 +635,10 @@ public readonly ref struct MeshPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType Program { get; }
-    public EntryPointReflection Mesh { get; }
-    public EntryPointReflection Amplification { get; }
-    public EntryPointReflection Pixel { get; }
+    public ShaderProgram Program { get; }
+    public ShaderEntryPoint Mesh { get; }
+    public ShaderEntryPoint Amplification { get; }
+    public ShaderEntryPoint Pixel { get; }
     public RasterizerState Rasterizer { get; }
     public MultisampleState Multisample { get; }
     public DepthStencilState DepthStencil { get; }

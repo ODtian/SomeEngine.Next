@@ -2,11 +2,11 @@
   "asset_guid": "77261b58-8f75-5ad6-8fee-d7490a8cf873",
   "source_guid": "7842851d-de0f-4d7d-8386-12b37a99d845",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "ef73d1e03fedf33ed39b15a06fc995552b24728fcae2ca12fb6c6aa58886eacd",
+  "content_fingerprint": "bba1e903bc45b05d3ac6093acc5e3572f31c53d26b3f206a24eaf18ed234753f",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
-      "hash": "ece93546354e3de857d785c5f4dff7432930a182e3c4bc28395b55ca9a1566ea"
+      "hash": "2c4e323f5a2ba46bdb975b71caa7d00de91a72c96441cc1fc6bbbbd605a2cf03"
     },
     {
       "path": "assets/Shaders/cluster_instance_properties.slang",
@@ -14,7 +14,7 @@
     },
     {
       "path": "assets/Shaders/cluster_shade_pipeline.slang",
-      "hash": "2abf30a89af703fcde1e20f305cf8eb9d90878b87557c24369695764c07191aa"
+      "hash": "70ff562b9a1d80d08e839df649cbfc6150e140e1a2728ac4c9583e50aeb5e7cf"
     },
     {
       "path": "assets/Shaders/cluster_shade_unlit.slang",
@@ -22,7 +22,7 @@
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "f91e66fd2f0246c2427166b33e66b17fa857b3d0156df061fd1beab311f39994"
+      "hash": "bcbef524988da5b55a5d4c1c48f1a4f4f731d366741d45b86d2cfebc55aa801b"
     },
     {
       "path": "assets/Shaders/common.slang",
@@ -30,7 +30,7 @@
     },
     {
       "path": "assets/Shaders/generated/render_instance_layout.slang",
-      "hash": "cf8fa08c7f1b56d2cfe5e5419fcbf8664c8906c14123109c48d0064d6d65d738"
+      "hash": "ce99ff32845ec3831e1910fea5784d0aface5fe0e18bf3f1f01f1ae96000fb80"
     },
     {
       "path": "assets/Shaders/material_interfaces.slang",
@@ -58,12 +58,12 @@
     },
     {
       "path": "assets/Shaders/vertex_evaluate.slang",
-      "hash": "038c650ab2f1ffae66e24f3b3a1ef769e34788545ec915ed1d0639669422ee61"
+      "hash": "5635495c159ac93e542210d852b815649a9247ead2c60825a665b171709aa671"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",
       "hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
     }
   ],
-  "importer_version": 25
+  "importer_version": 26
 }

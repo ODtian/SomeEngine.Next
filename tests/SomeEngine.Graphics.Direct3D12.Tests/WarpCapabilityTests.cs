@@ -722,9 +722,9 @@ public sealed class WarpCapabilityTests
         using IGraphicsBackend backend = CreateValidatedBackend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var creations = new Task<Pipeline>[16];
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        Assert.NotEqual(VariableLayoutReflection.Null, globals);
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        Assert.NotEqual(ShaderVariableLayout.Null, globals);
         try
         {
             ComputePipelineDesc description = new(
@@ -960,7 +960,7 @@ public sealed class WarpCapabilityTests
             new MeshPipelineDesc(
                 shader.Program,
                 shader.GetEntryPoint(0),
-                EntryPointReflection.Null,
+                ShaderEntryPoint.Null,
                 shader.GetEntryPoint(1),
                 rasterizer,
                 multisample,

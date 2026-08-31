@@ -29,8 +29,8 @@ public sealed class WarpDescriptorTests
             source,
             [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
             SlangParameterCategory.Uniform));
 
@@ -117,8 +117,8 @@ public sealed class WarpDescriptorTests
             source,
             [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
             SlangParameterCategory.Uniform));
 
@@ -240,8 +240,8 @@ public sealed class WarpDescriptorTests
             source,
             [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         Assert.Equal((nint)0, GetDataLayout(layout).BindingRangeCount);
 
         using var backend = new D3D12Backend();
@@ -299,9 +299,9 @@ public sealed class WarpDescriptorTests
             source,
             [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
             "sm_6_2");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout reflected = GetDataLayout(layout);
         (SlangBindingType Type, uint Register, uint Space)[] locations = Enumerable.Range(
                 0,
                 checked((int)reflected.BindingRangeCount))
@@ -369,10 +369,10 @@ public sealed class WarpDescriptorTests
         backend.Discard(context);
     }
 
-    private static TypeLayoutReflection GetDataLayout(
-        VariableLayoutReflection layout)
+    private static ShaderTypeLayout GetDataLayout(
+        ShaderVariableLayout layout)
     {
-        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
+        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             result = result.ElementTypeLayout.UnwrapArray();
         return result;

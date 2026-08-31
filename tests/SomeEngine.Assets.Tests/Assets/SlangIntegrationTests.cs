@@ -43,17 +43,23 @@ public class SlangIntegrationTests
             Assert.Equal(Path.GetFileNameWithoutExtension(slangFile), asset.Name);
 
             // DXIL depends on local DXC availability; SPIR-V must always compile.
-            Assert.True(asset.Variants!.Count >= 2);
+            Assert.True(asset.Programs!.Count >= 2);
 
-            var vsSpirv = asset.Variants.FirstOrDefault(v => v.EntryPoint == "vertexMain" && v.Backend == "spirv");
-            Assert.NotNull(vsSpirv);
-            Assert.Equal(ShaderStage.Vertex, vsSpirv.Stage);
-            Assert.True(vsSpirv.Data.HasValue && vsSpirv.Data.Value.Length > 0);
+            Assert.True(asset.TryEntry(
+                "spirv",
+                "vertexMain",
+                ShaderStage.Vertex,
+                out _,
+                out var vsSpirv));
+            Assert.True(vsSpirv.Code.Length > 0);
 
-            var psSpirv = asset.Variants.FirstOrDefault(v => v.EntryPoint == "pixelMain" && v.Backend == "spirv");
-            Assert.NotNull(psSpirv);
-            Assert.Equal(ShaderStage.Pixel, psSpirv.Stage);
-            Assert.True(psSpirv.Data.HasValue && psSpirv.Data.Value.Length > 0);
+            Assert.True(asset.TryEntry(
+                "spirv",
+                "pixelMain",
+                ShaderStage.Pixel,
+                out _,
+                out var psSpirv));
+            Assert.True(psSpirv.Code.Length > 0);
         }
         finally
         {
@@ -223,16 +229,18 @@ public class SlangIntegrationTests
             var assetA = SlangShaderImporter.Import(fileA);
             var assetB = SlangShaderImporter.Import(fileB);
 
-            Assert.NotNull(assetA.Variants);
-            Assert.NotNull(assetB.Variants);
+            Assert.NotNull(assetA.Programs);
+            Assert.NotNull(assetB.Programs);
 
             // 验证每个 backend 的 content hash 都一致
-            var hashesA = assetA.Variants!
-                .Where(v => v.EntryPoint == "CSMain")
-                .ToDictionary(v => v.Backend!, v => v.ContentHash);
-            var hashesB = assetB.Variants!
-                .Where(v => v.EntryPoint == "CSMain")
-                .ToDictionary(v => v.Backend!, v => v.ContentHash);
+            var hashesA = assetA.Programs!
+                .ToDictionary(
+                    program => program.Backend!,
+                    program => EntryHash(assetA, program.Backend!, "CSMain", ShaderStage.Compute));
+            var hashesB = assetB.Programs!
+                .ToDictionary(
+                    program => program.Backend!,
+                    program => EntryHash(assetB, program.Backend!, "CSMain", ShaderStage.Compute));
 
             Assert.True(hashesA.Count > 0, "Should have at least one CSMain variant");
 
@@ -289,15 +297,13 @@ public class SlangIntegrationTests
             var assetA = SlangShaderImporter.Import(fileA);
             var assetB = SlangShaderImporter.Import(fileB);
 
-            var spirvA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "spirv");
-            var spirvB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "spirv");
+            string spirvA = EntryHash(assetA, "spirv", "CSMain", ShaderStage.Compute);
+            string spirvB = EntryHash(assetB, "spirv", "CSMain", ShaderStage.Compute);
 
-            Assert.NotNull(spirvA);
-            Assert.NotNull(spirvB);
-            Assert.NotEqual(spirvB!.ContentHash, spirvA!.ContentHash);
+            Assert.NotEqual(spirvB, spirvA);
 
-            Console.WriteLine($"  A: {spirvA.ContentHash}");
-            Console.WriteLine($"  B: {spirvB.ContentHash}");
+            Console.WriteLine($"  A: {spirvA}");
+            Console.WriteLine($"  B: {spirvB}");
         }
         finally
         {
@@ -306,9 +312,10 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void ContentHash_DifferentLocalVarNames_SameLogic_SameHash()
+    public void CookedProgramHash_CoversEachDetachedBackendPayload()
     {
-        // 局部变量名不同但逻辑相同 → 编译后应产生相同字节码
+        // Backend compilers may preserve or erase local names independently. The asset hash
+        // always covers the exact detached payload that runtime pipeline creation consumes.
         string sourceA = @"
             RWStructuredBuffer<float> outputBuffer;
 
@@ -347,13 +354,19 @@ public class SlangIntegrationTests
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
-                var varA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                var varB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                if (varA == null || varB == null) continue;
+                CookedShaderProgram programA = assetA.Programs!.Single(program =>
+                    string.Equals(program.Backend, backend, StringComparison.Ordinal));
+                CookedShaderProgram programB = assetB.Programs!.Single(program =>
+                    string.Equals(program.Backend, backend, StringComparison.Ordinal));
+                string hashA = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(programA.Data!.Value.Span));
+                string hashB = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(programB.Data!.Value.Span));
 
-                Console.WriteLine($"  [{backend}] A: {varA.ContentHash}");
-                Console.WriteLine($"  [{backend}] B: {varB.ContentHash}");
-                Assert.Equal(varB.ContentHash, varA.ContentHash);
+                Console.WriteLine($"  [{backend}] A: {hashA}");
+                Console.WriteLine($"  [{backend}] B: {hashB}");
+                Assert.Equal(programA.ContentHash, hashA);
+                Assert.Equal(programB.ContentHash, hashB);
             }
         }
         finally
@@ -403,13 +416,12 @@ public class SlangIntegrationTests
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
-                var varA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                var varB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                if (varA == null || varB == null) continue;
+                string hashA = EntryHash(assetA, backend, "CSMain", ShaderStage.Compute);
+                string hashB = EntryHash(assetB, backend, "CSMain", ShaderStage.Compute);
 
-                Console.WriteLine($"  [{backend}] A: {varA.ContentHash}");
-                Console.WriteLine($"  [{backend}] B: {varB.ContentHash}");
-                Assert.Equal(varB.ContentHash, varA.ContentHash);
+                Console.WriteLine($"  [{backend}] A: {hashA}");
+                Console.WriteLine($"  [{backend}] B: {hashB}");
+                Assert.Equal(hashB, hashA);
             }
         }
         finally
@@ -464,18 +476,27 @@ public class SlangIntegrationTests
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
-                var varA = assetA.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                var varB = assetB.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == backend);
-                if (varA == null || varB == null) continue;
+                string hashA = EntryHash(assetA, backend, "CSMain", ShaderStage.Compute);
+                string hashB = EntryHash(assetB, backend, "CSMain", ShaderStage.Compute);
 
-                Console.WriteLine($"  [{backend}] A: {varA.ContentHash}");
-                Console.WriteLine($"  [{backend}] B: {varB.ContentHash}");
-                Assert.Equal(varB.ContentHash, varA.ContentHash);
+                Console.WriteLine($"  [{backend}] A: {hashA}");
+                Console.WriteLine($"  [{backend}] B: {hashB}");
+                Assert.Equal(hashB, hashA);
             }
         }
         finally
         {
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
+    }
+
+    private static string EntryHash(
+        Shader asset,
+        string backend,
+        string entryPoint,
+        ShaderStage stage)
+    {
+        Assert.True(asset.TryEntry(backend, entryPoint, stage, out _, out var entry));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(entry.Code.Span));
     }
 }

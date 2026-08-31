@@ -298,7 +298,7 @@ public sealed partial class Shader
     public string? AssetGuid { get; set; }
     public string? Name { get; set; }
     public ImportTrace? ImportTrace { get; set; }
-    public IList<ShaderBytecode>? Variants { get; set; }
+    public IList<CookedShaderProgram>? Programs { get; set; }
     public IList<ShaderEntryPointAttribute>? EntryPointAttributes { get; set; }
     public IList<BackendReflection>? Reflections { get; set; }
     public IList<ShaderEntryPointReflection>? EntryPointReflections { get; set; }
@@ -308,9 +308,9 @@ public sealed partial class Shader
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderBytecode
+public partial class CookedShaderProgram
 {
-    public ShaderBytecode()
+    public CookedShaderProgram()
     {
     }
 
@@ -321,9 +321,10 @@ public partial class ShaderBytecode
     [BinaryChunk(nameof(DataChunkKey), nameof(DataDecodedLength))]
     [BinaryIgnore]
     public Memory<byte>? Data { get; set; }
-    public string? EntryPoint { get; set; }
-    public ShaderStage Stage { get; set; }
     public string? ContentHash { get; set; }
+
+    [BinaryIgnore]
+    public SlangShaderSharp.ShaderProgram? Program { get; internal set; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
@@ -334,7 +335,8 @@ public partial class ShaderEntryPointAttribute
     }
 
 
-    public int VariantIndex { get; set; }
+    public int ProgramIndex { get; set; }
+    public int EntryPointIndex { get; set; }
     public string? Name { get; set; }
     public IList<string>? Args { get; set; }
 }
@@ -347,7 +349,8 @@ public partial class ShaderEntryPointMetadata
     }
 
 
-    public int VariantIndex { get; set; }
+    public int ProgramIndex { get; set; }
+    public int EntryPointIndex { get; set; }
     public Memory<byte>? VertexLayoutDescriptor { get; set; }
 }
 

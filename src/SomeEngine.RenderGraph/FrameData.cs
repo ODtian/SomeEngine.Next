@@ -263,7 +263,7 @@ internal struct FramePass
     internal PassQueueSelection QueuePolicy;
     internal PassOptions Options;
     internal Pipeline? Pipeline;
-    internal VariableLayoutReflection ParameterLayout;
+    internal ShaderVariableLayout ParameterLayout;
     internal byte[]? ParameterOrdinaryData;
     internal List<GraphParameterResourceBinding>? ParameterBindings;
     internal List<GraphIdentity>? PersistentBindings;
@@ -284,7 +284,7 @@ internal sealed class FramePassOverlay
 {
     internal Pipeline? Pipeline;
     internal bool PipelineAssigned;
-    internal VariableLayoutReflection ParameterLayout;
+    internal ShaderVariableLayout ParameterLayout = ShaderVariableLayout.Null;
     internal byte[] ParameterOrdinaryData = [];
     internal bool ParameterBlockAssigned;
     internal List<GraphParameterResourceBinding> ParameterBindings { get; } = [];

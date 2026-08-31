@@ -27,7 +27,8 @@ public class AssetStorageTests
             .ToArray();
 
         Assert.DoesNotContain(references, static name => name.StartsWith("SharpGLTF", StringComparison.Ordinal));
-        Assert.DoesNotContain(references, static name => name.StartsWith("SlangShaderSharp", StringComparison.Ordinal));
+        Assert.Contains(references, static name =>
+            string.Equals(name, "SlangShaderSharp", StringComparison.Ordinal));
         Assert.DoesNotContain(references, static name => name.Contains("MeshOptimizer", StringComparison.Ordinal));
     }
 

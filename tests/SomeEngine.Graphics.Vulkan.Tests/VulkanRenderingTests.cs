@@ -51,8 +51,8 @@ public sealed class VulkanRenderingTests
                 new BlendState(blend),
                 new AttachmentFormatSignature(colorFormats, null),
                 DynamicStates.Viewport | DynamicStates.Scissor));
-        VariableLayoutReflection global = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout global = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         byte[] tint =
         [
             0, 0, 0x80, 0x3F,

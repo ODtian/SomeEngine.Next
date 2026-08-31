@@ -153,9 +153,9 @@ internal static class RenderGraphCpuBenchmark
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
             new ComputePipelineDesc(shader.Program, shader.Entries[2], "Dagor graph CPU compute"));
-        VariableLayoutReflection globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        if (globalLayout == VariableLayoutReflection.Null)
+        ShaderVariableLayout globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        if (globalLayout == ShaderVariableLayout.Null)
             throw new InvalidDataException("The benchmark shader has no global parameter layout.");
 
         PersistentParameterBindings[] materials = CreateMaterials(
@@ -932,7 +932,7 @@ internal static class RenderGraphCpuBenchmark
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         int count)
     {
         var result = new PersistentParameterBindings[count];

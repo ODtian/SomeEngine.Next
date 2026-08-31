@@ -317,9 +317,9 @@ public enum AccelerationStructurePostBuildInfoType : byte
 /// </remarks>
 public readonly record struct RayTracingHitGroup(
     string Name,
-    EntryPointReflection ClosestHit,
-    EntryPointReflection AnyHit,
-    EntryPointReflection Intersection);
+    ShaderEntryPoint ClosestHit,
+    ShaderEntryPoint AnyHit,
+    ShaderEntryPoint Intersection);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -344,10 +344,10 @@ public enum RayTracingPipelineOptions : byte
 public readonly ref struct RayTracingPipelineDesc
 {
     public RayTracingPipelineDesc(
-        IComponentType program,
-        ReadOnlySpan<EntryPointReflection> rayGeneration,
-        ReadOnlySpan<EntryPointReflection> miss,
-        ReadOnlySpan<EntryPointReflection> callable,
+        ShaderProgram program,
+        ReadOnlySpan<ShaderEntryPoint> rayGeneration,
+        ReadOnlySpan<ShaderEntryPoint> miss,
+        ReadOnlySpan<ShaderEntryPoint> callable,
         ReadOnlySpan<RayTracingHitGroup> hitGroups,
         uint maximumRecursionDepth,
         uint maximumPayloadSize,
@@ -371,10 +371,10 @@ public readonly ref struct RayTracingPipelineDesc
         StaticSamplers = staticSamplers;
     }
 
-    public IComponentType Program { get; }
-    public ReadOnlySpan<EntryPointReflection> RayGeneration { get; }
-    public ReadOnlySpan<EntryPointReflection> Miss { get; }
-    public ReadOnlySpan<EntryPointReflection> Callable { get; }
+    public ShaderProgram Program { get; }
+    public ReadOnlySpan<ShaderEntryPoint> RayGeneration { get; }
+    public ReadOnlySpan<ShaderEntryPoint> Miss { get; }
+    public ReadOnlySpan<ShaderEntryPoint> Callable { get; }
     public ReadOnlySpan<RayTracingHitGroup> HitGroups { get; }
     public uint MaximumRecursionDepth { get; }
     public uint MaximumPayloadSize { get; }
@@ -422,7 +422,7 @@ public abstract class RayTracingShaderTable : DeviceResource
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
 public readonly record struct RayTracingLocalParameterBlock(
-    VariableLayoutReflection Layout,
+    ShaderVariableLayout Layout,
     uint ResourceOffset,
     uint ResourceCount,
     uint OrdinaryDataOffset,
@@ -437,7 +437,7 @@ public readonly record struct RayTracingLocalParameterBlock(
 public readonly struct RayTracingShaderRecord
 {
     private RayTracingShaderRecord(
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         string? hitGroupName,
         uint parameterBlockOffset,
         uint parameterBlockCount)
@@ -448,13 +448,13 @@ public readonly struct RayTracingShaderRecord
         ParameterBlockCount = parameterBlockCount;
     }
 
-    public EntryPointReflection EntryPoint { get; }
+    public ShaderEntryPoint EntryPoint { get; }
     public string? HitGroupName { get; }
     public uint ParameterBlockOffset { get; }
     public uint ParameterBlockCount { get; }
 
     public static RayTracingShaderRecord Entry(
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         uint parameterBlockOffset,
         uint parameterBlockCount) =>
         new(
@@ -468,7 +468,7 @@ public readonly struct RayTracingShaderRecord
         uint parameterBlockOffset,
         uint parameterBlockCount) =>
         new(
-            EntryPointReflection.Null,
+            ShaderEntryPoint.Null,
             hitGroupName ?? throw new ArgumentNullException(nameof(hitGroupName)),
             parameterBlockOffset,
             parameterBlockCount);

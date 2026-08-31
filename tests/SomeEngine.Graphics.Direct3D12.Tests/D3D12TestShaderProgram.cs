@@ -27,25 +27,29 @@ internal sealed class D3D12TestShaderProgram : IDisposable
         LazyThreadSafetyMode.ExecutionAndPublication);
 
     private readonly List<ComObject> _owned;
-    private readonly EntryPointReflection[] _entries;
+    private readonly ShaderEntryPoint[] _entries;
     private bool _disposed;
 
     private D3D12TestShaderProgram(
         List<ComObject> owned,
-        IComponentType program,
-        ShaderReflection reflection,
-        EntryPointReflection[] entries)
+        ShaderProgram program,
+        IComponentType nativeProgram,
+        ShaderReflection nativeReflection)
     {
         _owned = owned;
         Program = program;
-        Reflection = reflection;
-        _entries = entries;
+        Reflection = program.Layout;
+        _entries = [.. program.EntryPoints];
+        NativeProgram = nativeProgram;
+        NativeReflection = nativeReflection;
     }
 
-    internal IComponentType Program { get; }
-    internal ShaderReflection Reflection { get; }
+    internal ShaderProgram Program { get; }
+    internal ShaderProgramLayout Reflection { get; }
+    internal IComponentType NativeProgram { get; }
+    internal ShaderReflection NativeReflection { get; }
 
-    internal EntryPointReflection GetEntryPoint(int index)
+    internal ShaderEntryPoint GetEntryPoint(int index)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _entries[index];
@@ -276,7 +280,9 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 reflectedEntries[index] = reflected;
             }
 
-            return new D3D12TestShaderProgram(owned, linked, reflection, reflectedEntries);
+            string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
+            ShaderProgram cooked = ShaderProgram.Capture(linked, 0, backend);
+            return new D3D12TestShaderProgram(owned, cooked, linked, reflection);
         }
         catch
         {
@@ -450,7 +456,8 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 program,
                 targetCode.Buffer.ToArray(),
                 reflection);
-            return new D3D12TestShaderProgram(owned, targetProgram, reflection, reflectedEntries);
+            ShaderProgram cooked = ShaderProgram.Capture(targetProgram, 0, "dxil");
+            return new D3D12TestShaderProgram(owned, cooked, targetProgram, reflection);
         }
         catch
         {

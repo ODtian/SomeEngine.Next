@@ -6,7 +6,6 @@ using ImGuiNET;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
-using SomeEngine.Render.Assets;
 using SomeEngine.RenderGraph;
 using SlangShaderSharp;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -27,7 +26,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
     private readonly NativeWindow _window;
     private readonly nint _context;
     private nint _iniFilename;
-    private LiveShaderProgram? _program;
+    private ShaderProgram? _program;
     private Pipeline? _pipeline;
     private readonly Buffer?[] _vertexBuffers = new Buffer?[2];
     private readonly Buffer?[] _indexBuffers = new Buffer?[2];
@@ -299,7 +298,8 @@ internal sealed class RuntimeUiRenderer : IDisposable
                 this,
                 _pipeline ?? throw new InvalidOperationException("The Runtime ImGui pipeline is unavailable."),
                 (_program ?? throw new InvalidOperationException(
-                    "The Runtime ImGui Slang program is unavailable.")).ParameterLayout,
+                    "The Runtime ImGui cooked program is unavailable."))
+                    .Layout.GetGlobalParamsVarLayout(),
                 targetView,
                 vertices,
                 indices,
@@ -408,7 +408,6 @@ internal sealed class RuntimeUiRenderer : IDisposable
         _fontTexture = null;
         Destroy(_pipeline, ref failures);
         _pipeline = null;
-        Destroy(_program, ref failures);
         _program = null;
         if (_context != 0)
         {
@@ -431,13 +430,17 @@ internal sealed class RuntimeUiRenderer : IDisposable
         string pixelEntryPoint,
         Format outputFormat)
     {
-        _program = LiveShaderProgram.Link(
-            shader,
-            [
-                new LiveShaderEntry(vertexEntryPoint, LiveShaderStage.Vertex),
-                new LiveShaderEntry(pixelEntryPoint, LiveShaderStage.Pixel),
-            ],
-            _device.Capabilities.ShaderTarget);
+        CookedShaderEntry vertex = shader.RequireEntry(
+            _device.Capabilities.ShaderTarget,
+            vertexEntryPoint,
+            ShaderStage.Vertex);
+        CookedShaderEntry pixel = shader.RequireEntry(
+            _device.Capabilities.ShaderTarget,
+            pixelEntryPoint,
+            ShaderStage.Pixel);
+        if (!ReferenceEquals(vertex.Program, pixel.Program))
+            throw new InvalidDataException("Runtime UI entries must belong to one cooked shader program.");
+        _program = vertex.Program;
         SomeEngine.Graphics.VertexAttribute[] attributes =
         [
             new(0, 0, Format.R32G32Float, 0),
@@ -460,9 +463,9 @@ internal sealed class RuntimeUiRenderer : IDisposable
         var blend = new BlendState(blendAttachments);
         var attachments = new AttachmentFormatSignature([outputFormat], null);
         var description = new GraphicsPipelineDesc(
-            _program.Program,
-            _program.GetEntryPoint(0),
-            _program.GetEntryPoint(1),
+            _program,
+            vertex.EntryPoint,
+            pixel.EntryPoint,
             buffers,
             attributes,
             PrimitiveTopology.TriangleList,
@@ -1001,7 +1004,7 @@ internal readonly record struct RuntimeUiMetrics(
 internal readonly record struct RuntimeUiPassData(
     RuntimeUiRenderer Renderer,
     Pipeline Pipeline,
-    VariableLayoutReflection ParameterLayout,
+    ShaderVariableLayout ParameterLayout,
     GraphColorAttachmentViewId Target,
     GraphBufferId Vertices,
     GraphBufferId Indices,

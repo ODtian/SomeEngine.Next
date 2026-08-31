@@ -1,22 +1,29 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
+using SlangShaderSharp;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns one linked compute entry point and its RHI pipeline.</summary>
+/// <summary>Owns one RHI pipeline created from a cooked compute entry point.</summary>
 public sealed class LinkedComputePipeline : IDisposable
 {
     private bool _disposed;
 
-    private LinkedComputePipeline(LiveShaderProgram program, GraphicsPipeline pipeline)
+    private LinkedComputePipeline(
+        ShaderProgram program,
+        ShaderEntryPoint entryPoint,
+        GraphicsPipeline pipeline)
     {
         Program = program;
+        EntryPoint = entryPoint;
         Pipeline = pipeline;
     }
 
-    public LiveShaderProgram Program { get; }
+    public ShaderProgram Program { get; }
+    public ShaderEntryPoint EntryPoint { get; }
+    public ShaderVariableLayout ParameterLayout => Program.Layout.GetGlobalParamsVarLayout();
     public GraphicsPipeline Pipeline { get; }
 
     public static LinkedComputePipeline Create(
@@ -56,26 +63,25 @@ public sealed class LinkedComputePipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
-        LiveShaderProgram? program = null;
         GraphicsPipeline? pipeline = null;
         try
         {
-            program = LiveShaderProgram.Link(
-                shader,
-                [new LiveShaderEntry(entryPoint, LiveShaderStage.Compute)]);
+            CookedShaderEntry cooked = shader.RequireEntry(
+                device.Capabilities.ShaderTarget,
+                entryPoint,
+                ShaderStage.Compute);
             pipeline = backend.CreateComputePipeline(
                 device,
                 new ComputePipelineDesc(
-                    program.Program,
-                    program.GetEntryPoint(0),
+                    cooked.Program,
+                    cooked.EntryPoint,
                     label));
-            return new LinkedComputePipeline(program, pipeline);
+            return new LinkedComputePipeline(cooked.Program, cooked.EntryPoint, pipeline);
         }
         catch (Exception primary)
         {
             List<Exception>? cleanupFailures = null;
             if (pipeline is not null) TryDispose(pipeline, ref cleanupFailures);
-            if (program is not null) TryDispose(program, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
                 cleanupFailures.Insert(0, primary);
@@ -93,7 +99,6 @@ public sealed class LinkedComputePipeline : IDisposable
             return;
         List<Exception>? failures = null;
         TryDispose(Pipeline, ref failures);
-        TryDispose(Program, ref failures);
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);

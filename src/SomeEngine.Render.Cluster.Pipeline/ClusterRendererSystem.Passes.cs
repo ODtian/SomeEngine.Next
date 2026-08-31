@@ -1473,7 +1473,7 @@ public sealed partial class ClusterRendererSystem
                 state,
                 default,
                 pipeline.Pipeline,
-                pipeline.Program.ParameterLayout,
+                pipeline.ParameterLayout,
                 bindings,
                 declaration,
                 callback);
@@ -1516,7 +1516,7 @@ public sealed partial class ClusterRendererSystem
                 state,
                 default,
                 pipeline.Pipeline,
-                pipeline.Program.ParameterLayout,
+                pipeline.ParameterLayout,
                 bindings,
                 declaration,
                 callback);

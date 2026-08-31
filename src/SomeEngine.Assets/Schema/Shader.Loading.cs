@@ -1,4 +1,6 @@
 using SomeEngine.Serialization.Containers;
+using SlangShaderSharp;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.Assets.Schema;
 
@@ -17,18 +19,65 @@ public partial class Shader
         return asset;
     }
 
-    public bool TryVariant(
-        string backend,
-        string entryPoint,
-        out ShaderBytecode variant)
-        => TryVariant(backend, entryPoint, stage: null, out variant);
+    public bool TryProgram(string backend, out ShaderProgram program)
+    {
+        IList<CookedShaderProgram>? programs = Programs;
+        if (programs is not null)
+        {
+            for (int index = 0; index < programs.Count; index++)
+            {
+                CookedShaderProgram candidate = programs[index];
+                if (string.Equals(candidate.Backend, backend, StringComparison.Ordinal) &&
+                    candidate.Program is ShaderProgram value)
+                {
+                    program = value;
+                    return true;
+                }
+            }
+        }
 
-    public bool TryVariant(
+        program = null!;
+        return false;
+    }
+
+    public bool TryEntry(
         string backend,
         string entryPoint,
         ShaderStage stage,
-        out ShaderBytecode variant)
-        => TryVariant(backend, entryPoint, (ShaderStage?)stage, out variant);
+        out ShaderProgram program,
+        out ShaderEntryPoint entry)
+    {
+        if (TryProgram(backend, out program))
+        {
+            SlangStage expectedStage = ToSlangStage(stage);
+            for (int index = 0; index < program.EntryPoints.Count; index++)
+            {
+                ShaderEntryPoint candidate = program.EntryPoints[index];
+                if (candidate.Stage == expectedStage &&
+                    string.Equals(candidate.Name, entryPoint, StringComparison.Ordinal))
+                {
+                    entry = candidate;
+                    return true;
+                }
+            }
+        }
+
+        entry = null!;
+        return false;
+    }
+
+    public CookedShaderEntry RequireEntry(
+        ShaderTarget target,
+        string entryPoint,
+        ShaderStage stage)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
+        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        if (TryEntry(backend, entryPoint, stage, out ShaderProgram program, out ShaderEntryPoint entry))
+            return new CookedShaderEntry(program, entry);
+        throw new InvalidDataException(
+            $"Shader '{Name}' has no cooked {backend} {stage} entry '{entryPoint}'.");
+    }
 
     public bool TryReflection(
         string backend,
@@ -57,48 +106,24 @@ public partial class Shader
     public bool TryEntry(
         ShaderEntryPointAttribute attribute,
         string? preferred,
-        out string entry)
+        out ShaderEntryPoint entry)
     {
         ArgumentNullException.ThrowIfNull(attribute);
-        entry = string.Empty;
-        IList<ShaderBytecode>? variants = Variants;
-        if (variants is null
-            || attribute.VariantIndex < 0
-            || attribute.VariantIndex >= variants.Count)
+        entry = null!;
+        IList<CookedShaderProgram>? programs = Programs;
+        if (programs is null ||
+            attribute.ProgramIndex < 0 ||
+            attribute.ProgramIndex >= programs.Count ||
+            programs[attribute.ProgramIndex].Program is not ShaderProgram program ||
+            attribute.EntryPointIndex < 0 ||
+            attribute.EntryPointIndex >= program.EntryPoints.Count)
         {
             return false;
         }
 
-        entry = variants[attribute.VariantIndex].EntryPoint ?? string.Empty;
-        return entry.Length != 0
-            && (string.IsNullOrWhiteSpace(preferred)
-                || string.Equals(entry, preferred, StringComparison.Ordinal));
-    }
-
-    private bool TryVariant(
-        string backend,
-        string entryPoint,
-        ShaderStage? stage,
-        out ShaderBytecode variant)
-    {
-        IList<ShaderBytecode>? variants = Variants;
-        if (variants is not null)
-        {
-            for (int index = 0; index < variants.Count; index++)
-            {
-                ShaderBytecode candidate = variants[index];
-                if (string.Equals(candidate.Backend, backend, StringComparison.Ordinal)
-                    && string.Equals(candidate.EntryPoint, entryPoint, StringComparison.Ordinal)
-                    && (!stage.HasValue || candidate.Stage == stage.Value))
-                {
-                    variant = candidate;
-                    return true;
-                }
-            }
-        }
-
-        variant = null!;
-        return false;
+        entry = program.EntryPoints[attribute.EntryPointIndex];
+        return string.IsNullOrWhiteSpace(preferred) ||
+            string.Equals(entry.Name, preferred, StringComparison.Ordinal);
     }
 
     internal static void Validate(Shader asset)
@@ -110,21 +135,29 @@ public partial class Shader
                 "Runtime loading never compiles or reflects source files; recook the shader.");
         }
 
-        int variantCount = asset.Variants?.Count ?? 0;
-        if (variantCount == 0)
-            throw new InvalidDataException($"Shader '{asset.Name}' has no bytecode variant.");
-        foreach (ShaderBytecode variant in asset.Variants!)
+        int programCount = asset.Programs?.Count ?? 0;
+        if (programCount == 0)
+            throw new InvalidDataException($"Shader '{asset.Name}' has no cooked program.");
+        var backends = new HashSet<string>(StringComparer.Ordinal);
+        foreach (CookedShaderProgram cooked in asset.Programs!)
         {
-            if (!variant.Data.HasValue)
-                throw new InvalidDataException($"Shader '{asset.Name}' has an undecoded bytecode variant.");
+            if (!cooked.Data.HasValue || cooked.Program is null)
+                throw new InvalidDataException($"Shader '{asset.Name}' has an undecoded cooked program.");
+            if (string.IsNullOrWhiteSpace(cooked.Backend) || !backends.Add(cooked.Backend))
+                throw new InvalidDataException($"Shader '{asset.Name}' has a missing or duplicate cooked backend.");
         }
 
         if (asset.EntryPointAttributes is { Count: > 0 })
         {
             foreach (ShaderEntryPointAttribute attribute in asset.EntryPointAttributes)
             {
-                if (attribute.VariantIndex < 0 || attribute.VariantIndex >= variantCount)
-                    throw new InvalidDataException("Shader entry-point attribute references an invalid variant.");
+                if (attribute.ProgramIndex < 0 || attribute.ProgramIndex >= programCount ||
+                    attribute.EntryPointIndex < 0 ||
+                    attribute.EntryPointIndex >= asset.Programs![attribute.ProgramIndex].Program!.EntryPoints.Count)
+                {
+                    throw new InvalidDataException(
+                        "Shader entry-point attribute references an invalid cooked entry point.");
+                }
             }
         }
 
@@ -201,4 +234,28 @@ public partial class Shader
             && left.RowCount == right.RowCount
             && left.ColumnCount == right.ColumnCount
             && left.ScalarType == right.ScalarType;
+
+    private static SlangStage ToSlangStage(ShaderStage stage) => stage switch
+    {
+        ShaderStage.Vertex => SlangStage.Vertex,
+        ShaderStage.Pixel => SlangStage.Fragment,
+        ShaderStage.Compute => SlangStage.Compute,
+        ShaderStage.Hull => SlangStage.Hull,
+        ShaderStage.Domain => SlangStage.Domain,
+        ShaderStage.Geometry => SlangStage.Geometry,
+        ShaderStage.Amplification => SlangStage.Amplification,
+        ShaderStage.Mesh => SlangStage.Mesh,
+        ShaderStage.RayGen => SlangStage.RayGeneration,
+        ShaderStage.RayMiss => SlangStage.Miss,
+        ShaderStage.RayClosestHit => SlangStage.ClosestHit,
+        ShaderStage.RayAnyHit => SlangStage.AnyHit,
+        ShaderStage.RayIntersection => SlangStage.Intersection,
+        ShaderStage.Callable => SlangStage.Callable,
+        ShaderStage.Node => SlangStage.Node,
+        _ => throw new ArgumentOutOfRangeException(nameof(stage)),
+    };
 }
+
+public readonly record struct CookedShaderEntry(
+    ShaderProgram Program,
+    ShaderEntryPoint EntryPoint);

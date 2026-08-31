@@ -13,10 +13,10 @@ internal sealed unsafe partial class VulkanBackend
         if (!nativeDevice.TryGetCapability(out MeshShaders? capability) || capability is null)
             throw new NotSupportedException("The Device was not created with MeshShaders support.");
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
-        var entries = new List<EntryPointReflection> { desc.Mesh };
-        if (desc.Amplification != EntryPointReflection.Null) entries.Add(desc.Amplification);
-        if (desc.Pixel != EntryPointReflection.Null) entries.Add(desc.Pixel);
+        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        var entries = new List<ShaderEntryPoint> { desc.Mesh };
+        if (desc.Amplification != ShaderEntryPoint.Null) entries.Add(desc.Amplification);
+        if (desc.Pixel != ShaderEntryPoint.Null) entries.Add(desc.Pixel);
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
             reflection,
@@ -32,7 +32,7 @@ internal sealed unsafe partial class VulkanBackend
                 SlangStage.Mesh,
                 "mesh"), ShaderStageFlags.MeshBitExt, desc.Mesh),
         };
-        if (desc.Amplification != EntryPointReflection.Null)
+        if (desc.Amplification != ShaderEntryPoint.Null)
         {
             shaders.Insert(0, new MeshShaderStage(
                 CompileSpirv(
@@ -45,7 +45,7 @@ internal sealed unsafe partial class VulkanBackend
                 ShaderStageFlags.TaskBitExt,
                 desc.Amplification));
         }
-        if (desc.Pixel != EntryPointReflection.Null)
+        if (desc.Pixel != ShaderEntryPoint.Null)
         {
             shaders.Add(new MeshShaderStage(
                 CompileSpirv(
@@ -91,7 +91,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        RetainedShaderProgram program = RetainedShaderProgram.Capture(desc.Program);
         try
         {
             var snapshot = new MeshPipelineSnapshot(desc, program.Program);
@@ -244,14 +244,14 @@ internal sealed unsafe partial class VulkanBackend
     private readonly record struct MeshShaderStage(
         CompiledSpirv Shader,
         ShaderStageFlags Stage,
-        EntryPointReflection Entry);
+        ShaderEntryPoint Entry);
 
     private sealed class MeshPipelineSnapshot
     {
-        private readonly IComponentType _program;
-        private readonly EntryPointReflection _mesh;
-        private readonly EntryPointReflection _task;
-        private readonly EntryPointReflection _pixel;
+        private readonly ShaderProgram _program;
+        private readonly ShaderEntryPoint _mesh;
+        private readonly ShaderEntryPoint _task;
+        private readonly ShaderEntryPoint _pixel;
         private readonly RasterizerState _rasterizer;
         private readonly MultisampleState _multisample;
         private readonly DepthStencilState _depthStencil;
@@ -266,7 +266,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal MeshPipelineSnapshot(
             in MeshPipelineDesc desc,
-            IComponentType program)
+            ShaderProgram program)
         {
             _program = program;
             _mesh = desc.Mesh;

@@ -10,65 +10,35 @@ internal sealed unsafe partial class D3D12Backend
     private static readonly byte[] StateObjectReplayMagic = "SERHISO1"u8.ToArray();
 
     private static CompiledProgramLibrary CompileProgramLibrary(
-        IComponentType program,
-        ShaderReflection reflection,
-        ReadOnlySpan<EntryPointReflection> entries)
+        ShaderProgram program,
+        ShaderProgramLayout reflection,
+        ReadOnlySpan<ShaderEntryPoint> entries)
     {
         ArgumentNullException.ThrowIfNull(program);
-        if (program.GetSpecializationParamCount() != 0)
-        {
-            throw new GraphicsException(
-                GraphicsError.ShaderCompilation,
-                "State-object creation requires a fully specialized Slang program.");
-        }
-
         if (entries.IsEmpty)
             throw new ArgumentException("A state-object library requires at least one Slang entry point.", nameof(entries));
         byte[][] libraries = new byte[entries.Length][];
         for (int entryIndex = 0; entryIndex < entries.Length; entryIndex++)
         {
-            int reflectionIndex = GetStateObjectEntryPointIndex(reflection, entries[entryIndex]);
-            ISlangBlob? code = null;
-            ISlangBlob? diagnostics = null;
-            try
+            _ = GetStateObjectEntryPointIndex(reflection, entries[entryIndex]);
+            libraries[entryIndex] = entries[entryIndex].Code.ToArray();
+            if (libraries[entryIndex].Length == 0)
             {
-                SlangResult result = program.GetEntryPointCode(
-                    reflectionIndex,
-                    0,
-                    out code!,
-                    out diagnostics);
-                if (result.Failed || code is null || code.GetBufferPointer() is null ||
-                    code.GetBufferSize() == 0)
-                {
-                    throw new GraphicsException(
-                        GraphicsError.ShaderCompilation,
-                        FormatSlangFailure(
-                            $"Slang state-object DXIL generation failed for entry " +
-                            $"'{GetStableEntryPointName(entries[entryIndex])}'",
-                            diagnostics),
-                        result);
-                }
-
-                libraries[entryIndex] = new ReadOnlySpan<byte>(
-                    (void*)code.GetBufferPointer(),
-                    checked((int)code.GetBufferSize())).ToArray();
-            }
-            finally
-            {
-                ReleaseSlang(code);
-                ReleaseSlang(diagnostics);
+                throw new GraphicsException(
+                    GraphicsError.ShaderCompilation,
+                    $"The cooked state-object entry '{GetStableEntryPointName(entries[entryIndex])}' contains no DXIL.");
             }
         }
 
         return new CompiledProgramLibrary(
             libraries,
             HashProgramLibraries(libraries),
-            CreateSlangProgramIdentity(program, reflection));
+            SHA256.HashData(program.ToArray()));
     }
 
     private static int GetStateObjectEntryPointIndex(
-        ShaderReflection reflection,
-        EntryPointReflection entry)
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint entry)
     {
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
@@ -95,54 +65,7 @@ internal sealed unsafe partial class D3D12Backend
         return SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
     }
 
-    private static byte[] CreateSlangProgramIdentity(
-        IComponentType program,
-        ShaderReflection reflection)
-    {
-        using MemoryStream stream = new();
-        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
-        {
-            writer.Write(reflection.EntryPointCount);
-            for (uint index = 0; index < reflection.EntryPointCount; index++)
-            {
-                EntryPointReflection entryPoint = reflection.GetEntryPointByIndex(index);
-                writer.Write((int)entryPoint.Stage);
-                WriteCanonicalString(writer, GetStableEntryPointName(entryPoint));
-                WriteCanonicalBytes(
-                    writer,
-                    GetSlangEntryPointIdentity(program, checked((int)index)));
-            }
-        }
-
-        return SHA256.HashData(
-            stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
-    }
-
-    private static byte[] GetSlangEntryPointIdentity(IComponentType program, int entryPointIndex)
-    {
-        ISlangBlob? identity = null;
-        try
-        {
-            program.GetEntryPointHash(entryPointIndex, 0, out identity!);
-            if (identity is null || identity.GetBufferPointer() is null ||
-                identity.GetBufferSize() == 0)
-            {
-                throw new GraphicsException(
-                    GraphicsError.ShaderCompilation,
-                    "Slang did not produce an entry-point target-settings identity.");
-            }
-
-            return new ReadOnlySpan<byte>(
-                (void*)identity.GetBufferPointer(),
-                checked((int)identity.GetBufferSize())).ToArray();
-        }
-        finally
-        {
-            ReleaseSlang(identity);
-        }
-    }
-
-    internal static string GetStableEntryPointName(EntryPointReflection entryPoint) =>
+    internal static string GetStableEntryPointName(ShaderEntryPoint entryPoint) =>
         WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
 
     internal static string GetStableEntryPointName(string name, string? nameOverride) =>
@@ -300,12 +223,12 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static string ValidateStateObjectEntryPoint(
-        ShaderReflection reflection,
-        EntryPointReflection entryPoint,
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint entryPoint,
         ReadOnlySpan<SlangStage> permittedStages,
         string role)
     {
-        if (entryPoint == EntryPointReflection.Null)
+        if (entryPoint == ShaderEntryPoint.Null)
             throw new ArgumentException($"The {role} entry point is null.", nameof(entryPoint));
         if (!permittedStages.Contains(entryPoint.Stage))
         {

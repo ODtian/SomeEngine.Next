@@ -1,5 +1,4 @@
 using SlangShaderSharp;
-using System.Runtime.InteropServices.Marshalling;
 using System.Threading.Channels;
 
 namespace SomeEngine.Graphics.Vulkan;
@@ -120,14 +119,14 @@ internal sealed partial class VulkanBackend
         private readonly TaskCompletionSource<Pipeline> _completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly VulkanDevice _device;
-        private RetainedSlangProgram? _program;
+        private RetainedShaderProgram? _program;
         private VulkanPipelineCache? _cache;
         private Func<Pipeline>? _create;
         private int _state;
 
         internal VulkanPipelineJob(
             VulkanDevice device,
-            RetainedSlangProgram program,
+            RetainedShaderProgram program,
             VulkanPipelineCache? cache,
             Func<Pipeline> create)
         {
@@ -182,7 +181,7 @@ internal sealed partial class VulkanBackend
     private Task<Pipeline> EnqueuePipelineCreation(
         VulkanDevice device,
         VulkanPipelineCache? cache,
-        RetainedSlangProgram program,
+        RetainedShaderProgram program,
         Func<Pipeline> create)
     {
         bool cacheRetained = false;
@@ -205,90 +204,21 @@ internal sealed partial class VulkanBackend
         }
     }
 
-    private sealed class RetainedSlangProgram : IDisposable
+    private sealed class RetainedShaderProgram : IDisposable
     {
-        private IComponentType? _program;
-        private ISession? _session;
-        private IGlobalSession? _globalSession;
+        private ShaderProgram? _program;
 
-        private RetainedSlangProgram(
-            IComponentType program,
-            ISession session,
-            IGlobalSession globalSession)
-        {
-            _program = program;
-            _session = session;
-            _globalSession = globalSession;
-        }
+        private RetainedShaderProgram(ShaderProgram program) => _program = program;
 
-        internal IComponentType Program => Volatile.Read(ref _program)
-            ?? throw new ObjectDisposedException(nameof(RetainedSlangProgram));
+        internal ShaderProgram Program => Volatile.Read(ref _program)
+            ?? throw new ObjectDisposedException(nameof(RetainedShaderProgram));
 
-        internal static RetainedSlangProgram Capture(IComponentType program)
+        internal static RetainedShaderProgram Capture(ShaderProgram program)
         {
             ArgumentNullException.ThrowIfNull(program);
-            IGlobalSession? globalReference = null;
-            ISession? sessionReference = null;
-            IComponentType? programReference = null;
-            try
-            {
-                ISession session = program.GetSession();
-                IGlobalSession globalSession = session.GetGlobalSession();
-                globalReference = RetainComReference(globalSession);
-                sessionReference = RetainComReference(session);
-                programReference = RetainComReference(program);
-                var retained = new RetainedSlangProgram(
-                    programReference,
-                    sessionReference,
-                    globalReference);
-                programReference = null;
-                sessionReference = null;
-                globalReference = null;
-                return retained;
-            }
-            finally
-            {
-                ReleaseComReference(programReference);
-                ReleaseComReference(sessionReference);
-                ReleaseComReference(globalReference);
-            }
+            return new RetainedShaderProgram(program);
         }
 
-        public void Dispose()
-        {
-            ReleaseComReference(Interlocked.Exchange(ref _program, null));
-            ReleaseComReference(Interlocked.Exchange(ref _session, null));
-            ReleaseComReference(Interlocked.Exchange(ref _globalSession, null));
-        }
-
-        private static unsafe T RetainComReference<T>(T value)
-            where T : class
-        {
-            try
-            {
-                void* pointer = ComInterfaceMarshaller<T>.ConvertToUnmanaged(value);
-                try
-                {
-                    return UniqueComInterfaceMarshaller<T>.ConvertToManaged(pointer)
-                        ?? throw new InvalidOperationException(
-                            $"The {typeof(T).Name} COM reference could not be materialized.");
-                }
-                finally
-                {
-                    ComInterfaceMarshaller<T>.Free(pointer);
-                }
-            }
-            catch (InvalidCastException)
-            {
-                return value;
-            }
-        }
-
-        private static void ReleaseComReference<T>(T? value)
-            where T : class
-        {
-            if (value is System.Runtime.InteropServices.Marshalling.ComObject wrapper)
-                wrapper.FinalRelease();
-        }
+        public void Dispose() => Interlocked.Exchange(ref _program, null);
     }
 }

@@ -205,7 +205,7 @@ public ref struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         Pipeline pipeline,
-        VariableLayoutReflection parameterLayout,
+        ShaderVariableLayout parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback) =>
@@ -227,7 +227,7 @@ public ref struct RenderGraphFrame
         in TState state,
         in PassOptions options,
         Pipeline pipeline,
-        VariableLayoutReflection parameterLayout,
+        ShaderVariableLayout parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback) =>

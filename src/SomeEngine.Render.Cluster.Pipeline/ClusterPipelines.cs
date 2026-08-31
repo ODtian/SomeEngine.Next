@@ -1,25 +1,27 @@
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
-using SomeEngine.Render.Assets;
 using SomeEngine.RenderGraph;
+using SlangShaderSharp;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-/// <summary>Owns one linked shader program and the RHI pipeline created from it.</summary>
+/// <summary>Owns one RHI pipeline created from a cooked shader program.</summary>
 internal abstract class ClusterPipeline : IDisposable
 {
     private bool _disposed;
 
     protected ClusterPipeline(
-        LiveShaderProgram program,
+        ShaderProgram program,
         GraphicsPipeline pipeline)
     {
         Program = program ?? throw new ArgumentNullException(nameof(program));
         Pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }
 
-    internal LiveShaderProgram Program { get; }
+    internal ShaderProgram Program { get; }
+
+    internal ShaderVariableLayout ParameterLayout => Program.Layout.GetGlobalParamsVarLayout();
 
     internal GraphicsPipeline Pipeline { get; }
 
@@ -29,7 +31,6 @@ internal abstract class ClusterPipeline : IDisposable
             return;
         List<Exception>? failures = null;
         TryDispose(Pipeline, ref failures);
-        TryDispose(Program, ref failures);
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
@@ -38,14 +39,11 @@ internal abstract class ClusterPipeline : IDisposable
     protected static void CleanupConstructionFailure(
         Exception primary,
         GraphicsPipeline? pipeline,
-        LiveShaderProgram? program,
         string message)
     {
         List<Exception>? cleanupFailures = null;
         if (pipeline is not null)
             TryDispose(pipeline, ref cleanupFailures);
-        if (program is not null)
-            TryDispose(program, ref cleanupFailures);
         if (cleanupFailures is null)
             return;
         cleanupFailures.Insert(0, primary);
@@ -59,11 +57,11 @@ internal abstract class ClusterPipeline : IDisposable
     }
 }
 
-/// <summary>A linked compute program and its compute pipeline.</summary>
+/// <summary>A cooked compute program and its compute pipeline.</summary>
 internal sealed class ClusterComputePipeline : ClusterPipeline
 {
     private ClusterComputePipeline(
-        LiveShaderProgram program,
+        ShaderProgram program,
         GraphicsPipeline pipeline)
         : base(program, pipeline)
     {
@@ -76,39 +74,37 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
         string entryPoint,
         string name)
     {
-        LiveShaderProgram? program = null;
         GraphicsPipeline? pipeline = null;
         try
         {
-            program = LiveShaderProgram.Link(
-                shader,
-                [new LiveShaderEntry(entryPoint, LiveShaderStage.Compute)],
-                device.Capabilities.ShaderTarget);
+            CookedShaderEntry cooked = shader.RequireEntry(
+                device.Capabilities.ShaderTarget,
+                entryPoint,
+                ShaderStage.Compute);
             pipeline = backend.CreateComputePipeline(
                 device,
                 new ComputePipelineDesc(
-                    program.Program,
-                    program.GetEntryPoint(0),
+                    cooked.Program,
+                    cooked.EntryPoint,
                     name));
-            return new ClusterComputePipeline(program, pipeline);
+            return new ClusterComputePipeline(cooked.Program, pipeline);
         }
         catch (Exception primary)
         {
             CleanupConstructionFailure(
                 primary,
                 pipeline,
-                program,
                 $"Cluster compute pipeline '{name}' construction failed and cleanup also reported failures.");
             throw;
         }
     }
 }
 
-/// <summary>Owns one linked vertex/pixel program and the RHI pipeline created from it.</summary>
+/// <summary>Owns one cooked vertex/pixel program and its RHI pipeline.</summary>
 internal sealed class ClusterRasterPipeline : ClusterPipeline
 {
     private ClusterRasterPipeline(
-        LiveShaderProgram program,
+        ShaderProgram program,
         GraphicsPipeline pipeline)
         : base(program, pipeline)
     {
@@ -130,17 +126,19 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
         uint sampleMask = uint.MaxValue,
         bool alphaToCoverage = false)
     {
-        LiveShaderProgram? program = null;
         GraphicsPipeline? pipeline = null;
         try
         {
-            program = LiveShaderProgram.Link(
-                shader,
-                [
-                    new LiveShaderEntry(vertexEntryPoint, LiveShaderStage.Vertex),
-                    new LiveShaderEntry(pixelEntryPoint, LiveShaderStage.Pixel),
-                ],
-                device.Capabilities.ShaderTarget);
+            CookedShaderEntry vertex = shader.RequireEntry(
+                device.Capabilities.ShaderTarget,
+                vertexEntryPoint,
+                ShaderStage.Vertex);
+            CookedShaderEntry pixel = shader.RequireEntry(
+                device.Capabilities.ShaderTarget,
+                pixelEntryPoint,
+                ShaderStage.Pixel);
+            if (!ReferenceEquals(vertex.Program, pixel.Program))
+                throw new InvalidDataException("Cluster raster entries must belong to one cooked shader program.");
             var multisample = new MultisampleState(sampleCount, sampleMask, alphaToCoverage);
             var blend = new BlendState(
                 blendAttachments,
@@ -150,9 +148,9 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 depthStencilFormat,
                 sampleCount);
             var description = new GraphicsPipelineDesc(
-                program.Program,
-                program.GetEntryPoint(0),
-                program.GetEntryPoint(1),
+                vertex.Program,
+                vertex.EntryPoint,
+                pixel.EntryPoint,
                 vertexBuffers: default,
                 vertexAttributes: default,
                 PrimitiveTopology.TriangleList,
@@ -165,14 +163,13 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 DynamicStates.Viewport | DynamicStates.Scissor,
                 name);
             pipeline = backend.CreateGraphicsPipeline(device, description);
-            return new ClusterRasterPipeline(program, pipeline);
+            return new ClusterRasterPipeline(vertex.Program, pipeline);
         }
         catch (Exception primary)
         {
             CleanupConstructionFailure(
                 primary,
                 pipeline,
-                program,
                 $"Cluster raster pipeline '{name}' construction failed and cleanup also reported failures.");
             throw;
         }

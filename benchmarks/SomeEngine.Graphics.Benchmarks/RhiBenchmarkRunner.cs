@@ -98,9 +98,9 @@ internal static partial class RhiBenchmarkRunner
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
             new ComputePipelineDesc(shader.Program, shader.Entries[2], "graphics benchmark compute"));
-        VariableLayoutReflection globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        if (globalLayout == VariableLayoutReflection.Null)
+        ShaderVariableLayout globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        if (globalLayout == ShaderVariableLayout.Null)
             throw new InvalidDataException("The benchmark shader has no global parameter layout.");
         byte[] persistentData = new byte[16];
         WriteTint(persistentData, 1, 1, 1, 1);
@@ -213,7 +213,7 @@ internal static partial class RhiBenchmarkRunner
         Device device,
         Pipeline pipeline,
         PersistentParameterBindings persistent,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         string shaderManifest,
         in WorkerConfiguration configuration,
         GraphicsWorkload workload)
@@ -381,7 +381,7 @@ internal static partial class RhiBenchmarkRunner
         ScissorRect[] scissors,
         Pipeline pipeline,
         PersistentParameterBindings persistent,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         byte[] transientPackets,
         in DrawArguments draw,
         in CommandRecordingDesc recording,

@@ -197,7 +197,8 @@ internal sealed unsafe partial class D3D12Backend
     private static void ValidateIndirectVertexBufferArgument(
         in SomeEngine.Graphics.IndirectArgumentDesc argument)
     {
-        if (argument.Parameters != VariableLayoutReflection.Null || argument.ByteOffset != 0 ||
+        if (argument.Parameters is not null &&
+            argument.Parameters != ShaderVariableLayout.Null || argument.ByteOffset != 0 ||
             argument.ValueCount != 0)
         {
             throw new ArgumentException(
@@ -220,7 +221,9 @@ internal sealed unsafe partial class D3D12Backend
                 "desc");
         }
         IndirectRootDestination destination = pipeline.RootSignature.ResolveIndirectRoot(
-            argument.Parameters,
+            argument.Parameters ?? throw new ArgumentException(
+                "Indirect constants require a Slang parameter-object layout.",
+                "desc"),
             argument.Type,
             argument.ByteOffset,
             argument.ValueCount);
@@ -245,7 +248,9 @@ internal sealed unsafe partial class D3D12Backend
                 "desc");
         }
         IndirectRootDestination destination = pipeline.RootSignature.ResolveIndirectRoot(
-            argument.Parameters,
+            argument.Parameters ?? throw new ArgumentException(
+                "An indirect constant-buffer argument requires a Slang parameter-object layout.",
+                "desc"),
             argument.Type,
             argument.ByteOffset,
             argument.ValueCount);
@@ -427,7 +432,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private readonly NativeLease _native;
-        private RetainedSlangProgram? _program;
+        private RetainedShaderProgram? _program;
 
         internal D3D12IndirectCommandLayout(
             D3D12Device device,
@@ -442,7 +447,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             _device = device;
             NativeLease? pipelineState = null;
-            RetainedSlangProgram? program = null;
+            RetainedShaderProgram? program = null;
             try
             {
                 if (nativePipeline is not null)

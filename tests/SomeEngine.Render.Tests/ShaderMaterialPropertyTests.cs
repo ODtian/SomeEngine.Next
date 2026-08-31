@@ -46,23 +46,14 @@ public sealed class ShaderMaterialPropertyTests
         => new()
         {
             Name = "property-test",
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "Main",
-                    Stage = ShaderStage.Compute,
-                    Data = new byte[] { 1 },
-                },
-            ],
+            Programs = [CookedShaderTestProgram.Create()],
             EntryPointReflections =
             [
                 new ShaderEntryPointReflection
                 {
-                    Backend = "test",
-                    EntryPoint = "Main",
-                    Stage = ShaderStage.Compute,
+                    Backend = "spirv",
+                    EntryPoint = "VSMain",
+                    Stage = ShaderStage.Vertex,
                 },
             ],
             Metadata = new ShaderMetadata

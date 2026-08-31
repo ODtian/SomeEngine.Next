@@ -34,10 +34,10 @@ public ref struct PassDefinition
     }
 
     public void SetParameterBlock(
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         ReadOnlySpan<byte> ordinaryData = default)
     {
-        if (layout == VariableLayoutReflection.Null)
+        if (layout == ShaderVariableLayout.Null)
             throw new ArgumentException("The parameter layout cannot be null.", nameof(layout));
         if (_frame is null) _edit.SetPassParameterBlock(_pass, layout, ordinaryData);
         else _frame.SetPassParameterBlock(_pass, layout, ordinaryData);

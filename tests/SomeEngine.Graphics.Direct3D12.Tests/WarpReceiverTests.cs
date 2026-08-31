@@ -532,9 +532,9 @@ public sealed class WarpReceiverTests
             "rhi_state_shadow_content_identity",
             source,
             entries);
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout reflected = GetDataLayout(layout);
         Assert.Equal((nint)1, reflected.BindingRangeCount);
 
         using IGraphicsBackend backend = new D3D12Backend();
@@ -681,9 +681,9 @@ public sealed class WarpReceiverTests
             "rhi_transient_constant_buffer_16",
             source,
             [new("computeMain", SlangStage.Compute)]);
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout reflected = GetDataLayout(layout);
         Assert.Equal((nuint)16, reflected.GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nint)0, reflected.BindingRangeCount);
 
@@ -785,13 +785,13 @@ public sealed class WarpReceiverTests
     private static byte[] ExecuteInterface(IGraphicsBackend backend, ReadOnlySpan<byte> source) =>
         D3D12TestSupport.ExecuteCopyChain(backend, source);
 
-    private static TypeLayoutReflection GetDataLayout(VariableLayoutReflection layout)
+    private static ShaderTypeLayout GetDataLayout(ShaderVariableLayout layout)
     {
-        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
+        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
         {
-            TypeLayoutReflection element = result.ElementTypeLayout.UnwrapArray();
-            if (element != TypeLayoutReflection.Null)
+            ShaderTypeLayout element = result.ElementTypeLayout.UnwrapArray();
+            if (element != ShaderTypeLayout.Null)
                 result = element;
         }
         return result;

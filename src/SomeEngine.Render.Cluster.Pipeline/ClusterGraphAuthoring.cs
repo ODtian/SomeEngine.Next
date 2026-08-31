@@ -368,7 +368,7 @@ internal ref struct ClusterGraphAuthoring
             state,
             options,
             null,
-            VariableLayoutReflection.Null,
+            ShaderVariableLayout.Null,
             default,
             declaration,
             callback);
@@ -379,7 +379,7 @@ internal ref struct ClusterGraphAuthoring
         in TState state,
         in PassOptions options,
         GraphicsPipeline? pipeline,
-        VariableLayoutReflection parameterLayout,
+        ShaderVariableLayout parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback)
@@ -426,7 +426,7 @@ internal ref struct ClusterGraphAuthoring
             state,
             options,
             null,
-            VariableLayoutReflection.Null,
+            ShaderVariableLayout.Null,
             default,
             declaration,
             callback);
@@ -437,7 +437,7 @@ internal ref struct ClusterGraphAuthoring
         in TState state,
         in PassOptions options,
         GraphicsPipeline? pipeline,
-        VariableLayoutReflection parameterLayout,
+        ShaderVariableLayout parameterLayout,
         ReadOnlySpan<GraphParameterResourceBinding> parameterBindings,
         PassDeclaration<TState> declaration,
         ComputeFrameCallback<TState> callback)

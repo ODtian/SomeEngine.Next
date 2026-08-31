@@ -16,8 +16,8 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         WorkGraphs capability = ValidateWorkGraphPipelineDescription(nativeDevice, desc);
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
-        EntryPointReflection[] workGraphEntryPoints = CollectWorkGraphEntries(
+        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ShaderEntryPoint[] workGraphEntryPoints = CollectWorkGraphEntries(
             reflection,
             capability);
         CompiledProgramLibrary library = CompileProgramLibrary(
@@ -36,7 +36,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeLease? statePropertiesLease = null;
         NativeLease? graphPropertiesLease = null;
         D3D12RootSignatureState? globalToRelease = global;
-        RetainedSlangProgram? retainedProgram = null;
+        RetainedShaderProgram? retainedProgram = null;
         D3D12WorkGraphPipeline? result = null;
         try
         {
@@ -129,8 +129,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private D3D12RootSignatureState CompileWorkGraphRootSignature(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
-        EntryPointReflection[] entryPoints,
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint[] entryPoints,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers) =>
         D3D12RootSignatureBuilder.Compile(
             this,
@@ -162,7 +162,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12StateObject* stateObject,
         ID3D12StateObjectProperties1* stateProperties,
         ID3D12WorkGraphProperties* graphProperties,
-        RetainedSlangProgram? retainedProgram)
+        RetainedShaderProgram? retainedProgram)
     {
         if (result is not null)
         {
@@ -181,14 +181,14 @@ internal sealed unsafe partial class D3D12Backend
         retainedProgram?.Dispose();
     }
 
-    private EntryPointReflection[] CollectWorkGraphEntries(
-        ShaderReflection reflection,
+    private ShaderEntryPoint[] CollectWorkGraphEntries(
+        ShaderProgramLayout reflection,
         WorkGraphs capability)
     {
-        var entries = new List<EntryPointReflection>();
+        var entries = new List<ShaderEntryPoint>();
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
-            EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
+            ShaderEntryPoint entry = reflection.GetEntryPointByIndex(index);
             if (entry.Stage is not (SlangStage.Dispatch or SlangStage.Node))
                 continue;
             _ = ValidateStateObjectEntryPoint(
@@ -211,7 +211,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice,
         D3D12RootSignatureState global,
         byte[][] replayLibraries,
-        EntryPointReflection[] entryPoints,
+        ShaderEntryPoint[] entryPoints,
         uint nodeMask)
     {
         using NativeStateObjectArena arena = new();
@@ -261,7 +261,7 @@ internal sealed unsafe partial class D3D12Backend
     private static void AddWorkGraphLibraries(
         NativeStateObjectArena arena,
         byte[][] replayLibraries,
-        EntryPointReflection[] entryPoints,
+        ShaderEntryPoint[] entryPoints,
         StateSubobject* subobjects)
     {
         for (int index = 0; index < replayLibraries.Length; index++)
@@ -343,7 +343,7 @@ internal sealed unsafe partial class D3D12Backend
         WorkGraphs capability,
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
-        EntryPointReflection[] submittedEntryPoints)
+        ShaderEntryPoint[] submittedEntryPoints)
     {
         uint nativeEntryPointCount = graphProperties->GetNumEntrypoints(graphIndex);
         if (nativeEntryPointCount == 0 || nativeEntryPointCount > capability.MaximumNodeCount)
@@ -527,7 +527,7 @@ internal sealed unsafe partial class D3D12Backend
     private static void DispatchWorkGraphNodeCpu(
         D3D12CommandContext command,
         D3D12WorkGraphPipeline pipeline,
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         ReadOnlySpan<byte> records,
         uint recordCount,
         uint recordStride)
@@ -575,7 +575,7 @@ internal sealed unsafe partial class D3D12Backend
     private void DispatchWorkGraphNodeGpu(
         D3D12CommandContext command,
         D3D12WorkGraphPipeline pipeline,
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         in BufferRegion recordsRegion,
         uint recordCount,
         uint recordStride)
@@ -774,7 +774,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         for (int index = 0; index < inputs.Length; index++)
         {
-            if (inputs[index].EntryPoint == EntryPointReflection.Null)
+            if (inputs[index].EntryPoint == ShaderEntryPoint.Null)
                 throw new ArgumentException("A Work Graph node input requires a Slang entry point.");
             for (int prior = 0; prior < index; prior++)
             {
@@ -788,7 +788,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         for (int index = 0; index < inputs.Length; index++)
         {
-            if (inputs[index].EntryPoint == EntryPointReflection.Null)
+            if (inputs[index].EntryPoint == ShaderEntryPoint.Null)
                 throw new ArgumentException("A Work Graph node input requires a Slang entry point.");
             for (int prior = 0; prior < index; prior++)
             {
@@ -849,7 +849,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
         uint nativeEntryPointCount,
-        EntryPointReflection[] submittedEntryPoints,
+        ShaderEntryPoint[] submittedEntryPoints,
         uint maximumInputRecordSize)
     {
         if (nativeEntryPointCount != checked((uint)submittedEntryPoints.Length))
@@ -952,7 +952,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private readonly record struct WorkGraphEntryPointState(
-        EntryPointReflection EntryPoint,
+        ShaderEntryPoint EntryPoint,
         uint NativeIndex,
         uint RecordSize,
         uint RecordAlignment);
@@ -968,7 +968,7 @@ internal sealed unsafe partial class D3D12Backend
             NativeLease native,
             D3D12RootSignatureState root,
             NativeLease[] additionalLeases,
-            RetainedSlangProgram program,
+            RetainedShaderProgram program,
             in ProgramIdentifier identifier,
             in WorkGraphMemoryRequirements memoryRequirements,
             WorkGraphEntryPointState[] entryPoints,
@@ -993,9 +993,9 @@ internal sealed unsafe partial class D3D12Backend
         internal ProgramIdentifier ProgramIdentifier { get; }
         internal WorkGraphMemoryRequirements MemoryRequirements { get; }
 
-        internal WorkGraphEntryPointState GetEntryPoint(EntryPointReflection entryPoint)
+        internal WorkGraphEntryPointState GetEntryPoint(ShaderEntryPoint entryPoint)
         {
-            if (entryPoint == EntryPointReflection.Null)
+            if (entryPoint == ShaderEntryPoint.Null)
                 throw new ArgumentException("A Work Graph dispatch requires a Slang entry point.", nameof(entryPoint));
             foreach (ref readonly WorkGraphEntryPointState entry in _entryPoints.AsSpan())
             {

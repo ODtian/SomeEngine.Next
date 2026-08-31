@@ -103,12 +103,11 @@ public sealed class AssetArchitectureAcceptanceTests
         {
             AssetGuid = AssetGuid.New().ToFlatString(),
             Name = "lease-shader",
-            Variants =
+            Programs =
             [
-                new ShaderBytecode
+                new CookedShaderProgram
                 {
                     Backend = "test",
-                    EntryPoint = "main",
                     Data = expected,
                 },
             ],
@@ -117,9 +116,9 @@ public sealed class AssetArchitectureAcceptanceTests
 
         await using BinaryDocument<Shader> document =
             await AssetProject.OpenAsync<Shader>(path);
-        ShaderBytecode variant = Assert.Single(document.Root.Variants!);
-        Assert.Null(variant.Data);
-        using ChunkLease lease = await document.AcquireChunkAsync(variant.DataChunk);
+        CookedShaderProgram program = Assert.Single(document.Root.Programs!);
+        Assert.Null(program.Data);
+        using ChunkLease lease = await document.AcquireChunkAsync(program.DataChunk);
 
         Assert.Equal(expected, lease.Memory.ToArray());
     }
@@ -210,7 +209,7 @@ public sealed class AssetArchitectureAcceptanceTests
         {
             AssetGuid = shaderGuid.ToFlatString(),
             Name = "shader",
-            Variants = [new ShaderBytecode { Data = new byte[] { 3 }, EntryPoint = "main" }],
+            Programs = [new CookedShaderProgram { Backend = "test", Data = new byte[] { 3 } }],
             EntryPointReflections = [new ShaderEntryPointReflection { EntryPoint = "main" }],
         }, shaderPath);
         AssetWriter.Write(new Material

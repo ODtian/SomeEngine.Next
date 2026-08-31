@@ -63,10 +63,10 @@ public sealed class SlangShaderCookProfileTests
                     "assets/Shaders/profile_test.slang",
                     dependency.RelativePath));
 
-            Assert.Equal(2, CountBackend(defaultAsset, "dxil"));
-            Assert.Equal(2, CountBackend(sm62Asset, "dxil"));
-            Assert.Equal(2, CountBackend(defaultAsset, "spirv"));
-            Assert.Equal(2, CountBackend(sm62Asset, "spirv"));
+            Assert.Equal(1, CountBackend(defaultAsset, "dxil"));
+            Assert.Equal(1, CountBackend(sm62Asset, "dxil"));
+            Assert.Equal(1, CountBackend(defaultAsset, "spirv"));
+            Assert.Equal(1, CountBackend(sm62Asset, "spirv"));
             Assert.Equal(
                 ReflectionSurface(defaultAsset),
                 ReflectionSurface(sm62Asset));
@@ -127,8 +127,8 @@ public sealed class SlangShaderCookProfileTests
     }
 
     private static int CountBackend(Shader asset, string backend)
-        => asset.Variants!.Count(variant =>
-            string.Equals(variant.Backend, backend, StringComparison.Ordinal));
+        => asset.Programs!.Count(program =>
+            string.Equals(program.Backend, backend, StringComparison.Ordinal));
 
     private static string[] ReflectionSurface(Shader asset)
         => asset.EntryPointReflections!
@@ -139,9 +139,9 @@ public sealed class SlangShaderCookProfileTests
             .ToArray();
 
     private static string[] BackendHashes(Shader asset, string backend)
-        => asset.Variants!
-            .Where(variant => string.Equals(variant.Backend, backend, StringComparison.Ordinal))
-            .Select(static variant => variant.ContentHash!)
+        => asset.Programs!
+            .Where(program => string.Equals(program.Backend, backend, StringComparison.Ordinal))
+            .Select(static program => program.ContentHash!)
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
 }

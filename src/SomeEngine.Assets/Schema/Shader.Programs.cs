@@ -16,37 +16,37 @@ public partial class Shader
         return await MaterializeAsync(document, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static ulong BytecodeChunkKey(int variantIndex)
+    internal static ulong ProgramChunkKey(int programIndex)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(variantIndex);
+        ArgumentOutOfRangeException.ThrowIfNegative(programIndex);
         return BinaryFieldKey.FromName(
-            "SomeEngine.Assets.Schema.Shader.Variants.Data." +
-            variantIndex.ToString(CultureInfo.InvariantCulture));
+            "SomeEngine.Assets.Schema.Shader.Programs.Data." +
+            programIndex.ToString(CultureInfo.InvariantCulture));
     }
 
     internal static BinaryDocumentWriter CreateWriter(Shader asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        int variantCount = asset.Variants?.Count ?? 0;
-        for (int index = 0; index < variantCount; index++)
+        int programCount = asset.Programs?.Count ?? 0;
+        for (int index = 0; index < programCount; index++)
         {
-            ShaderBytecode variant = asset.Variants![index];
-            Memory<byte>? payload = variant.Data;
+            CookedShaderProgram program = asset.Programs![index];
+            Memory<byte>? payload = program.Data;
             if (!payload.HasValue || payload.Value.IsEmpty)
             {
                 throw new InvalidDataException(
-                    $"Shader bytecode variant {index} must provide one externalized payload.");
+                    $"Cooked shader program {index} must provide one externalized payload.");
             }
-            variant.DataChunkKey = BytecodeChunkKey(index);
-            variant.DataDecodedLength = checked((ulong)payload.Value.Length);
+            program.DataChunkKey = ProgramChunkKey(index);
+            program.DataDecodedLength = checked((ulong)payload.Value.Length);
         }
 
         BinaryDocumentWriter builder = BinaryDocumentWriter.Create(asset);
-        for (int index = 0; index < variantCount; index++)
+        for (int index = 0; index < programCount; index++)
         {
             builder.AddChunk(
-                asset.Variants![index].DataChunk.Key,
-                asset.Variants![index].Data!.Value,
+                asset.Programs![index].DataChunk.Key,
+                asset.Programs![index].Data!.Value,
                 AssetMetadata.RawBytesTypeFingerprint,
                 ChunkCompression.Brotli,
                 alignment: 16,
@@ -64,11 +64,11 @@ public partial class Shader
         ArgumentNullException.ThrowIfNull(document);
         ValidateExternalizedRoot(document.Root);
         Shader result = document.Root;
-        int variantCount = result.Variants?.Count ?? 0;
-        for (int index = 0; index < variantCount; index++)
+        int programCount = result.Programs?.Count ?? 0;
+        for (int index = 0; index < programCount; index++)
         {
             Memory<byte>? payload = await document.TryReadChunkAsync(
-                result.Variants![index].DataChunk,
+                result.Programs![index].DataChunk,
                 static length => GC.AllocateUninitializedArray<byte>(length),
                 cancellationToken).ConfigureAwait(false);
             if (!payload.HasValue)
@@ -76,7 +76,15 @@ public partial class Shader
                 throw new InvalidDataException(
                     $"Shader document is missing required bytecode chunk {index}.");
             }
-            result.Variants![index].Data = payload;
+            CookedShaderProgram cooked = result.Programs![index];
+            cooked.Data = payload;
+            cooked.Program = SlangShaderSharp.ShaderProgram.Read(payload.Value.Span);
+            if (!string.Equals(cooked.Backend, cooked.Program.Backend, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Cooked shader program {index} backend '{cooked.Backend}' does not match " +
+                    $"its detached payload backend '{cooked.Program.Backend}'.");
+            }
         }
 
         return result;
@@ -84,22 +92,22 @@ public partial class Shader
 
     private static void ValidateExternalizedRoot(Shader root)
     {
-        IList<ShaderBytecode>? variants = root.Variants;
-        if (variants is null)
+        IList<CookedShaderProgram>? programs = root.Programs;
+        if (programs is null)
             return;
-        for (int index = 0; index < variants.Count; index++)
+        for (int index = 0; index < programs.Count; index++)
         {
-            if (variants[index].Data.HasValue)
+            if (programs[index].Data.HasValue)
             {
                 throw new InvalidDataException(
-                    $"Binary shader root variant {index} must not contain inline bytecode.");
+                    $"Binary shader root program {index} must not contain inline data.");
             }
-            ulong expectedKey = BytecodeChunkKey(index);
-            if (variants[index].DataChunk.Key != expectedKey)
+            ulong expectedKey = ProgramChunkKey(index);
+            if (programs[index].DataChunk.Key != expectedKey)
             {
                 throw new InvalidDataException(
-                    $"Binary shader root variant {index} declares chunk key " +
-                    $"0x{variants[index].DataChunk.Key:X16}; expected 0x{expectedKey:X16}.");
+                    $"Binary shader root program {index} declares chunk key " +
+                    $"0x{programs[index].DataChunk.Key:X16}; expected 0x{expectedKey:X16}.");
             }
         }
     }
