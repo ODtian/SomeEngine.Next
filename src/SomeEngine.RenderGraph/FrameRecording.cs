@@ -158,7 +158,7 @@ internal sealed partial class FrameExecutor
         {
             if (_passes[pass].Options.Recording == PassRecordingMode.CallingThread) continue;
             parallelCount++;
-            parallelWeight = checked(parallelWeight + RecordingWeight(pass));
+            parallelWeight = SaturatingAdd(parallelWeight, RecordingWeight(pass));
         }
 
         if (parallelCount == 0)
@@ -174,7 +174,7 @@ internal sealed partial class FrameExecutor
                 _parallelPasses[destination++] = pass;
 
         bool parallel = jobsEnabled && parallelCount > 1 &&
-            parallelWeight >= checked((ulong)parallelCount * 8);
+            parallelWeight >= (ulong)parallelCount * 8;
         if (!parallel)
         {
             foreach (int pass in passes) RecordPass(pass);
@@ -220,23 +220,23 @@ internal sealed partial class FrameExecutor
             if (_passes[pass].Options.Recording != PassRecordingMode.WorkerEligible)
                 continue;
             count++;
-            weight = checked(weight + RecordingWeight(pass));
+            weight = SaturatingAdd(weight, RecordingWeight(pass));
         }
-        return count > 1 && weight >= checked((ulong)count * 8);
+        return count > 1 && weight >= (ulong)count * 8;
     }
 
     private ulong RecordingWeight(int pass)
     {
         ulong weight = Math.Max(_passes[pass].Options.EstimatedRecordingCost, 1);
         int aliasCount = _aliasBeforeResources[pass].Count;
-        int beforeCount = checked(
+        int beforeCount =
             _acquires[pass].Count +
             _beforeBufferBarriers[pass].Count +
-            _beforeTextureBarriers[pass].Count);
-        int afterCount = checked(
+            _beforeTextureBarriers[pass].Count;
+        int afterCount =
             _afterBufferBarriers[pass].Count +
             _afterTextureBarriers[pass].Count +
-            _releases[pass].Count);
+            _releases[pass].Count;
         int barrierCalls = 0;
         if (aliasCount == 0)
         {
@@ -254,10 +254,9 @@ internal sealed partial class FrameExecutor
         }
         if (afterCount != 0)
             barrierCalls++;
-        return checked(
-            weight +
-            (ulong)(aliasCount + beforeCount + afterCount) +
-            (ulong)barrierCalls * 4);
+        ulong recordedWork = (ulong)(aliasCount + beforeCount + afterCount) +
+            (ulong)barrierCalls * 4;
+        return SaturatingAdd(weight, recordedWork);
     }
 
     private void RecordPass(int pass)
@@ -454,25 +453,27 @@ internal sealed partial class FrameExecutor
             ulong remainingWeight = 0;
             foreach (int pass in passes)
             {
-                remainingWeight = checked(remainingWeight + RecordingWeight(pass));
+                remainingWeight = SaturatingAdd(remainingWeight, RecordingWeight(pass));
             }
             int start = 0;
             for (int unit = 0; unit < unitCount; unit++)
             {
                 int remainingUnits = unitCount - unit;
                 int maximumEnd = passes.Count - (remainingUnits - 1);
-                ulong targetWeight = (remainingWeight + (ulong)remainingUnits - 1) /
-                    (ulong)remainingUnits;
+                ulong divisor = (ulong)remainingUnits;
+                ulong targetWeight = remainingWeight / divisor +
+                    (remainingWeight % divisor == 0 ? 0UL : 1UL);
                 int count = 0;
                 ulong weight = 0;
                 while (start + count < maximumEnd)
                 {
                     ulong nextWeight = RecordingWeight(passes[start + count]);
+                    ulong combinedWeight = SaturatingAdd(weight, nextWeight);
                     if (count != 0 && weight < targetWeight &&
-                        weight + nextWeight > targetWeight &&
-                        targetWeight - weight <= weight + nextWeight - targetWeight)
+                        combinedWeight > targetWeight &&
+                        targetWeight - weight <= combinedWeight - targetWeight)
                         break;
-                    weight = checked(weight + nextWeight);
+                    weight = combinedWeight;
                     count++;
                     if (weight >= targetWeight)
                         break;
@@ -484,14 +485,16 @@ internal sealed partial class FrameExecutor
                 }
                 int accessCount = 0;
                 for (int item = start; item < start + count; item++)
-                    accessCount = checked(accessCount + _passAccesses[passes[item]].Count);
+                    accessCount += _passAccesses[passes[item]].Count;
                 _parallelBatches[destination++] = new RecordingBatch(
                     passes,
                     start,
                     count,
                     accessCount);
                 start += count;
-                remainingWeight -= weight;
+                remainingWeight = remainingWeight > weight
+                    ? remainingWeight - weight
+                    : 0;
             }
         }
         return destination;
@@ -499,6 +502,9 @@ internal sealed partial class FrameExecutor
 
     private void RecordBatch(in RecordingBatch batch) =>
         RecordBatch(batch.Passes, batch.Start, batch.Count, batch.AccessCount);
+
+    private static ulong SaturatingAdd(ulong left, ulong right) =>
+        ulong.MaxValue - left < right ? ulong.MaxValue : left + right;
 
     private static void RecordLatencyBatch(object? state, int index)
     {

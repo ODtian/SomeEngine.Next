@@ -222,7 +222,9 @@ public sealed class IntelCompatibilityTests
 [AttributeUsage(AttributeTargets.Method)]
 internal sealed class IntelHardwareDataAttribute : DataAttribute
 {
-    public override IEnumerable<object[]> GetData(MethodInfo testMethod)
+    private readonly bool _hardwareAvailable;
+
+    public IntelHardwareDataAttribute()
     {
         try
         {
@@ -232,22 +234,20 @@ internal sealed class IntelHardwareDataAttribute : DataAttribute
                 IncludeSoftware: false);
             _ = backend.TryEnumerateAdapters(options, [], out int count);
             var adapters = new AdapterInfo[count];
-            if (!backend.TryEnumerateAdapters(options, adapters, out int confirmed) ||
-                confirmed != adapters.Length ||
-                !adapters.Any(static adapter =>
+            _hardwareAvailable = backend.TryEnumerateAdapters(options, adapters, out int confirmed) &&
+                confirmed == adapters.Length &&
+                adapters.Any(static adapter =>
                     adapter.HardwareAccelerated &&
-                    adapter.Name.Contains("Intel", StringComparison.OrdinalIgnoreCase)))
-            {
+                    adapter.Name.Contains("Intel", StringComparison.OrdinalIgnoreCase));
+            if (!_hardwareAvailable)
                 Skip = "No Intel D3D12 hardware adapter is available.";
-                return [];
-            }
-            return [[true]];
         }
         catch (Exception exception) when (
             exception is NotSupportedException or PlatformNotSupportedException)
         {
             Skip = exception.Message;
-            return [];
         }
     }
+
+    public override IEnumerable<object[]> GetData(MethodInfo testMethod) => [[_hardwareAvailable]];
 }

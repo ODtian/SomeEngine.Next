@@ -110,14 +110,14 @@ public ref struct RasterPassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 }
 
@@ -305,14 +305,14 @@ public ref struct ComputePassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 }
 
@@ -415,14 +415,14 @@ public ref struct CopyPassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 
     private static ulong EstimateBufferTextureBytes(in BufferTextureCopy copy)
@@ -463,13 +463,13 @@ public ref struct GeneralPassCommandScope
 
     public void BeginRendering(PassRenderingRegionId region)
     {
-        if (_rendering) throw new InvalidOperationException("A rendering region is already active.");
+        DevelopmentCheck.Require(!_rendering, "A rendering region is already active.");
         _frame.Executor.BeginRawRendering(_passIndex, region, _context, _nextRegion++);
         _rendering = true;
     }
     public void EndRendering()
     {
-        if (!_rendering) throw new InvalidOperationException("No rendering region is active.");
+        DevelopmentCheck.Require(_rendering, "No rendering region is active.");
         _frame.Backend.EndRendering(_context);
         _rendering = false;
     }
@@ -731,15 +731,15 @@ public ref struct GeneralPassCommandScope
     }
     public void EndEvent()
     {
-        if (_eventDepth == 0) throw new InvalidOperationException("No event is active.");
+        DevelopmentCheck.Require(_eventDepth != 0, "No event is active.");
         _frame.Backend.EndEvent(_context);
         _eventDepth--;
     }
     public void SetMarker(ReadOnlySpan<byte> utf8Label) => _frame.Backend.SetMarker(_context, utf8Label);
     internal void Finish()
     {
-        if (_rendering) throw new InvalidOperationException("The Raw pass ended inside a rendering region.");
-        if (_eventDepth != 0) throw new InvalidOperationException("Pass events are not balanced.");
+        DevelopmentCheck.Require(!_rendering, "The Raw pass ended inside a rendering region.");
+        DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
         _frame.Executor.ValidateRawRegionsCompleted(_passIndex, _nextRegion);
     }
 

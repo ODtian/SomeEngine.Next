@@ -642,7 +642,7 @@ public sealed class PersistentRenderGraphTests
     }
 
     [Fact]
-    public void WriteOnlyDeclarationCannotAuthorizeReadCommand()
+    public void WriteOnlyDeclarationMismatchIsCheckedOnlyInDevelopment()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using Buffer destination = support.Backend.CreateBuffer(
@@ -687,8 +687,12 @@ public sealed class PersistentRenderGraphTests
         InvalidOperationException? exception = null;
         try { _ = frame.Execute(completions); }
         catch (InvalidOperationException value) { exception = value; }
+#if DEBUG
         Assert.NotNull(exception);
         Assert.Contains("not covered", exception.Message, StringComparison.Ordinal);
+#else
+        Assert.Null(exception);
+#endif
     }
 
     [Fact]

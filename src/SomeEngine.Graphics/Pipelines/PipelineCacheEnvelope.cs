@@ -169,6 +169,10 @@ internal static class PipelineCacheEnvelope
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates caller-provided cache entries at the serialization boundary.")]
     internal static byte[] Serialize(
         ReadOnlySpan<PipelineCacheEntry> entries,
         PipelineCacheLimits limits,
@@ -226,6 +230,10 @@ internal static class PipelineCacheEnvelope
         return result;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates externally persisted cache entries before merging them.")]
     internal static PipelineCacheEntry[] Merge(
         ReadOnlySpan<PipelineCacheEntry> destination,
         ReadOnlySpan<PipelineCacheEntry> source,

@@ -12,6 +12,10 @@ public sealed class IndirectCommands : DeviceCapability
 {
     private readonly ulong _supportedArguments;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates capability values returned by an external native backend.")]
     internal IndirectCommands(
         Device device,
         ReadOnlySpan<IndirectArgumentType> supportedArguments,

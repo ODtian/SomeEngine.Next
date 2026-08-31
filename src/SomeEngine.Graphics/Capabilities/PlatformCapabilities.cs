@@ -223,6 +223,10 @@ public sealed class ExternalResources : DeviceCapability
     public bool SupportsHeapExport(ExternalHandleType type) =>
         Contains(_heapExportHandleTypes, type);
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates capability values returned by an external native backend.")]
     private static ExternalHandleType[] ValidateHandleTypes(
         ReadOnlySpan<ExternalHandleType> handleTypes)
     {
@@ -267,6 +271,10 @@ public sealed class ExternalTimelines : DeviceCapability
     public bool SupportsExport(ExternalHandleType type) =>
         Contains(_exportHandleTypes, type);
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates capability values returned by an external native backend.")]
     private static ExternalHandleType[] ValidateHandleTypes(
         ReadOnlySpan<ExternalHandleType> handleTypes)
     {

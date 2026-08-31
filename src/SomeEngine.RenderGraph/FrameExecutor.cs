@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
@@ -528,47 +530,49 @@ internal sealed partial class FrameExecutor
 
     private int ResolveBuffer(in GraphIdentity identity)
     {
-        if (!_bufferIndices.TryGetValue(identity, out int value))
-            throw new ArgumentException("The Buffer identity is invalid or stale.");
+        bool found = _bufferIndices.TryGetValue(identity, out int value);
+        DevelopmentCheck.Require(found, "The Buffer identity is invalid or stale.");
         return value;
     }
 
     private int ResolveTexture(in GraphIdentity identity)
     {
-        if (!_textureIndices.TryGetValue(identity, out int value))
-            throw new ArgumentException("The Texture identity is invalid or stale.");
+        bool found = _textureIndices.TryGetValue(identity, out int value);
+        DevelopmentCheck.Require(found, "The Texture identity is invalid or stale.");
         return value;
     }
 
     private int ResolveQueryPool(in GraphIdentity identity)
     {
-        if (!_queryPoolIndices.TryGetValue(identity, out int value))
-            throw new ArgumentException("The QueryPool identity is invalid or stale.");
+        bool found = _queryPoolIndices.TryGetValue(identity, out int value);
+        DevelopmentCheck.Require(found, "The QueryPool identity is invalid or stale.");
         return value;
     }
 
     private int ResolveShaderTable(in GraphIdentity identity)
     {
-        if (!_shaderTableIndices.TryGetValue(identity, out int value))
-            throw new ArgumentException("The RayTracingShaderTable identity is invalid or stale.");
+        bool found = _shaderTableIndices.TryGetValue(identity, out int value);
+        DevelopmentCheck.Require(found, "The RayTracingShaderTable identity is invalid or stale.");
         return value;
     }
 
     private int ResolvePass(in GraphIdentity identity)
     {
-        if (!_passIndices.TryGetValue(identity, out int value))
-            throw new ArgumentException("The Pass identity is invalid or stale.");
+        bool found = _passIndices.TryGetValue(identity, out int value);
+        DevelopmentCheck.Require(found, "The Pass identity is invalid or stale.");
         return value;
     }
 
+    [Conditional("DEBUG")]
     private static void ValidateQueryRange(in FrameQueryPool pool, in QueryRange range)
     {
         uint count = pool.Resource.Description.Count;
         if (range.QueryCount == 0 || range.FirstQuery >= count ||
             range.QueryCount > count - range.FirstQuery)
-            throw new ArgumentOutOfRangeException(nameof(range));
+            DevelopmentCheck.Fail("The Query range is outside the declared QueryPool.");
     }
 
+    [Conditional("DEBUG")]
     private static void ValidateTextureRange(in FrameTexture texture, in TextureSubresourceRange range)
     {
         if (range.MipLevelCount == 0 || range.ArrayLayerCount == 0 ||
@@ -578,7 +582,7 @@ internal sealed partial class FrameExecutor
             range.ArrayLayerCount > texture.ArrayLayerCount - range.FirstArrayLayer ||
             range.Aspects == TextureAspects.None)
         {
-            throw new ArgumentOutOfRangeException(nameof(range));
+            DevelopmentCheck.Fail("The Texture range is outside the declared Texture.");
         }
     }
 }

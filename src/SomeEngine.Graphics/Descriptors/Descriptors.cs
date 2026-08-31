@@ -71,6 +71,10 @@ public abstract class DescriptorTable : DeviceResource
 
     private readonly DescriptorSlotDesc[] _slots;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates caller-provided descriptor schema at the resource-creation boundary.")]
     internal DescriptorTable(
         Device device,
         DescriptorTableType type,
