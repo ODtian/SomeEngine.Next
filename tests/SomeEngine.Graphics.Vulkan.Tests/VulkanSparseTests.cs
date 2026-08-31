@@ -7,7 +7,8 @@ public sealed class VulkanSparseTests
     [Fact]
     public void Sparse_buffer_bind_and_mapping_copy_alias_heap_tiles()
     {
-        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        using var backend = new VulkanBackend();
+        IGraphicsBackend graphics = backend;
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
             default,
@@ -17,9 +18,9 @@ public sealed class VulkanSparseTests
         BufferDesc description = new(
             128 * 1024,
             BufferUsages.CopySource | BufferUsages.CopyDestination);
-        using Buffer source = backend.CreateReservedBuffer(device, description);
-        using Buffer destination = backend.CreateReservedBuffer(device, description);
-        SparseResourceInfo info = backend.GetSparseResourceInfo(source);
+        using Buffer source = graphics.CreateReservedBuffer(device, description);
+        using Buffer destination = graphics.CreateReservedBuffer(device, description);
+        SparseResourceInfo info = graphics.GetSparseResourceInfo(source);
         Assert.True(info.Alignment > 0);
         using Heap heap = backend.CreateHeap(device, new HeapDesc(
             info.Alignment * 2,
@@ -28,11 +29,21 @@ public sealed class VulkanSparseTests
             HeapFlags.Buffers));
         SparseTileCoordinate origin = new(0, 0, 0, 0);
         SparseTileRegion oneTile = new(origin, 0, 0, 0, 1, Boxed: false);
-        QueueCompletion mapped = backend.UpdateSparseMappings(
+        QueueCompletion mapped = graphics.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(source, oneTile, SparseMappingType.Mapped, heap, 0)]);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(mapped, TimeSpan.FromSeconds(2)));
-        QueueCompletion copied = backend.CopySparseMappings(
+        backend.FaultHooks.OverrideResult = static (point, result) =>
+            point == VulkanCallPoint.QueueBindSparse
+                ? Silk.NET.Vulkan.Result.ErrorOutOfHostMemory
+                : result;
+        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
+            graphics.UpdateSparseMappings(
+                queue,
+                [new SparseMappingDesc(source, oneTile, SparseMappingType.Unmapped, null, 0)]));
+        Assert.Equal(GraphicsError.OutOfMemory, failure.Error);
+        backend.FaultHooks.Reset();
+        QueueCompletion copied = graphics.CopySparseMappings(
             queue,
             [new SparseMappingCopyDesc(destination, origin, source, origin, oneTile)]);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(copied, TimeSpan.FromSeconds(2)));
@@ -56,18 +67,21 @@ public sealed class VulkanSparseTests
             new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, source, 0, (ulong)byteCount));
-        backend.Barrier(context, new MemoryBarrier(
-            PipelineSync.Copy,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            ResourceAccess.CopySource));
+        backend.Barrier(
+            context,
+            new AliasingBarrier(
+                [new AliasingResource(source)],
+                [new AliasingResource(destination)]));
         backend.CopyBuffer(context, new BufferCopy(destination, 0, readback, 0, (ulong)byteCount));
         using RecordedCommands commands = backend.End(context);
         QueueCompletion complete = backend.Submit(queue, new QueueSubmitDesc([], [], [commands], [], []));
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(complete, TimeSpan.FromSeconds(2)));
         using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
         result.Invalidate(result.Range);
-        Assert.True(result.Bytes.ToArray().All(static value => value == 0x4D));
+        byte[] actual = result.Bytes.ToArray();
+        Assert.True(
+            actual.All(static value => value == 0x4D),
+            $"Sparse alias copy returned {actual.Count(static value => value == 0x4D)}/{actual.Length} expected bytes; first bytes: {Convert.ToHexString(actual.AsSpan(0, Math.Min(actual.Length, 32)))}");
     }
 
     [Fact]

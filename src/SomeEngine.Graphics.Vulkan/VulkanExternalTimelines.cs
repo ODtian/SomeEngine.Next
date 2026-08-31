@@ -8,13 +8,15 @@ internal sealed unsafe partial class VulkanBackend
         string? label)
     {
         VulkanDevice nativeDevice = RequireExternalTimelineDevice(device);
+        ExternalTimelines capability = GetExternalTimelineCapability(nativeDevice);
+        if (!capability.SupportsExport(ExternalHandleType.OpaqueWin32))
+            throw new NotSupportedException("This Vulkan Device cannot export OpaqueWin32 timeline semaphores.");
         VkSemaphore native = CreateTimelineSemaphore(
             nativeDevice,
             initialValue,
             ExternalSemaphoreHandleTypeFlags.OpaqueWin32Bit);
         var timeline = new VulkanExternalTimeline(nativeDevice, native, label);
-        nativeDevice.RegisterChild(timeline);
-        return timeline;
+        return RegisterChildOrDispose(nativeDevice, timeline);
     }
 
     private ExternalTimeline ImportTimelineCore(
@@ -24,10 +26,14 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireExternalTimelineDevice(device);
         ArgumentNullException.ThrowIfNull(handle);
+        ExternalTimelines capability = GetExternalTimelineCapability(nativeDevice);
+        if (!capability.SupportsImport(handle.Type))
+            throw new NotSupportedException($"This Vulkan Device cannot import {handle.Type} timeline semaphores.");
         VkSemaphore native = CreateTimelineSemaphore(
             nativeDevice,
             0,
             ExternalSemaphoreHandleTypeFlags.None);
+        VulkanExternalTimeline? timeline = null;
         try
         {
             ImportSemaphoreWin32HandleInfoKHR import = new()
@@ -37,20 +43,21 @@ internal sealed unsafe partial class VulkanBackend
                 HandleType = ToNativeSemaphoreHandleType(handle.Type),
                 Handle = handle.Value,
             };
-            ThrowIfFailed(
-                nativeDevice.ExternalSemaphoreApi.ImportSemaphoreWin32Handle(
-                    nativeDevice.Native,
-                    &import),
+            Result result = nativeDevice.ExternalSemaphoreApi.ImportSemaphoreWin32Handle(
+                nativeDevice.Native,
+                &import);
+            nativeDevice.ThrowIfDeviceCallFailed(
+                result,
                 "vkImportSemaphoreWin32HandleKHR");
-            var timeline = new VulkanExternalTimeline(nativeDevice, native, label);
-            nativeDevice.RegisterChild(timeline);
-            return timeline;
+            timeline = new VulkanExternalTimeline(nativeDevice, native, label);
         }
         catch
         {
-            Api.DestroySemaphore(nativeDevice.Native, native, null);
+            if (timeline is null)
+                Api.DestroySemaphore(nativeDevice.Native, native, null);
             throw;
         }
+        return RegisterChildOrDispose(nativeDevice, timeline);
     }
 
     private ExternalHandle ExportTimelineCore(
@@ -58,6 +65,9 @@ internal sealed unsafe partial class VulkanBackend
         ExternalHandleType type)
     {
         VulkanExternalTimeline native = RequireExternalTimeline(timeline, nameof(timeline));
+        ExternalTimelines capability = GetExternalTimelineCapability(native.NativeDevice);
+        if (!capability.SupportsExport(type))
+            throw new NotSupportedException($"This Vulkan Device cannot export {type} timeline semaphores.");
         SemaphoreGetWin32HandleInfoKHR info = new()
         {
             SType = StructureType.SemaphoreGetWin32HandleInfoKhr,
@@ -65,11 +75,12 @@ internal sealed unsafe partial class VulkanBackend
             HandleType = ToNativeSemaphoreHandleType(type),
         };
         nint handle = 0;
-        ThrowIfFailed(
-            native.NativeDevice.ExternalSemaphoreApi.GetSemaphoreWin32Handle(
-                native.NativeDevice.Native,
-                &info,
-                &handle),
+        Result result = native.NativeDevice.ExternalSemaphoreApi.GetSemaphoreWin32Handle(
+            native.NativeDevice.Native,
+            &info,
+            &handle);
+        native.NativeDevice.ThrowIfDeviceCallFailed(
+            result,
             "vkGetSemaphoreWin32HandleKHR");
         return new ExternalHandle(
             type,
@@ -102,9 +113,12 @@ internal sealed unsafe partial class VulkanBackend
             PNext = &timeline,
         };
         VkSemaphore native = default;
-        ThrowIfFailed(
-            device.Backend.Api.CreateSemaphore(device.Native, &createInfo, null, &native),
-            "vkCreateSemaphore(external timeline)");
+        Result result = device.Backend.Api.CreateSemaphore(
+            device.Native,
+            &createInfo,
+            null,
+            &native);
+        device.ThrowIfDeviceCallFailed(result, "vkCreateSemaphore(external timeline)");
         return native;
     }
 
@@ -114,6 +128,13 @@ internal sealed unsafe partial class VulkanBackend
         if (!native.TryGetCapability(out ExternalTimelines? capability) || capability is null)
             throw new NotSupportedException("The Device was not created with ExternalTimelines support.");
         return native;
+    }
+
+    private static ExternalTimelines GetExternalTimelineCapability(VulkanDevice device)
+    {
+        if (!device.TryGetCapability(out ExternalTimelines? capability) || capability is null)
+            throw new NotSupportedException("The Device was not created with ExternalTimelines support.");
+        return capability;
     }
 
     private VulkanExternalTimeline RequireExternalTimeline(

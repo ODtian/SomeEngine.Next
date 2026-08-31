@@ -125,7 +125,7 @@ internal sealed unsafe partial class VulkanBackend
                 "vkGetCalibratedTimestampsKHR",
                 "vkGetCalibratedTimestampsEXT",
                 device);
-        ThrowIfFailed(
+        device.ThrowIfDeviceCallFailed(
             getTimestamps(device.Native, 2, infos, timestamps, &maximumDeviation),
             "vkGetCalibratedTimestampsEXT");
         ulong queueFrequency = checked((ulong)Math.Round(1_000_000_000d / device.TimestampPeriod));
