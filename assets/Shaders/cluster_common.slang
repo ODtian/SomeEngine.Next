@@ -227,35 +227,8 @@ float3 ColorFromHash(uint hash)
     return float3(r, g, b);
 }
 
-// ── SoA Stream Cursor ──
-// Tracks cumulative byte offset across streams in a page's attribute region.
-// Usage: create with { attrBase, totalVertexCount }, then call advance(bytesPerVertex)
-// for each stream in the same order as ClusterBuilder writes them.
-//
-// Stream sizes vary by attribute:
-//   NORMAL  (VEC3 × Int8)   = 3 bytes/vertex
-//   TANGENT (VEC4 × Int8)   = 4 bytes/vertex
-//   UV      (VEC2 × Float16)= 4 bytes/vertex
-//   COLOR   (VEC3 × UInt8)  = 3 bytes/vertex  (or VEC4 = 4)
-
-struct StreamCursor
-{
-    uint base;
-    uint totalVerts;
-
-    /// Advance past one stream, returning the base address of that stream.
-    /// bytesPerVertex = actual bytes per vertex in this stream.
-    [mutating] uint advance(uint bytesPerVertex)
-    {
-        uint current = base;
-        base += totalVerts * bytesPerVertex;
-        return current;
-    }
-};
-
-// ── SoA Attribute Decode Helpers ──
-// Each function decodes a single DWORD (4 bytes) loaded from a stream.
-// All standard streams use stride = 4 bytes per vertex.
+// Explicit vertex implementations may reuse these byte-level primitives, but Cluster kernels
+// only pass an opaque record address and stride through VertexEvalContext.
 /// Decode Int8x4 SNORM → float4 (used for Normal, Tangent)
 float4 DecodeSnorm8x4(uint raw)
 {
@@ -278,17 +251,6 @@ float2 DecodeFloat16x2(uint raw)
     return float2(f16tof32(raw & 0xFFFF), f16tof32(raw >> 16));
 }
 
-/// Decode UInt8x4 UNORM → float4 (used for Vertex Color)
-float4 DecodeUnorm8x4(uint raw)
-{
-    float4 c;
-    c.x = float(raw & 0xFF) / 255.0;
-    c.y = float((raw >> 8) & 0xFF) / 255.0;
-    c.z = float((raw >> 16) & 0xFF) / 255.0;
-    c.w = float((raw >> 24) & 0xFF) / 255.0;
-    return c;
-}
-
 /// Load N bytes (1-4) from ByteAddressBuffer at an arbitrary byte offset.
 /// Handles unaligned access by loading the surrounding DWORD(s) and extracting.
 /// Returns the bytes packed into the low bits of a uint.
@@ -305,12 +267,6 @@ uint LoadStreamBytes(ByteAddressBuffer pageHeap, uint byteAddr, uint numBytes)
     return combined & mask;
 }
 
-/// Generic: load one DWORD from a 4-byte-stride attribute stream.
-uint LoadStreamDword(ByteAddressBuffer pageHeap, uint streamBase, uint vStart, uint localVi)
-{
-    return pageHeap.Load(streamBase + (vStart + localVi) * 4);
-}
-
 /// Decode an Int8x3 (3 bytes) SNORM → float3.
 float3 DecodeSnorm8x3(uint raw)
 {
@@ -322,41 +278,6 @@ float3 DecodeSnorm8x3(uint raw)
     s.y = (s.y << 24) >> 24;
     s.z = (s.z << 24) >> 24;
     return max(float3(s) / 127.0, float3(-1.0));
-}
-
-/// Fetch normal from a 3-byte-per-vertex stream (VEC3 × Int8 SNORM).
-float3 FetchNormal3(ByteAddressBuffer pageHeap, uint streamBase, uint vStart, uint localVi)
-{
-    uint byteAddr = streamBase + (vStart + localVi) * 3;
-    uint raw = LoadStreamBytes(pageHeap, byteAddr, 3);
-    return DecodeSnorm8x3(raw);
-}
-
-/// Fetch normal from a 4-byte-per-vertex stream (Int8x4, padded, xyz valid).
-float3 FetchNormal(ByteAddressBuffer pageHeap, uint streamBase, uint vStart, uint localVi)
-{
-    return DecodeSnorm8x4(LoadStreamDword(pageHeap, streamBase, vStart, localVi)).xyz;
-}
-
-/// Fetch tangent (Int8x4 SNORM, 4 bytes/vertex, xyzw valid, w = handedness).
-float4 FetchTangent(ByteAddressBuffer pageHeap, uint streamBase, uint vStart, uint localVi)
-{
-    return DecodeSnorm8x4(LoadStreamDword(pageHeap, streamBase, vStart, localVi));
-}
-
-/// Fetch UV (Float16x2, 4 bytes/vertex). Uses unaligned load because
-/// preceding streams may cause non-4-byte-aligned streamBase.
-float2 FetchUV(ByteAddressBuffer pageHeap, uint streamBase, uint vStart, uint localVi)
-{
-    uint byteAddr = streamBase + (vStart + localVi) * 4;
-    uint raw = LoadStreamBytes(pageHeap, byteAddr, 4);
-    return DecodeFloat16x2(raw);
-}
-
-/// Fetch vertex color (UInt8x4 UNORM, 4 bytes/vertex).
-float4 FetchVertexColor(ByteAddressBuffer pageHeap, uint streamBase, uint vStart, uint localVi)
-{
-    return DecodeUnorm8x4(LoadStreamDword(pageHeap, streamBase, vStart, localVi));
 }
 
 #endif

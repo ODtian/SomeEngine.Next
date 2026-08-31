@@ -2,11 +2,11 @@
   "asset_guid": "23bb6ba2-7516-54b9-aaef-37ae23452a80",
   "source_guid": "a819cf62-7b5a-42c3-8221-21fcd1389b99",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "0477c1082ccc735c1f18571a630193476393c2111bc65621cb488fa0d218272f",
+  "content_fingerprint": "ca0f2cd154a06e21a4d0c15cb1f81e1eb53ac423fcb75df69236262d358cdaa3",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
-      "hash": "6329207495348a09ec5c85a3adb88613d104bcd67d125e82a45fb6dc26d2506d"
+      "hash": "ece93546354e3de857d785c5f4dff7432930a182e3c4bc28395b55ca9a1566ea"
     },
     {
       "path": "assets/Shaders/cluster_instance_properties.slang",
@@ -14,11 +14,11 @@
     },
     {
       "path": "assets/Shaders/cluster_motion_vectors.slang",
-      "hash": "64e64b660827b21a3c80f3ec1745e3a5f65bd6aba9e7af54fa420186f1eafab8"
+      "hash": "8e796586f350e0bf28659bd9a38b474c444e7600e3374496fc780ac21fe99a75"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "b25fa485e008b5faf4d960ff596d765632474709f693af65eef11b4dd9f4ca07"
+      "hash": "f91e66fd2f0246c2427166b33e66b17fa857b3d0156df061fd1beab311f39994"
     },
     {
       "path": "assets/Shaders/common.slang",
@@ -42,7 +42,7 @@
     },
     {
       "path": "assets/Shaders/vertex_evaluate.slang",
-      "hash": "2c95e3f6ee406854c92de41a618fd186222f103938fc041daf18371aea5fc9b6"
+      "hash": "038c650ab2f1ffae66e24f3b3a1ef769e34788545ec915ed1d0639669422ee61"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",

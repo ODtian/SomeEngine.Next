@@ -93,6 +93,9 @@ GPUCluster LoadCluster(uint pageOffset, uint clusterIndex)
 
 bool PassesLODFilter(GPUCluster cluster, RenderInstanceTransform t)
 {
+    if (Uniforms.CullingEnabled == 0u)
+        return true;
+
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
@@ -274,6 +277,13 @@ bool IsOccludedByHiZ(
     out float2 minUv,
     out float2 maxUv)
 {
+    if (Uniforms.CullingEnabled == 0u)
+    {
+        minUv = 0.0.xx;
+        maxUv = 1.0.xx;
+        return false;
+    }
+
     float nearDepth;
     uint mipLevel;
     BuildClusterAabbScreenBoundsAndNearDepth(
@@ -292,7 +302,7 @@ bool IsOccludedByHiZ(
 
 bool ShouldUseSWRaster(float2 minUv, float2 maxUv)
 {
-    if (Uniforms.ForceHardwareRaster != 0u)
+    if (Uniforms.CullingEnabled == 0u || Uniforms.ForceHardwareRaster != 0u)
         return false;
 
     float width = (maxUv.x - minUv.x) * Uniforms.ScreenWidth;
@@ -377,6 +387,9 @@ bool LoadAndFilterCandidate(
             InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
+
+    if (Uniforms.CullingEnabled == 0u)
+        return true;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));

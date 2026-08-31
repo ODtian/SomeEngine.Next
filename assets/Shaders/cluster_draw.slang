@@ -133,6 +133,7 @@ VertexEvalContext MakeDrawVertexEvalContext(
     ctx.pageOffset = pageOffset;
     ctx.posOffset = posOffset;
     ctx.attrOffset = attrOffset;
+    ctx.vertexStride = PageHeap.Load(pageOffset + 44u);
     ctx.idxOffset = idxOffset;
     ctx.vStart = vStart;
     ctx.totalVertexCount = totalVertexCount;

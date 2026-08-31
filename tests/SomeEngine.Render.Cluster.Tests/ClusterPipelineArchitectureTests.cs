@@ -24,7 +24,7 @@ public sealed class ClusterPipelineArchitectureTests
     }
 
     [Fact]
-    public void Fixed_pipeline_set_retains_pipelines_but_not_asset_reads_or_material_cache()
+    public void Fixed_pipeline_set_retains_pipelines_but_not_asset_loader_or_material_cache()
     {
         FieldInfo[] fields = typeof(ClusterPipelineSet).GetFields(
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -33,7 +33,6 @@ public sealed class ClusterPipelineArchitectureTests
             field.FieldType == typeof(List<ClusterPipeline>));
         Assert.DoesNotContain(fields, field =>
             field.FieldType == typeof(AssetLoader) ||
-            IsAssetRead(field.FieldType) ||
             field.FieldType.Name.Contains("Dictionary", StringComparison.Ordinal));
     }
 
@@ -96,6 +95,4 @@ public sealed class ClusterPipelineArchitectureTests
         Assert.True(typeof(ClusterMaterialSequence).IsValueType);
     }
 
-    private static bool IsAssetRead(Type type)
-        => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(AssetRead<>);
 }

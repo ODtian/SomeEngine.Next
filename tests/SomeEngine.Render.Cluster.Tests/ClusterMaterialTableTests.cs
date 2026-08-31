@@ -9,8 +9,8 @@ public sealed class ClusterMaterialTableTests
     [Fact]
     public void Structurally_identical_publication_preserves_snapshot_identity_and_topology_version()
     {
-        var table = new ClusterMaterialTable();
-        AssetHandle<Material> material = default;
+        var table = new ClusterMaterialTable(new ClusterMaterialTypeExecutionResolver());
+        var material = new Material { Name = "test" };
         ClusterMaterialSnapshot first = Snapshot(material, shadeBin: 0);
         ClusterMaterialSnapshot identical = Snapshot(material, shadeBin: 0);
 
@@ -29,7 +29,7 @@ public sealed class ClusterMaterialTableTests
     }
 
     private static ClusterMaterialSnapshot Snapshot(
-        AssetHandle<Material> material,
+        Material material,
         uint shadeBin)
     {
         const uint slotCapacity = 2;
@@ -43,6 +43,9 @@ public sealed class ClusterMaterialTableTests
             [new ClusterMaterialSequence([material], 0)],
             [material],
             words,
-            slotCapacity);
+            slotCapacity,
+            rasterBinCount: 1,
+            deformBinCount: 1,
+            shadeBinCount: shadeBin + 1);
     }
 }

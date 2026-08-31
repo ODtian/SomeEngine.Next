@@ -399,12 +399,10 @@ public sealed class ClusterShaderAbiTests
             manifest.List(AssetType<ClusterShaders>.Name));
         await using var loader = new AssetLoader(
             new LooseAssetStorage(repositoryRoot, manifest));
-        AssetHandle<ClusterShaders> configurationHandle = loader.Load(
+        ClusterShaders configuration = await loader.LoadAsync(
             new AssetId<ClusterShaders>(configurationRecord.Guid));
-        await loader.WaitAsync(configurationHandle);
-        using AssetRead<ClusterShaders> configurationRead = loader.Read(configurationHandle);
         IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
-            configurationRead.Value.Operations);
+            configuration.Operations);
         Assert.Equal(
             Enum.GetValues<ClusterShaderOperationRole>()
                 .Count(static role => role != ClusterShaderOperationRole.None),
@@ -420,17 +418,12 @@ public sealed class ClusterShaderAbiTests
                 AssetGuid.TryParse(first.AssetGuid, out AssetGuid shaderGuid),
                 $"Operation {operation.Role} has no Shader asset identity.");
             Assert.All(entries, entry => Assert.Equal(first.AssetGuid, entry.AssetGuid));
-            AssetHandle<Shader> shaderHandle = loader.Load(new AssetId<Shader>(shaderGuid));
-            await loader.WaitAsync(shaderHandle);
-
-            string sourcePath;
-            using (AssetRead<Shader> shaderRead = loader.Read(shaderHandle))
-            {
-                string source = Assert.IsType<string>(shaderRead.Value.ImportTrace?.SourcePath);
-                sourcePath = Path.GetFullPath(Path.Combine(
-                    repositoryRoot,
-                    source.Replace('/', Path.DirectorySeparatorChar)));
-            }
+            Shader shader = first.Asset
+                ?? await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
+            string source = Assert.IsType<string>(shader.ImportTrace?.SourcePath);
+            string sourcePath = Path.GetFullPath(Path.Combine(
+                repositoryRoot,
+                source.Replace('/', Path.DirectorySeparatorChar)));
             Assert.StartsWith(
                 Path.GetFullPath(repositoryRoot) + Path.DirectorySeparatorChar,
                 sourcePath,

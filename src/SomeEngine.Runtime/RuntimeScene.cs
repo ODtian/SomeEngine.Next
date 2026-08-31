@@ -67,32 +67,29 @@ internal sealed class RuntimeScene : IDisposable
         ArgumentNullException.ThrowIfNull(scene);
 
         SceneMeshInstance[] instances = [.. scene.MeshInstances ?? []];
-        var meshes = new Dictionary<AssetGuid, AssetHandle<Mesh>>();
-        var materials = new Dictionary<AssetGuid, AssetHandle<Material>>();
+        var meshes = new Dictionary<AssetGuid, Mesh>();
+        var materials = new Dictionary<AssetGuid, Material>();
         foreach (SceneMeshInstance instance in instances)
         {
             AssetGuid meshGuid = ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid));
             if (!meshes.ContainsKey(meshGuid))
-                meshes.Add(meshGuid, assets.Load(new AssetId<Mesh>(meshGuid)));
+                meshes.Add(meshGuid, await assets.LoadAsync(new AssetId<Mesh>(meshGuid)).ConfigureAwait(false));
             foreach (string materialValue in instance.MaterialGuids ?? [])
             {
                 AssetGuid materialGuid = ParseGuid(materialValue, nameof(instance.MaterialGuids));
                 if (!materials.ContainsKey(materialGuid))
-                    materials.Add(materialGuid, assets.Load(new AssetId<Material>(materialGuid)));
+                    materials.Add(
+                        materialGuid,
+                        await assets.LoadAsync(new AssetId<Material>(materialGuid)).ConfigureAwait(false));
             }
         }
-
-        foreach (AssetHandle<Mesh> handle in meshes.Values)
-            _ = await assets.WaitAsync(handle).ConfigureAwait(false);
-        foreach (AssetHandle<Material> handle in materials.Values)
-            _ = await assets.WaitAsync(handle).ConfigureAwait(false);
 
         var motions = new List<SceneMotion>(instances.Length);
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
         foreach (SceneMeshInstance instance in instances)
         {
-            AssetHandle<Mesh> mesh = meshes[ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid))];
+            Mesh mesh = meshes[ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid))];
             Quaternion rotation = QuaternionValue(instance.Rotation);
             Vector3 position = VectorValue(instance.Position, nameof(instance.Position));
             meshPositionMin = Vector3.Min(meshPositionMin, position);

@@ -122,23 +122,6 @@ internal struct ClusterLightGridUniforms
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
-internal struct ClusterGpuLight
-{
-    internal Vector3 Position;
-    internal float Range;
-    internal Vector3 Direction;
-    internal float InnerConeCos;
-    internal Vector3 Color;
-    internal float Intensity;
-    internal float OuterConeCos;
-    internal uint LayerMask;
-    internal int CookieIndex;
-    internal float CookieStrength;
-    internal Matrix4x4 WorldToLightCookie;
-    internal Vector4 CookieScaleOffset;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
 internal struct ClusterResolveUniforms
 {
     internal Matrix4x4 ViewProj;

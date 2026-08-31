@@ -37,17 +37,28 @@ static const uint CACHE_OFFSET_UNINITIALIZED = 0xFFFFFFFEu;
 
 groupshared uint DeformKernelCacheBaseByte;
 
-bool TryAllocateDeformCache(uint requestBytes, out uint cacheBaseByte)
+bool TryAllocateDeformCache(
+    uint requestBytes,
+    uint requestAlignment,
+    out uint cacheBaseByte)
 {
     cacheBaseByte = CACHE_OFFSET_OVERFLOW;
-    if (requestBytes == 0u || requestBytes > Uniforms.MaxDeformCacheBytes)
+    if (requestBytes == 0u || requestBytes > Uniforms.MaxDeformCacheBytes ||
+        requestAlignment < 4u || requestAlignment > Uniforms.MaxDeformCacheBytes ||
+        (requestAlignment & (requestAlignment - 1u)) != 0u)
         return false;
 
     uint observedBytes = CacheAllocationCounter[0];
     uint latestBytes;
     while (observedBytes <= Uniforms.MaxDeformCacheBytes - requestBytes)
     {
-        uint committedBytes = observedBytes + requestBytes;
+        uint alignmentPadding = (0u - observedBytes) & (requestAlignment - 1u);
+        if (observedBytes > Uniforms.MaxDeformCacheBytes - alignmentPadding)
+            return false;
+        uint alignedBytes = observedBytes + alignmentPadding;
+        if (alignedBytes > Uniforms.MaxDeformCacheBytes - requestBytes)
+            return false;
+        uint committedBytes = alignedBytes + requestBytes;
         InterlockedCompareExchange(
             CacheAllocationCounter[0],
             observedBytes,
@@ -55,7 +66,7 @@ bool TryAllocateDeformCache(uint requestBytes, out uint cacheBaseByte)
             latestBytes);
         if (latestBytes == observedBytes)
         {
-            cacheBaseByte = observedBytes;
+            cacheBaseByte = alignedBytes;
             InterlockedAdd(CacheAllocationCounter[1], 1u);
             return true;
         }
@@ -116,6 +127,7 @@ VertexEvalContext MakeDeformVertexEvalContext(
     ctx.pageOffset = pageOffset;
     ctx.posOffset = posOffset;
     ctx.attrOffset = attrOffset;
+    ctx.vertexStride = PageHeap.Load(pageOffset + 44u);
     ctx.idxOffset = idxOffset;
     ctx.vStart = vStart;
     ctx.totalVertexCount = totalVertexCount;
@@ -218,13 +230,14 @@ void DeformKernel<TVE : IVertexEvaluate>(
     if (groupThreadIndex == 0u)
     {
         uint requestBytesRaw = evaluator.getCacheByteSize(vertexCount);
+        uint requestAlignment = evaluator.getCacheByteAlignment();
         uint requestBytes =
             requestBytesRaw != 0u && ((requestBytesRaw & 3u) == 0u)
                 ? requestBytesRaw
                 : 0u;
 
         uint cacheBaseByte;
-        TryAllocateDeformCache(requestBytes, cacheBaseByte);
+        TryAllocateDeformCache(requestBytes, requestAlignment, cacheBaseByte);
 
         CacheOffsetsWrite[visibleIndex] = cacheBaseByte;
         DeformKernelCacheBaseByte = cacheBaseByte;

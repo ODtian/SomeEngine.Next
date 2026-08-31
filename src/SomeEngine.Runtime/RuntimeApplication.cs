@@ -12,6 +12,7 @@ using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using Texture = SomeEngine.Graphics.Texture;
@@ -39,35 +40,25 @@ internal static class RuntimeApplication
         }
 
         await using var assets = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
-        AssetHandle<RuntimeConfiguration> configurationHandle = assets.Load(
-            new AssetId<RuntimeConfiguration>(runtimeRecords[0].Guid));
-        _ = await assets.WaitAsync(configurationHandle).ConfigureAwait(false);
+        RuntimeConfiguration value = await assets
+            .LoadAsync(new AssetId<RuntimeConfiguration>(runtimeRecords[0].Guid))
+            .ConfigureAwait(false);
+        (AssetGuid uiShader, string uiVertexEntry, string uiPixelEntry) =
+            ParseUiShaders(value.UiShaders);
+        var boot = new BootConfiguration(
+            ParseGuid(value.SceneGuid, nameof(value.SceneGuid)),
+            ParseGuid(value.ClusterRendererGuid, nameof(value.ClusterRendererGuid)),
+            uiShader,
+            uiVertexEntry,
+            uiPixelEntry,
+            checked((int)value.WindowWidth),
+            checked((int)value.WindowHeight),
+            string.IsNullOrWhiteSpace(value.Name) ? "SomeEngine" : value.Name);
 
-        BootConfiguration boot;
-        using (AssetRead<RuntimeConfiguration> read = assets.Read(configurationHandle))
-        {
-            RuntimeConfiguration value = read.Value;
-            (AssetGuid uiShader, string uiVertexEntry, string uiPixelEntry) =
-                ParseUiShaders(value.UiShaders);
-            boot = new BootConfiguration(
-                ParseGuid(value.SceneGuid, nameof(value.SceneGuid)),
-                ParseGuid(value.ClusterRendererGuid, nameof(value.ClusterRendererGuid)),
-                uiShader,
-                uiVertexEntry,
-                uiPixelEntry,
-                checked((int)value.WindowWidth),
-                checked((int)value.WindowHeight),
-                string.IsNullOrWhiteSpace(value.Name) ? "SomeEngine" : value.Name);
-        }
-
-        AssetHandle<RenderScene> sceneHandle = assets.Load(new AssetId<RenderScene>(boot.Scene));
-        AssetHandle<ClusterShaders> rendererHandle = assets.Load(
-            new AssetId<ClusterShaders>(boot.Renderer));
-        AssetHandle<Shader> uiShaderHandle = assets.Load(new AssetId<Shader>(boot.UiShader));
-        await Task.WhenAll(
-            assets.WaitAsync(sceneHandle).AsTask(),
-            assets.WaitAsync(rendererHandle).AsTask(),
-            assets.WaitAsync(uiShaderHandle).AsTask()).ConfigureAwait(false);
+        Task<RenderScene> sceneTask = assets.LoadAsync(new AssetId<RenderScene>(boot.Scene)).AsTask();
+        Task<ClusterShaders> rendererTask = assets.LoadAsync(new AssetId<ClusterShaders>(boot.Renderer)).AsTask();
+        Task<Shader> uiShaderTask = assets.LoadAsync(new AssetId<Shader>(boot.UiShader)).AsTask();
+        await Task.WhenAll(sceneTask, rendererTask, uiShaderTask).ConfigureAwait(false);
 
         using var window = new NativeWindow(boot.Title, boot.Width, boot.Height);
         if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
@@ -112,9 +103,9 @@ internal static class RuntimeApplication
             swapchain,
             window,
             assets,
-            sceneHandle,
-            rendererHandle,
-            uiShaderHandle,
+            sceneTask.Result,
+            rendererTask.Result,
+            uiShaderTask.Result,
             boot,
             forceHardwareRaster: useWarp);
     }
@@ -235,9 +226,9 @@ internal static class RuntimeApplication
         Swapchain swapchain,
         NativeWindow window,
         AssetLoader assets,
-        AssetHandle<RenderScene> sceneHandle,
-        AssetHandle<ClusterShaders> rendererHandle,
-        AssetHandle<Shader> uiShaderHandle,
+        RenderScene sceneAsset,
+        ClusterShaders rendererConfiguration,
+        Shader uiShader,
         BootConfiguration boot,
         bool forceHardwareRaster)
     {
@@ -245,17 +236,10 @@ internal static class RuntimeApplication
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048);
         using var extraction = new RenderExtractionSystems(renderWorld);
 
-        RuntimeScene scene;
-        using (AssetRead<RenderScene> read = assets.Read(sceneHandle))
-        {
-            scene = RuntimeWait.Task(
-                RuntimeScene.CreateAsync(
-                    mainWorld,
-                    assets,
-                    read.Value).AsTask(),
-                window,
-                FrameTimeout);
-        }
+        RuntimeScene scene = RuntimeWait.Task(
+            RuntimeScene.CreateAsync(mainWorld, assets, sceneAsset).AsTask(),
+            window,
+            FrameTimeout);
 
         extraction.Extract(mainWorld);
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
@@ -284,7 +268,7 @@ internal static class RuntimeApplication
             coordinator,
             renderWorld,
             instances);
-        var materialTable = new ClusterMaterialTable();
+        var materialTable = new ClusterMaterialTable(new ClusterMaterialTypeExecutionResolver());
         var materialSystem = new ClusterMaterialSystem(materialTable);
         var instanceSystem = new ClusterInstanceSystem<ClusterMaterialProducer>(
             cluster,
@@ -297,6 +281,8 @@ internal static class RuntimeApplication
         _ = prepareSystems.Add(instanceSystem);
 
         var targetMailbox = new ClusterRenderTargetMailbox();
+        var lightMailbox = new RenderLightSetMailbox();
+        var lightSystem = new RenderLightSetSystem(lightMailbox);
         ClusterRendererSystem renderer = CreateRenderer();
         RenderFrameSystems frameSystems = CreateFrameSystems(renderer);
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
@@ -320,13 +306,13 @@ internal static class RuntimeApplication
         ClusterRendererSystem CreateRenderer() => new(
             backend,
             device,
-            assets,
             cluster,
             instanceSystem,
             ClusterRenderFeature.InstanceLayout,
             materialTable,
-            rendererHandle,
+            rendererConfiguration,
             targetMailbox,
+            lightMailbox,
             new ClusterPipelineOptions
             {
                 EnableAsyncCompute = options.AsyncCompute,
@@ -337,6 +323,7 @@ internal static class RuntimeApplication
         RenderFrameSystems CreateFrameSystems(ClusterRendererSystem system)
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
+            _ = systems.Add(lightSystem);
             _ = systems.Add(system);
             return systems;
         }
@@ -350,8 +337,7 @@ internal static class RuntimeApplication
                 backend,
                 device,
                 window,
-                assets,
-                uiShaderHandle,
+                uiShader,
                 boot.UiVertexEntry,
                 boot.UiPixelEntry,
                 PresentationFormat);
@@ -359,7 +345,7 @@ internal static class RuntimeApplication
                 $"Runtime configuration '{boot.Title}' loaded from {contentRootLabel(FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
-                $"renderer={rendererHandle.AssetId}.");
+                $"renderer={rendererConfiguration.AssetGuid}.");
             long runtimeStarted = Stopwatch.GetTimestamp();
             long previousFrameTimestamp = Stopwatch.GetTimestamp();
             int frameIndex = 0;
@@ -510,7 +496,7 @@ internal static class RuntimeApplication
                 // The receiver and RenderGraph have one coordinator-thread owner. Asset I/O
                 // may run asynchronously, but its result is joined here before publishing GPU work.
                 ValueTask<ClusterMeshPrepareResult> meshPreparation =
-                    cluster.PrepareMeshesAsync(assets);
+                    cluster.PrepareMeshesAsync();
                 ClusterMeshPrepareResult meshPrepare =
                     meshPreparation.IsCompletedSuccessfully
                         ? meshPreparation.Result

@@ -27,7 +27,6 @@ internal sealed class RuntimeUiRenderer : IDisposable
     private readonly NativeWindow _window;
     private readonly nint _context;
     private nint _iniFilename;
-    private AssetRead<Shader>? _shaderRead;
     private LiveShaderProgram? _program;
     private Pipeline? _pipeline;
     private readonly Buffer?[] _vertexBuffers = new Buffer?[2];
@@ -48,8 +47,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
         IGraphicsBackend backend,
         Device device,
         NativeWindow window,
-        AssetLoader assets,
-        AssetHandle<Shader> shaderHandle,
+        Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
         Format outputFormat)
@@ -57,11 +55,9 @@ internal sealed class RuntimeUiRenderer : IDisposable
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _window = window ?? throw new ArgumentNullException(nameof(window));
-        ArgumentNullException.ThrowIfNull(assets);
+        ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexEntryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(pixelEntryPoint);
-        if (!shaderHandle.IsValid || shaderHandle.LoadState != AssetLoadState.Ready)
-            throw new ArgumentException("The Runtime ImGui shader must be ready.", nameof(shaderHandle));
 
         _context = ImGui.CreateContext();
         if (_context == 0)
@@ -80,8 +76,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
 
-            _shaderRead = assets.Read(shaderHandle);
-            CreatePipeline(_shaderRead.Value, vertexEntryPoint, pixelEntryPoint, outputFormat);
+            CreatePipeline(shader, vertexEntryPoint, pixelEntryPoint, outputFormat);
             UploadFontAtlas(io);
             _fontSampler = _backend.CreateSampler(_device, new SamplerDesc(
                 FilterType.Linear,
@@ -415,9 +410,6 @@ internal sealed class RuntimeUiRenderer : IDisposable
         _pipeline = null;
         Destroy(_program, ref failures);
         _program = null;
-        try { _shaderRead?.Dispose(); }
-        catch (Exception failure) { (failures ??= []).Add(failure); }
-        _shaderRead = null;
         if (_context != 0)
         {
             try { ImGui.DestroyContext(_context); }

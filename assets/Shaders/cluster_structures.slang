@@ -18,6 +18,7 @@ struct GPUPageHeader
     float QuantOriginY;       // 32
     float QuantOriginZ;       // 36
     float QuantStep;          // 40
+    uint VertexStride;        // 44
 };
 
 struct GPUCluster

@@ -14,7 +14,7 @@ struct ClusterViewUniforms
     uint MaxPageFaults;
     uint ForceHardwareRaster;
     float SoftwareRasterAreaThreshold;
-    uint Pad2;
+    uint CullingEnabled;
 
     float4x4 PrevViewProj;
     uint HasPrevHistory;

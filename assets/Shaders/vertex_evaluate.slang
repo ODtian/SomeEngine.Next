@@ -11,6 +11,7 @@ struct VertexEvalContext
     uint pageOffset;
     uint posOffset;
     uint attrOffset;
+    uint vertexStride;
     uint idxOffset;
     uint vStart;
     uint totalVertexCount;
@@ -20,12 +21,9 @@ struct VertexEvalContext
     RenderInstanceTransform transform;
     uint IsPreviousFrame;
 
-    StreamCursor getStreamCursor()
+    uint getVertexByteAddress()
     {
-        StreamCursor c;
-        c.base = pageOffset + attrOffset;
-        c.totalVerts = totalVertexCount;
-        return c;
+        return pageOffset + attrOffset + (vStart + localVertIdx) * vertexStride;
     }
 };
 
@@ -63,18 +61,14 @@ struct StaticVertexAttributes
 
 StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
 {
-    StreamCursor cursor = ctx.getStreamCursor();
-    uint normalBase = cursor.advance(3);
-    uint tangentBase = cursor.advance(4);
-    uint uvBase = cursor.advance(4);
-
-    float3 normal = FetchNormal3(ctx.pageHeap, normalBase, ctx.vStart, ctx.localVertIdx);
-    float4 tangent = FetchTangent(ctx.pageHeap, tangentBase, ctx.vStart, ctx.localVertIdx);
+    uint vertexBase = ctx.getVertexByteAddress();
+    float3 normal = DecodeSnorm8x3(LoadStreamBytes(ctx.pageHeap, vertexBase + 0u, 3u));
+    float4 tangent = DecodeSnorm8x4(LoadStreamBytes(ctx.pageHeap, vertexBase + 3u, 4u));
 
     StaticVertexAttributes attrs;
     attrs.worldNormal = normalize(RotateByTransform(normal, ctx.transform));
     attrs.worldTangent = float4(normalize(RotateByTransform(tangent.xyz, ctx.transform)), tangent.w);
-    attrs.uv0 = FetchUV(ctx.pageHeap, uvBase, ctx.vStart, ctx.localVertIdx);
+    attrs.uv0 = DecodeFloat16x2(LoadStreamBytes(ctx.pageHeap, vertexBase + 7u, 4u));
     return attrs;
 }
 
@@ -87,6 +81,11 @@ interface IVertexEvaluate : IMaterialVertex
     float2 getTexCoord0(DeformedVertex v);
 
     uint getCacheByteSize(uint vertexCount);
+    uint getCacheByteAlignment();
+    bool tryGetConservativeObjectBounds(
+        VertexEvalContext context,
+        out float3 minimum,
+        out float3 maximum);
     void writeCache(
         RWByteAddressBuffer cache,
         uint cacheBaseByte,
@@ -156,6 +155,22 @@ struct StaticVertexEval : IVertexEvaluate
     uint getCacheByteSize(uint vertexCount)
     {
         return vertexCount * 72u;
+    }
+
+    uint getCacheByteAlignment()
+    {
+        return 16u;
+    }
+
+    bool tryGetConservativeObjectBounds(
+        VertexEvalContext context,
+        out float3 minimum,
+        out float3 maximum)
+    {
+        float3 position = EvalObjectPosition(context);
+        minimum = position;
+        maximum = position;
+        return true;
     }
 
     void writeCache(
@@ -262,6 +277,22 @@ struct WaveVertexEval : IVertexEvaluate
     uint getCacheByteSize(uint vertexCount)
     {
         return vertexCount * 72u;
+    }
+
+    uint getCacheByteAlignment()
+    {
+        return 16u;
+    }
+
+    bool tryGetConservativeObjectBounds(
+        VertexEvalContext context,
+        out float3 minimum,
+        out float3 maximum)
+    {
+        float3 position = EvalObjectPosition(context);
+        minimum = position - float3(0.0, 0.3, 0.0);
+        maximum = position + float3(0.0, 0.3, 0.0);
+        return true;
     }
 
     void writeCache(

@@ -172,6 +172,7 @@ VertexEvalContext makeVertexEvalContext(
     ctx.pageOffset = tri.pageOffset;
     ctx.posOffset = tri.posOffset;
     ctx.attrOffset = tri.attrOffset;
+    ctx.vertexStride = PageHeap.Load(tri.pageOffset + 44u);
     ctx.idxOffset = tri.idxOffset;
     ctx.vStart = tri.vStart;
     ctx.totalVertexCount = tri.totalVertexCount;

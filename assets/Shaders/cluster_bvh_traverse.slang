@@ -141,7 +141,8 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
                 instanceID));
 
-        bool culled = IsNodeOutsideFrustum(node, t, boundsExpansion);
+        bool culled = Uniforms.CullingEnabled != 0u &&
+            IsNodeOutsideFrustum(node, t, boundsExpansion);
 
         float3 worldCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, t);
         float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
@@ -151,7 +152,8 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
         float distToSurface = max(0.0, dist - worldRadius);
 
         // LOD Culling
-        if (node.LODError * Uniforms.LodScale <= Uniforms.LodThreshold * distToSurface)
+        if (Uniforms.CullingEnabled != 0u &&
+            node.LODError * Uniforms.LodScale <= Uniforms.LodThreshold * distToSurface)
         {
             culled = true;
         }

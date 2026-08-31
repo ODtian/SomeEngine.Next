@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS.Queries;
@@ -7,6 +8,7 @@ using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -14,9 +16,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 namespace SomeEngine.Render.Cluster.Pipeline;
 
 /// <summary>
-/// Complete Cluster frame consumer: hierarchy traversal, two-phase visibility, raster/deform
-/// binning, cached deformation, software and hardware visibility raster, HiZ, material/pixel
-/// binning, lighting, motion, temporal resolve, tone mapping, and presentation.
+/// Composes Cluster geometry with independently published lighting and presentation features.
 /// </summary>
 public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemContext>
 {
@@ -25,21 +25,18 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly AssetLoader _assets;
     private readonly ClusterRenderResources _resources;
     private readonly IRenderInstanceBatchSource<RenderInstanceSingleGroup> _instances;
     private readonly RenderInstancePropertyLayout _instanceLayout;
     private readonly ClusterMaterialTable _materialTable;
-    private readonly AssetHandle<ClusterShaders> _configuration;
+    private readonly ClusterShaders _configuration;
     private readonly ClusterRenderTargetMailbox _targetMailbox;
+    private readonly RenderLightSetMailbox _lightMailbox;
     private readonly ClusterPipelineOptions _options;
     private QueryHandle _viewQuery;
-    private QueryHandle _directionalQuery;
-    private QueryHandle _pointQuery;
-    private QueryHandle _spotQuery;
     private ClusterPipelineSet? _pipelines;
-    private ClusterMaterialGpuBindings? _materialBindings;
     private ClusterRenderHistory? _history;
+    private readonly List<ClusterRenderHistory> _histories = [];
     private IndirectCommandLayout? _dispatchIndirectLayout;
     private IndirectCommandLayout? _drawIndirectLayout;
     private readonly Buffer?[] _pageFaultReadbacks = new Buffer?[ReadbackGenerationCount];
@@ -53,11 +50,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     private readonly bool[] _frameMetricReadbackPending = new bool[ReadbackGenerationCount];
     private readonly QueueCompletion[][] _readbackFences = [[], []];
     private readonly ulong[] _readbackSequences = new ulong[ReadbackGenerationCount];
-    private readonly Buffer?[] _lightBuffers = new Buffer?[ReadbackGenerationCount];
-    private readonly int[] _lightBufferCapacities = new int[ReadbackGenerationCount];
-    private readonly List<ClusterGpuLight> _gpuLights = [];
     private readonly ViewCollector _viewCollector = new();
-    private readonly LightCollector _lightCollector = new();
+    private GpuLightBufferPool? _gpuLightBuffers;
     private Buffer? _lightCountsBuffer;
     private Buffer? _lightGridBuffer;
     private Buffer? _lightIndicesBuffer;
@@ -74,34 +68,31 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     private ClusterFrameMetrics? _latestFrameMetrics;
     private Format _outputFormat;
     private ClusterEpochId _pendingReadbackEpoch;
-    private ulong _pendingReplayGeneration;
-    private bool _pendingReplay;
     private bool _hasPendingFrame;
+    private int _pendingHistoryCount;
     private bool _created;
 
     public ClusterRendererSystem(
         IGraphicsBackend backend,
         Device device,
-        AssetLoader assets,
         ClusterRenderResources resources,
         IRenderInstanceBatchSource<RenderInstanceSingleGroup> instances,
         RenderInstancePropertyLayout instanceLayout,
         ClusterMaterialTable materialTable,
-        AssetHandle<ClusterShaders> configuration,
+        ClusterShaders configuration,
         ClusterRenderTargetMailbox targetMailbox,
+        RenderLightSetMailbox lightMailbox,
         ClusterPipelineOptions? options = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
         _instanceLayout = instanceLayout ?? throw new ArgumentNullException(nameof(instanceLayout));
         _materialTable = materialTable ?? throw new ArgumentNullException(nameof(materialTable));
-        if (!configuration.IsValid)
-            throw new ArgumentException("The Cluster render configuration must be valid.", nameof(configuration));
-        _configuration = configuration;
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _targetMailbox = targetMailbox ?? throw new ArgumentNullException(nameof(targetMailbox));
+        _lightMailbox = lightMailbox ?? throw new ArgumentNullException(nameof(lightMailbox));
         _options = options ?? new ClusterPipelineOptions();
     }
 
@@ -110,31 +101,22 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         if (_created)
             throw new InvalidOperationException("The full Cluster renderer is already created.");
         _options.Validate();
-        if (_configuration.LoadState != AssetLoadState.Ready)
-            throw new InvalidOperationException("The Cluster render configuration is not ready.");
 
         QueryHandle view = default;
-        QueryHandle directional = default;
-        QueryHandle point = default;
-        QueryHandle spot = default;
         try
         {
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
-            directional = context.World.Query(
-                new QueryDefinitionBuilder().Read<RenderDirectionalLight>());
-            point = context.World.Query(new QueryDefinitionBuilder().Read<RenderPointLight>());
-            spot = context.World.Query(new QueryDefinitionBuilder().Read<RenderSpotLight>());
             _viewQuery = view;
-            _directionalQuery = directional;
-            _pointQuery = point;
-            _spotQuery = spot;
+            _gpuLightBuffers = new GpuLightBufferPool(
+                _backend,
+                _device,
+                ReadbackGenerationCount);
             _created = true;
         }
         catch
         {
-            ReleaseIfValid(context.World, spot);
-            ReleaseIfValid(context.World, point);
-            ReleaseIfValid(context.World, directional);
+            _gpuLightBuffers?.Dispose();
+            _gpuLightBuffers = null;
             ReleaseIfValid(context.World, view);
             throw;
         }
@@ -194,42 +176,33 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialSnapshot materialSnapshot = _materialTable.Current;
         if (materialSnapshot.MaterialCount == 0)
             throw new InvalidOperationException("The Cluster scene has no published materials.");
-        _materialBindings!.EnsureBindings(materialSnapshot);
 
         ViewCollector viewCollector = _viewCollector;
-        LightCollector lights = _lightCollector;
+        RenderLightSet lights = _lightMailbox.TakeRequired();
         viewCollector.Clear();
-        lights.Clear();
         try
         {
             context.World.ExecuteQuery(
                 _viewQuery,
                 ref viewCollector,
                 static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
-            if (viewCollector.Views.Count != 1)
+            if (viewCollector.Views.Count == 0)
             {
                 throw new InvalidOperationException(
-                    $"The default Cluster frame requires exactly one render view; found {viewCollector.Views.Count}.");
+                    "A Cluster frame requires at least one render view.");
             }
-            RenderView view = viewCollector.Views[0];
-            if (view.ViewportWidth != target.Width || view.ViewportHeight != target.Height)
+            if (checked((uint)viewCollector.Views.Count) > target.ArrayLayerCount)
             {
                 throw new InvalidOperationException(
-                    "The render-view viewport and acquired presentation target have different dimensions.");
+                    "The Cluster target does not have an array layer for every render view.");
             }
-
-            context.World.ExecuteQuery(
-                _directionalQuery,
-                ref lights,
-                static (QueryCursor cursor, ref LightCollector state) => state.CollectDirectional(cursor));
-            context.World.ExecuteQuery(
-                _pointQuery,
-                ref lights,
-                static (QueryCursor cursor, ref LightCollector state) => state.CollectPoint(cursor));
-            context.World.ExecuteQuery(
-                _spotQuery,
-                ref lights,
-                static (QueryCursor cursor, ref LightCollector state) => state.CollectSpot(cursor));
+            foreach (RenderView view in viewCollector.Views)
+                if (view.ViewportWidth != target.Width || view.ViewportHeight != target.Height)
+                {
+                    throw new InvalidOperationException(
+                        "Every render-view viewport must match the acquired Cluster target dimensions.");
+                }
+            EnsureHistoryCount(viewCollector.Views.Count);
 
             using ClusterRenderBinding binding = _resources.Use(
                 context.ActiveFrame,
@@ -239,38 +212,45 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             EnsureFrameMetricsReadback();
             if (_readbackWriteGeneration < 0)
                 _readbackWriteGeneration = AcquireReadbackGeneration();
-            bool replayRequested = _resources.TryGetFaultReplayRequest(out ulong replayGeneration);
-            ClusterViewUniforms viewUniforms = ClusterViewUniforms.Create(
-                in view,
-                _options,
-                binding.DispatchExtent,
-                binding.PageFaultCapacity);
-            bool historyPrepared = false;
+            var viewUniforms = new ClusterViewUniforms[viewCollector.Views.Count];
+            int historyPrepared = 0;
             try
             {
-                bool hasHistory = _history!.Prepare(
-                    target.Width,
-                    target.Height,
-                    in view);
-                historyPrepared = true;
-                if (hasHistory)
+                for (int viewIndex = 0; viewIndex < viewCollector.Views.Count; viewIndex++)
                 {
-                    Matrix4x4 previousView = _history.PreviousView;
-                    Matrix4x4 previousProjection = _history.PreviousProjection;
-                    viewUniforms.PrevViewProj = previousView * previousProjection;
-                    viewUniforms.HasPrevHistory = 1;
-                    viewUniforms.HiZMipCount = checked((uint)_history.HiZMipCount);
-                    viewUniforms.HiZInvSize = new Vector2(
-                        1.0f / target.Width,
-                        1.0f / target.Height);
-                    viewUniforms.PrevView = previousView;
-                    viewUniforms.PrevP00 = previousProjection.M11;
-                    viewUniforms.PrevP11 = previousProjection.M22;
+                    RenderView view = viewCollector.Views[viewIndex];
+                    ClusterRenderHistory history = _histories[viewIndex];
+                    _history = history;
+                    ClusterViewUniforms uniforms = ClusterViewUniforms.Create(
+                        in view,
+                        _options,
+                        _pipelines!.CullingEnabled,
+                        binding.DispatchExtent,
+                        binding.PageFaultCapacity);
+                    bool hasHistory = history.Prepare(
+                        target.Width,
+                        target.Height,
+                        in view);
+                    historyPrepared++;
+                    if (hasHistory)
+                    {
+                        Matrix4x4 previousView = history.PreviousView;
+                        Matrix4x4 previousProjection = history.PreviousProjection;
+                        uniforms.PrevViewProj = previousView * previousProjection;
+                        uniforms.HasPrevHistory = 1;
+                        uniforms.HiZMipCount = checked((uint)history.HiZMipCount);
+                        uniforms.HiZInvSize = new Vector2(
+                            1.0f / target.Width,
+                            1.0f / target.Height);
+                        uniforms.PrevView = previousView;
+                        uniforms.PrevP00 = previousProjection.M11;
+                        uniforms.PrevP11 = previousProjection.M22;
+                    }
+                    viewUniforms[viewIndex] = uniforms;
                 }
 
                 _pendingReadbackEpoch = binding.ReadbackEpoch;
-                _pendingReplay = replayRequested;
-                _pendingReplayGeneration = replayGeneration;
+                _pendingHistoryCount = historyPrepared;
                 _hasPendingFrame = true;
 
                 RenderGraphFrame graph = context.Graph;
@@ -279,15 +259,14 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
                     in target,
                     in binding,
                     materialSnapshot,
-                    in view,
-                    in viewUniforms,
-                    lights,
-                    hasHistory);
+                    CollectionsMarshal.AsSpan(viewCollector.Views),
+                    viewUniforms,
+                    lights);
             }
             catch
             {
-                if (historyPrepared)
-                    _history!.Discard();
+                for (int index = 0; index < historyPrepared; index++)
+                    _histories[index].Discard();
                 ClearPendingFrame();
                 throw;
             }
@@ -313,7 +292,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         ulong frameMetricsSequence = _options.EnableFrameMetricsReadback
             ? checked(_frameMetricsSubmittedFrame + 1)
             : _frameMetricsSubmittedFrame;
-        _history!.Commit(fences);
+        for (int index = 0; index < _pendingHistoryCount; index++)
+            _histories[index].Commit(fences);
         _readbackFences[generation] = fences;
         _nextReadbackSequence = readbackSequence;
         _readbackSequences[generation] = readbackSequence;
@@ -326,8 +306,6 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             _frameMetricReadbackPending[generation] = true;
         }
         _preferredReadbackGeneration = 1 - generation;
-        if (_pendingReplay)
-            _resources.AcknowledgeFaultReplay(_pendingReplayGeneration);
         ClearPendingFrame();
     }
 
@@ -335,15 +313,15 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
     public void Discard()
     {
         if (!_hasPendingFrame) return;
-        _history!.Discard();
+        for (int index = 0; index < _pendingHistoryCount; index++)
+            _histories[index].Discard();
         ClearPendingFrame();
     }
 
     private void ClearPendingFrame()
     {
         _pendingReadbackEpoch = default;
-        _pendingReplayGeneration = 0;
-        _pendingReplay = false;
+        _pendingHistoryCount = 0;
         _readbackWriteGeneration = -1;
         _hasPendingFrame = false;
     }
@@ -353,13 +331,15 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         if (!_created)
             return;
         List<Exception>? failures = null;
-        Release(ref _spotQuery, context.World, ref failures);
-        Release(ref _pointQuery, context.World, ref failures);
-        Release(ref _directionalQuery, context.World, ref failures);
         Release(ref _viewQuery, context.World, ref failures);
-        Dispose(ref _materialBindings, ref failures);
         Dispose(ref _pipelines, ref failures);
-        Dispose(ref _history, ref failures);
+        _history = null;
+        for (int index = _histories.Count - 1; index >= 0; index--)
+        {
+            try { _histories[index].Dispose(); }
+            catch (Exception failure) { (failures ??= []).Add(failure); }
+        }
+        _histories.Clear();
         Dispose(ref _dispatchIndirectLayout, ref failures);
         Dispose(ref _drawIndirectLayout, ref failures);
         for (int generation = 0; generation < ReadbackGenerationCount; generation++)
@@ -384,19 +364,12 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             _readbackFences[generation] = [];
             _readbackSequences[generation] = 0;
 
-            if (_lightBuffers[generation] is { } lightBuffer)
-            {
-                try { lightBuffer.Dispose(); }
-                catch (Exception failure) { (failures ??= []).Add(failure); }
-            }
-            _lightBuffers[generation] = null;
-            _lightBufferCapacities[generation] = 0;
         }
+        Dispose(ref _gpuLightBuffers, ref failures);
         Dispose(ref _lightCountsBuffer, ref failures);
         Dispose(ref _lightGridBuffer, ref failures);
         Dispose(ref _lightIndicesBuffer, ref failures);
         Dispose(ref _lightGridUniformsBuffer, ref failures);
-        _gpuLights.Clear();
         _lightStructureWidth = 0;
         _lightStructureHeight = 0;
         _lightStructureDirectionalCount = -1;
@@ -428,8 +401,6 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         }
 
         ClusterPipelineSet? pipelines = null;
-        ClusterMaterialGpuBindings? materialBindings = null;
-        ClusterRenderHistory? history = null;
         IndirectCommandLayout? dispatchIndirectLayout = null;
         IndirectCommandLayout? drawIndirectLayout = null;
         IndirectArgumentDesc[] dispatchArguments =
@@ -441,11 +412,8 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             pipelines = new ClusterPipelineSet(
                 _backend,
                 _device,
-                _assets,
                 _configuration,
                 target.Format);
-            materialBindings = new ClusterMaterialGpuBindings(_backend, _device, _assets);
-            history = new ClusterRenderHistory(_backend, _device);
             dispatchIndirectLayout = _backend.CreateIndirectCommandLayout(
                 _device,
                 new IndirectCommandLayoutDesc(
@@ -459,8 +427,6 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
                     ClusterIndirectAbi.DrawStride,
                     label: "Cluster draw indirect layout"));
             _pipelines = pipelines;
-            _materialBindings = materialBindings;
-            _history = history;
             _dispatchIndirectLayout = dispatchIndirectLayout;
             _drawIndirectLayout = drawIndirectLayout;
             _outputFormat = target.Format;
@@ -470,8 +436,6 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
             List<Exception>? cleanupFailures = null;
             Dispose(ref drawIndirectLayout, ref cleanupFailures);
             Dispose(ref dispatchIndirectLayout, ref cleanupFailures);
-            Dispose(ref history, ref cleanupFailures);
-            Dispose(ref materialBindings, ref cleanupFailures);
             Dispose(ref pipelines, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
@@ -481,6 +445,15 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
                     cleanupFailures);
             }
             throw;
+        }
+    }
+
+    private void EnsureHistoryCount(int count)
+    {
+        while (_histories.Count < count)
+        {
+            var history = new ClusterRenderHistory(_backend, _device);
+            _histories.Add(history);
         }
     }
 
@@ -833,35 +806,4 @@ public sealed partial class ClusterRendererSystem : ISystem<RenderFrameSystemCon
         }
     }
 
-    private sealed class LightCollector
-    {
-        internal List<RenderDirectionalLight> Directional { get; } = [];
-        internal List<RenderPointLight> Points { get; } = [];
-        internal List<RenderSpotLight> Spots { get; } = [];
-
-        internal void Clear()
-        {
-            Directional.Clear();
-            Points.Clear();
-            Spots.Clear();
-        }
-
-        internal void CollectDirectional(QueryCursor cursor)
-        {
-            foreach (QueryRow row in cursor.Rows)
-                Directional.Add(row.Read<RenderDirectionalLight>());
-        }
-
-        internal void CollectPoint(QueryCursor cursor)
-        {
-            foreach (QueryRow row in cursor.Rows)
-                Points.Add(row.Read<RenderPointLight>());
-        }
-
-        internal void CollectSpot(QueryCursor cursor)
-        {
-            foreach (QueryRow row in cursor.Rows)
-                Spots.Add(row.Read<RenderSpotLight>());
-        }
-    }
 }

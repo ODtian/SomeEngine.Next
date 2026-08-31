@@ -23,7 +23,7 @@ internal struct ClusterViewUniforms
     internal uint MaxPageFaults;
     internal uint ForceHardwareRaster;
     internal float SoftwareRasterAreaThreshold;
-    internal uint Pad2;
+    internal uint CullingEnabled;
 
     internal Matrix4x4 PrevViewProj;
     internal uint HasPrevHistory;
@@ -44,6 +44,7 @@ internal struct ClusterViewUniforms
     internal static ClusterViewUniforms Create(
         in RenderView source,
         ClusterPipelineOptions options,
+        bool cullingEnabled,
         int instanceCount,
         int pageFaultCapacity)
     {
@@ -81,6 +82,7 @@ internal struct ClusterViewUniforms
             MaxPageFaults = checked((uint)pageFaultCapacity),
             ForceHardwareRaster = options.ForceHardwareRaster ? 1u : 0u,
             SoftwareRasterAreaThreshold = options.SoftwareRasterAreaThreshold,
+            CullingEnabled = cullingEnabled ? 1u : 0u,
             PrevViewProj = viewProjection,
             HasPrevHistory = 0,
             HiZMipCount = 0,

@@ -13,12 +13,11 @@ public readonly record struct ClusterRenderTarget
             info.Width == 0 ||
             info.Height == 0 ||
             info.Depth != 1 ||
-            info.ArrayLayerCount != 1 ||
             info.SampleCount != 1 ||
             (info.Usages & TextureUsages.ColorAttachment) == 0)
         {
             throw new ArgumentException(
-                "A Cluster render target must be a non-empty single-sample 2D color attachment.",
+                "A Cluster render target must be a non-empty single-sample 2D color attachment or attachment array.",
                 nameof(texture));
         }
 
@@ -26,6 +25,7 @@ public readonly record struct ClusterRenderTarget
         Width = checked((int)info.Width);
         Height = checked((int)info.Height);
         Format = info.Format;
+        ArrayLayerCount = info.ArrayLayerCount;
     }
 
     public Texture Texture { get; }
@@ -35,6 +35,8 @@ public readonly record struct ClusterRenderTarget
     public int Height { get; }
 
     public Format Format { get; }
+
+    public uint ArrayLayerCount { get; }
 
     public bool IsValid => Texture is not null;
 }

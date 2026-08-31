@@ -21,7 +21,7 @@ public sealed class ClusterPipelineTests
         AssertOffset(nameof(ClusterViewUniforms.MaxPageFaults), 96);
         AssertOffset(nameof(ClusterViewUniforms.ForceHardwareRaster), 100);
         AssertOffset(nameof(ClusterViewUniforms.SoftwareRasterAreaThreshold), 104);
-        AssertOffset(nameof(ClusterViewUniforms.Pad2), 108);
+        AssertOffset(nameof(ClusterViewUniforms.CullingEnabled), 108);
         AssertOffset(nameof(ClusterViewUniforms.PrevViewProj), 112);
         AssertOffset(nameof(ClusterViewUniforms.HasPrevHistory), 176);
         AssertOffset(nameof(ClusterViewUniforms.HiZMipCount), 180);
@@ -51,6 +51,7 @@ public sealed class ClusterPipelineTests
         ClusterViewUniforms uniforms = ClusterViewUniforms.Create(
             in source,
             options,
+            cullingEnabled: true,
             instanceCount: 7,
             pageFaultCapacity: 11);
 
@@ -64,6 +65,7 @@ public sealed class ClusterPipelineTests
         Assert.Equal(11u, uniforms.MaxPageFaults);
         Assert.Equal(1u, uniforms.ForceHardwareRaster);
         Assert.Equal(1_024.0f, uniforms.SoftwareRasterAreaThreshold);
+        Assert.Equal(1u, uniforms.CullingEnabled);
         Assert.Equal(view, uniforms.PrevViewProj);
         Assert.Equal(0u, uniforms.HasPrevHistory);
         Assert.Equal(0u, uniforms.HiZMipCount);

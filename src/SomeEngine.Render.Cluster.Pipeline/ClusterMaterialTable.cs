@@ -26,10 +26,18 @@ public sealed class ClusterMaterialTable
 
     private ClusterMaterialSnapshot _current = ClusterMaterialSnapshot.Empty;
     private ulong _topologyVersion;
+    private readonly IClusterMaterialExecutionResolver _executionResolver;
+
+    public ClusterMaterialTable(IClusterMaterialExecutionResolver executionResolver)
+        => _executionResolver = executionResolver
+            ?? throw new ArgumentNullException(nameof(executionResolver));
 
     public ClusterMaterialSnapshot Current => Volatile.Read(ref _current);
 
     public ClusterMaterialProducer CreateProducer() => new(this);
+
+    internal ClusterMaterialExecutionKeys ResolveExecutionKeys(Material material)
+        => _executionResolver.Resolve(material);
 
     internal void Publish(ClusterMaterialSnapshot snapshot)
     {
@@ -51,7 +59,7 @@ public sealed class ClusterMaterialTable
 public sealed class ClusterMaterialSnapshot
 {
     internal static ClusterMaterialSnapshot Empty { get; } =
-        new([], [], [], 2, [], []);
+        new([], [], [], 2, 0, 0, 0, [], []);
 
     private readonly ClusterMaterialSequence[] _sequences;
     private readonly int[] _entityGenerations;
@@ -60,18 +68,25 @@ public sealed class ClusterMaterialSnapshot
 
     internal ClusterMaterialSnapshot(
         ClusterMaterialSequence[] sequences,
-        AssetHandle<Material>[] materials,
+        Material[] materials,
         uint[] slotWords,
-        uint slotCapacity)
-        : this(sequences, materials, slotWords, slotCapacity, [], [])
+        uint slotCapacity,
+        uint rasterBinCount,
+        uint deformBinCount,
+        uint shadeBinCount)
+        : this(sequences, materials, slotWords, slotCapacity,
+            rasterBinCount, deformBinCount, shadeBinCount, [], [])
     {
     }
 
     internal ClusterMaterialSnapshot(
         ClusterMaterialSequence[] sequences,
-        AssetHandle<Material>[] materials,
+        Material[] materials,
         uint[] slotWords,
         uint slotCapacity,
+        uint rasterBinCount,
+        uint deformBinCount,
+        uint shadeBinCount,
         int[] entityGenerations,
         uint[] entityOffsets)
     {
@@ -81,11 +96,14 @@ public sealed class ClusterMaterialSnapshot
         Materials = materials;
         SlotWords = slotWords;
         SlotCapacity = slotCapacity;
+        RasterBinCount = rasterBinCount;
+        DeformBinCount = deformBinCount;
+        ShadeBinCount = shadeBinCount;
     }
 
     public ulong TopologyVersion => _topologyVersion;
 
-    public IReadOnlyList<AssetHandle<Material>> Materials { get; }
+    public IReadOnlyList<Material> Materials { get; }
 
     public ReadOnlyMemory<uint> SlotWords { get; }
 
@@ -93,12 +111,21 @@ public sealed class ClusterMaterialSnapshot
 
     public uint MaterialCount => checked((uint)Materials.Count);
 
+    public uint RasterBinCount { get; }
+
+    public uint DeformBinCount { get; }
+
+    public uint ShadeBinCount { get; }
+
     internal void SetTopologyVersion(ulong version) => _topologyVersion = version;
 
     internal bool HasSameTopology(ClusterMaterialSnapshot other)
     {
         ArgumentNullException.ThrowIfNull(other);
         if (SlotCapacity != other.SlotCapacity ||
+            RasterBinCount != other.RasterBinCount ||
+            DeformBinCount != other.DeformBinCount ||
+            ShadeBinCount != other.ShadeBinCount ||
             Materials.Count != other.Materials.Count ||
             _sequences.Length != other._sequences.Length ||
             !SlotWords.Span.SequenceEqual(other.SlotWords.Span))
@@ -156,8 +183,47 @@ public sealed class ClusterMaterialSnapshot
 }
 
 internal readonly record struct ClusterMaterialSequence(
-    AssetHandle<Material>[] Materials,
+    Material[] Materials,
     uint Offset);
+
+public readonly record struct ClusterMaterialExecutionKeys(
+    uint Raster,
+    uint Deform,
+    uint Shade);
+
+public interface IClusterMaterialExecutionResolver
+{
+    ClusterMaterialExecutionKeys Resolve(Material material);
+}
+
+/// <summary>
+/// Assigns independent dense execution keys from material runtime types. Slot values, textures,
+/// and optional descriptor bases therefore never create execution bins by themselves.
+/// </summary>
+public sealed class ClusterMaterialTypeExecutionResolver : IClusterMaterialExecutionResolver
+{
+    private readonly Dictionary<Type, uint> _raster = [];
+    private readonly Dictionary<Type, uint> _deform = [];
+    private readonly Dictionary<Type, uint> _shade = [];
+
+    public ClusterMaterialExecutionKeys Resolve(Material material)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        Type type = material.GetType();
+        return new ClusterMaterialExecutionKeys(
+            Resolve(_raster, type),
+            Resolve(_deform, type),
+            Resolve(_shade, type));
+    }
+
+    private static uint Resolve(Dictionary<Type, uint> values, Type type)
+    {
+        if (values.TryGetValue(type, out uint key)) return key;
+        key = checked((uint)values.Count);
+        values.Add(type, key);
+        return key;
+    }
+}
 
 /// <summary>Publishes material bins before the Cluster instance producer writes slot offsets.</summary>
 public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
@@ -213,7 +279,7 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
                 return;
         }
 
-        var builder = new SnapshotBuilder();
+        var builder = new SnapshotBuilder(_table);
         context.World.ExecuteQuery(
             _query,
             ref builder,
@@ -235,12 +301,15 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
     private sealed class SnapshotBuilder
     {
         private readonly List<ClusterMaterialSequence> _sequences = [];
-        private readonly List<AssetHandle<Material>> _materials = [];
-        private readonly Dictionary<AssetHandle<Material>, uint> _bins = [];
-        private readonly List<uint[]> _sequenceBins = [];
+        private readonly ClusterMaterialTable _table;
+        private readonly List<Material> _materials = [];
+        private readonly HashSet<Material> _materialSet = [];
+        private readonly List<ClusterMaterialExecutionKeys[]> _sequenceKeys = [];
         private int[] _entityGenerations = [];
         private uint[] _entityOffsets = [];
         private int _usedSlots;
+
+        internal SnapshotBuilder(ClusterMaterialTable table) => _table = table;
 
         internal void Collect(QueryCursor cursor)
         {
@@ -276,29 +345,20 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
                     return sequence.Offset;
             }
 
-            var handles = new AssetHandle<Material>[bindings.Length];
-            var bins = new uint[bindings.Length];
+            var materials = new Material[bindings.Length];
+            var keys = new ClusterMaterialExecutionKeys[bindings.Length];
             for (int index = 0; index < bindings.Length; index++)
             {
-                AssetHandle<Material> handle = bindings[index].Material;
-                if (!handle.IsValid || handle.LoadState != AssetLoadState.Ready)
-                {
-                    throw new InvalidOperationException(
-                        $"Cluster material {handle} is not ready at the render prepare boundary.");
-                }
-                handles[index] = handle;
-                if (!_bins.TryGetValue(handle, out uint bin))
-                {
-                    bin = checked((uint)_materials.Count);
-                    _bins.Add(handle, bin);
-                    _materials.Add(handle);
-                }
-                bins[index] = bin;
+                Material material = bindings[index].Material;
+                ArgumentNullException.ThrowIfNull(material);
+                materials[index] = material;
+                keys[index] = _table.ResolveExecutionKeys(material);
+                if (_materialSet.Add(material)) _materials.Add(material);
             }
             uint offset = checked((uint)_usedSlots);
             _usedSlots = checked(_usedSlots + bindings.Length);
-            _sequences.Add(new ClusterMaterialSequence(handles, offset));
-            _sequenceBins.Add(bins);
+            _sequences.Add(new ClusterMaterialSequence(materials, offset));
+            _sequenceKeys.Add(keys);
             return offset;
         }
 
@@ -307,13 +367,19 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
             uint slotCapacity = checked((uint)Math.Max(2, (_usedSlots + 1) & ~1));
             var words = new uint[checked((int)(slotCapacity * ClusterMaterialTable.FieldCount))];
             int slot = 0;
-            foreach (uint[] bins in _sequenceBins)
+            uint rasterBinCount = 0;
+            uint deformBinCount = 0;
+            uint shadeBinCount = 0;
+            foreach (ClusterMaterialExecutionKeys[] keys in _sequenceKeys)
             {
-                foreach (uint bin in bins)
+                foreach (ClusterMaterialExecutionKeys key in keys)
                 {
-                    words[checked((int)(ClusterMaterialTable.RasterBinField * slotCapacity) + slot)] = bin;
-                    words[checked((int)(ClusterMaterialTable.DeformBinField * slotCapacity) + slot)] = bin;
-                    words[checked((int)(ClusterMaterialTable.ShadeBinField * slotCapacity) + slot)] = bin;
+                    words[checked((int)(ClusterMaterialTable.RasterBinField * slotCapacity) + slot)] = key.Raster;
+                    words[checked((int)(ClusterMaterialTable.DeformBinField * slotCapacity) + slot)] = key.Deform;
+                    words[checked((int)(ClusterMaterialTable.ShadeBinField * slotCapacity) + slot)] = key.Shade;
+                    rasterBinCount = Math.Max(rasterBinCount, checked(key.Raster + 1));
+                    deformBinCount = Math.Max(deformBinCount, checked(key.Deform + 1));
+                    shadeBinCount = Math.Max(shadeBinCount, checked(key.Shade + 1));
                     slot++;
                 }
             }
@@ -322,6 +388,9 @@ public sealed class ClusterMaterialSystem : ISystem<RenderPrepareSystemContext>
                 [.. _materials],
                 words,
                 slotCapacity,
+                rasterBinCount,
+                deformBinCount,
+                shadeBinCount,
                 _entityGenerations,
                 _entityOffsets);
         }
