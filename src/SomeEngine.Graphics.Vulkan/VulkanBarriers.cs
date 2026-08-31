@@ -283,6 +283,7 @@ internal sealed unsafe partial class VulkanBackend
             "A Texture QueueAcquire requires a subresource range.", nameof(barrier));
         TextureLayout layout = barrier.Layout ?? throw new ArgumentException(
             "A Texture QueueAcquire requires a layout.", nameof(barrier));
+        ValidateTextureRange(texture.Info, range);
         command.Capture(texture);
         images[imageCount++] = CreateImageBarrier(
             texture, range, PipelineSync.None, barrier.Sync,
@@ -321,6 +322,7 @@ internal sealed unsafe partial class VulkanBackend
             "A Texture QueueRelease requires a subresource range.", nameof(barrier));
         TextureLayout layout = barrier.Layout ?? throw new ArgumentException(
             "A Texture QueueRelease requires a layout.", nameof(barrier));
+        ValidateTextureRange(texture.Info, range);
         command.Capture(texture);
         images[imageCount++] = CreateImageBarrier(
             texture, range, barrier.Sync, PipelineSync.None,

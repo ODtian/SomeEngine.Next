@@ -218,7 +218,7 @@ internal sealed unsafe partial class VulkanBackend
             PTokens = &token,
         };
         IndirectCommandsLayoutEXT layout = default;
-        ThrowIfFailed(
+        device.ThrowIfDeviceCallFailed(
             device.GeneratedCommandsApi.CreateIndirectCommandsLayout(
                 device.Native,
                 &createInfo,
@@ -385,7 +385,7 @@ internal sealed unsafe partial class VulkanBackend
                 SharingMode = SharingMode.Exclusive,
             };
             VkBuffer buffer = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateBuffer(device.Native, &createInfo, null, &buffer),
                 "vkCreateBuffer(generated-command preprocess)");
             VulkanMemoryBlock? memory = null;
@@ -403,7 +403,7 @@ internal sealed unsafe partial class VulkanBackend
                     memoryTypes,
                     MemoryType.DeviceLocal,
                     deviceAddress: true);
-                ThrowIfFailed(
+                device.ThrowIfDeviceCallFailed(
                     device.Backend.Api.BindBufferMemory(
                         device.Native,
                         buffer,

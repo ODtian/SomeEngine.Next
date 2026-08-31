@@ -10,6 +10,9 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Description>Vulkan Graphics backend adapter.</Description>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(SomeEngineTesting)' == 'true'">
+    <DefineConstants>$(DefineConstants);SOMEENGINE_TESTING</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
   </ItemGroup>

@@ -8,11 +8,11 @@ namespace SomeEngine.Graphics.Direct3D12;
 
 internal sealed unsafe partial class D3D12Backend
 {
-    private const uint PipelineCacheEnvelopeSchemaVersion = 3;
-    private const int PipelineCacheHardEntryCountLimit = 1_000_000;
-    private const int PipelineCacheEmptyEnvelopeByteCount = 48;
-    private const int PipelineCacheEntryFixedByteCount = 109;
-    private const int PipelineCacheHashByteCount = 32;
+    private const uint PipelineCacheEnvelopeSchemaVersion = PipelineCacheEnvelope.SchemaVersion;
+    private const int PipelineCacheHardEntryCountLimit = PipelineCacheEnvelope.HardEntryCountLimit;
+    private const int PipelineCacheEmptyEnvelopeByteCount = PipelineCacheEnvelope.EmptyEnvelopeByteCount;
+    private const int PipelineCacheEntryFixedByteCount = PipelineCacheEnvelope.EntryFixedByteCount;
+    private const int PipelineCacheHashByteCount = PipelineCacheEnvelope.HashByteCount;
     private const int PipelineCacheCancellationChunkByteCount = 64 * 1024;
     // Stable little-endian wire identity: ASCII "D3D12" followed by three zero bytes.
     private const ulong D3D12PipelineCacheBackendTag = 0x0000_0032_3144_3344UL;
@@ -110,7 +110,6 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class D3D12PipelineCache : PipelineCache
     {
-        private static ReadOnlySpan<byte> Magic => "SERHIC01"u8;
         private static readonly object MergeGate = new();
 
         private readonly D3D12Device _device;
@@ -392,58 +391,21 @@ internal sealed unsafe partial class D3D12Backend
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ThrowIfDisposed();
-                var result = new byte[_residentWireByteCount];
-                int offset = 0;
-                Magic.CopyTo(result.AsSpan(offset, Magic.Length));
-                offset += Magic.Length;
-                BinaryPrimitives.WriteUInt32LittleEndian(
-                    result.AsSpan(offset, sizeof(uint)),
-                    PipelineCacheEnvelopeSchemaVersion);
-                offset += sizeof(uint);
-                BinaryPrimitives.WriteUInt32LittleEndian(
-                    result.AsSpan(offset, sizeof(uint)),
-                    checked((uint)_entries.Count));
-                offset += sizeof(uint);
-
+                var entries = new PipelineCacheEntry[_entries.Count];
+                int index = 0;
                 foreach ((CacheEntryKey key, CacheEntry entry) in _entries)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    BinaryPrimitives.WriteUInt64LittleEndian(
-                        result.AsSpan(offset, sizeof(ulong)),
-                        key.Backend);
-                    offset += sizeof(ulong);
-                    result[offset++] = key.Family;
-                    key.Key.CopyTo(result, offset);
-                    offset += key.Key.Length;
-                    key.Compatibility.CopyTo(result, offset);
-                    offset += key.Compatibility.Length;
-                    BinaryPrimitives.WriteUInt32LittleEndian(
-                        result.AsSpan(offset, sizeof(uint)),
-                        checked((uint)entry.Payload.Length));
-                    offset += sizeof(uint);
-                    CopyWithCancellation(
-                        entry.Payload,
-                        result.AsSpan(offset, entry.Payload.Length),
-                        cancellationToken);
-                    offset += entry.Payload.Length;
-                    ComputeSha256(
-                        entry.Payload,
-                        result.AsSpan(offset, PipelineCacheHashByteCount),
-                        cancellationToken);
-                    offset += PipelineCacheHashByteCount;
+                    entries[index++] = new PipelineCacheEntry(
+                        key.Backend,
+                        key.Family,
+                        key.Key,
+                        key.Compatibility,
+                        entry.Payload);
                 }
-
-                if (offset != result.Length - PipelineCacheHashByteCount)
-                {
-                    throw new InvalidOperationException(
-                        "The pipeline-cache resident wire-byte count is inconsistent.");
-                }
-                ComputeSha256(
-                    result.AsSpan(0, offset),
-                    result.AsSpan(offset, PipelineCacheHashByteCount),
+                return PipelineCacheEnvelope.Serialize(
+                    entries,
+                    Limits,
                     cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                return result;
             }
         }
 
@@ -480,125 +442,36 @@ internal sealed unsafe partial class D3D12Backend
 
         private void Parse(ReadOnlySpan<byte> data, CancellationToken cancellationToken)
         {
-            try
+            ParsedPipelineCache parsed = PipelineCacheEnvelope.Parse(
+                data,
+                Limits,
+                cancellationToken);
+            var candidate = new SortedDictionary<CacheEntryKey, CacheEntry>();
+            int decodedByteCount = 0;
+            foreach (PipelineCacheEntry entry in parsed.Entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (data.Length < PipelineCacheEmptyEnvelopeByteCount)
-                    throw new InvalidDataException("The pipeline-cache envelope is truncated.");
-                if (data.Length > _maximumByteCount)
-                {
-                    throw new ArgumentException(
-                        "The complete pipeline-cache envelope exceeds the configured serialized-byte limit.",
-                        "data");
-                }
-
-                ReadOnlySpan<byte> body = data[..^PipelineCacheHashByteCount];
-                Span<byte> envelopeHash = stackalloc byte[PipelineCacheHashByteCount];
-                ComputeSha256(body, envelopeHash, cancellationToken);
-                if (!envelopeHash.SequenceEqual(data[^PipelineCacheHashByteCount..]))
-                    throw new InvalidDataException("The pipeline-cache envelope checksum is invalid.");
-                int offset = 0;
-                if (!body[..Magic.Length].SequenceEqual(Magic))
-                    throw new InvalidDataException("The pipeline-cache magic is invalid.");
-                offset += Magic.Length;
-                uint version = ReadUInt32(body, ref offset);
-                if (version != PipelineCacheEnvelopeSchemaVersion)
-                    throw new InvalidDataException("The pipeline-cache schema is unsupported.");
-                uint count = ReadUInt32(body, ref offset);
-                if (count > PipelineCacheHardEntryCountLimit)
-                    throw new InvalidDataException("The pipeline-cache entry count is invalid.");
-                long decodedByteCount = 0;
-                bool hasPrevious = false;
-                ulong previousBackend = 0;
-                byte previousFamily = 0;
-                Span<byte> previousKey = stackalloc byte[PipelineCacheHashByteCount];
-                Span<byte> previousCompatibility = stackalloc byte[PipelineCacheHashByteCount];
-                for (uint index = 0; index < count; index++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    CacheEnvelopeSection section = ReadCacheSection(
-                        body,
-                        ref offset,
-                        verifyChecksum: true,
-                        cancellationToken);
-                    if (hasPrevious)
-                    {
-                        int comparison = CompareEntryKeys(
-                            previousBackend,
-                            previousFamily,
-                            previousKey,
-                            previousCompatibility,
-                            section.Backend,
-                            section.Family,
-                            section.Key,
-                            section.Compatibility);
-                        if (comparison == 0)
-                        {
-                            throw new InvalidDataException(
-                                "The pipeline-cache envelope contains a duplicate section.");
-                        }
-                        if (comparison > 0)
-                        {
-                            throw new InvalidDataException(
-                                "The pipeline-cache sections are not in canonical key order.");
-                        }
-                    }
-                    hasPrevious = true;
-                    previousBackend = section.Backend;
-                    previousFamily = section.Family;
-                    section.Key.CopyTo(previousKey);
-                    section.Compatibility.CopyTo(previousCompatibility);
-                    decodedByteCount = checked(decodedByteCount + section.Payload.Length);
-                }
-                if (offset != body.Length)
-                    throw new InvalidDataException("The pipeline-cache envelope has trailing bytes.");
-
-                if (count > _maximumEntryCount)
-                {
-                    throw new ArgumentException(
-                        "The complete pipeline-cache envelope exceeds the configured entry-count limit.",
-                        "data");
-                }
-                if (decodedByteCount > _maximumDecodedByteCount)
-                {
-                    throw new ArgumentException(
-                        "The complete pipeline-cache envelope exceeds the configured decoded-byte limit.",
-                        "data");
-                }
-
-                var candidate = new SortedDictionary<CacheEntryKey, CacheEntry>();
-                offset = Magic.Length + sizeof(uint) + sizeof(uint);
-                for (uint index = 0; index < count; index++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    CacheEnvelopeSection section = ReadCacheSection(
-                        body,
-                        ref offset,
-                        verifyChecksum: false,
-                        cancellationToken);
-                    byte[] payload = CopyBytes(section.Payload, cancellationToken);
-                    candidate.Add(
-                        new CacheEntryKey(
-                            section.Backend,
-                            section.Family,
-                            section.Key.ToArray(),
-                            section.Compatibility.ToArray()),
-                        new CacheEntry(payload, section.WireByteCount));
-                }
-                cancellationToken.ThrowIfCancellationRequested();
-                _entries = candidate;
-                _residentWireByteCount = data.Length;
-                _residentDecodedByteCount = checked((int)decodedByteCount);
+                candidate.Add(
+                    new CacheEntryKey(
+                        entry.Backend,
+                        entry.Family,
+                        entry.Key,
+                        entry.Compatibility),
+                    new CacheEntry(
+                        entry.Payload,
+                        PipelineCacheEnvelope.GetEntryWireByteCount(entry.Payload.Length)));
+                decodedByteCount = checked(decodedByteCount + entry.Payload.Length);
             }
-            catch (Exception exception) when (exception is
-                InvalidDataException or EndOfStreamException or OverflowException)
-            {
-                throw new GraphicsException(
-                    GraphicsError.NativeFailure,
-                    "The pipeline-cache envelope is corrupt.",
-                    innerException: exception);
-            }
+            cancellationToken.ThrowIfCancellationRequested();
+            _entries = candidate;
+            _residentWireByteCount = data.Length;
+            _residentDecodedByteCount = decodedByteCount;
         }
+
+        private PipelineCacheLimits Limits => new(
+            _maximumEntryCount,
+            _maximumByteCount,
+            _maximumDecodedByteCount);
 
         private CacheEntryKey CreateLocalEntryKey(byte family, ReadOnlySpan<byte> key) =>
             new(
@@ -709,86 +582,6 @@ internal sealed unsafe partial class D3D12Backend
             return result != 0
                 ? result
                 : leftCompatibility.SequenceCompareTo(rightCompatibility);
-        }
-
-        private static uint ReadUInt32(ReadOnlySpan<byte> source, ref int offset)
-        {
-            if (source.Length - offset < 4)
-                throw new EndOfStreamException();
-            uint result = BinaryPrimitives.ReadUInt32LittleEndian(source[offset..]);
-            offset += 4;
-            return result;
-        }
-
-        private static ulong ReadUInt64(ReadOnlySpan<byte> source, ref int offset)
-        {
-            if (source.Length - offset < 8)
-                throw new EndOfStreamException();
-            ulong result = BinaryPrimitives.ReadUInt64LittleEndian(source[offset..]);
-            offset += 8;
-            return result;
-        }
-
-        private static byte ReadByte(ReadOnlySpan<byte> source, ref int offset)
-        {
-            if ((uint)offset >= (uint)source.Length)
-                throw new EndOfStreamException();
-            return source[offset++];
-        }
-
-        private static ReadOnlySpan<byte> ReadSpan(
-            ReadOnlySpan<byte> source,
-            ref int offset,
-            int length)
-        {
-            if (length < 0 || source.Length - offset < length)
-                throw new EndOfStreamException();
-            ReadOnlySpan<byte> result = source.Slice(offset, length);
-            offset += length;
-            return result;
-        }
-
-        private static CacheEnvelopeSection ReadCacheSection(
-            ReadOnlySpan<byte> body,
-            ref int offset,
-            bool verifyChecksum,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ulong backend = ReadUInt64(body, ref offset);
-            byte family = ReadByte(body, ref offset);
-            ReadOnlySpan<byte> key = ReadSpan(
-                body,
-                ref offset,
-                PipelineCacheHashByteCount);
-            ReadOnlySpan<byte> compatibility = ReadSpan(
-                body,
-                ref offset,
-                PipelineCacheHashByteCount);
-            int payloadLength = checked((int)ReadUInt32(body, ref offset));
-            int wireByteCount = checked(PipelineCacheEntryFixedByteCount + payloadLength);
-            ReadOnlySpan<byte> payload = ReadSpan(body, ref offset, payloadLength);
-            ReadOnlySpan<byte> checksum = ReadSpan(
-                body,
-                ref offset,
-                PipelineCacheHashByteCount);
-            if (verifyChecksum)
-            {
-                Span<byte> actualChecksum = stackalloc byte[PipelineCacheHashByteCount];
-                ComputeSha256(payload, actualChecksum, cancellationToken);
-                if (!actualChecksum.SequenceEqual(checksum))
-                {
-                    throw new InvalidDataException(
-                        "A pipeline-cache section checksum is invalid.");
-                }
-            }
-            return new CacheEnvelopeSection(
-                backend,
-                family,
-                key,
-                compatibility,
-                payload,
-                wireByteCount);
         }
 
         private static byte[] CopyBytes(
@@ -1029,31 +822,6 @@ internal sealed unsafe partial class D3D12Backend
                 other.Compatibility);
         }
 
-        private readonly ref struct CacheEnvelopeSection
-        {
-            internal CacheEnvelopeSection(
-                ulong backend,
-                byte family,
-                ReadOnlySpan<byte> key,
-                ReadOnlySpan<byte> compatibility,
-                ReadOnlySpan<byte> payload,
-                int wireByteCount)
-            {
-                Backend = backend;
-                Family = family;
-                Key = key;
-                Compatibility = compatibility;
-                Payload = payload;
-                WireByteCount = wireByteCount;
-            }
-
-            internal ulong Backend { get; }
-            internal byte Family { get; }
-            internal ReadOnlySpan<byte> Key { get; }
-            internal ReadOnlySpan<byte> Compatibility { get; }
-            internal ReadOnlySpan<byte> Payload { get; }
-            internal int WireByteCount { get; }
-        }
     }
 
     private static void WriteDeviceCapabilities(

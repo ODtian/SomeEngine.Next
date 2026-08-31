@@ -603,6 +603,11 @@ public sealed partial class ValidationLayer
         RequireGraphicsRecording(context);
         if (context.Bundle)
             Reject("Commands", "Scissors are not legal in a command bundle.", context.Label);
+        foreach (ref readonly ScissorRect rect in scissors)
+        {
+            if (rect.Width < 0 || rect.Height < 0)
+                throw new ArgumentOutOfRangeException(nameof(scissors));
+        }
         Backend.SetScissors(context, scissors);
     }
 

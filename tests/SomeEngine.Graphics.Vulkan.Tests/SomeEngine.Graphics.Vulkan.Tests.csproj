@@ -11,7 +11,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/SomeEngine.Graphics.Vulkan/SomeEngine.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Graphics.Vulkan/SomeEngine.Graphics.Vulkan.csproj"
+                      AdditionalProperties="SomeEngineTesting=true" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>

@@ -6,102 +6,15 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         ExternalHandle handle,
         in BufferDesc desc,
-        in ImportedResourceState state)
-    {
-        VulkanDevice nativeDevice = RequireExternalResourceDevice(device);
-        ValidateExternalHandle(handle);
-        if ((desc.Usages & BufferUsages.Shareable) == 0 || state.Layout.HasValue)
-            throw new ArgumentException("An imported Buffer requires Shareable usage and no Texture layout.", nameof(desc));
-        ValidateBufferDescription(desc, MemoryType.DeviceLocal);
-        VkBuffer native = CreateNativeBuffer(nativeDevice, desc);
-        VulkanMemoryBlock? memory = null;
-        try
-        {
-            Silk.NET.Vulkan.MemoryRequirements requirements;
-            Api.GetBufferMemoryRequirements(nativeDevice.Native, native, &requirements);
-            memory = nativeDevice.AllocateMemory(
-                requirements.Size,
-                requirements.MemoryTypeBits,
-                MemoryType.DeviceLocal,
-                nativeDevice.SupportsBufferDeviceAddress,
-                ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
-                handle.Value);
-            ThrowIfFailed(
-                Api.BindBufferMemory(nativeDevice.Native, native, memory.Native, 0),
-                "vkBindBufferMemory(imported)");
-            var buffer = new VulkanBuffer(
-                nativeDevice,
-                native,
-                memory,
-                heap: null,
-                desc,
-                MemoryType.DeviceLocal,
-                0,
-                requirements.Size,
-                state.Sync,
-                state.Access,
-                state.QueueType);
-            nativeDevice.RegisterChild(buffer);
-            return buffer;
-        }
-        catch
-        {
-            Api.DestroyBuffer(nativeDevice.Native, native, null);
-            memory?.Release();
-            throw;
-        }
-    }
+        in ImportedResourceState state) =>
+        throw DirectResourceSharingNotSupported();
 
     private RhiTexture ImportTextureCore(
         RhiDevice device,
         ExternalHandle handle,
         in TextureDesc desc,
-        in ImportedResourceState state)
-    {
-        VulkanDevice nativeDevice = RequireExternalResourceDevice(device);
-        ValidateExternalHandle(handle);
-        if ((desc.Usages & TextureUsages.Shareable) == 0 || !state.Layout.HasValue)
-            throw new ArgumentException("An imported Texture requires Shareable usage and an initial layout.", nameof(desc));
-        ValidateTextureDescription(desc);
-        VkImage native = CreateNativeImage(nativeDevice, desc, aliasable: false);
-        VulkanMemoryBlock? memory = null;
-        try
-        {
-            Silk.NET.Vulkan.MemoryRequirements requirements;
-            Api.GetImageMemoryRequirements(nativeDevice.Native, native, &requirements);
-            memory = nativeDevice.AllocateMemory(
-                requirements.Size,
-                requirements.MemoryTypeBits,
-                MemoryType.DeviceLocal,
-                deviceAddress: false,
-                ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
-                handle.Value);
-            ThrowIfFailed(
-                Api.BindImageMemory(nativeDevice.Native, native, memory.Native, 0),
-                "vkBindImageMemory(imported)");
-            var texture = new VulkanTexture(
-                nativeDevice,
-                native,
-                memory,
-                heap: null,
-                desc,
-                0,
-                requirements.Size,
-                ownsImage: true,
-                state.Sync,
-                state.Access,
-                state.Layout.Value,
-                state.QueueType);
-            nativeDevice.RegisterChild(texture);
-            return texture;
-        }
-        catch
-        {
-            Api.DestroyImage(nativeDevice.Native, native, null);
-            memory?.Release();
-            throw;
-        }
-    }
+        in ImportedResourceState state) =>
+        throw DirectResourceSharingNotSupported();
 
     private RhiHeap ImportHeapCore(
         RhiDevice device,
@@ -113,6 +26,12 @@ internal sealed unsafe partial class VulkanBackend
         ValidateHeapDescription(desc);
         if ((desc.Flags & HeapFlags.Shareable) == 0)
             throw new ArgumentException("An imported Heap requires Shareable flags.", nameof(desc));
+        // Opaque Win32 handles are deliberately excluded from
+        // vkGetMemoryWin32HandlePropertiesKHR. Vulkan-created opaque payloads
+        // must instead be imported with the same allocation size and memory
+        // type index used by the exporter. HeapDesc carries the former and our
+        // deterministic memory-type selection recreates the latter for the
+        // same physical adapter.
         VulkanMemoryBlock memory = nativeDevice.AllocateMemory(
             desc.Size,
             uint.MaxValue,
@@ -120,37 +39,25 @@ internal sealed unsafe partial class VulkanBackend
             nativeDevice.SupportsBufferDeviceAddress,
             ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
             handle.Value);
+        VulkanHeap? heap = null;
         try
         {
-            var heap = new VulkanHeap(nativeDevice, memory, desc);
-            nativeDevice.RegisterChild(heap);
-            return heap;
+            heap = new VulkanHeap(nativeDevice, memory, desc);
+            return RegisterChildOrDispose(nativeDevice, heap);
         }
         catch
         {
-            memory.Release();
+            if (heap is null)
+                memory.Release();
             throw;
         }
     }
 
-    private ExternalHandle ExportBufferCore(RhiBuffer buffer, ExternalHandleType type)
-    {
-        VulkanBuffer native = RequireBuffer(buffer, nameof(buffer));
-        if ((native.Info.Usages & BufferUsages.Shareable) == 0)
-            throw new ArgumentException("The Buffer was not created as Shareable.", nameof(buffer));
-        return ExportMemory((VulkanDevice)native.Device, native.Memory.Native, type);
-    }
+    private ExternalHandle ExportBufferCore(RhiBuffer buffer, ExternalHandleType type) =>
+        throw DirectResourceSharingNotSupported();
 
-    private ExternalHandle ExportTextureCore(RhiTexture texture, ExternalHandleType type)
-    {
-        if (texture is not VulkanTexture native || native.Device is not VulkanDevice device ||
-            !ReferenceEquals(device.Backend, this))
-            throw new ArgumentException("The Texture belongs to a different graphics backend.", nameof(texture));
-        native.ThrowIfDisposed();
-        if ((native.Info.Usages & TextureUsages.Shareable) == 0)
-            throw new ArgumentException("The Texture was not created as Shareable.", nameof(texture));
-        return ExportMemory(device, native.Memory.Native, type);
-    }
+    private ExternalHandle ExportTextureCore(RhiTexture texture, ExternalHandleType type) =>
+        throw DirectResourceSharingNotSupported();
 
     private ExternalHandle ExportHeapCore(RhiHeap heap, ExternalHandleType type)
     {
@@ -177,9 +84,11 @@ internal sealed unsafe partial class VulkanBackend
             HandleType = ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
         };
         nint handle = 0;
-        ThrowIfFailed(
-            device.ExternalMemoryApi.GetMemoryWin32Handle(device.Native, &info, &handle),
-            "vkGetMemoryWin32HandleKHR");
+        Result result = device.ExternalMemoryApi.GetMemoryWin32Handle(
+            device.Native,
+            &info,
+            &handle);
+        device.ThrowIfDeviceCallFailed(result, "vkGetMemoryWin32HandleKHR");
         return new ExternalHandle(
             type,
             handle,
@@ -201,4 +110,17 @@ internal sealed unsafe partial class VulkanBackend
             throw new NotSupportedException("This Vulkan Device exposes OpaqueWin32 external memory only.");
         _ = handle.Value;
     }
+
+    private static ExternalMemoryHandleTypeFlags ToNativeMemoryHandleType(
+        ExternalHandleType type) => type switch
+    {
+        ExternalHandleType.OpaqueWin32 => ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
+        ExternalHandleType.OpaqueWin32Kmt => ExternalMemoryHandleTypeFlags.OpaqueWin32KmtBit,
+        _ => throw new ArgumentOutOfRangeException(nameof(type)),
+    };
+
+    private static NotSupportedException DirectResourceSharingNotSupported() =>
+        new(
+            "Direct Vulkan Buffer/Texture sharing is not enabled; " +
+            "share a Heap and recreate placed resources at the same offsets.");
 }

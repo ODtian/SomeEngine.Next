@@ -380,6 +380,9 @@ public abstract class Device : GraphicsObject
 
     internal void ThrowIfUnavailable()
     {
+        if (IsDisposed)
+            throw new ObjectDisposedException(GetType().FullName);
+
         switch (Status)
         {
             case DeviceStatus.Active:

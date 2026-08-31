@@ -70,6 +70,8 @@ internal sealed unsafe partial class D3D12Backend
         native.CheckSlot(slot);
         DescriptorSlotDesc slotDesc = native.GetSlotDesc(slot);
         EnsureTableBindingType(slotDesc.Type, value);
+        if (value.IsNull && slotDesc.Type == ResourceBindingType.Sampler)
+            throw new ArgumentException("A Sampler descriptor cannot be null.", nameof(value));
         native.Publisher.StageBinding(
             native.Type,
             checked(native.FirstIndex + slot),

@@ -25,8 +25,8 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private const string ValidationLayer = "VK_LAYER_KHRONOS_validation";
 
     private readonly object _gate = new();
-    private readonly HashSet<VulkanDevice> _devices = [];
-    private readonly HashSet<VulkanSurface> _surfaces = [];
+    private readonly GraphicsObjectRegistry _devices;
+    private readonly GraphicsObjectRegistry _surfaces;
     private readonly Vk _vk;
     private readonly VulkanBackendOptions _options;
     private readonly AdapterRecord[] _adapters;
@@ -36,11 +36,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private ExtDebugUtils? _debugUtilsApi;
     private DebugUtilsMessengerEXT _debugMessenger;
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
-    private int _disposed;
+    private DisposeGate _disposeGate;
+    private Exception? _releaseFailure;
 
     internal VulkanBackend(in VulkanBackendOptions options = default)
     {
         _options = options;
+        _devices = new GraphicsObjectRegistry(_gate);
+        _surfaces = new GraphicsObjectRegistry(_gate);
         _vk = Vk.GetApi();
         _instance = CreateInstance();
         try
@@ -67,6 +70,10 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     internal VkInstance Instance => _instance;
     internal ExtDebugUtils? DebugUtilsApi => _debugUtilsApi;
     internal ReadOnlySpan<AdapterRecord> Adapters => _adapters;
+    internal Exception? ReleaseFailure => Volatile.Read(ref _releaseFailure);
+#if SOMEENGINE_TESTING
+    internal VulkanFaultHooks FaultHooks { get; } = new();
+#endif
 
     internal bool TryEnumerateAdapters(
         in AdapterEnumerationOptions options,
@@ -104,32 +111,25 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        if (!_disposeGate.TryEnter())
             return;
-        lock (_gate)
+
+        try
         {
-            foreach (VulkanDevice device in _devices.ToArray())
-                device.DisposeFromParent();
-            _devices.Clear();
-            foreach (VulkanSurface surface in _surfaces.ToArray())
-                surface.DisposeFromParent();
-            _surfaces.Clear();
-            _surfaceApi?.Dispose();
-            _surfaceApi = null;
-            _win32SurfaceApi?.Dispose();
-            _win32SurfaceApi = null;
-            DestroyDebugMessenger();
-            if (_instance.Handle != 0)
-            {
-                _vk.DestroyInstance(_instance, null);
-                _instance = default;
-            }
+            ReleaseBackend();
         }
-        _vk.Dispose();
+        catch (Exception exception)
+        {
+            RecordReleaseFailure(exception);
+        }
+        finally
+        {
+            _disposeGate.Exit();
+        }
     }
 
     internal void ThrowIfDisposed() =>
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(_disposeGate.IsDisposed, this);
 
     void INativeValidationControl.EnableNativeValidation()
     {
@@ -142,34 +142,65 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 
     private void RegisterDevice(VulkanDevice device)
     {
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            if (!_devices.Add(device))
-                throw new InvalidOperationException("The Vulkan Device is already registered.");
-        }
+        ThrowIfDisposed();
+        _devices.Add(device);
     }
 
     private void UnregisterDevice(VulkanDevice device)
     {
-        lock (_gate)
-            _devices.Remove(device);
+        _devices.Remove(device);
     }
 
     private void RegisterSurface(VulkanSurface surface)
     {
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            _surfaces.Add(surface);
-        }
+        ThrowIfDisposed();
+        _surfaces.Add(surface);
     }
 
     private void UnregisterSurface(VulkanSurface surface)
     {
-        lock (_gate)
-            _surfaces.Remove(surface);
+        _surfaces.Remove(surface);
     }
+
+    private void ReleaseBackend()
+    {
+        DrainRegistry(_devices);
+        DrainRegistry(_surfaces);
+
+        if (_devices.HasRetainedFailures || _surfaces.HasRetainedFailures)
+        {
+            RecordReleaseFailure(new InvalidOperationException(
+                "A Vulkan root object did not detach during backend teardown."));
+            return;
+        }
+
+        _surfaceApi?.Dispose();
+        _surfaceApi = null;
+        _win32SurfaceApi?.Dispose();
+        _win32SurfaceApi = null;
+        DestroyDebugMessenger();
+        if (_instance.Handle != 0)
+        {
+            _vk.DestroyInstance(_instance, null);
+            _instance = default;
+        }
+        _vk.Dispose();
+    }
+
+    private static void DrainRegistry(GraphicsObjectRegistry registry)
+    {
+        GraphicsObject? values = registry.CloseAndBuildDrainList();
+        while (values is GraphicsObject value)
+        {
+            values = value.RegistryDrainNext;
+            value.RegistryDrainNext = null;
+            value.DisposeFromParent();
+            _ = registry.CompleteDrain(value);
+        }
+    }
+
+    private void RecordReleaseFailure(Exception exception) =>
+        Interlocked.CompareExchange(ref _releaseFailure, exception, null);
 
     private VkInstance CreateInstance()
     {

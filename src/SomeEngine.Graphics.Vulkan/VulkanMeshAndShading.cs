@@ -97,7 +97,7 @@ internal sealed unsafe partial class VulkanBackend
                 1),
         };
         VkImageView nativeView = default;
-        ThrowIfFailed(
+        device.ThrowIfDeviceCallFailed(
             Api.CreateImageView(device.Native, &createInfo, null, &nativeView),
             "vkCreateImageView(shading rate)");
         var view = new VulkanShadingRateImageView(device, nativeTexture, nativeView);

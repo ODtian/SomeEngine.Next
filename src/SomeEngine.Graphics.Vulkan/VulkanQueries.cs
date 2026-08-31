@@ -28,7 +28,7 @@ internal sealed unsafe partial class VulkanBackend
                 : 0,
         };
         VkQueryPool native = default;
-        ThrowIfFailed(
+        nativeDevice.ThrowIfDeviceCallFailed(
             Api.CreateQueryPool(nativeDevice.Native, &createInfo, null, &native),
             "vkCreateQueryPool");
         var pool = new VulkanQueryPool(
@@ -36,8 +36,7 @@ internal sealed unsafe partial class VulkanBackend
             native,
             desc with { NodeIndex = 0 },
             GetQueryResultInfo(desc.Type));
-        nativeDevice.RegisterChild(pool);
-        return pool;
+        return RegisterChildOrDispose(nativeDevice, pool);
     }
 
     private void BeginQueryCore(CommandContext context, QueryPool pool, uint queryIndex)

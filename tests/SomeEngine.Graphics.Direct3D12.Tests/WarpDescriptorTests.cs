@@ -441,7 +441,7 @@ public sealed class WarpDescriptorTests
     }
 
     [Fact]
-    public void Every_typed_null_descriptor_publishes_as_a_valid_native_descriptor()
+    public void Resource_typed_null_descriptors_publish_and_sampler_null_is_rejected_on_write()
     {
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -577,13 +577,18 @@ public sealed class WarpDescriptorTests
                 checked((uint)slot),
                 ResourceBinding.Null(types[slot]));
         }
-        backend.WriteDescriptor(
+        Assert.Throws<ArgumentException>(() => backend.WriteDescriptor(
             samplers,
             0,
-            ResourceBinding.Null(ResourceBindingType.Sampler));
-        Assert.Throws<InvalidOperationException>(() =>
-            backend.PublishDescriptors(device));
-        AssertDescriptorRecordTypes(resources, "_resources", resourceFirst, types, hasOwner: true);
+            ResourceBinding.Null(ResourceBindingType.Sampler)));
+        backend.PublishDescriptors(device);
+        AssertDescriptorRecordTypes(resources, "_resources", resourceFirst, types);
+        AssertDescriptorRecordTypes(
+            samplers,
+            "_samplers",
+            samplerFirst,
+            [ResourceBindingType.Sampler],
+            hasOwner: true);
 
         for (int slot = 0; slot < actual.Length; slot++)
             backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);

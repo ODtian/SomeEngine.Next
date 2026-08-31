@@ -255,24 +255,19 @@ public sealed class VulkanCoreFeatureTests
     }
 
     [Fact]
-    public void Memory_budget_residency_and_calibrated_timestamps_are_live()
+    public void Residency_is_not_published_and_calibrated_timestamps_remain_live()
     {
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
+        Assert.Throws<NotSupportedException>(() => backend.CreateDevice(new DeviceDesc(
+            default,
+            queues,
+            requiredFeatures: DeviceFeatures.Residency)));
         using Device device = backend.CreateDevice(new DeviceDesc(
             default,
             queues,
-            requiredFeatures: DeviceFeatures.Residency | DeviceFeatures.CalibratedTimestamps));
+            requiredFeatures: DeviceFeatures.CalibratedTimestamps));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        ResidencyInfo budget = backend.GetResidencyInfo(device);
-        Assert.True(budget.LocalBudget > 0);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(4096, BufferUsages.CopyDestination));
-        ResidencyResource resource = backend.GetResidencyResource(buffer);
-        QueueCompletion completion = backend.EnqueueMakeResident(queue, [resource]);
-        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(2)));
-        backend.Evict(device, [resource]);
         CalibratedTimestampInfo timestamps = backend.CalibrateTimestamps(queue);
         Assert.True(timestamps.CpuCounter > 0);
         Assert.True(timestamps.CpuFrequency > 0);
@@ -311,38 +306,59 @@ public sealed class VulkanCoreFeatureTests
     }
 
     [Fact]
-    public void External_buffer_memory_exports_imports_and_shares_bytes()
+    public void External_memory_is_heap_only_and_placed_buffers_share_bytes()
     {
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        using Device device = backend.CreateDevice(new DeviceDesc(
+        DeviceDesc deviceDescription = new(
             default,
             queues,
-            requiredFeatures: DeviceFeatures.ExternalResources));
+            requiredFeatures: DeviceFeatures.ExternalResources);
+        using Device device = backend.CreateDevice(deviceDescription);
+        using Device importedDevice = backend.CreateDevice(deviceDescription);
         BufferDesc sharedDescription = new(
             256,
             BufferUsages.CopySource | BufferUsages.CopyDestination | BufferUsages.Shareable);
-        using Buffer original = backend.CreateBuffer(device, sharedDescription);
-        using ExternalHandle handle = backend.ExportBuffer(
-            original,
-            ExternalHandleType.OpaqueWin32);
-        using Buffer imported = backend.ImportBuffer(
+        Assert.True(backend.TryGetCapability(device, out ExternalResources? external));
+        Assert.NotNull(external);
+        Assert.False(external.SupportsBufferImport(ExternalHandleType.OpaqueWin32));
+        Assert.False(external.SupportsBufferExport(ExternalHandleType.OpaqueWin32));
+        Assert.False(external.SupportsTextureImport(ExternalHandleType.OpaqueWin32));
+        Assert.False(external.SupportsTextureExport(ExternalHandleType.OpaqueWin32));
+        Assert.True(external.SupportsHeapImport(ExternalHandleType.OpaqueWin32));
+        Assert.True(external.SupportsHeapExport(ExternalHandleType.OpaqueWin32));
+
+        MemoryRequirements requirements = backend.GetBufferMemoryRequirements(
             device,
-            handle,
-            sharedDescription,
-            new ImportedResourceState(
-                PipelineSync.None,
-                ResourceAccess.NoAccess,
-                null,
-                QueueType.Graphics));
+            sharedDescription);
+        ulong heapSize = Math.Max(requirements.Size, requirements.Alignment);
+        HeapDesc heapDescription = new(
+            heapSize,
+            requirements.Alignment,
+            MemoryType.DeviceLocal,
+            HeapFlags.Buffers | HeapFlags.Shareable);
+        using Heap originalHeap = backend.CreateHeap(device, heapDescription);
+        using Buffer original = backend.CreatePlacedBuffer(
+            device,
+            originalHeap,
+            0,
+            sharedDescription);
+        Assert.Throws<NotSupportedException>(() => backend.ExportBuffer(
+            original,
+            ExternalHandleType.OpaqueWin32));
+        using ExternalHandle handle = backend.ExportHeap(
+            originalHeap,
+            ExternalHandleType.OpaqueWin32);
+        using Heap importedHeap = backend.ImportHeap(importedDevice, handle, heapDescription);
+        using Buffer imported = backend.CreatePlacedBuffer(
+            importedDevice,
+            importedHeap,
+            0,
+            sharedDescription);
         using Buffer upload = backend.CreateBuffer(
             device,
             new BufferDesc(256, BufferUsages.CopySource),
             MemoryType.Upload);
-        using Buffer readback = backend.CreateBuffer(
-            device,
-            new BufferDesc(256, BufferUsages.CopyDestination),
-            MemoryType.Readback);
         using (MappedBuffer mapped = backend.Map(upload, MapType.Write, BufferRange.Whole))
         {
             mapped.Bytes.Fill(0xA7);
@@ -354,15 +370,27 @@ public sealed class VulkanCoreFeatureTests
             new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(context);
         backend.CopyBuffer(context, new BufferCopy(upload, 0, original, 0, 256));
-        backend.Barrier(context, new MemoryBarrier(
-            PipelineSync.Copy,
-            PipelineSync.Copy,
-            ResourceAccess.CopyDestination,
-            ResourceAccess.CopySource));
-        backend.CopyBuffer(context, new BufferCopy(imported, 0, readback, 0, 256));
         using RecordedCommands commands = backend.End(context);
         QueueCompletion completion = backend.Submit(queue, new QueueSubmitDesc([], [], [commands], [], []));
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(2)));
+
+        using Buffer readback = backend.CreateBuffer(
+            importedDevice,
+            new BufferDesc(256, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        Queue importedQueue = backend.GetQueue(importedDevice, QueueType.Graphics);
+        using CommandContext importedContext = backend.CreateCommandContext(
+            importedDevice,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        backend.Begin(importedContext);
+        backend.CopyBuffer(importedContext, new BufferCopy(imported, 0, readback, 0, 256));
+        using RecordedCommands importedCommands = backend.End(importedContext);
+        QueueCompletion importedCompletion = backend.Submit(
+            importedQueue,
+            new QueueSubmitDesc([], [], [importedCommands], [], []));
+        Assert.Equal(
+            WaitStatus.Completed,
+            backend.WaitCpu(importedCompletion, TimeSpan.FromSeconds(2)));
         using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
         result.Invalidate(result.Range);
         Assert.All(result.Bytes.ToArray(), static value => Assert.Equal(0xA7, value));

@@ -82,15 +82,16 @@ internal sealed unsafe partial class VulkanBackend
             externalHandleTypes: (desc.Flags & HeapFlags.Shareable) != 0
                 ? ExternalMemoryHandleTypeFlags.OpaqueWin32Bit
                 : ExternalMemoryHandleTypeFlags.None);
+        VulkanHeap? heap = null;
         try
         {
-            var heap = new VulkanHeap(nativeDevice, memory, desc);
-            nativeDevice.RegisterChild(heap);
-            return heap;
+            heap = new VulkanHeap(nativeDevice, memory, desc);
+            return RegisterChildOrDispose(nativeDevice, heap);
         }
         catch
         {
-            memory.Release();
+            if (heap is null)
+                memory.Release();
             throw;
         }
     }
@@ -104,6 +105,7 @@ internal sealed unsafe partial class VulkanBackend
         ValidateBufferDescription(desc, memoryType);
         VkBuffer native = CreateNativeBuffer(nativeDevice, desc);
         VulkanMemoryBlock? memory = null;
+        VulkanBuffer? buffer = null;
         try
         {
             Silk.NET.Vulkan.MemoryRequirements requirements;
@@ -116,10 +118,10 @@ internal sealed unsafe partial class VulkanBackend
                 externalHandleTypes: (desc.Usages & BufferUsages.Shareable) != 0
                     ? ExternalMemoryHandleTypeFlags.OpaqueWin32Bit
                     : ExternalMemoryHandleTypeFlags.None);
-            ThrowIfFailed(
+            nativeDevice.ThrowIfDeviceCallFailed(
                 Api.BindBufferMemory(nativeDevice.Native, native, memory.Native, 0),
                 "vkBindBufferMemory");
-            var buffer = new VulkanBuffer(
+            buffer = new VulkanBuffer(
                 nativeDevice,
                 native,
                 memory,
@@ -128,13 +130,15 @@ internal sealed unsafe partial class VulkanBackend
                 memoryType,
                 allocationOffset: 0,
                 allocationSize: requirements.Size);
-            nativeDevice.RegisterChild(buffer);
-            return buffer;
+            return RegisterChildOrDispose(nativeDevice, buffer);
         }
         catch
         {
-            Api.DestroyBuffer(nativeDevice.Native, native, null);
-            memory?.Release();
+            if (buffer is null)
+            {
+                Api.DestroyBuffer(nativeDevice.Native, native, null);
+                memory?.Release();
+            }
             throw;
         }
     }
@@ -148,16 +152,23 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanHeap nativeHeap = RequireHeap(nativeDevice, heap, nameof(heap));
         ValidateBufferDescription(desc, nativeHeap.Info.MemoryType);
+        bool shareable = (desc.Usages & BufferUsages.Shareable) != 0;
+        ValidatePlacedShareability(nativeHeap, shareable);
+        if (shareable)
+            ValidateExternalBufferPlacement(nativeDevice, desc);
         VkBuffer native = CreateNativeBuffer(nativeDevice, desc);
+        VulkanBuffer? buffer = null;
         try
         {
-            Silk.NET.Vulkan.MemoryRequirements requirements;
-            Api.GetBufferMemoryRequirements(nativeDevice.Native, native, &requirements);
+            Silk.NET.Vulkan.MemoryRequirements requirements = GetBufferMemoryRequirements(
+                nativeDevice,
+                native,
+                rejectDedicated: shareable);
             ValidatePlacedRange(nativeHeap, offset, requirements);
-            ThrowIfFailed(
+            nativeDevice.ThrowIfDeviceCallFailed(
                 Api.BindBufferMemory(nativeDevice.Native, native, nativeHeap.Memory.Native, offset),
                 "vkBindBufferMemory(placed)");
-            var buffer = new VulkanBuffer(
+            buffer = new VulkanBuffer(
                 nativeDevice,
                 native,
                 ownedMemory: null,
@@ -166,12 +177,12 @@ internal sealed unsafe partial class VulkanBackend
                 nativeHeap.Info.MemoryType,
                 offset,
                 requirements.Size);
-            nativeDevice.RegisterChild(buffer);
-            return buffer;
+            return RegisterChildOrDispose(nativeDevice, buffer);
         }
         catch
         {
-            Api.DestroyBuffer(nativeDevice.Native, native, null);
+            if (buffer is null)
+                Api.DestroyBuffer(nativeDevice.Native, native, null);
             throw;
         }
     }
@@ -182,6 +193,7 @@ internal sealed unsafe partial class VulkanBackend
         ValidateTextureDescription(desc);
         VkImage native = CreateNativeImage(nativeDevice, desc, aliasable: false);
         VulkanMemoryBlock? memory = null;
+        VulkanTexture? texture = null;
         try
         {
             Silk.NET.Vulkan.MemoryRequirements requirements;
@@ -194,10 +206,10 @@ internal sealed unsafe partial class VulkanBackend
                 externalHandleTypes: (desc.Usages & TextureUsages.Shareable) != 0
                     ? ExternalMemoryHandleTypeFlags.OpaqueWin32Bit
                     : ExternalMemoryHandleTypeFlags.None);
-            ThrowIfFailed(
+            nativeDevice.ThrowIfDeviceCallFailed(
                 Api.BindImageMemory(nativeDevice.Native, native, memory.Native, 0),
                 "vkBindImageMemory");
-            var texture = new VulkanTexture(
+            texture = new VulkanTexture(
                 nativeDevice,
                 native,
                 memory,
@@ -206,13 +218,15 @@ internal sealed unsafe partial class VulkanBackend
                 allocationOffset: 0,
                 allocationSize: requirements.Size,
                 ownsImage: true);
-            nativeDevice.RegisterChild(texture);
-            return texture;
+            return RegisterChildOrDispose(nativeDevice, texture);
         }
         catch
         {
-            Api.DestroyImage(nativeDevice.Native, native, null);
-            memory?.Release();
+            if (texture is null)
+            {
+                Api.DestroyImage(nativeDevice.Native, native, null);
+                memory?.Release();
+            }
             throw;
         }
     }
@@ -228,16 +242,23 @@ internal sealed unsafe partial class VulkanBackend
         if (nativeHeap.Info.MemoryType != MemoryType.DeviceLocal)
             throw new ArgumentException("Placed Textures require a DeviceLocal Heap.", nameof(heap));
         ValidateTextureDescription(desc);
+        bool shareable = (desc.Usages & TextureUsages.Shareable) != 0;
+        ValidatePlacedShareability(nativeHeap, shareable);
+        if (shareable)
+            ValidateExternalImagePlacement(nativeDevice, desc);
         VkImage native = CreateNativeImage(nativeDevice, desc, aliasable: true);
+        VulkanTexture? texture = null;
         try
         {
-            Silk.NET.Vulkan.MemoryRequirements requirements;
-            Api.GetImageMemoryRequirements(nativeDevice.Native, native, &requirements);
+            Silk.NET.Vulkan.MemoryRequirements requirements = GetImageMemoryRequirements(
+                nativeDevice,
+                native,
+                rejectDedicated: shareable);
             ValidatePlacedRange(nativeHeap, offset, requirements);
-            ThrowIfFailed(
+            nativeDevice.ThrowIfDeviceCallFailed(
                 Api.BindImageMemory(nativeDevice.Native, native, nativeHeap.Memory.Native, offset),
                 "vkBindImageMemory(placed)");
-            var texture = new VulkanTexture(
+            texture = new VulkanTexture(
                 nativeDevice,
                 native,
                 ownedMemory: null,
@@ -246,12 +267,12 @@ internal sealed unsafe partial class VulkanBackend
                 offset,
                 requirements.Size,
                 ownsImage: true);
-            nativeDevice.RegisterChild(texture);
-            return texture;
+            return RegisterChildOrDispose(nativeDevice, texture);
         }
         catch
         {
-            Api.DestroyImage(nativeDevice.Native, native, null);
+            if (texture is null)
+                Api.DestroyImage(nativeDevice.Native, native, null);
             throw;
         }
     }
@@ -271,8 +292,7 @@ internal sealed unsafe partial class VulkanBackend
         _ = RequireBuffer(nativeDevice, desc.Buffer, nameof(desc));
         _ = desc.Range.Resolve(desc.Buffer.Info.Size);
         var view = new VulkanBufferCbv(nativeDevice, desc);
-        nativeDevice.RegisterChild(view);
-        return view;
+        return RegisterChildOrDispose(nativeDevice, view);
     }
 
     internal BufferSrv CreateBufferSrv(RhiDevice device, in BufferSrvDesc desc) =>
@@ -299,11 +319,10 @@ internal sealed unsafe partial class VulkanBackend
         VkBufferView native = desc.Format.HasValue
             ? CreateNativeBufferView(nativeDevice, (VulkanBuffer)desc.Buffer, desc.Range, desc.Format.Value)
             : default;
+        VulkanBufferUav? view = null;
         try
         {
-            var view = new VulkanBufferUav(nativeDevice, desc, native);
-            nativeDevice.RegisterChild(view);
-            return view;
+            view = new VulkanBufferUav(nativeDevice, desc, native);
         }
         catch
         {
@@ -311,6 +330,7 @@ internal sealed unsafe partial class VulkanBackend
                 Api.DestroyBufferView(nativeDevice.Native, native, null);
             throw;
         }
+        return RegisterChildOrDispose(nativeDevice, view);
     }
 
     internal TextureSrv CreateTextureSrv(RhiDevice device, in TextureSrvDesc desc) =>
@@ -393,20 +413,20 @@ internal sealed unsafe partial class VulkanBackend
         if (customBorder.SType != 0)
             createInfo.PNext = &customBorder;
         VkSampler native = default;
-        ThrowIfFailed(
+        nativeDevice.ThrowIfDeviceCallFailed(
             Api.CreateSampler(nativeDevice.Native, &createInfo, null, &native),
             "vkCreateSampler");
+        VulkanSampler? sampler = null;
         try
         {
-            var sampler = new VulkanSampler(nativeDevice, desc, native);
-            nativeDevice.RegisterChild(sampler);
-            return sampler;
+            sampler = new VulkanSampler(nativeDevice, desc, native);
         }
         catch
         {
             Api.DestroySampler(nativeDevice.Native, native, null);
             throw;
         }
+        return RegisterChildOrDispose(nativeDevice, sampler);
     }
 
     private TView CreateBufferView<TView, TDescription>(
@@ -425,11 +445,10 @@ internal sealed unsafe partial class VulkanBackend
         VkBufferView native = format.HasValue
             ? CreateNativeBufferView(nativeDevice, nativeBuffer, range, format.Value)
             : default;
+        TView view;
         try
         {
-            TView view = factory(nativeDevice, description, native);
-            nativeDevice.RegisterChild(view);
-            return view;
+            view = factory(nativeDevice, description, native);
         }
         catch
         {
@@ -437,6 +456,7 @@ internal sealed unsafe partial class VulkanBackend
                 Api.DestroyBufferView(nativeDevice.Native, native, null);
             throw;
         }
+        return RegisterChildOrDispose(nativeDevice, view);
     }
 
     private TView CreateTextureView<TView, TDescription>(
@@ -467,20 +487,20 @@ internal sealed unsafe partial class VulkanBackend
             SubresourceRange = ToNative(range),
         };
         VkImageView native = default;
-        ThrowIfFailed(
+        nativeDevice.ThrowIfDeviceCallFailed(
             Api.CreateImageView(nativeDevice.Native, &createInfo, null, &native),
             "vkCreateImageView");
+        TView view;
         try
         {
-            TView view = factory(nativeDevice, description, native);
-            nativeDevice.RegisterChild(view);
-            return view;
+            view = factory(nativeDevice, description, native);
         }
         catch
         {
             Api.DestroyImageView(nativeDevice.Native, native, null);
             throw;
         }
+        return RegisterChildOrDispose(nativeDevice, view);
     }
 
     private VkBuffer CreateNativeBuffer(VulkanDevice device, in BufferDesc desc)
@@ -494,7 +514,7 @@ internal sealed unsafe partial class VulkanBackend
         if ((desc.Usages & BufferUsages.Shareable) != 0)
             createInfo.PNext = &external;
         VkBuffer native = default;
-        ThrowIfFailed(
+        device.ThrowIfDeviceCallFailed(
             Api.CreateBuffer(device.Native, &createInfo, null, &native),
             "vkCreateBuffer");
         return native;
@@ -574,7 +594,7 @@ internal sealed unsafe partial class VulkanBackend
                 InitialLayout = ImageLayout.Undefined,
             };
             VkImage native = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 Api.CreateImage(device.Native, &createInfo, null, &native),
                 "vkCreateImage");
             return native;
@@ -597,7 +617,7 @@ internal sealed unsafe partial class VulkanBackend
             Range = resolved.Size,
         };
         VkBufferView native = default;
-        ThrowIfFailed(
+        device.ThrowIfDeviceCallFailed(
             Api.CreateBufferView(device.Native, &createInfo, null, &native),
             "vkCreateBufferView");
         return native;
@@ -1160,6 +1180,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal VkImage Native => _native;
         internal VulkanSparseState? SparseState { get; init; }
+        internal VulkanImageState? SwapchainState { get; set; }
         internal VulkanMemoryBlock Memory => _ownedMemory ?? _heap?.Memory
             ?? throw new InvalidOperationException("The sparse or swapchain Texture has no bound memory.");
 
@@ -1252,7 +1273,9 @@ internal sealed unsafe partial class VulkanBackend
             Result result = flush
                 ? device.Backend.Api.FlushMappedMemoryRanges(device.Native, 1, &nativeRange)
                 : device.Backend.Api.InvalidateMappedMemoryRanges(device.Native, 1, &nativeRange);
-            ThrowIfFailed(result, flush ? "vkFlushMappedMemoryRanges" : "vkInvalidateMappedMemoryRanges");
+            device.ThrowIfDeviceCallFailed(
+                result,
+                flush ? "vkFlushMappedMemoryRanges" : "vkInvalidateMappedMemoryRanges");
         }
     }
 
@@ -1307,7 +1330,163 @@ internal sealed unsafe partial class VulkanBackend
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyBufferView(_device.Native, _native, null); _native = default; _counter?.ReleaseNative(); _resource.ReleaseNative(); }
     }
 
-    private sealed class VulkanTextureSrv : TextureSrv, IVulkanRetained
+    private interface IVulkanTextureView : IVulkanRetained
+    {
+        VulkanTexture Texture { get; }
+    }
+
+    private static void ValidatePlacedShareability(
+        VulkanHeap heap,
+        bool resourceShareable)
+    {
+        if (resourceShareable && (heap.Info.Flags & HeapFlags.Shareable) == 0)
+        {
+            throw new ArgumentException(
+                "A Shareable placed resource requires a Shareable Heap.",
+                nameof(heap));
+        }
+    }
+
+    private static void ValidateExternalBufferPlacement(
+        VulkanDevice device,
+        in BufferDesc desc)
+    {
+        BufferCreateInfo create = CreateBufferInfo(device, desc);
+        PhysicalDeviceExternalBufferInfo info = new()
+        {
+            SType = StructureType.PhysicalDeviceExternalBufferInfo,
+            Flags = create.Flags,
+            Usage = create.Usage,
+            HandleType = ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
+        };
+        ExternalBufferProperties properties = new()
+        {
+            SType = StructureType.ExternalBufferProperties,
+        };
+        device.Backend.Api.GetPhysicalDeviceExternalBufferProperties(
+            device.PhysicalDevice,
+            &info,
+            &properties);
+        ValidateExternalMemoryProperties(properties.ExternalMemoryProperties);
+    }
+
+    private static void ValidateExternalImagePlacement(
+        VulkanDevice device,
+        in TextureDesc desc)
+    {
+        PhysicalDeviceExternalImageFormatInfo external = new()
+        {
+            SType = StructureType.PhysicalDeviceExternalImageFormatInfo,
+            HandleType = ExternalMemoryHandleTypeFlags.OpaqueWin32Bit,
+        };
+        ImageCreateFlags flags = ImageCreateFlags.CreateAliasBit;
+        if (!desc.PermittedViewFormats.IsEmpty)
+            flags |= ImageCreateFlags.CreateMutableFormatBit;
+        if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6)
+            flags |= ImageCreateFlags.CreateCubeCompatibleBit;
+        PhysicalDeviceImageFormatInfo2 info = new()
+        {
+            SType = StructureType.PhysicalDeviceImageFormatInfo2,
+            PNext = &external,
+            Format = VulkanFormats.ToNative(desc.Format),
+            Type = ToNative(desc.Dimension),
+            Tiling = ImageTiling.Optimal,
+            Usage = ToNative(desc.Usages),
+            Flags = flags,
+        };
+        ExternalImageFormatProperties externalProperties = new()
+        {
+            SType = StructureType.ExternalImageFormatProperties,
+        };
+        ImageFormatProperties2 properties = new()
+        {
+            SType = StructureType.ImageFormatProperties2,
+            PNext = &externalProperties,
+        };
+        Result result = device.Backend.Api.GetPhysicalDeviceImageFormatProperties2(
+            device.PhysicalDevice,
+            &info,
+            &properties);
+        if (result == Result.ErrorFormatNotSupported)
+            throw new NotSupportedException("The Vulkan image description does not support OpaqueWin32 external memory.");
+        device.ThrowIfDeviceCallFailed(
+            result,
+            "vkGetPhysicalDeviceImageFormatProperties2(external image)");
+        ValidateExternalMemoryProperties(externalProperties.ExternalMemoryProperties);
+    }
+
+    private static void ValidateExternalMemoryProperties(
+        in ExternalMemoryProperties properties)
+    {
+        if ((properties.CompatibleHandleTypes &
+             ExternalMemoryHandleTypeFlags.OpaqueWin32Bit) == 0)
+            throw new NotSupportedException("The Vulkan resource is incompatible with OpaqueWin32 external memory.");
+        if ((properties.ExternalMemoryFeatures &
+             ExternalMemoryFeatureFlags.DedicatedOnlyBit) != 0)
+            throw new NotSupportedException("The Vulkan resource requires a dedicated external-memory allocation and cannot be placed in a Heap.");
+        if ((properties.ExternalMemoryFeatures &
+             (ExternalMemoryFeatureFlags.ImportableBit |
+              ExternalMemoryFeatureFlags.ExportableBit)) == 0)
+            throw new NotSupportedException("The Vulkan resource cannot use OpaqueWin32 external memory.");
+    }
+
+    private static Silk.NET.Vulkan.MemoryRequirements GetBufferMemoryRequirements(
+        VulkanDevice device,
+        VkBuffer buffer,
+        bool rejectDedicated)
+    {
+        MemoryDedicatedRequirements dedicated = new()
+        {
+            SType = StructureType.MemoryDedicatedRequirements,
+        };
+        MemoryRequirements2 requirements = new()
+        {
+            SType = StructureType.MemoryRequirements2,
+            PNext = rejectDedicated ? &dedicated : null,
+        };
+        BufferMemoryRequirementsInfo2 info = new()
+        {
+            SType = StructureType.BufferMemoryRequirementsInfo2,
+            Buffer = buffer,
+        };
+        device.Backend.Api.GetBufferMemoryRequirements2(
+            device.Native,
+            &info,
+            &requirements);
+        if (rejectDedicated && dedicated.RequiresDedicatedAllocation)
+            throw new NotSupportedException("The Vulkan Buffer requires a dedicated external-memory allocation and cannot be placed in a Heap.");
+        return requirements.MemoryRequirements;
+    }
+
+    private static Silk.NET.Vulkan.MemoryRequirements GetImageMemoryRequirements(
+        VulkanDevice device,
+        VkImage image,
+        bool rejectDedicated)
+    {
+        MemoryDedicatedRequirements dedicated = new()
+        {
+            SType = StructureType.MemoryDedicatedRequirements,
+        };
+        MemoryRequirements2 requirements = new()
+        {
+            SType = StructureType.MemoryRequirements2,
+            PNext = rejectDedicated ? &dedicated : null,
+        };
+        ImageMemoryRequirementsInfo2 info = new()
+        {
+            SType = StructureType.ImageMemoryRequirementsInfo2,
+            Image = image,
+        };
+        device.Backend.Api.GetImageMemoryRequirements2(
+            device.Native,
+            &info,
+            &requirements);
+        if (rejectDedicated && dedicated.RequiresDedicatedAllocation)
+            throw new NotSupportedException("The Vulkan Texture requires a dedicated external-memory allocation and cannot be placed in a Heap.");
+        return requirements.MemoryRequirements;
+    }
+
+    private sealed class VulkanTextureSrv : TextureSrv, IVulkanTextureView
     {
         private readonly VulkanDevice _device;
         private readonly VulkanTexture _resource;
@@ -1315,13 +1494,14 @@ internal sealed unsafe partial class VulkanBackend
         private VkImageView _native;
         internal VulkanTextureSrv(VulkanDevice device, in TextureSrvDesc desc, VkImageView native) : base(device, desc) { _device = device; _resource = (VulkanTexture)desc.Texture; _resource.RetainNative(); _native = native; _lifetime = new VulkanLifetime(DestroyNative); }
         internal VkImageView Native => _native;
+        VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
         internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
-    private sealed class VulkanTextureUav : TextureUav, IVulkanRetained
+    private sealed class VulkanTextureUav : TextureUav, IVulkanTextureView
     {
         private readonly VulkanDevice _device;
         private readonly VulkanTexture _resource;
@@ -1329,13 +1509,14 @@ internal sealed unsafe partial class VulkanBackend
         private VkImageView _native;
         internal VulkanTextureUav(VulkanDevice device, in TextureUavDesc desc, VkImageView native) : base(device, desc) { _device = device; _resource = (VulkanTexture)desc.Texture; _resource.RetainNative(); _native = native; _lifetime = new VulkanLifetime(DestroyNative); }
         internal VkImageView Native => _native;
+        VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
         internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
-    private sealed class VulkanColorAttachmentView : ColorAttachmentView, IVulkanRetained
+    private sealed class VulkanColorAttachmentView : ColorAttachmentView, IVulkanTextureView
     {
         private readonly VulkanDevice _device;
         private readonly VulkanTexture _resource;
@@ -1343,13 +1524,14 @@ internal sealed unsafe partial class VulkanBackend
         private VkImageView _native;
         internal VulkanColorAttachmentView(VulkanDevice device, in ColorAttachmentViewDesc desc, VkImageView native) : base(device, desc) { _device = device; _resource = (VulkanTexture)desc.Texture; _resource.RetainNative(); _native = native; _lifetime = new VulkanLifetime(DestroyNative); }
         internal VkImageView Native => _native;
+        VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
         internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
-    private sealed class VulkanDepthStencilView : DepthStencilView, IVulkanRetained
+    private sealed class VulkanDepthStencilView : DepthStencilView, IVulkanTextureView
     {
         private readonly VulkanDevice _device;
         private readonly VulkanTexture _resource;
@@ -1357,6 +1539,7 @@ internal sealed unsafe partial class VulkanBackend
         private VkImageView _native;
         internal VulkanDepthStencilView(VulkanDevice device, in DepthStencilViewDesc desc, VkImageView native) : base(device, desc) { _device = device; _resource = (VulkanTexture)desc.Texture; _resource.RetainNative(); _native = native; _lifetime = new VulkanLifetime(DestroyNative); }
         internal VkImageView Native => _native;
+        VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
         internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
@@ -1448,16 +1631,34 @@ internal sealed unsafe partial class VulkanBackend
                 MemoryTypeIndex = typeIndex,
             };
             VkDeviceMemory native = default;
-            ThrowIfFailed(
-                Backend.Api.AllocateMemory(Native, &allocateInfo, null, &native),
-                "vkAllocateMemory");
+#if SOMEENGINE_TESTING
+            Backend.FaultHooks.Before(VulkanCallPoint.AllocateMemory);
+            bool overridden = Backend.FaultHooks.TryOverride(
+                VulkanCallPoint.AllocateMemory,
+                out Result injectedResult);
+#endif
+            Result allocationResult =
+#if SOMEENGINE_TESTING
+                overridden
+                    ? injectedResult
+                    :
+#endif
+                Backend.Api.AllocateMemory(
+                Native,
+                &allocateInfo,
+                null,
+                &native);
+#if SOMEENGINE_TESTING
+            Backend.FaultHooks.After(VulkanCallPoint.AllocateMemory);
+#endif
+            ThrowIfDeviceCallFailed(allocationResult, "vkAllocateMemory");
             nint mapped = 0;
             try
             {
                 if ((properties & MemoryPropertyFlags.HostVisibleBit) != 0)
                 {
                     void* pointer = null;
-                    ThrowIfFailed(
+                    ThrowIfDeviceCallFailed(
                         Backend.Api.MapMemory(Native, native, 0, size, 0, &pointer),
                         "vkMapMemory");
                     mapped = (nint)pointer;
