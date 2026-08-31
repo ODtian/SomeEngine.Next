@@ -27,8 +27,8 @@ public enum RenderMeshInstanceUpdateMode : byte
 public sealed class RenderMeshInstanceSet : IDisposable
 {
     private readonly object _gate = new();
-    private AssetHandle<Mesh> _mesh;
-    private ReadOnlyCollection<AssetHandle<Material>> _materials;
+    private Mesh _mesh;
+    private ReadOnlyCollection<Material> _materials;
     private IRenderInstanceSource _source;
     private float _boundsExpansion;
     private RenderMeshInstanceUpdateMode _updateMode;
@@ -41,8 +41,8 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// source, not a renderer-recognized procedural source kind.
     /// </summary>
     internal RenderMeshInstanceSet(
-        AssetHandle<Mesh> mesh,
-        IReadOnlyList<AssetHandle<Material>> materials,
+        Mesh mesh,
+        IReadOnlyList<Material> materials,
         int instanceCount,
         RenderMeshInstanceWriter writer,
         float boundsExpansion = 0.0f,
@@ -62,8 +62,8 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// sources may be shared by tools, streaming systems, or several scene objects.
     /// </summary>
     internal RenderMeshInstanceSet(
-        AssetHandle<Mesh> mesh,
-        IReadOnlyList<AssetHandle<Material>> materials,
+        Mesh mesh,
+        IReadOnlyList<Material> materials,
         IRenderInstanceSource source,
         float boundsExpansion = 0.0f,
         RenderMeshInstanceUpdateMode updateMode = RenderMeshInstanceUpdateMode.OnDemand,
@@ -81,8 +81,8 @@ public sealed class RenderMeshInstanceSet : IDisposable
 
     /// <summary>Creates engine-owned editable memory for the built-in transform contract.</summary>
     public static RenderMeshInstanceSet CreateBuffered(
-        AssetHandle<Mesh> mesh,
-        IReadOnlyList<AssetHandle<Material>> materials,
+        Mesh mesh,
+        IReadOnlyList<Material> materials,
         int capacity = 0,
         float boundsExpansion = 0.0f,
         RenderMeshInstanceUpdateMode updateMode = RenderMeshInstanceUpdateMode.OnDemand) =>
@@ -100,8 +100,8 @@ public sealed class RenderMeshInstanceSet : IDisposable
     /// material or pipeline-neutral properties contributed by the caller.
     /// </summary>
     public static RenderMeshInstanceSet CreateBuffered(
-        AssetHandle<Mesh> mesh,
-        IReadOnlyList<AssetHandle<Material>> materials,
+        Mesh mesh,
+        IReadOnlyList<Material> materials,
         RenderInstancePropertyLayout layout,
         int capacity = 0,
         float boundsExpansion = 0.0f,
@@ -125,9 +125,9 @@ public sealed class RenderMeshInstanceSet : IDisposable
         }
     }
 
-    public AssetHandle<Mesh> Mesh => Read(static set => set._mesh);
+    public Mesh Mesh => Read(static set => set._mesh);
 
-    public IReadOnlyList<AssetHandle<Material>> Materials =>
+    public IReadOnlyList<Material> Materials =>
         Read(static set => set._materials);
 
     internal IRenderInstanceSource Source => Read(static set => set._source);
@@ -151,7 +151,7 @@ public sealed class RenderMeshInstanceSet : IDisposable
 
     public ulong DataRevision => Read(static set => set._source.Revision);
 
-    public void SetMesh(AssetHandle<Mesh> mesh)
+    public void SetMesh(Mesh mesh)
     {
         ValidateMesh(mesh);
         lock (_gate)
@@ -164,9 +164,9 @@ public sealed class RenderMeshInstanceSet : IDisposable
         }
     }
 
-    public void SetMaterials(IReadOnlyList<AssetHandle<Material>> materials)
+    public void SetMaterials(IReadOnlyList<Material> materials)
     {
-        ReadOnlyCollection<AssetHandle<Material>> snapshot = SnapshotMaterials(materials);
+        ReadOnlyCollection<Material> snapshot = SnapshotMaterials(materials);
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -379,25 +379,24 @@ public sealed class RenderMeshInstanceSet : IDisposable
         return source;
     }
 
-    private static void ValidateMesh(AssetHandle<Mesh> mesh)
+    private static void ValidateMesh(Mesh mesh)
     {
-        if (!mesh.IsValid)
-            throw new ArgumentException("An instanced-mesh set requires a valid mesh.", nameof(mesh));
+        ArgumentNullException.ThrowIfNull(mesh);
     }
 
-    private static ReadOnlyCollection<AssetHandle<Material>> SnapshotMaterials(
-        IReadOnlyList<AssetHandle<Material>> materials)
+    private static ReadOnlyCollection<Material> SnapshotMaterials(
+        IReadOnlyList<Material> materials)
     {
         ArgumentNullException.ThrowIfNull(materials);
-        AssetHandle<Material>[] values = [.. materials];
+        Material[] values = [.. materials];
         if (values.Length == 0)
             throw new ArgumentException("An instanced-mesh set requires at least one material.", nameof(materials));
         for (int index = 0; index < values.Length; index++)
         {
-            if (!values[index].IsValid)
+            if (values[index] is null)
             {
                 throw new ArgumentException(
-                    $"Instanced-mesh material {index} is invalid.",
+                    $"Instanced-mesh material {index} is null.",
                     nameof(materials));
             }
         }
@@ -417,8 +416,8 @@ public sealed class RenderMeshInstanceSet : IDisposable
 
 /// <summary>Immutable shared draw state of one instanced-mesh resource.</summary>
 internal readonly record struct RenderMeshInstanceSharedSnapshot(
-    AssetHandle<Mesh> Mesh,
-    IReadOnlyList<AssetHandle<Material>> Materials,
+    Mesh Mesh,
+    IReadOnlyList<Material> Materials,
     float BoundsExpansion,
     RenderMeshInstanceUpdateMode UpdateMode,
     ulong Revision);
@@ -429,8 +428,8 @@ internal sealed class RenderMeshInstanceSnapshot : IDisposable
     private RenderInstanceSourceSnapshot? _source;
 
     internal RenderMeshInstanceSnapshot(
-        AssetHandle<Mesh> mesh,
-        ReadOnlyCollection<AssetHandle<Material>> materials,
+        Mesh mesh,
+        ReadOnlyCollection<Material> materials,
         float boundsExpansion,
         RenderMeshInstanceUpdateMode updateMode,
         ulong revision,
@@ -444,9 +443,9 @@ internal sealed class RenderMeshInstanceSnapshot : IDisposable
         _source = source;
     }
 
-    public AssetHandle<Mesh> Mesh { get; }
+    public Mesh Mesh { get; }
 
-    public IReadOnlyList<AssetHandle<Material>> Materials { get; }
+    public IReadOnlyList<Material> Materials { get; }
 
     public RenderInstancePropertyLayout InstanceLayout => Source.Layout;
 

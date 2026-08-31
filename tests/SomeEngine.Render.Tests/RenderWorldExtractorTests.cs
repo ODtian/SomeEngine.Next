@@ -25,7 +25,7 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(1, 1),
+            MeshAsset(1, 1),
             boundsExpansion: 0.25f,
             position: Vector3.One);
 
@@ -48,7 +48,7 @@ public sealed class RenderWorldExtractorTests
         using var extractionSystems = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(1, 1),
+            MeshAsset(1, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
         using ManualResetEventSlim mutationEntered = new();
@@ -62,7 +62,7 @@ public sealed class RenderWorldExtractorTests
 
         MeshInstance replacement = new()
         {
-            Mesh = new AssetHandle<Mesh>(2, 1),
+            Mesh = MeshAsset(2, 1),
             BoundsExpansion = 3,
         };
         Task mutation = Task.Run(() => mainWorld.Replace(source, replacement));
@@ -92,9 +92,9 @@ public sealed class RenderWorldExtractorTests
         World mainWorld = new();
         RenderWorld renderWorld = new();
         using var extraction = new RenderExtractionSystems(renderWorld);
-        AssetHandle<Mesh> firstOldMesh = new(11, 1);
-        AssetHandle<Mesh> secondOldMesh = new(12, 1);
-        AssetHandle<Material> oldMaterial = new(21, 1);
+        Mesh firstOldMesh = MeshAsset(11, 1);
+        Mesh secondOldMesh = MeshAsset(12, 1);
+        Material oldMaterial = MaterialAsset(21, 1);
         Entity firstSource = AddMeshSource(
             mainWorld,
             firstOldMesh,
@@ -105,7 +105,7 @@ public sealed class RenderWorldExtractorTests
             secondOldMesh,
             boundsExpansion: 2,
             position: new Vector3(2));
-        SetSourceBindings(mainWorld, firstSource, oldMaterial, default, count: 1);
+        SetSourceBindings(mainWorld, firstSource, oldMaterial, default!, count: 1);
         extraction.Extract(mainWorld);
 
         Entity firstMirror = Mirror(renderWorld, firstSource);
@@ -116,15 +116,15 @@ public sealed class RenderWorldExtractorTests
         Move(mainWorld, secondSource, new Vector3(20));
         mainWorld.Replace(
             firstSource,
-            new MeshInstance { Mesh = new AssetHandle<Mesh>(31, 2), BoundsExpansion = 3 });
+            new MeshInstance { Mesh = MeshAsset(31, 2), BoundsExpansion = 3 });
         mainWorld.Replace(
             secondSource,
-            new MeshInstance { Mesh = new AssetHandle<Mesh>(32, 2), BoundsExpansion = 4 });
+            new MeshInstance { Mesh = MeshAsset(32, 2), BoundsExpansion = 4 });
         SetSourceBindings(
             mainWorld,
             firstSource,
-            new AssetHandle<Material>(41, 2),
-            default,
+            MaterialAsset(41, 2),
+            default!,
             count: 1);
 
         int replaceCount = 0;
@@ -144,7 +144,7 @@ public sealed class RenderWorldExtractorTests
         Assert.Equal(secondOldMesh, renderWorld.Read<RenderMesh>(secondMirror).Mesh);
         Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(firstMirror).Position);
         Assert.Equal(new Vector3(2), renderWorld.Read<RenderTransform>(secondMirror).Position);
-        AssertRenderBindings(renderWorld, firstMirror, oldMaterial, default, count: 1);
+        AssertRenderBindings(renderWorld, firstMirror, oldMaterial, default!, count: 1);
         Assert.Equal(47, renderWorld.Read<PipelinePreparedState>(firstMirror).Value);
     }
 
@@ -154,7 +154,7 @@ public sealed class RenderWorldExtractorTests
         World mainWorld = new();
         RenderWorld renderWorld = new();
         using var extraction = new RenderExtractionSystems(renderWorld);
-        AssetHandle<Mesh> originalMesh = new(43, 1);
+        Mesh originalMesh = MeshAsset(43, 1);
         Entity source = AddMeshSource(
             mainWorld,
             originalMesh,
@@ -175,7 +175,7 @@ public sealed class RenderWorldExtractorTests
             source,
             new MeshInstance
             {
-                Mesh = new AssetHandle<Mesh>(44, 2),
+                Mesh = MeshAsset(44, 2),
                 BoundsExpansion = 3,
             });
         mainWorld.Replace(
@@ -206,18 +206,18 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity firstSource = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(51, 1),
+            MeshAsset(51, 1),
             boundsExpansion: 1,
             position: Vector3.Zero);
         Entity secondSource = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(52, 1),
+            MeshAsset(52, 1),
             boundsExpansion: 2,
             position: Vector3.One);
         extraction.Extract(mainWorld);
 
-        AssetHandle<Mesh> firstReplacement = new(61, 2);
-        AssetHandle<Mesh> secondReplacement = new(62, 2);
+        Mesh firstReplacement = MeshAsset(61, 2);
+        Mesh secondReplacement = MeshAsset(62, 2);
         mainWorld.Replace(
             firstSource,
             new MeshInstance { Mesh = firstReplacement, BoundsExpansion = 3 });
@@ -268,12 +268,12 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity firstSource = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(1, 1),
+            MeshAsset(1, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
         Entity secondSource = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(2, 1),
+            MeshAsset(2, 1),
             boundsExpansion: 0,
             position: Vector3.One);
 
@@ -302,7 +302,7 @@ public sealed class RenderWorldExtractorTests
         QueryHandle sourceQuery = mainWorld.Query(SourceExtractionDefinition());
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(3, 1),
+            MeshAsset(3, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
 
@@ -320,7 +320,7 @@ public sealed class RenderWorldExtractorTests
         World mainWorld = new();
         RenderWorld renderWorld = new();
         using var extraction = new RenderExtractionSystems(renderWorld);
-        AssetHandle<Mesh> mesh = new(17, 3);
+        Mesh mesh = MeshAsset(17, 3);
         var sourceTransform = new TransformQvvs(
             new Vector3(3, 2, 1),
             Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
@@ -355,12 +355,12 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(5, 1),
+            MeshAsset(5, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
-        AssetHandle<Material> first = new(11, 1);
-        AssetHandle<Material> second = new(12, 1);
-        AssetHandle<Material> replacement = new(13, 2);
+        Material first = MaterialAsset(11, 1);
+        Material second = MaterialAsset(12, 1);
+        Material replacement = MaterialAsset(13, 2);
         SetSourceBindings(mainWorld, source, first, second, count: 2);
 
         extraction.Extract(mainWorld);
@@ -370,11 +370,11 @@ public sealed class RenderWorldExtractorTests
         Assert.False(renderWorld.HasBuffer<MeshMaterialBinding>(mirror));
         AssertRenderBindings(renderWorld, mirror, first, second, count: 2);
 
-        SetSourceBindings(mainWorld, source, replacement, default, count: 1);
+        SetSourceBindings(mainWorld, source, replacement, default!, count: 1);
         extraction.Extract(mainWorld);
 
         Assert.Equal(mirror, Mirror(renderWorld, source));
-        AssertRenderBindings(renderWorld, mirror, replacement, default, count: 1);
+        AssertRenderBindings(renderWorld, mirror, replacement, default!, count: 1);
 
         mainWorld.RemoveBuffer<MeshMaterialBinding>(source);
         extraction.Extract(mainWorld);
@@ -392,8 +392,8 @@ public sealed class RenderWorldExtractorTests
         RenderWorld referenceRenderWorld = new();
         using var deltaExtraction = new RenderExtractionSystems(deltaRenderWorld);
         using var referenceExtraction = new RenderExtractionSystems(referenceRenderWorld);
-        AssetHandle<Mesh> initialMesh = new(81, 1);
-        AssetHandle<Material> initialMaterial = new(82, 1);
+        Mesh initialMesh = MeshAsset(81, 1);
+        Material initialMaterial = MaterialAsset(82, 1);
         Entity deltaMeshSource = AddMeshSource(
             deltaMainWorld,
             initialMesh,
@@ -408,13 +408,13 @@ public sealed class RenderWorldExtractorTests
             deltaMainWorld,
             deltaMeshSource,
             initialMaterial,
-            default,
+            default!,
             count: 1);
         SetSourceBindings(
             referenceMainWorld,
             referenceMeshSource,
             initialMaterial,
-            default,
+            default!,
             count: 1);
         PointLight initialPoint = new(
             Vector3.One,
@@ -423,7 +423,7 @@ public sealed class RenderWorldExtractorTests
             2,
             0x01u);
         LightCookie initialCookie = new(
-            new AssetHandle<Texture>(83, 1),
+            TextureAsset(83, 1),
             0.5f,
             new Vector4(1, 1, 0, 0),
             Matrix4x4.Identity);
@@ -455,8 +455,8 @@ public sealed class RenderWorldExtractorTests
         deltaExtraction.Extract(deltaMainWorld);
         referenceExtraction.Extract(referenceMainWorld);
 
-        AssetHandle<Mesh> replacementMesh = new(91, 2);
-        AssetHandle<Material> replacementMaterial = new(92, 2);
+        Mesh replacementMesh = MeshAsset(91, 2);
+        Material replacementMaterial = MaterialAsset(92, 2);
         MeshInstance replacementInstance = new()
         {
             Mesh = replacementMesh,
@@ -472,7 +472,7 @@ public sealed class RenderWorldExtractorTests
         };
         LightCookie replacementCookie = initialCookie with
         {
-            Texture = new AssetHandle<Texture>(93, 2),
+            Texture = TextureAsset(93, 2),
             Strength = 0.75f,
             ScaleOffset = new Vector4(0.5f, 0.5f, 0.25f, 0.25f),
             WorldToCookie = Matrix4x4.CreateTranslation(1, 2, 3),
@@ -499,13 +499,13 @@ public sealed class RenderWorldExtractorTests
             deltaMainWorld,
             deltaMeshSource,
             replacementMaterial,
-            default,
+            default!,
             count: 1);
         SetSourceBindings(
             referenceMainWorld,
             referenceMeshSource,
             replacementMaterial,
-            default,
+            default!,
             count: 1);
         deltaMainWorld.Replace(deltaMeshSource, replacementPoint);
         referenceMainWorld.Replace(referenceMeshSource, replacementPoint);
@@ -557,13 +557,13 @@ public sealed class RenderWorldExtractorTests
             deltaRenderWorld,
             deltaMeshMirror,
             replacementMaterial,
-            default,
+            default!,
             count: 1);
         AssertRenderBindings(
             referenceRenderWorld,
             referenceMeshMirror,
             replacementMaterial,
-            default,
+            default!,
             count: 1);
 
         Entity deltaDirectionalMirror = Mirror(deltaRenderWorld, deltaDirectionalSource);
@@ -607,12 +607,12 @@ public sealed class RenderWorldExtractorTests
             4,
             0x08u);
         LightCookie directionalCookie = new(
-            new AssetHandle<Texture>(31, 1),
+            TextureAsset(31, 1),
             0.5f,
             new Vector4(0.5f, 0.5f, 0, 0),
             Matrix4x4.Identity);
         LightCookie spotCookie = new(
-            new AssetHandle<Texture>(32, 1),
+            TextureAsset(32, 1),
             0.75f,
             new Vector4(0.25f, 0.25f, 0.5f, 0),
             Matrix4x4.CreateTranslation(1, 2, 3));
@@ -663,12 +663,12 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(7, 1),
+            MeshAsset(7, 1),
             boundsExpansion: 0.5f,
             position: Vector3.One);
         PointLight point = new(Vector3.One, 10, Vector3.One, 2);
         mainWorld.Add(source, point);
-        SetSourceBindings(mainWorld, source, new AssetHandle<Material>(21, 1), default, count: 1);
+        SetSourceBindings(mainWorld, source, MaterialAsset(21, 1), default!, count: 1);
 
         extraction.Extract(mainWorld);
         Entity mirror = Mirror(renderWorld, source);
@@ -692,7 +692,7 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(8, 1),
+            MeshAsset(8, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
         extraction.Extract(mainWorld);
@@ -717,7 +717,7 @@ public sealed class RenderWorldExtractorTests
         renderWorld.Add(rendererOnly, new PipelinePreparedState(91));
         AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(9, 1),
+            MeshAsset(9, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
 
@@ -737,7 +737,7 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(10, 1),
+            MeshAsset(10, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
         extraction.Extract(mainWorld);
@@ -760,7 +760,7 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity removedSource = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(73, 1),
+            MeshAsset(73, 1),
             boundsExpansion: 1,
             position: Vector3.Zero);
         extraction.Extract(mainWorld);
@@ -770,7 +770,7 @@ public sealed class RenderWorldExtractorTests
         mainWorld.DestroyEntity(removedSource);
         Entity addedSource = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(74, 1),
+            MeshAsset(74, 1),
             boundsExpansion: 2,
             position: Vector3.One);
         int removeCount = 0;
@@ -798,7 +798,7 @@ public sealed class RenderWorldExtractorTests
         Assert.False(renderWorld.IsAlive(removedMirror));
         Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(removedSource).Length);
         Entity addedMirror = Mirror(renderWorld, addedSource);
-        Assert.Equal(new AssetHandle<Mesh>(74, 1), renderWorld.Read<RenderMesh>(addedMirror).Mesh);
+        Assert.Same(MeshAsset(74, 1), renderWorld.Read<RenderMesh>(addedMirror).Mesh);
         Assert.Equal(Vector3.One, renderWorld.Read<RenderTransform>(addedMirror).Position);
     }
 
@@ -810,10 +810,10 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity source = AddMeshSource(
             mainWorld,
-            new AssetHandle<Mesh>(11, 1),
+            MeshAsset(11, 1),
             boundsExpansion: 0.75f,
             position: Vector3.One);
-        SetSourceBindings(mainWorld, source, new AssetHandle<Material>(31, 1), default, count: 1);
+        SetSourceBindings(mainWorld, source, MaterialAsset(31, 1), default!, count: 1);
 
         extraction.Extract(mainWorld);
 
@@ -835,13 +835,13 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity rejectedSource = AddMeshSource(
             rejectedMainWorld,
-            new AssetHandle<Mesh>(71, 1),
+            MeshAsset(71, 1),
             boundsExpansion: 1,
             position: Vector3.Zero);
         acceptedMainWorld.CreateEntity();
         Entity acceptedSource = AddMeshSource(
             acceptedMainWorld,
-            new AssetHandle<Mesh>(72, 1),
+            MeshAsset(72, 1),
             boundsExpansion: 2,
             position: Vector3.One);
         int addCount = 0;
@@ -861,7 +861,7 @@ public sealed class RenderWorldExtractorTests
         extraction.Extract(acceptedMainWorld);
 
         Entity acceptedMirror = Mirror(renderWorld, acceptedSource);
-        Assert.Equal(new AssetHandle<Mesh>(72, 1), renderWorld.Read<RenderMesh>(acceptedMirror).Mesh);
+        Assert.Same(MeshAsset(72, 1), renderWorld.Read<RenderMesh>(acceptedMirror).Mesh);
         Assert.Equal(0, renderWorld.GetByIndex<RenderSource, Entity>(rejectedSource).Length);
         InvalidOperationException bindingFault = Assert.Throws<InvalidOperationException>(
             () => extraction.Extract(rejectedMainWorld));
@@ -878,12 +878,12 @@ public sealed class RenderWorldExtractorTests
         using var extraction = new RenderExtractionSystems(renderWorld);
         Entity firstSource = AddMeshSource(
             firstMainWorld,
-            new AssetHandle<Mesh>(41, 1),
+            MeshAsset(41, 1),
             boundsExpansion: 0,
             position: Vector3.Zero);
         AddMeshSource(
             secondMainWorld,
-            new AssetHandle<Mesh>(42, 1),
+            MeshAsset(42, 1),
             boundsExpansion: 0,
             position: Vector3.One);
 
@@ -895,7 +895,7 @@ public sealed class RenderWorldExtractorTests
 
         Assert.Contains("one authoritative main World", error.Message, StringComparison.Ordinal);
         Assert.True(renderWorld.IsAlive(firstMirror));
-        Assert.Equal(new AssetHandle<Mesh>(41, 1), renderWorld.Read<RenderMesh>(firstMirror).Mesh);
+        Assert.Same(MeshAsset(41, 1), renderWorld.Read<RenderMesh>(firstMirror).Mesh);
     }
 
     [Fact]
@@ -949,7 +949,7 @@ public sealed class RenderWorldExtractorTests
 
     private static Entity AddMeshSource(
         World world,
-        AssetHandle<Mesh> mesh,
+        Mesh mesh,
         float boundsExpansion,
         Vector3 position)
     {
@@ -992,8 +992,8 @@ public sealed class RenderWorldExtractorTests
     private static void SetSourceBindings(
         World world,
         Entity entity,
-        AssetHandle<Material> first,
-        AssetHandle<Material> second,
+        Material first,
+        Material second,
         int count)
     {
         Assert.InRange(count, 0, 2);
@@ -1017,8 +1017,8 @@ public sealed class RenderWorldExtractorTests
     private static void AssertRenderBindings(
         RenderWorld renderWorld,
         Entity entity,
-        AssetHandle<Material> first,
-        AssetHandle<Material> second,
+        Material first,
+        Material second,
         int count)
     {
         MaterialBindingExpectation state = new(first, second, count);
@@ -1113,7 +1113,16 @@ public sealed class RenderWorldExtractorTests
     }
 
     private readonly record struct MaterialBindingExpectation(
-        AssetHandle<Material> First,
-        AssetHandle<Material> Second,
+        Material First,
+        Material Second,
         int Count);
+
+    private static Mesh MeshAsset(int id, int revision)
+        => TestAssets.Mesh(id, revision);
+
+    private static Material MaterialAsset(int id, int revision)
+        => TestAssets.Material(id, revision);
+
+    private static Texture TextureAsset(int id, int revision)
+        => TestAssets.Texture(id, revision);
 }

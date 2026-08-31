@@ -19,6 +19,7 @@
   <Project Path="src\SomeEngine.Job.Dots\SomeEngine.Job.Dots.csproj" />
   <Project Path="src\SomeEngine.Generators\SomeEngine.Generators.csproj" />
   <Project Path="src\SomeEngine.Render\SomeEngine.Render.csproj" />
+  <Project Path="src\SomeEngine.Render.MaterialBindless\SomeEngine.Render.MaterialBindless.csproj" />
   <Project Path="src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
   <Project Path="src\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />

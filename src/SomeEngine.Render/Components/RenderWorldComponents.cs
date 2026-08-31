@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -105,7 +104,7 @@ public readonly record struct RenderInstance : IComponent;
 /// their own components and contribute fixed fields to the shared render-instance property store
 /// without creating a second instance store.
 /// </summary>
-public readonly record struct RenderMesh(AssetHandle<Mesh> Mesh, float BoundsExpansion) : IComponent;
+public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion) : IComponent;
 
 /// <summary>
 /// Pipeline-neutral view input stored as an ordinary RenderWorld component. A view entity may

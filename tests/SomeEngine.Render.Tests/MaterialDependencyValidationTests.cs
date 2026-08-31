@@ -54,9 +54,8 @@ public sealed class MaterialDependencyValidationTests
             materialGuid);
         await using var loader = new AssetLoader(storage);
 
-        AssetHandle<Material> handle = loader.Load(new AssetId<Material>(materialGuid));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => loader.WaitAsync(handle).AsTask());
+            () => loader.LoadAsync(new AssetId<Material>(materialGuid)).AsTask());
 
         Assert.Contains("Textures[1].TextureGuid", error.Message, StringComparison.Ordinal);
         Assert.Equal(0, storage.DependencyResolutions);
@@ -96,10 +95,8 @@ public sealed class MaterialDependencyValidationTests
             instanceGuid);
         await using var loader = new AssetLoader(storage);
 
-        AssetHandle<MaterialInstance> handle = loader.Load(
-            new AssetId<MaterialInstance>(instanceGuid));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => loader.WaitAsync(handle).AsTask());
+            () => loader.LoadAsync(new AssetId<MaterialInstance>(instanceGuid)).AsTask());
 
         Assert.Contains("Overrides[1].TextureGuid", error.Message, StringComparison.Ordinal);
         Assert.Equal(0, storage.DependencyResolutions);

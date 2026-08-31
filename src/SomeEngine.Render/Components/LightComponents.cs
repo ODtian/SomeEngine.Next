@@ -1,5 +1,4 @@
 using System.Numerics;
-using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
@@ -40,7 +39,7 @@ public readonly record struct SpotLight(
 
 /// <summary>Optional semantic cookie attached to a light in the main world.</summary>
 public readonly record struct LightCookie(
-    AssetHandle<Texture> Texture,
+    Texture Texture,
     float Strength,
     Vector4 ScaleOffset,
     Matrix4x4 WorldToCookie) : IComponent;
@@ -73,7 +72,7 @@ public readonly record struct RenderSpotLight(
 
 /// <summary>Light-cookie snapshot owned by the render world.</summary>
 public readonly record struct RenderLightCookie(
-    AssetHandle<Texture> Texture,
+    Texture Texture,
     float Strength,
     Vector4 ScaleOffset,
     Matrix4x4 WorldToCookie) : IComponent;

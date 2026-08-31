@@ -49,14 +49,13 @@ public sealed class VirtualShadowMap : IDisposable
         IGraphicsBackend backend,
         Device device,
         AssetLoader assets,
-        AssetHandle<VirtualShadowMapShaders> shaders,
+        VirtualShadowMapShaders shaders,
         VirtualShadowMapSettings settings)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         ArgumentNullException.ThrowIfNull(assets);
-        if (!shaders.IsValid || shaders.LoadState != AssetLoadState.Ready)
-            throw new ArgumentException("The virtual-shadow shader asset must be ready.", nameof(shaders));
+        ArgumentNullException.ThrowIfNull(shaders);
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         settings.Validate();
         _views = new VirtualShadowView[settings.MaxShadowViews];
@@ -71,24 +70,23 @@ public sealed class VirtualShadowMap : IDisposable
         Texture? atlas = null;
         try
         {
-            using AssetRead<VirtualShadowMapShaders> read = assets.Read(shaders);
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
                 assets,
-                read.Value.MarkPages,
+                shaders.MarkPages,
                 "Virtual shadow receiver page marking");
             allocatePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
                 assets,
-                read.Value.AllocatePages,
+                shaders.AllocatePages,
                 "Virtual shadow physical-page allocation");
             clearPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
                 assets,
-                read.Value.ClearPages,
+                shaders.ClearPages,
                 "Virtual shadow active-page clear");
             pageTable = _backend.CreateBuffer(
                 _device,

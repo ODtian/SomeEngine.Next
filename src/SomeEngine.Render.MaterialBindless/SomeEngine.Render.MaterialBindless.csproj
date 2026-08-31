@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
+    <ProjectReference Include="..\SomeEngine.Graphics\SomeEngine.Graphics.csproj" />
+    <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\MaterialBindless.slang" Pack="true" PackagePath="contentFiles/any/any/Shaders" />
+  </ItemGroup>
+</Project>

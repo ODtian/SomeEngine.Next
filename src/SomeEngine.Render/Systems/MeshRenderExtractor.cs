@@ -15,7 +15,7 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<MeshSnapshot> _snapshots = [];
     private readonly List<InstancedSnapshot> _instancedSnapshots = [];
-    private readonly List<AssetHandle<Material>> _materials = [];
+    private readonly List<Material> _materials = [];
     private readonly HashSet<Entity> _meshSources = [];
     private readonly HashSet<Entity> _instancedSources = [];
 
@@ -345,7 +345,7 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly record struct MeshSnapshot(
         Entity Source,
         RenderTransform Transform,
-        AssetHandle<Mesh> Mesh,
+        Mesh Mesh,
         float BoundsExpansion,
         bool HasMaterialBuffer,
         int MaterialOffset,
@@ -360,16 +360,16 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
         bool Changed);
 
     private readonly record struct MaterialSlice(
-        List<AssetHandle<Material>> Values,
+        List<Material> Values,
         int Offset,
         int Count);
 
     private struct MaterialSliceComparison(
-        List<AssetHandle<Material>> values,
+        List<Material> values,
         int offset,
         int count)
     {
-        internal List<AssetHandle<Material>> Values = values;
+        internal List<Material> Values = values;
         internal int Offset = offset;
         internal int Count = count;
         internal bool Equal = true;

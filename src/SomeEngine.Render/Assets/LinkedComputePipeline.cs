@@ -39,11 +39,9 @@ public sealed class LinkedComputePipeline : IDisposable
             throw new InvalidDataException(
                 $"Compute pipeline '{label}' has no valid shader entry.");
         }
-        AssetHandle<Shader> handle = assets.Load(new AssetId<Shader>(shaderGuid));
-        if (handle.LoadState != AssetLoadState.Ready)
-            assets.WaitAsync(handle).AsTask().GetAwaiter().GetResult();
-        using AssetRead<Shader> read = assets.Read(handle);
-        return Create(backend, device, read.Value, shader.EntryPoint, label);
+        Shader loaded = assets.LoadAsync(new AssetId<Shader>(shaderGuid))
+            .AsTask().GetAwaiter().GetResult();
+        return Create(backend, device, loaded, shader.EntryPoint, label);
     }
 
     public static LinkedComputePipeline Create(

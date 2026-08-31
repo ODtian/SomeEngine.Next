@@ -11,8 +11,8 @@ public sealed class RenderMeshInstanceSetTests
     [Fact]
     public void ProceduralSnapshotKeepsOneLogicalRevisionAndCoreTransformContract()
     {
-        AssetHandle<Mesh> mesh = new(11, 1);
-        AssetHandle<Material> material = new(12, 1);
+        Mesh mesh = TestAssets.Mesh(11);
+        Material material = TestAssets.Material(12);
         using var set = new RenderMeshInstanceSet(
             mesh,
             [material],
@@ -66,8 +66,8 @@ public sealed class RenderMeshInstanceSetTests
     [Fact]
     public void BufferedSetUsesCallerDeclaredCanonicalProperties()
     {
-        AssetHandle<Mesh> mesh = new(21, 1);
-        AssetHandle<Material> material = new(22, 1);
+        Mesh mesh = TestAssets.Mesh(21);
+        Material material = TestAssets.Material(22);
         (RenderInstancePropertyLayout layout,
             ResolvedRenderInstanceProperty<RenderTransform> current,
             ResolvedRenderInstanceProperty<RenderPreviousTransform> previous,
@@ -106,8 +106,8 @@ public sealed class RenderMeshInstanceSetTests
     [Fact]
     public void SharedBindingsAreImmutableAndSourcesMustProvideSpatialContract()
     {
-        AssetHandle<Mesh> mesh = new(31, 1);
-        AssetHandle<Material> material = new(32, 1);
+        Mesh mesh = TestAssets.Mesh(31);
+        Material material = TestAssets.Material(32);
         using var set = new RenderMeshInstanceSet(
             mesh,
             [material],
@@ -118,10 +118,10 @@ public sealed class RenderMeshInstanceSetTests
                 previous.Clear();
             });
 
-        IList<AssetHandle<Material>> materials = Assert.IsAssignableFrom<IList<AssetHandle<Material>>>(
+        IList<Material> materials = Assert.IsAssignableFrom<IList<Material>>(
             set.Materials);
         Assert.True(materials.IsReadOnly);
-        Assert.Throws<NotSupportedException>(() => materials[0] = new AssetHandle<Material>(33, 1));
+        Assert.Throws<NotSupportedException>(() => materials[0] = TestAssets.Material(33));
 
         var nonSpatialBuilder = new RenderInstancePropertyLayoutBuilder();
         _ = nonSpatialBuilder.Register<uint>(
@@ -139,8 +139,8 @@ public sealed class RenderMeshInstanceSetTests
             [material],
             nonSpatial));
 
-        Assert.Throws<ArgumentException>(() => new RenderMeshInstanceSet(
-            default,
+        Assert.Throws<ArgumentNullException>(() => new RenderMeshInstanceSet(
+            null!,
             [material],
             1,
             static (_, _, _) => { }));
@@ -151,7 +151,7 @@ public sealed class RenderMeshInstanceSetTests
             static (_, _, _) => { }));
         Assert.Throws<ArgumentException>(() => new RenderMeshInstanceSet(
             mesh,
-            [default],
+            [null!],
             1,
             static (_, _, _) => { }));
         Assert.Throws<ArgumentOutOfRangeException>(() => new RenderMeshInstanceSet(

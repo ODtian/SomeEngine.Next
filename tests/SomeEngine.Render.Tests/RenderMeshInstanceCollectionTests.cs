@@ -63,8 +63,8 @@ public sealed class RenderMeshInstanceCollectionTests
     }
 
     private static RenderMeshInstanceSet CreateSet(int count) => new(
-        new AssetHandle<Mesh>(101, 1),
-        [new AssetHandle<Material>(102, 1)],
+        TestAssets.Mesh(101),
+        [TestAssets.Material(102)],
         count,
         static (_, current, previous) =>
         {

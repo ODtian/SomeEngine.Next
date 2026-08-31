@@ -37,9 +37,8 @@ public sealed class AssetLoaderTests
         var storage = new AssetPackStorage(new AssetPackOverlay([pack]));
         await using var loader = new AssetLoader(storage);
 
-        AssetHandle<Shader> handle = loader.Load(new AssetId<Shader>(guid));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => loader.WaitAsync(handle).AsTask());
+            () => loader.LoadAsync(new AssetId<Shader>(guid)).AsTask());
         Assert.Contains("serialized entry-point reflection", error.Message);
     }
 
@@ -66,15 +65,15 @@ public sealed class AssetLoaderTests
         AssetPack pack = await AssetPack.OpenAsync(packPath);
         var storage = new AssetPackStorage(new AssetPackOverlay([pack]));
         await using var loader = new AssetLoader(storage);
-        AssetHandle<MaterialInstance> first = loader.Load(
-            new AssetId<MaterialInstance>(firstGuid));
-        AssetHandle<MaterialInstance> second = loader.Load(
-            new AssetId<MaterialInstance>(secondGuid));
+        Task<MaterialInstance> first = loader.LoadAsync(
+            new AssetId<MaterialInstance>(firstGuid)).AsTask();
+        Task<MaterialInstance> second = loader.LoadAsync(
+            new AssetId<MaterialInstance>(secondGuid)).AsTask();
 
         Exception firstError = await Assert.ThrowsAnyAsync<Exception>(async () =>
-            await loader.WaitAsync(first).AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
+            await first.WaitAsync(TimeSpan.FromSeconds(2)));
         Exception secondError = await Assert.ThrowsAnyAsync<Exception>(async () =>
-            await loader.WaitAsync(second).AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
+            await second.WaitAsync(TimeSpan.FromSeconds(2)));
         Assert.True(firstError is InvalidDataException or InvalidOperationException);
         Assert.True(secondError is InvalidDataException or InvalidOperationException);
     }
@@ -99,38 +98,31 @@ public sealed class AssetLoaderTests
         Texture texture;
         await using (var loader = new AssetLoader(storage))
         {
-            AssetHandle<Texture>[] requested = Enumerable.Range(0, 32)
-                .Select(_ => loader.Load(new AssetId<Texture>(guid)))
+            Task<Texture>[] requested = Enumerable.Range(0, 32)
+                .Select(_ => loader.LoadAsync(new AssetId<Texture>(guid)).AsTask())
                 .ToArray();
-            AssetHandle<Texture>[] handles = await Task.WhenAll(
-                requested.Select(handle => loader.WaitAsync(handle).AsTask()));
+            Texture[] loaded = await Task.WhenAll(requested);
 
-            Assert.All(handles, handle => Assert.Equal(handles[0], handle));
+            Assert.All(loaded, value => Assert.Same(loaded[0], value));
             Assert.Equal(1, storage.OpenCount);
-            using AssetRead<Texture> textureRead = loader.Read(handles[0]);
-            texture = textureRead.Value;
+            texture = loaded[0];
             Assert.True(texture.IsStreamed);
-            foreach (AssetHandle<Texture> handle in handles)
-            {
-                using AssetRead<Texture> read = loader.Read(handle);
-                Assert.Same(texture, read.Value);
-            }
 
             using ResidentChunkLease lease = await texture.AcquireMipTileAsync(
                 mipLevel: 1,
                 arrayLayer: 2,
-                face: 3,
-                depthSlice: 4,
+                face: 0,
+                depthSlice: 0,
                 tileX: 0,
                 tileY: 0);
             Assert.Equal([5, 6], lease.Memory.ToArray());
 
             await using var foreign = new AssetLoader(new EmptyStorage());
-            Assert.False(foreign.TryRead(handles[0], out _));
+            Assert.False(foreign.TryGetAssetId(texture, out _));
         }
 
         await Assert.ThrowsAsync<ObjectDisposedException>(
-            async () => await texture.AcquireMipTileAsync(1, 2, 3, 4, 0, 0));
+            async () => await texture.AcquireMipTileAsync(1, 2, 0, 0, 0, 0));
     }
 
     [Fact]
@@ -178,15 +170,12 @@ public sealed class AssetLoaderTests
             new TextureLoadOptions(1024 * 1024, residency));
         await using (var loader = new AssetLoader(storage, options))
         {
-            AssetHandle<Texture> first = loader.Load(new AssetId<Texture>(guid));
-            AssetHandle<Texture> second = loader.Load(new AssetId<Texture>(guid));
-            await Task.WhenAll(
-                loader.WaitAsync(first).AsTask(),
-                loader.WaitAsync(second).AsTask());
+            Texture[] loaded = await Task.WhenAll(
+                loader.LoadAsync(new AssetId<Texture>(guid)).AsTask(),
+                loader.LoadAsync(new AssetId<Texture>(guid)).AsTask());
 
-            Assert.Equal(first, second);
-            using AssetRead<Texture> textureRead = loader.Read(first);
-            Texture texture = textureRead.Value;
+            Assert.Same(loaded[0], loaded[1]);
+            Texture texture = loaded[0];
             Assert.True(texture.IsStreamed);
             Assert.Same(residency, texture.Residency);
             IList<TextureMipTile> mipTiles = Assert.IsAssignableFrom<IList<TextureMipTile>>(
@@ -197,72 +186,38 @@ public sealed class AssetLoaderTests
             using ResidentChunkLease lease = await texture.AcquireMipTileAsync(
                 mipLevel: 1,
                 arrayLayer: 2,
-                face: 3,
-                depthSlice: 4,
+                face: 0,
+                depthSlice: 0,
                 tileX: 0,
                 tileY: 0);
             Assert.Equal(mipOne, lease.Memory.ToArray());
             Assert.Equal(mipOne.Length, residency.Used(ResidencyClass.DecodedCpu));
             Assert.True(texture.StreamingMetrics!.Snapshot().Requests >= 1);
 
-            AssetHandle<Shader> shaderHandle = loader.Load(new AssetId<Shader>(shaderGuid));
-            await loader.WaitAsync(shaderHandle);
-            using AssetRead<Shader> shaderRead = loader.Read(shaderHandle);
-            Assert.True(shaderRead.Value.TryVariant(
+            Shader shader = await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
+            Assert.True(shader.TryVariant(
                 "test",
                 "main",
                 SomeEngine.Assets.Schema.ShaderStage.Compute,
                 out ShaderBytecode shaderVariant));
             Assert.Equal([4, 2, 1], shaderVariant.Data!.Value.ToArray());
 
-            AssetHandle<Mesh> meshHandle = loader.Load(new AssetId<Mesh>(meshGuid));
-            await loader.WaitAsync(meshHandle);
-            using AssetRead<Mesh> meshRead = loader.Read(meshHandle);
-            Assert.True(meshRead.Value.IsStreamed);
+            Mesh mesh = await loader.LoadAsync(new AssetId<Mesh>(meshGuid));
+            Assert.True(mesh.IsStreamed);
 
-            AssetHandle<Material> materialHandle = loader.Load(new AssetId<Material>(materialGuid));
-            await loader.WaitAsync(materialHandle);
-            using AssetRead<Material> materialRead = loader.Read(materialHandle);
-            Material material = materialRead.Value;
+            Material material = await loader.LoadAsync(new AssetId<Material>(materialGuid));
             TextureBinding binding = Assert.Single(material.Textures!);
             Assert.Equal(guid.ToFlatString(), binding.TextureGuid);
-            Assert.True(loader.TryFind(guid, out AssetHandle<Texture> dependencyHandle));
-            Assert.Equal(first, dependencyHandle);
+            Assert.Contains(
+                Enumerable.Range(0, material.SlotCount),
+                slot => ReferenceEquals(texture, material.GetSlotValue(checked((uint)slot))));
 
             await using var foreignLoader = new AssetLoader(new EmptyStorage());
-            Assert.False(foreignLoader.TryRead(first, out _));
+            Assert.False(foreignLoader.TryGetAssetId(texture, out _));
         }
 
         Assert.Equal(0, residency.Used(ResidencyClass.DecodedCpu));
         Assert.Equal(0, residency.Used(ResidencyClass.Compressed));
-    }
-
-    [Fact]
-    public async Task EcsComponentStrongHandleKeepsTheCanonicalAssetAlive()
-    {
-        var assets = new ResidentAssetTable();
-        var value = new LifetimeProbe();
-        (World world, Entity entity, WeakReference state) =
-            await CreateWorldWithOnlyStrongHandleAsync(assets, value);
-
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-        Assert.True(state.IsAlive);
-        AssertWorldAsset(assets, world, entity, value);
-
-        world.Dispose();
-        for (int attempt = 0; attempt < 8 && state.IsAlive; attempt++)
-        {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-            await Task.Delay(10);
-        }
-
-        Assert.False(state.IsAlive);
-        await assets.DisposeAsync();
-        Assert.Equal(1, value.DisposeCount);
     }
 
     private static byte[] CookTexture(AssetGuid guid, byte[] mipZero, byte[] mipOne)
@@ -275,7 +230,13 @@ public sealed class AssetLoaderTests
             Name = "stored-texture",
             Width = 2,
             Height = 2,
-            Format = "R8_UNorm",
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 2,
+            ArrayLayerCount = 3,
+            Format = SomeEngine.Graphics.Format.R8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
             MipTiles =
             [
                 new TextureMipTile
@@ -291,8 +252,8 @@ public sealed class AssetLoaderTests
                 {
                     MipLevel = 1,
                     ArrayLayer = 2,
-                    Face = 3,
-                    DepthSlice = 4,
+                    Face = 0,
+                    DepthSlice = 0,
                     Width = 1,
                     Height = 1,
                     RowPitch = 1,
@@ -386,6 +347,7 @@ public sealed class AssetLoaderTests
             PositionsOffset = checked((uint)pageSize),
             AttributesOffset = checked((uint)pageSize),
             IndicesOffset = checked((uint)pageSize),
+            VertexStride = 32,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
@@ -395,7 +357,7 @@ public sealed class AssetLoaderTests
             Name = "stored-mesh",
             BvhOffset = checked((ulong)pageSize),
             Payload = payload,
-            Attributes = [],
+            VertexStride = 32,
             Regions = [],
         }, path);
         return File.ReadAllBytes(path);
@@ -457,46 +419,6 @@ public sealed class AssetLoaderTests
         }
 
         public ValueTask DisposeAsync() => _inner.DisposeAsync();
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task<(World World, Entity Entity, WeakReference State)>
-        CreateWorldWithOnlyStrongHandleAsync(
-            ResidentAssetTable assets,
-            LifetimeProbe value)
-    {
-        AssetHandle<LifetimeProbe> handle = assets.Load(
-            AssetGuid.New(),
-            (_, _) => Task.FromResult<LifetimeProbe?>(value));
-        await assets.WaitAsync(handle, default);
-        var world = new World();
-        Entity entity = world.CreateEntity();
-        world.Add(entity, new ProbeAssetComponent { Asset = handle });
-        return (world, entity, new WeakReference(handle.Reference!));
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void AssertWorldAsset(
-        ResidentAssetTable assets,
-        World world,
-        Entity entity,
-        LifetimeProbe expected)
-    {
-        AssetHandle<LifetimeProbe> handle = world.Read<ProbeAssetComponent>(entity).Asset;
-        using AssetRead<LifetimeProbe> read = assets.Read(handle);
-        Assert.Same(expected, read.Value);
-    }
-
-    private struct ProbeAssetComponent : SomeEngine.ECS.IComponent
-    {
-        internal AssetHandle<LifetimeProbe> Asset;
-    }
-
-    private sealed class LifetimeProbe : IDisposable
-    {
-        internal int DisposeCount { get; private set; }
-
-        public void Dispose() => DisposeCount++;
     }
 
 }
