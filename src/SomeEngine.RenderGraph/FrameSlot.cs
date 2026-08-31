@@ -32,7 +32,8 @@ internal sealed class FrameSlot : IDisposable
         TransientResources!.Reset(
             structureVersion,
             options.SubmissionMode,
-            options.Debug);
+            options.Debug,
+            structureIndex);
         _state.Begin(identity, options, structureIndex, structureVersion);
         return _state;
     }

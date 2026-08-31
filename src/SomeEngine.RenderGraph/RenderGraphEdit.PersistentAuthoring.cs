@@ -298,9 +298,10 @@ public ref partial struct RenderGraphEdit
             CallbackStorage = callbackStorage,
             Pipeline = pipeline,
             ParameterLayout = parameterLayout,
-            DeclarationOrdinal = Staging.Passes.Count,
+            DeclarationOrdinal = checked(Staging.NextDeclarationOrdinal++),
         };
         GraphIdentity identity = Staging.Passes.Add(Graph.Identity, pass);
+        Changes.TouchPass(identity, membership: true);
         TState mutable = declarationState;
         try
         {
@@ -325,6 +326,7 @@ public ref partial struct RenderGraphEdit
     private void RemoveView(in GraphIdentity view)
     {
         ValidateOwner(view);
+        Changes.TouchView(view, membership: true);
         _ = Staging.Views.Remove(view);
     }
 

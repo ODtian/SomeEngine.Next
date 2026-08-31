@@ -87,6 +87,9 @@ public sealed partial class RenderGraph : IDisposable
     public ulong StructureVersion { get; private set; }
     public string? Label => Description.Label;
     public int MaximumQueueCompletionCount => _queues.Length;
+#if DEBUG
+    public RenderGraphEditStatistics LastEditStatistics { get; private set; }
+#endif
 
     public RenderGraphEdit BeginEdit()
     {
@@ -99,7 +102,11 @@ public sealed partial class RenderGraph : IDisposable
         try
         {
             lock (_structureGate)
-                return new RenderGraphEdit(this, token, _structure.Clone());
+                return new RenderGraphEdit(
+                    this,
+                    token,
+                    _structure.Fork(),
+                    new GraphEditChanges());
         }
         catch
         {
@@ -180,6 +187,95 @@ public sealed partial class RenderGraph : IDisposable
             slot.CollectCompleted(_backend);
     }
 
+    internal bool TryGetTransientPlacement(
+        GraphBufferId buffer,
+        out Heap? heap,
+        out ulong offset)
+    {
+        if (!buffer.Value.IsValid || buffer.Value.Owner != Identity)
+            throw new ArgumentException("The Buffer identity belongs to another RenderGraph.", nameof(buffer));
+        foreach (FrameSlot slot in _frameSlots)
+            if (slot.TransientResources is not null &&
+                slot.TransientResources.TryGetPlacement(buffer.Value, out heap, out offset))
+                return true;
+        heap = null;
+        offset = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns the number of Queue completions that can still access the requested Buffer range.
+    /// At most one (the maximum known value) is returned for each registered Queue.
+    /// </summary>
+    public int GetRangeCompletionCount(Buffer buffer, in BufferRange range)
+    {
+        var completions = new List<QueueCompletion>(_queues.Length);
+        CollectRangeCompletions(buffer, range, completions);
+        return completions.Count;
+    }
+
+    /// <summary>
+    /// Copies the Queue completions that can still access the requested Buffer range.
+    /// At most one (the maximum known value) is copied for each registered Queue.
+    /// The caller must prevent future frames from declaring access to the range before using the
+    /// copied completions as its complete retirement dependency set.
+    /// </summary>
+    public int CopyRangeCompletions(
+        Buffer buffer,
+        in BufferRange range,
+        Span<QueueCompletion> destination)
+    {
+        var completions = new List<QueueCompletion>(_queues.Length);
+        CollectRangeCompletions(buffer, range, completions);
+        if (destination.Length < completions.Count)
+            throw new ArgumentException(
+                "The destination cannot hold every Queue completion.",
+                nameof(destination));
+        for (int i = 0; i < completions.Count; i++) destination[i] = completions[i];
+        return completions.Count;
+    }
+
+    /// <summary>
+    /// Discards retained transient placement history so the next frame can repack it. The graph
+    /// and all submitted frames must be idle; ordinary structural commits never compact implicitly.
+    /// </summary>
+    public void CompactTransientResources()
+    {
+        EnsureAvailable();
+        lock (_structureGate)
+        {
+            if (_editToken != 0 || _frameToken != 0)
+                throw new InvalidOperationException(
+                    "Transient compaction requires an idle RenderGraph with no edit or CPU frame.");
+            foreach (FrameSlot slot in _frameSlots)
+                if (!slot.IsReady(_backend))
+                    throw new InvalidOperationException(
+                        "Transient compaction requires every submitted frame to complete.");
+
+            var changes = new GraphEditChanges { CompactTransientPlacements = true };
+            GraphStructureIndex index = GraphStructureIndex.Update(
+                this,
+                _structureIndex,
+                _structure,
+                changes,
+                out GraphIndexUpdateStatistics updateStatistics);
+            foreach (FrameSlot slot in _frameSlots) slot.TransientResources?.Compact();
+            _structureIndex = index;
+            StructureVersion++;
+#if DEBUG
+            LastEditStatistics = new RenderGraphEditStatistics(
+                0,
+                0,
+                0,
+                10,
+                updateStatistics.ResourcesReanalyzed,
+                updateStatistics.HazardEdgesRebuilt,
+                updateStatistics.ScheduleNodesRevisited,
+                updateStatistics.TransientAllocationsMoved);
+#endif
+        }
+    }
+
     internal Queue[] ResolveQueueCandidates(in PassQueueSelection policy, GraphPassKind kind)
     {
         var result = new List<Queue>(_queues.Length);
@@ -245,14 +341,22 @@ public sealed partial class RenderGraph : IDisposable
             throw new NotSupportedException($"A {kind} pass cannot execute on a {type} Queue.");
     }
 
-    internal void CommitEdit(long token, GraphStructure staging)
+    internal void CommitEdit(
+        long token,
+        GraphStructure staging,
+        GraphEditChanges changes)
     {
         EnsureEdit(token);
         lock (_structureGate)
         {
             GraphStructure previous = _structure;
             CarryBoundaryStates(previous, staging);
-            GraphStructureIndex index = GraphStructureIndex.Build(this, staging);
+            GraphStructureIndex index = GraphStructureIndex.Update(
+                this,
+                _structureIndex,
+                staging,
+                changes,
+                out GraphIndexUpdateStatistics updateStatistics);
             bool frameActive = _frameToken != 0;
             _persistentResources.ApplyStructure(previous, staging, !frameActive);
             if (frameActive)
@@ -260,6 +364,18 @@ public sealed partial class RenderGraph : IDisposable
             _structure = staging;
             _structureIndex = index;
             StructureVersion++;
+#if DEBUG
+            int sharedBlocks = staging.CountSharedBlocks(previous);
+            LastEditStatistics = new RenderGraphEditStatistics(
+                changes.Passes.Count,
+                changes.EditedResourceCount,
+                10 - sharedBlocks,
+                sharedBlocks,
+                updateStatistics.ResourcesReanalyzed,
+                updateStatistics.HazardEdgesRebuilt,
+                updateStatistics.ScheduleNodesRevisited,
+                updateStatistics.TransientAllocationsMoved);
+#endif
             EndEdit(token);
         }
     }
@@ -426,6 +542,48 @@ public sealed partial class RenderGraph : IDisposable
                     AddCompletion(completions, endpoint.ReadyAfter.Value);
         foreach (QueueCompletion completion in completions)
             _ = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
+    }
+
+    private void CollectRangeCompletions(
+        Buffer buffer,
+        in BufferRange requested,
+        List<QueueCompletion> destination)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        if (!ReferenceEquals(buffer.Device, _device))
+            throw new ArgumentException("The Buffer belongs to another Device.", nameof(buffer));
+        BufferRange range = GraphStructureIndex.ResolveRange(requested, buffer.Info.Size);
+        lock (_structureGate)
+        {
+            CollectFrom(_structure);
+            foreach (StructureTransition transition in _deferredRetirements)
+            {
+                CollectFrom(transition.Previous);
+                CollectFrom(transition.Next);
+            }
+        }
+        return;
+
+        void CollectFrom(GraphStructure structure)
+        {
+            foreach (GraphBuffer graphBuffer in structure.Buffers.Rows)
+            {
+                if (!ReferenceEquals(graphBuffer.PersistentResource, buffer) &&
+                    !ReferenceEquals(graphBuffer.RegisteredResource, buffer))
+                    continue;
+                foreach (BufferBoundaryState boundary in graphBuffer.BoundaryStates)
+                {
+                    if (!boundary.ReadyAfter.HasValue) continue;
+                    BufferRange endpoint = GraphStructureIndex.ResolveRange(
+                        boundary.Range,
+                        buffer.Info.Size);
+                    if (endpoint.Offset >= range.Offset + range.Size ||
+                        range.Offset >= endpoint.Offset + endpoint.Size)
+                        continue;
+                    AddCompletion(destination, boundary.ReadyAfter.Value);
+                }
+            }
+        }
     }
 
     private static void AddCompletion(List<QueueCompletion> values, QueueCompletion completion)

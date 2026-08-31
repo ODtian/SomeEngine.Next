@@ -10,50 +10,81 @@ internal sealed class SlotMap<T>
         internal bool Retired;
     }
 
-    private readonly List<Slot> _slots = [];
-    private readonly List<T> _rows = [];
-    private readonly List<int> _rowSlots = [];
-    private int _firstFree = -1;
+    private sealed class Storage
+    {
+        internal readonly List<Slot> Slots = [];
+        internal readonly List<T> Rows = [];
+        internal readonly List<int> RowSlots = [];
+        internal int FirstFree = -1;
+    }
 
-    internal int Count => _rows.Count;
-    internal List<T> Rows => _rows;
+    private readonly Func<T, T>? _clone;
+    private Storage _storage;
+    private bool _writable;
+
+    internal SlotMap(Func<T, T>? clone = null)
+    {
+        _clone = clone;
+        _storage = new Storage();
+        _writable = true;
+    }
+
+    private SlotMap(Func<T, T>? clone, Storage storage)
+    {
+        _clone = clone;
+        _storage = storage;
+    }
+
+    internal int Count => _storage.Rows.Count;
+    internal List<T> Rows => _storage.Rows;
+    internal object BlockIdentity => _storage;
+
+    internal SlotMap<T> Fork()
+    {
+        _writable = false;
+        return new SlotMap<T>(_clone, _storage);
+    }
 
     internal GraphIdentity Add(ulong owner, T value)
     {
+        EnsureWritable();
+        List<Slot> slots = _storage.Slots;
+        List<T> rows = _storage.Rows;
+        List<int> rowSlots = _storage.RowSlots;
         int slot;
         uint generation;
-        if (_firstFree >= 0)
+        if (_storage.FirstFree >= 0)
         {
-            slot = _firstFree;
-            Slot reused = _slots[slot];
-            _firstFree = reused.NextFree;
+            slot = _storage.FirstFree;
+            Slot reused = slots[slot];
+            _storage.FirstFree = reused.NextFree;
             generation = reused.Generation;
-            reused.DenseIndex = _rows.Count;
+            reused.DenseIndex = rows.Count;
             reused.NextFree = -1;
-            _slots[slot] = reused;
+            slots[slot] = reused;
         }
         else
         {
-            slot = _slots.Count;
+            slot = slots.Count;
             generation = 1;
-            _slots.Add(new Slot
+            slots.Add(new Slot
             {
                 Generation = generation,
-                DenseIndex = _rows.Count,
+                DenseIndex = rows.Count,
                 NextFree = -1,
             });
         }
 
-        _rows.Add(value);
-        _rowSlots.Add(slot);
+        rows.Add(value);
+        rowSlots.Add(slot);
         return new GraphIdentity(owner, slot, generation);
     }
 
     internal bool Contains(in GraphIdentity id)
     {
-        if (!id.IsValid || (uint)id.Slot >= (uint)_slots.Count)
+        if (!id.IsValid || (uint)id.Slot >= (uint)_storage.Slots.Count)
             return false;
-        Slot slot = _slots[id.Slot];
+        Slot slot = _storage.Slots[id.Slot];
         return !slot.Retired && slot.DenseIndex >= 0 && slot.Generation == id.Generation;
     }
 
@@ -61,32 +92,46 @@ internal sealed class SlotMap<T>
     {
         if (!Contains(id))
             throw new ArgumentException("The graph identity is invalid, stale, or belongs to another owner.");
-        return _slots[id.Slot].DenseIndex;
+        return _storage.Slots[id.Slot].DenseIndex;
     }
 
-    internal T Get(in GraphIdentity id) => _rows[DenseIndex(id)];
+    internal T Get(in GraphIdentity id) => _storage.Rows[DenseIndex(id)];
 
-    internal void Set(in GraphIdentity id, T value) => _rows[DenseIndex(id)] = value;
+    internal T GetMutable(in GraphIdentity id)
+    {
+        EnsureWritable();
+        return _storage.Rows[DenseIndex(id)];
+    }
+
+    internal void Set(in GraphIdentity id, T value)
+    {
+        EnsureWritable();
+        _storage.Rows[DenseIndex(id)] = value;
+    }
 
     internal T Remove(in GraphIdentity id)
     {
+        EnsureWritable();
+        List<Slot> slots = _storage.Slots;
+        List<T> rows = _storage.Rows;
+        List<int> rowSlots = _storage.RowSlots;
         int dense = DenseIndex(id);
-        T removed = _rows[dense];
-        int last = _rows.Count - 1;
+        T removed = rows[dense];
+        int last = rows.Count - 1;
         int slotIndex = id.Slot;
         if (dense != last)
         {
-            _rows[dense] = _rows[last];
-            int movedSlot = _rowSlots[last];
-            _rowSlots[dense] = movedSlot;
-            Slot moved = _slots[movedSlot];
+            rows[dense] = rows[last];
+            int movedSlot = rowSlots[last];
+            rowSlots[dense] = movedSlot;
+            Slot moved = slots[movedSlot];
             moved.DenseIndex = dense;
-            _slots[movedSlot] = moved;
+            slots[movedSlot] = moved;
         }
-        _rows.RemoveAt(last);
-        _rowSlots.RemoveAt(last);
+        rows.RemoveAt(last);
+        rowSlots.RemoveAt(last);
 
-        Slot slot = _slots[slotIndex];
+        Slot slot = slots[slotIndex];
         slot.DenseIndex = -1;
         if (slot.Generation == uint.MaxValue)
         {
@@ -96,62 +141,146 @@ internal sealed class SlotMap<T>
         else
         {
             slot.Generation++;
-            slot.NextFree = _firstFree;
-            _firstFree = slotIndex;
+            slot.NextFree = _storage.FirstFree;
+            _storage.FirstFree = slotIndex;
         }
-        _slots[slotIndex] = slot;
+        slots[slotIndex] = slot;
         return removed;
     }
 
     internal GraphIdentity IdentityAt(ulong owner, int denseIndex)
     {
-        int slotIndex = _rowSlots[denseIndex];
-        Slot slot = _slots[slotIndex];
+        int slotIndex = _storage.RowSlots[denseIndex];
+        Slot slot = _storage.Slots[slotIndex];
         return new GraphIdentity(owner, slotIndex, slot.Generation);
     }
 
-    internal SlotMap<T> Clone(Func<T, T>? clone = null)
+    private void EnsureWritable()
     {
-        var result = new SlotMap<T>();
-        result._slots.AddRange(_slots);
-        result._rowSlots.AddRange(_rowSlots);
-        if (clone is null)
-            result._rows.AddRange(_rows);
+        if (_writable) return;
+        Storage source = _storage;
+        var copy = new Storage { FirstFree = source.FirstFree };
+        copy.Slots.AddRange(source.Slots);
+        copy.RowSlots.AddRange(source.RowSlots);
+        if (_clone is null)
+            copy.Rows.AddRange(source.Rows);
         else
-            foreach (T row in _rows) result._rows.Add(clone(row));
-        result._firstFree = _firstFree;
-        return result;
+            foreach (T row in source.Rows) copy.Rows.Add(_clone(row));
+        _storage = copy;
+        _writable = true;
+    }
+}
+
+internal sealed class SharedList<T> : IEnumerable<T>
+{
+    private sealed class Storage
+    {
+        internal readonly List<T> Values = [];
+    }
+
+    private Storage _storage;
+    private bool _writable;
+
+    internal SharedList()
+    {
+        _storage = new Storage();
+        _writable = true;
+    }
+
+    private SharedList(Storage storage) => _storage = storage;
+
+    internal int Count => _storage.Values.Count;
+    internal object BlockIdentity => _storage;
+
+    internal SharedList<T> Fork()
+    {
+        _writable = false;
+        return new SharedList<T>(_storage);
+    }
+
+    internal bool Contains(T value) => _storage.Values.Contains(value);
+
+    internal void Add(T value)
+    {
+        EnsureWritable();
+        _storage.Values.Add(value);
+    }
+
+    internal int RemoveAll(Predicate<T> predicate)
+    {
+        EnsureWritable();
+        return _storage.Values.RemoveAll(predicate);
+    }
+
+    internal void Clear()
+    {
+        EnsureWritable();
+        _storage.Values.Clear();
+    }
+
+    public List<T>.Enumerator GetEnumerator() => _storage.Values.GetEnumerator();
+    IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+    private void EnsureWritable()
+    {
+        if (_writable) return;
+        var copy = new Storage();
+        copy.Values.AddRange(_storage.Values);
+        _storage = copy;
+        _writable = true;
     }
 }
 
 internal sealed class GraphStructure
 {
-    internal SlotMap<GraphBuffer> Buffers { get; private set; } = new();
-    internal SlotMap<GraphTexture> Textures { get; private set; } = new();
-    internal SlotMap<GraphPersistentParameterBindings> PersistentBindings { get; private set; } = new();
-    internal SlotMap<GraphQueryPool> QueryPools { get; private set; } = new();
-    internal SlotMap<GraphRayTracingShaderTable> ShaderTables { get; private set; } = new();
-    internal SlotMap<GraphView> Views { get; private set; } = new();
-    internal SlotMap<GraphPass> Passes { get; private set; } = new();
-    internal SlotMap<PassResourceAccess> Accesses { get; private set; } = new();
-    internal SlotMap<GraphExtensionPoint> ExtensionPoints { get; private set; } = new();
-    internal List<ExplicitPassOrder> Orders { get; private set; } = [];
+    internal SlotMap<GraphBuffer> Buffers { get; private init; } = new(static value => value.Clone());
+    internal SlotMap<GraphTexture> Textures { get; private init; } = new(static value => value.Clone());
+    internal SlotMap<GraphPersistentParameterBindings> PersistentBindings { get; private init; } =
+        new(static value => value.Clone());
+    internal SlotMap<GraphQueryPool> QueryPools { get; private init; } = new(static value => value.Clone());
+    internal SlotMap<GraphRayTracingShaderTable> ShaderTables { get; private init; } =
+        new(static value => value.Clone());
+    internal SlotMap<GraphView> Views { get; private init; } = new(static value => value.Clone());
+    internal SlotMap<GraphPass> Passes { get; private init; } = new(static value => value.Clone());
+    internal SlotMap<PassResourceAccess> Accesses { get; private init; } =
+        new(static value => value.Clone());
+    internal SlotMap<GraphExtensionPoint> ExtensionPoints { get; private init; } = new();
+    internal SharedList<ExplicitPassOrder> Orders { get; private init; } = new();
+    internal int NextDeclarationOrdinal { get; set; }
 
-    internal GraphStructure Clone()
+    internal GraphStructure Fork()
     {
         return new GraphStructure
         {
-            Buffers = Buffers.Clone(static value => value.Clone()),
-            Textures = Textures.Clone(static value => value.Clone()),
-            PersistentBindings = PersistentBindings.Clone(static value => value.Clone()),
-            QueryPools = QueryPools.Clone(static value => value.Clone()),
-            ShaderTables = ShaderTables.Clone(static value => value.Clone()),
-            Views = Views.Clone(static value => value.Clone()),
-            Passes = Passes.Clone(static value => value.Clone()),
-            Accesses = Accesses.Clone(static value => value.Clone()),
-            ExtensionPoints = ExtensionPoints.Clone(static value => value with { }),
-            Orders = new List<ExplicitPassOrder>(Orders),
+            Buffers = Buffers.Fork(),
+            Textures = Textures.Fork(),
+            PersistentBindings = PersistentBindings.Fork(),
+            QueryPools = QueryPools.Fork(),
+            ShaderTables = ShaderTables.Fork(),
+            Views = Views.Fork(),
+            Passes = Passes.Fork(),
+            Accesses = Accesses.Fork(),
+            ExtensionPoints = ExtensionPoints.Fork(),
+            Orders = Orders.Fork(),
+            NextDeclarationOrdinal = NextDeclarationOrdinal,
         };
+    }
+
+    internal int CountSharedBlocks(GraphStructure other)
+    {
+        int count = 0;
+        if (ReferenceEquals(Buffers.BlockIdentity, other.Buffers.BlockIdentity)) count++;
+        if (ReferenceEquals(Textures.BlockIdentity, other.Textures.BlockIdentity)) count++;
+        if (ReferenceEquals(PersistentBindings.BlockIdentity, other.PersistentBindings.BlockIdentity)) count++;
+        if (ReferenceEquals(QueryPools.BlockIdentity, other.QueryPools.BlockIdentity)) count++;
+        if (ReferenceEquals(ShaderTables.BlockIdentity, other.ShaderTables.BlockIdentity)) count++;
+        if (ReferenceEquals(Views.BlockIdentity, other.Views.BlockIdentity)) count++;
+        if (ReferenceEquals(Passes.BlockIdentity, other.Passes.BlockIdentity)) count++;
+        if (ReferenceEquals(Accesses.BlockIdentity, other.Accesses.BlockIdentity)) count++;
+        if (ReferenceEquals(ExtensionPoints.BlockIdentity, other.ExtensionPoints.BlockIdentity)) count++;
+        if (ReferenceEquals(Orders.BlockIdentity, other.Orders.BlockIdentity)) count++;
+        return count;
     }
 }
 

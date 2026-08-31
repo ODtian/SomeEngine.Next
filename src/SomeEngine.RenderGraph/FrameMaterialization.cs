@@ -37,10 +37,9 @@ internal sealed partial class FrameExecutor
                 buffer.Description.NodePlacement,
                 begin,
                 end,
+                buffer.Identity,
                 bufferIndex);
-            bool cacheable = _stableExecutionEligible &&
-                memory.CanCacheResources &&
-                buffer.Definition is not null &&
+            bool cacheable = buffer.Definition is not null &&
                 buffer.Ownership == RenderGraphResourceOwnership.GraphOwned &&
                 buffer.Lifetime == RenderGraphResourceLifetime.PerFrame &&
                 buffer.InitialData is null;
@@ -113,10 +112,9 @@ internal sealed partial class FrameExecutor
                 texture.NodePlacement,
                 begin,
                 end,
+                texture.Identity,
                 checked(_buffers.Length + textureIndex));
-            bool cacheable = _stableExecutionEligible &&
-                memory.CanCacheResources &&
-                texture.Definition is not null &&
+            bool cacheable = texture.Definition is not null &&
                 texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
                 texture.Lifetime == RenderGraphResourceLifetime.PerFrame;
             Texture? resource = cacheable

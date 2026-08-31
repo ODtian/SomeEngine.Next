@@ -78,8 +78,6 @@ internal sealed partial class FrameExecutor
             _stableExecutionSubmissionMode == _frame.Options.SubmissionMode &&
             _stableExecutionDebug == _frame.Options.Debug;
         FrameTransientResourceAllocator? transientResources = _frame.Slot.TransientResources;
-        if (_stableExecutionEligible && !sameExecution)
-            transientResources?.InvalidatePlacementHistory();
         if (!sameExecution)
         {
             _stableExecutionVersion = _stableExecutionEligible
