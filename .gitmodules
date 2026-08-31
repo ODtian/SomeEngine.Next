@@ -3,7 +3,7 @@
 	url = https://github.com/ODtian/Alimer.Bindings
 [submodule "external/SlangShaderSharp"]
 	path = external/SlangShaderSharp
-	url = https://github.com/DominicMaas/SlangShaderSharp
+	url = https://github.com/ODtian/SlangShaderSharp.git
 [submodule "external/tracy"]
 	path = external/tracy
 	url = https://github.com/wolfpld/tracy.git

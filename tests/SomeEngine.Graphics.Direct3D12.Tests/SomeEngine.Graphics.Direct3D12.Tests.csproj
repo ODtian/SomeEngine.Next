@@ -4,7 +4,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <SlangStandardModuleSourceRoot>$(MSBuildThisFileDirectory)..\..\external\SlangShaderSharp\standard-modules</SlangStandardModuleSourceRoot>
+    <SlangStandardModuleSourceRoot>$(MSBuildThisFileDirectory)Fixtures\$(SlangTestFixtureDirectory)</SlangStandardModuleSourceRoot>
     <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Isolation!=ProcessDestructive)&amp;(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
   </PropertyGroup>
   <ItemGroup>

@@ -195,7 +195,7 @@ public sealed class LiveShaderProgram : IDisposable
                     "Slang linked-program reflection failed",
                     layoutDiagnostics));
             }
-            if (reflection.EntryPointCount != entries.Length)
+            if (reflection.EntryPointCount != checked((nuint)entries.Length))
             {
                 throw new InvalidDataException(
                     $"Slang linked program exposes {reflection.EntryPointCount} entry points; " +

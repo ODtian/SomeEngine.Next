@@ -18,10 +18,8 @@ internal sealed unsafe partial class D3D12Backend
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
         ShaderReflection reflection = GetProgramReflection(desc.Program);
         EntryPointReflection[] workGraphEntryPoints = CollectWorkGraphEntries(
-            desc.Program,
             reflection,
-            capability,
-            out Dictionary<(string Name, uint ArrayIndex), EntryPointReflection> reflectedNodes);
+            capability);
         CompiledProgramLibrary library = CompileProgramLibrary(
             desc.Program,
             reflection,
@@ -46,7 +44,6 @@ internal sealed unsafe partial class D3D12Backend
                 nativeDevice,
                 global,
                 library,
-                reflectedNodes,
                 desc);
             byte[][] replayLibraries = ResolveStateObjectReplayCode(
                 nativeCache,
@@ -71,7 +68,7 @@ internal sealed unsafe partial class D3D12Backend
                 capability,
                 graphProperties,
                 graphIndex,
-                reflectedNodes);
+                workGraphEntryPoints);
             WorkGraphMemoryRequirements requirements = ReadWorkGraphMemoryRequirements(
                 graphProperties,
                 graphIndex);
@@ -185,13 +182,10 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private EntryPointReflection[] CollectWorkGraphEntries(
-        IComponentType program,
         ShaderReflection reflection,
-        WorkGraphs capability,
-        out Dictionary<(string Name, uint ArrayIndex), EntryPointReflection> reflectedNodes)
+        WorkGraphs capability)
     {
         var entries = new List<EntryPointReflection>();
-        reflectedNodes = [];
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
             EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
@@ -202,28 +196,6 @@ internal sealed unsafe partial class D3D12Backend
                 entry,
                 [SlangStage.Dispatch, SlangStage.Node],
                 "Work Graph member");
-            (string Name, uint ArrayIndex) nodeID = GetWorkGraphNodeIdentity(program, entry);
-            if (!reflectedNodes.TryAdd(nodeID, entry))
-            {
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    $"Slang produced duplicate Work Graph node identity " +
-                    $"'{nodeID.Name}[{nodeID.ArrayIndex}]'.");
-            }
-            ValidateWorkGraphNodeGrid(
-                program,
-                entry,
-                nodeID,
-                capability,
-                "NodeMaxDispatchGrid",
-                fixedGrid: false);
-            ValidateWorkGraphNodeGrid(
-                program,
-                entry,
-                nodeID,
-                capability,
-                "NodeDispatchGrid",
-                fixedGrid: true);
             entries.Add(entry);
         }
         if (entries.Count == 0 || (uint)entries.Count > capability.MaximumNodeCount)
@@ -233,39 +205,6 @@ internal sealed unsafe partial class D3D12Backend
                 "The linked Slang program exposes on valid Work Graph nodes or exceeds the Device limit.");
         }
         return [.. entries];
-    }
-
-    private void ValidateWorkGraphNodeGrid(
-        IComponentType program,
-        EntryPointReflection entry,
-        (string Name, uint ArrayIndex) nodeID,
-        WorkGraphs capability,
-        string attribute,
-        bool fixedGrid)
-    {
-        if (!TryGetWorkGraphGrid(
-                program,
-                entry,
-                attribute,
-                out uint x,
-                out uint y,
-                out uint z) ||
-            WorkGraphValidation.IsMaximumDispatchGridValid(
-                capability.MaximumDispatchGridDimension,
-                capability.MaximumOneDimensionalDispatchGridX,
-                capability.MaximumDispatchGridVolume,
-                x,
-                y,
-                z))
-        {
-            return;
-        }
-        string detail = fixedGrid
-            ? "has a fixed dispatch grid outside the Device limits."
-            : "exceeds the Device Work Graph dispatch-grid limits.";
-        throw new GraphicsException(
-            GraphicsError.PipelineCreation,
-            $"Slang node '{nodeID.Name}[{nodeID.ArrayIndex}]' {detail}");
     }
 
     private ID3D12StateObject* CreateNativeWorkGraphStateObject(
@@ -404,7 +343,7 @@ internal sealed unsafe partial class D3D12Backend
         WorkGraphs capability,
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
-        Dictionary<(string Name, uint ArrayIndex), EntryPointReflection> reflectedNodes)
+        EntryPointReflection[] submittedEntryPoints)
     {
         uint nativeEntryPointCount = graphProperties->GetNumEntrypoints(graphIndex);
         if (nativeEntryPointCount == 0 || nativeEntryPointCount > capability.MaximumNodeCount)
@@ -417,7 +356,7 @@ internal sealed unsafe partial class D3D12Backend
             graphProperties,
             graphIndex,
             nativeEntryPointCount,
-            reflectedNodes,
+            submittedEntryPoints,
             capability.MaximumInputRecordSize);
     }
 
@@ -906,113 +845,20 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static (string Name, uint ArrayIndex) GetWorkGraphNodeIdentity(
-        IComponentType program,
-        EntryPointReflection entryPoint)
-    {
-        AttributeReflection attribute = FindWorkGraphAttribute(program, entryPoint, "NodeID");
-        if (attribute == AttributeReflection.Null)
-        {
-            string name = WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
-            if (string.IsNullOrWhiteSpace(name))
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    "Slang returned a Work Graph entry point without a name.");
-            return (name, 0);
-        }
-        if (attribute.ArgumentCount is < 1 or > 2)
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "Slang's NodeID attribute must contain a node name and optional array index.");
-        }
-        string nodeName = attribute.GetArgumentValueString(0);
-        if (string.IsNullOrWhiteSpace(nodeName))
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                "Slang's NodeID attribute contains an empty node name.");
-        }
-        uint arrayIndex = 0;
-        if (attribute.ArgumentCount == 2)
-        {
-            SlangResult result = attribute.GetArgumentValueInt(1, out int value);
-            if (result.Failed || value < 0)
-            {
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    $"Slang's NodeID array index is invalid: {result}.");
-            }
-            arrayIndex = checked((uint)value);
-        }
-        return (nodeName, arrayIndex);
-    }
-
-    private static bool TryGetWorkGraphGrid(
-        IComponentType program,
-        EntryPointReflection entryPoint,
-        string attributeName,
-        out uint x,
-        out uint y,
-        out uint z)
-    {
-        AttributeReflection attribute = FindWorkGraphAttribute(program, entryPoint, attributeName);
-        if (attribute == AttributeReflection.Null)
-        {
-            x = y = z = 0;
-            return false;
-        }
-        if (attribute.ArgumentCount != 3)
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                $"Slang's {attributeName} attribute must contain three integers.");
-        }
-        x = ReadPositiveWorkGraphInteger(attribute, 0, attributeName);
-        y = ReadPositiveWorkGraphInteger(attribute, 1, attributeName);
-        z = ReadPositiveWorkGraphInteger(attribute, 2, attributeName);
-        return true;
-    }
-
-    private static uint ReadPositiveWorkGraphInteger(
-        AttributeReflection attribute,
-        uint index,
-        string attributeName)
-    {
-        SlangResult result = attribute.GetArgumentValueInt(index, out int value);
-        if (result.Failed || value <= 0)
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                $"Slang's {attributeName} component {index} is invalid: {result}.");
-        }
-        return checked((uint)value);
-    }
-
-    private static AttributeReflection FindWorkGraphAttribute(
-        IComponentType program,
-        EntryPointReflection entryPoint,
-        string name)
-    {
-        FunctionReflection function = entryPoint.Function;
-        if (function == FunctionReflection.Null)
-        {
-            throw new GraphicsException(
-                GraphicsError.PipelineCreation,
-                $"Slang did not expose function reflection for Work Graph entry point " +
-                $"'{WorkGraphValidation.GetEffectiveEntryPointName(entryPoint)}'.");
-        }
-        IGlobalSession globalSession = program.GetSession().GetGlobalSession();
-        return function.FindAttributeByName(globalSession, name) ?? AttributeReflection.Null;
-    }
-
     private static WorkGraphEntryPointState[] ReadWorkGraphEntries(
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
         uint nativeEntryPointCount,
-        IReadOnlyDictionary<(string Name, uint ArrayIndex), EntryPointReflection> reflectedNodes,
+        EntryPointReflection[] submittedEntryPoints,
         uint maximumInputRecordSize)
     {
+        if (nativeEntryPointCount != checked((uint)submittedEntryPoints.Length))
+        {
+            throw new GraphicsException(
+                GraphicsError.PipelineCreation,
+                $"D3D12 materialized {nativeEntryPointCount} Work Graph entry points, but " +
+                $"{submittedEntryPoints.Length} Slang entry points were submitted.");
+        }
         var result = new WorkGraphEntryPointState[checked((int)nativeEntryPointCount)];
         var materialized = new HashSet<uint>();
         for (uint ordinal = 0; ordinal < nativeEntryPointCount; ordinal++)
@@ -1038,20 +884,11 @@ internal sealed unsafe partial class D3D12Backend
                     "D3D12 returned duplicate Work Graph entry-point indices.");
             }
 
-            (string Name, uint ArrayIndex) nodeID = (new string(id.Name), id.ArrayIndex);
-            if (!reflectedNodes.TryGetValue(nodeID, out EntryPointReflection entryPoint))
-            {
-                throw new GraphicsException(
-                    GraphicsError.PipelineCreation,
-                    $"D3D12 returned Work Graph entry '{nodeID.Name}" +
-                    $"[{nodeID.ArrayIndex}]', which is not an identity reflected by Slang.");
-            }
-
             uint size = graphProperties->GetEntrypointRecordSizeInBytes(graphIndex, nativeIndex);
             uint alignment = graphProperties->GetEntrypointRecordAlignmentInBytes(graphIndex, nativeIndex);
             RequireValidWorkGraphEntryPointLayout(maximumInputRecordSize, size, alignment);
             result[checked((int)ordinal)] = new WorkGraphEntryPointState(
-                entryPoint,
+                submittedEntryPoints[checked((int)ordinal)],
                 nativeIndex,
                 size,
                 alignment);
@@ -1086,15 +923,8 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device device,
         D3D12RootSignatureState global,
         CompiledProgramLibrary library,
-        IReadOnlyDictionary<(string Name, uint ArrayIndex), EntryPointReflection> reflectedNodes,
         in WorkGraphPipelineDesc desc)
     {
-        (string Name, uint ArrayIndex)[] sortedNodes = [.. reflectedNodes.Keys];
-        Array.Sort(sortedNodes, static (left, right) =>
-        {
-            int name = string.CompareOrdinal(left.Name, right.Name);
-            return name != 0 ? name : left.ArrayIndex.CompareTo(right.ArrayIndex);
-        });
         uint nodeMask = desc.NodeMask;
         return CreateCanonicalPipelineKey(
             device,
@@ -1113,15 +943,11 @@ internal sealed unsafe partial class D3D12Backend
             },
             writer =>
             {
+                // Node identities and grid metadata are already part of the compiled-library
+                // identity. D3D12 is the authority for the materialized graph topology.
                 writer.Write(nodeMask);
                 WriteCanonicalString(writer, WorkGraphProgramName);
                 writer.Write((byte)WorkGraphFlags.IncludeAllAvailableNodes);
-                writer.Write(checked((uint)sortedNodes.Length));
-                foreach ((string Name, uint ArrayIndex) node in sortedNodes)
-                {
-                    WriteCanonicalString(writer, node.Name);
-                    writer.Write(node.ArrayIndex);
-                }
             });
     }
 

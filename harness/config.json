@@ -1274,8 +1274,8 @@
       {
         "name": "SlangShaderSharp",
         "path": "external/SlangShaderSharp",
-        "url": "https://github.com/DominicMaas/SlangShaderSharp",
-        "commit": "cac1f1b1b616af7fa3a54c5b241f68e37a15f166",
+        "url": "https://github.com/ODtian/SlangShaderSharp.git",
+        "commit": "18a8df4b18b4ee3105a9ace1f2817e12f4caae6b",
         "role": "accepted source project dependency"
       },
       {

@@ -18,7 +18,7 @@ internal sealed class D3D12TestShaderProgram : IDisposable
     private const string SlangWorkGraphModuleSha256 =
         "6CAF5B40D92E1827909AA8EAF670848B7F7693AE429C0DE0E1776456D0865D13";
     private const string SlangCompilerSha256 =
-        "D8CB09D946242045DE90792635BD1F1F9A5117C9ADF7B8B040BE694F89DFFCB2";
+        "BF277592ACAB648F8BD1777054A6703B6DF797B7F2FCA55ED6116777363986D7";
     private const string SlangGlslangSha256 =
         "5CE8128D06A3362AF1261EF132A6F6F2C0CEDD3919EFA64E798A68F21A505598";
 
@@ -252,7 +252,7 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 throw new InvalidDataException(
                     FormatFailure("Slang test-program reflection failed", layoutDiagnostics));
             }
-            if (reflection.EntryPointCount != entries.Length)
+            if (reflection.EntryPointCount != checked((nuint)entries.Length))
             {
                 throw new InvalidDataException(
                     $"The linked test program reports {reflection.EntryPointCount} entry points; " +
@@ -423,7 +423,7 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 throw new InvalidDataException(
                     FormatFailure("Slang pass-through reflection failed", layoutDiagnostics));
             }
-            if (reflection.EntryPointCount != entries.Length)
+            if (reflection.EntryPointCount != checked((nuint)entries.Length))
             {
                 throw new InvalidDataException(
                     $"The pass-through program reports {reflection.EntryPointCount} entry points; " +

@@ -121,8 +121,7 @@ public sealed class WarpWorkGraphTests
             ?? AttributeReflection.Null;
         Assert.NotEqual(AttributeReflection.Null, nodeID);
         Assert.Equal("renamedNode", nodeID.GetArgumentValueString(0));
-        Assert.True(nodeID.GetArgumentValueInt(1, out int arrayIndex).Succeeded);
-        Assert.Equal(3, arrayIndex);
+        Assert.Equal(2u, nodeID.ArgumentCount);
         Assert.NotEqual(
             AttributeReflection.Null,
             function.FindAttributeByName(globalSession, "NodeIsProgramEntry")

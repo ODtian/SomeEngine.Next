@@ -332,7 +332,7 @@ internal static class BenchmarkShaders
 
             ShaderReflection reflection = linked.GetLayout(0, out ISlangBlob? layoutDiagnostics);
             TrackOptional(layoutDiagnostics);
-            if (reflection == ShaderReflection.Null || reflection.EntryPointCount != Entries.Length)
+            if (reflection == ShaderReflection.Null || reflection.EntryPointCount != checked((nuint)Entries.Length))
                 throw new InvalidDataException(FormatFailure("Slang reflection failed", layoutDiagnostics));
             var reflected = new EntryPointReflection[Entries.Length];
             var code = new byte[Entries.Length][];
