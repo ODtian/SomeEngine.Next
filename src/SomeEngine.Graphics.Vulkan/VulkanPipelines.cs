@@ -38,6 +38,7 @@ internal sealed unsafe partial class VulkanBackend
             new VulkanSpirvEntryBindings(desc.Pixel, pixel.ActiveBindings),
         ]);
         VkPipeline native = default;
+        VulkanPipeline? pipeline = null;
         try
         {
             if (nativeCache is null)
@@ -45,15 +46,15 @@ internal sealed unsafe partial class VulkanBackend
             else
                 lock (nativeCache.Gate)
                     native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, nativeCache.Native);
-            var pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Graphics, desc.Label);
-            nativeDevice.RegisterChild(pipeline);
-            return pipeline;
+            pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Graphics, desc.Label);
+            return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
         {
-            if (native.Handle != 0)
+            if (pipeline is null && native.Handle != 0)
                 Api.DestroyPipeline(nativeDevice.Native, native, null);
-            layout.Release();
+            if (pipeline is null)
+                layout.Release();
             throw;
         }
     }
@@ -64,8 +65,22 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache = null)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        GraphicsPipelineSnapshot snapshot = new(desc);
-        return Task.Run(() => snapshot.Create(this, nativeDevice, cache));
+        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        try
+        {
+            GraphicsPipelineSnapshot snapshot = new(desc, program.Program);
+            return EnqueuePipelineCreation(
+                nativeDevice,
+                nativeCache,
+                program,
+                () => snapshot.Create(this, nativeDevice, nativeCache));
+        }
+        catch
+        {
+            program.Dispose();
+            throw;
+        }
     }
 
     internal Pipeline CreateComputePipeline(
@@ -94,6 +109,7 @@ internal sealed unsafe partial class VulkanBackend
         VkPipeline native = default;
         VkShaderModule module = default;
         nint entryName = 0;
+        VulkanPipeline? pipeline = null;
         try
         {
             module = CreateShaderModule(nativeDevice, compute.Code);
@@ -112,7 +128,21 @@ internal sealed unsafe partial class VulkanBackend
                 Layout = layout.Native,
             };
             Result result;
+#if SOMEENGINE_TESTING
+            FaultHooks.Before(VulkanCallPoint.CreatePipeline);
+            bool overridden = FaultHooks.TryOverride(
+                VulkanCallPoint.CreatePipeline,
+                out Result injectedResult);
+#endif
+#if SOMEENGINE_TESTING
+            if (overridden)
+            {
+                result = injectedResult;
+            }
+            else if (nativeCache is null)
+#else
             if (nativeCache is null)
+#endif
             {
                 result = Api.CreateComputePipelines(
                     nativeDevice.Native, default, 1, &createInfo, null, &native);
@@ -123,16 +153,19 @@ internal sealed unsafe partial class VulkanBackend
                     result = Api.CreateComputePipelines(
                         nativeDevice.Native, nativeCache.Native, 1, &createInfo, null, &native);
             }
-            ThrowPipelineFailure(result, "vkCreateComputePipelines");
-            var pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Compute, desc.Label);
-            nativeDevice.RegisterChild(pipeline);
-            return pipeline;
+#if SOMEENGINE_TESTING
+            FaultHooks.After(VulkanCallPoint.CreatePipeline);
+#endif
+            ThrowPipelineFailure(nativeDevice, result, "vkCreateComputePipelines");
+            pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Compute, desc.Label);
+            return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
         {
-            if (native.Handle != 0)
+            if (pipeline is null && native.Handle != 0)
                 Api.DestroyPipeline(nativeDevice.Native, native, null);
-            layout.Release();
+            if (pipeline is null)
+                layout.Release();
             throw;
         }
         finally
@@ -150,8 +183,22 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache = null)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        ComputePipelineDesc snapshot = desc;
-        return Task.Run(() => CreateComputePipeline(nativeDevice, snapshot, cache));
+        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        try
+        {
+            ComputePipelineSnapshot snapshot = new(desc, program.Program);
+            return EnqueuePipelineCreation(
+                nativeDevice,
+                nativeCache,
+                program,
+                () => snapshot.Create(this, nativeDevice, nativeCache));
+        }
+        catch
+        {
+            program.Dispose();
+            throw;
+        }
     }
 
     private VkPipeline CreateGraphicsPipelineNative(
@@ -304,16 +351,39 @@ internal sealed unsafe partial class VulkanBackend
                 Layout = layout.Native,
             };
             VkPipeline native = default;
-            Result result = Api.CreateGraphicsPipelines(
-                device.Native,
-                cache,
-                1,
-                &createInfo,
-                null,
-                &native);
-            ThrowPipelineFailure(result, "vkCreateGraphicsPipelines");
+            ThrowPipelineFailure(
+                device,
+                CreateGraphicsPipelineNative(device, cache, &createInfo, &native),
+                "vkCreateGraphicsPipelines");
             return native;
         }
+    }
+
+    private Result CreateGraphicsPipelineNative(
+        VulkanDevice device,
+        VkPipelineCache cache,
+        GraphicsPipelineCreateInfo* createInfo,
+        VkPipeline* native)
+    {
+#if SOMEENGINE_TESTING
+        FaultHooks.Before(VulkanCallPoint.CreatePipeline);
+        if (FaultHooks.TryOverride(VulkanCallPoint.CreatePipeline, out Result injectedResult))
+        {
+            FaultHooks.After(VulkanCallPoint.CreatePipeline);
+            return injectedResult;
+        }
+#endif
+        Result result = Api.CreateGraphicsPipelines(
+            device.Native,
+            cache,
+            1,
+            createInfo,
+            null,
+            native);
+#if SOMEENGINE_TESTING
+        FaultHooks.After(VulkanCallPoint.CreatePipeline);
+#endif
+        return result;
     }
 
     private static VertexInputBindingDescription[] CreateVertexBindings(
@@ -417,7 +487,7 @@ internal sealed unsafe partial class VulkanBackend
                 PCode = (uint*)codePointer,
             };
             VkShaderModule module = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 Api.CreateShaderModule(device.Native, &createInfo, null, &module),
                 "vkCreateShaderModule");
             return module;
@@ -712,10 +782,15 @@ internal sealed unsafe partial class VulkanBackend
 
     private static LogicOp ToNative(LogicOperation operation) => (LogicOp)operation;
 
-    private static void ThrowPipelineFailure(Result result, string operation)
+    private static void ThrowPipelineFailure(
+        VulkanDevice device,
+        Result result,
+        string operation)
     {
         if (result == Result.Success)
             return;
+        if (result == Result.ErrorDeviceLost)
+            throw device.PublishDeviceLoss(result, operation);
         throw new GraphicsException(
             result is Result.ErrorOutOfHostMemory or Result.ErrorOutOfDeviceMemory
                 ? GraphicsError.OutOfMemory
@@ -754,9 +829,11 @@ internal sealed unsafe partial class VulkanBackend
         private readonly uint? _rasterizedStreamIndex;
         private readonly bool _hasStreamOutput;
 
-        internal GraphicsPipelineSnapshot(in GraphicsPipelineDesc desc)
+        internal GraphicsPipelineSnapshot(
+            in GraphicsPipelineDesc desc,
+            IComponentType program)
         {
-            _program = desc.Program;
+            _program = program;
             _vertex = desc.Vertex;
             _pixel = desc.Pixel;
             _vertexBuffers = desc.VertexBuffers.ToArray();
@@ -840,6 +917,37 @@ internal sealed unsafe partial class VulkanBackend
                     _staticSamplers),
                 cache);
         }
+    }
+
+    private sealed class ComputePipelineSnapshot
+    {
+        private readonly IComponentType _program;
+        private readonly EntryPointReflection _compute;
+        private readonly string? _label;
+        private readonly StaticSamplerBinding[] _staticSamplers;
+
+        internal ComputePipelineSnapshot(
+            in ComputePipelineDesc desc,
+            IComponentType program)
+        {
+            _program = program;
+            _compute = desc.Compute;
+            _label = desc.Label;
+            _staticSamplers = desc.StaticSamplers.ToArray();
+        }
+
+        internal Pipeline Create(
+            VulkanBackend backend,
+            VulkanDevice device,
+            SomeEngine.Graphics.PipelineCache? cache) =>
+            backend.CreateComputePipeline(
+                device,
+                new ComputePipelineDesc(
+                    _program,
+                    _compute,
+                    _label,
+                    _staticSamplers),
+                cache);
     }
 
     private sealed class VulkanPipeline : Pipeline, IVulkanRetained

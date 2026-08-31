@@ -20,6 +20,7 @@ internal sealed unsafe partial class VulkanBackend
             build.Entries,
             desc.StaticSamplers);
         VkPipeline native = default;
+        VulkanPipeline? pipeline = null;
         try
         {
             if (nativeCache is null)
@@ -36,21 +37,21 @@ internal sealed unsafe partial class VulkanBackend
                 properties.ShaderGroupHandleAlignment,
                 properties.ShaderGroupBaseAlignment,
                 properties.MaxShaderGroupStride);
-            var pipeline = new VulkanPipeline(
+            pipeline = new VulkanPipeline(
                 nativeDevice,
                 native,
                 layout,
                 PipelineType.RayTracing,
                 desc.Label,
                 state);
-            nativeDevice.RegisterChild(pipeline);
-            return pipeline;
+            return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
         {
-            if (native.Handle != 0)
+            if (pipeline is null && native.Handle != 0)
                 Api.DestroyPipeline(nativeDevice.Native, native, null);
-            layout.Release();
+            if (pipeline is null)
+                layout.Release();
             throw;
         }
     }
@@ -61,8 +62,22 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache)
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
-        var snapshot = new RayPipelineSnapshot(desc);
-        return Task.Run(() => snapshot.Create(this, nativeDevice, cache));
+        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        try
+        {
+            var snapshot = new RayPipelineSnapshot(desc, program.Program);
+            return EnqueuePipelineCreation(
+                nativeDevice,
+                nativeCache,
+                program,
+                () => snapshot.Create(this, nativeDevice, nativeCache));
+        }
+        catch
+        {
+            program.Dispose();
+            throw;
+        }
     }
 
     private RayTracingShaderTable CreateRayTracingShaderTableCore(
@@ -75,9 +90,17 @@ internal sealed unsafe partial class VulkanBackend
             throw new ArgumentException("The ShaderTable requires a Vulkan ray-tracing Pipeline.", nameof(desc));
         ValidateShaderTableDescription(desc, pipeline.RayTracing);
         pipeline.RetainNative();
-        var table = new VulkanRayTracingShaderTable(nativeDevice, pipeline, desc);
-        nativeDevice.RegisterChild(table);
-        return table;
+        VulkanRayTracingShaderTable table;
+        try
+        {
+            table = new VulkanRayTracingShaderTable(nativeDevice, pipeline, desc);
+        }
+        catch
+        {
+            pipeline.ReleaseNative();
+            throw;
+        }
+        return RegisterChildOrDispose(nativeDevice, table);
     }
 
     private void UpdateRayTracingShaderTableCore(
@@ -180,7 +203,19 @@ internal sealed unsafe partial class VulkanBackend
                     Layout = layout.Native,
                 };
                 VkPipeline native = default;
-                Result result = device.RayTracingPipelineApi.CreateRayTracingPipelines(
+#if SOMEENGINE_TESTING
+                FaultHooks.Before(VulkanCallPoint.CreatePipeline);
+                bool overridden = FaultHooks.TryOverride(
+                    VulkanCallPoint.CreatePipeline,
+                    out Result injectedResult);
+#endif
+                Result result =
+#if SOMEENGINE_TESTING
+                    overridden
+                        ? injectedResult
+                        :
+#endif
+                    device.RayTracingPipelineApi.CreateRayTracingPipelines(
                     device.Native,
                     default,
                     cache,
@@ -188,7 +223,10 @@ internal sealed unsafe partial class VulkanBackend
                     &createInfo,
                     null,
                     &native);
-                ThrowPipelineFailure(result, "vkCreateRayTracingPipelinesKHR");
+#if SOMEENGINE_TESTING
+                FaultHooks.After(VulkanCallPoint.CreatePipeline);
+#endif
+                ThrowPipelineFailure(device, result, "vkCreateRayTracingPipelinesKHR");
                 return native;
             }
         }
@@ -492,7 +530,7 @@ internal sealed unsafe partial class VulkanBackend
                     requirements.MemoryTypeBits,
                     MemoryType.Upload,
                     deviceAddress: true);
-                ThrowIfFailed(
+                device.ThrowIfDeviceCallFailed(
                     device.Backend.Api.BindBufferMemory(device.Native, buffer, memory.Native, 0),
                     "vkBindBufferMemory(shader table)");
                 BufferDeviceAddressInfo addressInfo = new()
@@ -504,7 +542,7 @@ internal sealed unsafe partial class VulkanBackend
                 byte[] handles = new byte[checked((int)(state.GroupCount * state.HandleSize))];
                 fixed (byte* handlePointer = handles)
                 {
-                    ThrowIfFailed(
+                    device.ThrowIfDeviceCallFailed(
                         device.RayTracingPipelineApi.GetRayTracingShaderGroupHandles(
                             device.Native,
                             pipeline.Native,
@@ -549,7 +587,7 @@ internal sealed unsafe partial class VulkanBackend
                 SharingMode = SharingMode.Exclusive,
             };
             VkBuffer buffer = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateBuffer(device.Native, &createInfo, null, &buffer),
                 "vkCreateBuffer(shader table)");
             return buffer;
@@ -634,7 +672,7 @@ internal sealed unsafe partial class VulkanBackend
                 Offset = 0,
                 Size = Math.Min(AlignUp(size, device.NonCoherentAtomSize), memory.Size),
             };
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.FlushMappedMemoryRanges(device.Native, 1, &range),
                 "vkFlushMappedMemoryRanges(shader table)");
         }
@@ -663,9 +701,11 @@ internal sealed unsafe partial class VulkanBackend
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
 
-        internal RayPipelineSnapshot(in RayTracingPipelineDesc desc)
+        internal RayPipelineSnapshot(
+            in RayTracingPipelineDesc desc,
+            IComponentType program)
         {
-            _program = desc.Program;
+            _program = program;
             _rayGeneration = desc.RayGeneration.ToArray();
             _miss = desc.Miss.ToArray();
             _callable = desc.Callable.ToArray();

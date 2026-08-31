@@ -63,6 +63,7 @@ internal sealed unsafe partial class VulkanBackend
                 value.Entry,
                 value.Shader.ActiveBindings)).ToArray());
         VkPipeline native = default;
+        VulkanPipeline? pipeline = null;
         try
         {
             if (nativeCache is null)
@@ -70,15 +71,15 @@ internal sealed unsafe partial class VulkanBackend
             else
                 lock (nativeCache.Gate)
                     native = CreateMeshPipelineNative(nativeDevice, layout, shaders, desc, nativeCache.Native);
-            var pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Mesh, desc.Label);
-            nativeDevice.RegisterChild(pipeline);
-            return pipeline;
+            pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Mesh, desc.Label);
+            return RegisterChildOrDispose(nativeDevice, pipeline);
         }
         catch
         {
-            if (native.Handle != 0)
+            if (pipeline is null && native.Handle != 0)
                 Api.DestroyPipeline(nativeDevice.Native, native, null);
-            layout.Release();
+            if (pipeline is null)
+                layout.Release();
             throw;
         }
     }
@@ -89,8 +90,22 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        var snapshot = new MeshPipelineSnapshot(desc);
-        return Task.Run(() => snapshot.Create(this, nativeDevice, cache));
+        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        try
+        {
+            var snapshot = new MeshPipelineSnapshot(desc, program.Program);
+            return EnqueuePipelineCreation(
+                nativeDevice,
+                nativeCache,
+                program,
+                () => snapshot.Create(this, nativeDevice, nativeCache));
+        }
+        catch
+        {
+            program.Dispose();
+            throw;
+        }
     }
 
     private VkPipeline CreateMeshPipelineNative(
@@ -218,14 +233,10 @@ internal sealed unsafe partial class VulkanBackend
                 Layout = layout.Native,
             };
             VkPipeline native = default;
-            Result result = Api.CreateGraphicsPipelines(
-                device.Native,
-                cache,
-                1,
-                &createInfo,
-                null,
-                &native);
-            ThrowPipelineFailure(result, "vkCreateGraphicsPipelines(mesh)");
+            ThrowPipelineFailure(
+                device,
+                CreateGraphicsPipelineNative(device, cache, &createInfo, &native),
+                "vkCreateGraphicsPipelines(mesh)");
             return native;
         }
     }
@@ -253,9 +264,11 @@ internal sealed unsafe partial class VulkanBackend
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
 
-        internal MeshPipelineSnapshot(in MeshPipelineDesc desc)
+        internal MeshPipelineSnapshot(
+            in MeshPipelineDesc desc,
+            IComponentType program)
         {
-            _program = desc.Program;
+            _program = program;
             _mesh = desc.Mesh;
             _task = desc.Amplification;
             _pixel = desc.Pixel;

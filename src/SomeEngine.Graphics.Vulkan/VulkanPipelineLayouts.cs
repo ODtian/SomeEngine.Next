@@ -639,7 +639,7 @@ internal sealed unsafe partial class VulkanBackend
                         PPushConstantRanges = pushPointer,
                     };
                     VkPipelineLayout native = default;
-                    ThrowIfFailed(
+                    _device.ThrowIfDeviceCallFailed(
                         _device.Backend.Api.CreatePipelineLayout(_device.Native, &createInfo, null, &native),
                         "vkCreatePipelineLayout");
                     return new VulkanPipelineLayoutState(
@@ -789,7 +789,7 @@ internal sealed unsafe partial class VulkanBackend
                     SType = StructureType.DescriptorSetLayoutCreateInfo,
                 };
                 VkDescriptorSetLayout result = default;
-                ThrowIfFailed(
+                _device.ThrowIfDeviceCallFailed(
                     _device.Backend.Api.CreateDescriptorSetLayout(_device.Native, &empty, null, &result),
                     "vkCreateDescriptorSetLayout(empty)");
                 return result;
@@ -835,7 +835,7 @@ internal sealed unsafe partial class VulkanBackend
                     PBindings = bindingPointer,
                 };
                 VkDescriptorSetLayout result = default;
-                ThrowIfFailed(
+                _device.ThrowIfDeviceCallFailed(
                     _device.Backend.Api.CreateDescriptorSetLayout(_device.Native, &createInfo, null, &result),
                     "vkCreateDescriptorSetLayout");
                 return result;
@@ -872,7 +872,7 @@ internal sealed unsafe partial class VulkanBackend
             if (customBorder.SType != 0)
                 createInfo.PNext = &customBorder;
             VkSampler native = default;
-            ThrowIfFailed(
+            _device.ThrowIfDeviceCallFailed(
                 _device.Backend.Api.CreateSampler(_device.Native, &createInfo, null, &native),
                 "vkCreateSampler(static)");
             _nativeStaticSamplers.Add(native);
