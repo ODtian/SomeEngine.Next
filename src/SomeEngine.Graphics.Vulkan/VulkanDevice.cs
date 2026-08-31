@@ -54,11 +54,29 @@ internal sealed unsafe partial class VulkanBackend
         return native;
     }
 
+    private static T RegisterChildOrDispose<T>(VulkanDevice device, T child)
+        where T : GraphicsObject
+    {
+        try
+        {
+            device.RegisterChild(child);
+            return child;
+        }
+        catch
+        {
+            child.Dispose();
+            throw;
+        }
+    }
+
     private sealed partial class VulkanDevice : RhiDevice
     {
+        private static readonly InvalidOperationException ChildDetachFailure =
+            new("A Vulkan Device child did not detach during Device teardown.");
+
         private readonly object _gate = new();
         private readonly VulkanBackend _backend;
-        private readonly HashSet<GraphicsObject> _children = [];
+        private readonly GraphicsObjectRegistry _children;
         private readonly Dictionary<(QueueType Type, uint Index), VulkanQueue> _queues = [];
         private readonly Dictionary<Type, DeviceCapability> _capabilities = [];
         private readonly PhysicalDeviceMemoryProperties _memoryProperties;
@@ -97,6 +115,7 @@ internal sealed unsafe partial class VulkanBackend
             : base(adapter, capabilities, 1, desc.Label)
         {
             _backend = backend;
+            _children = new GraphicsObjectRegistry(_gate);
             _physicalDevice = physicalDevice;
             _native = native;
             BackendOwner = backend;
@@ -104,6 +123,8 @@ internal sealed unsafe partial class VulkanBackend
             PhysicalDeviceProperties nativeProperties;
             backend.Api.GetPhysicalDeviceProperties(physicalDevice, &nativeProperties);
             NonCoherentAtomSize = nativeProperties.Limits.NonCoherentAtomSize;
+            MinimumUniformBufferOffsetAlignment =
+                nativeProperties.Limits.MinUniformBufferOffsetAlignment;
             TimestampPeriod = nativeProperties.Limits.TimestampPeriod;
             MaxBoundDescriptorSets = nativeProperties.Limits.MaxBoundDescriptorSets;
             MaxDrawIndirectCount = nativeProperties.Limits.MaxDrawIndirectCount;
@@ -121,13 +142,15 @@ internal sealed unsafe partial class VulkanBackend
             LoadExtendedEntryPoints(enabledFeatures, extendedFeatures);
             CreateQueues(queuePlan);
             CreateCapabilities(enabledFeatures, extensions, nativeFeatures);
+            _pipelineWorker = new VulkanPipelineWorker();
         }
 
         internal VulkanBackend Backend => _backend;
-        internal VkDevice Native => _native;
         internal VkPhysicalDevice PhysicalDevice => _physicalDevice;
+        internal VkDevice Native => _native;
         internal PhysicalDeviceMemoryProperties MemoryProperties => _memoryProperties;
         internal ulong NonCoherentAtomSize { get; }
+        internal ulong MinimumUniformBufferOffsetAlignment { get; }
         internal float TimestampPeriod { get; }
         internal uint MaxBoundDescriptorSets { get; }
         internal uint MaxDrawIndirectCount { get; }
@@ -191,11 +214,18 @@ internal sealed unsafe partial class VulkanBackend
                 adapter.PhysicalDevice,
                 extensions);
             RequireCoreFeatures(available12, available13);
+            QueuePlan queuePlan = QueuePlan.Create(
+                vk,
+                adapter.PhysicalDevice,
+                queueDescriptions);
 
             DeviceFeatures supportedFeatures = GetSupportedFeatures(
+                vk,
+                adapter.PhysicalDevice,
                 extensions,
                 availableFeatures.Features,
-                extendedFeatures);
+                extendedFeatures,
+                queuePlan);
             DeviceFeatures missing = desc.RequiredFeatures & ~supportedFeatures;
             if (missing != DeviceFeatures.None)
             {
@@ -205,7 +235,6 @@ internal sealed unsafe partial class VulkanBackend
             DeviceFeatures enabledFeatures = desc.RequiredFeatures |
                 (desc.OptionalFeatures & supportedFeatures);
 
-            QueuePlan queuePlan = QueuePlan.Create(vk, adapter.PhysicalDevice, queueDescriptions);
             List<string> enabledExtensions = [];
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0)
                 enabledExtensions.Add(SwapchainExtension);
@@ -288,21 +317,79 @@ internal sealed unsafe partial class VulkanBackend
                 queue.CollectCompleted();
         }
 
-        internal void RegisterChild(GraphicsObject child)
+        internal GraphicsException PublishDeviceLoss(Result result, string operation)
         {
-            lock (_gate)
-            {
-                ThrowIfUnavailable();
-                if (!_children.Add(child))
-                    throw new InvalidOperationException("The Vulkan Device child is already registered.");
-            }
+            var candidate = new GraphicsException(
+                GraphicsError.DeviceLost,
+                $"{operation} detected Vulkan device loss.",
+                (long)result);
+
+            if (TryMarkLost(candidate))
+                OnFirstDeviceLoss();
+
+            return Loss ?? candidate;
         }
 
-        internal void UnregisterChild(GraphicsObject child)
+        internal GraphicsException PublishInternalDeviceLoss(string operation)
         {
-            lock (_gate)
-                _children.Remove(child);
+            var candidate = new GraphicsException(
+                GraphicsError.DeviceLost,
+                operation);
+
+            if (TryMarkLost(candidate))
+                OnFirstDeviceLoss();
+
+            return Loss ?? candidate;
         }
+
+        internal void ThrowIfDeviceCallFailed(
+            Result result,
+            string operation,
+            GraphicsError ordinaryError = GraphicsError.NativeFailure)
+        {
+            if (result == Result.Success)
+                return;
+            if (result == Result.ErrorDeviceLost)
+                throw PublishDeviceLoss(result, operation);
+            if (result is Result.ErrorOutOfHostMemory or Result.ErrorOutOfDeviceMemory)
+            {
+                throw new GraphicsException(
+                    GraphicsError.OutOfMemory,
+                    $"{operation} ran out of memory.",
+                    (long)result);
+            }
+            throw new GraphicsException(
+                ordinaryError,
+                $"{operation} failed with Vulkan result {result}.",
+                (long)result);
+        }
+
+        private void OnFirstDeviceLoss()
+        {
+            _pipelineWorker.StopAccepting(Loss!);
+            GraphicsObject? work = _children.BuildWorkList(static child =>
+                child is VulkanCommandContext or VulkanSwapchain);
+            while (work is GraphicsObject child)
+            {
+                work = child.DeviceLossWorkNext;
+                child.DeviceLossWorkNext = null;
+                if (child is VulkanCommandContext context)
+                    context.MarkDeviceLostNoThrow();
+                else if (child is VulkanSwapchain swapchain)
+                    swapchain.MarkDeviceLostNoThrow();
+            }
+
+            foreach (VulkanQueue queue in _queues.Values)
+                queue.MarkWorkDeviceLostNoThrow();
+        }
+
+        internal void RegisterChild(GraphicsObject child)
+        {
+            ThrowIfUnavailable();
+            _children.Add(child);
+        }
+
+        internal void UnregisterChild(GraphicsObject child) => _children.Remove(child);
 
         internal override void Release(bool fromParent)
         {
@@ -312,20 +399,60 @@ internal sealed unsafe partial class VulkanBackend
                 native = _native;
                 if (native.Handle == 0)
                     return;
-                MarkDisposed();
             }
 
-            _ = _backend.Api.DeviceWaitIdle(native);
-            foreach (VulkanQueue queue in _queues.Values)
-                queue.CollectCompleted();
-            GraphicsObject[] children;
-            lock (_gate)
+            try
             {
-                children = _children.ToArray();
-                _children.Clear();
+                _pipelineWorker.StopAndJoin(new ObjectDisposedException(
+                    nameof(VulkanDevice),
+                    "The Vulkan device is being disposed."));
             }
-            foreach (GraphicsObject child in children)
+            catch (Exception exception)
+            {
+                RecordReleaseFailure(exception);
+            }
+
+            Result idleResult = _backend.Api.DeviceWaitIdle(native);
+            bool deviceLost = Status == DeviceStatus.Lost ||
+                idleResult == Result.ErrorDeviceLost;
+            if (idleResult == Result.ErrorDeviceLost && Status == DeviceStatus.Active)
+                _ = PublishDeviceLoss(idleResult, "vkDeviceWaitIdle");
+            else if (!deviceLost && idleResult != Result.Success)
+            {
+                try
+                {
+                    ThrowIfDeviceCallFailed(idleResult, "vkDeviceWaitIdle");
+                }
+                catch (Exception exception)
+                {
+                    RecordReleaseFailure(exception);
+                }
+            }
+
+            if (!deviceLost && idleResult == Result.Success)
+            {
+                foreach (VulkanQueue queue in _queues.Values)
+                    queue.CollectCompletedAfterIdle();
+            }
+
+            lock (_gate)
+                MarkDisposed();
+
+            GraphicsObject? children = _children.CloseAndBuildDrainList();
+            while (children is GraphicsObject child)
+            {
+                children = child.RegistryDrainNext;
+                child.RegistryDrainNext = null;
+                if (child is VulkanCommandContext context)
+                    context.ReleaseFromDeviceNoThrow();
                 child.DisposeFromParent();
+                if (_children.CompleteDrain(child))
+                    RecordReleaseFailure(ChildDetachFailure);
+            }
+
+            if (_children.HasRetainedFailures || TeardownFailure is not null)
+                return;
+
             _bindlessPublisher.Release();
             _descriptorAllocator.Release();
             foreach (VulkanQueue queue in _queues.Values)
@@ -369,6 +496,7 @@ internal sealed unsafe partial class VulkanBackend
                         assignment.RhiIndex,
                         assignment.Priority,
                         assignment.FamilyIndex,
+                        assignment.SupportsSparseBinding,
                         nativeQueue);
                     _queues.Add((assignment.Type, assignment.RhiIndex), queue);
                 }
@@ -390,7 +518,6 @@ internal sealed unsafe partial class VulkanBackend
             Add(new PipelineCreationSupport(
                 this,
                 PipelineCreationFeatures.PersistentCacheData |
-                PipelineCreationFeatures.CompileRequiredDetection |
                 PipelineCreationFeatures.PipelineSpecialization));
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0)
                 Add(new Presentation(this));
@@ -614,23 +741,41 @@ internal sealed unsafe partial class VulkanBackend
 
         private void AddExternalCapabilities(DeviceFeatures enabledFeatures)
         {
-            ExternalHandleType[] handles =
-            [
-                ExternalHandleType.OpaqueWin32,
-            ];
             if ((enabledFeatures & DeviceFeatures.ExternalResources) != 0)
             {
+                ExternalHandleSupport heap = QueryExternalHeapSupport(
+                    _backend.Api,
+                    _physicalDevice,
+                    ExternalHandleType.OpaqueWin32);
                 Add(new ExternalResources(
                     this,
-                    handles,
-                    handles,
-                    handles,
-                    handles,
-                    handles,
-                    handles));
+                    [],
+                    [],
+                    [],
+                    [],
+                    heap.Importable ? [ExternalHandleType.OpaqueWin32] : [],
+                    heap.Exportable ? [ExternalHandleType.OpaqueWin32] : []));
             }
             if ((enabledFeatures & DeviceFeatures.ExternalTimelines) != 0)
-                Add(new ExternalTimelines(this, handles, handles));
+            {
+                var import = new List<ExternalHandleType>(2);
+                var export = new List<ExternalHandleType>(2);
+                AddTimelineHandle(ExternalHandleType.OpaqueWin32);
+                AddTimelineHandle(ExternalHandleType.OpaqueWin32Kmt);
+                Add(new ExternalTimelines(this, import.ToArray(), export.ToArray()));
+
+                void AddTimelineHandle(ExternalHandleType type)
+                {
+                    ExternalHandleSupport support = QueryExternalTimelineSupport(
+                        _backend.Api,
+                        _physicalDevice,
+                        type);
+                    if (support.Importable)
+                        import.Add(type);
+                    if (support.Exportable)
+                        export.Add(type);
+                }
+            }
         }
 
         private void AddRayTracingCapability(DeviceFeatures enabledFeatures)
@@ -1027,17 +1172,20 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private static DeviceFeatures GetSupportedFeatures(
+            Vk vk,
+            VkPhysicalDevice physicalDevice,
             IReadOnlySet<string> extensions,
             in PhysicalDeviceFeatures features,
-            VulkanExtendedFeatureSupport extended)
+            VulkanExtendedFeatureSupport extended,
+            QueuePlan queuePlan)
         {
             DeviceFeatures supported = DeviceFeatures.IndirectCommands;
-            if (extensions.Contains(SwapchainExtension))
-                supported |= DeviceFeatures.Presentation;
-            if (features.SparseBinding && features.SparseResidencyBuffer)
+            if (features.SparseBinding &&
+                features.SparseResidencyBuffer &&
+                queuePlan.SupportsSparseGraphicsQueue0)
+            {
                 supported |= DeviceFeatures.SparseResources;
-            if (extensions.Contains(MemoryBudgetExtension))
-                supported |= DeviceFeatures.Residency;
+            }
             if (extensions.Contains(CalibratedTimestampsExtension))
                 supported |= DeviceFeatures.CalibratedTimestamps;
             if (extended.MeshShader)
@@ -1048,11 +1196,90 @@ internal sealed unsafe partial class VulkanBackend
                 extensions.Contains(DeferredHostOperationsExtension))
                 supported |= DeviceFeatures.RayTracing;
             if (extensions.Contains(ExternalMemoryWin32Extension))
-                supported |= DeviceFeatures.ExternalResources;
+            {
+                ExternalHandleSupport heap = QueryExternalHeapSupport(
+                    vk,
+                    physicalDevice,
+                    ExternalHandleType.OpaqueWin32);
+                if (heap.Importable || heap.Exportable)
+                    supported |= DeviceFeatures.ExternalResources;
+            }
             if (extensions.Contains(ExternalSemaphoreWin32Extension))
-                supported |= DeviceFeatures.ExternalTimelines;
+            {
+                ExternalHandleSupport opaque = QueryExternalTimelineSupport(
+                    vk,
+                    physicalDevice,
+                    ExternalHandleType.OpaqueWin32);
+                ExternalHandleSupport kmt = QueryExternalTimelineSupport(
+                    vk,
+                    physicalDevice,
+                    ExternalHandleType.OpaqueWin32Kmt);
+                if (opaque.Importable || opaque.Exportable ||
+                    kmt.Importable || kmt.Exportable)
+                    supported |= DeviceFeatures.ExternalTimelines;
+            }
             return supported;
         }
+
+        private static ExternalHandleSupport QueryExternalHeapSupport(
+            Vk vk,
+            VkPhysicalDevice physicalDevice,
+            ExternalHandleType type)
+        {
+            PhysicalDeviceExternalBufferInfo info = new()
+            {
+                SType = StructureType.PhysicalDeviceExternalBufferInfo,
+                Usage = BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit,
+                HandleType = ToNativeMemoryHandleType(type),
+            };
+            ExternalBufferProperties properties = new()
+            {
+                SType = StructureType.ExternalBufferProperties,
+            };
+            vk.GetPhysicalDeviceExternalBufferProperties(
+                physicalDevice,
+                &info,
+                &properties);
+            ExternalMemoryFeatureFlags features =
+                properties.ExternalMemoryProperties.ExternalMemoryFeatures;
+            return new ExternalHandleSupport(
+                (features & ExternalMemoryFeatureFlags.ImportableBit) != 0,
+                (features & ExternalMemoryFeatureFlags.ExportableBit) != 0);
+        }
+
+        private static ExternalHandleSupport QueryExternalTimelineSupport(
+            Vk vk,
+            VkPhysicalDevice physicalDevice,
+            ExternalHandleType type)
+        {
+            SemaphoreTypeCreateInfo timeline = new()
+            {
+                SType = StructureType.SemaphoreTypeCreateInfo,
+                SemaphoreType = SemaphoreType.Timeline,
+            };
+            PhysicalDeviceExternalSemaphoreInfo info = new()
+            {
+                SType = StructureType.PhysicalDeviceExternalSemaphoreInfo,
+                PNext = &timeline,
+                HandleType = ToNativeSemaphoreHandleType(type),
+            };
+            ExternalSemaphoreProperties properties = new()
+            {
+                SType = StructureType.ExternalSemaphoreProperties,
+            };
+            vk.GetPhysicalDeviceExternalSemaphoreProperties(
+                physicalDevice,
+                &info,
+                &properties);
+            ExternalSemaphoreFeatureFlags features = properties.ExternalSemaphoreFeatures;
+            return new ExternalHandleSupport(
+                (features & ExternalSemaphoreFeatureFlags.ImportableBit) != 0,
+                (features & ExternalSemaphoreFeatureFlags.ExportableBit) != 0);
+        }
+
+        private readonly record struct ExternalHandleSupport(
+            bool Importable,
+            bool Exportable);
 
         private static string[] EnumerateDeviceExtensions(Vk vk, VkPhysicalDevice physicalDevice)
         {
@@ -1084,7 +1311,7 @@ internal sealed unsafe partial class VulkanBackend
     private sealed partial class VulkanQueue : RhiQueue
     {
         private readonly VulkanDevice _device;
-        private readonly object _submitGate = new();
+        private readonly object _gate = new();
         private VkQueue _native;
         private VkSemaphore _completion;
         private ulong _nextCompletion;
@@ -1095,11 +1322,13 @@ internal sealed unsafe partial class VulkanBackend
             uint index,
             float priority,
             uint familyIndex,
+            bool supportsSparseBinding,
             VkQueue native)
             : base(device, type, index, priority, 0)
         {
             _device = device;
             FamilyIndex = familyIndex;
+            SupportsSparseBinding = supportsSparseBinding;
             _native = native;
             SemaphoreTypeCreateInfo timeline = new()
             {
@@ -1113,21 +1342,23 @@ internal sealed unsafe partial class VulkanBackend
                 PNext = &timeline,
             };
             VkSemaphore semaphore = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateSemaphore(device.Native, &createInfo, null, &semaphore),
                 "vkCreateSemaphore(queue completion)");
             _completion = semaphore;
         }
 
         internal uint FamilyIndex { get; }
+        internal bool SupportsSparseBinding { get; }
         internal VkQueue Native => _native;
         internal VkSemaphore CompletionSemaphore => _completion;
-        internal object SubmitGate => _submitGate;
+        internal object Gate => _gate;
 
         internal ulong ReserveCompletionValue() => checked(++_nextCompletion);
 
         internal void Release(VkDevice nativeDevice)
         {
+            ReleaseWorkNoThrow();
             if (_completion.Handle != 0)
             {
                 _device.Backend.Api.DestroySemaphore(nativeDevice, _completion, null);
@@ -1147,6 +1378,10 @@ internal sealed unsafe partial class VulkanBackend
 
         internal FamilyPlan[] Families { get; }
         internal QueueAssignment[] Assignments { get; }
+        internal bool SupportsSparseGraphicsQueue0 => Assignments.Any(static assignment =>
+            assignment.Type == QueueType.Graphics &&
+            assignment.RhiIndex == 0 &&
+            assignment.SupportsSparseBinding);
 
         internal static QueuePlan Create(
             Vk vk,
@@ -1187,6 +1422,8 @@ internal sealed unsafe partial class VulkanBackend
                         firstRhiIndex + index,
                         description.Priority,
                         familyIndex,
+                        (properties[(int)familyIndex].QueueFlags &
+                         QueueFlags.SparseBindingBit) != 0,
                         nativeIndex));
                 }
                 nextRhiIndex[description.Type] = checked(firstRhiIndex + description.Count);
@@ -1274,5 +1511,6 @@ internal sealed unsafe partial class VulkanBackend
         uint RhiIndex,
         float Priority,
         uint FamilyIndex,
+        bool SupportsSparseBinding,
         uint NativeQueueIndex);
 }
