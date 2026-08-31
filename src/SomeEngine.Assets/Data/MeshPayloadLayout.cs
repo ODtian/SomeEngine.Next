@@ -8,6 +8,7 @@ public readonly record struct MeshPayloadPage(
     long Offset,
     int Size,
     uint ClusterCount,
+    uint VertexStride,
     Vector3 QuantOrigin,
     float QuantStep,
     ReadOnlyMemory<byte> Sha256);
@@ -37,6 +38,8 @@ public static class MeshPayloadLayout
             (ulong)MeshPageHeader.Size + ((ulong)header.ClusterCount * GPUCluster.SizeInBytes));
         ulong expectedAttributesOffset = checked(
             expectedPositionsOffset + ((ulong)header.TotalVertexCount * 3 * sizeof(ushort)));
+        ulong expectedIndicesOffset = checked(
+            expectedAttributesOffset + ((ulong)header.TotalVertexCount * header.VertexStride));
         ulong pageSize = checked((ulong)header.IndicesOffset + ((ulong)header.TotalTriangleCount * 3));
 
         if (header.ClusterCount == 0)
@@ -47,7 +50,7 @@ public static class MeshPayloadLayout
         if (header.ClustersOffset != MeshPageHeader.Size ||
             header.PositionsOffset != expectedPositionsOffset ||
             header.AttributesOffset != expectedAttributesOffset ||
-            header.IndicesOffset < header.AttributesOffset)
+            header.IndicesOffset != expectedIndicesOffset)
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has an inconsistent stream layout: " +
@@ -79,6 +82,7 @@ public static class MeshPayloadLayout
             offset,
             checked((int)pageSize),
             header.ClusterCount,
+            header.VertexStride,
             new Vector3(header.QuantOriginX, header.QuantOriginY, header.QuantOriginZ),
             header.QuantStep,
             ReadOnlyMemory<byte>.Empty);

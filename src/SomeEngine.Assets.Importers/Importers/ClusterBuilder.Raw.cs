@@ -30,7 +30,7 @@ public static partial class ClusterBuilder
             PreparedRawMesh prepared = PrepareRawMesh(rawPos, rawAttributes, rawIndices, scratch);
             MeshletBuild meshletBuild = BuildMeshletData(prepared);
             SortMeshlets(meshletBuild.Meshlets, meshletBuild.Quantization);
-            List<VertexAttributeriptor> descriptors = CreateVertexDescriptors(prepared.Attributes);
+            List<VertexAttributeDescriptor> descriptors = CreateVertexDescriptors(prepared.Attributes);
             PageBuildOutput pageOutput = WriteMeshPages(stream, scratch.PageBuffer, prepared, meshletBuild, descriptors);
             long bvhOffset = WriteBvh(stream, pageOutput.ClusterInfos);
             return CreateMeshAsset(name, regionNames, stream, meshletBuild.Quantization, descriptors, bvhOffset);
@@ -240,32 +240,39 @@ public static partial class ClusterBuilder
         return leftCode.CompareTo(rightCode);
     }
 
-    private static List<VertexAttributeriptor> CreateVertexDescriptors(List<RawAttribute> attributes)
+    private static List<VertexAttributeDescriptor> CreateVertexDescriptors(List<RawAttribute> attributes)
     {
-        var descriptors = new List<VertexAttributeriptor>(attributes.Count);
+        var descriptors = new List<VertexAttributeDescriptor>(attributes.Count);
+        int byteOffset = 0;
         for (int index = 0; index < attributes.Count; index++)
         {
             RawAttribute attribute = attributes[index];
-            descriptors.Add(
-                new VertexAttributeriptor
-                {
-                    Name = attribute.Name,
-                    Type = attribute.TargetType,
-                    NumComponents = attribute.NumComponents,
-                    IsNormalized = attribute.Normalized,
-                    StreamIndex = (ushort)index,
-                });
+            var descriptor = new VertexAttributeDescriptor
+            {
+                Name = attribute.Name,
+                Type = attribute.TargetType,
+                NumComponents = attribute.NumComponents,
+                IsNormalized = attribute.Normalized,
+                ByteOffset = checked((ushort)byteOffset),
+            };
+            descriptors.Add(descriptor);
+            byteOffset = checked(byteOffset + descriptor.GetSize());
         }
 
         return descriptors;
     }
+
+    private static uint VertexStride(List<VertexAttributeDescriptor> descriptors)
+        => descriptors.Count == 0
+            ? 0u
+            : checked((uint)(descriptors[^1].ByteOffset + descriptors[^1].GetSize()));
 
     private static PageBuildOutput WriteMeshPages(
         FileStream stream,
         byte[] pageBuffer,
         PreparedRawMesh prepared,
         MeshletBuild meshletBuild,
-        List<VertexAttributeriptor> descriptors)
+        List<VertexAttributeDescriptor> descriptors)
     {
         var writer = new MeshPageWriter(stream, pageBuffer, prepared, meshletBuild, descriptors);
         return writer.Write();
@@ -286,15 +293,15 @@ public static partial class ClusterBuilder
         List<string> regionNames,
         FileStream stream,
         QuantizationInfo quantization,
-        List<VertexAttributeriptor> descriptors,
+        List<VertexAttributeDescriptor> descriptors,
         long bvhOffset)
     {
         var meshAsset = new Mesh
         {
             Name = name,
             Bounds = CreateBounds(quantization),
+            VertexStride = VertexStride(descriptors),
             Payload = new byte[stream.Length],
-            Attributes = CreateSchemaAttributes(descriptors),
             BvhOffset = (ulong)bvhOffset,
             QuantOrigin = CreateVec3(quantization.Origin),
             QuantStep = quantization.Step,
@@ -324,26 +331,6 @@ public static partial class ClusterBuilder
             Y = value.Y,
             Z = value.Z,
         };
-    }
-
-    private static VertexAttribute[] CreateSchemaAttributes(
-        List<VertexAttributeriptor> descriptors)
-    {
-        VertexAttribute[] schemaAttributes = new SomeEngine.Assets.Schema.VertexAttribute[descriptors.Count];
-        for (int index = 0; index < descriptors.Count; index++)
-        {
-            VertexAttributeriptor descriptor = descriptors[index];
-            schemaAttributes[index] = new SomeEngine.Assets.Schema.VertexAttribute
-            {
-                Name = descriptor.Name,
-                Type = (SomeEngine.Assets.Schema.ValueType)descriptor.Type,
-                Components = descriptor.NumComponents,
-                Normalized = descriptor.IsNormalized,
-                Offset = descriptor.StreamIndex,
-            };
-        }
-
-        return schemaAttributes;
     }
 
     private static MeshRegion[] CreateMeshRegions(List<string> regionNames)
@@ -404,32 +391,34 @@ public static partial class ClusterBuilder
             byte[] pageBuffer,
             PreparedRawMesh mesh,
             MeshletBuild meshletBuild,
-            List<VertexAttributeriptor> descriptors)
+            List<VertexAttributeDescriptor> descriptors)
         {
             Stream = stream;
             PageBuffer = pageBuffer;
             Mesh = mesh;
             MeshletBuild = meshletBuild;
             Descriptors = descriptors;
-            CurrentStreams = CreateCurrentStreams(descriptors);
-            LocalStreamBytes = CreateLocalStreams(descriptors);
+            VertexStride = checked((int)ClusterBuilder.VertexStride(descriptors));
+            CurrentVertexBytes = [];
+            LocalVertexBytes = new List<byte>(MaxVerticesPerMeshlet * VertexStride);
         }
 
         private FileStream Stream { get; }
         private byte[] PageBuffer { get; }
         private PreparedRawMesh Mesh { get; }
         private MeshletBuild MeshletBuild { get; }
-        private List<VertexAttributeriptor> Descriptors { get; }
+        private List<VertexAttributeDescriptor> Descriptors { get; }
         private List<MeshPageInfo> Pages { get; } = [];
         private List<ClusterInfo> ClusterInfos { get; } = [];
         private List<GPUCluster> CurrentClusters { get; } = [];
         private List<ushort> CurrentPositions { get; } = [];
-        private List<byte>[] CurrentStreams { get; }
+        private List<byte> CurrentVertexBytes { get; }
         private List<byte> CurrentIndices { get; } = [];
         private Dictionary<uint, ushort> UsedMap { get; } = new(MaxVerticesPerMeshlet);
         private List<ushort> LocalPositions { get; } = new(MaxVerticesPerMeshlet * 3);
         private List<byte> LocalIndices { get; } = new(MaxTrianglesPerMeshlet * 3);
-        private List<byte>[] LocalStreamBytes { get; }
+        private List<byte> LocalVertexBytes { get; }
+        private int VertexStride { get; }
         private int CurrentBytes { get; set; } = PageHeaderSize;
 
         public PageBuildOutput Write()
@@ -444,29 +433,6 @@ public static partial class ClusterBuilder
             return new PageBuildOutput(Pages, ClusterInfos);
         }
 
-        private static List<byte>[] CreateCurrentStreams(
-            List<VertexAttributeriptor> descriptors)
-        {
-            List<byte>[] streams = new List<byte>[descriptors.Count];
-            for (int index = 0; index < descriptors.Count; index++)
-            {
-                streams[index] = [];
-            }
-
-            return streams;
-        }
-
-        private static List<byte>[] CreateLocalStreams(
-            List<VertexAttributeriptor> descriptors)
-        {
-            List<byte>[] streams = new List<byte>[descriptors.Count];
-            for (int index = 0; index < descriptors.Count; index++)
-            {
-                streams[index] = new List<byte>(MaxVerticesPerMeshlet * descriptors[index].GetSize());
-            }
-
-            return streams;
-        }
     }
 
     private sealed partial class MeshPageWriter
@@ -492,10 +458,7 @@ public static partial class ClusterBuilder
             UsedMap.Clear();
             LocalPositions.Clear();
             LocalIndices.Clear();
-            for (int index = 0; index < LocalStreamBytes.Length; index++)
-            {
-                LocalStreamBytes[index].Clear();
-            }
+            LocalVertexBytes.Clear();
         }
 
         private QuantizedBounds ComputeIntBounds(ReadOnlySpan<uint> meshletIndices)
@@ -549,7 +512,7 @@ public static partial class ClusterBuilder
             decodedMax = Vector3.Max(decodedMax, decoded);
             for (int index = 0; index < Mesh.Attributes.Count; index++)
             {
-                PackAttribute(LocalStreamBytes[index], Mesh.Attributes[index], (int)globalIndex);
+                PackAttribute(LocalVertexBytes, Mesh.Attributes[index], (int)globalIndex);
             }
         }
 
@@ -688,13 +651,8 @@ public static partial class ClusterBuilder
 
         private int ClusterPayloadSize()
         {
-            int attributeSize = 0;
-            for (int index = 0; index < LocalStreamBytes.Length; index++)
-            {
-                attributeSize += LocalStreamBytes[index].Count;
-            }
-
-            return Unsafe.SizeOf<GPUCluster>() + LocalPositions.Count * 2 + attributeSize + LocalIndices.Count;
+            return Unsafe.SizeOf<GPUCluster>() + LocalPositions.Count * 2 +
+                LocalVertexBytes.Count + LocalIndices.Count;
         }
 
         private void EnsurePageSpace(int bytesToAdd)
@@ -738,10 +696,7 @@ public static partial class ClusterBuilder
         {
             int payloadSize = ClusterPayloadSize();
             CurrentPositions.AddRange(LocalPositions);
-            for (int index = 0; index < CurrentStreams.Length; index++)
-            {
-                CurrentStreams[index].AddRange(LocalStreamBytes[index]);
-            }
+            CurrentVertexBytes.AddRange(LocalVertexBytes);
 
             CurrentIndices.AddRange(LocalIndices);
             CurrentBytes += payloadSize;
@@ -860,7 +815,7 @@ public static partial class ClusterBuilder
             uint positionsOffset = clustersOffset + (uint)clustersSize;
             int positionsSize = CurrentPositions.Count * sizeof(ushort);
             uint attributesOffset = positionsOffset + (uint)positionsSize;
-            int attributesSize = CurrentAttributeSize();
+            int attributesSize = CurrentVertexBytes.Count;
             uint indicesOffset = attributesOffset + (uint)attributesSize;
             int indicesSize = CurrentIndices.Count;
             return new PageOffsets(
@@ -873,17 +828,6 @@ public static partial class ClusterBuilder
                 indicesOffset,
                 indicesSize,
                 (int)indicesOffset + indicesSize);
-        }
-
-        private int CurrentAttributeSize()
-        {
-            int size = 0;
-            for (int index = 0; index < CurrentStreams.Length; index++)
-            {
-                size += CurrentStreams[index].Count;
-            }
-
-            return size;
         }
 
         private void WritePage(PageOffsets offsets)
@@ -909,6 +853,7 @@ public static partial class ClusterBuilder
             header.QuantOriginY = MeshletBuild.Quantization.Origin.Y;
             header.QuantOriginZ = MeshletBuild.Quantization.Origin.Z;
             header.QuantStep = MeshletBuild.Quantization.Step;
+            header.VertexStride = checked((uint)VertexStride);
         }
     }
 
@@ -922,20 +867,10 @@ public static partial class ClusterBuilder
                 .CopyTo(pageSpan.Slice((int)offsets.ClustersOffset, offsets.ClustersSize));
             MemoryMarshal.Cast<ushort, byte>(CollectionsMarshal.AsSpan(CurrentPositions))
                 .CopyTo(pageSpan.Slice((int)offsets.PositionsOffset, offsets.PositionsSize));
-            WriteAttributeStreams(pageSpan, offsets.AttributesOffset);
+            CollectionsMarshal.AsSpan(CurrentVertexBytes)
+                .CopyTo(pageSpan.Slice((int)offsets.AttributesOffset, offsets.AttributesSize));
             CollectionsMarshal.AsSpan(CurrentIndices)
                 .CopyTo(pageSpan.Slice((int)offsets.IndicesOffset, offsets.IndicesSize));
-        }
-
-        private void WriteAttributeStreams(Span<byte> pageSpan, uint attributesOffset)
-        {
-            int writeOffset = (int)attributesOffset;
-            for (int index = 0; index < CurrentStreams.Length; index++)
-            {
-                Span<byte> streamSpan = CollectionsMarshal.AsSpan(CurrentStreams[index]);
-                streamSpan.CopyTo(pageSpan.Slice(writeOffset, streamSpan.Length));
-                writeOffset += streamSpan.Length;
-            }
         }
 
         private MeshPageInfo CreatePageInfo(PageOffsets offsets)
@@ -957,10 +892,7 @@ public static partial class ClusterBuilder
         {
             CurrentClusters.Clear();
             CurrentPositions.Clear();
-            for (int index = 0; index < CurrentStreams.Length; index++)
-            {
-                CurrentStreams[index].Clear();
-            }
+            CurrentVertexBytes.Clear();
 
             CurrentIndices.Clear();
             CurrentBytes = PageHeaderSize;

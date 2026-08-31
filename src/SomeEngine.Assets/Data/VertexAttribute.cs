@@ -17,18 +17,13 @@ public enum ValueType : byte
     Float64
 }
 
-public class VertexAttributeriptor
+internal sealed class VertexAttributeDescriptor
 {
     public string Name = "ATTRIB";
     public ValueType Type = ValueType.Float32;
     public byte NumComponents = 3;
     public bool IsNormalized = false;
-    /// <summary>
-    /// Stream index: the position of this attribute in the SoA stream order.
-    /// To compute the byte offset of stream N in a page:
-    ///   streamBase = attributesOffset + sum(stream[0..N-1].GetSize() * totalVertexCount)
-    /// </summary>
-    public ushort StreamIndex;
+    public ushort ByteOffset;
 
     public int GetSize()
     {

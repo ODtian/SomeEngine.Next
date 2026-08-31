@@ -89,6 +89,7 @@ public partial class Texture
 
     private static IList<TextureMipTile> CreateCanonicalMipTiles(Texture root)
     {
+        ValidateDescription(root);
         if (root.MipTiles is null || root.MipTiles.Count == 0)
             throw new InvalidDataException("Texture assets must contain mip/tile payloads.");
 
@@ -192,6 +193,7 @@ public partial class Texture
 
     private static void ValidateRootMetadata(Texture root)
     {
+        ValidateDescription(root);
         if (root.MipTiles is null || root.MipTiles.Count == 0)
             throw new InvalidDataException("Binary texture roots must declare mip/tile metadata.");
 
@@ -246,8 +248,19 @@ public partial class Texture
 
     private static void ValidateTileBounds(Texture root, TextureMipTile tile)
     {
+        bool cube = root.SampledDimension is
+            SomeEngine.Graphics.TextureViewDimension.Cube or
+            SomeEngine.Graphics.TextureViewDimension.CubeArray;
         if (tile.Face > 5)
             throw new InvalidDataException($"Texture {Describe(tile)} declares cube face {tile.Face}; maximum is 5.");
+        if (!cube && tile.Face != 0)
+            throw new InvalidDataException($"Texture {Describe(tile)} declares a cube face for a non-cube texture.");
+        if (tile.MipLevel >= root.MipLevelCount)
+            throw new InvalidDataException($"Texture {Describe(tile)} exceeds the declared mip count.");
+        if (tile.ArrayLayer >= root.ArrayLayerCount)
+            throw new InvalidDataException($"Texture {Describe(tile)} exceeds the declared array-layer count.");
+        if (tile.DepthSlice >= MipExtent(root.Depth, tile.MipLevel))
+            throw new InvalidDataException($"Texture {Describe(tile)} exceeds the declared depth extent.");
         uint mipWidth = MipExtent(root.Width, tile.MipLevel);
         uint mipHeight = MipExtent(root.Height, tile.MipLevel);
         if (root.Width != 0 && (tile.Width == 0 || tile.Width > mipWidth || tile.TileX >= mipWidth))
@@ -261,6 +274,46 @@ public partial class Texture
             throw new InvalidDataException(
                 $"Texture {Describe(tile)} height is outside " +
                 $"the {mipHeight}-pixel mip extent.");
+        }
+    }
+
+    private static void ValidateDescription(Texture root)
+    {
+        if (root.Width == 0 || root.Height == 0 || root.Depth == 0)
+            throw new InvalidDataException("Texture extents must be non-zero.");
+        if (root.MipLevelCount == 0 || root.ArrayLayerCount == 0)
+            throw new InvalidDataException("Texture mip and array-layer counts must be non-zero.");
+        if (!Enum.IsDefined(root.Dimension) || !Enum.IsDefined(root.Format) ||
+            !Enum.IsDefined(root.SampledFormat) || !Enum.IsDefined(root.SampledDimension))
+        {
+            throw new InvalidDataException("Texture resource or sampled-view metadata is invalid.");
+        }
+
+        bool validShape = root.Dimension switch
+        {
+            SomeEngine.Graphics.TextureDimension.Texture1D =>
+                root.Height == 1 && root.Depth == 1 && root.SampledDimension is
+                    SomeEngine.Graphics.TextureViewDimension.Texture1D or
+                    SomeEngine.Graphics.TextureViewDimension.Texture1DArray,
+            SomeEngine.Graphics.TextureDimension.Texture2D =>
+                root.Depth == 1 && root.SampledDimension is
+                    SomeEngine.Graphics.TextureViewDimension.Texture2D or
+                    SomeEngine.Graphics.TextureViewDimension.Texture2DArray or
+                    SomeEngine.Graphics.TextureViewDimension.Cube or
+                    SomeEngine.Graphics.TextureViewDimension.CubeArray,
+            SomeEngine.Graphics.TextureDimension.Texture3D =>
+                root.ArrayLayerCount == 1 &&
+                root.SampledDimension == SomeEngine.Graphics.TextureViewDimension.Texture3D,
+            _ => false,
+        };
+        if (!validShape)
+            throw new InvalidDataException("Texture resource and sampled-view dimensions are incompatible.");
+        if (root.SampledDimension is
+                SomeEngine.Graphics.TextureViewDimension.Cube or
+                SomeEngine.Graphics.TextureViewDimension.CubeArray
+            && root.Width != root.Height)
+        {
+            throw new InvalidDataException("Cube textures must have equal width and height.");
         }
     }
 

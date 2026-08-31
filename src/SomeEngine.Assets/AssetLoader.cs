@@ -1,8 +1,8 @@
 namespace SomeEngine.Assets;
 
 /// <summary>
-/// The sole asset loading and residency service. It owns storage I/O, exact type admission, dependency-cycle
-/// detection, single-flight loading, resident values, handles, and lifetime drain.
+/// Loads one canonical object for each asset ID. Loader state, single-flight coordination and
+/// reload attempts remain private; application and render code retain ordinary object references.
 /// </summary>
 public sealed class AssetLoader : IAsyncDisposable
 {
@@ -15,77 +15,88 @@ public sealed class AssetLoader : IAsyncDisposable
     private readonly Dictionary<AssetGuid, Dictionary<AssetGuid, int>> _dependencies = [];
     private int _disposed;
 
-    /// <summary>
-    /// Creates the loader and takes exclusive ownership of <paramref name="storage"/>. Storage is
-    /// disposed only after all resident and in-flight assets have drained.
-    /// </summary>
     public AssetLoader(IAssetStorage storage, AssetLoaderOptions? options = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _options = options ?? AssetLoaderOptions.Empty;
     }
 
-    /// <summary>
-    /// Returns the canonical strong reference immediately and starts one shared background load
-    /// when necessary. The same logical asset in this loader always returns the same reference.
-    /// </summary>
-    public AssetHandle<T> Load<T>(AssetId<T> asset)
+    public ValueTask<T> LoadAsync<T>(
+        AssetId<T> asset,
+        CancellationToken cancellationToken = default)
         where T : class
     {
         ThrowIfDisposed();
-        if (!asset.IsValid)
-            throw new ArgumentException("An asset ID must be valid.", nameof(asset));
+        ValidateAssetId(asset);
         AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
         AssetGuid guid = asset.Value;
-        AssetEntry entry = Admit<T>(guid, descriptor);
-        return LoadCore(guid, entry, descriptor);
-    }
-
-    /// <summary>Waits for the current load attempt without cancelling the shared operation.</summary>
-    public ValueTask<AssetHandle<T>> WaitAsync<T>(
-        AssetHandle<T> handle,
-        CancellationToken cancellationToken = default)
-        where T : class
-    {
-        ThrowIfDisposed();
-        return _assets.WaitAsync(handle, cancellationToken);
-    }
-
-    /// <summary>
-    /// Replaces the current value behind the same strong handle. New reads are blocked, existing
-    /// reads drain, and the old value is completely released before storage is queried or the new
-    /// document is opened. Concurrent callers join the same replacement attempt.
-    /// </summary>
-    public ValueTask<AssetHandle<T>> ReloadAsync<T>(
-        AssetHandle<T> handle,
-        CancellationToken cancellationToken = default)
-        where T : class
-    {
-        ThrowIfDisposed();
-        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        return _assets.ReloadAsync(
-            handle,
-            (guid, operationCancellation) =>
-                ReloadValueAsync(guid, descriptor, operationCancellation),
+        AssetEntry entry = Admit(guid, descriptor);
+        return _assets.LoadAsync(
+            guid,
+            (_, operationCancellation) =>
+                LoadValueAsync(guid, entry, descriptor, operationCancellation),
             cancellationToken);
     }
 
-    /// <summary>
-    /// Acquires a scoped read of the current ready value. Unload and replacement wait for every
-    /// acquired read to leave before releasing the asset's one backing.
-    /// </summary>
-    public AssetRead<T> Read<T>(AssetHandle<T> handle)
+    public ValueTask<T> ReloadAsync<T>(
+        T asset,
+        CancellationToken cancellationToken = default)
         where T : class
     {
         ThrowIfDisposed();
-        return _assets.Read(handle);
+        ArgumentNullException.ThrowIfNull(asset);
+        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
+        Func<T, T, CancellationToken, ValueTask> apply = descriptor.ApplyReload
+            ?? throw new NotSupportedException(
+                $"Asset type '{typeof(T).FullName}' does not support in-place reload.");
+        if (!_assets.TryGetAssetGuid(asset, out AssetGuid guid))
+            throw new InvalidOperationException("The asset does not belong to this loader.");
+        return _assets.ReloadAsync(
+            asset,
+            (_, operationCancellation) =>
+                ReloadValueAsync(guid, descriptor, operationCancellation),
+            apply,
+            cancellationToken);
     }
 
-    public bool TryRead<T>(AssetHandle<T> handle, out AssetRead<T>? read)
+    public ValueTask<T> ReloadAsync<T>(
+        AssetId<T> asset,
+        CancellationToken cancellationToken = default)
         where T : class
     {
         ThrowIfDisposed();
-        return _assets.TryRead(handle, out read);
+        ValidateAssetId(asset);
+        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
+        Func<T, T, CancellationToken, ValueTask> apply = descriptor.ApplyReload
+            ?? throw new NotSupportedException(
+                $"Asset type '{typeof(T).FullName}' does not support in-place reload.");
+        AssetGuid guid = asset.Value;
+        return _assets.ReloadAsync(
+            guid,
+            (_, operationCancellation) =>
+                ReloadValueAsync(guid, descriptor, operationCancellation),
+            apply,
+            cancellationToken);
+    }
+
+    public ulong GetRevision<T>(T asset)
+        where T : class
+    {
+        ThrowIfDisposed();
+        return _assets.GetRevision(asset);
+    }
+
+    public bool TryGetAssetId<T>(T asset, out AssetId<T> assetId)
+        where T : class
+    {
+        ThrowIfDisposed();
+        if (_assets.TryGetAssetGuid(asset, out AssetGuid guid))
+        {
+            assetId = new AssetId<T>(guid);
+            return true;
+        }
+        assetId = default;
+        return false;
     }
 
     internal IAssetStorage Storage => _storage;
@@ -94,25 +105,22 @@ public sealed class AssetLoader : IAsyncDisposable
         where TOptions : notnull
         => _options.Get(fallback);
 
-    internal bool TryFind<T>(AssetGuid guid, out AssetHandle<T> handle)
+    internal bool TryFind<T>(AssetGuid guid, out T? value)
         where T : class
-        => _assets.TryFind(guid, out handle);
+        => _assets.TryFind(guid, out value);
 
-    internal async Task<AssetHandle<T>> LoadDependencyAsync<T>(
+    internal async ValueTask<T> LoadDependencyAsync<T>(
         AssetGuid owner,
         AssetId<T> asset,
         CancellationToken operationCancellation)
         where T : class
     {
-        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
+        ValidateAssetId(asset);
         AssetGuid guid = asset.Value;
-        ValidateGuid(guid);
-        AssetEntry entry = Admit<T>(guid, descriptor);
         AddDependency(owner, guid);
         try
         {
-            AssetHandle<T> handle = LoadCore(guid, entry, descriptor);
-            return await _assets.WaitAsync(handle, operationCancellation).ConfigureAwait(false);
+            return await LoadAsync(asset, operationCancellation).ConfigureAwait(false);
         }
         finally
         {
@@ -143,16 +151,6 @@ public sealed class AssetLoader : IAsyncDisposable
         }
     }
 
-    private AssetHandle<T> LoadCore<T>(
-        AssetGuid guid,
-        AssetEntry entry,
-        AssetTypeDescriptor<T> descriptor)
-        where T : class
-        => _assets.Load<T>(
-            guid,
-            (_, operationCancellation) =>
-                LoadValueAsync(guid, entry, descriptor, operationCancellation));
-
     private async Task<AssetPublication<T>> LoadValueAsync<T>(
         AssetGuid guid,
         AssetEntry entry,
@@ -168,9 +166,8 @@ public sealed class AssetLoader : IAsyncDisposable
                 ?? throw new InvalidDataException(
                     $"Asset loader for '{typeof(T).FullName}' returned null.");
             context.Commit(result);
-            AssetHandleState[] dependencies = context.TakeDependencies();
             await context.DisposeAsync().ConfigureAwait(false);
-            return new AssetPublication<T>(result, dependencies);
+            return new AssetPublication<T>(result);
         }
         catch
         {
@@ -211,39 +208,37 @@ public sealed class AssetLoader : IAsyncDisposable
                 return ValidateAdmission<T>(guid, existing);
         }
 
-        if (!_storage.TryFind(guid, out AssetEntry entry))
-            throw new KeyNotFoundException($"Asset {guid} was not found in storage.");
-        if (!descriptor.Accepts(entry))
-        {
-            throw new InvalidDataException(
-                $"Asset '{typeof(T).FullName}' does not accept stored type " +
-                $"'{entry.AssetType}' with fingerprint 0x{entry.SchemaFingerprint:X16}.");
-        }
-
+        AssetEntry entry = FindAndValidate(guid, descriptor);
         lock (_admissionGate)
         {
             if (_admissions.TryGetValue(guid, out AssetAdmission existing))
                 return ValidateAdmission<T>(guid, existing);
-
             _admissions.Add(guid, new AssetAdmission(typeof(T), entry));
             return entry;
         }
     }
 
-    private AssetEntry RefreshAdmission<T>(
-        AssetGuid guid,
-        AssetTypeDescriptor<T> descriptor)
+    private AssetEntry RefreshAdmission<T>(AssetGuid guid, AssetTypeDescriptor<T> descriptor)
         where T : class
     {
         lock (_admissionGate)
         {
             if (_admissions.TryGetValue(guid, out AssetAdmission existing)
                 && existing.RuntimeType != typeof(T))
-            {
                 _ = ValidateAdmission<T>(guid, existing);
-            }
         }
 
+        AssetEntry entry = FindAndValidate(guid, descriptor);
+        lock (_admissionGate)
+        {
+            _admissions[guid] = new AssetAdmission(typeof(T), entry);
+            return entry;
+        }
+    }
+
+    private AssetEntry FindAndValidate<T>(AssetGuid guid, AssetTypeDescriptor<T> descriptor)
+        where T : class
+    {
         if (!_storage.TryFind(guid, out AssetEntry entry))
             throw new KeyNotFoundException($"Asset {guid} was not found in storage.");
         if (!descriptor.Accepts(entry))
@@ -252,18 +247,7 @@ public sealed class AssetLoader : IAsyncDisposable
                 $"Asset '{typeof(T).FullName}' does not accept stored type " +
                 $"'{entry.AssetType}' with fingerprint 0x{entry.SchemaFingerprint:X16}.");
         }
-
-        lock (_admissionGate)
-        {
-            if (_admissions.TryGetValue(guid, out AssetAdmission existing)
-                && existing.RuntimeType != typeof(T))
-            {
-                return ValidateAdmission<T>(guid, existing);
-            }
-
-            _admissions[guid] = new AssetAdmission(typeof(T), entry);
-            return entry;
-        }
+        return entry;
     }
 
     private static AssetEntry ValidateAdmission<T>(AssetGuid guid, AssetAdmission admission)
@@ -275,7 +259,6 @@ public sealed class AssetLoader : IAsyncDisposable
                 $"Asset GUID '{guid}' is already loaded as '{admission.RuntimeType.FullName}', not " +
                 $"'{typeof(T).FullName}'. One GUID may have only one asset instance and backing.");
         }
-
         return admission.Entry;
     }
 
@@ -285,13 +268,11 @@ public sealed class AssetLoader : IAsyncDisposable
         {
             if (owner == dependency)
                 throw Cycle(owner, dependency);
-
             if (!_dependencies.TryGetValue(owner, out Dictionary<AssetGuid, int>? outgoing))
             {
                 outgoing = [];
                 _dependencies.Add(owner, outgoing);
             }
-
             outgoing.TryGetValue(dependency, out int count);
             outgoing[dependency] = checked(count + 1);
             if (CanReach(dependency, owner))
@@ -312,10 +293,7 @@ public sealed class AssetLoader : IAsyncDisposable
     {
         if (!_dependencies.TryGetValue(owner, out Dictionary<AssetGuid, int>? outgoing)
             || !outgoing.TryGetValue(dependency, out int count))
-        {
             return;
-        }
-
         if (count > 1)
             outgoing[dependency] = count - 1;
         else
@@ -335,26 +313,21 @@ public sealed class AssetLoader : IAsyncDisposable
                 return true;
             if (!visited.Add(current)
                 || !_dependencies.TryGetValue(current, out Dictionary<AssetGuid, int>? outgoing))
-            {
                 continue;
-            }
-
             foreach (AssetGuid next in outgoing.Keys)
                 pending.Push(next);
         }
-
         return false;
     }
 
     private static InvalidDataException Cycle(AssetGuid owner, AssetGuid dependency)
-        => new(
-            "Asset dependency cycle detected while " +
-            $"asset '{owner}' loaded asset '{dependency}'.");
+        => new($"Asset dependency cycle detected while asset '{owner}' loaded asset '{dependency}'.");
 
-    private static void ValidateGuid(AssetGuid guid)
+    private static void ValidateAssetId<T>(AssetId<T> asset)
+        where T : class
     {
-        if (guid.IsEmpty)
-            throw new ArgumentException("An asset GUID cannot be empty.", nameof(guid));
+        if (!asset.IsValid)
+            throw new ArgumentException("An asset ID must be valid.", nameof(asset));
     }
 
     private static async ValueTask DisposeUnpublishedAsync(object value)
@@ -371,7 +344,6 @@ public sealed class AssetLoader : IAsyncDisposable
     private readonly record struct AssetAdmission(Type RuntimeType, AssetEntry Entry);
 }
 
-/// <summary>Immutable type-keyed configuration for asset-specific loading behavior.</summary>
 public sealed class AssetLoaderOptions
 {
     private readonly IReadOnlyDictionary<Type, object> _values;

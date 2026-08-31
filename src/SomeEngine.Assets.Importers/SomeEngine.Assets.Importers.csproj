@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <ProjectReference Include="..\SomeEngine.Assets\SomeEngine.Assets.csproj" />
     <ProjectReference Include="..\..\external\Alimer.Bindings\src\Alimer.Bindings.MeshOptimizer\Alimer.Bindings.MeshOptimizer.csproj" />
     <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />

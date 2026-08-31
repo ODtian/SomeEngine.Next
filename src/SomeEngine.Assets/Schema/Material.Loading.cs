@@ -12,6 +12,7 @@ public partial class Material
             .ConfigureAwait(false);
         Material asset = document.Root;
         ValidateDependencies(asset);
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
 
         if (asset.Passes is { Count: > 0 } passes)
         {
@@ -21,7 +22,9 @@ public partial class Material
                     pass.Shader,
                     "Material",
                     "Pass.Shader");
-                _ = await context.LoadDependencyAsync(new AssetId<Shader>(shaderGuid)).ConfigureAwait(false);
+                pass.Shader!.Asset = await context
+                    .LoadDependencyAsync(new AssetId<Shader>(shaderGuid))
+                    .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
@@ -31,10 +34,39 @@ public partial class Material
             foreach (TextureBinding binding in textures)
             {
                 AssetGuid textureGuid = RequireGuid(binding.TextureGuid, "Texture.TextureGuid");
-                _ = await context.LoadDependencyAsync(new AssetId<Texture>(textureGuid)).ConfigureAwait(false);
+                Texture texture = await context.LoadDependencyAsync(new AssetId<Texture>(textureGuid)).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(binding.Name))
+                    throw new InvalidDataException("A material texture binding must have a name.");
+                values.Add(binding.Name, texture);
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
+
+        foreach (ScalarParam scalar in asset.Scalars ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(scalar.Name) || scalar.Value is not { } value)
+                throw new InvalidDataException("A material scalar binding must have a name and value.");
+            values.Add(scalar.Name, value.Kind switch
+            {
+                ParamValue.ItemKind.FloatVal => value.FloatVal.V,
+                ParamValue.ItemKind.IntVal => value.IntVal.V,
+                ParamValue.ItemKind.BoolVal => value.BoolVal.V,
+                ParamValue.ItemKind.Vec2Val => new System.Numerics.Vector2(
+                    value.Vec2Val.X,
+                    value.Vec2Val.Y),
+                ParamValue.ItemKind.Vec3Val => new System.Numerics.Vector3(
+                    value.Vec3Val.X,
+                    value.Vec3Val.Y,
+                    value.Vec3Val.Z),
+                ParamValue.ItemKind.Vec4Val => new System.Numerics.Vector4(
+                    value.Vec4Val.X,
+                    value.Vec4Val.Y,
+                    value.Vec4Val.Z,
+                    value.Vec4Val.W),
+                _ => throw new InvalidDataException("A material scalar binding has an unsupported value."),
+            });
+        }
+        asset.ResolveWeakSlots(values);
 
         return asset;
     }

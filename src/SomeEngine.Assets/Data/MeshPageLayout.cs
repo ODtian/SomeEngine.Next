@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace SomeEngine.Assets.Data;
 
 /// <summary>
-/// Page header (44 bytes). Contains stream offsets and global quantization parameters.
+/// Page header (48 bytes). Contains raw vertex-record stride, stream offsets, and quantization.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct MeshPageHeader
@@ -19,8 +19,9 @@ public struct MeshPageHeader
     public float QuantOriginY;       // 32
     public float QuantOriginZ;       // 36
     public float QuantStep;          // 40
+    public uint VertexStride;        // 44
 
-    public const int Size = 44;
+    public const int Size = 48;
     public const int MaxPageSize = 131072;
 }
 

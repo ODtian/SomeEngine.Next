@@ -57,17 +57,12 @@ public sealed class AssetTypeExtensibilityTests
             var state = new ProbeLoadState();
             AssetLoaderOptions options = AssetLoaderOptions.Empty.With(state);
             await using var loader = new AssetLoader(project.CreateStorage(), options);
-            AssetHandle<ProbeAsset> first = loader.Load(new AssetId<ProbeAsset>(guid));
-            AssetHandle<ProbeAsset> second = loader.Load(new AssetId<ProbeAsset>(guid));
-            AssetHandle<ProbeAsset>[] handles = await Task.WhenAll(
-                loader.WaitAsync(first).AsTask(),
-                loader.WaitAsync(second).AsTask());
-            using AssetRead<ProbeAsset> firstRead = loader.Read(handles[0]);
-            using AssetRead<ProbeAsset> secondRead = loader.Read(handles[1]);
-            ProbeAsset loaded = firstRead.Value;
+            ProbeAsset[] loadedAssets = await Task.WhenAll(
+                loader.LoadAsync(new AssetId<ProbeAsset>(guid)).AsTask(),
+                loader.LoadAsync(new AssetId<ProbeAsset>(guid)).AsTask());
+            ProbeAsset loaded = loadedAssets[0];
 
-            Assert.Equal(handles[0], handles[1]);
-            Assert.Same(loaded, secondRead.Value);
+            Assert.Same(loaded, loadedAssets[1]);
             Assert.Equal(guid.ToFlatString(), loaded.AssetGuid);
             Assert.Equal(42, loaded.Value);
             Assert.Equal(1, state.LoadCount);
@@ -152,10 +147,7 @@ public sealed class AssetTypeExtensibilityTests
             }
 
             await using var loader = new AssetLoader(storage);
-            AssetHandle<ProbeAsset> handle = loader.Load(new AssetId<ProbeAsset>(guid));
-            await loader.WaitAsync(handle);
-            using AssetRead<ProbeAsset> read = loader.Read(handle);
-            ProbeAsset loaded = read.Value;
+            ProbeAsset loaded = await loader.LoadAsync(new AssetId<ProbeAsset>(guid));
             Assert.Equal(73, loaded.Value);
             Assert.Equal(guid.ToFlatString(), loaded.AssetGuid);
         }
@@ -193,20 +185,16 @@ public sealed class AssetTypeExtensibilityTests
             await using var loader = new AssetLoader(
                 storage,
                 AssetLoaderOptions.Empty.With(state));
-            AssetHandle<ProbeAsset> handle = loader.Load(new AssetId<ProbeAsset>(guid));
-            await loader.WaitAsync(handle);
-            using (AssetRead<ProbeAsset> first = loader.Read(handle))
-                Assert.Equal(11, first.Value.Value);
+            ProbeAsset loaded = await loader.LoadAsync(new AssetId<ProbeAsset>(guid));
+            Assert.Equal(11, loaded.Value);
 
             storage.Publish(Entry(guid), secondPath);
-            AssetHandle<ProbeAsset> reloaded = await loader.ReloadAsync(handle);
+            ProbeAsset reloaded = await loader.ReloadAsync(loaded);
 
-            Assert.Equal(handle, reloaded);
-            Assert.Equal(AssetLoadState.Ready, handle.LoadState);
-            Assert.Equal<ulong>(2, handle.Revision);
+            Assert.Same(loaded, reloaded);
+            Assert.Equal<ulong>(2, loader.GetRevision(loaded));
             Assert.Equal(2, state.LoadCount);
-            using AssetRead<ProbeAsset> second = loader.Read(handle);
-            Assert.Equal(29, second.Value.Value);
+            Assert.Equal(29, loaded.Value);
         }
         finally
         {
@@ -221,7 +209,7 @@ public sealed class AssetTypeExtensibilityTests
     }
 
     [Fact]
-    public async Task ParentStrongHandleRetainsDependenciesUntilParentRetirementFinishes()
+    public async Task LoaderRetainsAndDisposesEveryCanonicalDependency()
     {
         string directory = CreateTempDir();
         try
@@ -238,27 +226,17 @@ public sealed class AssetTypeExtensibilityTests
                     ChildGuid = childGuid.ToFlatString(),
                 });
             DependencyRetirementOrder.Reset();
-            await using var loader = new AssetLoader(project.CreateStorage());
+            var loader = new AssetLoader(project.CreateStorage());
+            ParentProbe parent = await loader.LoadAsync(new AssetId<ParentProbe>(parentGuid));
+            Assert.True(loader.TryGetAssetId(parent, out AssetId<ParentProbe> foundParent));
+            Assert.Equal(parentGuid, foundParent.Value);
 
-            (WeakReference parent, WeakReference child) =
-                await LoadDependencyGraphAndReleaseAsync(loader, parentGuid, childGuid);
+            await loader.DisposeAsync();
 
-            for (int attempt = 0;
-                 attempt < 16 && (parent.IsAlive || child.IsAlive);
-                 attempt++)
-            {
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                GC.Collect();
-                await Task.Delay(10);
-            }
-
-            Assert.False(parent.IsAlive);
-            Assert.False(child.IsAlive);
             Assert.Equal(1, DependencyRetirementOrder.ParentDisposals);
             Assert.Equal(1, DependencyRetirementOrder.ChildDisposals);
             Assert.True(DependencyRetirementOrder.Parent > 0);
-            Assert.True(DependencyRetirementOrder.Child > DependencyRetirementOrder.Parent);
+            Assert.True(DependencyRetirementOrder.Child > 0);
         }
         finally
         {
@@ -325,9 +303,8 @@ public sealed class AssetTypeExtensibilityTests
             AssetLoaderOptions options = AssetLoaderOptions.Empty.With(new TrackingLoadOptions(mode));
             await using (var loader = new AssetLoader(project.CreateStorage(), options))
             {
-                AssetHandle<TrackingAsset> handle = loader.Load(new AssetId<TrackingAsset>(guid));
                 Exception error = await Assert.ThrowsAnyAsync<Exception>(
-                    () => loader.WaitAsync(handle).AsTask());
+                    () => loader.LoadAsync(new AssetId<TrackingAsset>(guid)).AsTask());
                 if (mode == TrackingLoadMode.ReturnDifferentRoot)
                     Assert.Contains("document root itself", error.Message);
                 else if (mode == TrackingLoadMode.ReturnWithoutOpen)
@@ -431,20 +408,6 @@ public sealed class AssetTypeExtensibilityTests
 
     internal readonly record struct TrackingLoadOptions(TrackingLoadMode Mode);
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task<(WeakReference Parent, WeakReference Child)>
-        LoadDependencyGraphAndReleaseAsync(
-            AssetLoader loader,
-            AssetGuid parentGuid,
-            AssetGuid childGuid)
-    {
-        AssetHandle<ParentProbe> parent = loader.Load(new AssetId<ParentProbe>(parentGuid));
-        await loader.WaitAsync(parent);
-        Assert.Equal(1, parent.Reference!.DependencyCount);
-        Assert.True(loader.TryFind(childGuid, out AssetHandle<ChildProbe> child));
-        Assert.Equal(AssetLoadState.Ready, child.LoadState);
-        return (new WeakReference(parent.Reference), new WeakReference(child.Reference!));
-    }
 }
 
 [Asset(".probe.asset")]
@@ -478,6 +441,18 @@ public partial class ProbeAsset
             new AssetTypeExtensibilityTests.ProbeLoadState());
         Interlocked.Increment(ref state.LoadCount);
         return document.Root;
+    }
+
+    internal static ValueTask ApplyReloadAsync(
+        ProbeAsset current,
+        ProbeAsset replacement,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        current.AssetGuid = replacement.AssetGuid;
+        current.Name = replacement.Name;
+        current.Value = replacement.Value;
+        return ValueTask.CompletedTask;
     }
 }
 

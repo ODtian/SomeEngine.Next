@@ -503,9 +503,20 @@ internal static partial class SlangBindingMap
         return selected;
     }
 
+    private static int GetAttributeInt(AttributeReflection attribute, uint index)
+    {
+        SlangResult result = attribute.GetArgumentValueInt(index, out int value);
+        if (result.Failed)
+        {
+            throw new InvalidDataException(
+                $"Slang could not read integer argument {index} from attribute '{attribute.Name}': {result}.");
+        }
+        return value;
+    }
+
     private static Schema.AccessEffect ParseEffect(
         string resourceName,
-        AttributeReflection attribute) => attribute.GetArgumentValueInt(0) switch
+        AttributeReflection attribute) => GetAttributeInt(attribute, 0) switch
     {
         1 => Schema.AccessEffect.Read,
         2 => Schema.AccessEffect.Write,
@@ -518,7 +529,7 @@ internal static partial class SlangBindingMap
         string resourceName,
         AttributeReflection attribute)
     {
-        int qualifierValue = attribute.GetArgumentValueInt(1);
+        int qualifierValue = GetAttributeInt(attribute, 1);
         const int allQualifiers = (int)(
             Schema.ShaderQualifiers.Atomic |
             Schema.ShaderQualifiers.Append |

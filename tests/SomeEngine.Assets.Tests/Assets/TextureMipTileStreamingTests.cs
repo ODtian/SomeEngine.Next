@@ -22,7 +22,13 @@ public sealed class TextureMipTileStreamingTests
             Name = "streamed",
             Width = 8,
             Height = 8,
-            Format = "BC7_UNorm",
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 2,
+            ArrayLayerCount = 3,
+            Format = SomeEngine.Graphics.Format.BC7UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.BC7UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
             MipTiles =
             [
                 Tile(
@@ -33,8 +39,8 @@ public sealed class TextureMipTileStreamingTests
                     height: 4,
                     payload: mipOne,
                     arrayLayer: 2,
-                    face: 3,
-                    depthSlice: 4,
+                    face: 0,
+                    depthSlice: 0,
                     rowPitch: 1,
                     slicePitch: 2),
                 Tile(mipLevel: 0, tileX: 1, tileY: 0, width: 4, height: 8, payload: mipZeroRight),
@@ -51,7 +57,7 @@ public sealed class TextureMipTileStreamingTests
             [
                 (0u, 0u, 0u, 0u, 0u, 0u),
                 (0u, 0u, 0u, 0u, 1u, 0u),
-                (1u, 2u, 3u, 4u, 0u, 0u),
+                (1u, 2u, 0u, 0u, 0u, 0u),
             ],
             metadata.Select(static tile => (
                 tile.MipLevel,
@@ -76,8 +82,8 @@ public sealed class TextureMipTileStreamingTests
             document.Root,
             mipLevel: 1,
             arrayLayer: 2,
-            face: 3,
-            depthSlice: 4,
+            face: 0,
+            depthSlice: 0,
             tileX: 0,
             tileY: 0);
         using ChunkLease lease = await document.AcquireChunkAsync(selected.PayloadChunk);
@@ -95,6 +101,13 @@ public sealed class TextureMipTileStreamingTests
             AssetGuid = "10112233445566778899aabbccddeeff",
             Width = 2,
             Height = 1,
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 1,
+            ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles =
             [
                 new TextureMipTile
@@ -190,7 +203,13 @@ public sealed class TextureMipTileStreamingTests
             Name = "deterministic",
             Width = 4,
             Height = 4,
-            Format = "R8_UNorm",
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 2,
+            ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = tiles,
         };
 

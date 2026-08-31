@@ -103,6 +103,7 @@ public sealed class AssetGenerator : IIncrementalGenerator
         bool customWriter = false;
         bool customLoader = false;
         bool customDependencies = false;
+        bool customReload = false;
         if (!candidate.PathSuffix.StartsWith(".", StringComparison.Ordinal))
             reasons.Add("the required file suffix must start with '.'");
         if (!HasAttribute(type, BinaryContractAttributeName) && !ImplementsBinaryContract(type))
@@ -115,6 +116,7 @@ public sealed class AssetGenerator : IIncrementalGenerator
         customWriter = HasCreateWriter(type);
         customLoader = HasCustomLoader(type);
         customDependencies = HasDependencies(type);
+        customReload = HasReload(type);
 
         if (reasons.Count != 0)
         {
@@ -133,7 +135,8 @@ public sealed class AssetGenerator : IIncrementalGenerator
             name,
             customWriter,
             customLoader,
-            customDependencies);
+            customDependencies,
+            customReload);
     }
 
     private static string Emit(AssetModel model)
@@ -185,7 +188,11 @@ public sealed class AssetGenerator : IIncrementalGenerator
             source.Append("                static value => ").Append(asset).AppendLine(".CreateWriter(value),");
         else
             source.AppendLine("                static value => global::SomeEngine.Serialization.Containers.BinaryDocumentWriter.Create(value),");
-        source.AppendLine("                LoadAsync));");
+        source.Append("                LoadAsync,").AppendLine();
+        if (model.CustomReload)
+            source.Append("                ").Append(asset).AppendLine(".ApplyReloadAsync));");
+        else
+            source.AppendLine("                null));");
         source.AppendLine("    }");
         source.AppendLine();
         source.Append("    private static async global::System.Threading.Tasks.ValueTask<").Append(asset)
@@ -269,6 +276,17 @@ public sealed class AssetGenerator : IIncrementalGenerator
                 && method.Parameters.Length == 1
                 && method.Parameters[0].Type.SpecialType == SpecialType.System_String);
 
+    private static bool HasReload(INamedTypeSymbol type)
+        => type.GetMembers("ApplyReloadAsync")
+            .OfType<IMethodSymbol>()
+            .Any(method => method.IsStatic
+                && IsAssemblyAccessible(method)
+                && method.Parameters.Length == 3
+                && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, type)
+                && SymbolEqualityComparer.Default.Equals(method.Parameters[1].Type, type)
+                && method.Parameters[2].Type.ToDisplayString() == "System.Threading.CancellationToken"
+                && method.ReturnType.ToDisplayString() == "System.Threading.Tasks.ValueTask");
+
     private static bool HasAttribute(ISymbol symbol, string metadataName)
         => symbol.GetAttributes().Any(attribute =>
             string.Equals(attribute.AttributeClass?.ToDisplayString(), metadataName, StringComparison.Ordinal));
@@ -327,7 +345,8 @@ public sealed class AssetGenerator : IIncrementalGenerator
             IPropertySymbol? name,
             bool customWriter,
             bool customLoader,
-            bool customDependencies)
+            bool customDependencies,
+            bool customReload)
         {
             Type = type;
             PathSuffix = pathSuffix;
@@ -336,6 +355,7 @@ public sealed class AssetGenerator : IIncrementalGenerator
             CustomWriter = customWriter;
             CustomLoader = customLoader;
             CustomDependencies = customDependencies;
+            CustomReload = customReload;
         }
 
         internal INamedTypeSymbol Type { get; }
@@ -345,6 +365,7 @@ public sealed class AssetGenerator : IIncrementalGenerator
         internal bool CustomWriter { get; }
         internal bool CustomLoader { get; }
         internal bool CustomDependencies { get; }
+        internal bool CustomReload { get; }
     }
 }
 

@@ -267,9 +267,15 @@ static AssetGuid GenerateDefault1x1Texture(AssetProject project, string name, ui
     var textureAsset = new Texture
     {
         Name = name,
+        Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
         Width = 1,
         Height = 1,
-        Format = "RGBA8_UNorm",
+        Depth = 1,
+        MipLevelCount = 1,
+        ArrayLayerCount = 1,
+        Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+        SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+        SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
         MipTiles =
         [
             new TextureMipTile
@@ -580,6 +586,7 @@ static ClusterShaderOperation ComputeOperation(
     => new()
     {
         Role = role,
+        BoundsSupport = DefaultBoundsSupport(role),
         Shaders = [Shader(shaderGuid, entryPoint, ShaderStage.Compute)],
     };
 
@@ -591,12 +598,18 @@ static ClusterShaderOperation RasterOperation(
     => new()
     {
         Role = role,
+        BoundsSupport = DefaultBoundsSupport(role),
         Shaders =
         [
             Shader(shaderGuid, vertexEntryPoint, ShaderStage.Vertex),
             Shader(shaderGuid, pixelEntryPoint, ShaderStage.Pixel),
         ],
     };
+
+static ClusterBoundsSupport DefaultBoundsSupport(ClusterShaderOperationRole role)
+    => ClusterShaders.IsPositionOperation(role)
+        ? ClusterBoundsSupport.Finite
+        : ClusterBoundsSupport.NotApplicable;
 
 static AssetGuid ResolveRequired(AssetProject project, string sourcePath) =>
     project.Resolve(sourcePath)

@@ -13,7 +13,6 @@ public sealed class AssetLoadContext
     private readonly AssetGuid _owner;
     private readonly AssetEntry _entry;
     private readonly CancellationToken _cancellationToken;
-    private readonly List<AssetHandleState> _dependencies = [];
     private object? _document;
     private object? _openedRoot;
     private object? _transferredOwner;
@@ -87,21 +86,13 @@ public sealed class AssetLoadContext
         return asset;
     }
 
-    public async Task<AssetHandle<T>> LoadDependencyAsync<T>(AssetId<T> asset)
+    public Task<T> LoadDependencyAsync<T>(AssetId<T> asset)
         where T : class
     {
         ThrowIfSealed();
         if (!asset.IsValid)
             throw new ArgumentException("An asset ID must be valid.", nameof(asset));
-        AssetHandle<T> handle = await _loader.LoadDependencyAsync(
-            _owner,
-            asset,
-            _cancellationToken).ConfigureAwait(false);
-        AssetHandleState state = handle.Reference
-            ?? throw new InvalidOperationException("A loaded dependency returned an invalid handle.");
-        if (!_dependencies.Contains(state, ReferenceEqualityComparer.Instance))
-            _dependencies.Add(state);
-        return handle;
+        return _loader.LoadDependencyAsync(_owner, asset, _cancellationToken).AsTask();
     }
 
     public TOptions GetOptions<TOptions>(TOptions fallback)
@@ -111,23 +102,15 @@ public sealed class AssetLoadContext
         return _loader.GetOptions(fallback);
     }
 
-    internal bool TryFind<T>(AssetGuid guid, out AssetHandle<T> handle)
+    internal bool TryFind<T>(AssetGuid guid, out T? value)
         where T : class
     {
         ThrowIfSealed();
-        return _loader.TryFind(guid, out handle);
+        return _loader.TryFind(guid, out value);
     }
 
     internal bool Owns(object value)
         => ReferenceEquals(Volatile.Read(ref _transferredOwner), value);
-
-    internal AssetHandleState[] TakeDependencies()
-    {
-        ThrowIfSealed();
-        AssetHandleState[] dependencies = [.. _dependencies];
-        _dependencies.Clear();
-        return dependencies;
-    }
 
     internal void Commit(object asset)
     {
@@ -153,7 +136,6 @@ public sealed class AssetLoadContext
 
     internal async ValueTask DisposeAsync()
     {
-        _dependencies.Clear();
         object? owner = Interlocked.Exchange(ref _transferredOwner, null);
         object? document = Interlocked.Exchange(ref _document, null);
         Interlocked.Exchange(ref _openedRoot, null);

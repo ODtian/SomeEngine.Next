@@ -76,7 +76,7 @@ public class ClusterBuilderTests
     }
 
     [Fact]
-    public void TestSoAStreamLayout()
+    public void TestInterleavedRawVertexRecordLayout()
     {
         // Create a minimal triangle with known attribute values
         var positions = new Vector3[]
@@ -105,16 +105,14 @@ public class ClusterBuilderTests
         uint totalVerts = header.TotalVertexCount;
         Assert.Equal(3u, totalVerts);
 
-        // --- Verify SoA layout ---
-        // Stream 0: NORMAL (Int8x3, 3 bytes per vertex)
-        // Stream 1: TEXCOORD_0 (Float16x2, 4 bytes per vertex)
+        // Raw vertex records are interleaved. Their schema belongs to the selected decoder.
         uint attrBase = header.AttributesOffset;
+        Assert.Equal(7u, header.VertexStride);
+        Assert.Equal(7u, asset.VertexStride);
 
-        // Normal stream: starts at attrBase, size = 3 * 3 = 9 bytes
-        int normalStreamSize = 3 * 3; // 3 verts * 3 bytes
         for (int v = 0; v < 3; v++)
         {
-            int offset = (int)attrBase + v * 3;
+            int offset = checked((int)attrBase + (v * (int)header.VertexStride));
             // Normal = (0, 1, 0) packed as Int8 SNORM: x=0, y=127, z=0
             sbyte nx = (sbyte)span[offset + 0];
             sbyte ny = (sbyte)span[offset + 1];
@@ -123,15 +121,9 @@ public class ClusterBuilderTests
             Assert.Equal(0, nx);
             Assert.Equal(127, ny);
             Assert.Equal(0, nz);
-        }
 
-        // UV stream: starts right after normal stream
-        uint uvBase = attrBase + (uint)normalStreamSize;
-        for (int v = 0; v < 3; v++)
-        {
-            int offset = (int)uvBase + v * 4;
-            ushort rawU = BitConverter.ToUInt16(span.Slice(offset, 2));
-            ushort rawV = BitConverter.ToUInt16(span.Slice(offset + 2, 2));
+            ushort rawU = BitConverter.ToUInt16(span.Slice(offset + 3, 2));
+            ushort rawV = BitConverter.ToUInt16(span.Slice(offset + 5, 2));
             float u = (float)BitConverter.UInt16BitsToHalf(rawU);
             float uExpected = uvs[v * 2 + 0];
             float vExpected = uvs[v * 2 + 1];
@@ -141,12 +133,12 @@ public class ClusterBuilderTests
         }
 
         // Verify indices start after UV stream (no interleaving gap)
-        uint expectedIndicesOffset = uvBase + (uint)(3 * 4); // 3 verts * 4 bytes
+        uint expectedIndicesOffset = attrBase + (3u * header.VertexStride);
         Assert.Equal(expectedIndicesOffset, header.IndicesOffset);
     }
 
     [Fact]
-    public void TestSoAStreamLayout_WithTangent_PlacesUvAfterTangent()
+    public void TestInterleavedRawVertexRecordLayout_WithTangent()
     {
         var positions = new Vector3[]
         {
@@ -173,19 +165,19 @@ public class ClusterBuilderTests
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
 
         uint attrBase = header.AttributesOffset;
-        uint tangentBase = attrBase + (uint)(3 * 3);
-        uint uvBase = tangentBase + (uint)(3 * 4);
+        Assert.Equal(11u, header.VertexStride);
+        Assert.Equal(11u, asset.VertexStride);
 
         for (int v = 0; v < 3; v++)
         {
-            int uvOffset = (int)uvBase + v * 4;
+            int uvOffset = checked((int)attrBase + (v * (int)header.VertexStride) + 7);
             ushort rawU = BitConverter.ToUInt16(span.Slice(uvOffset, 2));
             ushort rawV = BitConverter.ToUInt16(span.Slice(uvOffset + 2, 2));
             Assert.InRange((float)BitConverter.UInt16BitsToHalf(rawU), uvs[v * 2 + 0] - 0.01f, uvs[v * 2 + 0] + 0.01f);
             Assert.InRange((float)BitConverter.UInt16BitsToHalf(rawV), uvs[v * 2 + 1] - 0.01f, uvs[v * 2 + 1] + 0.01f);
         }
 
-        uint expectedIndicesOffset = uvBase + (uint)(3 * 4);
+        uint expectedIndicesOffset = attrBase + (3u * header.VertexStride);
         Assert.Equal(expectedIndicesOffset, header.IndicesOffset);
     }
 

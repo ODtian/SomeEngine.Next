@@ -33,17 +33,8 @@ public class IcoSphereTest
         Assert.NotNull(meshAsset.Payload);
         Assert.True(meshAsset.Payload.Value.Length > 0);
 
-        // Verify attribute streams
-        Assert.NotNull(meshAsset.Attributes);
-        Assert.Equal(3, meshAsset.Attributes!.Count);
-        for (int i = 0; i < meshAsset.Attributes.Count; i++)
-        {
-            var a = meshAsset.Attributes[i];
-            Console.WriteLine($"  Attr[{i}] name={a.Name} type={a.Type} comp={a.Components} norm={a.Normalized} streamIdx={a.Offset}");
-        }
-        Assert.Equal("NORMAL", meshAsset.Attributes[0].Name);
-        Assert.Equal("TANGENT", meshAsset.Attributes[1].Name);
-        Assert.Equal("TEXCOORD_0", meshAsset.Attributes[2].Name);
+        // The runtime contract is one opaque raw vertex record, not a fixed attribute schema.
+        Assert.True(meshAsset.VertexStride > 0);
 
         // Save to test output, not the excluded samples workspace.
         string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh.asset");

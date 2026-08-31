@@ -202,6 +202,7 @@ internal sealed class MeshPayloadSource : IDisposable
                     checked((long)digest.Offset),
                     checked((int)digest.Length),
                     digest.ClusterCount,
+                    digest.VertexStride,
                     new System.Numerics.Vector3(origin.X, origin.Y, origin.Z),
                     digest.QuantStep,
                     sha256);

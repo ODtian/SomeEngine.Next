@@ -59,17 +59,8 @@ public sealed class AssetArchitectureAcceptanceTests
         Assert.DoesNotContain(
             typeof(IAssetStorage).GetMethods(),
             static method => method.IsGenericMethod);
-        Assert.Empty(typeof(AssetHandle<>).GetConstructors(
-            System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.DeclaredOnly));
-        FieldInfo handleReference = Assert.Single(typeof(AssetHandle<>).GetFields(
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly));
-        Assert.False(handleReference.FieldType.IsValueType);
-        Assert.Equal(typeof(AssetId<>), typeof(AssetHandle<>).GetProperty("AssetId")!.PropertyType.GetGenericTypeDefinition());
-        Assert.Equal(typeof(AssetLoadState), typeof(AssetHandle<>).GetProperty("LoadState")!.PropertyType);
-        Assert.Equal(typeof(ulong), typeof(AssetHandle<>).GetProperty("Revision")!.PropertyType);
-        Assert.True(typeof(AssetRead<>).IsSealed);
+        Assert.DoesNotContain(assetAssembly.GetTypes(), static type => type.Name == "AssetHandle`1");
+        Assert.DoesNotContain(assetAssembly.GetTypes(), static type => type.Name == "AssetRead`1");
         Assert.Null(typeof(Mesh).GetMethod(
             "TryRetainPayloadSource",
             BindingFlags.Public | BindingFlags.Instance));
@@ -80,13 +71,15 @@ public sealed class AssetArchitectureAcceptanceTests
             .Select(static method => method.Name)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        Assert.Contains("Load", loaderMethods);
-        Assert.Contains("WaitAsync", loaderMethods);
+        Assert.Contains("LoadAsync", loaderMethods);
         Assert.Contains("ReloadAsync", loaderMethods);
-        Assert.Contains("Read", loaderMethods);
-        Assert.Contains("TryRead", loaderMethods);
+        Assert.Contains("GetRevision", loaderMethods);
+        Assert.Contains("TryGetAssetId", loaderMethods);
         Assert.Contains("DisposeAsync", loaderMethods);
-        Assert.DoesNotContain("LoadAsync", loaderMethods);
+        Assert.DoesNotContain("Load", loaderMethods);
+        Assert.DoesNotContain("WaitAsync", loaderMethods);
+        Assert.DoesNotContain("Read", loaderMethods);
+        Assert.DoesNotContain("TryRead", loaderMethods);
         Assert.DoesNotContain("Get", loaderMethods);
         Assert.DoesNotContain("TryGet", loaderMethods);
         Assert.DoesNotContain("Request", loaderMethods);
@@ -113,16 +106,15 @@ public sealed class AssetArchitectureAcceptanceTests
         Assert.True(typeof(AssetId<>).IsValueType);
         Assert.True(typeof(BinaryChunkRef).IsValueType);
 
-        Type[] assetTypes =
+        Type[] sealedAssetTypes =
         [
             typeof(Texture),
             typeof(Mesh),
             typeof(Shader),
-            typeof(Material),
             typeof(MaterialInstance),
             typeof(ClusterShaders),
         ];
-        foreach (Type assetType in assetTypes)
+        foreach (Type assetType in sealedAssetTypes)
         {
             Assert.True(assetType.IsSealed, $"Asset root '{assetType.FullName}' must be sealed.");
             Assert.DoesNotContain(
@@ -144,9 +136,14 @@ public sealed class AssetArchitectureAcceptanceTests
                 static method => method.Name is
                     "ReadAsync" or "OpenAsync" or "LoadAssetAsync" or "CreateWriter" or "GetDependencies");
         }
+        Assert.False(typeof(Material).IsSealed);
+        Assert.True(typeof(Material).IsAssignableFrom(typeof(SomeEngine.Render.Materials.StandardMaterial)));
 
         Assembly renderAssembly = typeof(SomeEngine.Render.Assets.LiveShaderProgram).Assembly;
-        string[] singleAssetNames = assetTypes.Select(static type => type.Name).ToArray();
+        string[] singleAssetNames = sealedAssetTypes
+            .Append(typeof(Material))
+            .Select(static type => type.Name)
+            .ToArray();
         Assert.DoesNotContain(
             renderAssembly.ExportedTypes,
             type => singleAssetNames.Contains(type.Name, StringComparer.Ordinal));
@@ -206,7 +203,13 @@ public sealed class AssetArchitectureAcceptanceTests
             Name = "lease-texture",
             Width = 2,
             Height = 1,
-            Format = "test",
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 1,
+            ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles =
             [
                 new TextureMipTile
@@ -263,7 +266,9 @@ public sealed class AssetArchitectureAcceptanceTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("range.mesh.asset");
-        int pageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes + (3 * sizeof(ushort)) + 3;
+        const uint vertexStride = 32;
+        int pageBytes = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes
+            + (3 * sizeof(ushort)) + (int)vertexStride + 3);
         byte[] payload = new byte[pageBytes + Marshal.SizeOf<ClusterBVHNode>()];
         var header = new MeshPageHeader
         {
@@ -273,7 +278,9 @@ public sealed class AssetArchitectureAcceptanceTests
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes)),
             AttributesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes + (3 * sizeof(ushort)))),
-            IndicesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes + (3 * sizeof(ushort)))),
+            IndicesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes
+                + (3 * sizeof(ushort)) + vertexStride)),
+            VertexStride = vertexStride,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(payload, in header);
@@ -283,7 +290,7 @@ public sealed class AssetArchitectureAcceptanceTests
             Name = "range-mesh",
             Payload = payload,
             BvhOffset = checked((ulong)pageBytes),
-            Attributes = [],
+            VertexStride = vertexStride,
             Regions = [],
         }, path);
 
@@ -321,13 +328,20 @@ public sealed class AssetArchitectureAcceptanceTests
             Name = "texture",
             Width = 1,
             Height = 1,
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 1,
+            ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, Payload = new byte[] { 1 } }],
         }, texturePath);
         byte[] streamedMeshPayload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
         AssetWriter.Write(new Mesh
         {
             AssetGuid = meshGuid.ToFlatString(), Name = "mesh", Payload = streamedMeshPayload,
-            BvhOffset = bvhOffset, Attributes = [], Regions = [],
+            BvhOffset = bvhOffset, VertexStride = 32, Regions = [],
         }, meshPath);
         AssetWriter.Write(new Shader
         {
@@ -391,6 +405,9 @@ public sealed class AssetArchitectureAcceptanceTests
         var result = new ClusterShaderOperation
         {
             Role = role,
+            BoundsSupport = IsPositionOperation(role)
+                ? ClusterBoundsSupport.Finite
+                : ClusterBoundsSupport.NotApplicable,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.SoftwareDepthMerge
@@ -450,12 +467,20 @@ public sealed class AssetArchitectureAcceptanceTests
             PositionsOffset = checked((uint)pageSize),
             AttributesOffset = checked((uint)pageSize),
             IndicesOffset = checked((uint)pageSize),
+            VertexStride = 32,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
         bvhOffset = checked((ulong)pageSize);
         return payload;
     }
+
+    private static bool IsPositionOperation(ClusterShaderOperationRole role)
+        => role is ClusterShaderOperationRole.DeformCachePopulate
+            or ClusterShaderOperationRole.SoftwareVisibilityRaster
+            or ClusterShaderOperationRole.HardwareVisibilityRaster
+            or ClusterShaderOperationRole.MotionVectors
+            or ClusterShaderOperationRole.VisibilityResolve;
 
     private sealed class TemporaryDirectory : IDisposable
     {

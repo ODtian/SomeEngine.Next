@@ -159,6 +159,7 @@ public partial class Mesh
                 if (authenticated.Length < MeshPageHeader.Size ||
                     authenticated.Length > MeshPageHeader.MaxPageSize ||
                     authenticated.ClusterCount == 0 ||
+                    authenticated.VertexStride != root.VertexStride ||
                     !float.IsFinite(origin.X) ||
                     !float.IsFinite(origin.Y) ||
                     !float.IsFinite(origin.Z) ||
@@ -243,12 +244,19 @@ public partial class Mesh
                 payload[pageOffset..],
                 pageOffset,
                 bvhOffset);
+            if (page.VertexStride != root.VertexStride)
+            {
+                throw new InvalidDataException(
+                    $"Mesh page at byte {pageOffset} declares vertex stride {page.VertexStride}, " +
+                    $"but the root declares {root.VertexStride}.");
+            }
             ReadOnlySpan<byte> pageBytes = payload.Slice(pageOffset, page.Size);
             pageDigests.Add(new MeshPayloadPageDigest
             {
                 Offset = checked((ulong)page.Offset),
                 Length = checked((uint)page.Size),
                 ClusterCount = page.ClusterCount,
+                VertexStride = page.VertexStride,
                 QuantOrigin = new Vec3
                 {
                     X = page.QuantOrigin.X,
@@ -278,6 +286,7 @@ public partial class Mesh
             ?? throw new InvalidDataException($"Mesh page digest {pageIndex} has no quantization origin.");
         if (authenticated.Length != checked((uint)actual.Size) ||
             authenticated.ClusterCount != actual.ClusterCount ||
+            authenticated.VertexStride != actual.VertexStride ||
             !SameFloat(origin.X, actual.QuantOrigin.X) ||
             !SameFloat(origin.Y, actual.QuantOrigin.Y) ||
             !SameFloat(origin.Z, actual.QuantOrigin.Z) ||

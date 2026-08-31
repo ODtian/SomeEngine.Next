@@ -12,10 +12,25 @@ public partial class ClusterShaders
             .ConfigureAwait(false);
         ClusterShaders asset = document.Root;
 
+        var shaders = new Dictionary<AssetGuid, Shader>();
         foreach (AssetGuid shader in asset.GetDependencies(string.Empty))
         {
-            _ = await context.LoadDependencyAsync(new AssetId<Shader>(shader)).ConfigureAwait(false);
+            shaders.Add(
+                shader,
+                await context.LoadDependencyAsync(new AssetId<Shader>(shader)).ConfigureAwait(false));
             cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        foreach (ClusterShaderOperation operation in asset.Operations ?? [])
+        {
+            foreach (ShaderRef reference in operation.Shaders ?? [])
+            {
+                AssetGuid shader = ShaderRef.Require(
+                    reference,
+                    "Cluster render asset",
+                    "Operations.Shaders");
+                reference.Asset = shaders[shader];
+            }
         }
 
         return asset;

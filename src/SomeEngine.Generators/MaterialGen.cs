@@ -4,190 +4,234 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SomeEngine.Generators;
 
+/// <summary>Generates dense, material-local slots for partial properties on Material types.</summary>
 [Generator]
 public sealed class MaterialGen : IIncrementalGenerator
 {
-    private const string BindAttributeName = "SomeEngine.Render.Materials.BindFieldAttribute";
-    private const string ScalarAttributeName = "SomeEngine.Render.Materials.ScalarFieldAttribute";
+    private const string MaterialTypeName = "SomeEngine.Assets.Schema.Material";
+
+    private static readonly SymbolDisplayFormat QualifiedTypeFormat = new(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+        miscellaneousOptions:
+            SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers |
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
+            SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         context.RegisterSourceOutput(
             context.CompilationProvider,
-            static (spc, compilation) =>
+            static (production, compilation) =>
             {
                 foreach (MaterialInfo material in Build(compilation))
-                    spc.AddSource($"{material.Name}.Material.g.cs", Emit(material));
+                    production.AddSource(material.HintName, Emit(material));
             });
     }
 
     private static ImmutableArray<MaterialInfo> Build(Compilation compilation)
     {
+        INamedTypeSymbol? materialBase = compilation.GetTypeByMetadataName(MaterialTypeName);
+        if (materialBase is null)
+            return [];
+
         var materials = ImmutableArray.CreateBuilder<MaterialInfo>();
-        Collect(compilation.Assembly.GlobalNamespace, materials);
+        Collect(compilation.Assembly.GlobalNamespace, materialBase, materials);
         return materials.ToImmutable();
     }
 
-    private static void Collect(INamespaceSymbol ns, ImmutableArray<MaterialInfo>.Builder materials)
+    private static void Collect(
+        INamespaceSymbol ns,
+        INamedTypeSymbol materialBase,
+        ImmutableArray<MaterialInfo>.Builder materials)
     {
         foreach (INamespaceSymbol child in ns.GetNamespaceMembers())
-            Collect(child, materials);
+            Collect(child, materialBase, materials);
         foreach (INamedTypeSymbol type in ns.GetTypeMembers())
-            Collect(type, materials);
+            Collect(type, materialBase, materials);
     }
 
-    private static void Collect(INamedTypeSymbol type, ImmutableArray<MaterialInfo>.Builder materials)
+    private static void Collect(
+        INamedTypeSymbol type,
+        INamedTypeSymbol materialBase,
+        ImmutableArray<MaterialInfo>.Builder materials)
     {
-        var binds = ImmutableArray.CreateBuilder<FieldInfo>();
-        var scalars = ImmutableArray.CreateBuilder<FieldInfo>();
-
-        foreach (ISymbol member in type.GetMembers())
+        if (IsMaterial(type, materialBase))
         {
-            if (member is not IFieldSymbol and not IPropertySymbol)
-                continue;
-
-            string memberType = MemberType(member);
-            foreach (AttributeData attribute in member.GetAttributes())
+            ImmutableArray<PropertyInfo> properties = type.GetMembers()
+                .OfType<IPropertySymbol>()
+                .Where(static property => !property.IsStatic && IsPartialProperty(property))
+                .OrderBy(static property => SourcePath(property), StringComparer.Ordinal)
+                .ThenBy(static property => SourceStart(property))
+                .ThenBy(static property => property.Name, StringComparer.Ordinal)
+                .Select(static (property, slot) => new PropertyInfo(
+                    property.Name,
+                    property.Type.ToDisplayString(QualifiedTypeFormat),
+                    property.Type.WithNullableAnnotation(NullableAnnotation.None)
+                        .ToDisplayString(QualifiedTypeFormat),
+                    AccessibilityText(property.DeclaredAccessibility),
+                    property.SetMethod?.IsInitOnly == true,
+                    checked((uint)slot)))
+                .ToImmutableArray();
+            if (!properties.IsDefaultOrEmpty)
             {
-                string? attributeName = attribute.AttributeClass?.ToDisplayString();
-                if (attribute.ConstructorArguments.Length != 1
-                    || attribute.ConstructorArguments[0].Value is not string fieldName
-                    || string.IsNullOrWhiteSpace(fieldName))
-                {
-                    continue;
-                }
-
-                if (string.Equals(attributeName, BindAttributeName, StringComparison.Ordinal))
-                    binds.Add(new FieldInfo(member.Name, fieldName, memberType));
-                else if (string.Equals(attributeName, ScalarAttributeName, StringComparison.Ordinal))
-                    scalars.Add(new FieldInfo(member.Name, fieldName, memberType));
+                materials.Add(new MaterialInfo(
+                    type.ContainingNamespace.IsGlobalNamespace
+                        ? string.Empty
+                        : type.ContainingNamespace.ToDisplayString(),
+                    AccessibilityText(type.DeclaredAccessibility),
+                    type.IsSealed,
+                    type.Name,
+                    Sanitize(type.ToDisplayString()) + ".Material.g.cs",
+                    properties));
             }
         }
 
-        if (binds.Count != 0 || scalars.Count != 0)
-        {
-            materials.Add(new MaterialInfo(
-                NamespaceOf(type),
-                TypeDecl(type),
-                type.Name,
-                binds.ToImmutable(),
-                scalars.ToImmutable()));
-        }
-
         foreach (INamedTypeSymbol nested in type.GetTypeMembers())
-            Collect(nested, materials);
+            Collect(nested, materialBase, materials);
     }
+
+    private static bool IsMaterial(INamedTypeSymbol type, INamedTypeSymbol materialBase)
+    {
+        for (INamedTypeSymbol? current = type.BaseType; current is not null; current = current.BaseType)
+            if (SymbolEqualityComparer.Default.Equals(current, materialBase))
+                return true;
+        return false;
+    }
+
+    private static bool IsPartialProperty(IPropertySymbol property)
+        => property.DeclaringSyntaxReferences.Any(reference =>
+            reference.GetSyntax() is PropertyDeclarationSyntax syntax &&
+            syntax.Modifiers.Any(SyntaxKind.PartialKeyword));
 
     private static string Emit(MaterialInfo material)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("// <auto-generated/>");
-        sb.AppendLine("#nullable enable");
-        sb.AppendLine();
+        var source = new StringBuilder();
+        source.AppendLine("// <auto-generated/>");
+        source.AppendLine("#nullable enable");
+        source.AppendLine();
         if (material.Namespace.Length != 0)
         {
-            sb.Append("namespace ").Append(material.Namespace).AppendLine(";");
-            sb.AppendLine();
+            source.Append("namespace ").Append(material.Namespace).AppendLine(";");
+            source.AppendLine();
         }
 
-        sb.Append(material.TypeDecl).Append(' ').Append(material.Name).AppendLine();
-        sb.AppendLine("{");
-        EmitScalars(material, sb);
-        sb.AppendLine("}");
-        return sb.ToString();
-    }
-
-    private static void EmitScalars(MaterialInfo material, StringBuilder sb)
-    {
-        sb.AppendLine("    internal partial void WriteFields(global::SomeEngine.Render.Materials.ScalarLayout layout, global::System.Span<byte> payload)");
-        sb.AppendLine("    {");
-        foreach (FieldInfo field in material.Scalars.OrderBy(static field => field.Name, StringComparer.Ordinal))
-            sb.Append("        layout.Write(\"").Append(Escape(field.Name)).Append("\", ").Append(field.Member).AppendLine(", payload);");
-        sb.AppendLine("    }");
-        sb.AppendLine();
-        sb.AppendLine("    internal partial bool SupportsScalarField(string name)");
-        sb.AppendLine("    {");
-        sb.AppendLine("        return name switch");
-        sb.AppendLine("        {");
-        foreach (IGrouping<string, FieldInfo> fields in material.Scalars
-                     .OrderBy(static field => field.Name, StringComparer.Ordinal)
-                     .GroupBy(static field => field.Name, StringComparer.Ordinal))
+        source.Append(material.Accessibility).Append(' ');
+        if (material.IsSealed)
+            source.Append("sealed ");
+        source.Append("partial class ").Append(material.Name).AppendLine();
+        source.AppendLine("{");
+        foreach (PropertyInfo property in material.Properties)
         {
-            sb.Append("            \"").Append(Escape(fields.Key)).AppendLine("\" => true,");
+            source.Append("    ").Append(property.Accessibility).Append(" partial ")
+                .Append(property.Type).Append(' ').Append(property.Name).AppendLine();
+            source.AppendLine("    {");
+            source.Append("        get => GetSlot<").Append(property.Type).Append(">(")
+                .Append(property.Slot).AppendLine("u);");
+            source.Append("        ").Append(property.IsInitOnly ? "init" : "set")
+                .Append(" => SetSlot(").Append(property.Slot).AppendLine("u, value);");
+            source.AppendLine("    }");
+            source.AppendLine();
         }
-        sb.AppendLine("            _ => false,");
-        sb.AppendLine("        };");
-        sb.AppendLine("    }");
+
+        source.AppendLine("    protected override global::SomeEngine.Assets.Schema.MaterialSlotDefinition[] CreateSlots() =>");
+        source.AppendLine("    [");
+        foreach (PropertyInfo property in material.Properties)
+        {
+            source.Append("        new global::SomeEngine.Assets.Schema.MaterialSlotDefinition(")
+                .Append(property.Slot).Append("u, \"").Append(Escape(property.Name))
+                .Append("\", typeof(").Append(property.TypeOf).AppendLine(")),");
+        }
+        source.AppendLine("    ];");
+        source.AppendLine("}");
+        return source.ToString();
     }
 
-    private static string MemberType(ISymbol member)
-        => member switch
-        {
-            IFieldSymbol field => field.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", string.Empty),
-            IPropertySymbol property => property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", string.Empty),
-            _ => string.Empty,
-        };
+    private static string SourcePath(IPropertySymbol property)
+        => property.Locations.FirstOrDefault(static location => location.IsInSource)
+            ?.SourceTree?.FilePath ?? string.Empty;
 
-    private static string NamespaceOf(INamedTypeSymbol type)
-        => type.ContainingNamespace.IsGlobalNamespace
-            ? string.Empty
-            : type.ContainingNamespace.ToDisplayString();
+    private static int SourceStart(IPropertySymbol property)
+        => property.Locations.FirstOrDefault(static location => location.IsInSource)
+            ?.SourceSpan.Start ?? int.MaxValue;
 
-    private static string TypeDecl(INamedTypeSymbol type)
-    {
-        string access = type.DeclaredAccessibility switch
+    private static string AccessibilityText(Accessibility accessibility)
+        => accessibility switch
         {
             Accessibility.Public => "public",
             Accessibility.Internal => "internal",
-            _ => "internal",
+            Accessibility.Protected => "protected",
+            Accessibility.ProtectedOrInternal => "protected internal",
+            Accessibility.ProtectedAndInternal => "private protected",
+            _ => "private",
         };
-        string modifier = type.IsSealed && type.TypeKind == TypeKind.Class ? " sealed" : string.Empty;
-        string kind = type.TypeKind == TypeKind.Struct ? "struct" : "class";
-        return $"{access}{modifier} partial {kind}";
-    }
 
     private static string Escape(string value)
         => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
+    private static string Sanitize(string value)
+    {
+        var result = new StringBuilder(value.Length);
+        foreach (char character in value)
+            result.Append(char.IsLetterOrDigit(character) ? character : '_');
+        return result.ToString();
+    }
+
     private readonly struct MaterialInfo
     {
-        public MaterialInfo(
+        internal MaterialInfo(
             string ns,
-            string typeDecl,
+            string accessibility,
+            bool isSealed,
             string name,
-            ImmutableArray<FieldInfo> binds,
-            ImmutableArray<FieldInfo> scalars)
+            string hintName,
+            ImmutableArray<PropertyInfo> properties)
         {
             Namespace = ns;
-            TypeDecl = typeDecl;
+            Accessibility = accessibility;
+            IsSealed = isSealed;
             Name = name;
-            Binds = binds;
-            Scalars = scalars;
+            HintName = hintName;
+            Properties = properties;
         }
 
-        public string Namespace { get; }
-        public string TypeDecl { get; }
-        public string Name { get; }
-        public ImmutableArray<FieldInfo> Binds { get; }
-        public ImmutableArray<FieldInfo> Scalars { get; }
+        internal string Namespace { get; }
+        internal string Accessibility { get; }
+        internal bool IsSealed { get; }
+        internal string Name { get; }
+        internal string HintName { get; }
+        internal ImmutableArray<PropertyInfo> Properties { get; }
     }
 
-    private readonly struct FieldInfo
+    private readonly struct PropertyInfo
     {
-        public FieldInfo(string member, string name, string type)
+        internal PropertyInfo(
+            string name,
+            string type,
+            string typeOf,
+            string accessibility,
+            bool isInitOnly,
+            uint slot)
         {
-            Member = member;
             Name = name;
             Type = type;
+            TypeOf = typeOf;
+            Accessibility = accessibility;
+            IsInitOnly = isInitOnly;
+            Slot = slot;
         }
 
-        public string Member { get; }
-        public string Name { get; }
-        public string Type { get; }
+        internal string Name { get; }
+        internal string Type { get; }
+        internal string TypeOf { get; }
+        internal string Accessibility { get; }
+        internal bool IsInitOnly { get; }
+        internal uint Slot { get; }
     }
 }
-
-

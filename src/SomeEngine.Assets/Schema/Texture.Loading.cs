@@ -11,6 +11,9 @@ public partial class Texture : IDisposable, IAsyncDisposable
     private int _disposed;
 
     [SomeEngine.Serialization.BinaryIgnore]
+    public ulong Revision { get; private set; } = 1;
+
+    [SomeEngine.Serialization.BinaryIgnore]
     public bool IsStreamed => Volatile.Read(ref _scheduler) is not null;
     [SomeEngine.Serialization.BinaryIgnore]
     public ChunkStreamingMetrics? StreamingMetrics => Volatile.Read(ref _scheduler)?.Metrics;
@@ -51,6 +54,34 @@ public partial class Texture : IDisposable, IAsyncDisposable
         return scheduler.AcquireAsync(key, options, cancellationToken);
     }
 
+    public bool TryAcquireResidentMipTile(
+        uint mipLevel,
+        uint arrayLayer,
+        uint face,
+        uint depthSlice,
+        uint tileX,
+        uint tileY,
+        out ResidentChunkLease lease)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ChunkRequestScheduler? scheduler = Volatile.Read(ref _scheduler);
+        if (scheduler is null)
+        {
+            lease = default;
+            return false;
+        }
+        _ = RequireMipTile(this, mipLevel, arrayLayer, face, depthSlice, tileX, tileY);
+        return scheduler.TryAcquireResident(
+            MipTileChunkKey(
+                mipLevel,
+                arrayLayer,
+                face,
+                depthSlice,
+                tileX,
+                tileY),
+            out lease);
+    }
+
     internal static async ValueTask<Texture> LoadAssetAsync(
         AssetLoadContext context,
         CancellationToken cancellationToken)
@@ -86,6 +117,41 @@ public partial class Texture : IDisposable, IAsyncDisposable
             root._scheduler = null;
             throw;
         }
+    }
+
+    internal static async ValueTask ApplyReloadAsync(
+        Texture current,
+        Texture replacement,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(replacement);
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRoot(replacement);
+
+        ChunkRequestScheduler? nextScheduler = Interlocked.Exchange(ref replacement._scheduler, null);
+        BinaryDocument<Texture>? nextDocument = Interlocked.Exchange(ref replacement._document, null);
+        ChunkRequestScheduler? previousScheduler = Interlocked.Exchange(ref current._scheduler, nextScheduler);
+        BinaryDocument<Texture>? previousDocument = Interlocked.Exchange(ref current._document, nextDocument);
+
+        current.AssetGuid = replacement.AssetGuid;
+        current.Name = replacement.Name;
+        current.Dimension = replacement.Dimension;
+        current.Width = replacement.Width;
+        current.Height = replacement.Height;
+        current.Depth = replacement.Depth;
+        current.MipLevelCount = replacement.MipLevelCount;
+        current.ArrayLayerCount = replacement.ArrayLayerCount;
+        current.Format = replacement.Format;
+        current.SampledFormat = replacement.SampledFormat;
+        current.SampledDimension = replacement.SampledDimension;
+        current.MipTiles = replacement.MipTiles;
+        current.Revision = checked(current.Revision + 1);
+
+        if (previousScheduler is not null)
+            await previousScheduler.DisposeAsync().ConfigureAwait(false);
+        if (previousDocument is not null)
+            await previousDocument.DisposeAsync().ConfigureAwait(false);
     }
 
     public void Dispose()

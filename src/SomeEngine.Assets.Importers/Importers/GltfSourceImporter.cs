@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using SharpGLTF.Schema2;
+using StbImageSharp;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using GltfMaterial = SharpGLTF.Schema2.Material;
@@ -522,13 +523,25 @@ public sealed partial class GltfSourceImporter
         Image image)
     {
         AssetGuid assetGuid = AssetGuid.FromSource(context.SourceMeta.SourceGuid, exportPath.SubAssetKey);
+        ImageResult decoded = ImageResult.FromMemory(
+            ReadImageBytes(image).ToArray(),
+            ColorComponents.RedGreenBlueAlpha);
+        byte[] pixels = decoded.Data;
+        uint width = checked((uint)decoded.Width);
+        uint height = checked((uint)decoded.Height);
         return new Texture
         {
             AssetGuid = assetGuid.ToFlatString(),
             Name = exportPath.SafeName,
-            Width = 0,
-            Height = 0,
-            Format = "RGBA8_UNorm",
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Width = width,
+            Height = height,
+            Depth = 1,
+            MipLevelCount = 1,
+            ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles =
             [
                 new TextureMipTile
@@ -536,7 +549,11 @@ public sealed partial class GltfSourceImporter
                     MipLevel = 0,
                     TileX = 0,
                     TileY = 0,
-                    Payload = ReadImageBytes(image),
+                    Width = width,
+                    Height = height,
+                    RowPitch = checked(width * 4u),
+                    SlicePitch = checked((ulong)width * height * 4u),
+                    Payload = pixels,
                 },
             ],
         };

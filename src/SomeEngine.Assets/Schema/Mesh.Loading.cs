@@ -8,6 +8,9 @@ public partial class Mesh : IDisposable, IAsyncDisposable
     private MeshPayloadSource? _payloadSource;
 
     [SomeEngine.Serialization.BinaryIgnore]
+    public ulong Revision { get; private set; } = 1;
+
+    [SomeEngine.Serialization.BinaryIgnore]
     public bool IsStreamed => Volatile.Read(ref _payloadSource) is not null;
 
     internal bool TryRetainPayloadSource(out MeshPayloadSource? source)
@@ -46,6 +49,36 @@ public partial class Mesh : IDisposable, IAsyncDisposable
             .ConfigureAwait(false);
         Mesh root = await OpenStreamedAsync(document, cancellationToken).ConfigureAwait(false);
         return context.Transfer(document, root);
+    }
+
+    internal static ValueTask ApplyReloadAsync(
+        Mesh current,
+        Mesh replacement,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(replacement);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        MeshPayloadSource? next = Interlocked.Exchange(ref replacement._payloadSource, null);
+        MeshPayloadSource? previous = Interlocked.Exchange(ref current._payloadSource, next);
+        current.AssetGuid = replacement.AssetGuid;
+        current.Name = replacement.Name;
+        current.Bounds = replacement.Bounds;
+        current.VertexStride = replacement.VertexStride;
+        current.PayloadKey = replacement.PayloadKey;
+        current.PayloadLength = replacement.PayloadLength;
+        current.Payload = replacement.Payload;
+        current.BvhOffset = replacement.BvhOffset;
+        current.PageDigests = replacement.PageDigests;
+        current.BvhLength = replacement.BvhLength;
+        current.BvhSha256 = replacement.BvhSha256;
+        current.QuantOrigin = replacement.QuantOrigin;
+        current.QuantStep = replacement.QuantStep;
+        current.Regions = replacement.Regions;
+        current.Revision = checked(current.Revision + 1);
+        previous?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public void Dispose()

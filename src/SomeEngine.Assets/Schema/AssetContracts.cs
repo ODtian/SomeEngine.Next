@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using SomeEngine.Serialization;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.Assets.Schema;
 
@@ -18,9 +19,15 @@ public sealed partial class Texture
 
     public string? AssetGuid { get; set; }
     public string? Name { get; set; }
+    public TextureDimension Dimension { get; set; }
     public uint Width { get; set; }
     public uint Height { get; set; }
-    public string? Format { get; set; }
+    public uint Depth { get; set; }
+    public uint MipLevelCount { get; set; }
+    public uint ArrayLayerCount { get; set; }
+    public Format Format { get; set; }
+    public Format SampledFormat { get; set; }
+    public SomeEngine.Graphics.TextureViewDimension SampledDimension { get; set; }
     public IList<TextureMipTile>? MipTiles { get; set; }
 }
 
@@ -89,7 +96,7 @@ public sealed partial class Mesh
     public string? AssetGuid { get; set; }
     public string? Name { get; set; }
     public Bounds? Bounds { get; set; }
-    public IList<VertexAttribute>? Attributes { get; set; }
+    public uint VertexStride { get; set; }
     public ulong PayloadKey { get; set; }
     public ulong PayloadLength { get; set; }
     [BinaryChunk(nameof(PayloadKey), nameof(PayloadLength))]
@@ -120,6 +127,7 @@ public partial class MeshPayloadPageDigest
     public ulong Offset { get; set; }
     public uint Length { get; set; }
     public uint ClusterCount { get; set; }
+    public uint VertexStride { get; set; }
     public Vec3? QuantOrigin { get; set; }
     public float QuantStep { get; set; }
     public Memory<byte>? Sha256 { get; set; }
@@ -147,21 +155,6 @@ public partial class Vec3
     public float X { get; set; }
     public float Y { get; set; }
     public float Z { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class VertexAttribute
-{
-    public VertexAttribute()
-    {
-    }
-
-
-    public string? Name { get; set; }
-    public ValueType Type { get; set; }
-    public byte Components { get; set; }
-    public bool Normalized { get; set; }
-    public ushort Offset { get; set; }
 }
 
 public enum DescriptorType : byte
@@ -523,6 +516,13 @@ public enum ClusterShaderOperationRole : byte
     ToneMapAndPresent = 24,
 }
 
+public enum ClusterBoundsSupport : byte
+{
+    NotApplicable = 0,
+    Finite = 1,
+    Unbounded = 2,
+}
+
 [BinaryContract(BinaryCompatibility.ExactSchema)]
 public sealed partial class ClusterShaderOperation
 {
@@ -532,6 +532,7 @@ public sealed partial class ClusterShaderOperation
 
 
     public ClusterShaderOperationRole Role { get; set; }
+    public ClusterBoundsSupport BoundsSupport { get; set; }
     public IList<ShaderRef>? Shaders { get; set; }
 }
 
@@ -833,7 +834,7 @@ public partial class IntVal
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class Material
+public partial class Material
 {
     public Material()
     {

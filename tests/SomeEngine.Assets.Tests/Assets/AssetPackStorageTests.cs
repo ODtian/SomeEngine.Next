@@ -83,7 +83,13 @@ public sealed class AssetPackStorageTests
                 Name = "stored-texture",
                 Width = 1,
                 Height = 1,
-                Format = "R8_UNorm",
+                Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+                Depth = 1,
+                MipLevelCount = 1,
+                ArrayLayerCount = 1,
+                Format = SomeEngine.Graphics.Format.R8UNorm,
+                SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+                SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
                 MipTiles =
                 [
                     new TextureMipTile

@@ -12,6 +12,9 @@ public sealed partial class ShaderRef
 
     public ShaderStage Stage { get; set; }
 
+    [BinaryIgnore]
+    public Shader? Asset { get; internal set; }
+
     internal static AssetGuid Require(
         ShaderRef? shader,
         string owner,
