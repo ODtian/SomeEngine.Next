@@ -47,8 +47,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private ulong _pendingReportedFaults;
     private ulong _pendingStoredFaults;
     private ulong _pendingDroppedFaults;
-    private ulong _faultReplayGeneration;
-    private ulong _acknowledgedFaultReplayGeneration;
     private ulong _reportedFaultCount;
     private ulong _storedFaultCount;
     private ulong _droppedFaultCount;
@@ -70,20 +68,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private int _disposeSynchronousCleanupComplete;
     private int _disposeCompletionPublished;
     private int _resourcesAttached;
-
-    public bool TryGetFaultReplayRequest(out ulong generation)
-    {
-        lock (_faultGate)
-        {
-            if (Volatile.Read(ref _lifecycleState) != 0)
-            {
-                generation = 0;
-                return false;
-            }
-            generation = _faultReplayGeneration;
-            return _acknowledgedFaultReplayGeneration < generation;
-        }
-    }
 
     public PageStreamSnapshot CaptureSnapshot()
     {
@@ -162,9 +146,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 _maxPendingFaultWords - _pendingFaultWords);
             ulong accepted = checked((uint)acceptedCount);
             ulong dropped = faults.ReportedCount - accepted;
-            ulong replayGeneration = dropped == 0
-                ? _faultReplayGeneration
-                : checked(_faultReplayGeneration + 1);
             if (acceptedCount != 0)
             {
                 faults.LeafNodeIndices[..acceptedCount].CopyTo(
@@ -175,19 +156,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             _pendingReportedFaults = SaturatingAdd(_pendingReportedFaults, faults.ReportedCount);
             _pendingStoredFaults = SaturatingAdd(_pendingStoredFaults, accepted);
             _pendingDroppedFaults = SaturatingAdd(_pendingDroppedFaults, dropped);
-            _faultReplayGeneration = replayGeneration;
-        }
-    }
-
-    public void AcknowledgeFaultReplay(ulong generation)
-    {
-        lock (_faultGate)
-        {
-            ThrowIfNotActive();
-            if (generation == 0 || generation > _faultReplayGeneration)
-                throw new ArgumentOutOfRangeException(nameof(generation), "Fault replay acknowledgement must name an observed generation.");
-            if (generation > _acknowledgedFaultReplayGeneration)
-                _acknowledgedFaultReplayGeneration = generation;
         }
     }
 
@@ -284,8 +252,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
     private void RecordQueueBackpressure()
     {
-        lock (_faultGate)
-            _faultReplayGeneration = checked(_faultReplayGeneration + 1);
         _backpressuredPageCount = checked(_backpressuredPageCount + 1);
         _totalBackpressuredPageCount = SaturatingAdd(_totalBackpressuredPageCount, 1);
     }
@@ -461,11 +427,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             pageId,
             code,
             message);
-        if (code is PageStreamFailureCode.InvalidPayload or
-            PageStreamFailureCode.PermanentCapacityFailure)
-        {
-            _permanentlyFailedPages.Add(pageId);
-        }
+        _permanentlyFailedPages.Add(pageId);
     }
 
     private void PublishSnapshot(PageStreamLifecycle lifecycle)
@@ -566,7 +528,6 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                     _pendingReportedFaults = 0;
                     _pendingStoredFaults = 0;
                     _pendingDroppedFaults = 0;
-                    _acknowledgedFaultReplayGeneration = _faultReplayGeneration;
                     _pendingLeafNodeIndices.Clear();
                     _queuedPages.Clear();
                     _queuedPageSet.Clear();

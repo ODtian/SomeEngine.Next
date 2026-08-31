@@ -15,18 +15,16 @@ internal readonly record struct RegisteredMeshPages(
     int PageCount,
     ulong AssetRevision,
     MeshPayloadSource Source,
-    bool OwnsSource,
-    AssetRead<Mesh>? AssetRead);
+    bool OwnsSource);
 
 internal sealed class PreparedMeshPages
 {
     internal PreparedMeshPages(
-        AssetHandle<Mesh> mesh,
+        Mesh mesh,
         uint firstPageId,
         int registrationIndex,
         MeshPayloadSource source,
         bool ownsSource,
-        AssetRead<Mesh>? assetRead,
         LinkedListNode<uint>[] lruNodes,
         int pageCount)
     {
@@ -36,26 +34,23 @@ internal sealed class PreparedMeshPages
         AssetRevision = mesh.Revision;
         Source = source;
         OwnsSource = ownsSource;
-        AssetRead = assetRead;
         LruNodes = lruNodes;
         PageCount = pageCount;
     }
 
-    internal AssetHandle<Mesh> Mesh { get; }
+    internal Mesh Mesh { get; }
     internal uint FirstPageId { get; }
     internal int RegistrationIndex { get; }
     internal ulong AssetRevision { get; }
     internal MeshPayloadSource Source { get; }
     internal bool OwnsSource { get; }
-    internal AssetRead<Mesh>? AssetRead { get; }
     internal LinkedListNode<uint>[] LruNodes { get; }
     internal int PageCount { get; }
 }
 
 internal readonly record struct PreparedMeshPagesDisposal(
     ResidencyReservation[] GpuReservations,
-    MeshPayloadSource?[] OwnedSources,
-    AssetRead<Mesh>?[] AssetReads);
+    MeshPayloadSource?[] OwnedSources);
 
 internal readonly struct MeshPageReadSource
 {
@@ -75,6 +70,7 @@ internal readonly struct MeshPageReadSource
         MeshPayloadPage expected = Descriptor;
         return page.Size == expected.Size &&
                page.ClusterCount == expected.ClusterCount &&
+               page.VertexStride == expected.VertexStride &&
                page.QuantOrigin == expected.QuantOrigin &&
                page.QuantStep == expected.QuantStep;
     }
@@ -91,7 +87,7 @@ internal readonly struct MeshPageReadSource
 
 internal sealed class MeshPages
 {
-    private readonly FlatDictionary<AssetHandle<Mesh>, int> _registrationByMesh = new();
+    private readonly FlatDictionary<Mesh, int> _registrationByMesh = new();
     private readonly List<RegisteredMeshPages> _registrations = [];
     private readonly List<int> _pageRegistrationIndices = [];
     private readonly FlatDictionary<uint, ResidencyReservation> _gpuReservations = new();
@@ -109,10 +105,9 @@ internal sealed class MeshPages
     public int PendingEvictionCount => _pendingEvictions.Count;
 
     public PreparedMeshPages PrepareStreamedRegistration(
-        AssetHandle<Mesh> mesh,
+        Mesh mesh,
         MeshPayloadSource streamedSource,
-        bool ownsSource = true,
-        AssetRead<Mesh>? assetRead = null)
+        bool ownsSource = true)
     {
         ArgumentNullException.ThrowIfNull(streamedSource);
         IReadOnlyList<MeshPayloadPage> payloadPages = streamedSource.Pages;
@@ -151,7 +146,6 @@ internal sealed class MeshPages
             _registrations.Count,
             streamedSource,
             ownsSource,
-            assetRead,
             lruNodes,
             payloadPages.Count);
     }
@@ -177,8 +171,7 @@ internal sealed class MeshPages
             registration.PageCount,
             registration.AssetRevision,
             registration.Source,
-            registration.OwnsSource,
-            registration.AssetRead));
+            registration.OwnsSource));
 
         for (int index = 0; index < registration.PageCount; index++)
         {
@@ -189,7 +182,7 @@ internal sealed class MeshPages
     }
 
     public bool TryRegistration(
-        AssetHandle<Mesh> mesh,
+        Mesh mesh,
         out uint firstPageId,
         out uint pageCount,
         out ulong assetRevision)
@@ -208,10 +201,9 @@ internal sealed class MeshPages
         return false;
     }
 
-    private void EnsureCanRegister(AssetHandle<Mesh> mesh, int pageCount)
+    private void EnsureCanRegister(Mesh mesh, int pageCount)
     {
-        if (!mesh.IsValid)
-            throw new InvalidOperationException("Runtime mesh handle must be valid before cluster page registration.");
+        ArgumentNullException.ThrowIfNull(mesh);
         if (_registrationByMesh.ContainsKey(mesh))
             throw new InvalidOperationException($"Mesh '{mesh}' is already registered in this cluster epoch.");
         if (pageCount <= 0)
@@ -228,8 +220,6 @@ internal sealed class MeshPages
             registration.PageCount != registration.Source.Pages.Count ||
             registration.PageCount != registration.LruNodes.Length ||
             registration.AssetRevision != registration.Mesh.Revision ||
-            (registration.AssetRead is not null
-                && registration.AssetRead.Revision != registration.AssetRevision) ||
             _registrationByMesh.ContainsKey(registration.Mesh))
         {
             throw new InvalidOperationException("The prepared mesh-page registration is stale or malformed.");
@@ -512,28 +502,23 @@ internal sealed class MeshPages
             gpuReservations[gpuIndex++] = entry.Value;
 
         var ownedSources = new MeshPayloadSource?[_registrations.Count];
-        var assetReads = new AssetRead<Mesh>?[_registrations.Count];
         for (int index = 0; index < _registrations.Count; index++)
         {
             if (_registrations[index].OwnsSource)
                 ownedSources[index] = _registrations[index].Source;
-            assetReads[index] = _registrations[index].AssetRead;
         }
 
         return new PreparedMeshPagesDisposal(
             gpuReservations,
-            ownedSources,
-            assetReads);
+            ownedSources);
     }
 
     public void CommitDisposal(in PreparedMeshPagesDisposal prepared)
     {
         if (prepared.GpuReservations is null ||
             prepared.OwnedSources is null ||
-            prepared.AssetReads is null ||
             prepared.GpuReservations.Length != _gpuReservations.Count ||
-            prepared.OwnedSources.Length != _registrations.Count ||
-            prepared.AssetReads.Length != _registrations.Count)
+            prepared.OwnedSources.Length != _registrations.Count)
         {
             throw new InvalidOperationException("The prepared mesh-page disposal is stale.");
         }

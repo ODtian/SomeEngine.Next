@@ -27,7 +27,7 @@ internal sealed class ClusterPageSourceException : Exception
 }
 
 internal readonly record struct ClusterMeshRegistration(
-    AssetHandle<Mesh> Mesh,
+    Mesh Mesh,
     uint FirstPageId,
     uint PageCount,
     uint RootNode);
@@ -679,7 +679,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 $"Cluster page at byte {payloadOffset} cluster {clusterIndex} decodes a non-finite or overflowing coordinate.");
         }
     }
-    public bool TryGetPublishedRoot(AssetHandle<Mesh> mesh, out uint root)
+    public bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         lock (_gate)
         {
@@ -688,9 +688,10 @@ internal sealed partial class ClusterMeshes : IDisposable
                     mesh,
                     out _,
                     out _,
-                    out ulong registeredRevision))
+                    out _))
             {
-                RequireCurrentRevision(mesh, registeredRevision);
+                // The registration owns a retained payload source. A Mesh reload publishes a
+                // source for future epochs without invalidating readers of the current epoch.
             }
             return _bvh.TryPublishedRoot(mesh, out root);
         }
@@ -804,8 +805,7 @@ internal sealed partial class ClusterMeshes : IDisposable
 
     private static Exception? DisposePublicationResources(
         ReadOnlySpan<ResidencyReservation> gpuReservations,
-        ReadOnlySpan<MeshPayloadSource?> sources = default,
-        ReadOnlySpan<AssetRead<Mesh>?> assetReads = default)
+        ReadOnlySpan<MeshPayloadSource?> sources = default)
     {
         Exception? firstFailure = null;
         DisposeAll(gpuReservations, ref firstFailure);
@@ -814,17 +814,6 @@ internal sealed partial class ClusterMeshes : IDisposable
             try
             {
                 source?.Dispose();
-            }
-            catch (Exception error)
-            {
-                firstFailure ??= error;
-            }
-        }
-        foreach (AssetRead<Mesh>? assetRead in assetReads)
-        {
-            try
-            {
-                assetRead?.Dispose();
             }
             catch (Exception error)
             {
@@ -999,8 +988,7 @@ internal sealed partial class ClusterMeshes : IDisposable
 
         Exception? resourceCleanupFailure = DisposePublicationResources(
             pageDisposal.GpuReservations,
-            pageDisposal.OwnedSources,
-            pageDisposal.AssetReads);
+            pageDisposal.OwnedSources);
         cleanupFailure ??= resourceCleanupFailure;
         foreach (DirectPageBacking backing in directBackings)
         {

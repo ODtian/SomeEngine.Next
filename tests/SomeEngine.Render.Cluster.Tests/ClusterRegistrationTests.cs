@@ -12,7 +12,7 @@ public sealed class ClusterRegistrationTests
     private static readonly int BvhBytes = Marshal.SizeOf<ClusterBVHNode>();
 
     [Fact]
-    public async Task SameHandleConcurrentRegistrationReadsOnceIntoFinalBvhStorage()
+    public async Task SameMeshConcurrentRegistrationReadsOnceIntoFinalBvhStorage()
     {
         var finalBvh = new byte[checked(BvhBytes * 2)];
         using var manager = new ClusterMeshes(
@@ -33,13 +33,12 @@ public sealed class ClusterRegistrationTests
             await release.Task.WaitAsync(cancellationToken);
         };
 
-        AssetHandle<Mesh> handle = MeshHandle(1);
         Task<ClusterMeshRegistrationResult> first = manager
-            .RegisterMeshAsync(handle, controlled.Mesh)
+            .RegisterMeshAsync(controlled.Mesh)
             .AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Task<ClusterMeshRegistrationResult> duplicate = manager
-            .RegisterMeshAsync(handle, controlled.Mesh)
+            .RegisterMeshAsync(controlled.Mesh)
             .AsTask();
         await WaitUntilAsync(() => manager.ActiveRegistrationOperations == 2);
 
@@ -54,7 +53,7 @@ public sealed class ClusterRegistrationTests
     }
 
     [Fact]
-    public async Task DifferentHandlesShareOneRegistrationAdmission()
+    public async Task DifferentMeshesShareOneRegistrationAdmission()
     {
         using var manager = new ClusterMeshes();
         using ControlledRuntimeMesh firstMesh = await OpenControlledAsync("First");
@@ -68,11 +67,11 @@ public sealed class ClusterRegistrationTests
         };
 
         Task<ClusterMeshRegistrationResult> first = manager
-            .RegisterMeshAsync(MeshHandle(2), firstMesh.Mesh)
+            .RegisterMeshAsync(firstMesh.Mesh)
             .AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Task<ClusterMeshRegistrationResult> second = manager
-            .RegisterMeshAsync(MeshHandle(3), secondMesh.Mesh)
+            .RegisterMeshAsync(secondMesh.Mesh)
             .AsTask();
         await WaitUntilAsync(() => manager.ActiveRegistrationOperations == 2);
 
@@ -99,7 +98,7 @@ public sealed class ClusterRegistrationTests
             bvhStorage: storage);
         using ControlledRuntimeMesh destinationFailure = await OpenControlledAsync("DestinationFailure");
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.AddMeshAsync(MeshHandle(4), destinationFailure.Mesh).AsTask());
+            () => manager.AddMeshAsync(destinationFailure.Mesh).AsTask());
         Assert.Equal(0, destinationFailure.Source.TargetReadCount);
         Assert.Equal(0, manager.ActiveRegistrationOperations);
 
@@ -107,13 +106,13 @@ public sealed class ClusterRegistrationTests
         sourceFailure.Source.BeforeRead = static (_, _, _) =>
             ValueTask.FromException(new IOException("Injected BVH source failure."));
         await Assert.ThrowsAsync<IOException>(
-            () => manager.AddMeshAsync(MeshHandle(5), sourceFailure.Mesh).AsTask());
+            () => manager.AddMeshAsync(sourceFailure.Mesh).AsTask());
         Assert.Equal(1, sourceFailure.Source.TargetReadCount);
         Assert.Equal(0, manager.ActiveRegistrationOperations);
 
         using ControlledRuntimeMesh valid = await OpenControlledAsync("Valid");
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(MeshHandle(6), valid.Mesh);
-        Assert.Equal(MeshHandle(6), registration.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(valid.Mesh);
+        Assert.Same(valid.Mesh, registration.Mesh);
         Assert.Equal(1, manager.CaptureSnapshot().RegisteredMeshCount);
         Assert.Equal(0, manager.ActiveRegistrationOperations);
     }
@@ -132,7 +131,7 @@ public sealed class ClusterRegistrationTests
             };
             using var cancellation = new CancellationTokenSource();
             Task<ClusterMeshRegistration> pending = manager
-                .AddMeshAsync(MeshHandle(7), cancelled.Mesh, cancellation.Token)
+                .AddMeshAsync(cancelled.Mesh, cancellation.Token)
                 .AsTask();
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             cancellation.Cancel();
@@ -140,7 +139,7 @@ public sealed class ClusterRegistrationTests
             Assert.Equal(0, manager.ActiveRegistrationOperations);
 
             using ControlledRuntimeMesh valid = await OpenControlledAsync("AfterCancellation");
-            _ = await manager.AddMeshAsync(MeshHandle(8), valid.Mesh);
+            _ = await manager.AddMeshAsync(valid.Mesh);
         }
 
         var disposingManager = new ClusterMeshes();
@@ -152,7 +151,7 @@ public sealed class ClusterRegistrationTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         };
         Task<ClusterMeshRegistration> disposedRegistration = disposingManager
-            .AddMeshAsync(MeshHandle(9), disposing.Mesh)
+            .AddMeshAsync(disposing.Mesh)
             .AsTask();
         await disposeEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -173,12 +172,12 @@ public sealed class ClusterRegistrationTests
         outer.Source.BeforeRead = async (_, _, _) =>
         {
             reentryFailure = await Record.ExceptionAsync(
-                () => manager.AddMeshAsync(MeshHandle(11), inner.Mesh).AsTask());
+                () => manager.AddMeshAsync(inner.Mesh).AsTask());
         };
 
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(MeshHandle(10), outer.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(outer.Mesh);
 
-        Assert.Equal(MeshHandle(10), registration.Mesh);
+        Assert.Same(outer.Mesh, registration.Mesh);
         InvalidOperationException error = Assert.IsType<InvalidOperationException>(reentryFailure);
         Assert.Contains("reenter", error.Message, StringComparison.Ordinal);
         Assert.Equal(1, outer.Source.TargetReadCount);
@@ -187,43 +186,29 @@ public sealed class ClusterRegistrationTests
     }
 
     [Fact]
-    public async Task ReloadedMeshCannotReuseAStaleClusterEpochRegistration()
+    public async Task ReloadKeepsThePublishedRegistrationOnItsRetainedOldSource()
     {
-        await using var assets = new ResidentAssetTable();
         using var manager = new ClusterMeshes();
-        Mesh first = await ClusterTestAssets.OpenRuntimeMeshAsync(
+        using Mesh first = await ClusterTestAssets.OpenRuntimeMeshAsync(
             ClusterTestAssets.CreateSinglePageMesh("revision-one"));
-        Mesh second = await ClusterTestAssets.OpenRuntimeMeshAsync(
+        using Mesh second = await ClusterTestAssets.OpenRuntimeMeshAsync(
             ClusterTestAssets.CreateSinglePageMesh("revision-two"));
-        AssetHandle<Mesh> handle = assets.Load(
-            AssetGuid.New(),
-            (_, _) => Task.FromResult<Mesh?>(first));
-        await assets.WaitAsync(handle, default);
-        using (AssetRead<Mesh> read = assets.Read(handle))
-            _ = await manager.AddMeshAsync(handle, read.Value);
+        _ = await manager.AddMeshAsync(first);
         Assert.True(manager.PublishPending());
-        Assert.True(manager.IsMeshRegistered(handle));
+        Assert.True(manager.IsMeshRegistered(first));
+        Assert.True(manager.TryGetPublishedRoot(first, out uint rootBefore));
 
-        await assets.ReloadAsync(
-            handle,
-            (_, _) => Task.FromResult(new AssetPublication<Mesh>(second, [])),
-            default);
+        await Mesh.ApplyReloadAsync(first, second, default);
 
-        Assert.Equal<ulong>(2, handle.Revision);
-        InvalidOperationException registered = Assert.Throws<InvalidOperationException>(
-            () => manager.IsMeshRegistered(handle));
-        Assert.Contains("Recreate the Cluster residency epoch", registered.Message);
-        InvalidOperationException published = Assert.Throws<InvalidOperationException>(
-            () => manager.TryGetPublishedRoot(handle, out _));
-        Assert.Contains("stale GPU geometry", published.Message);
+        Assert.True(manager.IsMeshRegistered(first));
+        Assert.True(manager.TryGetPublishedRoot(first, out uint rootAfter));
+        Assert.Equal(rootBefore, rootAfter);
     }
 
     private static ValueTask<ControlledRuntimeMesh> OpenControlledAsync(string name)
         => ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             ClusterTestAssets.CreateSinglePageMesh(name),
             BvhBytes);
-
-    private static AssetHandle<Mesh> MeshHandle(int id) => new(id, 1);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

@@ -9,7 +9,7 @@ using SomeEngine.Render.Systems;
 namespace SomeEngine.Render.Cluster;
 
 /// <summary>
-/// Deduplicates Cluster geometry registration by asset handle. It does not publish pending roots;
+/// Deduplicates Cluster geometry registration by asset object. It does not publish pending roots;
 /// publication remains an explicit operation on <see cref="ClusterResidency"/>.
 /// </summary>
 internal sealed class ClusterMeshCache
@@ -34,34 +34,23 @@ internal sealed class ClusterMeshCache
 
     internal ClusterMeshesSnapshot CaptureSnapshot() => _residency.CaptureMeshesSnapshot();
 
-    internal bool IsRegistered(AssetHandle<Mesh> mesh)
+    internal bool IsRegistered(Mesh mesh)
         => _residency.IsMeshRegistered(mesh);
 
     internal async ValueTask<bool> PrepareAsync(
-        AssetHandle<Mesh> handle,
-        AssetRead<Mesh> assetRead,
+        Mesh mesh,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(assetRead);
-        try
-        {
-            if (!handle.IsValid)
-                throw new ArgumentException("Cluster mesh handles must be valid.", nameof(handle));
-            ClusterMeshRegistrationResult result = await _residency
-                .RegisterMeshAsync(handle, assetRead, cancellationToken)
-                .ConfigureAwait(false);
-            return result.Added;
-        }
-        catch
-        {
-            assetRead.Dispose();
-            throw;
-        }
+        ArgumentNullException.ThrowIfNull(mesh);
+        ClusterMeshRegistrationResult result = await _residency
+            .RegisterMeshAsync(mesh, cancellationToken)
+            .ConfigureAwait(false);
+        return result.Added;
     }
 
-    internal bool TryGetPublishedRoot(AssetHandle<Mesh> handle, out uint root)
+    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
-        if (_residency.TryGetPublishedRoot(handle, out root))
+        if (_residency.TryGetPublishedRoot(mesh, out root))
             return true;
         root = ClusterRenderFeature.MissingBvhRoot;
         return false;
@@ -88,7 +77,7 @@ internal sealed class ClusterMeshCache
                 required = Math.Max(required, checked(entities[row].Index + 1));
             EnsureInstanceGeometryCapacity(required);
 
-            AssetHandle<Mesh> lastMesh = default;
+            Mesh? lastMesh = null;
             ulong lastRevision = 0;
             uint lastRoot = ClusterRenderFeature.MissingBvhRoot;
             bool lastRootPublished = false;
@@ -156,16 +145,16 @@ internal sealed class ClusterMeshCache
 }
 
 /// <summary>
-/// Finds the unique mesh handles referenced by RenderWorld mesh entities and acquires scoped reads
-/// from the one owning asset loader. Registration cannot retain an unadmitted raw Mesh reference.
+/// Finds the unique meshes referenced by RenderWorld mesh entities and registers their retained
+/// streamed payload sources with the active Cluster residency epoch.
 /// </summary>
 internal sealed class ClusterMeshPrepareSystem : IDisposable
 {
     private readonly RenderWorld _world;
     private readonly ClusterMeshCache _cache;
     private readonly QueryHandle _meshQuery;
-    private readonly HashSet<AssetHandle<Mesh>> _seen = [];
-    private readonly List<AssetHandle<Mesh>> _missing = [];
+    private readonly HashSet<Mesh> _seen = [];
+    private readonly List<Mesh> _missing = [];
     private long _topologyRevision = -1;
     private int _referencedMeshCount;
     private int _preparing;
@@ -179,10 +168,8 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     }
 
     internal ValueTask<ClusterMeshPrepareResult> PrepareAsync(
-        AssetLoader assets,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(assets);
         if (Interlocked.CompareExchange(ref _preparing, 1, 0) != 0)
             throw new InvalidOperationException("Cluster mesh preparation is already in progress.");
         if (Volatile.Read(ref _disposed) != 0)
@@ -213,10 +200,10 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                     ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                     for (int row = 0; row < meshes.Length; row++)
                     {
-                        AssetHandle<Mesh> handle = meshes[row].Mesh;
-                        if (!_seen.Add(handle) || _cache.IsRegistered(handle))
+                        Mesh mesh = meshes[row].Mesh;
+                        if (!_seen.Add(mesh) || _cache.IsRegistered(mesh))
                             continue;
-                        _missing.Add(handle);
+                        _missing.Add(mesh);
                     }
                 }
             });
@@ -231,7 +218,6 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                     new ClusterMeshPrepareResult(referencedMeshCount, 0, 0));
             }
             return PrepareMissingAsync(
-                assets,
                 topologyRevision,
                 referencedMeshCount,
                 cancellationToken);
@@ -245,7 +231,6 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     }
 
     private async ValueTask<ClusterMeshPrepareResult> PrepareMissingAsync(
-        AssetLoader assets,
         long topologyRevision,
         int referencedMeshCount,
         CancellationToken cancellationToken)
@@ -257,16 +242,8 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
             for (int index = 0; index < _missing.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                AssetHandle<Mesh> handle = _missing[index];
-                if (!handle.IsValid || !assets.TryRead(handle, out AssetRead<Mesh>? read))
-                {
-                    unresolved++;
-                    continue;
-                }
-
-                AssetRead<Mesh> admitted = read!;
                 if (await _cache
-                    .PrepareAsync(handle, admitted, cancellationToken)
+                    .PrepareAsync(_missing[index], cancellationToken)
                     .ConfigureAwait(false))
                 {
                     registered++;

@@ -13,9 +13,11 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class ClusterPublicationTests
 {
     private const int PositionBytes = 3 * sizeof(ushort);
+    private const uint VertexStride = 16;
     private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes + IndexBytes;
-    private const uint PageAllocationBytes = 144;
+    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
+        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const uint PageAllocationBytes = (uint)((PageBytes + 15) & ~15);
 
     [Fact]
     public async Task RegistrationAndPageResidencyBecomeVisibleOnlyWhenPendingChangesPublish()
@@ -26,10 +28,9 @@ public sealed class ClusterPublicationTests
             residency: null,
             pageStorage: null,
             bvhStorage: new TestClusterBvhStorage(globalBvh));
-        AssetHandle<Mesh> handle = MeshHandle(1);
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
-            handle,
             MeshWithBvh("Mesh", Leaf()));
+        Mesh handle = registration.Mesh;
 
         Assert.Equal(1u, registration.PageCount);
         ClusterMeshesSnapshot registered = manager.CaptureSnapshot();
@@ -81,15 +82,13 @@ public sealed class ClusterPublicationTests
     public async Task PendingRegistrationsCoalesceIntoOneAtomicPublication()
     {
         using var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> firstHandle = MeshHandle(2);
-        AssetHandle<Mesh> secondHandle = MeshHandle(3);
         ClusterMeshRegistration firstRegistration = await manager.AddAuthoredMeshAsync(
-            firstHandle,
             MeshWithBvh("First", Leaf()));
+        Mesh firstHandle = firstRegistration.Mesh;
 
         ClusterMeshRegistration secondRegistration = await manager.AddAuthoredMeshAsync(
-            secondHandle,
             MeshWithBvh("Second", Leaf()));
+        Mesh secondHandle = secondRegistration.Mesh;
 
         Assert.Equal(1u, firstRegistration.PageCount);
         Assert.Equal(1u, secondRegistration.PageCount);
@@ -120,17 +119,15 @@ public sealed class ClusterPublicationTests
             residency: null,
             pageStorage: null,
             bvhStorage: storage);
-        AssetHandle<Mesh> firstHandle = MeshHandle(35);
         using Mesh first = await ClusterTestAssets.OpenRuntimeMeshAsync(MeshWithBvh("First", Leaf()));
-        _ = await manager.AddMeshAsync(firstHandle, first);
+        _ = await manager.AddMeshAsync(first);
         CompletePublication(manager);
 
         storage.FailNextRelease();
-        AssetHandle<Mesh> invalidHandle = MeshHandle(34);
         using Mesh invalid = await ClusterTestAssets.OpenRuntimeMeshAsync(
             MeshWithBvh("Invalid", Leaf(localPage: 1)));
         InvalidOperationException primary = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.AddMeshAsync(invalidHandle, invalid).AsTask());
+            () => manager.AddMeshAsync(invalid).AsTask());
 
         Assert.Contains("references local page", primary.Message, StringComparison.Ordinal);
         ClusterCleanupFailure cleanup = Assert.IsType<ClusterCleanupFailure>(
@@ -138,12 +135,11 @@ public sealed class ClusterPublicationTests
         Assert.Equal(ClusterCleanupStage.Registration, cleanup.Stage);
         Assert.Contains("Injected BVH release failure", cleanup.Message, StringComparison.Ordinal);
 
-        AssetHandle<Mesh> secondHandle = MeshHandle(36);
         using Mesh second = await ClusterTestAssets.OpenRuntimeMeshAsync(MeshWithBvh("Second", Leaf()));
-        _ = await manager.AddMeshAsync(secondHandle, second);
+        _ = await manager.AddMeshAsync(second);
         CompletePublication(manager);
 
-        Assert.True(manager.TryGetPublishedRoot(secondHandle, out uint secondRoot));
+        Assert.True(manager.TryGetPublishedRoot(second, out uint secondRoot));
         Assert.Equal(2u, secondRoot);
         Assert.Equal(2, manager.CaptureSnapshot().PublishedMeshCount);
     }
@@ -152,13 +148,13 @@ public sealed class ClusterPublicationTests
     public async Task PendingChangesCanBeDiscardedByEpochDisposal()
     {
         var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(40);
-        await manager.AddAuthoredMeshAsync(handle, MeshWithBvh("Pending", Leaf()));
+        ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
+            MeshWithBvh("Pending", Leaf()));
         ClusterMeshesSnapshot pending = manager.CaptureSnapshot();
         Assert.Equal(1u, pending.Pages.Registered);
         Assert.Equal(1u, pending.Pages.Missing);
         Assert.Equal(0, pending.PublishedMeshCount);
-        Assert.False(manager.TryGetPublishedRoot(handle, out _));
+        Assert.False(manager.TryGetPublishedRoot(registration.Mesh, out _));
 
         manager.Dispose();
         ClusterMeshesSnapshot terminal = manager.CaptureSnapshot();
@@ -172,10 +168,9 @@ public sealed class ClusterPublicationTests
     public async Task DisposalReleasesPublishedResidencyAndExposesAStableTerminalSnapshot()
     {
         var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(4);
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
-            handle,
             MeshWithBvh("Mesh", Leaf()));
+        Mesh handle = registration.Mesh;
         CompletePublication(manager);
         Assert.Equal(
             PageLoadResult.Staged,
@@ -220,7 +215,7 @@ public sealed class ClusterPublicationTests
             residency: null,
             pageStorage: null,
             bvhStorage: storage);
-        await manager.AddAuthoredMeshAsync(MeshHandle(37), MeshWithBvh("DisposalFailure", Leaf()));
+        await manager.AddAuthoredMeshAsync(MeshWithBvh("DisposalFailure", Leaf()));
         CompletePublication(manager);
         storage.FailNextRelease();
 
@@ -241,10 +236,9 @@ public sealed class ClusterPublicationTests
     public async Task ConcurrentPublishCommitsPendingChangesExactlyOnce()
     {
         using var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(41);
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
-            handle,
             MeshWithBvh("ConcurrentCompletion", Leaf()));
+        Mesh handle = registration.Mesh;
         Assert.Equal(
             PageLoadResult.Staged,
             await ClusterTestAssets.LoadPageAsync(manager, registration.FirstPageId));
@@ -274,11 +268,11 @@ public sealed class ClusterPublicationTests
             PageAllocationBytes,
             residency: null,
             pageStorage: new TestClusterPageStorage(pageStorageBytes));
-        AssetHandle<Mesh> handle = MeshHandle(1);
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Mesh", Leaf()),
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(handle, controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
+        Mesh handle = registration.Mesh;
         CompletePublication(manager);
         Assert.True(manager.TryGetPublishedRoot(handle, out _));
 
@@ -325,11 +319,10 @@ public sealed class ClusterPublicationTests
     public async Task UnknownPageOrAuthenticatedPayloadFailureCannotMutateHeapOrPublicationState()
     {
         using var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(1);
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Mesh", Leaf()),
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(handle, controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
         CompletePublication(manager);
         uint pageId = registration.FirstPageId;
         Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, pageId));
@@ -352,11 +345,10 @@ public sealed class ClusterPublicationTests
     public async Task ThrowingPageSourceCannotLeakAHeapAllocation()
     {
         using var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(5);
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Mesh", Leaf()),
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(handle, controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
         CompletePublication(manager);
         controlled.Source.BeforeRead = static (_, _, _) =>
             ValueTask.FromException(new InvalidOperationException("Injected page-source failure."));
@@ -373,11 +365,9 @@ public sealed class ClusterPublicationTests
     public async Task RegistrationDoesNotDependOnPageHeapCapacity()
     {
         var manager = new ClusterMeshes(16);
-        AssetHandle<Mesh> handle = MeshHandle(7);
-
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
-            handle,
             MeshWithBvh("Oversized", Leaf()));
+        Mesh handle = registration.Mesh;
 
         ClusterMeshesSnapshot registered = manager.CaptureSnapshot();
         Assert.Equal(1u, registration.PageCount);
@@ -408,18 +398,14 @@ public sealed class ClusterPublicationTests
         using var manager = new ClusterMeshes(
             PageAllocationBytes * 3,
             residency);
-        AssetHandle<Mesh> first = MeshHandle(20);
-        AssetHandle<Mesh> second = MeshHandle(21);
-        AssetHandle<Mesh> incoming = MeshHandle(22);
         ClusterMeshRegistration firstRegistration = await manager.AddAuthoredMeshAsync(
-            first,
             MeshWithBvh("First", Leaf()));
         ClusterMeshRegistration secondRegistration = await manager.AddAuthoredMeshAsync(
-            second,
             MeshWithBvh("Second", Leaf()));
         ClusterMeshRegistration incomingRegistration = await manager.AddAuthoredMeshAsync(
-            incoming,
             MeshWithBvh("Incoming", Leaf()));
+        Mesh first = firstRegistration.Mesh;
+        Mesh second = secondRegistration.Mesh;
         CompletePublication(manager);
 
         uint firstPageId = firstRegistration.FirstPageId;
@@ -453,24 +439,20 @@ public sealed class ClusterPublicationTests
     }
 
     [Fact]
-    public async Task InvalidMeshCannotLeavePartialStateAndTheSameHandleCanRetry()
+    public async Task InvalidMeshesCannotLeavePartialStateAndAValidMeshCanRegister()
     {
         var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(8);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => manager.AddAuthoredMeshAsync(
-                handle,
                 MeshWithBvh("BadLeaf", Leaf(localPage: 1))).AsTask());
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => manager.AddAuthoredMeshAsync(
-                handle,
                 MeshWithBvh(
                     "BadClusterRange",
                     Leaf(clusterStart: 1, clusterCount: 1))).AsTask());
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => manager.AddAuthoredMeshAsync(
-                handle,
                 MeshWithBvh("Disconnected", Leaf(), Leaf())).AsTask());
 
         Mesh badVertexRange = MeshWithBvh("BadVertexRange", Leaf());
@@ -504,8 +486,8 @@ public sealed class ClusterPublicationTests
         Assert.False(manager.PublishPending());
 
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
-            handle,
             MeshWithBvh("Valid", Leaf()));
+        Mesh handle = registration.Mesh;
 
         Assert.Equal(1u, registration.PageCount);
         Assert.Equal(1u, manager.CaptureSnapshot().Pages.Registered);
@@ -686,7 +668,7 @@ public sealed class ClusterPublicationTests
             meshes[index] = MeshWithBvh($"Mesh{index}", Leaf());
         var registrations = new ClusterMeshRegistration[meshCount];
         for (int index = 0; index < meshCount; index++)
-            registrations[index] = await manager.AddAuthoredMeshAsync(MeshHandle(index + 100), meshes[index]);
+            registrations[index] = await manager.AddAuthoredMeshAsync(meshes[index]);
 
         ClusterMeshesSnapshot registered = manager.CaptureSnapshot();
         Assert.Equal((uint)meshCount, registered.Pages.Registered);
@@ -731,10 +713,9 @@ public sealed class ClusterPublicationTests
         }
 
         var manager = new ClusterMeshes(48);
-        AssetHandle<Mesh> handle = MeshHandle(200);
-        await manager.AddAuthoredMeshAsync(
-            handle,
+        ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
             MeshWithBvh("Deep", nodes));
+        Mesh handle = registration.Mesh;
 
         Assert.False(manager.TryGetPublishedRoot(handle, out _));
         CompletePublication(manager);
@@ -774,9 +755,6 @@ public sealed class ClusterPublicationTests
         return MemoryMarshal.Read<ClusterBVHNode>(
             globalBvh.Slice(nodeOffset, checked((int)ClusterBvh.NodeBytes))).ChildPointer;
     }
-
-    private static AssetHandle<Mesh> MeshHandle(int id)
-        => new(id, 1);
 
     private static GPUCluster ReadCluster(Mesh asset)
         => MemoryMarshal.Read<GPUCluster>(
@@ -819,7 +797,7 @@ public sealed class ClusterPublicationTests
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
             Payload = payload,
-            Attributes = [],
+            VertexStride = VertexStride,
             BvhOffset = checked((ulong)pageBytes),
             QuantStep = 1f,
         };
@@ -851,8 +829,10 @@ public sealed class ClusterPublicationTests
     {
         int clusterBytes = checked((int)clusterCount * GPUCluster.SizeInBytes);
         int positionBytes = checked((int)clusterCount * PositionBytes);
+        int vertexBytes = checked((int)clusterCount * (int)VertexStride);
         int indexBytes = checked((int)clusterCount * IndexBytes);
-        int pageBytes = checked(MeshPageHeader.Size + clusterBytes + positionBytes + indexBytes);
+        int pageBytes = checked(MeshPageHeader.Size + clusterBytes + positionBytes
+            + vertexBytes + indexBytes);
         byte[] data = new byte[pageBytes];
         var header = new MeshPageHeader
         {
@@ -862,7 +842,9 @@ public sealed class ClusterPublicationTests
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = checked((uint)(MeshPageHeader.Size + clusterBytes)),
             AttributesOffset = checked((uint)(MeshPageHeader.Size + clusterBytes + positionBytes)),
-            IndicesOffset = checked((uint)(MeshPageHeader.Size + clusterBytes + positionBytes)),
+            IndicesOffset = checked((uint)(MeshPageHeader.Size + clusterBytes
+                + positionBytes + vertexBytes)),
+            VertexStride = VertexStride,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(data.AsSpan(), in header);
@@ -892,7 +874,6 @@ public sealed class ClusterPublicationTests
             asset,
             pageLength);
         ClusterMeshRegistration registration = await manager.AddMeshAsync(
-            MeshHandle(900),
             controlled.Mesh);
         CompletePublication(manager);
 
@@ -922,7 +903,7 @@ public sealed class ClusterPublicationTests
         using var manager = new ClusterMeshes(PageAllocationBytes);
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.AddAuthoredMeshAsync(MeshHandle(901), asset).AsTask());
+            () => manager.AddAuthoredMeshAsync(asset).AsTask());
         Assert.Equal(0u, manager.CaptureSnapshot().Pages.Registered);
         Assert.False(manager.PublishPending());
         return error;

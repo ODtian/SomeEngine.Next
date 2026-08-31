@@ -11,9 +11,11 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class PageStreamTests
 {
     private const int PositionBytes = 3 * sizeof(ushort);
+    private const uint VertexStride = 16;
     private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes + IndexBytes;
-    private const uint PageAllocationBytes = 144;
+    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
+        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const uint PageAllocationBytes = (uint)((PageBytes + 15) & ~15);
 
     [Fact]
     public async Task HoldsDuplicatePageFaultsDuringLoad()
@@ -61,14 +63,12 @@ public sealed class PageStreamTests
     }
 
     [Fact]
-    public async Task RecoversAfterLoadFailureAndPublishesBvhLeafFixup()
+    public async Task SourceFailurePermanentlyRejectsPageWithoutRetry()
     {
         MissingPageFixture fixture = await MissingPageAsync();
         using ClusterMeshes manager = fixture.Manager;
-        fixture.Source.BeforeRead = (_, _, _) =>
-            fixture.Source.TargetReadCount == 1
-                ? ValueTask.FromException(new InvalidOperationException("transient page load failure"))
-                : ValueTask.CompletedTask;
+        fixture.Source.BeforeRead = static (_, _, _) =>
+            ValueTask.FromException(new InvalidOperationException("page load failure"));
         await using var stream = new PageStream(manager);
 
         ReadOnlyMemory<uint> fault = new[] { fixture.FaultNode };
@@ -84,40 +84,20 @@ public sealed class PageStreamTests
         Assert.Equal(0, failedLoad.Work.QueuedPages);
         Assert.Equal(0u, failedLoad.LastUpdate.StagedPages);
         Assert.Equal(1ul, failedLoad.Totals.LoadFailures);
+        Assert.Equal(1, failedLoad.Work.PermanentlyFailedPages);
         PageStreamFailure failure = Assert.IsType<PageStreamFailure>(failedLoad.LastFailure);
         Assert.Equal(fixture.PageId, failure.PageId);
         Assert.Equal(PageStreamFailureCode.SourceReadFailed, failure.Code);
         Assert.Equal(2u, manager.CaptureSnapshot().Pages.Missing);
 
         stream.Push(new PageFaultRead(manager.EpochId, 1, fault.Span));
-        await UpdateUntilAsync(
-            stream,
-            () => fixture.Source.TargetReadCount == 2 &&
-                  stream.CaptureSnapshot().Work.InFlightPages == 0);
+        stream.Update();
 
-        PageStreamSnapshot stagedLoad = stream.CaptureSnapshot();
-        ClusterMeshesSnapshot stagedResources = manager.CaptureSnapshot();
-        Assert.Equal(2, fixture.Source.TargetReadCount);
-        Assert.Equal(0, stagedLoad.Work.InFlightPages);
-        Assert.Equal(0, stagedLoad.Work.QueuedPages);
-        Assert.Equal(1u, stagedLoad.LastUpdate.StagedPages);
-        Assert.Equal(1ul, stagedLoad.Totals.LoadFailures);
-        Assert.Equal(0u, stagedResources.Pages.Resident);
-        Assert.Equal(2u, stagedResources.Pages.Missing);
-        Assert.Equal(1, stagedResources.Pages.UncompletedLoads);
-
-        Assert.Equal(
-            PageFaultResolutionKind.Pending,
-            manager.ResolvePageFault(fixture.FaultNode).Kind);
-        Assert.True(manager.PublishPending());
-
-        ClusterMeshesSnapshot completed = manager.CaptureSnapshot();
-        Assert.Equal(1u, completed.Pages.Resident);
-        Assert.Equal(1u, completed.Pages.Missing);
-        Assert.Equal(0, completed.Pages.UncompletedLoads);
-        Assert.Equal(
-            PageFaultResolutionKind.Satisfied,
-            manager.ResolvePageFault(fixture.FaultNode).Kind);
+        PageStreamSnapshot repeated = stream.CaptureSnapshot();
+        Assert.Equal(1, fixture.Source.TargetReadCount);
+        Assert.Equal(1ul, repeated.Totals.LoadFailures);
+        Assert.Equal(1, repeated.Work.PermanentlyFailedPages);
+        Assert.Equal(0u, manager.CaptureSnapshot().Pages.Resident);
     }
 
     [Fact]
@@ -163,17 +143,14 @@ public sealed class PageStreamTests
     public async Task PageWaitsForSafeHeapRetirementBeforeIo()
     {
         var manager = new ClusterMeshes(PageAllocationBytes * 2);
-        AssetHandle<Mesh> firstHandle = MeshHandle(10);
-        AssetHandle<Mesh> waitingHandle = MeshHandle(11);
         ClusterMeshRegistration firstRegistration = await manager.AddAuthoredMeshAsync(
-            firstHandle,
             MeshWithBvh("First", Leaf()));
         using ControlledRuntimeMesh waiting = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Waiting", Leaf()),
             PageBytes);
         ClusterMeshRegistration waitingRegistration = await manager.AddMeshAsync(
-            waitingHandle,
             waiting.Mesh);
+        Mesh waitingHandle = waitingRegistration.Mesh;
         PublishPending(manager);
         Assert.True(manager.TryGetPublishedRoot(waitingHandle, out uint waitingFaultNode));
 
@@ -191,9 +168,7 @@ public sealed class PageStreamTests
         PublishPending(manager);
         Assert.Equal(PageAllocationBytes, manager.CaptureSnapshot().Heap.FreeBytes);
 
-        AssetHandle<Mesh> replacementHandle = MeshHandle(12);
         ClusterMeshRegistration replacementRegistration = await manager.AddAuthoredMeshAsync(
-            replacementHandle,
             MeshWithBvh("Replacement", Leaf()));
         PublishPending(manager);
         Assert.Equal(1u, replacementRegistration.PageCount);
@@ -247,7 +222,7 @@ public sealed class PageStreamTests
     }
 
     [Fact]
-    public async Task FaultOverflowSurvivesStreamerIngestionAndRequiresReplay()
+    public async Task FaultOverflowIsDroppedAndCountedWithoutReplayState()
     {
         MissingPageFixture fixture = await MissingPageAsync();
         using ClusterMeshes manager = fixture.Manager;
@@ -262,9 +237,6 @@ public sealed class PageStreamTests
         Assert.Equal(1ul, snapshot.LastUpdate.StoredFaults);
         Assert.Equal(4ul, snapshot.LastUpdate.DroppedFaults);
         Assert.Equal(4ul, snapshot.Totals.DroppedFaults);
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong generation));
-        stream.AcknowledgeFaultReplay(generation);
-        Assert.False(stream.TryGetFaultReplayRequest(out _));
     }
 
     [Fact]
@@ -280,9 +252,6 @@ public sealed class PageStreamTests
 
         stream.Push(new PageFaultRead(manager.EpochId, 2, firstBatch));
         stream.Push(new PageFaultRead(manager.EpochId, 2, secondBatch));
-
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong generation));
-        Assert.NotEqual(0ul, generation);
 
         stream.Update();
 
@@ -301,13 +270,12 @@ public sealed class PageStreamTests
         const int pageCount = 5;
         const int maxQueuedPages = 2;
         using var manager = new ClusterMeshes();
-        var handles = new AssetHandle<Mesh>[pageCount];
+        var meshes = new Mesh[pageCount];
         var sources = new ControlledRangeSource[pageCount];
         var loadCompletion = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         for (int index = 0; index < pageCount; index++)
         {
-            handles[index] = MeshHandle(400 + index);
             using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
                 MeshWithBvh($"Backpressure{index}", Leaf()),
                 PageBytes);
@@ -318,14 +286,14 @@ public sealed class PageStreamTests
             };
             sources[index] = controlled.Source;
             ClusterMeshRegistration registration = await manager.AddMeshAsync(
-                handles[index],
                 controlled.Mesh);
+            meshes[index] = registration.Mesh;
             Assert.Equal(1u, registration.PageCount);
         }
         PublishPending(manager);
         var faultNodes = new uint[pageCount];
         for (int index = 0; index < faultNodes.Length; index++)
-            Assert.True(manager.TryGetPublishedRoot(handles[index], out faultNodes[index]));
+            Assert.True(manager.TryGetPublishedRoot(meshes[index], out faultNodes[index]));
 
         await using var stream = new PageStream(
             manager,
@@ -344,7 +312,6 @@ public sealed class PageStreamTests
         Assert.Equal(0ul, first.LastUpdate.DroppedFaults);
         Assert.Equal(3u, first.LastUpdate.BackpressuredPages);
         Assert.Equal(3ul, first.Totals.BackpressuredPages);
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong firstGeneration));
 
         stream.Push(new PageFaultRead(manager.EpochId, pageCount, faultNodes));
         stream.Update();
@@ -357,8 +324,6 @@ public sealed class PageStreamTests
         Assert.Equal(0ul, second.LastUpdate.DroppedFaults);
         Assert.Equal(2u, second.LastUpdate.BackpressuredPages);
         Assert.Equal(5ul, second.Totals.BackpressuredPages);
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong secondGeneration));
-        Assert.True(secondGeneration > firstGeneration);
 
         stream.Push(new PageFaultRead(manager.EpochId, pageCount, faultNodes));
         stream.Update();
@@ -369,8 +334,6 @@ public sealed class PageStreamTests
         Assert.InRange(third.Work.QueuedPages, 0, maxQueuedPages);
         Assert.Equal(2u, third.LastUpdate.BackpressuredPages);
         Assert.Equal(7ul, third.Totals.BackpressuredPages);
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong thirdGeneration));
-        Assert.True(thirdGeneration > secondGeneration);
 
         stream.Dispose();
         loadCompletion.SetResult(true);
@@ -382,7 +345,7 @@ public sealed class PageStreamTests
     }
 
     [Fact]
-    public void DisposeTerminatesPendingFaultReplay()
+    public void DisposePreservesOverflowTelemetryAndEndsTheStream()
     {
         using var manager = new ClusterMeshes();
         using var stream = new PageStream(
@@ -391,14 +354,9 @@ public sealed class PageStreamTests
         uint[] overflowingBatch = [0, 0];
 
         stream.Push(new PageFaultRead(manager.EpochId, 2, overflowingBatch));
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong activeGeneration));
-        Assert.NotEqual(0ul, activeGeneration);
 
         stream.Dispose();
 
-        Assert.False(stream.TryGetFaultReplayRequest(out ulong terminalGeneration));
-        Assert.Equal(0ul, terminalGeneration);
-        Assert.Throws<ObjectDisposedException>(() => stream.AcknowledgeFaultReplay(activeGeneration));
         PageStreamSnapshot terminal = stream.CaptureSnapshot();
         Assert.Equal(PageStreamLifecycle.Disposed, terminal.Lifecycle);
         Assert.Equal(1ul, terminal.Totals.DroppedFaults);
@@ -406,7 +364,7 @@ public sealed class PageStreamTests
     }
 
     [Fact]
-    public async Task StaleReplayAcknowledgementCannotClearLaterOverflow()
+    public async Task RepeatedOverflowAccumulatesDropTelemetry()
     {
         MissingPageFixture fixture = await MissingPageAsync();
         using ClusterMeshes manager = fixture.Manager;
@@ -416,22 +374,12 @@ public sealed class PageStreamTests
         uint[] overflowingBatch = [fixture.FaultNode, fixture.FaultNode];
 
         stream.Push(new PageFaultRead(manager.EpochId, 2, overflowingBatch));
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong firstGeneration));
-
-        stream.AcknowledgeFaultReplay(firstGeneration);
-        Assert.False(stream.TryGetFaultReplayRequest(out _));
         stream.Update();
+        Assert.Equal(1ul, stream.CaptureSnapshot().Totals.DroppedFaults);
 
         stream.Push(new PageFaultRead(manager.EpochId, 2, overflowingBatch));
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong secondGeneration));
-        Assert.True(secondGeneration > firstGeneration);
-
-        stream.AcknowledgeFaultReplay(firstGeneration);
-        Assert.True(stream.TryGetFaultReplayRequest(out ulong pendingGeneration));
-        Assert.Equal(secondGeneration, pendingGeneration);
-
-        stream.AcknowledgeFaultReplay(secondGeneration);
-        Assert.False(stream.TryGetFaultReplayRequest(out _));
+        stream.Update();
+        Assert.Equal(2ul, stream.CaptureSnapshot().Totals.DroppedFaults);
     }
 
     [Fact]
@@ -450,7 +398,6 @@ public sealed class PageStreamTests
         Assert.Equal(0ul, snapshot.LastUpdate.StoredFaults);
         Assert.Equal(expected, snapshot.LastUpdate.DroppedFaults);
         Assert.Equal(expected, snapshot.Totals.DroppedFaults);
-        Assert.True(stream.TryGetFaultReplayRequest(out _));
     }
 
     [Fact]
@@ -471,8 +418,6 @@ public sealed class PageStreamTests
         Assert.Equal(0ul, snapshot.LastUpdate.StoredFaults);
         Assert.Equal(0ul, snapshot.LastUpdate.DroppedFaults);
         Assert.Equal(0ul, snapshot.Totals.DroppedFaults);
-        Assert.False(stream.TryGetFaultReplayRequest(out ulong generation));
-        Assert.Equal(0ul, generation);
         Assert.Equal(0, snapshot.Work.QueuedPages);
         Assert.Equal(0, snapshot.Work.InFlightPages);
     }
@@ -683,20 +628,19 @@ public sealed class PageStreamTests
     {
         const int pageCount = 4;
         using var manager = new ClusterMeshes();
-        var handles = new AssetHandle<Mesh>[pageCount];
+        var meshes = new Mesh[pageCount];
         var completions = new TaskCompletionSource<bool>[pageCount];
         var started = new List<uint>();
         for (int index = 0; index < pageCount; index++)
         {
             completions[index] = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            handles[index] = MeshHandle(200 + index);
             using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
                 MeshWithBvh($"Budget{index}", Leaf()),
                 PageBytes);
             ClusterMeshRegistration registration = await manager.AddMeshAsync(
-                handles[index],
                 controlled.Mesh);
+            meshes[index] = registration.Mesh;
             uint pageId = registration.FirstPageId;
             controlled.Source.BeforeRead = async (_, _, cancellationToken) =>
             {
@@ -709,7 +653,7 @@ public sealed class PageStreamTests
         PublishPending(manager);
         var faultNodes = new uint[pageCount];
         for (int index = 0; index < faultNodes.Length; index++)
-            Assert.True(manager.TryGetPublishedRoot(handles[index], out faultNodes[index]));
+            Assert.True(manager.TryGetPublishedRoot(meshes[index], out faultNodes[index]));
 
         await using var stream = new PageStream(
             manager,
@@ -742,13 +686,13 @@ public sealed class PageStreamTests
     public async Task FaultDuringPendingEvictionCancelsRetirementWithoutIo()
     {
         using var manager = new ClusterMeshes(PageAllocationBytes);
-        AssetHandle<Mesh> handle = MeshHandle(300);
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             MeshWithBvh("Retiring", Leaf()),
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(handle, controlled.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
+        Mesh mesh = registration.Mesh;
         PublishPending(manager);
-        Assert.True(manager.TryGetPublishedRoot(handle, out uint faultNode));
+        Assert.True(manager.TryGetPublishedRoot(mesh, out uint faultNode));
         Assert.Equal(1u, registration.PageCount);
         uint pageID = registration.FirstPageId;
         Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, pageID));
@@ -884,26 +828,25 @@ public sealed class PageStreamTests
             ? new ClusterMeshes()
             : new ClusterMeshes(PageHeap.CapacityBytes, residency: null, pageStorage);
         await manager.AddAuthoredMeshAsync(
-            MeshHandle(99),
             MeshWithBvh("Seed", Leaf(), Internal(firstChild: 0, childCount: 1)));
         PublishPending(manager);
 
-        AssetHandle<Mesh> handle = MeshHandle(1);
         Mesh asset = MeshWithBvh("PageStream", Leaf());
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             asset,
             PageBytes);
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(handle, controlled.Mesh);
-        Assert.Equal(handle, registration.Mesh);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
+        Mesh mesh = registration.Mesh;
+        Assert.Same(controlled.Mesh, mesh);
         Assert.Equal(1u, registration.PageCount);
         uint pageID = registration.FirstPageId;
-        Assert.False(manager.TryGetPublishedRoot(handle, out _));
+        Assert.False(manager.TryGetPublishedRoot(mesh, out _));
         ClusterMeshesSnapshot pendingRegistration = manager.CaptureSnapshot();
         Assert.Equal(0u, pendingRegistration.Pages.Resident);
         Assert.Equal(1, pendingRegistration.PublishedMeshCount);
 
         PublishPending(manager);
-        Assert.True(manager.TryGetPublishedRoot(handle, out uint globalNodeIndex));
+        Assert.True(manager.TryGetPublishedRoot(mesh, out uint globalNodeIndex));
         ClusterMeshesSnapshot published = manager.CaptureSnapshot();
         Assert.Equal(0u, published.Pages.Resident);
         Assert.Equal(2, published.PublishedMeshCount);
@@ -959,9 +902,6 @@ public sealed class PageStreamTests
         Assert.Fail(failureMessage);
     }
 
-    private static AssetHandle<Mesh> MeshHandle(int id)
-        => new(id, 1);
-
     private static Mesh MeshWithBvh(string name, params ClusterBVHNode[] nodes)
     {
         byte[] payload = new byte[PageBytes + nodes.Length * Marshal.SizeOf<ClusterBVHNode>()];
@@ -973,7 +913,9 @@ public sealed class PageStreamTests
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
             AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
+            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
+                + PositionBytes + VertexStride,
+            VertexStride = VertexStride,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
@@ -990,7 +932,7 @@ public sealed class PageStreamTests
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
             Payload = payload,
-            Attributes = [],
+            VertexStride = VertexStride,
             BvhOffset = PageBytes,
             QuantStep = 1f,
         };
@@ -1026,7 +968,9 @@ public sealed class PageStreamTests
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
             AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
+            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
+                + PositionBytes + VertexStride,
+            VertexStride = VertexStride,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(data.AsSpan(), in header);

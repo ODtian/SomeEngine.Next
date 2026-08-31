@@ -199,15 +199,14 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal bool IsDisposed => Volatile.Read(ref _lifecycleState) == 2;
 
     internal ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        AssetHandle<Mesh> handle,
-        AssetRead<Mesh> assetRead,
+        Mesh mesh,
         CancellationToken cancellationToken = default)
     {
         ThrowIfNotActive();
-        return _meshes.RegisterMeshAsync(handle, assetRead, cancellationToken);
+        return _meshes.RegisterMeshAsync(mesh, cancellationToken);
     }
 
-    internal bool IsMeshRegistered(AssetHandle<Mesh> mesh)
+    internal bool IsMeshRegistered(Mesh mesh)
     {
         ThrowIfNotActive();
         return _meshes.IsMeshRegistered(mesh);
@@ -230,7 +229,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         return _meshes.PublishPending();
     }
 
-    internal bool TryGetPublishedRoot(AssetHandle<Mesh> mesh, out uint root)
+    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         ThrowIfNotActive();
         return _meshes.TryGetPublishedRoot(mesh, out root);
@@ -256,18 +255,6 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         ThrowIfNotActive();
         PageFaultRead faults = _faults.Read(bytes);
         _stream.Push(faults);
-    }
-
-    internal bool TryGetFaultReplayRequest(out ulong generation)
-    {
-        ThrowIfNotActive();
-        return _stream.TryGetFaultReplayRequest(out generation);
-    }
-
-    internal void AcknowledgeFaultReplay(ulong generation)
-    {
-        ThrowIfNotActive();
-        _stream.AcknowledgeFaultReplay(generation);
     }
 
     internal void ReportLeafUsage(ReadOnlySpan<uint> leafNodeIndices)

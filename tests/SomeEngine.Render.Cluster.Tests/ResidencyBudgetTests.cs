@@ -12,9 +12,11 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class ResidencyBudgetTests
 {
     private const int PositionBytes = 3 * sizeof(ushort);
+    private const uint VertexStride = 16;
     private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes + IndexBytes;
-    private const int GpuPageBytes = 144;
+    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
+        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int GpuPageBytes = (PageBytes + 15) & ~15;
 
     [Fact]
     public async Task FinalGpuReservationSpansDirectIoPublicationAndRetirement()
@@ -363,10 +365,9 @@ public sealed class ResidencyBudgetTests
             Mesh(pageCount),
             PageBytes);
         ClusterMeshRegistration registration = await manager.AddMeshAsync(
-            MeshHandle(),
             controlled.Mesh);
         CompletePublication(manager);
-        Assert.True(manager.TryGetPublishedRoot(MeshHandle(), out uint root));
+        Assert.True(manager.TryGetPublishedRoot(registration.Mesh, out uint root));
         uint firstFaultNode = pageCount == 1 ? root : checked(root - 2);
         return new RegisteredManagerFixture(
             manager,
@@ -478,8 +479,6 @@ public sealed class ResidencyBudgetTests
         public void Dispose() => _inner.Dispose();
     }
 
-    private static AssetHandle<Mesh> MeshHandle() => new(77, 1);
-
     private static Mesh Mesh(int pageCount)
     {
         if (pageCount is < 1 or > 2)
@@ -500,7 +499,7 @@ public sealed class ResidencyBudgetTests
             AssetGuid = AssetGuid.New().ToFlatString(),
             Name = "BudgetedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            Attributes = [],
+            VertexStride = VertexStride,
             Payload = payload,
             BvhOffset = checked((ulong)pageRegionBytes),
             QuantStep = 1f,
@@ -518,7 +517,9 @@ public sealed class ResidencyBudgetTests
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
             AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
+            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
+                + PositionBytes + VertexStride,
+            VertexStride = VertexStride,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(data.AsSpan(0, MeshPageHeader.Size), in header);

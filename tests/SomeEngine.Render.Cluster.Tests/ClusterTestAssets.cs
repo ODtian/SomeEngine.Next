@@ -17,11 +17,10 @@ internal static class ClusterTestAssets
 
     internal static async ValueTask<ClusterMeshRegistration> AddAuthoredMeshAsync(
         this ClusterMeshes manager,
-        AssetHandle<Mesh> handle,
         Mesh asset)
     {
         using Mesh mesh = await OpenRuntimeMeshAsync(asset);
-        return await manager.AddMeshAsync(handle, mesh);
+        return await manager.AddMeshAsync(mesh);
     }
 
     internal static async ValueTask<Mesh> OpenRuntimeMeshAsync(Mesh asset)
@@ -91,7 +90,7 @@ internal static class ClusterTestAssets
 
     internal static ClusterMeshRoot AssertRoot(
         ReadOnlySpan<ClusterMeshRoot> roots,
-        AssetHandle<Mesh> mesh)
+        Mesh mesh)
     {
         ClusterMeshRoot match = default;
         int matchCount = 0;
@@ -109,7 +108,9 @@ internal static class ClusterTestAssets
 
     internal static Mesh CreateSinglePageMesh(string name)
     {
-        int pageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes + IndexBytes;
+        const uint vertexStride = 32;
+        int pageBytes = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes
+            + PositionBytes + (int)vertexStride + IndexBytes);
         byte[] payload = new byte[pageBytes + Marshal.SizeOf<ClusterBVHNode>()];
         var header = new MeshPageHeader
         {
@@ -119,7 +120,9 @@ internal static class ClusterTestAssets
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes)),
             AttributesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes)),
-            IndicesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes)),
+            IndicesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes
+                + PositionBytes + vertexStride)),
+            VertexStride = vertexStride,
             QuantStep = 1,
         };
         MemoryMarshal.Write(payload.AsSpan(), in header);
@@ -150,7 +153,7 @@ internal static class ClusterTestAssets
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1 },
             Payload = payload,
-            Attributes = [],
+            VertexStride = vertexStride,
             BvhOffset = checked((ulong)pageBytes),
             QuantStep = 1,
         };

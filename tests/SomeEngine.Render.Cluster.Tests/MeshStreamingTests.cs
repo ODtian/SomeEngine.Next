@@ -13,8 +13,10 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class MeshStreamingTests
 {
     private const int PositionBytes = 3 * sizeof(ushort);
+    private const uint VertexStride = 16;
     private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes + IndexBytes;
+    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
+        + PositionBytes + (int)VertexStride + IndexBytes;
 
     [Fact]
     public async Task StreamedOpenAndOneHundredDuplicateFaultsReadOnlyOneRequestedPage()
@@ -36,16 +38,15 @@ public sealed class MeshStreamingTests
         RangeRead[] metadataReads = counted.Reads;
         Assert.DoesNotContain(metadataReads, static read => read.Length == MeshPageHeader.Size);
 
-        var handle = new AssetHandle<Mesh>(1, 1);
         Assert.True(streamed.IsStreamed);
         using var manager = new ClusterMeshes();
         int readCountBeforeRegistration = counted.Reads.Length;
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(handle, streamed);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(streamed);
 
         RangeRead[] registeredReads = counted.Reads;
         Assert.Equal(readCountBeforeRegistration + 1, registeredReads.Length);
         Assert.Equal(payloadSource.BvhLength, registeredReads[readCountBeforeRegistration].Length);
-        Assert.Equal(handle, registration.Mesh);
+        Assert.Same(streamed, registration.Mesh);
         Assert.Equal(2u, registration.PageCount);
         ClusterMeshesSnapshot registrationSnapshot = manager.CaptureSnapshot();
         Assert.Equal(2u, registrationSnapshot.Pages.Registered);
@@ -53,7 +54,7 @@ public sealed class MeshStreamingTests
         Assert.Equal(0, registrationSnapshot.Pages.UncompletedLoads);
         Assert.Equal(0u, registrationSnapshot.Heap.UsedBytes);
         CompletePublication(manager);
-        Assert.True(manager.TryGetPublishedRoot(handle, out uint publishedRoot));
+        Assert.True(manager.TryGetPublishedRoot(streamed, out uint publishedRoot));
         uint requestedLeafNode = checked(publishedRoot - 2);
 
         counted.Clear();
@@ -214,7 +215,7 @@ public sealed class MeshStreamingTests
         {
             Name = "RangeStreamedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            Attributes = [],
+            VertexStride = VertexStride,
             Payload = payload,
             BvhOffset = 2 * PageBytes,
             QuantStep = 1f,
@@ -232,7 +233,9 @@ public sealed class MeshStreamingTests
             ClustersOffset = MeshPageHeader.Size,
             PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
             AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
+            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
+                + PositionBytes + VertexStride,
+            VertexStride = VertexStride,
             QuantStep = 1f,
         };
         MemoryMarshal.Write(data.AsSpan(0, MeshPageHeader.Size), in header);

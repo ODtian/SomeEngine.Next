@@ -31,17 +31,12 @@ public sealed class ClusterAssetLoaderTests
             CreateClusterRoot(shaderGuids));
         await using var loader = new AssetLoader(project.CreateStorage());
 
-        AssetHandle<ClusterShaders> first = loader.Load(new AssetId<ClusterShaders>(clusterGuid));
-        AssetHandle<ClusterShaders> second = loader.Load(new AssetId<ClusterShaders>(clusterGuid));
-        await Task.WhenAll(
-            loader.WaitAsync(first).AsTask(),
-            loader.WaitAsync(second).AsTask());
-        using AssetRead<ClusterShaders> firstRead = loader.Read(first);
-        using AssetRead<ClusterShaders> secondRead = loader.Read(second);
-        ClusterShaders shaders = firstRead.Value;
+        ClusterShaders[] loaded = await Task.WhenAll(
+            loader.LoadAsync(new AssetId<ClusterShaders>(clusterGuid)).AsTask(),
+            loader.LoadAsync(new AssetId<ClusterShaders>(clusterGuid)).AsTask());
+        ClusterShaders shaders = loaded[0];
 
-        Assert.Equal(first, second);
-        Assert.Same(shaders, secondRead.Value);
+        Assert.Same(shaders, loaded[1]);
         Assert.Equal("MainCluster", shaders.Name);
         Assert.Equal(roles.Length, shaders.Operations?.Count);
         for (int index = 0; index < roles.Length; index++)
@@ -50,9 +45,10 @@ public sealed class ClusterAssetLoaderTests
             Assert.Equal(roles[index], operation.Role);
             ShaderRef shader = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders)[0];
             Assert.True(AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid));
-            Assert.True(loader.TryFind(shaderGuid, out AssetHandle<Shader> handle));
-            using AssetRead<Shader> read = loader.Read(handle);
-            Assert.Equal($"cluster-{index}", read.Value.Name);
+            Assert.NotNull(shader.Asset);
+            Assert.Equal($"cluster-{index}", shader.Asset.Name);
+            Assert.True(loader.TryGetAssetId(shader.Asset, out AssetId<Shader> shaderId));
+            Assert.Equal(shaderGuid, shaderId.Value);
         }
     }
 
@@ -84,10 +80,8 @@ public sealed class ClusterAssetLoaderTests
             clusterGuid);
         await using var loader = new AssetLoader(storage);
 
-        AssetHandle<ClusterShaders> handle = loader.Load(
-            new AssetId<ClusterShaders>(clusterGuid));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => loader.WaitAsync(handle).AsTask());
+            () => loader.LoadAsync(new AssetId<ClusterShaders>(clusterGuid)).AsTask());
         Assert.Contains($"Operations[{operationCount - 1}].Shader", error.Message);
         Assert.Equal(0, storage.DependencyResolutions);
     }
@@ -139,6 +133,9 @@ public sealed class ClusterAssetLoaderTests
         var result = new ClusterShaderOperation
         {
             Role = role,
+            BoundsSupport = IsPositionOperation(role)
+                ? ClusterBoundsSupport.Finite
+                : ClusterBoundsSupport.NotApplicable,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.SoftwareDepthMerge
@@ -175,6 +172,13 @@ public sealed class ClusterAssetLoaderTests
         }
         return result;
     }
+
+    private static bool IsPositionOperation(ClusterShaderOperationRole role)
+        => role is ClusterShaderOperationRole.DeformCachePopulate
+            or ClusterShaderOperationRole.SoftwareVisibilityRaster
+            or ClusterShaderOperationRole.HardwareVisibilityRaster
+            or ClusterShaderOperationRole.MotionVectors
+            or ClusterShaderOperationRole.VisibilityResolve;
 
     private sealed class DependencyCountingStorage : IAssetStorage
     {

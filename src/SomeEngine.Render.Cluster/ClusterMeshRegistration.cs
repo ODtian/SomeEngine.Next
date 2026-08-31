@@ -31,49 +31,19 @@ internal sealed partial class ClusterMeshes
     }
 
     internal async ValueTask<ClusterMeshRegistration> AddMeshAsync(
-        AssetHandle<Mesh> handle,
         Mesh mesh,
         CancellationToken cancellationToken = default)
-        => (await RegisterMeshAsync(handle, mesh, cancellationToken).ConfigureAwait(false)).Registration;
+        => (await RegisterMeshAsync(mesh, cancellationToken).ConfigureAwait(false)).Registration;
 
     internal async ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        AssetHandle<Mesh> handle,
         Mesh mesh,
         CancellationToken cancellationToken = default)
         => await RegisterMeshCoreAsync(
-            handle,
             mesh,
-            assetRead: null,
             cancellationToken).ConfigureAwait(false);
-
-    internal async ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        AssetHandle<Mesh> handle,
-        AssetRead<Mesh> assetRead,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(assetRead);
-        Mesh mesh;
-        try
-        {
-            mesh = assetRead.Value;
-        }
-        catch
-        {
-            assetRead.Dispose();
-            throw;
-        }
-
-        return await RegisterMeshCoreAsync(
-            handle,
-            mesh,
-            assetRead,
-            cancellationToken).ConfigureAwait(false);
-    }
 
     private async ValueTask<ClusterMeshRegistrationResult> RegisterMeshCoreAsync(
-        AssetHandle<Mesh> handle,
         Mesh mesh,
-        AssetRead<Mesh>? assetRead,
         CancellationToken cancellationToken)
     {
         bool operationEntered = false;
@@ -87,10 +57,6 @@ internal sealed partial class ClusterMeshes
         try
         {
             ArgumentNullException.ThrowIfNull(mesh);
-            if (!handle.IsValid)
-                throw new InvalidOperationException("Runtime mesh handle must be valid before cluster registration.");
-            if (assetRead is not null && assetRead.Revision != handle.Revision)
-                throw new InvalidOperationException("Cluster mesh read revision does not match its handle.");
             if (IsRegistrationOwner)
             {
                 throw new InvalidOperationException(
@@ -116,11 +82,11 @@ internal sealed partial class ClusterMeshes
                     throw new ObjectDisposedException(nameof(ClusterMeshes));
 
                 bool pagesRegistered = _pages.TryRegistration(
-                    handle,
+                    mesh,
                     out uint existingFirstPage,
                     out uint existingPageCount,
-                    out ulong registeredRevision);
-                bool rootRegistered = _bvh.TryRegisteredRoot(handle, out uint existingRoot);
+                    out _);
+                bool rootRegistered = _bvh.TryRegisteredRoot(mesh, out uint existingRoot);
                 if (pagesRegistered != rootRegistered)
                 {
                     throw new InvalidOperationException(
@@ -128,26 +94,17 @@ internal sealed partial class ClusterMeshes
                 }
                 if (pagesRegistered)
                 {
-                    RequireCurrentRevision(handle, registeredRevision);
                     return new ClusterMeshRegistrationResult(
                         new ClusterMeshRegistration(
-                            handle,
+                            mesh,
                             existingFirstPage,
                             existingPageCount,
                             existingRoot),
                         Added: false);
                 }
 
-                bool hasSource;
-                if (assetRead is null)
-                {
-                    hasSource = mesh.TryRetainPayloadSource(out source);
-                    ownsSource = hasSource;
-                }
-                else
-                {
-                    hasSource = mesh.TryBorrowPayloadSource(out source);
-                }
+                bool hasSource = mesh.TryRetainPayloadSource(out source);
+                ownsSource = hasSource;
                 if (!hasSource || source is null)
                 {
                     throw new InvalidOperationException(
@@ -157,10 +114,9 @@ internal sealed partial class ClusterMeshes
                     throw new InvalidDataException("A streamed cluster mesh must contain page metadata and BVH data.");
 
                 pageRegistration = _pages.PrepareStreamedRegistration(
-                    handle,
+                    mesh,
                     source,
-                    ownsSource,
-                    assetRead);
+                    ownsSource);
                 bvhDestination = _bvh.AllocateRegistration(source.BvhLength);
                 destinationAllocated = true;
             }
@@ -175,7 +131,7 @@ internal sealed partial class ClusterMeshes
                     throw new OperationCanceledException("Cluster registration shutdown was requested.", token);
 
                 ClusterBvhRegistration bvh = _bvh.Prepare(
-                    handle,
+                    mesh,
                     bvhDestination,
                     pageRegistration.FirstPageId,
                     source.Pages);
@@ -189,11 +145,10 @@ internal sealed partial class ClusterMeshes
                 uint rootNode = _bvh.Commit(bvh);
                 destinationAllocated = false;
                 source = null;
-                assetRead = null;
                 AdvanceRevision();
                 return new ClusterMeshRegistrationResult(
                     new ClusterMeshRegistration(
-                        handle,
+                        mesh,
                         pageRegistration.FirstPageId,
                         checked((uint)pageRegistration.PageCount),
                         rootNode),
@@ -231,7 +186,6 @@ internal sealed partial class ClusterMeshes
                     cleanupFailure ??= error;
                 }
             }
-            assetRead?.Dispose();
             if (cleanupFailure is not null)
                 RecordCleanupFailure(ClusterCleanupStage.Registration, cleanupFailure);
 
@@ -274,7 +228,7 @@ internal sealed partial class ClusterMeshes
         return idle;
     }
 
-    internal bool IsMeshRegistered(AssetHandle<Mesh> mesh)
+    internal bool IsMeshRegistered(Mesh mesh)
     {
         lock (_gate)
         {
@@ -283,26 +237,11 @@ internal sealed partial class ClusterMeshes
                 mesh,
                 out _,
                 out _,
-                out ulong registeredRevision);
+                out _);
             bool rootRegistered = _bvh.IsRegistered(mesh);
             if (pagesRegistered != rootRegistered)
                 throw new InvalidOperationException("Cluster mesh registration indexes are inconsistent.");
-            if (pagesRegistered)
-                RequireCurrentRevision(mesh, registeredRevision);
             return pagesRegistered;
-        }
-    }
-
-    private static void RequireCurrentRevision(
-        AssetHandle<Mesh> mesh,
-        ulong registeredRevision)
-    {
-        if (registeredRevision != mesh.Revision)
-        {
-            throw new InvalidOperationException(
-                $"Mesh '{mesh.AssetId}' changed from revision {registeredRevision} to " +
-                $"revision {mesh.Revision}. Recreate the Cluster residency epoch before using " +
-                "the replacement; stale GPU geometry is never reused.");
         }
     }
 

@@ -219,14 +219,13 @@ public sealed class ClusterRenderResources : IDisposable
     internal void ExitInstanceComposition() => ExitActiveOperation();
 
     public ValueTask<ClusterMeshPrepareResult> PrepareMeshesAsync(
-        AssetLoader assets,
         CancellationToken cancellationToken = default)
     {
         EnterActiveOperation(trackContext: false);
         try
         {
             ValueTask<ClusterMeshPrepareResult> pending =
-                _meshPrepare.PrepareAsync(assets, cancellationToken);
+                _meshPrepare.PrepareAsync(cancellationToken);
             if (!pending.IsCompletedSuccessfully)
                 return CompleteMeshPreparationAsync(pending);
             ClusterMeshPrepareResult result = pending.Result;
@@ -364,32 +363,6 @@ public sealed class ClusterRenderResources : IDisposable
         try
         {
             _residency.PumpStreaming();
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
-
-    public bool TryGetFaultReplayRequest(out ulong generation)
-    {
-        EnterActiveOperation();
-        try
-        {
-            return _residency.TryGetFaultReplayRequest(out generation);
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
-
-    public void AcknowledgeFaultReplay(ulong generation)
-    {
-        EnterActiveOperation();
-        try
-        {
-            _residency.AcknowledgeFaultReplay(generation);
         }
         finally
         {

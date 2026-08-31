@@ -8,11 +8,11 @@ using SomeEngine.Core.Collections;
 
 namespace SomeEngine.Render.Cluster;
 
-internal readonly record struct ClusterMeshRoot(AssetHandle<Mesh> Mesh, uint NodeIndex);
+internal readonly record struct ClusterMeshRoot(Mesh Mesh, uint NodeIndex);
 internal readonly record struct ClusterRootState(uint NodeIndex, bool Published);
 
 internal readonly record struct ClusterBvhRegistration(
-    AssetHandle<Mesh> Mesh,
+    Mesh Mesh,
     uint FirstNode,
     uint FirstPage,
     uint Root,
@@ -49,9 +49,9 @@ internal sealed class ClusterBvh
     private readonly IClusterBvhStorage _storage;
     private readonly List<ClusterBvhAllocation> _allocations = [];
     private readonly List<ClusterBvhPatch> _pendingPatches = [];
-    private readonly FlatDictionary<AssetHandle<Mesh>, ClusterRootState> _roots = new();
+    private readonly FlatDictionary<Mesh, ClusterRootState> _roots = new();
     private readonly List<ClusterBvhLeafIndex> _leafIndexes = [];
-    private readonly List<AssetHandle<Mesh>> _pendingRootMeshes = [];
+    private readonly List<Mesh> _pendingRootMeshes = [];
     private uint _count;
     private uint _registeredPageCount;
     private int _publishedCount;
@@ -65,10 +65,10 @@ internal sealed class ClusterBvh
         => _pendingPatches.Count != 0 ||
            _pendingRootMeshes.Count != 0;
 
-    public bool IsRegistered(AssetHandle<Mesh> mesh)
+    public bool IsRegistered(Mesh mesh)
         => _roots.ContainsKey(mesh);
 
-    public bool TryRegisteredRoot(AssetHandle<Mesh> mesh, out uint root)
+    public bool TryRegisteredRoot(Mesh mesh, out uint root)
     {
         if (_roots.TryGetValue(mesh, out ClusterRootState state))
         {
@@ -79,7 +79,7 @@ internal sealed class ClusterBvh
         return false;
     }
 
-    public bool TryPublishedRoot(AssetHandle<Mesh> mesh, out uint root)
+    public bool TryPublishedRoot(Mesh mesh, out uint root)
     {
         if (_roots.TryGetValue(mesh, out ClusterRootState state) && state.Published)
         {
@@ -139,13 +139,12 @@ internal sealed class ClusterBvh
     }
 
     public ClusterBvhRegistration Prepare(
-        AssetHandle<Mesh> mesh,
+        Mesh mesh,
         in ClusterBvhDestination destination,
         uint firstPage,
         IReadOnlyList<MeshPayloadPage> pages)
     {
-        if (!mesh.IsValid)
-            throw new InvalidOperationException("Runtime mesh handle must be valid before Cluster BVH registration.");
+        ArgumentNullException.ThrowIfNull(mesh);
 
         if (_roots.ContainsKey(mesh))
             throw new InvalidOperationException($"Mesh '{mesh}' already has a registered Cluster BVH.");
@@ -270,7 +269,7 @@ internal sealed class ClusterBvh
             if (patch.Destination.Length != sizeof(uint))
                 throw new InvalidOperationException($"Cluster BVH patch at {patch.Offset} has an invalid destination.");
         }
-        foreach (AssetHandle<Mesh> mesh in _pendingRootMeshes)
+        foreach (Mesh mesh in _pendingRootMeshes)
         {
             if (!_roots.TryGetValue(mesh, out ClusterRootState root) || root.Published)
             {
@@ -289,7 +288,7 @@ internal sealed class ClusterBvh
             _storage.Stage(patch.Offset, sizeof(uint));
         }
         _storage.Publish();
-        foreach (AssetHandle<Mesh> mesh in _pendingRootMeshes)
+        foreach (Mesh mesh in _pendingRootMeshes)
         {
             ClusterRootState root = _roots[mesh];
             _roots[mesh] = root with { Published = true };
