@@ -136,20 +136,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
         VulkanPipeline pipeline = command.CurrentPipeline;
         VulkanBlockLayout block = pipeline.Layout.GetBlock(bindings.Layout);
-        VulkanDescriptorGeneration generation = CreateDescriptorGeneration(
-            (VulkanDevice)command.Device,
-            pipeline.Layout,
-            block,
-            bindings);
-        try
-        {
-            BindDescriptorGeneration(command, pipeline, generation);
-            command.Capture(generation);
-        }
-        finally
-        {
-            generation.ReleaseNative();
-        }
+        BindTransientDescriptorGeneration(command, pipeline, block, bindings);
     }
 
     internal void SetVertexBuffers(
@@ -159,8 +146,10 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
         VulkanDevice device = (VulkanDevice)command.Device;
-        VkBuffer[] nativeBuffers = new VkBuffer[bindings.Length];
-        ulong[] offsets = new ulong[bindings.Length];
+        command.PrepareVertexBufferStorage(
+            bindings.Length,
+            out Span<VkBuffer> nativeBuffers,
+            out Span<ulong> offsets);
         for (int index = 0; index < bindings.Length; index++)
         {
             VulkanBuffer buffer = RequireBuffer(device, bindings[index].Buffer, nameof(bindings));
@@ -212,11 +201,15 @@ internal sealed unsafe partial class VulkanBackend
             bindings.Length >
                 device.ExtendedFeatures.MaximumTransformFeedbackBuffers - firstSlot)
             throw new ArgumentOutOfRangeException(nameof(firstSlot));
-        VkBuffer[] buffers = new VkBuffer[bindings.Length];
-        ulong[] offsets = new ulong[bindings.Length];
-        ulong[] sizes = new ulong[bindings.Length];
-        VkBuffer[] counters = new VkBuffer[bindings.Length];
-        ulong[] counterOffsets = new ulong[bindings.Length];
+        command.PrepareTransformFeedbackStorage(
+            bindings.Length,
+            out Span<VkBuffer> buffers,
+            out Span<ulong> offsets,
+            out Span<ulong> sizes,
+            out Span<VkBuffer> counters,
+            out Span<ulong> counterOffsets);
+        counters.Clear();
+        counterOffsets.Clear();
         for (int index = 0; index < bindings.Length; index++)
         {
             VulkanBuffer buffer = RequireBuffer(device, bindings[index].Buffer, nameof(bindings));
@@ -265,14 +258,13 @@ internal sealed unsafe partial class VulkanBackend
         }
         command.BeginTransformFeedback(
             firstSlot,
-            counters,
-            counterOffsets);
+            bindings.Length);
     }
 
     internal void SetViewports(CommandContext context, ReadOnlySpan<Viewport> viewports)
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        Silk.NET.Vulkan.Viewport[] native = new Silk.NET.Vulkan.Viewport[viewports.Length];
+        Span<Silk.NET.Vulkan.Viewport> native = command.PrepareViewportStorage(viewports.Length);
         for (int index = 0; index < native.Length; index++)
         {
             Viewport value = viewports[index];
@@ -291,7 +283,7 @@ internal sealed unsafe partial class VulkanBackend
     internal void SetScissors(CommandContext context, ReadOnlySpan<ScissorRect> scissors)
     {
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
-        Rect2D[] native = new Rect2D[scissors.Length];
+        Span<Rect2D> native = command.PrepareScissorStorage(scissors.Length);
         for (int index = 0; index < native.Length; index++)
         {
             ScissorRect value = scissors[index];
@@ -462,13 +454,14 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDescriptorGeneration generation)
     {
         PipelineBindPoint bindPoint = ToBindPoint(pipeline.Type);
-        foreach ((uint setIndex, VkDescriptorSet set) in generation.Sets)
+        foreach (ref readonly VulkanBoundDescriptorSet binding in generation.Sets.AsSpan())
         {
+            VkDescriptorSet set = binding.Native;
             Api.CmdBindDescriptorSets(
                 command.NativeRecording,
                 bindPoint,
                 pipeline.Layout.Native,
-                setIndex,
+                binding.Set,
                 1,
                 &set,
                 0,
@@ -637,6 +630,12 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private uint _transformFeedbackFirst;
+        private int _transformFeedbackCount;
+        private VkBuffer[] _bufferScratch = [];
+        private ulong[] _offsetScratch = [];
+        private ulong[] _sizeScratch = [];
+        private Silk.NET.Vulkan.Viewport[] _viewportScratch = [];
+        private Rect2D[] _scissorScratch = [];
         private VkBuffer[] _transformFeedbackCounters = [];
         private ulong[] _transformFeedbackCounterOffsets = [];
         private bool _transformFeedback;
@@ -644,32 +643,72 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void BeginTransformFeedback(
             uint first,
-            VkBuffer[] counters,
-            ulong[] counterOffsets)
+            int count)
         {
             _transformFeedback = true;
             _transformFeedbackFirst = first;
-            _transformFeedbackCounters = counters;
-            _transformFeedbackCounterOffsets = counterOffsets;
+            _transformFeedbackCount = count;
+        }
+
+        internal void PrepareVertexBufferStorage(
+            int count,
+            out Span<VkBuffer> buffers,
+            out Span<ulong> offsets)
+        {
+            EnsureArray(ref _bufferScratch, count);
+            EnsureArray(ref _offsetScratch, count);
+            buffers = _bufferScratch.AsSpan(0, count);
+            offsets = _offsetScratch.AsSpan(0, count);
+        }
+
+        internal void PrepareTransformFeedbackStorage(
+            int count,
+            out Span<VkBuffer> buffers,
+            out Span<ulong> offsets,
+            out Span<ulong> sizes,
+            out Span<VkBuffer> counters,
+            out Span<ulong> counterOffsets)
+        {
+            EnsureArray(ref _bufferScratch, count);
+            EnsureArray(ref _offsetScratch, count);
+            EnsureArray(ref _sizeScratch, count);
+            EnsureArray(ref _transformFeedbackCounters, count);
+            EnsureArray(ref _transformFeedbackCounterOffsets, count);
+            buffers = _bufferScratch.AsSpan(0, count);
+            offsets = _offsetScratch.AsSpan(0, count);
+            sizes = _sizeScratch.AsSpan(0, count);
+            counters = _transformFeedbackCounters.AsSpan(0, count);
+            counterOffsets = _transformFeedbackCounterOffsets.AsSpan(0, count);
+        }
+
+        internal Span<Silk.NET.Vulkan.Viewport> PrepareViewportStorage(int count)
+        {
+            EnsureArray(ref _viewportScratch, count);
+            return _viewportScratch.AsSpan(0, count);
+        }
+
+        internal Span<Rect2D> PrepareScissorStorage(int count)
+        {
+            EnsureArray(ref _scissorScratch, count);
+            return _scissorScratch.AsSpan(0, count);
         }
 
         internal void EndTransformFeedbackIfActive()
         {
             if (!_transformFeedback)
                 return;
-            fixed (VkBuffer* counterPointer = _transformFeedbackCounters)
-            fixed (ulong* offsetPointer = _transformFeedbackCounterOffsets)
+            fixed (VkBuffer* counterPointer = _transformFeedbackCounters.AsSpan(0, _transformFeedbackCount))
+            fixed (ulong* offsetPointer = _transformFeedbackCounterOffsets.AsSpan(0, _transformFeedbackCount))
             {
                 ((VulkanDevice)Device).TransformFeedbackApi.CmdEndTransformFeedback(
                     NativeRecording,
                     _transformFeedbackFirst,
-                    checked((uint)_transformFeedbackCounters.Length),
+                    checked((uint)_transformFeedbackCount),
                     counterPointer,
                     offsetPointer);
             }
             _transformFeedback = false;
-            _transformFeedbackCounters = [];
-            _transformFeedbackCounterOffsets = [];
+            _transformFeedbackCount = 0;
         }
 
         internal void BeginConditionalRendering() => _conditionalRendering = true;
@@ -694,11 +733,18 @@ internal sealed unsafe partial class VulkanBackend
             _rendering = false;
             _transformFeedback = false;
             _transformFeedbackFirst = 0;
-            _transformFeedbackCounters = [];
-            _transformFeedbackCounterOffsets = [];
+            _transformFeedbackCount = 0;
             _conditionalRendering = false;
             _shadingRateAttachment = default;
             _shadingRateTexelSize = default;
+        }
+
+        private static void EnsureArray<T>(ref T[] storage, int count)
+        {
+            if (storage.Length >= count)
+                return;
+            int capacity = storage.Length == 0 ? 8 : checked(storage.Length * 2);
+            Array.Resize(ref storage, Math.Max(capacity, count));
         }
     }
 }

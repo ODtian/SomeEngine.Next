@@ -25,7 +25,7 @@ internal sealed unsafe partial class VulkanBackend
             Type = ToNative(type),
         };
         VkAccelerationStructure native = default;
-        ThrowIfFailed(
+        nativeDevice.ThrowIfDeviceCallFailed(
             nativeDevice.AccelerationStructureApi.CreateAccelerationStructure(
                 nativeDevice.Native,
                 &createInfo,
@@ -602,7 +602,7 @@ internal sealed unsafe partial class VulkanBackend
                 QueryCount = 1,
             };
             VkQueryPool native = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateQueryPool(device.Native, &createInfo, null, &native),
                 "vkCreateQueryPool(acceleration structure property)");
             _native = native;

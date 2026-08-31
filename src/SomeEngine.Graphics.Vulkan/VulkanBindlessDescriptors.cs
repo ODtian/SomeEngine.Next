@@ -409,7 +409,7 @@ internal sealed unsafe partial class VulkanBackend
                 PBindings = &nativeBinding,
             };
             VkDescriptorSetLayout layout = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateDescriptorSetLayout(
                     device.Native,
                     &layoutInfo,
@@ -514,7 +514,7 @@ internal sealed unsafe partial class VulkanBackend
                 PPoolSizes = &size,
             };
             VkDescriptorPool pool = default;
-            ThrowIfFailed(
+            device.ThrowIfDeviceCallFailed(
                 device.Backend.Api.CreateDescriptorPool(
                     device.Native,
                     &poolInfo,
@@ -531,7 +531,7 @@ internal sealed unsafe partial class VulkanBackend
                     PSetLayouts = &layout,
                 };
                 VkDescriptorSet set = default;
-                ThrowIfFailed(
+                device.ThrowIfDeviceCallFailed(
                     device.Backend.Api.AllocateDescriptorSets(
                         device.Native,
                         &allocation,
