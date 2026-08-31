@@ -29,6 +29,8 @@ public ref struct RenderGraphFrame
     /// <summary>Identifies this CPU frame authoring lease.</summary>
     public ulong FrameIdentity => State.Identity;
 
+    internal RenderGraph Owner => State.Graph;
+
     /// <summary>
     /// Retires an object after every frame submitted before this frame began has completed.
     /// The current frame must not reference <paramref name="value"/>.
@@ -37,6 +39,12 @@ public ref struct RenderGraphFrame
     {
         ArgumentNullException.ThrowIfNull(value);
         State.RetireAfterSubmittedFrames(value);
+    }
+
+    internal void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
+    {
+        ArgumentNullException.ThrowIfNull(observer);
+        State.ObserveExecution(observer);
     }
 
     public PassDefinition GetPass(GraphPassId pass) => State.GetPass(pass);

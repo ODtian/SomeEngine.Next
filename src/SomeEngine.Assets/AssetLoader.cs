@@ -86,6 +86,17 @@ public sealed class AssetLoader : IAsyncDisposable
         return _assets.GetRevision(asset);
     }
 
+    /// <summary>
+    /// Applies every fully loaded and validated replacement to its canonical asset object. Call
+    /// this only at an ownership boundary where extraction and render preparation are not reading
+    /// mutable asset fields.
+    /// </summary>
+    public ValueTask ApplyUpdatesAsync()
+    {
+        ThrowIfDisposed();
+        return _assets.ApplyUpdatesAsync();
+    }
+
     public bool TryGetAssetId<T>(T asset, out AssetId<T> assetId)
         where T : class
     {

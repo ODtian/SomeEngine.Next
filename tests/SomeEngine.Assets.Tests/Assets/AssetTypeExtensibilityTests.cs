@@ -172,6 +172,11 @@ public sealed class AssetTypeExtensibilityTests
             ProbeAsset reloaded = await loader.ReloadAsync(loaded);
 
             Assert.Same(loaded, reloaded);
+            Assert.Equal<ulong>(1, loader.GetRevision(loaded));
+            Assert.Equal(11, loaded.Value);
+
+            await loader.ApplyUpdatesAsync();
+
             Assert.Equal<ulong>(2, loader.GetRevision(loaded));
             Assert.Equal(2, state.LoadCount);
             Assert.Equal(29, loaded.Value);

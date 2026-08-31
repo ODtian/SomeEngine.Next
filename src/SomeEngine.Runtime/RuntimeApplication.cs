@@ -7,6 +7,7 @@ using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Vulkan;
 using SomeEngine.Graphics.Validation;
+using SomeEngine.Render;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
@@ -250,7 +251,8 @@ internal static class RuntimeApplication
             temporalFrameIndex: 0);
         Entity viewEntity = renderWorld.CreateEntity(initialView.View);
 
-        using var coordinator = new RenderFrameCoordinator(backend, device, FrameTimeout);
+        using var renderDevice = new RenderDevice(backend, device, FrameTimeout);
+        using var coordinator = new RenderFrameCoordinator(renderDevice, FrameTimeout);
         var instances = new RenderInstanceStorageSystem(
             backend,
             device,
@@ -409,6 +411,10 @@ internal static class RuntimeApplication
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
+                RuntimeWait.Task(
+                    assets.ApplyUpdatesAsync().AsTask(),
+                    window,
+                    FrameTimeout);
                 input.BeginFrame();
                 if (!window.PumpMessages())
                     break;

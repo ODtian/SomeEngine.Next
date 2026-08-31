@@ -11,6 +11,8 @@ internal sealed class ResidentAssetTable : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly List<Func<ValueTask>> _disposeSets = [];
+    private readonly List<IResidentAssetUpdate> _pendingUpdates = [];
+    private readonly SemaphoreSlim _updateBoundary = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private bool _disposed;
 
@@ -80,35 +82,91 @@ internal sealed class ResidentAssetTable : IAsyncDisposable
         throw new InvalidOperationException("The asset does not belong to this loader.");
     }
 
+    internal async ValueTask ApplyUpdatesAsync()
+    {
+        await _updateBoundary.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            IResidentAssetUpdate[] updates;
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                updates = [.. _pendingUpdates];
+                _pendingUpdates.Clear();
+            }
+
+            List<Exception>? failures = null;
+            foreach (IResidentAssetUpdate update in updates)
+            {
+                try
+                {
+                    await update.ApplyAsync().ConfigureAwait(false);
+                }
+                catch (Exception failure)
+                {
+                    (failures ??= []).Add(failure);
+                }
+            }
+            if (failures is not null)
+                throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
+        }
+        finally
+        {
+            _updateBoundary.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        Func<ValueTask>[] disposals;
-        lock (_gate)
+        await _updateBoundary.WaitAsync().ConfigureAwait(false);
+        try
         {
-            if (_disposed)
-                return;
-            _disposed = true;
-            disposals = [.. _disposeSets];
-            _disposeSets.Clear();
-        }
+            Func<ValueTask>[] disposals;
+            IResidentAssetUpdate[] updates;
+            lock (_gate)
+            {
+                if (_disposed)
+                    return;
+                _disposed = true;
+                disposals = [.. _disposeSets];
+                updates = [.. _pendingUpdates];
+                _disposeSets.Clear();
+                _pendingUpdates.Clear();
+            }
 
-        _lifetime.Cancel();
-        List<Exception>? failures = null;
-        for (int index = disposals.Length - 1; index >= 0; index--)
+            _lifetime.Cancel();
+            List<Exception>? failures = null;
+            foreach (IResidentAssetUpdate update in updates)
+            {
+                try
+                {
+                    await update.DiscardAsync().ConfigureAwait(false);
+                }
+                catch (Exception failure)
+                {
+                    (failures ??= []).Add(failure);
+                }
+            }
+            for (int index = disposals.Length - 1; index >= 0; index--)
+            {
+                try
+                {
+                    await disposals[index]().ConfigureAwait(false);
+                }
+                catch (Exception failure)
+                {
+                    (failures ??= []).Add(failure);
+                }
+            }
+            _lifetime.Dispose();
+
+            if (failures is not null)
+                throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
+        }
+        finally
         {
-            try
-            {
-                await disposals[index]().ConfigureAwait(false);
-            }
-            catch (Exception failure)
-            {
-                (failures ??= []).Add(failure);
-            }
+            _updateBoundary.Release();
         }
-        _lifetime.Dispose();
-
-        if (failures is not null)
-            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
     }
 
     private ResidentAssetSet<T> Set<T>()
@@ -119,7 +177,9 @@ internal sealed class ResidentAssetTable : IAsyncDisposable
             ThrowIfDisposed();
             ResidentAssetSet<T> set = ResidentSets<T>.Values.GetValue(
                 this,
-                table => new ResidentAssetSet<T>(table._lifetime.Token));
+                table => new ResidentAssetSet<T>(
+                    table._lifetime.Token,
+                    table.EnqueueUpdate));
             if (set.MarkRegistered())
                 _disposeSets.Add(set.DisposeAsync);
             return set;
@@ -133,12 +193,28 @@ internal sealed class ResidentAssetTable : IAsyncDisposable
     private void ThrowIfDisposed()
         => ObjectDisposedException.ThrowIf(_disposed, this);
 
+    private void EnqueueUpdate(IResidentAssetUpdate update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _pendingUpdates.Add(update);
+        }
+    }
+
     private static class ResidentSets<T>
         where T : class
     {
         internal static readonly ConditionalWeakTable<ResidentAssetTable, ResidentAssetSet<T>>
             Values = new();
     }
+}
+
+internal interface IResidentAssetUpdate
+{
+    ValueTask ApplyAsync();
+    ValueTask DiscardAsync();
 }
 
 internal readonly record struct AssetPublication<T>(T Value)
@@ -149,14 +225,20 @@ internal sealed class ResidentAssetSet<T> : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly CancellationToken _lifetime;
+    private readonly Action<IResidentAssetUpdate> _enqueueUpdate;
     private readonly Dictionary<AssetGuid, Entry> _byGuid = [];
     private readonly Dictionary<T, Entry> _byValue = new(ReferenceEqualityComparer.Instance);
     private readonly List<Entry> _publicationOrder = [];
     private int _registered;
     private bool _disposed;
 
-    internal ResidentAssetSet(CancellationToken lifetime)
-        => _lifetime = lifetime;
+    internal ResidentAssetSet(
+        CancellationToken lifetime,
+        Action<IResidentAssetUpdate> enqueueUpdate)
+    {
+        _lifetime = lifetime;
+        _enqueueUpdate = enqueueUpdate ?? throw new ArgumentNullException(nameof(enqueueUpdate));
+    }
 
     internal bool MarkRegistered()
         => Interlocked.CompareExchange(ref _registered, 1, 0) == 0;
@@ -374,9 +456,8 @@ internal sealed class ResidentAssetSet<T> : IAsyncDisposable
             AssetPublication<T> publication = await load(entry.Guid, _lifetime).ConfigureAwait(false);
             replacement = publication.Value
                 ?? throw new InvalidDataException("Asset reload returned null.");
-            await apply(current, replacement, _lifetime).ConfigureAwait(false);
-            lock (_gate)
-                entry.Revision = checked(entry.Revision + 1);
+            _enqueueUpdate(new PendingUpdate(this, entry, current, replacement, apply));
+            replacement = null;
             return current;
         }
         finally
@@ -399,6 +480,27 @@ internal sealed class ResidentAssetSet<T> : IAsyncDisposable
             disposable.Dispose();
     }
 
+    private async ValueTask ApplyUpdateAsync(
+        Entry entry,
+        T current,
+        T replacement,
+        Func<T, T, CancellationToken, ValueTask> apply)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (!ReferenceEquals(entry.Value, current))
+                throw new InvalidOperationException("The canonical asset changed before its update boundary.");
+        }
+
+        await apply(current, replacement, _lifetime).ConfigureAwait(false);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            entry.Revision = checked(entry.Revision + 1);
+        }
+    }
+
     private void ThrowIfDisposed()
         => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -409,5 +511,36 @@ internal sealed class ResidentAssetSet<T> : IAsyncDisposable
         internal T? Value { get; set; }
         internal Task<T>? ReloadTask { get; set; }
         internal ulong Revision { get; set; }
+    }
+
+    private sealed class PendingUpdate(
+        ResidentAssetSet<T> owner,
+        Entry entry,
+        T current,
+        T replacement,
+        Func<T, T, CancellationToken, ValueTask> apply) : IResidentAssetUpdate
+    {
+        private T? _replacement = replacement;
+
+        public async ValueTask ApplyAsync()
+        {
+            T value = Interlocked.Exchange(ref _replacement, null)
+                ?? throw new InvalidOperationException("The asset update was already consumed.");
+            try
+            {
+                await owner.ApplyUpdateAsync(entry, current, value, apply).ConfigureAwait(false);
+            }
+            finally
+            {
+                await DisposeAssetAsync(value).ConfigureAwait(false);
+            }
+        }
+
+        public async ValueTask DiscardAsync()
+        {
+            T? value = Interlocked.Exchange(ref _replacement, null);
+            if (value is not null)
+                await DisposeAssetAsync(value).ConfigureAwait(false);
+        }
     }
 }

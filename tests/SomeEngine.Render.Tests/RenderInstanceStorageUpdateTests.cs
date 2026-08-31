@@ -21,7 +21,8 @@ public sealed class RenderInstanceStorageUpdateTests
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend);
-        using var coordinator = new RenderFrameCoordinator(backend, device);
+        using var renderDevice = new RenderDevice(backend, device);
+        using var coordinator = new RenderFrameCoordinator(renderDevice);
         RenderWorld world = new();
         var instances = new RenderInstanceStorageSystem(
             backend,

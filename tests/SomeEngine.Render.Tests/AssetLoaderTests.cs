@@ -180,7 +180,7 @@ public sealed class AssetLoaderTests
             Assert.Same(residency, texture.Residency);
             IList<TextureMipTile> mipTiles = Assert.IsAssignableFrom<IList<TextureMipTile>>(
                 texture.MipTiles);
-            Assert.Equal(2, mipTiles.Count);
+            Assert.Equal(4, mipTiles.Count);
             Assert.All(mipTiles, static tile => Assert.Null(tile.Payload));
 
             using ResidentChunkLease lease = await texture.AcquireMipTileAsync(
@@ -191,7 +191,7 @@ public sealed class AssetLoaderTests
                 tileX: 0,
                 tileY: 0);
             Assert.Equal(mipOne, lease.Memory.ToArray());
-            Assert.Equal(mipOne.Length, residency.Used(ResidencyClass.DecodedCpu));
+            Assert.Equal(mipOne.Length + 2, residency.Used(ResidencyClass.DecodedCpu));
             Assert.True(texture.StreamingMetrics!.Snapshot().Requests >= 1);
 
             Shader shader = await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
@@ -248,6 +248,30 @@ public sealed class AssetLoaderTests
                     RowPitch = 2,
                     SlicePitch = 4,
                     Payload = mipZero,
+                },
+                new TextureMipTile
+                {
+                    MipLevel = 1,
+                    ArrayLayer = 0,
+                    Face = 0,
+                    DepthSlice = 0,
+                    Width = 1,
+                    Height = 1,
+                    RowPitch = 1,
+                    SlicePitch = 1,
+                    Payload = new byte[] { 0 },
+                },
+                new TextureMipTile
+                {
+                    MipLevel = 1,
+                    ArrayLayer = 1,
+                    Face = 0,
+                    DepthSlice = 0,
+                    Width = 1,
+                    Height = 1,
+                    RowPitch = 1,
+                    SlicePitch = 1,
+                    Payload = new byte[] { 0 },
                 },
                 new TextureMipTile
                 {

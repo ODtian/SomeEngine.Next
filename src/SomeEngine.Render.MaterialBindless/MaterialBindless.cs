@@ -13,12 +13,11 @@ public sealed class MaterialBindless : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly EngineTexture _missingTexture;
+    private readonly RenderDevice _renderDevice;
     private readonly uint[] _mirror;
     private readonly SomeEngine.Graphics.Buffer _values;
     private readonly RangeAllocator _valueRanges;
     private readonly uint _descriptorSlotsPerShape;
-    private readonly TextureDeviceRealizations _textures;
     private readonly Dictionary<Material, MaterialState> _materials =
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<DescriptorSlotDesc, DescriptorPool> _descriptorPools = [];
@@ -34,15 +33,13 @@ public sealed class MaterialBindless : IDisposable
     private bool _disposed;
 
     public MaterialBindless(
-        IGraphicsBackend backend,
-        Device device,
-        EngineTexture missingTexture,
+        RenderDevice renderDevice,
         uint maximumValueSlots,
         uint descriptorSlotsPerShape = 1024)
     {
-        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
-        _device = device ?? throw new ArgumentNullException(nameof(device));
-        _missingTexture = missingTexture ?? throw new ArgumentNullException(nameof(missingTexture));
+        _renderDevice = renderDevice ?? throw new ArgumentNullException(nameof(renderDevice));
+        _backend = renderDevice.Backend;
+        _device = renderDevice.Device;
         if (maximumValueSlots == 0)
             throw new ArgumentOutOfRangeException(nameof(maximumValueSlots));
         if (descriptorSlotsPerShape == 0)
@@ -57,7 +54,6 @@ public sealed class MaterialBindless : IDisposable
                 checked((ulong)maximumValueSlots * sizeof(uint)),
                 BufferUsages.CopyDestination | BufferUsages.ShaderRead,
                 "MaterialBindlessValues"));
-        _textures = new TextureDeviceRealizations(_backend, _device);
         AddDirty(0, maximumValueSlots);
     }
 
@@ -135,14 +131,18 @@ public sealed class MaterialBindless : IDisposable
             if (typeof(EngineTexture).IsAssignableFrom(definition.ValueType))
             {
                 object? raw = material.GetSlotValue(slot);
-                EngineTexture texture = raw switch
+                EngineTexture? texture = raw switch
                 {
-                    null => _missingTexture,
+                    null => null,
                     EngineTexture value => value,
                     _ => throw new InvalidOperationException(
                         $"Material slot {slot} declares Texture but contains {raw.GetType().FullName}."),
                 };
-                TextureUse use = _textures.Use(ref frame, ref pass, texture, sync);
+                TextureUse use = PrepareTexture(
+                    ref frame,
+                    ref pass,
+                    texture,
+                    sync);
                 UpdateTextureSlot(ref frame, material, state, slot, texture, use);
             }
             else if (definition.ValueType == typeof(SamplerDesc))
@@ -162,7 +162,7 @@ public sealed class MaterialBindless : IDisposable
         Material material,
         MaterialState state,
         uint slot,
-        EngineTexture texture,
+        EngineTexture? texture,
         in TextureUse use)
     {
         SlotState? current = state.Slots[checked((int)slot)];
@@ -182,7 +182,7 @@ public sealed class MaterialBindless : IDisposable
         ulong slotRevision = material.GetSlotRevision(slot);
         if (current is null
             || !ReferenceEquals(current.Texture, texture)
-            || current.TextureRevision != texture.Revision
+            || current.TextureRevision != (texture?.Revision ?? 0)
             || !ReferenceEquals(current.TextureView, use.View)
             || current.SlotRevision != slotRevision
             || current.Allocation != allocation)
@@ -197,7 +197,7 @@ public sealed class MaterialBindless : IDisposable
                 Allocation = allocation,
                 SlotRevision = slotRevision,
                 Texture = texture,
-                TextureRevision = texture.Revision,
+                TextureRevision = texture?.Revision ?? 0,
                 TextureView = use.View,
             };
         }
@@ -249,6 +249,42 @@ public sealed class MaterialBindless : IDisposable
             Sampler = sampler,
             SamplerDescription = description,
         };
+    }
+
+    private TextureUse PrepareTexture(
+        ref RenderGraphFrame frame,
+        ref PassDefinition pass,
+        EngineTexture? asset,
+        PipelineSync sync)
+    {
+        SomeEngine.Graphics.Texture resource;
+        TextureSrv view;
+        if (asset is null)
+        {
+            resource = _renderDevice.PrepareMissingTexture(ref frame, pass.Id);
+            view = _renderDevice.MissingTextureSrv;
+        }
+        else
+        {
+            resource = _renderDevice.PrepareTexture(ref frame, pass.Id, asset);
+            view = _renderDevice.GetTextureSrv(asset);
+        }
+
+        TextureSrvDesc description = view.Description;
+        GraphTextureId graphTexture = frame.GetImported(resource);
+        GraphTextureSrvId graphView = frame.CreateTextureSrv(
+            graphTexture,
+            description.Range,
+            description.Format,
+            description.Dimension,
+            "MaterialBindless Texture SRV");
+        _ = pass.Read(graphView, sync, TextureLayout.ShaderResource);
+        DescriptorSlotDesc descriptor = new(
+            ResourceBindingType.TextureSrv,
+            description.Format,
+            TextureDimension: description.Dimension,
+            Aspects: description.Range.Aspects);
+        return new TextureUse(view, descriptor);
     }
 
     private DescriptorAllocation AllocateDescriptor(in DescriptorSlotDesc shape)
@@ -414,7 +450,6 @@ public sealed class MaterialBindless : IDisposable
         foreach (DescriptorPool pool in _descriptorPools.Values)
             pool.Dispose();
         _descriptorPools.Clear();
-        _textures.Dispose();
         _values.Dispose();
     }
 
@@ -442,6 +477,10 @@ public sealed class MaterialBindless : IDisposable
         internal Sampler? Sampler { get; init; }
         internal SamplerDesc SamplerDescription { get; init; }
     }
+
+    private readonly record struct TextureUse(
+        TextureSrv View,
+        DescriptorSlotDesc Descriptor);
 
     private sealed class DescriptorPool : IDisposable
     {

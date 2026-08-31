@@ -263,13 +263,15 @@ public partial class Texture
             throw new InvalidDataException($"Texture {Describe(tile)} exceeds the declared depth extent.");
         uint mipWidth = MipExtent(root.Width, tile.MipLevel);
         uint mipHeight = MipExtent(root.Height, tile.MipLevel);
-        if (root.Width != 0 && (tile.Width == 0 || tile.Width > mipWidth || tile.TileX >= mipWidth))
+        if (root.Width != 0 && (tile.Width == 0 || tile.TileX >= mipWidth ||
+            tile.Width > mipWidth - tile.TileX))
         {
             throw new InvalidDataException(
                 $"Texture {Describe(tile)} width is outside " +
                 $"the {mipWidth}-pixel mip extent.");
         }
-        if (root.Height != 0 && (tile.Height == 0 || tile.Height > mipHeight || tile.TileY >= mipHeight))
+        if (root.Height != 0 && (tile.Height == 0 || tile.TileY >= mipHeight ||
+            tile.Height > mipHeight - tile.TileY))
         {
             throw new InvalidDataException(
                 $"Texture {Describe(tile)} height is outside " +

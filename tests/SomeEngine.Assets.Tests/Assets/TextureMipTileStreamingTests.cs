@@ -3,11 +3,122 @@ using System.Runtime.InteropServices;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.IO;
+using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class TextureMipTileStreamingTests
 {
+    [Fact]
+    public async Task LoaderPublishesTextureOnlyAfterBootstrapMipIsResident()
+    {
+        using var directory = new TemporaryDirectory();
+        var project = new AssetProject(directory.Path, []);
+        AssetGuid guid = project.CreateAsset(
+            "assets/bootstrap.texture.asset",
+            new Texture
+            {
+                Name = "bootstrap",
+                Width = 4,
+                Height = 4,
+                Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+                Depth = 1,
+                MipLevelCount = 2,
+                ArrayLayerCount = 1,
+                Format = SomeEngine.Graphics.Format.R8UNorm,
+                SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+                SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
+                MipTiles =
+                [
+                    Tile(0, 0, 0, 4, 4, new byte[16], rowPitch: 4, slicePitch: 16),
+                    Tile(1, 0, 0, 2, 2, [1, 2, 3, 4], rowPitch: 2, slicePitch: 4),
+                ],
+            });
+
+        await using var loader = new AssetLoader(project.CreateStorage());
+        Texture texture = await loader.LoadAsync(new AssetId<Texture>(guid));
+
+        Assert.True(texture.HasBootstrap);
+        Assert.Equal(1u, texture.BootstrapMipLevel);
+        Assert.False(texture.TryAcquireResidentMipTile(0, 0, 0, 0, 0, 0, out _));
+        Assert.True(texture.TryAcquireResidentMipTile(1, 0, 0, 0, 0, 0, out ResidentChunkLease lease));
+        using (lease)
+            Assert.Equal([1, 2, 3, 4], lease.Memory.ToArray());
+    }
+
+    [Fact]
+    public async Task LoaderRejectsIncompleteBootstrapCoverageBeforePublication()
+    {
+        using var directory = new TemporaryDirectory();
+        var project = new AssetProject(directory.Path, []);
+        AssetGuid guid = project.CreateAsset(
+            "assets/incomplete-bootstrap.texture.asset",
+            new Texture
+            {
+                Name = "incomplete-bootstrap",
+                Width = 2,
+                Height = 2,
+                Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+                Depth = 1,
+                MipLevelCount = 2,
+                ArrayLayerCount = 2,
+                Format = SomeEngine.Graphics.Format.R8UNorm,
+                SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+                SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
+                MipTiles =
+                [
+                    Tile(0, 0, 0, 2, 2, new byte[4], arrayLayer: 0),
+                    Tile(1, 0, 0, 1, 1, [7], arrayLayer: 0),
+                ],
+            });
+
+        await using var loader = new AssetLoader(project.CreateStorage());
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => loader.LoadAsync(new AssetId<Texture>(guid)).AsTask());
+
+        Assert.Contains("missing layer 1", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReloadSwitchesBootstrapAndShapeAtExplicitUpdateBoundaryWithoutChangingIdentity()
+    {
+        using var directory = new TemporaryDirectory();
+        AssetGuid guid = AssetGuid.New();
+        string beforePath = directory.File("before.texture.asset");
+        string afterPath = directory.File("after.texture.asset");
+        Texture before = SingleMipTexture("before", 2, [1, 2]);
+        before.AssetGuid = guid.ToFlatString();
+        Texture after = SingleMipTexture("after", 4, [3, 4, 5, 6]);
+        after.AssetGuid = guid.ToFlatString();
+        AssetWriter.Write(before, beforePath);
+        AssetWriter.Write(after, afterPath);
+        var storage = new MutableTextureStorage();
+        storage.Publish(guid, beforePath);
+        await using var loader = new AssetLoader(storage);
+        Texture canonical = await loader.LoadAsync(new AssetId<Texture>(guid));
+
+        storage.Publish(guid, afterPath);
+        Texture reloadResult = await loader.ReloadAsync(canonical);
+
+        Assert.Same(canonical, reloadResult);
+        Assert.Equal("before", canonical.Name);
+        Assert.Equal(2u, canonical.Width);
+        Assert.Equal(1ul, canonical.Revision);
+
+        await loader.ApplyUpdatesAsync();
+
+        Assert.Same(canonical, reloadResult);
+        Assert.Equal("after", canonical.Name);
+        Assert.Equal(4u, canonical.Width);
+        Assert.Equal(2ul, canonical.Revision);
+        Assert.Equal(2ul, loader.GetRevision(canonical));
+        Assert.True(canonical.HasBootstrap);
+        Assert.True(canonical.TryAcquireResidentMipTile(0, 0, 0, 0, 0, 0, out ResidentChunkLease lease));
+        using (lease)
+            Assert.Equal([3, 4, 5, 6], lease.Memory.ToArray());
+    }
+
     [Fact]
     public async Task StreamedOpen_ExposesCanonicalMetadataAndAcquiresOnlyRequestedTile()
     {
@@ -213,6 +324,25 @@ public sealed class TextureMipTileStreamingTests
             MipTiles = tiles,
         };
 
+    private static Texture SingleMipTexture(string name, uint width, byte[] payload)
+        => new()
+        {
+            Name = name,
+            Width = width,
+            Height = 1,
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Depth = 1,
+            MipLevelCount = 1,
+            ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R8UNorm,
+            SampledFormat = SomeEngine.Graphics.Format.R8UNorm,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
+            MipTiles =
+            [
+                Tile(0, 0, 0, width, 1, payload, rowPitch: width, slicePitch: width),
+            ],
+        };
+
     private static TextureMipTile Tile(
         uint mipLevel,
         uint tileX,
@@ -257,6 +387,53 @@ public sealed class TextureMipTileStreamingTests
         {
             if (Directory.Exists(Path))
                 Directory.Delete(Path, recursive: true);
+        }
+    }
+
+    private sealed class MutableTextureStorage : IAssetStorage
+    {
+        private readonly object _gate = new();
+        private AssetEntry _entry;
+        private string? _path;
+
+        internal void Publish(AssetGuid guid, string path)
+        {
+            lock (_gate)
+            {
+                _entry = new AssetEntry(
+                    guid,
+                    AssetType<Texture>.Name,
+                    Texture.SchemaFingerprint,
+                    Guid.NewGuid());
+                _path = path;
+            }
+        }
+
+        public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
+        {
+            lock (_gate)
+            {
+                if (_path is not null && assetGuid == _entry.AssetGuid)
+                {
+                    entry = _entry;
+                    return true;
+                }
+            }
+            entry = default;
+            return false;
+        }
+
+        public ValueTask<IRangeSource> OpenAsync(
+            AssetEntry entry,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                if (_path is null || entry != _entry)
+                    throw new InvalidDataException("The Texture publication is no longer current.");
+                return ValueTask.FromResult<IRangeSource>(FileRangeSource.Open(_path));
+            }
         }
     }
 }

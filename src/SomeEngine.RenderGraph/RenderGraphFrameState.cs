@@ -27,6 +27,7 @@ internal sealed class RenderGraphFrameState
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Texture, GraphTextureId> _importedTextures =
         new(ReferenceEqualityComparer.Instance);
+    private readonly List<IRenderGraphFrameExecutionObserver> _executionObservers = [];
     private readonly FrameExecutor _executor;
     private bool _executorActive;
     private bool _sealed;
@@ -93,6 +94,12 @@ internal sealed class RenderGraphFrameState
     {
         EnsureAuthoring();
         Graph.RetireAfterSubmittedFrames(value);
+    }
+
+    internal void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
+    {
+        EnsureAuthoring();
+        _executionObservers.Add(observer);
     }
 
     internal Buffer GetBuffer(int passIndex, GraphBufferId buffer) =>
@@ -938,6 +945,7 @@ internal sealed class RenderGraphFrameState
             _finished = true;
             _executorActive = false;
             Slot.SetCompletions(_executor.SubmittedCompletions);
+            NotifyExecutionObservers(executed: true);
             ClearFrameData();
             Graph.EndFrame(Identity);
             return result;
@@ -948,6 +956,7 @@ internal sealed class RenderGraphFrameState
             Graph.MarkDeviceLost();
             _finished = true;
             _executorActive = false;
+            NotifyExecutionObservers(executed: true);
             ClearFrameData();
             Graph.EndFrame(Identity);
             throw;
@@ -957,6 +966,7 @@ internal sealed class RenderGraphFrameState
             Slot.SetCompletions(_executor.SubmittedCompletions);
             _finished = true;
             _executorActive = false;
+            NotifyExecutionObservers(executed: true);
             ClearFrameData();
             Graph.EndFrame(Identity);
             throw;
@@ -968,6 +978,7 @@ internal sealed class RenderGraphFrameState
         if (_finished || Identity != identity) return;
         _finished = true;
         _executorActive = false;
+        NotifyExecutionObservers(executed: false);
         ClearFrameData();
         Graph.EndFrame(Identity);
     }
@@ -1277,6 +1288,15 @@ internal sealed class RenderGraphFrameState
         DynamicRenderingRegions.Clear();
         DynamicColorAttachments.Clear();
         DynamicDepthAttachments.Clear();
+        _executionObservers.Clear();
+    }
+
+    private void NotifyExecutionObservers(bool executed)
+    {
+        IRenderGraphFrameExecutionObserver[] observers = [.. _executionObservers];
+        _executionObservers.Clear();
+        foreach (IRenderGraphFrameExecutionObserver observer in observers)
+            observer.OnRenderGraphFrameFinished(executed);
     }
 }
 
