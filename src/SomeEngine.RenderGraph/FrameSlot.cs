@@ -24,14 +24,16 @@ internal sealed class FrameSlot : IDisposable
     internal RenderGraphFrameState BeginExecution(
         RenderGraph graph,
         ulong identity,
-        in RenderGraphFrameOptions options)
+        in RenderGraphFrameOptions options,
+        GraphStructureIndex structureIndex,
+        ulong structureVersion)
     {
         _state ??= new RenderGraphFrameState(graph, this);
         TransientResources!.Reset(
-            graph.StructureVersion,
+            structureVersion,
             options.SubmissionMode,
             options.Debug);
-        _state.Begin(identity, options);
+        _state.Begin(identity, options, structureIndex, structureVersion);
         return _state;
     }
 

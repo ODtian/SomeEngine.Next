@@ -274,7 +274,7 @@ internal sealed partial class FrameExecutor
         for (int table = 0; table < _shaderTables.Length; table++)
             ResolveShaderTableHazards(table);
 
-        GraphStructureIndex structureIndex = _frame.Graph.StructureIndex;
+        GraphStructureIndex structureIndex = _frame.StructureIndex;
         for (int staticConsumer = 0;
              staticConsumer < structureIndex.ExplicitPredecessors.Length;
              staticConsumer++)

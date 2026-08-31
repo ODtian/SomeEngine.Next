@@ -7,7 +7,7 @@ public ref struct PassDefinition
     private readonly GraphIdentity _pass;
     private readonly GraphPassKind _kind;
 
-    internal PassDefinition(RenderGraphEdit edit, in GraphIdentity pass, GraphPassKind kind)
+    internal PassDefinition(RenderGraphEdit edit, GraphIdentity pass, GraphPassKind kind)
     {
         _edit = edit;
         _frame = null;
@@ -15,13 +15,16 @@ public ref struct PassDefinition
         _kind = kind;
     }
 
-    internal PassDefinition(RenderGraphFrameState frame, in GraphIdentity pass, GraphPassKind kind)
+    internal PassDefinition(RenderGraphFrameState frame, GraphIdentity pass, GraphPassKind kind)
     {
         _edit = default;
         _frame = frame;
         _pass = pass;
         _kind = kind;
     }
+
+    /// <summary>Returns the stable graph identity of this pass.</summary>
+    public GraphPassId Id => new(_pass);
 
     public void SetPipeline(Pipeline pipeline)
     {

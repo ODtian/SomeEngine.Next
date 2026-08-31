@@ -72,7 +72,7 @@ internal sealed partial class FrameExecutor
     {
         _stableExecutionEligible = IsStableExecutionEligible();
         bool sameExecution = _stableExecutionEligible &&
-            _stableExecutionVersion == _frame.Graph.StructureVersion &&
+            _stableExecutionVersion == _frame.StructureVersion &&
             _stableExecutionSubmissionMode == _frame.Options.SubmissionMode &&
             _stableExecutionDebug == _frame.Options.Debug;
         FrameTransientResourceAllocator? transientResources = _frame.Slot.TransientResources;
@@ -81,7 +81,7 @@ internal sealed partial class FrameExecutor
         if (!sameExecution)
         {
             _stableExecutionVersion = _stableExecutionEligible
-                ? _frame.Graph.StructureVersion
+                ? _frame.StructureVersion
                 : 0;
             _stableExecutionSubmissionMode = _frame.Options.SubmissionMode;
             _stableExecutionDebug = _frame.Options.Debug;
@@ -125,6 +125,7 @@ internal sealed partial class FrameExecutor
             _frame.EnabledOverrides.Count != 0 ||
             _frame.BufferRangeOverrides.Count != 0 ||
             _frame.TextureRangeOverrides.Count != 0 ||
+            _frame.PassOverlays.Count != 0 ||
             _frame.BufferBindings.Count != 0 ||
             _frame.TextureBindings.Count != 0 ||
             _frame.SwapchainImages.Count != 0 ||
@@ -133,7 +134,7 @@ internal sealed partial class FrameExecutor
             _frame.DynamicDepthAttachments.Count != 0)
             return false;
 
-        GraphStructure structure = _frame.Graph.StructureIndex.Structure;
+        GraphStructure structure = _frame.StructureIndex.Structure;
         if (structure.QueryPools.Count != 0 || structure.ShaderTables.Count != 0)
             return false;
         foreach (GraphBuffer buffer in structure.Buffers.Rows)
@@ -174,7 +175,7 @@ internal sealed partial class FrameExecutor
 
     private void BuildRows()
     {
-        GraphStructureIndex structureIndex = _frame.Graph.StructureIndex;
+        GraphStructureIndex structureIndex = _frame.StructureIndex;
         int staticBufferCount = structureIndex.Structure.Buffers.Count;
         int staticTextureCount = structureIndex.Structure.Textures.Count;
         int staticQueryPoolCount = structureIndex.Structure.QueryPools.Count;
@@ -368,6 +369,7 @@ internal sealed partial class FrameExecutor
             GraphPass source = structureIndex.Structure.Passes.Rows[i];
             GraphIdentity identity = structureIndex.PassIds[i];
             bool enabled = !_frame.EnabledOverrides.TryGetValue(identity, out bool value) || value;
+            _frame.PassOverlays.TryGetValue(identity, out FramePassOverlay? overlay);
             _passRows.Add((checked((long)i << 32), new FramePass
             {
                 Identity = identity,
@@ -376,11 +378,15 @@ internal sealed partial class FrameExecutor
                 Kind = source.Kind,
                 QueuePolicy = source.Queue,
                 Options = source.Options,
-                Pipeline = source.Pipeline,
-                ParameterLayout = source.ParameterLayout,
-                ParameterOrdinaryData = source.ParameterOrdinaryData,
-                ParameterBindings = source.ParameterBindings,
-                PersistentBindings = source.PersistentBindings,
+                Pipeline = overlay?.PipelineAssigned == true ? overlay.Pipeline : source.Pipeline,
+                ParameterLayout = overlay?.ParameterBlockAssigned == true
+                    ? overlay.ParameterLayout
+                    : source.ParameterLayout,
+                ParameterOrdinaryData = overlay?.ParameterBlockAssigned == true
+                    ? overlay.ParameterOrdinaryData
+                    : source.ParameterOrdinaryData,
+                ParameterBindings = Merge(source.ParameterBindings, overlay?.ParameterBindings),
+                PersistentBindings = Merge(source.PersistentBindings, overlay?.PersistentBindings),
                 DeclarationOrdinal = i,
                 Enabled = enabled,
                 PersistentCallbacks = source.CallbackStorage,
@@ -492,6 +498,15 @@ internal sealed partial class FrameExecutor
         PrepareAdjacency(ref _successors, _passes.Length);
         PrepareArray(ref _live, _passes.Length);
         Array.Clear(_live);
+    }
+
+    private static List<T> Merge<T>(List<T> source, List<T>? additions)
+    {
+        if (additions is null || additions.Count == 0) return source;
+        var result = new List<T>(source.Count + additions.Count);
+        result.AddRange(source);
+        result.AddRange(additions);
+        return result;
     }
 
     private static void PrepareArray<T>(ref T[] values, int count)

@@ -67,7 +67,8 @@ internal sealed class PersistentResourceAllocator : IDisposable
 
     internal void ApplyStructure(
         GraphStructure previous,
-        GraphStructure next)
+        GraphStructure next,
+        bool retireRemoved)
     {
         int originalPageCount = _pages.Count;
         var createdObjects = new List<IDisposable>();
@@ -173,7 +174,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
             throw;
         }
 
-        RetireRemoved(previous, next);
+        if (retireRemoved) RetireRemoved(previous, next);
     }
 
     private DeviceResource? CreatePersistentView(GraphStructure structure, GraphView view)
@@ -257,7 +258,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
         return texture.PersistentResource ?? texture.RegisteredResource;
     }
 
-    private void RetireRemoved(GraphStructure previous, GraphStructure next)
+    internal void RetireRemoved(GraphStructure previous, GraphStructure next)
     {
         var liveResources = new HashSet<DeviceResource>(ReferenceEqualityComparer.Instance);
         foreach (GraphBuffer buffer in next.Buffers.Rows)
@@ -269,7 +270,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
 
         foreach (GraphView view in previous.Views.Rows)
             if (view.PersistentView is not null && !liveResources.Contains(view.PersistentView))
-                Retire(view.PersistentView, []);
+                Retire(view.PersistentView, CollectViewCompletions(previous, view));
         foreach (GraphBuffer buffer in previous.Buffers.Rows)
         {
             if (buffer.PersistentResource is null || liveResources.Contains(buffer.PersistentResource))
@@ -282,6 +283,23 @@ internal sealed class PersistentResourceAllocator : IDisposable
                 continue;
             Retire(texture.PersistentResource, Collect(texture.BoundaryStates));
         }
+    }
+
+    private static QueueCompletion[] CollectViewCompletions(
+        GraphStructure structure,
+        GraphView view)
+    {
+        var result = new List<QueueCompletion>();
+        if (view.Buffer.IsValid && structure.Buffers.Contains(view.Buffer))
+            foreach (QueueCompletion completion in Collect(structure.Buffers.Get(view.Buffer).BoundaryStates))
+                AddCompletion(result, completion);
+        if (view.AdditionalBuffer.IsValid && structure.Buffers.Contains(view.AdditionalBuffer))
+            foreach (QueueCompletion completion in Collect(structure.Buffers.Get(view.AdditionalBuffer).BoundaryStates))
+                AddCompletion(result, completion);
+        if (view.Texture.IsValid && structure.Textures.Contains(view.Texture))
+            foreach (QueueCompletion completion in Collect(structure.Textures.Get(view.Texture).BoundaryStates))
+                AddCompletion(result, completion);
+        return result.ToArray();
     }
 
     private static QueueCompletion[] Collect(BufferBoundaryState[] boundaryStates)

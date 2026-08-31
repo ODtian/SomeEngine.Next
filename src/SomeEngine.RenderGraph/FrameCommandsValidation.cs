@@ -79,7 +79,7 @@ internal sealed partial class FrameExecutor
         int pass,
         GraphPersistentParameterBindingsId id)
     {
-        if (!_frame.Graph.StructureIndex.Structure.PersistentBindings.Contains(id.Value))
+        if (!_frame.StructureIndex.Structure.PersistentBindings.Contains(id.Value))
             throw new ArgumentException("The PersistentParameterBindings identity is invalid or stale.");
         List<GraphIdentity>? allowed = _passes[pass].PersistentBindings;
         if (allowed is null || !allowed.Contains(id.Value))
@@ -87,7 +87,7 @@ internal sealed partial class FrameExecutor
             throw new InvalidOperationException(
                 "RG8001: The Pass did not declare these PersistentParameterBindings.");
         }
-        return _frame.Graph.StructureIndex.Structure.PersistentBindings.Get(id.Value).Resource;
+        return _frame.StructureIndex.Structure.PersistentBindings.Get(id.Value).Resource;
     }
 
     private T GetView<T>(int pass, in GraphIdentity identity, GraphViewKind kind)

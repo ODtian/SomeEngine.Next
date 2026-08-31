@@ -280,6 +280,17 @@ internal struct FramePass
     internal int ExtensionPointIndex;
 }
 
+internal sealed class FramePassOverlay
+{
+    internal Pipeline? Pipeline;
+    internal bool PipelineAssigned;
+    internal VariableLayoutReflection ParameterLayout;
+    internal byte[] ParameterOrdinaryData = [];
+    internal bool ParameterBlockAssigned;
+    internal List<GraphParameterResourceBinding> ParameterBindings { get; } = [];
+    internal List<GraphIdentity> PersistentBindings { get; } = [];
+}
+
 internal struct FrameResourceAccess
 {
     internal GraphIdentity Identity;

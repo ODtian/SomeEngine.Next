@@ -24,7 +24,22 @@ public ref struct RenderGraphFrame
         }
     }
 
-    public ulong StructureVersion => State.Graph.StructureVersion;
+    public ulong StructureVersion => State.StructureVersion;
+
+    /// <summary>Identifies this CPU frame authoring lease.</summary>
+    public ulong FrameIdentity => State.Identity;
+
+    /// <summary>
+    /// Retires an object after every frame submitted before this frame began has completed.
+    /// The current frame must not reference <paramref name="value"/>.
+    /// </summary>
+    public void RetireAfterSubmittedFrames(IDisposable value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        State.RetireAfterSubmittedFrames(value);
+    }
+
+    public PassDefinition GetPass(GraphPassId pass) => State.GetPass(pass);
 
     public void SetPassEnabled(GraphPassId pass, bool enabled) => State.SetPassEnabled(pass, enabled);
 

@@ -139,7 +139,7 @@ internal sealed partial class FrameExecutor
             logicalBytes,
             physicalBytes);
         var view = new RenderGraphDiagnosticsView(
-            _frame.Graph.StructureVersion,
+            _frame.StructureVersion,
             passes,
             buffers,
             textures,
