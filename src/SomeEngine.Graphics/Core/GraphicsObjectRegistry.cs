@@ -1,7 +1,9 @@
-namespace SomeEngine.Graphics.Direct3D12;
+namespace SomeEngine.Graphics;
 
 /// <summary>
-/// Thread-safe child storage used by backend, Device, and presentation parents.
+/// Thread-safe child storage used by backends, Devices, and presentation parents.
+/// Draining only builds an intrusive work list while holding the registry gate;
+/// callers dispose the returned children after the gate has been released.
 /// </summary>
 internal sealed class GraphicsObjectRegistry
 {
@@ -13,7 +15,7 @@ internal sealed class GraphicsObjectRegistry
 
     internal GraphicsObjectRegistry(object gate)
     {
-        _gate = gate;
+        _gate = gate ?? throw new ArgumentNullException(nameof(gate));
     }
 
     internal void Add(GraphicsObject value)
@@ -30,6 +32,7 @@ internal sealed class GraphicsObjectRegistry
 
     internal void Remove(GraphicsObject value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         lock (_gate)
             _children.Remove(value);
     }
@@ -54,6 +57,7 @@ internal sealed class GraphicsObjectRegistry
 
     internal bool CompleteDrain(GraphicsObject value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         lock (_gate)
         {
             if (!_children.Remove(value))

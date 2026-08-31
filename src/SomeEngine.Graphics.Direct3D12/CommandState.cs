@@ -195,6 +195,11 @@ internal sealed unsafe partial class D3D12Backend
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         if (command.Bundle)
             throw new InvalidOperationException("Scissors are not legal in a D3D12 command bundle.");
+        foreach (ref readonly ScissorRect rect in scissors)
+        {
+            if (rect.Width < 0 || rect.Height < 0)
+                throw new ArgumentOutOfRangeException(nameof(scissors));
+        }
         if (command.ScissorsEqual(scissors))
             return;
         SetScissorsSlow(command, scissors);

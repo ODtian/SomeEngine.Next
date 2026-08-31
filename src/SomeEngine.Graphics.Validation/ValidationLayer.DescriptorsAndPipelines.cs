@@ -58,6 +58,8 @@ public sealed partial class ValidationLayer
     public void WriteDescriptor(DescriptorTable table, uint slot, in ResourceBinding value)
     {
         Require(table);
+        if (value.IsNull && value.Type == ResourceBindingType.Sampler)
+            throw new ArgumentException("A Sampler descriptor cannot be null.", nameof(value));
         if (value.Value is DeviceResource resource)
         {
             Require(resource);

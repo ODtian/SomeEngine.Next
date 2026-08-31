@@ -307,6 +307,19 @@ internal abstract class SwapchainImageLease
             (int)SwapchainImageStatus.Submitted) == (int)SwapchainImageStatus.Submitted;
     }
 
+    internal void RestoreSubmittedAfterPresentFailure(ulong sequence)
+    {
+        Validate(sequence);
+        if (Interlocked.CompareExchange(
+                ref _status,
+                (int)SwapchainImageStatus.Submitted,
+                (int)SwapchainImageStatus.Presented) != (int)SwapchainImageStatus.Presented)
+        {
+            throw new InvalidOperationException(
+                "The image cannot be restored to Submitted after a failed Present.");
+        }
+    }
+
     internal void Invalidate(bool deviceLost)
     {
         Volatile.Write(
