@@ -1,11 +1,41 @@
 # SomeEngine Wiki
 
-根索引（MOC）。每条笔记聚焦一个概念，通过 `[[wikilink]]` 互联。
+根索引。每个架构事实由一个原子页面拥有；领域页只负责导航。参见 [[design/Atomic-Wiki|Atomic Wiki]]。
 
-## 领域
+## Architecture
 
-- [[DRY]] · [[SRP]] · [[Structural-Optimization]] — 设计原则
-- [[Profiler-Bridge-Only]] · [[Tracy-Toolchain]] · [[ECS-Architecture]] · [[Product-Boundary]] · [[Render-Boundaries]] · [[Render-Graph]] — 架构决策
-- [[Harness-Definition]] · [[Feedforward-Feedback]] · [[Constraint-Direction]] — harness 理念
-- [[Engine-Goals]] — 项目目标
-- [[visco-semen-liquid-domain]] — 独立原型领域记录
+- [[architecture/Rendering|Rendering]]
+- [[architecture/RHI/Index|RHI]]
+- [[architecture/ECS-Architecture|ECS]]
+- [[architecture/Product-Boundary|Product Boundary]]
+- [[architecture/Profiler-Bridge-Only|Profiler Bridge Only]]
+- [[architecture/Tracy-Toolchain|Tracy Toolchain]]
+
+## Design
+
+- [[design/Atomic-Wiki|Atomic Wiki]]
+- [[design/DRY|DRY]]
+- [[design/SRP|SRP]]
+- [[design/Structural-Optimization|Structural Optimization]]
+- [[design/Type-Admission|Type Admission]]
+- [[design/Naming|Naming]]
+
+## Harness
+
+- [[harness/Harness-Definition|Harness]]
+- [[harness/Architecture-Checks|Architecture Checks]]
+- [[harness/Behavior-Checks|Behavior Checks]]
+- [[harness/Harness-Performance-Evidence|Performance Evidence]]
+- [[harness/Constraint-Direction|Constraint Direction]]
+- [[harness/Feedforward-Feedback|Feedforward and Feedback]]
+
+## Goals and prototypes
+
+- [[goals/Engine-Goals|Engine Goals]]
+- [[design/visco-semen-liquid-domain|Visco-Semen Liquid Domain]]
+
+
+
+## Evidence and history
+
+Architecture pages define current design. `evidence/` records measurements and source evidence. `history/` preserves superseded decisions and past reconstruction notes; neither overrides current architecture pages.
