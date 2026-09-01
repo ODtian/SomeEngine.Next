@@ -510,6 +510,9 @@ public enum ClusterShaderOperationRole : byte
     MaterialBinningReserve = 18,
     MaterialBinningScatter = 19,
     VisibilityResolve = 20,
+    DeformCachePrefixLocal = 21,
+    DeformCachePrefixGlobal = 22,
+    DeformCachePrefixWrite = 23,
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]

@@ -148,7 +148,11 @@ void ReserveDeform(
 
     bins[bin].ClusterOffset = baseOffset + inclusive - count;
     bins[bin].Cursor = 0;
-    WriteDispatch(args, bin, count);
+    WriteDispatch(
+        args,
+        bin,
+        (count + DEFORM_CACHE_CLUSTER_BLOCK_SIZE - 1u) /
+            DEFORM_CACHE_CLUSTER_BLOCK_SIZE);
 }
 
 void ScatterRaster(

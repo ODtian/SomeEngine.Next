@@ -4,6 +4,8 @@
 static const uint PACKED_CLUSTER_STRIDE_BYTES = 88;
 static const uint SLOT_INVALID = 0xFFFFu;
 static const uint BIN_INVALID = 0xFFFFFFFFu;
+static const uint DEFORM_CACHE_CLUSTER_BLOCK_SIZE = 4u;
+static const uint DEFORM_CACHE_PREFIX_THREAD_COUNT = 256u;
 
 struct PackedCluster
 {

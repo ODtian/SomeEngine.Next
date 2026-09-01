@@ -33,6 +33,7 @@ public sealed partial class ClusterPipelineSystem
         VisibilityProbeReadbackOffset + VisibilityProbeRowPitch;
     private const uint MaxBinnedEntriesPerCluster = 9;
     private const uint ClusterVertexCapacity = 64;
+    private const uint DeformCachePrefixThreadCount = 256;
     private const int RasterBinStride = 32;
     private const int DeformBinStride = 16;
     private const int VisibleClusterStride = 16;
@@ -237,10 +238,28 @@ public sealed partial class ClusterPipelineSystem
             "Cluster deform bin indices");
         frame.DeformDispatchArgs = frame.AddBuffer(
             ref graph,
-            checked((ulong)deformBinCount * ClusterIndirectAbi.DispatchBytes),
+            checked((ulong)(deformBinCount + 1u) * ClusterIndirectAbi.DispatchBytes),
             BufferUsages.Indirect,
             "Cluster deform dispatches");
-        frame.DeformReserveCounters = frame.AddBuffer(ref graph, 2 * sizeof(uint), BufferUsages.CopySource, "Cluster deform reserve counters");
+        frame.DeformReserveCounters = frame.AddBuffer(ref graph, 3 * sizeof(uint), BufferUsages.CopySource, "Cluster deform reserve counters");
+        frame.DeformCacheRequests = frame.AddBuffer(
+            ref graph,
+            checked(candidates * 2u * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster deform cache requests");
+        frame.DeformCachePrefixOffsets = frame.AddBuffer(
+            ref graph,
+            checked(candidates * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster deform cache prefix offsets");
+        ulong deformPrefixGroupCapacity =
+            (candidates + DeformCachePrefixThreadCount - 1u) /
+            DeformCachePrefixThreadCount;
+        frame.DeformCachePrefixGroups = frame.AddBuffer(
+            ref graph,
+            checked(deformPrefixGroupCapacity * 2u * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster deform cache prefix groups");
         frame.CacheOffsets = frame.AddBuffer(
             ref graph,
             checked(candidates * sizeof(uint)),
@@ -489,10 +508,41 @@ public sealed partial class ClusterPipelineSystem
                     MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
                     MaxClusterVertices = ClusterVertexCapacity,
                     CurrentBin = bin,
+                    Pass = 0u,
                 },
                 phaseOne
-                    ? "Cluster phase one deform bin uniforms"
-                    : "Cluster phase two deform bin uniforms");
+                    ? "Cluster phase one deform size bin uniforms"
+                    : "Cluster phase two deform size bin uniforms");
+        }
+
+        WriteUniform(
+            ref graph,
+            uploads,
+            generation,
+            new ClusterDeformPrefixUniforms
+            {
+                MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
+            },
+            phaseOne
+                ? "Cluster phase one deform cache prefix uniforms"
+                : "Cluster phase two deform cache prefix uniforms");
+
+        for (uint bin = 0; bin < frame.DeformBinCount; bin++)
+        {
+            WriteUniform(
+                ref graph,
+                uploads,
+                generation,
+                new ClusterDeformUniforms
+                {
+                    MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
+                    MaxClusterVertices = ClusterVertexCapacity,
+                    CurrentBin = bin,
+                    Pass = 1u,
+                },
+                phaseOne
+                    ? "Cluster phase one deform write bin uniforms"
+                    : "Cluster phase two deform write bin uniforms");
         }
 
         for (uint bin = 0; bin < frame.RasterBinCount; bin++)
@@ -829,6 +879,9 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId DeformBinnedClusters;
         internal GraphBufferId DeformDispatchArgs;
         internal GraphBufferId DeformReserveCounters;
+        internal GraphBufferId DeformCacheRequests;
+        internal GraphBufferId DeformCachePrefixOffsets;
+        internal GraphBufferId DeformCachePrefixGroups;
         internal GraphBufferId CacheOffsets;
         internal GraphBufferId CacheAllocationCounter;
         internal GraphBufferId DeformCache;

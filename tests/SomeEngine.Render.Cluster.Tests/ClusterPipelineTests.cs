@@ -103,6 +103,12 @@ public sealed class ClusterPipelineTests
             nameof(ClusterDeformUniforms.MaxClusterVertices), 4);
         AssertOffset<ClusterDeformUniforms>(
             nameof(ClusterDeformUniforms.CurrentBin), 8);
+        AssertOffset<ClusterDeformUniforms>(
+            nameof(ClusterDeformUniforms.Pass), 12);
+
+        Assert.Equal(16, Marshal.SizeOf<ClusterDeformPrefixUniforms>());
+        AssertOffset<ClusterDeformPrefixUniforms>(
+            nameof(ClusterDeformPrefixUniforms.MaxDeformCacheBytes), 0);
     }
 
     [Fact]

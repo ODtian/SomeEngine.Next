@@ -65,6 +65,7 @@ string[] shaderSources =
     "cluster_cull_phase2.slang",
     "cluster_cull_reset.slang",
     "cluster_deform.slang",
+    "cluster_deform_prefix.slang",
     "cluster_draw.slang",
     "cluster_resolve.slang",
     "shade_bin_reset.slang",
@@ -415,6 +416,18 @@ static AssetGuid GenerateClusterPipeline(AssetProject project)
                 ClusterShaderOperationRole.RasterDeformBinningScatter,
                 ResolveRequired(project, "assets/Shaders/cluster_bin_scatter.slang"),
                 "ScatterBins"),
+            ComputeOperation(
+                ClusterShaderOperationRole.DeformCachePrefixLocal,
+                ResolveRequired(project, "assets/Shaders/cluster_deform_prefix.slang"),
+                "PrefixDeformCacheLocal"),
+            ComputeOperation(
+                ClusterShaderOperationRole.DeformCachePrefixGlobal,
+                ResolveRequired(project, "assets/Shaders/cluster_deform_prefix.slang"),
+                "PrefixDeformCacheGroups"),
+            ComputeOperation(
+                ClusterShaderOperationRole.DeformCachePrefixWrite,
+                ResolveRequired(project, "assets/Shaders/cluster_deform_prefix.slang"),
+                "WriteDeformCacheOffsets"),
             ComputeOperation(
                 ClusterShaderOperationRole.SoftwareVisibilityRaster,
                 ResolveRequired(project, "assets/Shaders/sw_raster.slang"),

@@ -558,6 +558,175 @@ public sealed partial class ClusterPipelineSystem
         ClusterDeformStageSet deformStages,
         bool phaseOne)
     {
+        RecordDeformMaterialPasses(
+            ref graph,
+            frame,
+            deformStages,
+            phaseOne,
+            pass: 0u,
+            "size");
+
+        GraphBufferId prefixUniforms = UploadUniform(
+            ref graph,
+            new ClusterDeformPrefixUniforms
+            {
+                MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
+            },
+            phaseOne
+                ? "Cluster phase one deform cache prefix uniforms"
+                : "Cluster phase two deform cache prefix uniforms");
+        ulong prefixDispatchOffset = checked(
+            (ulong)frame.DeformBinCount * ClusterIndirectAbi.DispatchBytes);
+
+        int bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
+            CreateConstantBufferView(graph, prefixUniforms), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.DeformReserveCounters, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(
+                graph,
+                frame.DeformBinnedClusters,
+                BinnedClusterStride),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCacheRequests, 2 * sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCachePrefixOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCachePrefixGroups, 2 * sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CacheOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CacheAllocationCounter, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        ClusterIndirectDispatchParameters localPrefix = new(
+            RequireDispatchIndirectLayout(),
+            frame.DeformDispatchArgs,
+            prefixDispatchOffset);
+        _ = AddComputePass(
+            ref graph,
+            phaseOne
+                ? "Cluster phase one deform cache local prefix"
+                : "Cluster phase two deform cache local prefix",
+            _pipelines!.DeformCachePrefixLocal,
+            localPrefix,
+            bindingCount,
+            static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
+                _ = access.Read(
+                    data.Arguments,
+                    new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
+                    PipelineSync.ExecuteIndirect,
+                    ResourceAccess.IndirectArgument),
+            ClusterIndirectDispatchParameters.Record);
+
+        bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
+            CreateConstantBufferView(graph, prefixUniforms), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.DeformReserveCounters, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(
+                graph,
+                frame.DeformBinnedClusters,
+                BinnedClusterStride),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCacheRequests, 2 * sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCachePrefixOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCachePrefixGroups, 2 * sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CacheOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CacheAllocationCounter, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        ClusterDispatchParameters globalPrefix = new(new DispatchArguments(1, 1, 1));
+        _ = AddComputePass(
+            ref graph,
+            phaseOne
+                ? "Cluster phase one deform cache global prefix"
+                : "Cluster phase two deform cache global prefix",
+            _pipelines.DeformCachePrefixGlobal,
+            globalPrefix,
+            bindingCount,
+            ClusterDispatchParameters.Record);
+
+        bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
+            CreateConstantBufferView(graph, prefixUniforms), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.DeformReserveCounters, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(
+                graph,
+                frame.DeformBinnedClusters,
+                BinnedClusterStride),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCacheRequests, 2 * sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCachePrefixOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.DeformCachePrefixGroups, 2 * sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CacheOffsets, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.CacheAllocationCounter, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        ClusterIndirectDispatchParameters writeOffsets = new(
+            RequireDispatchIndirectLayout(),
+            frame.DeformDispatchArgs,
+            prefixDispatchOffset);
+        _ = AddComputePass(
+            ref graph,
+            phaseOne
+                ? "Cluster phase one deform cache offset write"
+                : "Cluster phase two deform cache offset write",
+            _pipelines.DeformCachePrefixWrite,
+            writeOffsets,
+            bindingCount,
+            static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
+                _ = access.Read(
+                    data.Arguments,
+                    new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
+                    PipelineSync.ExecuteIndirect,
+                    ResourceAccess.IndirectArgument),
+            ClusterIndirectDispatchParameters.Record);
+
+        RecordDeformMaterialPasses(
+            ref graph,
+            frame,
+            deformStages,
+            phaseOne,
+            pass: 1u,
+            "write");
+    }
+
+    private void RecordDeformMaterialPasses(
+        ref RenderGraphEdit graph,
+        in FrameResources frame,
+        ClusterDeformStageSet deformStages,
+        bool phaseOne,
+        uint pass,
+        string passName)
+    {
         for (uint bin = 0; bin < frame.DeformBinCount; bin++)
         {
             ClusterDeformInvocation invocation =
@@ -569,10 +738,11 @@ public sealed partial class ClusterPipelineSystem
                     MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
                     MaxClusterVertices = ClusterVertexCapacity,
                     CurrentBin = bin,
+                    Pass = pass,
                 },
                 phaseOne
-                    ? "Cluster phase one deform bin uniforms"
-                    : "Cluster phase two deform bin uniforms");
+                    ? $"Cluster phase one deform {passName} bin uniforms"
+                    : $"Cluster phase two deform {passName} bin uniforms");
             ulong indirectOffset = checked((ulong)bin * ClusterIndirectAbi.DispatchBytes);
             int bindingCount = 0;
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
@@ -615,10 +785,7 @@ public sealed partial class ClusterPipelineSystem
                 CreateStorageBufferView(graph, frame.CacheOffsets, sizeof(uint)),
                 PipelineSync.ComputeShading));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
-                CreateStorageBufferView(
-                    graph,
-                    frame.CacheAllocationCounter,
-                    sizeof(uint)),
+                CreateStorageBufferView(graph, frame.DeformCacheRequests, 2 * sizeof(uint)),
                 PipelineSync.ComputeShading));
             ClusterIndirectDispatchParameters passData = new(
                 RequireDispatchIndirectLayout(),
@@ -627,8 +794,8 @@ public sealed partial class ClusterPipelineSystem
             _ = AddComputePass(
                 ref graph,
                 phaseOne
-                    ? "Cluster phase one deform bin"
-                    : "Cluster phase two deform bin",
+                    ? $"Cluster phase one deform {passName} bin"
+                    : $"Cluster phase two deform {passName} bin",
                 invocation.Pipeline,
                 passData,
                 bindingCount,

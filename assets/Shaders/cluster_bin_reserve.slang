@@ -92,4 +92,26 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_Grou
         DeformBase,
         DeformPrefix[groupIndex],
         deformCount);
+
+    GroupMemoryBarrierWithGroupSync();
+    if (groupIndex == 0u)
+    {
+        DeviceMemoryBarrier();
+        uint completedGroupCount;
+        InterlockedAdd(DeformReserveCounters[2], 1u, completedGroupCount);
+        uint reserveGroupCount = max(
+            1u,
+            (max(Uniforms.RasterMaxBins, Uniforms.DeformMaxBins) + BLOCK_SIZE - 1u) /
+                BLOCK_SIZE);
+        if (completedGroupCount + 1u == reserveGroupCount)
+        {
+            DeviceMemoryBarrier();
+            uint deformCountTotal = DeformReserveCounters[0];
+            WriteDispatch(
+                PreDeformDispatchArgs,
+                Uniforms.DeformMaxBins,
+                (deformCountTotal + DEFORM_CACHE_PREFIX_THREAD_COUNT - 1u) /
+                    DEFORM_CACHE_PREFIX_THREAD_COUNT);
+        }
+    }
 }

@@ -5,6 +5,7 @@ using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Instances;
 using SlangShaderReflection = SlangShaderSharp.ShaderReflection;
 
@@ -44,6 +45,116 @@ public sealed class ClusterShaderAbiTests
             "LocalMaterial(packedMaterials, packedRanges, 0u)",
             scatter,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deform_cache_uses_only_the_measured_global_prefix_allocator()
+    {
+        string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
+        string deform = File.ReadAllText(Path.Combine(shaderDirectory, "cluster_deform.slang"));
+        string prefix = File.ReadAllText(Path.Combine(
+            shaderDirectory,
+            "cluster_deform_prefix.slang"));
+        string reserve = File.ReadAllText(Path.Combine(
+            shaderDirectory,
+            "cluster_bin_reserve.slang"));
+
+        Assert.Contains("DEFORM_PASS_SIZE", deform, StringComparison.Ordinal);
+        Assert.Contains("DEFORM_PASS_WRITE", deform, StringComparison.Ordinal);
+        Assert.Contains(
+            "rawBytes + rawAlignment - 1u",
+            deform,
+            StringComparison.Ordinal);
+        Assert.Contains("PrefixDeformCacheLocal", prefix, StringComparison.Ordinal);
+        Assert.Contains("PrefixDeformCacheGroups", prefix, StringComparison.Ordinal);
+        Assert.Contains("WriteDeformCacheOffsets", prefix, StringComparison.Ordinal);
+        Assert.Contains("SaturatingCacheAdd", prefix, StringComparison.Ordinal);
+        Assert.Contains(
+            "slotBase <= Uniforms.MaxDeformCacheBytes - reservationBytes",
+            prefix,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Uniforms.DeformMaxBins",
+            reserve,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("InterlockedCompareExchange", deform, StringComparison.Ordinal);
+        Assert.DoesNotContain("InterlockedCompareExchange", prefix, StringComparison.Ordinal);
+        Assert.DoesNotContain("TryAllocateDeformCache", deform, StringComparison.Ordinal);
+        Assert.DoesNotContain("BLOCK_RESERVE", deform, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Invalid_cached_deformation_is_dropped_instead_of_evaluated_inline()
+    {
+        string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
+        string draw = File.ReadAllText(Path.Combine(shaderDirectory, "cluster_draw.slang"));
+        string software = File.ReadAllText(Path.Combine(shaderDirectory, "sw_raster.slang"));
+        string shade = File.ReadAllText(Path.Combine(
+            shaderDirectory,
+            "cluster_shade_pipeline.slang"));
+
+        Assert.Contains(
+            "if (cacheBaseByte >= DRAW_CACHE_OFFSET_INVALID)\n            return false;",
+            draw.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (cacheBaseByte >= SW_CACHE_OFFSET_INVALID)\n            return asfloat(uint4(0x7FC00000u));",
+            software.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (cacheBaseByte >= SHADE_CACHE_OFFSET_INVALID)\n        return false;",
+            shade.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("cache overflow", draw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cache overflow", software, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cache overflow", shade, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Cooked_default_geometry_entries_retain_vertex_contract_attributes()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        AssetManifest manifest = AssetManifest.Load(
+            Path.Combine(repositoryRoot, "Library", "AssetManifest"));
+        AssetManifestRecord configurationRecord = Assert.Single(
+            manifest.List(AssetType<ClusterShaders>.Name));
+        await using var loader = new AssetLoader(
+            new LooseAssetStorage(repositoryRoot, manifest));
+        ClusterShaders configuration = await loader.LoadAsync(
+            new AssetId<ClusterShaders>(configurationRecord.Guid));
+
+        (ClusterShaderOperationRole Role, string EntryPoint)[] geometryEntries =
+        [
+            (ClusterShaderOperationRole.SoftwareVisibilityRaster, "CSSWRasterCached"),
+            (ClusterShaderOperationRole.HardwareVisibilityRaster, "VSVisBufferCached"),
+        ];
+        foreach ((ClusterShaderOperationRole role, string entryPoint) in geometryEntries)
+        {
+            ClusterShaderOperation operation = Assert.Single(
+                configuration.Operations!,
+                candidate => candidate.Role == role);
+            ShaderRef shaderRef = Assert.Single(
+                operation.Shaders!,
+                candidate => string.Equals(
+                    candidate.EntryPoint,
+                    entryPoint,
+                    StringComparison.Ordinal));
+            Assert.True(
+                AssetGuid.TryParse(shaderRef.AssetGuid, out AssetGuid shaderGuid),
+                $"Operation {role} has no Shader asset identity.");
+            Shader shader = shaderRef.Asset
+                ?? await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
+
+            Assert.Equal(
+                ClusterTestAssets.StandardVertexEncoding,
+                ClusterGeometryContracts.RequireVertexEncoding(shader, entryPoint, role.ToString()));
+            Assert.Equal(
+                ClusterConservativeBounds.Finite,
+                ClusterGeometryContracts.RequireConservativeBounds(
+                    shader,
+                    entryPoint,
+                    role.ToString()));
+        }
     }
 
     [Fact]

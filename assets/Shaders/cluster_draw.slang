@@ -131,7 +131,7 @@ VertexEvalContext MakeDrawVertexEvalContext(
     return ctx;
 }
 
-void LoadDrawDeformedVertex<TVE : IVertexEvaluate>(
+bool LoadDrawDeformedVertex<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
     bool useDeformCache,
     uint visibleClusterIndex,
@@ -143,13 +143,17 @@ void LoadDrawDeformedVertex<TVE : IVertexEvaluate>(
     {
         uint cacheBaseByte = CacheOffsets[visibleClusterIndex];
         if (cacheBaseByte >= DRAW_CACHE_OFFSET_INVALID)
-            vertex = evaluator.evaluate(ctx);
-        else
-            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertexIndex);
-        return;
+            return false;
+        vertex = evaluator.readCache(
+            DeformCache,
+            cacheBaseByte,
+            vertexCount,
+            ctx.localVertexIndex);
+        return true;
     }
 
     vertex = evaluator.evaluate(ctx);
+    return true;
 }
 
 void WriteInvalidPSInput(out PSInput output)
@@ -203,7 +207,11 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
         realInstanceID,
         GetCurrentInstanceTransform(realInstanceID));
     StaticVertexEval.DeformedVertex vertex;
-    LoadDrawDeformedVertex(eval, false, visibleClusterIndex, vertexCount, ctx, vertex);
+    if (!LoadDrawDeformedVertex(eval, false, visibleClusterIndex, vertexCount, ctx, vertex))
+    {
+        WriteInvalidPSInput(output);
+        return output;
+    }
 
     output.Pos = mul(float4(eval.getPosition(vertex), 1.0), Uniforms.ViewProj);
     output.ClusterID = clusterID;
@@ -286,7 +294,17 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
         realInstanceID,
         GetCurrentInstanceTransform(realInstanceID));
     TVE.DeformedVertex vertex;
-    LoadDrawDeformedVertex(evaluator, useDeformCache, visibleClusterIndex, vertexCount, ctx, vertex);
+    if (!LoadDrawDeformedVertex(
+            evaluator,
+            useDeformCache,
+            visibleClusterIndex,
+            vertexCount,
+            ctx,
+            vertex))
+    {
+        output.Pos = asfloat(uint4(0x7FC00000, 0x7FC00000, 0x7FC00000, 0x7FC00000));
+        return output;
+    }
 
     output.Pos = mul(float4(evaluator.getPosition(vertex), 1.0), Uniforms.ViewProj);
     output.VisibleClusterIndex = visibleClusterIndex;

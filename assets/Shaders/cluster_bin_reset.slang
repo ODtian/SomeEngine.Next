@@ -34,6 +34,7 @@ void ResetBins(uint3 threadId : SV_DispatchThreadID)
     ReserveCounters[0] = 0u;
     ReserveCounters[1] = 0u;
     DeformReserveCounters[0] = 0u;
+    DeformReserveCounters[2] = 0u;
     if (Uniforms.ResetCacheAllocationState == 0u)
         return;
 

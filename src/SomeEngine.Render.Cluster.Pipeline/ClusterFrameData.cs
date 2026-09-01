@@ -58,7 +58,16 @@ internal struct ClusterDeformUniforms
     internal uint MaxDeformCacheBytes;
     internal uint MaxClusterVertices;
     internal uint CurrentBin;
+    internal uint Pass;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+internal struct ClusterDeformPrefixUniforms
+{
+    internal uint MaxDeformCacheBytes;
     internal uint Pad0;
+    internal uint Pad1;
+    internal uint Pad2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

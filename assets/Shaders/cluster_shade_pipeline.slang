@@ -137,7 +137,7 @@ void evaluateTriangleVertices<TVE : IVertexEvaluate>(
         v2);
 }
 
-void readCachedTriangleVertices<TVE : IVertexEvaluate>(
+bool readCachedTriangleVertices<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
     TriangleInfo tri,
     ByteAddressBuffer cache,
@@ -148,17 +148,15 @@ void readCachedTriangleVertices<TVE : IVertexEvaluate>(
 {
     uint cacheBaseByte = offsets[tri.visibleClusterIndex];
     if (cacheBaseByte >= SHADE_CACHE_OFFSET_INVALID)
-    {
-        evaluateTriangleVertices(evaluator, tri, v0, v1, v2);
-        return;
-    }
+        return false;
 
     v0 = evaluator.readCache(cache, cacheBaseByte, tri.vertexCount, tri.vi0);
     v1 = evaluator.readCache(cache, cacheBaseByte, tri.vertexCount, tri.vi1);
     v2 = evaluator.readCache(cache, cacheBaseByte, tri.vertexCount, tri.vi2);
+    return true;
 }
 
-void loadTriangleVertices<TVE : IVertexEvaluate>(
+bool loadTriangleVertices<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
     TriangleInfo tri,
     bool useDeformCache,
@@ -167,12 +165,17 @@ void loadTriangleVertices<TVE : IVertexEvaluate>(
     out TVE.DeformedVertex v2)
 {
     if (useDeformCache)
-    {
-        readCachedTriangleVertices(evaluator, tri, DeformCache, CacheOffsets, v0, v1, v2);
-        return;
-    }
+        return readCachedTriangleVertices(
+            evaluator,
+            tri,
+            DeformCache,
+            CacheOffsets,
+            v0,
+            v1,
+            v2);
 
     evaluateTriangleVertices(evaluator, tri, v0, v1, v2);
+    return true;
 }
 
 float3 computeTriangleBarycentric<TVE : IVertexEvaluate>(
@@ -270,7 +273,8 @@ void CSShadeCore<
     TVE.DeformedVertex v0;
     TVE.DeformedVertex v1;
     TVE.DeformedVertex v2;
-    loadTriangleVertices(vertexEval, tri, useDeformCache, v0, v1, v2);
+    if (!loadTriangleVertices(vertexEval, tri, useDeformCache, v0, v1, v2))
+        return;
 
     Triangle triangle = MakeSurfaceTriangle(vertexEval, v0, v1, v2);
     SurfaceBarycentrics coordinates = ResolveBarycentrics(

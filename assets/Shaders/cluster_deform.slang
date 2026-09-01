@@ -1,6 +1,7 @@
 // cluster_deform.slang — Pre-deformation Compute Shader
-// 64 threads/group, 1 group = 1 DeformBin cluster entry.
-// DeformCache is binned by VertexEval; raster remains independently binned.
+// 64 threads/group, 1 group = a fixed block of DeformBin cluster entries.
+// The selected allocator is size -> global prefix -> write. DeformCache remains binned by
+// VertexEval while raster remains independently binned.
 
 #ifndef CLUSTER_DEFORM_SLANG
 #define CLUSTER_DEFORM_SLANG
@@ -8,6 +9,7 @@
 #include "cluster_common.slang"
 #include "cluster_structures.slang"
 #include "common.slang"
+#include "resource_effects.slang"
 #include "vertex_evaluate.slang"
 
 struct DeformUniforms
@@ -15,7 +17,7 @@ struct DeformUniforms
     uint   MaxDeformCacheBytes;
     uint   MaxClusterVertices;
     uint   CurrentBin;
-    uint   Pad0;
+    uint   Pass;
 };
 
 cbuffer PushConstants : register(b100, space0)
@@ -30,50 +32,12 @@ StructuredBuffer<DeformBinEntry> DeformBinMeta;
 
 RWByteAddressBuffer      DeformCache;
 RWStructuredBuffer<uint> CacheOffsetsWrite;
-RWStructuredBuffer<uint> CacheAllocationCounter;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWStructuredBuffer<uint2> DeformCacheRequests;
 
 static const uint CACHE_OFFSET_OVERFLOW    = 0xFFFFFFFDu;
-static const uint CACHE_OFFSET_UNINITIALIZED = 0xFFFFFFFEu;
-
-groupshared uint DeformKernelCacheBaseByte;
-
-bool TryAllocateDeformCache(
-    uint requestBytes,
-    uint requestAlignment,
-    out uint cacheBaseByte)
-{
-    cacheBaseByte = CACHE_OFFSET_OVERFLOW;
-    if (requestBytes == 0u || requestBytes > Uniforms.MaxDeformCacheBytes ||
-        requestAlignment < 4u || requestAlignment > Uniforms.MaxDeformCacheBytes ||
-        (requestAlignment & (requestAlignment - 1u)) != 0u)
-        return false;
-
-    uint observedBytes = CacheAllocationCounter[0];
-    uint latestBytes;
-    while (observedBytes <= Uniforms.MaxDeformCacheBytes - requestBytes)
-    {
-        uint alignmentPadding = (0u - observedBytes) & (requestAlignment - 1u);
-        if (observedBytes > Uniforms.MaxDeformCacheBytes - alignmentPadding)
-            return false;
-        uint alignedBytes = observedBytes + alignmentPadding;
-        if (alignedBytes > Uniforms.MaxDeformCacheBytes - requestBytes)
-            return false;
-        uint committedBytes = alignedBytes + requestBytes;
-        InterlockedCompareExchange(
-            CacheAllocationCounter[0],
-            observedBytes,
-            committedBytes,
-            latestBytes);
-        if (latestBytes == observedBytes)
-        {
-            cacheBaseByte = alignedBytes;
-            InterlockedAdd(CacheAllocationCounter[1], 1u);
-            return true;
-        }
-        observedBytes = latestBytes;
-    }
-    return false;
-}
+static const uint DEFORM_PASS_SIZE = 0u;
+static const uint DEFORM_PASS_WRITE = 1u;
 
 uint MaskedBitCount(uint2 bits, uint index)
 {
@@ -177,86 +141,115 @@ void DeformKernel<TVE : IVertexEvaluate>(
     uint3 groupID,
     uint groupThreadIndex)
 {
-    uint flatIndex = groupID.x + groupID.y * 65535u;
+    uint blockIndex = groupID.x + groupID.y * 65535u;
 
-    // Per-bin dispatch: one compute group per visible-cluster DeformBin entry.
     DeformBinEntry binMeta = DeformBinMeta[Uniforms.CurrentBin];
-    if (flatIndex >= binMeta.BinCount)
+    uint blockStart = blockIndex * DEFORM_CACHE_CLUSTER_BLOCK_SIZE;
+    if (blockStart >= binMeta.BinCount)
         return;
 
-    uint clusterOffset = binMeta.ClusterOffset;
-    uint binnedIndex = clusterOffset + flatIndex;
-    uint2 binEntry = BinnedClusterIndexBuffer[binnedIndex];
-    uint visibleIndex = binEntry.x;
-
-    uint4 req = VisibleClusters[visibleIndex];
-    uint pageOffset     = req.x;
-    uint clusterID      = req.y;
-    uint realInstanceID = req.z;
-
-    uint vertexBlobAddress;
-    uint vertexBlobSize;
-    uint tStart;
-    uint packedCounts;
-    LoadClusterInfo(
-        PageHeap,
-        pageOffset,
-        clusterID,
-        vertexBlobAddress,
-        vertexBlobSize,
-        tStart,
-        packedCounts);
-    uint vertexCount  = packedCounts & 0xFF;
-    if (vertexCount == 0u || vertexCount > Uniforms.MaxClusterVertices)
-        return;
-
-    if (groupThreadIndex == 0u)
+    if (Uniforms.Pass == DEFORM_PASS_SIZE)
     {
-        uint requestBytesRaw = evaluator.getCacheByteSize(vertexCount);
-        uint requestAlignment = evaluator.getCacheByteAlignment();
-        uint requestBytes =
-            requestBytesRaw != 0u && ((requestBytesRaw & 3u) == 0u)
-                ? requestBytesRaw
+        if (groupThreadIndex < DEFORM_CACHE_CLUSTER_BLOCK_SIZE)
+        {
+            uint flatIndex = blockStart + groupThreadIndex;
+            if (flatIndex >= binMeta.BinCount)
+                return;
+            uint binnedIndex = binMeta.ClusterOffset + flatIndex;
+            uint visibleIndex = BinnedClusterIndexBuffer[binnedIndex].x;
+            uint4 request = VisibleClusters[visibleIndex];
+            uint vertexBlobAddress;
+            uint vertexBlobSize;
+            uint triangleStart;
+            uint packedCounts;
+            LoadClusterInfo(
+                PageHeap,
+                request.x,
+                request.y,
+                vertexBlobAddress,
+                vertexBlobSize,
+                triangleStart,
+                packedCounts);
+            uint vertexCount = packedCounts & 0xFFu;
+            uint rawBytes = evaluator.getCacheByteSize(vertexCount);
+            uint rawAlignment = evaluator.getCacheByteAlignment();
+            bool valid =
+                vertexCount != 0u && vertexCount <= Uniforms.MaxClusterVertices &&
+                rawBytes != 0u && (rawBytes & 3u) == 0u &&
+                rawAlignment >= 4u && rawAlignment <= Uniforms.MaxDeformCacheBytes &&
+                (rawAlignment & (rawAlignment - 1u)) == 0u &&
+                rawBytes <= Uniforms.MaxDeformCacheBytes - (rawAlignment - 1u);
+            uint reservationBytes = valid
+                ? rawBytes + rawAlignment - 1u
                 : 0u;
-
-        uint cacheBaseByte;
-        TryAllocateDeformCache(requestBytes, requestAlignment, cacheBaseByte);
-
-        CacheOffsetsWrite[visibleIndex] = cacheBaseByte;
-        DeformKernelCacheBaseByte = cacheBaseByte;
+            CacheOffsetsWrite[visibleIndex] = CACHE_OFFSET_OVERFLOW;
+            DeformCacheRequests[binnedIndex] = uint2(
+                reservationBytes,
+                valid ? rawAlignment : 0u);
+        }
+        return;
     }
-    GroupMemoryBarrierWithGroupSync();
 
-    uint cacheBaseByte = DeformKernelCacheBaseByte;
-    if (cacheBaseByte >= CACHE_OFFSET_OVERFLOW)
+    if (Uniforms.Pass != DEFORM_PASS_WRITE)
         return;
 
-    uint localVertIdx = groupThreadIndex;
-    if (localVertIdx >= vertexCount || localVertIdx >= Uniforms.MaxClusterVertices)
-        return;
+    for (uint blockCluster = 0u;
+         blockCluster < DEFORM_CACHE_CLUSTER_BLOCK_SIZE;
+         blockCluster++)
+    {
+        uint flatIndex = blockStart + blockCluster;
+        if (flatIndex >= binMeta.BinCount)
+            continue;
+        uint binnedIndex = binMeta.ClusterOffset + flatIndex;
+        uint visibleIndex = BinnedClusterIndexBuffer[binnedIndex].x;
+        uint cacheBaseByte = CacheOffsetsWrite[visibleIndex];
+        if (cacheBaseByte >= CACHE_OFFSET_OVERFLOW)
+            continue;
 
-    RenderInstanceTransform transform = GetCurrentInstanceTransform(realInstanceID);
-    RenderInstanceTransform previousTransform = GetPreviousInstanceTransform(realInstanceID);
+        uint4 request = VisibleClusters[visibleIndex];
+        uint vertexBlobAddress;
+        uint vertexBlobSize;
+        uint triangleStart;
+        uint packedCounts;
+        LoadClusterInfo(
+            PageHeap,
+            request.x,
+            request.y,
+            vertexBlobAddress,
+            vertexBlobSize,
+            triangleStart,
+            packedCounts);
+        uint vertexCount = packedCounts & 0xFFu;
+        uint localVertIdx = groupThreadIndex;
+        if (localVertIdx >= vertexCount)
+            continue;
 
-    VertexEvalContext ctx = MakeDeformVertexEvalContext(
-        vertexBlobAddress,
-        vertexBlobSize,
-        localVertIdx,
-        realInstanceID,
-        transform,
-        0u);
-    TVE.DeformedVertex v = evaluator.evaluate(ctx);
-
-    VertexEvalContext previousCtx = MakeDeformVertexEvalContext(
-        vertexBlobAddress,
-        vertexBlobSize,
-        localVertIdx,
-        realInstanceID,
-        previousTransform,
-        1u);
-    TVE.DeformedVertex previousV = evaluator.evaluate(previousCtx);
-
-    evaluator.writeCache(DeformCache, cacheBaseByte, vertexCount, localVertIdx, v, previousV);
+        RenderInstanceTransform transform = GetCurrentInstanceTransform(request.z);
+        RenderInstanceTransform previousTransform = GetPreviousInstanceTransform(request.z);
+        VertexEvalContext ctx = MakeDeformVertexEvalContext(
+            vertexBlobAddress,
+            vertexBlobSize,
+            localVertIdx,
+            request.z,
+            transform,
+            0u);
+        TVE.DeformedVertex vertex = evaluator.evaluate(ctx);
+        VertexEvalContext previousCtx = MakeDeformVertexEvalContext(
+            vertexBlobAddress,
+            vertexBlobSize,
+            localVertIdx,
+            request.z,
+            previousTransform,
+            1u);
+        TVE.DeformedVertex previousVertex = evaluator.evaluate(previousCtx);
+        evaluator.writeCache(
+            DeformCache,
+            cacheBaseByte,
+            vertexCount,
+            localVertIdx,
+            vertex,
+            previousVertex);
+    }
 }
 
 [MaterialTarget("cluster.deform.eval")]

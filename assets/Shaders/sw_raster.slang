@@ -224,9 +224,12 @@ float4 EvaluateSWRasterClipPosition<TVE : IVertexEvaluate>(
     {
         uint cacheBaseByte = CacheOffsets[visibleClusterIndex];
         if (cacheBaseByte >= SW_CACHE_OFFSET_INVALID)
-            vertex = evaluator.evaluate(ctx);
-        else
-            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertexIndex);
+            return asfloat(uint4(0x7FC00000u));
+        vertex = evaluator.readCache(
+            DeformCache,
+            cacheBaseByte,
+            vertexCount,
+            ctx.localVertexIndex);
     }
     else
     {
