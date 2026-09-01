@@ -29,6 +29,8 @@ public class ShaderSourcePolicyTests
     [InlineData("cluster_resolve.slang")]
     [InlineData("cluster_shade_material.slang")]
     [InlineData("cluster_shade_unlit.slang")]
+    [InlineData("cluster_tessellation_phong.slang")]
+    [InlineData("cluster_tessellation_visibility.slang")]
     [InlineData("debug_sphere.slang")]
     public void ClusterEntryModulesImportAfterLayoutChange(string shaderFile)
     {

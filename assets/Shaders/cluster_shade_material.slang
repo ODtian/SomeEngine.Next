@@ -1,4 +1,5 @@
 #include "cluster_shade_pipeline.slang"
+#include "phong_tessellation.slang"
 #include "standard_pbr.slang"
 
 StandardPBRMaterial Material;
@@ -10,7 +11,7 @@ StandardPBRMaterial Material;
 void CSMaterialShade(uint3 tid : SV_DispatchThreadID)
 {
     StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
+    PhongTessellation surface = MakePhongTessellation();
     CSShade(vertexEval, surface, Material, tid);
 }
 
@@ -21,6 +22,6 @@ void CSMaterialShade(uint3 tid : SV_DispatchThreadID)
 void CSMaterialShadeCached(uint3 tid : SV_DispatchThreadID)
 {
     StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
+    PhongTessellation surface = MakePhongTessellation();
     CSShadeFromCache(vertexEval, surface, Material, tid);
 }

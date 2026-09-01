@@ -74,6 +74,8 @@ string[] shaderSources =
     "shade_bin_scatter.slang",
     "cluster_shade_material.slang",
     "cluster_shade_unlit.slang",
+    "cluster_tessellation_phong.slang",
+    "cluster_tessellation_visibility.slang",
     "debug_args_copy.slang",
     "debug_sphere.slang",
     "depth_merge.slang",
@@ -428,6 +430,18 @@ static AssetGuid GenerateClusterPipeline(AssetProject project)
                 ClusterShaderOperationRole.DeformCachePrefixWrite,
                 ResolveRequired(project, "assets/Shaders/cluster_deform_prefix.slang"),
                 "WriteDeformCacheOffsets"),
+            ComputeOperation(
+                ClusterShaderOperationRole.TessellationFactor,
+                ResolveRequired(project, "assets/Shaders/cluster_tessellation_phong.slang"),
+                "FactorPhongTessellation"),
+            ComputeOperation(
+                ClusterShaderOperationRole.TessellationDice,
+                ResolveRequired(project, "assets/Shaders/cluster_tessellation_phong.slang"),
+                "DicePhongTessellation"),
+            ComputeOperation(
+                ClusterShaderOperationRole.TessellationVisibilityRaster,
+                ResolveRequired(project, "assets/Shaders/cluster_tessellation_visibility.slang"),
+                "RasterDicedTriangles"),
             ComputeOperation(
                 ClusterShaderOperationRole.SoftwareVisibilityRaster,
                 ResolveRequired(project, "assets/Shaders/sw_raster.slang"),

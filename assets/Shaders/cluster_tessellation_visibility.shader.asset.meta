@@ -1,0 +1,25 @@
+{
+  "asset_guid": "1db8e4af-0e70-5114-83de-631e2adf5e32",
+  "source_guid": "f16ec0b2-3ef2-46bf-aafa-1128e5cc7298",
+  "sub_asset_key": "shader:main",
+  "content_fingerprint": "9318f930b4c36ff06ad23d6e556f512b89b217bce26224d60f68ef0d7528f7f0",
+  "dependencies": [
+    {
+      "path": "assets/Shaders/cluster_tessellation_types.slang",
+      "hash": "c230a102d97999ab0ff415e94f6a64768ea5148a13e56ef756eee3cd06c67648"
+    },
+    {
+      "path": "assets/Shaders/cluster_tessellation_visibility.slang",
+      "hash": "9e578881d6389e75c1d5ea5a450eb53f2a3a385a476d2598c2b8ae553f75596e"
+    },
+    {
+      "path": "assets/Shaders/cluster_view.slang",
+      "hash": "e88de9c59a9f8c072a1ffd82b68186af0b7f9c6c4bc3cdfa40c369958a1f0ba4"
+    },
+    {
+      "path": "assets/Shaders/visbuffer_encoding.slang",
+      "hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
+    }
+  ],
+  "importer_version": 26
+}

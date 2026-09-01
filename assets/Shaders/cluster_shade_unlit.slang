@@ -1,4 +1,5 @@
 #include "cluster_shade_pipeline.slang"
+#include "phong_tessellation.slang"
 
 [MaterialScalars]
 struct UnlitScalars
@@ -123,7 +124,7 @@ UnlitMaterial Material;
 void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
 {
     StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
+    PhongTessellation surface = MakePhongTessellation();
     CSShade(vertexEval, surface, Material, tid);
 }
 
@@ -134,6 +135,6 @@ void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
 void CSUnlitShadeCached(uint3 tid : SV_DispatchThreadID)
 {
     StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
+    PhongTessellation surface = MakePhongTessellation();
     CSShadeFromCache(vertexEval, surface, Material, tid);
 }

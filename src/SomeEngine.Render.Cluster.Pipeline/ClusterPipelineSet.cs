@@ -91,6 +91,15 @@ internal sealed class ClusterPipelineSet : IDisposable
                 DeformCachePrefixWrite = Compute(
                     ClusterShaderOperationRole.DeformCachePrefixWrite,
                     "Cluster deform cache offset write");
+                TessellationFactor = Compute(
+                    ClusterShaderOperationRole.TessellationFactor,
+                    "Cluster tessellation factor");
+                TessellationDice = Compute(
+                    ClusterShaderOperationRole.TessellationDice,
+                    "Cluster tessellation dice");
+                TessellationVisibilityRaster = Compute(
+                    ClusterShaderOperationRole.TessellationVisibilityRaster,
+                    "Cluster diced visibility raster");
                 SoftwareRaster = Compute(
                     ClusterShaderOperationRole.SoftwareVisibilityRaster,
                     "Cluster software visibility raster");
@@ -161,6 +170,9 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline DeformCachePrefixLocal { get; }
     internal ClusterComputePipeline DeformCachePrefixGlobal { get; }
     internal ClusterComputePipeline DeformCachePrefixWrite { get; }
+    internal ClusterComputePipeline TessellationFactor { get; }
+    internal ClusterComputePipeline TessellationDice { get; }
+    internal ClusterComputePipeline TessellationVisibilityRaster { get; }
     internal ClusterComputePipeline SoftwareRaster { get; }
     internal ClusterRasterPipeline HardwareRaster { get; }
     internal ClusterRasterPipeline DepthMerge { get; }

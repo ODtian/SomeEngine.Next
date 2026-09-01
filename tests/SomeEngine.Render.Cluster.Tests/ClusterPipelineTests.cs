@@ -97,6 +97,30 @@ public sealed class ClusterPipelineTests
     }
 
     [Fact]
+    public void TessellationUniformsExactlyMatchTheBoundedGpuContracts()
+    {
+        Assert.Equal(32, Marshal.SizeOf<ClusterTessellationUniforms>());
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.ScreenWidth), 0);
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.CurrentBin), 8);
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.DispatchGroupWidth), 12);
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.MaxSplitWorkItems), 16);
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.MaxDicedTriangles), 20);
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.MaxFactor), 24);
+        AssertOffset<ClusterTessellationUniforms>(
+            nameof(ClusterTessellationUniforms.TargetEdgePixels), 28);
+
+        Assert.Equal(16, Marshal.SizeOf<ClusterTessellationVisibilityUniforms>());
+        AssertOffset<ClusterTessellationVisibilityUniforms>(
+            nameof(ClusterTessellationVisibilityUniforms.MaxDicedTriangles), 8);
+    }
+
+    [Fact]
     public void DeformCacheUniformsContainOnlyKernelInputs()
     {
         Assert.Equal(16, Marshal.SizeOf<ClusterDeformUniforms>());
@@ -148,6 +172,16 @@ public sealed class ClusterPipelineTests
             {
                 DeformCacheBytes = ClusterPipelineOptions.MaximumDeformCacheBytes + 1,
             }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => (valid with { MaxTessellationSplitWorkItems = 0 }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => (valid with { MaxDicedTriangles = 0 }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => (valid with { MaxTessellationFactor = 17 }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => (valid with { TessellationTargetEdgePixels = 0.5f }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => (valid with { TessellationTargetEdgePixels = float.NaN }).Validate());
     }
 
     private static void AssertOffset(string field, int expected) =>

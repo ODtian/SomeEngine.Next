@@ -18,6 +18,50 @@ public sealed class ClusterShaderAbiTests
     private const string TestTintCanonicalId = "material.test.tint";
 
     [Fact]
+    public void Tessellation_is_generic_bounded_RasterBin_work_with_original_visibility_identity()
+    {
+        string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
+        string surface = Read("triangle_surface.slang");
+        string inverse = Read("triangle_surface_inverse.slang");
+        string core = Read("cluster_tessellation_core.slang");
+        string types = Read("cluster_tessellation_types.slang");
+        string phong = Read("cluster_tessellation_phong.slang");
+        string displacement = Read("texture_displacement.slang");
+        string visibility = Read("cluster_tessellation_visibility.slang");
+        string shade = Read("cluster_shade_pipeline.slang");
+
+        Assert.Contains("interface ITriangleSurface", surface, StringComparison.Ordinal);
+        Assert.Contains("TSurface : ITriangleSurface", core, StringComparison.Ordinal);
+        Assert.Contains("TSurface : ITriangleSurface", inverse, StringComparison.Ordinal);
+        Assert.DoesNotContain("phong_tessellation.slang", core, StringComparison.Ordinal);
+        Assert.DoesNotContain("texture_displacement.slang", core, StringComparison.Ordinal);
+        Assert.Contains("struct PhongTessellation : ITriangleSurface", Read("phong_tessellation.slang"), StringComparison.Ordinal);
+        Assert.Contains("struct TextureDisplacement : ITriangleSurface", displacement, StringComparison.Ordinal);
+        Assert.Contains("cluster_tessellation_core.slang", phong, StringComparison.Ordinal);
+        Assert.Contains("FactorRasterBin", core, StringComparison.Ordinal);
+        Assert.Contains("RasterBinMeta", core, StringComparison.Ordinal);
+        Assert.DoesNotContain("struct TessBin", core, StringComparison.Ordinal);
+        Assert.DoesNotContain("TessBinMeta", core, StringComparison.Ordinal);
+
+        Assert.Contains("MaxSplitWorkItems", types, StringComparison.Ordinal);
+        Assert.Contains("MaxDicedTriangles", types, StringComparison.Ordinal);
+        Assert.Contains("TESS_COUNTER_SPLIT_OVERFLOW", core, StringComparison.Ordinal);
+        Assert.Contains("TESS_COUNTER_DICED_OVERFLOW", core, StringComparison.Ordinal);
+        Assert.Contains("return;", core, StringComparison.Ordinal);
+        Assert.DoesNotContain("fallback", core, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("retry", core, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Contains("VisibleClusterIndex", types, StringComparison.Ordinal);
+        Assert.Contains("OriginalTriangle", types, StringComparison.Ordinal);
+        Assert.Contains("EncodeVisBuffer(", visibility, StringComparison.Ordinal);
+        Assert.Contains("diced.OriginalTriangle", visibility, StringComparison.Ordinal);
+        Assert.Contains("ReconstructWorldPosition", shade, StringComparison.Ordinal);
+        Assert.Contains("ResolveTriangleSurface", shade, StringComparison.Ordinal);
+
+        string Read(string name) => File.ReadAllText(Path.Combine(shaderDirectory, name));
+    }
+
+    [Fact]
     public void Deform_binning_reads_the_explicit_cluster_material_index()
     {
         string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
@@ -167,6 +211,8 @@ public sealed class ClusterShaderAbiTests
         [
             (ClusterShaderOperationRole.SoftwareVisibilityRaster, "CSSWRasterCached"),
             (ClusterShaderOperationRole.HardwareVisibilityRaster, "VSVisBufferCached"),
+            (ClusterShaderOperationRole.TessellationFactor, "FactorPhongTessellation"),
+            (ClusterShaderOperationRole.TessellationDice, "DicePhongTessellation"),
         ];
         foreach ((ClusterShaderOperationRole role, string entryPoint) in geometryEntries)
         {

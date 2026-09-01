@@ -58,6 +58,28 @@ internal struct ClusterDeformUniforms
     internal uint Pass;
 }
 
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+internal struct ClusterTessellationUniforms
+{
+    internal uint ScreenWidth;
+    internal uint ScreenHeight;
+    internal uint CurrentBin;
+    internal uint DispatchGroupWidth;
+    internal uint MaxSplitWorkItems;
+    internal uint MaxDicedTriangles;
+    internal uint MaxFactor;
+    internal float TargetEdgePixels;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+internal struct ClusterTessellationVisibilityUniforms
+{
+    internal uint ScreenWidth;
+    internal uint ScreenHeight;
+    internal uint MaxDicedTriangles;
+    internal uint Pad0;
+}
+
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
 internal struct ClusterDeformPrefixUniforms
 {

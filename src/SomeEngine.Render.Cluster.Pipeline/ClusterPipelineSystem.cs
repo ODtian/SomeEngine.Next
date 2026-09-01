@@ -856,6 +856,30 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             : throw new InvalidOperationException("Cluster frame-metrics readback ownership was lost.");
         ReadMappedBuffer(frameMetricReadback, _frameMetricReadbackBytes);
         ReadOnlySpan<byte> bytes = _frameMetricReadbackBytes;
+        uint phaseOneSplit = ReadUInt32(
+            bytes,
+            PhaseOneTessellationCountersReadbackOffset);
+        uint phaseOneDiced = ReadUInt32(
+            bytes,
+            PhaseOneTessellationCountersReadbackOffset + sizeof(uint));
+        uint phaseOneSplitOverflow = ReadUInt32(
+            bytes,
+            PhaseOneTessellationCountersReadbackOffset + 2 * sizeof(uint));
+        uint phaseOneDicedOverflow = ReadUInt32(
+            bytes,
+            PhaseOneTessellationCountersReadbackOffset + 3 * sizeof(uint));
+        uint phaseTwoSplit = ReadUInt32(
+            bytes,
+            PhaseTwoTessellationCountersReadbackOffset);
+        uint phaseTwoDiced = ReadUInt32(
+            bytes,
+            PhaseTwoTessellationCountersReadbackOffset + sizeof(uint));
+        uint phaseTwoSplitOverflow = ReadUInt32(
+            bytes,
+            PhaseTwoTessellationCountersReadbackOffset + 2 * sizeof(uint));
+        uint phaseTwoDicedOverflow = ReadUInt32(
+            bytes,
+            PhaseTwoTessellationCountersReadbackOffset + 3 * sizeof(uint));
         _latestFrameMetrics = new ClusterFrameMetrics(
             _frameMetricReadbackFrames[generation],
             ReadUInt32(bytes, CandidateCountReadbackOffset),
@@ -874,6 +898,14 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ReadUInt32(bytes, CachedDeformClustersReadbackOffset),
             ReadUInt32(bytes, CacheAllocationReadbackOffset),
             _options.DeformCacheBytes,
+            SaturatingAdd(
+                Math.Min(phaseOneSplit, _options.MaxTessellationSplitWorkItems),
+                Math.Min(phaseTwoSplit, _options.MaxTessellationSplitWorkItems)),
+            SaturatingAdd(
+                Math.Min(phaseOneDiced, _options.MaxDicedTriangles),
+                Math.Min(phaseTwoDiced, _options.MaxDicedTriangles)),
+            SaturatingAdd(phaseOneSplitOverflow, phaseTwoSplitOverflow),
+            SaturatingAdd(phaseOneDicedOverflow, phaseTwoDicedOverflow),
             ReadUInt32(bytes, SoftwareDebugReadbackOffset),
             CountNonZeroVisibilityProbe(bytes));
         _frameMetricReadbackFrames[generation] = 0;
@@ -882,6 +914,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, sizeof(uint)));
+
+    private static uint SaturatingAdd(uint left, uint right) =>
+        left > uint.MaxValue - right ? uint.MaxValue : left + right;
 
     private static uint CountNonZeroVisibilityProbe(ReadOnlySpan<byte> bytes)
     {

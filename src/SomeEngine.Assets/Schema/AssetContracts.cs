@@ -513,6 +513,9 @@ public enum ClusterShaderOperationRole : byte
     DeformCachePrefixLocal = 21,
     DeformCachePrefixGlobal = 22,
     DeformCachePrefixWrite = 23,
+    TessellationFactor = 24,
+    TessellationDice = 25,
+    TessellationVisibilityRaster = 26,
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]

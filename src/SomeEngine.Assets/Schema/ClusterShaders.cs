@@ -77,5 +77,7 @@ public partial class ClusterShaders
     public static bool IsPositionOperation(ClusterShaderOperationRole role) => role is
         ClusterShaderOperationRole.SoftwareVisibilityRaster or
         ClusterShaderOperationRole.HardwareVisibilityRaster or
+        ClusterShaderOperationRole.TessellationFactor or
+        ClusterShaderOperationRole.TessellationDice or
         ClusterShaderOperationRole.VisibilityResolve;
 }

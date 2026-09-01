@@ -227,6 +227,8 @@ internal struct ClusterFrameMetricsReadbackParameters
     internal GraphBufferId DeformReserve;
     internal GraphBufferId CacheAllocation;
     internal GraphBufferId SoftwareDebug;
+    internal GraphBufferId PhaseOneTessellationCounters;
+    internal GraphBufferId PhaseTwoTessellationCounters;
     internal GraphTextureId Visibility;
     internal uint VisibilityProbeX;
     internal uint VisibilityProbeY;
@@ -268,6 +270,12 @@ internal struct ClusterFrameMetricsReadbackParameters
         Copy(ref commands, parameters.SoftwareDebug, 0,
             parameters.Destination, ClusterPipelineSystem.SoftwareDebugReadbackOffset,
             sizeof(uint));
+        Copy(ref commands, parameters.PhaseOneTessellationCounters, 0,
+            parameters.Destination, ClusterPipelineSystem.PhaseOneTessellationCountersReadbackOffset,
+            4 * sizeof(uint));
+        Copy(ref commands, parameters.PhaseTwoTessellationCounters, 0,
+            parameters.Destination, ClusterPipelineSystem.PhaseTwoTessellationCountersReadbackOffset,
+            4 * sizeof(uint));
         Buffer destination = commands.GetBuffer(parameters.Destination);
         Texture visibility = commands.GetTexture(parameters.Visibility);
         commands.CopyTextureToBuffer(new BufferTextureCopy(

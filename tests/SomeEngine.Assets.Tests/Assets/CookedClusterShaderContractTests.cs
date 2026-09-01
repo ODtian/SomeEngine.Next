@@ -48,6 +48,58 @@ public sealed class CookedClusterShaderContractTests
             ResourceNames(cull, entryPoint));
     }
 
+    [Theory]
+    [InlineData(ClusterShaderOperationRole.TessellationFactor)]
+    [InlineData(ClusterShaderOperationRole.TessellationDice)]
+    public async Task TessellationSurfaceEntriesExposeExactForwardResources(
+        ClusterShaderOperationRole role)
+    {
+        (Shader shader, string entryPoint) = await ConfiguredComputeOperation(role);
+
+        string[] expected = role == ClusterShaderOperationRole.TessellationFactor
+            ? Sorted(
+                "Uniforms",
+                "Views",
+                "PageHeap",
+                "VisibleClusters",
+                "BinnedClusterIndexBuffer",
+                "RasterBinMeta",
+                "DeformCache",
+                "CacheOffsets",
+                "TessellationCounters",
+                "SplitWorkItems",
+                "DiceDispatchArgs")
+            : Sorted(
+                "Uniforms",
+                "PageHeap",
+                "VisibleClusters",
+                "DeformCache",
+                "CacheOffsets",
+                "TessellationCounters",
+                "SplitWorkItems",
+                "DicedTriangles",
+                "RasterDispatchArgs");
+        Assert.Equal(expected, ResourceNames(shader, entryPoint));
+    }
+
+    [Fact]
+    public async Task DicedVisibilityEntryConsumesOnlyTheDicedTriangleAbi()
+    {
+        (Shader shader, string entryPoint) = await ConfiguredComputeOperation(
+            ClusterShaderOperationRole.TessellationVisibilityRaster);
+
+        Assert.Equal(
+            Sorted(
+                "VisibilityUniforms",
+                "VisibilityViews",
+                "VisibilityDicedTriangles",
+                "VisibilityTessellationCounters",
+                "VisibilityDepthTarget",
+                "VisibilityTarget",
+                "VisibilityDepthUav"),
+            ResourceNames(shader, entryPoint));
+    }
+
     private static async Task<(Shader Shader, string EntryPoint)> ConfiguredComputeOperation(
         ClusterShaderOperationRole role)
     {

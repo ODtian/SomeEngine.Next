@@ -19,5 +19,9 @@ public readonly record struct ClusterFrameMetrics(
     uint CachedDeformClusters,
     uint DeformCacheBytes,
     ulong DeformCacheCapacityBytes,
+    uint TessellationSplitWorkItems,
+    uint DicedTriangles,
+    uint DroppedTessellationSplitWorkItems,
+    uint DroppedDicedTriangles,
     uint SoftwareRasterDebugRecords,
     uint VisibilityProbePixels);

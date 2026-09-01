@@ -25,6 +25,8 @@ public sealed partial class ClusterPipelineSystem
     internal const int CachedDeformClustersReadbackOffset = 84;
     internal const int SoftwareDebugReadbackOffset = 88;
     internal const int ShadeBinCountReadbackOffset = 92;
+    internal const int PhaseOneTessellationCountersReadbackOffset = 96;
+    internal const int PhaseTwoTessellationCountersReadbackOffset = 112;
     internal const int VisibilityProbeReadbackOffset = 512;
     internal const int VisibilityProbePixelCount = 64;
     internal const int VisibilityProbeRowPitch = VisibilityProbePixelCount * sizeof(uint);
@@ -38,6 +40,8 @@ public sealed partial class ClusterPipelineSystem
     private const int VisibleClusterStride = 16;
     private const int CandidateStride = 16;
     private const int BinnedClusterStride = 12;
+    private const int TessellationWorkStride = 16;
+    private const int DicedTriangleStride = 48;
     private FrameResources CreateFrameResources(
         ref RenderGraphEdit graph,
         in ClusterPipelineOutputDescription output,
@@ -270,6 +274,41 @@ public sealed partial class ClusterPipelineSystem
             _options.DeformCacheBytes,
             BufferUsages.None,
             "Cluster deform cache");
+        frame.TessellationCounters = frame.AddBuffer(
+            ref graph,
+            4 * sizeof(uint),
+            BufferUsages.CopySource,
+            "Cluster tessellation counters");
+        frame.PhaseOneTessellationCounters = frame.AddBuffer(
+            ref graph,
+            4 * sizeof(uint),
+            BufferUsages.CopySource,
+            "Cluster phase one tessellation counters");
+        frame.TessellationSplitWork = frame.AddBuffer(
+            ref graph,
+            checked((ulong)_options.MaxTessellationSplitWorkItems * TessellationWorkStride),
+            BufferUsages.None,
+            "Cluster tessellation split work");
+        frame.TessellationDiceDispatchArgs = frame.AddBuffer(
+            ref graph,
+            ClusterIndirectAbi.DispatchBytes,
+            BufferUsages.Indirect,
+            "Cluster tessellation dice dispatch");
+        frame.DicedTriangles = frame.AddBuffer(
+            ref graph,
+            checked((ulong)_options.MaxDicedTriangles * DicedTriangleStride),
+            BufferUsages.None,
+            "Cluster diced triangles");
+        frame.TessellationRasterDispatchArgs = frame.AddBuffer(
+            ref graph,
+            ClusterIndirectAbi.DispatchBytes,
+            BufferUsages.Indirect,
+            "Cluster tessellation visibility dispatch");
+        frame.TessellationDispatchInitialization = UploadWords(
+            ref graph,
+            [0u, 1u, 1u, 0u],
+            BufferUsages.CopySource,
+            "Cluster tessellation dispatch initialization");
         frame.SoftwareDebug = frame.AddBuffer(
             ref graph,
             4 + 8192ul * 24,
@@ -557,6 +596,8 @@ public sealed partial class ClusterPipelineSystem
                 "Cluster zero read offset");
             WriteWords(ref graph, uploads, generation, [0u, 1u, 1u, 0u],
                 "Cluster candidate dispatch initialization");
+            WriteWords(ref graph, uploads, generation, [0u, 1u, 1u, 0u],
+                "Cluster tessellation dispatch initialization");
             WriteStructs(ref graph, uploads, generation, packedViews,
                 "Cluster packed views");
 
@@ -664,6 +705,60 @@ public sealed partial class ClusterPipelineSystem
                     ? "Cluster phase one deform write bin uniforms"
                     : "Cluster phase two deform write bin uniforms");
         }
+
+        for (uint bin = 0; bin < frame.RasterBinCount; bin++)
+        {
+            WriteUniform(
+                ref graph,
+                uploads,
+                generation,
+                new ClusterTessellationUniforms
+                {
+                    ScreenWidth = checked((uint)frame.Width),
+                    ScreenHeight = checked((uint)frame.Height),
+                    CurrentBin = bin,
+                    DispatchGroupWidth = 65_535u,
+                    MaxSplitWorkItems = _options.MaxTessellationSplitWorkItems,
+                    MaxDicedTriangles = _options.MaxDicedTriangles,
+                    MaxFactor = _options.MaxTessellationFactor,
+                    TargetEdgePixels = _options.TessellationTargetEdgePixels,
+                },
+                phaseOne
+                    ? "Cluster phase one tessellation uniforms"
+                    : "Cluster phase two tessellation uniforms");
+        }
+
+        WriteUniform(
+            ref graph,
+            uploads,
+            generation,
+            new ClusterTessellationUniforms
+            {
+                ScreenWidth = checked((uint)frame.Width),
+                ScreenHeight = checked((uint)frame.Height),
+                DispatchGroupWidth = 65_535u,
+                MaxSplitWorkItems = _options.MaxTessellationSplitWorkItems,
+                MaxDicedTriangles = _options.MaxDicedTriangles,
+                MaxFactor = _options.MaxTessellationFactor,
+                TargetEdgePixels = _options.TessellationTargetEdgePixels,
+            },
+            phaseOne
+                ? "Cluster phase one dicing uniforms"
+                : "Cluster phase two dicing uniforms");
+
+        WriteUniform(
+            ref graph,
+            uploads,
+            generation,
+            new ClusterTessellationVisibilityUniforms
+            {
+                ScreenWidth = checked((uint)frame.Width),
+                ScreenHeight = checked((uint)frame.Height),
+                MaxDicedTriangles = _options.MaxDicedTriangles,
+            },
+            phaseOne
+                ? "Cluster phase one diced visibility uniforms"
+                : "Cluster phase two diced visibility uniforms");
 
         for (uint bin = 0; bin < frame.RasterBinCount; bin++)
         {
@@ -1043,6 +1138,13 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId CacheOffsets;
         internal GraphBufferId CacheAllocationCounter;
         internal GraphBufferId DeformCache;
+        internal GraphBufferId TessellationCounters;
+        internal GraphBufferId PhaseOneTessellationCounters;
+        internal GraphBufferId TessellationSplitWork;
+        internal GraphBufferId TessellationDiceDispatchArgs;
+        internal GraphBufferId DicedTriangles;
+        internal GraphBufferId TessellationRasterDispatchArgs;
+        internal GraphBufferId TessellationDispatchInitialization;
         internal GraphBufferId SoftwareDebug;
         internal GraphBufferId ShadeBinCounts;
         internal GraphBufferId ShadeBinOffsets;
