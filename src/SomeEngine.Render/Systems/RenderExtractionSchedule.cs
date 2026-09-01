@@ -24,10 +24,14 @@ public sealed class RenderExtractionSystems : IDisposable
     private QueryDefinition? _sourceQuery;
     private QueryHandle _sourceQueryHandle;
     private World? _mainWorld;
+    private World? _candidateMainWorld;
     private uint _lastSystemVersion;
     private uint _candidateSystemVersion;
     private long _lastTopologyRevision = -1;
+    private long _candidateTopologyRevision;
+    private bool _candidateFullReconciliation;
     private bool _nonTransformChange;
+    private bool _candidatePending;
     private bool _extractionActive;
     private bool _disposed;
 
@@ -49,6 +53,20 @@ public sealed class RenderExtractionSystems : IDisposable
             {
                 ThrowIfDisposed();
                 return _systems.Count;
+            }
+        }
+    }
+
+    internal RenderWorld World => _renderWorld;
+
+    internal bool HasPendingCandidate
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                return _candidatePending;
             }
         }
     }
@@ -89,8 +107,9 @@ public sealed class RenderExtractionSystems : IDisposable
     }
 
     /// <summary>
-    /// Reconciles render-facing snapshots from <paramref name="mainWorld"/>. The main world is
-    /// read only; render-only components already attached to mirrored entities remain untouched.
+    /// Collects one detached candidate from <paramref name="mainWorld"/>. The main world is read
+    /// only and the live RenderWorld is not mutated. The candidate is published by the next
+    /// RenderPrepareSystems update; a second candidate cannot overwrite pending work.
     /// </summary>
     public void Extract(World mainWorld)
     {
@@ -108,6 +127,11 @@ public sealed class RenderExtractionSystems : IDisposable
             ThrowIfDisposed();
             if (_extractionActive)
                 throw new InvalidOperationException("Render extraction is already active.");
+            if (_candidatePending)
+            {
+                throw new InvalidOperationException(
+                    "The previous render extraction candidate has not reached a render update boundary.");
+            }
             RequireAuthoritativeMainWorld(mainWorld);
             _sourceQuery ??= BuildSourceQuery();
             _extractionActive = true;
@@ -119,6 +143,8 @@ public sealed class RenderExtractionSystems : IDisposable
                 try
                 {
                     ExtractCore(mainWorld);
+                    _candidateMainWorld = mainWorld;
+                    _candidatePending = true;
                 }
                 catch
                 {
@@ -183,43 +209,82 @@ public sealed class RenderExtractionSystems : IDisposable
             _context.CancelTransformChanges();
             CollectFullSnapshot(mainWorld);
         }
+        _candidateTopologyRevision = topologyRevision;
+        _candidateFullReconciliation = fullReconciliation;
+    }
 
-        if (fullReconciliation)
+    /// <summary>
+    /// Publishes the pending candidate while RenderPrepareSystems owns the render update boundary.
+    /// No product caller outside that boundary receives this mutation path.
+    /// </summary>
+    internal bool ApplyPendingCandidate()
+    {
+        lock (_gate)
         {
-            _context.RefreshMirrors();
+            ThrowIfDisposed();
+            if (_extractionActive)
+                throw new InvalidOperationException("Render extraction is still collecting a candidate.");
+            if (!_candidatePending)
+                return false;
+
+            World candidateMainWorld = _candidateMainWorld
+                ?? throw new InvalidOperationException("The pending extraction candidate lost its source World.");
             try
             {
-                _renderWorld.ApplyExtraction(this);
-            }
-            catch
-            {
-                _context.RefreshMirrors();
-                throw;
-            }
-            _context.RefreshMirrors();
-        }
-        else if (_nonTransformChange)
-        {
-            try
-            {
-                if (!_renderWorld.TryApplyExtractionChangesDirect(this))
-                {
-                    _renderWorld.ApplyExtractionChanges(this);
-                    _context.AcceptValuePublication();
-                }
+                ApplyCandidateCore();
+                _lastSystemVersion = _candidateSystemVersion;
+                _lastTopologyRevision = _candidateTopologyRevision;
+                _mainWorld ??= candidateMainWorld;
+                ClearCandidate();
+                return true;
             }
             catch
             {
                 _context.CancelTransformChanges();
+                if (_candidateFullReconciliation)
+                    _context.RefreshMirrors();
+                if (_mainWorld is null && _sourceQueryHandle.IsValid)
+                {
+                    candidateMainWorld.ReleaseQuery(_sourceQueryHandle);
+                    _sourceQueryHandle = default;
+                }
+                ClearCandidate();
                 throw;
             }
         }
-        else
-            _context.ApplyTransformChanges();
+    }
 
-        _lastSystemVersion = _candidateSystemVersion;
-        _lastTopologyRevision = topologyRevision;
-        _mainWorld ??= mainWorld;
+    private void ApplyCandidateCore()
+    {
+        if (_candidateFullReconciliation)
+        {
+            _context.RefreshMirrors();
+            _renderWorld.ApplyExtraction(this);
+            _context.RefreshMirrors();
+            return;
+        }
+
+        if (_nonTransformChange)
+        {
+            if (!_renderWorld.TryApplyExtractionChangesDirect(this))
+            {
+                _renderWorld.ApplyExtractionChanges(this);
+                _context.AcceptValuePublication();
+            }
+            return;
+        }
+
+        _context.ApplyTransformChanges();
+    }
+
+    private void ClearCandidate()
+    {
+        _candidateMainWorld = null;
+        _candidateSystemVersion = 0;
+        _candidateTopologyRevision = 0;
+        _candidateFullReconciliation = false;
+        _nonTransformChange = false;
+        _candidatePending = false;
     }
 
     private void CollectFullSnapshot(World mainWorld)
@@ -316,14 +381,16 @@ public sealed class RenderExtractionSystems : IDisposable
                 return;
             if (_extractionActive)
                 throw new InvalidOperationException("Render extraction is still active.");
+            _context.CancelTransformChanges();
             _context.Dispose();
             if (_sourceQueryHandle.IsValid)
             {
-                (_mainWorld ?? throw new InvalidOperationException(
+                (_mainWorld ?? _candidateMainWorld ?? throw new InvalidOperationException(
                     "A bound extraction query has no authoritative main World."))
                     .ReleaseQuery(_sourceQueryHandle);
                 _sourceQueryHandle = default;
             }
+            ClearCandidate();
             _disposed = true;
         }
     }

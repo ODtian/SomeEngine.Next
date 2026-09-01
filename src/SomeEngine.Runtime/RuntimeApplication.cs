@@ -286,7 +286,9 @@ internal static class RuntimeApplication
             ClusterMaterialAssignmentSystem.EntityQuery(),
             ClusterRenderFeature.InstanceLayout,
             materialAssignments.CreateProducer());
-        var prepareSystems = new RenderPrepareSystems(renderWorld, instances);
+        var prepareSystems = new RenderPrepareSystems(renderWorld, instances, extraction);
+        var viewSystem = new RuntimeViewPrepareSystem(viewEntity);
+        _ = prepareSystems.Add(viewSystem);
         _ = prepareSystems.Add(new ClusterResidencySystem(cluster));
         _ = prepareSystems.Add(materialSystem);
         _ = prepareSystems.Add(instanceSystem);
@@ -308,6 +310,7 @@ internal static class RuntimeApplication
         FrameOutputVerifier? outputVerifier = null;
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
+        Task? nextGameUpdate = null;
         var input = new RuntimeInput();
         int width = boot.Width;
         int height = boot.Height;
@@ -482,7 +485,7 @@ internal static class RuntimeApplication
                     height,
                     checked((uint)frameIndex),
                     cameraCut: cameraCut);
-                renderWorld.Replace(viewEntity, viewFrame.View);
+                viewSystem.Stage(viewFrame.View);
                 ui.DrawDebugWindow(
                     ref debugUiOpen,
                     ref animateScene,
@@ -497,37 +500,28 @@ internal static class RuntimeApplication
                         window.HasFocus));
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
-                    Console.WriteLine("First frame: extracting scene.");
-                if (animateScene)
+                    Console.WriteLine("First frame: applying extracted scene.");
+                if (nextGameUpdate is not null)
                 {
-                    scene.Update(
-                        (float)Stopwatch.GetElapsedTime(
-                            runtimeStarted,
-                            currentFrameTimestamp).TotalSeconds);
+                    RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                    nextGameUpdate = null;
                 }
-                extraction.Extract(mainWorld);
-                if (reportMilestones)
-                    Console.WriteLine("First frame: preparing streamed meshes.");
-                // The receiver and RenderGraph have one coordinator-thread owner. Asset I/O
-                // may run asynchronously, but its result is joined here before publishing GPU work.
-                ValueTask<ClusterMeshPrepareResult> meshPreparation =
-                    cluster.PrepareMeshesAsync();
-                ClusterMeshPrepareResult meshPrepare =
-                    meshPreparation.IsCompletedSuccessfully
-                        ? meshPreparation.Result
-                        : RuntimeWait.Task(
-                            meshPreparation.AsTask(),
-                            window,
-                            FrameTimeout);
-                if (meshPrepare.UnresolvedMeshes != 0)
+                Prepare(prepareSystems, cluster, coordinator, window, reportMilestones);
+                bool hasFutureFrame =
+                    options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
+                if (hasFutureFrame)
                 {
-                    throw new InvalidOperationException(
-                        $"{meshPrepare.UnresolvedMeshes} scene mesh assets were unresolved during Cluster preparation.");
+                    bool updateScene = animateScene;
+                    float nextSceneTime = (float)Stopwatch.GetElapsedTime(
+                        runtimeStarted,
+                        Stopwatch.GetTimestamp()).TotalSeconds;
+                    nextGameUpdate = Task.Run(() =>
+                    {
+                        if (updateScene)
+                            scene.Update(nextSceneTime);
+                        extraction.Extract(mainWorld);
+                    });
                 }
-                cluster.PumpStreaming();
-                if (reportMilestones)
-                    Console.WriteLine("First frame: publishing prepare systems.");
-                Prepare(prepareSystems, coordinator);
                 ClusterPipelineOutputs clusterOutputs = pipeline.ReconcileGraph();
                 presentation ??= new RuntimePresentationPipeline(
                     backend,
@@ -654,6 +648,8 @@ internal static class RuntimeApplication
         }
         finally
         {
+            if (nextGameUpdate is not null)
+                RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
             outputVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
             ui?.Dispose();
@@ -667,12 +663,37 @@ internal static class RuntimeApplication
 
     private static void Prepare(
         RenderPrepareSystems systems,
-        RenderFrameCoordinator coordinator)
+        ClusterRenderResources cluster,
+        RenderFrameCoordinator coordinator,
+        NativeWindow window,
+        bool reportMilestones)
     {
         if (!coordinator.TryBeginPrepare(out RenderPrepareScope? scope))
             throw new InvalidOperationException("The render prepare boundary is not available.");
         using (scope)
         {
+            _ = systems.ApplyExtraction(scope);
+            if (reportMilestones)
+                Console.WriteLine("First frame: preparing streamed meshes.");
+            // Mesh discovery reads only the newly published RenderWorld. Asset I/O may complete
+            // asynchronously; no renderer path reaches back into the authoritative GameWorld.
+            ValueTask<ClusterMeshPrepareResult> meshPreparation =
+                cluster.PrepareMeshesAsync();
+            ClusterMeshPrepareResult meshPrepare =
+                meshPreparation.IsCompletedSuccessfully
+                    ? meshPreparation.Result
+                    : RuntimeWait.Task(
+                        meshPreparation.AsTask(),
+                        window,
+                        FrameTimeout);
+            if (meshPrepare.UnresolvedMeshes != 0)
+            {
+                throw new InvalidOperationException(
+                    $"{meshPrepare.UnresolvedMeshes} scene mesh assets were unresolved during Cluster preparation.");
+            }
+            cluster.PumpStreaming();
+            if (reportMilestones)
+                Console.WriteLine("First frame: publishing prepare systems.");
             systems.Update(scope);
             scope.Commit();
         }

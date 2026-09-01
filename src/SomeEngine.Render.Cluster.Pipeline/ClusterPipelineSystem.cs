@@ -60,8 +60,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private IndirectCommandLayout? _drawIndirectLayout;
     private readonly Buffer?[] _pageFaultReadbacks = new Buffer?[ReadbackGenerationCount];
     private byte[] _pageFaultReadbackBytes = [];
-    private readonly ClusterEpochId[] _pageFaultReadbackEpochs =
-        new ClusterEpochId[ReadbackGenerationCount];
+    private readonly ClusterReadbackTicket[] _pageFaultReadbackTickets =
+        new ClusterReadbackTicket[ReadbackGenerationCount];
     private readonly bool[] _pageFaultReadbackPending = new bool[ReadbackGenerationCount];
     private readonly Buffer?[] _frameMetricReadbacks = new Buffer?[ReadbackGenerationCount];
     private byte[] _frameMetricReadbackBytes = [];
@@ -481,7 +481,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _readbackFences[generation] = fences;
         _nextReadbackSequence = readbackSequence;
         _readbackSequences[generation] = readbackSequence;
-        _pageFaultReadbackEpochs[generation] = _pendingReadbackEpoch;
+        _pageFaultReadbackTickets[generation] = new ClusterReadbackTicket(
+            _pendingReadbackEpoch,
+            readbackSequence);
         _pageFaultReadbackPending[generation] = true;
         if (_options.EnableFrameMetricsReadback)
         {
@@ -535,7 +537,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 catch (Exception failure) { (failures ??= []).Add(failure); }
             }
             _pageFaultReadbacks[generation] = null;
-            _pageFaultReadbackEpochs[generation] = default;
+            _pageFaultReadbackTickets[generation] = default;
             _pageFaultReadbackPending[generation] = false;
 
             if (_frameMetricReadbacks[generation] is { } frameMetricReadback)
@@ -738,12 +740,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     ? value
                     : throw new InvalidOperationException(
                         "Cluster page-fault readback ownership was lost.");
-            ClusterEpochId epoch = _pageFaultReadbackEpochs[generation];
-            if (!epoch.IsValid)
-                throw new InvalidOperationException("Cluster page-fault readback epoch was lost.");
+            ClusterReadbackTicket ticket = _pageFaultReadbackTickets[generation];
+            if (!ticket.IsValid)
+                throw new InvalidOperationException("Cluster page-fault readback ticket was lost.");
             ReadMappedBuffer(pageFaultReadback, _pageFaultReadbackBytes);
-            _resources.IngestPageFaultReadback(epoch, _pageFaultReadbackBytes);
-            _pageFaultReadbackEpochs[generation] = default;
+            _resources.IngestPageFaultReadback(ticket, _pageFaultReadbackBytes);
+            _pageFaultReadbackTickets[generation] = default;
             _pageFaultReadbackPending[generation] = false;
 
             if (_frameMetricReadbackPending[generation])

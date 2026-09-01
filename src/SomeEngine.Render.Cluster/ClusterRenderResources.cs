@@ -114,6 +114,7 @@ public sealed class ClusterRenderResources : IDisposable
     private readonly object _worldClaimToken = new();
     private readonly object _lifecycleGate = new();
     private readonly object _aggregateStateGate = new();
+    private readonly object _feedbackGate = new();
     private readonly Dictionary<int, int> _activeOperationThreadDepths = [];
     private readonly TimeSpan _shutdownTimeout;
     private RenderPrepareScope? _shutdownScope;
@@ -125,6 +126,8 @@ public sealed class ClusterRenderResources : IDisposable
     private bool _streamStopped;
     private bool _residencyDestroyed;
     private bool _instanceBorrowerReleased;
+    private ulong _lastFaultFeedbackFrame;
+    private ulong _lastUsageFeedbackFrame;
 
     public ClusterRenderResources(
         IGraphicsBackend backend,
@@ -399,16 +402,20 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    /// <summary>Ingests page faults only when tagged with this exact resource epoch.</summary>
+    /// <summary>Ingests page faults only from a later host visit to a submitted frame.</summary>
     internal void IngestPageFaultReadback(
-        ClusterEpochId epoch,
+        ClusterReadbackTicket ticket,
         ReadOnlySpan<byte> bytes)
     {
         EnterActiveOperation();
         try
         {
-            ValidateReadbackEpoch(epoch);
-            _residency.IngestFaults(bytes);
+            lock (_feedbackGate)
+            {
+                ValidateReadbackTicket(ticket, _lastFaultFeedbackFrame);
+                _residency.IngestFaults(bytes);
+                _lastFaultFeedbackFrame = ticket.SubmittedFrame;
+            }
         }
         finally
         {
@@ -430,14 +437,18 @@ public sealed class ClusterRenderResources : IDisposable
     }
 
     internal void IngestPageUsageReadback(
-        ClusterEpochId epoch,
+        ClusterReadbackTicket ticket,
         ReadOnlySpan<uint> leafNodeIndices)
     {
         EnterActiveOperation();
         try
         {
-            ValidateReadbackEpoch(epoch);
-            _residency.ReportLeafUsage(leafNodeIndices);
+            lock (_feedbackGate)
+            {
+                ValidateReadbackTicket(ticket, _lastUsageFeedbackFrame);
+                _residency.ReportLeafUsage(leafNodeIndices);
+                _lastUsageFeedbackFrame = ticket.SubmittedFrame;
+            }
         }
         finally
         {
@@ -703,13 +714,24 @@ public sealed class ClusterRenderResources : IDisposable
         return remaining;
     }
 
-    private void ValidateReadbackEpoch(ClusterEpochId epoch)
+    private void ValidateReadbackTicket(
+        ClusterReadbackTicket ticket,
+        ulong lastSubmittedFrame)
     {
-        if (epoch != _epoch)
+        if (!ticket.IsValid)
+            throw new ArgumentException("The Cluster readback ticket is invalid.", nameof(ticket));
+        if (ticket.EpochId != _epoch)
         {
             throw new ArgumentException(
-                $"The readback belongs to Cluster epoch {epoch}, not {_epoch}.",
-                nameof(epoch));
+                $"The readback belongs to Cluster epoch {ticket.EpochId}, not {_epoch}.",
+                nameof(ticket));
+        }
+        if (ticket.SubmittedFrame <= lastSubmittedFrame)
+        {
+            throw new ArgumentException(
+                $"Cluster feedback frame {ticket.SubmittedFrame} is not newer than " +
+                $"the consumed frame {lastSubmittedFrame}.",
+                nameof(ticket));
         }
     }
 
