@@ -41,6 +41,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         uniform StaticVertexEval eval,
         uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
@@ -57,7 +58,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
             v1,
             v2);
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
-        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>();
+        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(materialSlot);
         outputColor[ctx.pixelCoord] = float4(
             albedoSample.rgb * scalars.BaseColorTint.rgb,
             1.0);
@@ -68,6 +69,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         uint debugMode,
         uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,

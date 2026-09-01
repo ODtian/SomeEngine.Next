@@ -31,9 +31,9 @@ internal sealed class ClusterPipelineSet : IDisposable
         {
             Dictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations =
                 IndexOperations(configuration);
-            ClusterCoreGeometryContract geometry = ResolveGeometryContract(operations);
-            VertexEncoding = geometry.VertexEncoding;
-            CullingEnabled = geometry.Bounds == ClusterConservativeBounds.Finite;
+            ClusterDefaultGeometryContract geometry = ResolveDefaultGeometryContract(operations);
+            DefaultRasterVertexEncoding = geometry.VertexEncoding;
+            DefaultRasterCullingEnabled = geometry.Bounds == ClusterConservativeBounds.Finite;
 
             ClusterComputePipeline Compute(ClusterShaderOperationRole role, string name) =>
                 CreateCompute(backend, device, operations, _pipelines, role, name);
@@ -158,8 +158,8 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 
     internal ClusterComputePipeline Traversal { get; }
-    internal string VertexEncoding { get; }
-    internal bool CullingEnabled { get; }
+    internal string DefaultRasterVertexEncoding { get; }
+    internal bool DefaultRasterCullingEnabled { get; }
     internal ClusterComputePipeline CullReset { get; }
     internal ClusterComputePipeline CullPhase1 { get; }
     internal ClusterComputePipeline CullPhase2 { get; }
@@ -299,7 +299,7 @@ internal sealed class ClusterPipelineSet : IDisposable
             : throw new InvalidDataException(
                 $"Cluster render asset has no '{role}' shader operation.");
 
-    private static ClusterCoreGeometryContract ResolveGeometryContract(
+    private static ClusterDefaultGeometryContract ResolveDefaultGeometryContract(
         IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations)
     {
         string? vertexEncoding = null;
@@ -334,7 +334,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                 bounds = ClusterConservativeBounds.Unbounded;
             }
         }
-        return new ClusterCoreGeometryContract(
+        return new ClusterDefaultGeometryContract(
             vertexEncoding ?? throw new InvalidDataException(
                 "Cluster render asset has no vertex-evaluating shader operation."),
             bounds);
@@ -478,6 +478,6 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 }
 
-internal readonly record struct ClusterCoreGeometryContract(
+internal readonly record struct ClusterDefaultGeometryContract(
     string VertexEncoding,
     ClusterConservativeBounds Bounds);

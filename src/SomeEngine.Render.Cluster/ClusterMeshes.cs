@@ -42,7 +42,6 @@ internal sealed record ClusterMeshPublication(
 
 internal sealed partial class ClusterMeshes : IDisposable
 {
-    private string? _vertexEncoding;
     private static long s_nextEpochId;
 
     private readonly PageHeap _heap;

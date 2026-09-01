@@ -26,17 +26,23 @@ public sealed class ClusterShaderAbiTests
         string core = Read("cluster_tessellation_core.slang");
         string types = Read("cluster_tessellation_types.slang");
         string phong = Read("cluster_tessellation_phong.slang");
+        string phongSurface = Read("phong_tessellation.slang");
         string displacement = Read("texture_displacement.slang");
         string visibility = Read("cluster_tessellation_visibility.slang");
         string shade = Read("cluster_shade_pipeline.slang");
 
         Assert.Contains("interface ITriangleSurface", surface, StringComparison.Ordinal);
+        Assert.Contains("SurfaceBarycentrics reconstruct", surface, StringComparison.Ordinal);
         Assert.Contains("TSurface : ITriangleSurface", core, StringComparison.Ordinal);
-        Assert.Contains("TSurface : ITriangleSurface", inverse, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveTriangleSurface", inverse, StringComparison.Ordinal);
+        Assert.Contains("ReconstructNormalDisplacementSurface", inverse, StringComparison.Ordinal);
+        Assert.DoesNotContain("SampleLevel", inverse, StringComparison.Ordinal);
         Assert.DoesNotContain("phong_tessellation.slang", core, StringComparison.Ordinal);
         Assert.DoesNotContain("texture_displacement.slang", core, StringComparison.Ordinal);
-        Assert.Contains("struct PhongTessellation : ITriangleSurface", Read("phong_tessellation.slang"), StringComparison.Ordinal);
+        Assert.Contains("struct PhongTessellation : ITriangleSurface", phongSurface, StringComparison.Ordinal);
+        Assert.Contains("SolveSurfaceNormalEquations", phongSurface, StringComparison.Ordinal);
         Assert.Contains("struct TextureDisplacement : ITriangleSurface", displacement, StringComparison.Ordinal);
+        Assert.Contains("ReconstructNormalDisplacementSurface", displacement, StringComparison.Ordinal);
         Assert.Contains("cluster_tessellation_core.slang", phong, StringComparison.Ordinal);
         Assert.Contains("FactorRasterBin", core, StringComparison.Ordinal);
         Assert.Contains("RasterBinMeta", core, StringComparison.Ordinal);
@@ -55,8 +61,9 @@ public sealed class ClusterShaderAbiTests
         Assert.Contains("OriginalTriangle", types, StringComparison.Ordinal);
         Assert.Contains("EncodeVisBuffer(", visibility, StringComparison.Ordinal);
         Assert.Contains("diced.OriginalTriangle", visibility, StringComparison.Ordinal);
-        Assert.Contains("ReconstructWorldPosition", shade, StringComparison.Ordinal);
-        Assert.Contains("ResolveTriangleSurface", shade, StringComparison.Ordinal);
+        Assert.Contains("ReconstructWorldPositionAt", shade, StringComparison.Ordinal);
+        Assert.Contains("surface.reconstruct", shade, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveTriangleSurface", shade, StringComparison.Ordinal);
 
         string Read(string name) => File.ReadAllText(Path.Combine(shaderDirectory, name));
     }

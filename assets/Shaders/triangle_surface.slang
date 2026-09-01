@@ -30,10 +30,35 @@ struct SurfaceEval
     float3 DpDv;
 };
 
+struct SurfaceBarycentrics
+{
+    float3 Value;
+    float3 Dx;
+    float3 Dy;
+    float Residual;
+    uint Valid;
+};
+
+struct SurfaceReconstructionInput
+{
+    float3 TargetPosition;
+    float3 TargetPositionDx;
+    float3 TargetPositionDy;
+    float3 CameraPosition;
+    float3 ParentValue;
+    float3 ParentDx;
+    float3 ParentDy;
+    float4x4 ViewProjection;
+    uint2 ScreenSize;
+};
+
 interface ITriangleSurface
 {
     float3 position(Triangle triangle, float3 barycentric);
     SurfaceEval eval(Triangle triangle, float3 barycentric);
+    SurfaceBarycentrics reconstruct(
+        Triangle triangle,
+        SurfaceReconstructionInput input);
     void bounds(Triangle triangle, out float3 minimum, out float3 maximum);
 };
 
@@ -144,6 +169,20 @@ struct LinearSurface : ITriangleSurface
     SurfaceEval eval(Triangle triangle, float3 barycentric)
     {
         return EvalLinearSurface(triangle, barycentric);
+    }
+
+    SurfaceBarycentrics reconstruct(
+        Triangle triangle,
+        SurfaceReconstructionInput input)
+    {
+        SurfaceBarycentrics result;
+        result.Value = ClampBarycentric(input.ParentValue);
+        result.Dx = input.ParentDx;
+        result.Dy = input.ParentDy;
+        result.Residual = length(
+            EvalLinearPosition(triangle, result.Value) - input.TargetPosition);
+        result.Valid = all(isfinite(result.Value)) ? 1u : 0u;
+        return result;
     }
 
     void bounds(Triangle triangle, out float3 minimum, out float3 maximum)

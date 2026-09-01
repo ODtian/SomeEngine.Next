@@ -17,6 +17,7 @@ interface ISurfaceEvaluate<TVE : IMaterialVertex>
         uniform TVE eval,
         uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
         TVE.DeformedVertex v0,
@@ -29,6 +30,7 @@ interface ISurfaceEvaluate<TVE : IMaterialVertex>
         uint debugMode,
         uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
         TVE.DeformedVertex v0,
@@ -40,10 +42,12 @@ interface ISurfaceEvaluate<TVE : IMaterialVertex>
 static const uint MATERIAL_SCALAR_HEADER_BYTES = 16;
 
 ByteAddressBuffer MaterialScalarRegion;
+StructuredBuffer<uint> MaterialScalarOffsets;
 
-T LoadMaterialScalars<T>()
+T LoadMaterialScalars<T>(uint materialSlot)
 {
-    return MaterialScalarRegion.Load<T>(MATERIAL_SCALAR_HEADER_BYTES);
+    return MaterialScalarRegion.Load<T>(
+        MaterialScalarOffsets[materialSlot] + MATERIAL_SCALAR_HEADER_BYTES);
 }
 
 #endif

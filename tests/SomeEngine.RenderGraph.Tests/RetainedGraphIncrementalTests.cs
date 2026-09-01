@@ -128,6 +128,52 @@ public sealed class RetainedGraphIncrementalTests
     }
 
     [Fact]
+    public void ExplicitOrderPlacesNewPassBeforeExistingHazardConsumer()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue]);
+        Branch branch;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            branch = AddBranch(edit, support.GraphicsQueue, "ordered insertion");
+            edit.Commit();
+        }
+
+        GraphPassId middle;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            var state = new DeclarationState(branch.Buffer);
+            middle = edit.AddCopyPass<DeclarationState, byte>(
+                "ordered middle write",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                state,
+                default,
+                static (ref PassDefinition pass, ref DeclarationState value) =>
+                    value.Access = pass.Write(
+                        value.Buffer,
+                        new BufferRange(0, 64),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        WriteCoverage.Complete),
+                static (ref CopyPassCommandScope _, in DeclarationState _, in byte _) => { });
+            edit.OrderAfter(middle, branch.WritePass);
+            edit.OrderAfter(branch.ReadPass, middle);
+            edit.Commit();
+        }
+
+        GraphHazardTimeline hazards = graph.StructureIndex.HazardTimelines[branch.Buffer.Value];
+        Assert.Contains(
+            hazards.Edges,
+            edge => edge.Predecessor == middle.Value && edge.Consumer == branch.ReadPass.Value);
+        Assert.DoesNotContain(
+            hazards.Edges,
+            edge => edge.Predecessor == branch.ReadPass.Value && edge.Consumer == middle.Value);
+    }
+
+    [Fact]
     public void OldFrameCompletesAgainstOldBlocksAfterNewVersionCommits()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -337,6 +383,72 @@ public sealed class RetainedGraphIncrementalTests
     }
 
     [Fact]
+    public void LocalTransientResizeKeepsUnchangedCachedRhiBuffer()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        var leftCapture = new BackingCapture();
+        var rightCapture = new BackingCapture();
+        GraphBufferId left;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            left = edit.CreateTransientBuffer(new BufferDesc(
+                64,
+                BufferUsages.CopyDestination,
+                "cached-left"));
+            GraphBufferId right = edit.CreateTransientBuffer(new BufferDesc(
+                64,
+                BufferUsages.CopyDestination,
+                "cached-right"));
+            AddBackingCapture(edit, support.GraphicsQueue, left, leftCapture, "capture-left");
+            AddBackingCapture(edit, support.GraphicsQueue, right, rightCapture, "capture-right");
+            edit.Commit();
+        }
+
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int frameIndex = 0; frameIndex < 4; frameIndex++)
+        {
+            completions.AsSpan().Clear();
+            using (RenderGraphFrame frame = graph.BeginFrame())
+                Assert.Equal(1, frame.Execute(completions));
+            support.Wait(completions);
+        }
+        Buffer leftBefore = Assert.IsAssignableFrom<Buffer>(leftCapture.Last);
+        Buffer rightBefore = Assert.IsAssignableFrom<Buffer>(rightCapture.Last);
+
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.SetBufferDescription(
+                left,
+                new BufferDesc(
+                    128,
+                    BufferUsages.CopyDestination,
+                    "cached-left resized"));
+            edit.Commit();
+        }
+
+        completions.AsSpan().Clear();
+        using (RenderGraphFrame frame = graph.BeginFrame())
+            Assert.Equal(1, frame.Execute(completions));
+        support.Wait(completions);
+
+        Assert.NotSame(leftBefore, leftCapture.Last);
+        Assert.Same(rightBefore, rightCapture.Last);
+
+        Buffer leftAfterResize = Assert.IsAssignableFrom<Buffer>(leftCapture.Last);
+        completions.AsSpan().Clear();
+        using (RenderGraphFrame frame = graph.BeginFrame())
+            Assert.Equal(1, frame.Execute(completions));
+        support.Wait(completions);
+        Assert.Same(leftAfterResize, leftCapture.Last);
+        Assert.Same(rightBefore, rightCapture.Last);
+    }
+
+    [Fact]
     public void ExplicitIdleCompactChangesOnlyTransientPlacementTokens()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -442,6 +554,30 @@ public sealed class RetainedGraphIncrementalTests
             read.Access);
     }
 
+    private static void AddBackingCapture(
+        RenderGraphEdit edit,
+        Queue queue,
+        GraphBufferId buffer,
+        BackingCapture capture,
+        string label)
+    {
+        var state = new BackingCaptureState(buffer, capture);
+        _ = edit.AddCopyPass<BackingCaptureState, byte>(
+            label,
+            PassQueueSelection.Exact(queue),
+            state,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition pass, ref BackingCaptureState value) =>
+                _ = pass.Write(
+                    value.Buffer,
+                    BufferRange.Whole,
+                    PipelineSync.Copy,
+                    ResourceAccess.CopyDestination,
+                    WriteCoverage.Complete),
+            static (ref CopyPassCommandScope commands, in BackingCaptureState value, in byte _) =>
+                value.Capture.Last = commands.GetBuffer(value.Buffer));
+    }
+
     private sealed class DeclarationState(GraphBufferId buffer)
     {
         internal GraphBufferId Buffer { get; } = buffer;
@@ -453,6 +589,17 @@ public sealed class RetainedGraphIncrementalTests
         internal GraphBufferId Buffer { get; } = buffer;
         internal GraphBufferSrvId View { get; } = view;
         internal GraphBufferAccessId Access { get; set; }
+    }
+
+    private sealed class BackingCapture
+    {
+        internal Buffer? Last { get; set; }
+    }
+
+    private sealed class BackingCaptureState(GraphBufferId buffer, BackingCapture capture)
+    {
+        internal GraphBufferId Buffer { get; } = buffer;
+        internal BackingCapture Capture { get; } = capture;
     }
 
     private readonly record struct Branch(

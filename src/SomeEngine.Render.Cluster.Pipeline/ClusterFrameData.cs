@@ -8,10 +8,10 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
 internal struct ClusterDrawUniforms
 {
-    internal uint DebugMode;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint Pad0;
+    internal uint Pad1;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -110,7 +110,7 @@ internal struct ClusterShadeUniforms
     internal uint ScreenHeight;
     internal uint ShadingBin;
     internal uint ShadeBinCount;
-    internal uint Pad1;
+    internal uint MaterialSlotCapacity;
     internal uint Pad2;
     internal uint Pad3;
 }
@@ -118,8 +118,8 @@ internal struct ClusterShadeUniforms
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
 internal struct ClusterResolveUniforms
 {
-    internal uint DebugMode;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint Pad0;
+    internal uint Pad1;
 }

@@ -206,16 +206,12 @@ public sealed class ClusterRegistrationTests
     }
 
     [Fact]
-    public async Task VertexEncodingCompatibilityIsLockedAtReconcileBeforeFrameExecution()
+    public async Task DifferentVertexEncodingsCanShareResidency()
     {
         using var manager = new ClusterMeshes();
         Mesh standard = ClusterTestAssets.CreateSinglePageMesh("standard");
-        _ = await manager.AddAuthoredMeshAsync(standard);
-
-        manager.RequireVertexEncoding(ClusterTestAssets.StandardVertexEncoding);
-        InvalidOperationException changedPipeline = Assert.Throws<InvalidOperationException>(
-            () => manager.RequireVertexEncoding("test.vertex.other.v1"));
-        Assert.Contains("already requires", changedPipeline.Message, StringComparison.Ordinal);
+        ClusterMeshRegistration standardRegistration = await manager.AddAuthoredMeshAsync(standard);
+        Assert.True(manager.IsMeshRegistered(standardRegistration.Mesh));
 
         Mesh incompatible = ClusterTestAssets.CreateSinglePageMesh("incompatible");
         incompatible.VertexEncoding = "test.vertex.other.v1";
@@ -223,9 +219,9 @@ public sealed class ClusterRegistrationTests
         header.VertexEncodingHash = VertexEncodingCompatibility.Hash(incompatible.VertexEncoding);
         MemoryMarshal.Write(incompatible.Payload.Value.Span, in header);
 
-        InvalidDataException incompatibleMesh = await Assert.ThrowsAsync<InvalidDataException>(
-            () => manager.AddAuthoredMeshAsync(incompatible).AsTask());
-        Assert.Contains("vertex encoding", incompatibleMesh.Message, StringComparison.OrdinalIgnoreCase);
+        ClusterMeshRegistration incompatibleRegistration = await manager.AddAuthoredMeshAsync(incompatible);
+        Assert.True(manager.IsMeshRegistered(standardRegistration.Mesh));
+        Assert.True(manager.IsMeshRegistered(incompatibleRegistration.Mesh));
     }
 
     private static ValueTask<ControlledRuntimeMesh> OpenControlledAsync(string name)

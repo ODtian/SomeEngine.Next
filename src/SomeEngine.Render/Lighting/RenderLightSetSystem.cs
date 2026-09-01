@@ -6,33 +6,11 @@ using SomeEngine.Render.Systems;
 namespace SomeEngine.Render.Lighting;
 
 /// <summary>
-/// Read-only one-frame publication shared by independent lighting and shadow consumers.
-/// </summary>
-public sealed class RenderLightSetPublication
-{
-    private RenderLightSet? _current;
-
-    public void Publish(RenderLightSet lights)
-    {
-        ArgumentNullException.ThrowIfNull(lights);
-        Volatile.Write(ref _current, lights);
-    }
-
-    public RenderLightSet RequireCurrent() =>
-        Volatile.Read(ref _current)
-            ?? throw new InvalidOperationException(
-                "No render-light set was published for this frame.");
-
-    internal void Clear() => Volatile.Write(ref _current, null);
-}
-
-/// <summary>
-/// Owns light-component queries and publishes one immutable-for-rendering light set. Geometry,
-/// light assignment, shadow and shading pipelines consume the publication without querying ECS.
+/// Owns light-component queries and one immutable-for-rendering light set. Geometry,
+/// light assignment, shadow and shading pipelines consume this system without querying ECS.
 /// </summary>
 public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
 {
-    private readonly RenderLightSetPublication _publication;
     private readonly RenderLightSet _lights = new();
     private QueryHandle _directional;
     private QueryHandle _point;
@@ -40,8 +18,9 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
     private long _topologyRevision = -1;
     private bool _created;
 
-    public RenderLightSetSystem(RenderLightSetPublication publication)
-        => _publication = publication ?? throw new ArgumentNullException(nameof(publication));
+    public RenderLightSet RequireCurrent() => _created
+        ? _lights
+        : throw new InvalidOperationException("The render-light set system is not active.");
 
     public void OnCreate(ref RenderFrameSystemContext context)
     {
@@ -83,7 +62,6 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
         if (_topologyRevision == topologyRevision &&
             !AnyLightChanged(ref context))
         {
-            _publication.Publish(_lights);
             return;
         }
         RenderLightSet lights = _lights;
@@ -103,7 +81,6 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
             static (QueryCursor cursor, ref RenderLightSet lights) => lights.CollectSpot(cursor));
         lights.CommitChanges();
         _topologyRevision = topologyRevision;
-        _publication.Publish(lights);
     }
 
     private bool AnyLightChanged(ref RenderFrameSystemContext context)
@@ -187,7 +164,6 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
         _point = default;
         _directional = default;
         _lights.Clear();
-        _publication.Clear();
         _topologyRevision = -1;
         _created = false;
     }

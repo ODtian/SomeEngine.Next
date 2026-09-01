@@ -177,21 +177,6 @@ internal sealed class MeshPages
         }
     }
 
-    internal void ValidateVertexEncoding(string expected)
-    {
-        foreach (RegisteredMeshPages registration in _registrations)
-        {
-            string actual = registration.Mesh.VertexEncoding ?? throw new InvalidDataException(
-                $"Cluster mesh '{registration.Mesh.Name}' has no vertex encoding compatibility.");
-            if (!string.Equals(actual, expected, StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    $"Cluster mesh '{registration.Mesh.Name}' uses vertex encoding '{actual}', but " +
-                    $"the installed Cluster pipeline requires '{expected}'.");
-            }
-        }
-    }
-
     public bool TryRegistration(
         Mesh mesh,
         out uint firstPageId,

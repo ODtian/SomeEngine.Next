@@ -19,6 +19,7 @@ struct TessellationWorkItem
     uint OriginalTriangle;
     uint ViewIndex;
     uint Factor;
+    uint RasterBin;
 };
 
 // The original visibility identity is carried beside the diced positions. Deferred shade uses

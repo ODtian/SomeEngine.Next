@@ -253,6 +253,7 @@ void FactorRasterBin<TVE : IVertexEvaluate, TSurface : ITriangleSurface>(
             surface,
             triangle,
             Views[viewIndex]);
+        item.RasterBin = Uniforms.CurrentBin;
         AppendSplitWork(item);
     }
 }
@@ -306,6 +307,8 @@ void DiceSplitWork<TVE : IVertexEvaluate, TSurface : ITriangleSurface>(
         return;
 
     TessellationWorkItem work = SplitWorkItems[workIndex];
+    if (work.RasterBin != Uniforms.CurrentBin)
+        return;
     bool valid;
     Triangle source;
     LoadTessellationTriangle(

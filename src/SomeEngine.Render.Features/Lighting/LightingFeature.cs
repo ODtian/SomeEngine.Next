@@ -34,7 +34,7 @@ public readonly record struct LightingFeatureResources(
 /// Standard shade discovers these resources from its final linked program through the generic
 /// Cluster shade-resource boundary.
 /// </summary>
-public sealed class LightingFeature : IClusterShadeResourceProvider, IDisposable
+public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
 {
     private const uint ThreadCount = 64;
     private readonly LinkedComputePipeline _pipeline;
@@ -277,7 +277,7 @@ public sealed class LightingFeature : IClusterShadeResourceProvider, IDisposable
     public bool TryResolve(
         string name,
         ResourceBindingType type,
-        out ClusterShadeResourceBinder binder)
+        out ClusterStageResourceBinder binder)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         binder = name switch

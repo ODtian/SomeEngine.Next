@@ -40,7 +40,7 @@ public sealed partial class ClusterPipelineSystem
     private const int VisibleClusterStride = 16;
     private const int CandidateStride = 16;
     private const int BinnedClusterStride = 12;
-    private const int TessellationWorkStride = 16;
+private const int TessellationWorkStride = 20;
     private const int DicedTriangleStride = 48;
     private FrameResources CreateFrameResources(
         ref RenderGraphEdit graph,
@@ -392,6 +392,126 @@ public sealed partial class ClusterPipelineSystem
         return frame;
     }
 
+    private void ReconcileStageResources(
+        ref RenderGraphEdit graph,
+        ClusterMaterialAssignmentSet assignments,
+        ClusterDeformStageSet deformStages,
+        ClusterRasterStageSet rasterStages,
+        ClusterShadeStageSet shadeStages)
+    {
+        FrameResources frame = _frameResources;
+        uint rasterBinCount = rasterStages.BinCount;
+        uint deformBinCount = deformStages.BinCount;
+        uint shadeBinCount = shadeStages.BinCount;
+
+        frame.RasterBinCount = rasterBinCount;
+        frame.DeformBinCount = deformBinCount;
+        frame.ShadeBinCount = shadeBinCount;
+        frame.SlotCapacity = assignments.SlotCapacity;
+        frame.RasterSlots = UploadWords(
+            ref graph,
+            rasterStages.Slots.Span,
+            BufferUsages.ShaderRead,
+            "Cluster raster stage slots");
+        frame.DeformSlots = UploadWords(
+            ref graph,
+            deformStages.Slots.Span,
+            BufferUsages.ShaderRead,
+            "Cluster deform stage slots");
+        frame.ShadeSlots = UploadWords(
+            ref graph,
+            shadeStages.Slots.Span,
+            BufferUsages.ShaderRead,
+            "Cluster shade stage slots");
+
+        SetStageBuffer(
+            ref graph,
+            frame.RasterBinMeta,
+            checked((ulong)rasterBinCount * RasterBinStride),
+            BufferUsages.None,
+            "Cluster raster bins");
+        SetStageBuffer(
+            ref graph,
+            frame.BinnedDrawArgs,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
+            BufferUsages.None,
+            "Cluster raster draw metadata");
+        SetStageBuffer(
+            ref graph,
+            frame.BinnedHardwareDrawArgs,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
+            BufferUsages.CopySource,
+            "Cluster hardware draw metadata");
+        SetStageBuffer(
+            ref graph,
+            frame.HardwareIndirectArgs,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
+            BufferUsages.Indirect | BufferUsages.CopyDestination,
+            "Cluster hardware indirect arguments");
+        SetStageBuffer(
+            ref graph,
+            frame.SoftwareDispatchArgs,
+            checked((ulong)rasterBinCount * 2 * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect,
+            "Cluster software raster dispatches");
+        SetStageBuffer(
+            ref graph,
+            frame.DeformBinMeta,
+            checked((ulong)deformBinCount * DeformBinStride),
+            BufferUsages.None,
+            "Cluster deform bins");
+        SetStageBuffer(
+            ref graph,
+            frame.DeformDispatchArgs,
+            checked((ulong)(deformBinCount + 1u) * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect,
+            "Cluster deform dispatches");
+        SetStageBuffer(
+            ref graph,
+            frame.ShadeBinCounts,
+            checked((ulong)shadeBinCount * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster shade bin counts");
+        SetStageBuffer(
+            ref graph,
+            frame.ShadeBinOffsets,
+            checked((ulong)shadeBinCount * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster shade bin offsets");
+        SetStageBuffer(
+            ref graph,
+            frame.ShadeIndirectArgs,
+            checked((ulong)shadeBinCount * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect,
+            "Cluster shade dispatches");
+        SetStageBuffer(
+            ref graph,
+            frame.ShadeScatterCounts,
+            checked((ulong)shadeBinCount * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster shade scatter counts");
+
+        _frameResources = frame;
+    }
+
+    private static void SetStageBuffer(
+        ref RenderGraphEdit graph,
+        GraphBufferId buffer,
+        ulong size,
+        BufferUsages additional,
+        string label)
+    {
+        graph.SetBufferDescription(
+            buffer,
+            new BufferDesc(
+                Math.Max(size, 4),
+                BufferUsages.ShaderRead |
+                BufferUsages.ShaderWrite |
+                BufferUsages.CopyDestination |
+                additional,
+                label));
+    }
+
     private void BindFrameResources(
         ref RenderGraphFrame graph,
         in ClusterRenderBinding binding,
@@ -728,23 +848,27 @@ public sealed partial class ClusterPipelineSystem
                     : "Cluster phase two tessellation uniforms");
         }
 
-        WriteUniform(
-            ref graph,
-            uploads,
-            generation,
-            new ClusterTessellationUniforms
-            {
-                ScreenWidth = checked((uint)frame.Width),
-                ScreenHeight = checked((uint)frame.Height),
-                DispatchGroupWidth = 65_535u,
-                MaxSplitWorkItems = _options.MaxTessellationSplitWorkItems,
-                MaxDicedTriangles = _options.MaxDicedTriangles,
-                MaxFactor = _options.MaxTessellationFactor,
-                TargetEdgePixels = _options.TessellationTargetEdgePixels,
-            },
-            phaseOne
-                ? "Cluster phase one dicing uniforms"
-                : "Cluster phase two dicing uniforms");
+        for (uint bin = 0; bin < frame.RasterBinCount; bin++)
+        {
+            WriteUniform(
+                ref graph,
+                uploads,
+                generation,
+                new ClusterTessellationUniforms
+                {
+                    ScreenWidth = checked((uint)frame.Width),
+                    ScreenHeight = checked((uint)frame.Height),
+                    CurrentBin = bin,
+                    DispatchGroupWidth = 65_535u,
+                    MaxSplitWorkItems = _options.MaxTessellationSplitWorkItems,
+                    MaxDicedTriangles = _options.MaxDicedTriangles,
+                    MaxFactor = _options.MaxTessellationFactor,
+                    TargetEdgePixels = _options.TessellationTargetEdgePixels,
+                },
+                phaseOne
+                    ? "Cluster phase one dicing uniforms"
+                    : "Cluster phase two dicing uniforms");
+        }
 
         WriteUniform(
             ref graph,

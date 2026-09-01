@@ -1,7 +1,7 @@
 #ifndef PHONG_TESSELLATION_SLANG
 #define PHONG_TESSELLATION_SLANG
 
-#include "triangle_surface.slang"
+#include "triangle_surface_inverse.slang"
 
 struct PhongCoefficients
 {
@@ -102,6 +102,63 @@ struct PhongTessellation : ITriangleSurface
             triangle,
             BuildPhongCoefficients(triangle),
             barycentric);
+    }
+
+    SurfaceBarycentrics reconstruct(
+        Triangle triangle,
+        SurfaceReconstructionInput input)
+    {
+        PhongCoefficients coefficients = BuildPhongCoefficients(triangle);
+        float2 parameters = input.ParentValue.yz;
+        [unroll]
+        for (uint iteration = 0u; iteration < 2u; iteration++)
+        {
+            SurfaceEval evaluation = EvalPhongSurface(
+                triangle,
+                coefficients,
+                Barycentric(parameters));
+            float3 residual = evaluation.Position - input.TargetPosition;
+            float a = dot(evaluation.DpDu, evaluation.DpDu);
+            float b = dot(evaluation.DpDu, evaluation.DpDv);
+            float c = dot(evaluation.DpDv, evaluation.DpDv);
+            float damping = max(1e-10, (a + c) * 1e-7);
+            float2 delta = SolveSurfaceNormalEquations(
+                a + damping,
+                b,
+                c + damping,
+                float2(
+                    dot(evaluation.DpDu, residual),
+                    dot(evaluation.DpDv, residual)));
+            float maximumStep = max(abs(delta.x), abs(delta.y));
+            delta *= min(1.0, 0.25 / max(maximumStep, 1e-12));
+            parameters -= delta;
+        }
+
+        float3 unresolved = Barycentric(parameters);
+        float3 value = ClampBarycentric(unresolved);
+        SurfaceEval evaluation = EvalPhongSurface(triangle, coefficients, value);
+        float3 barycentricDx;
+        float3 barycentricDy;
+        bool derivativesValid = ResolveParametricScreenDerivatives(
+            evaluation,
+            input,
+            barycentricDx,
+            barycentricDy);
+
+        SurfaceBarycentrics result;
+        result.Value = value;
+        result.Dx = barycentricDx;
+        result.Dy = barycentricDy;
+        result.Residual = length(evaluation.Position - input.TargetPosition);
+        result.Valid =
+            derivativesValid &&
+            SurfaceBarycentricViolation(unresolved) <= 1e-3 &&
+            all(isfinite(evaluation.Position)) &&
+            all(isfinite(evaluation.DpDu)) &&
+            all(isfinite(evaluation.DpDv))
+                ? 1u
+                : 0u;
+        return result;
     }
 
     void bounds(Triangle triangle, out float3 minimum, out float3 maximum)

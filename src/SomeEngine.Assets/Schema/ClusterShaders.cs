@@ -78,6 +78,5 @@ public partial class ClusterShaders
         ClusterShaderOperationRole.SoftwareVisibilityRaster or
         ClusterShaderOperationRole.HardwareVisibilityRaster or
         ClusterShaderOperationRole.TessellationFactor or
-        ClusterShaderOperationRole.TessellationDice or
-        ClusterShaderOperationRole.VisibilityResolve;
+        ClusterShaderOperationRole.TessellationDice;
 }

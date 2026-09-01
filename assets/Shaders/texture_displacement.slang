@@ -1,7 +1,7 @@
 #ifndef TEXTURE_DISPLACEMENT_SLANG
 #define TEXTURE_DISPLACEMENT_SLANG
 
-#include "triangle_surface.slang"
+#include "triangle_surface_inverse.slang"
 
 struct TextureDisplacement : ITriangleSurface
 {
@@ -30,16 +30,17 @@ struct TextureDisplacement : ITriangleSurface
         SurfaceEval result = EvalLinearSurface(triangle, barycentric);
         float displacement = height(triangle, barycentric);
         result.Position += result.Normal * displacement;
-
-        // The generic visibility inverse needs a differential of the authored
-        // surface. Two one-sided samples keep this user implementation compact;
-        // dicing calls position() and does not pay this cost.
-        const float step = 1.0 / 1024.0;
-        float3 baryU = Barycentric(barycentric.yz + float2(step, 0.0));
-        float3 baryV = Barycentric(barycentric.yz + float2(0.0, step));
-        result.DpDu = (position(triangle, baryU) - result.Position) / step;
-        result.DpDv = (position(triangle, baryV) - result.Position) / step;
         return result;
+    }
+
+    SurfaceBarycentrics reconstruct(
+        Triangle triangle,
+        SurfaceReconstructionInput input)
+    {
+        // The final position already contains the sampled displacement. Recover the
+        // original-triangle coordinates by solving an effective scalar displacement
+        // along the interpolated normal; no displacement texture sample is required.
+        return ReconstructNormalDisplacementSurface(triangle, input);
     }
 
     void bounds(Triangle triangle, out float3 minimum, out float3 maximum)

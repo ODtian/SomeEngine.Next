@@ -2,11 +2,11 @@
   "asset_guid": "1db8e4af-0e70-5114-83de-631e2adf5e32",
   "source_guid": "f16ec0b2-3ef2-46bf-aafa-1128e5cc7298",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "9318f930b4c36ff06ad23d6e556f512b89b217bce26224d60f68ef0d7528f7f0",
+  "content_fingerprint": "f4ae693f6a35db1f5caf4fef06ae62c0ce7a61c5bcb6342fd83a94063dfd50e7",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_tessellation_types.slang",
-      "hash": "c230a102d97999ab0ff415e94f6a64768ea5148a13e56ef756eee3cd06c67648"
+      "hash": "3638c016bb3cceb62b0480ec1f447a61492c55c12168dfbb378aac2061575ef8"
     },
     {
       "path": "assets/Shaders/cluster_tessellation_visibility.slang",

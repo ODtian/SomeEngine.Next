@@ -32,8 +32,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterShaders _configuration;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly ClusterPipelineOutputDescription _outputDescription;
-    private readonly ClusterRasterExecutor _rasterExecutor;
-    private readonly IClusterShadeResourceProvider? _shadeResourceProvider;
+    private readonly IClusterStageResourceProvider? _stageResourceProvider;
     private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
     private readonly ClusterPipelineOptions _options;
     private QueryHandle _viewQuery;
@@ -49,6 +48,18 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private ClusterFrameUploads? _uploads;
     private FrameResources _frameResources;
     private readonly List<GraphPassId> _historyInitializationPasses = [];
+    private readonly List<GraphPassId> _stagePasses = [];
+    private readonly List<GraphPassId> _geometryStagePasses = [];
+    private readonly List<GraphPassId> _shadeStagePasses = [];
+    private readonly List<GraphPassId>[] _binningStagePasses = [[], []];
+    private readonly List<GraphPassId>[] _deformStagePasses = [[], []];
+    private readonly List<GraphPassId>[] _rasterBeforeDepthStagePasses = [[], []];
+    private readonly List<GraphPassId>[] _hardwareRasterStagePasses = [[], []];
+    private readonly List<ClusterDeformPassBinding> _deformPassBindings = [];
+    private readonly List<ClusterSoftwareRasterPassBinding> _softwareRasterPassBindings = [];
+    private readonly List<ClusterHardwareRasterPassBinding> _hardwareRasterPassBindings = [];
+    private readonly List<ClusterTessellationPassBinding> _tessellationFactorPassBindings = [];
+    private readonly List<ClusterTessellationPassBinding> _tessellationDicePassBindings = [];
     private readonly List<ClusterLayerDispatch> _layerDispatches = [];
     private readonly List<GraphPassId> _depthMergePasses = [];
     private readonly List<GraphPassId> _pageHeapReaderPasses = [];
@@ -56,6 +67,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly RenderView[] _stagedViews;
     private int _stagedViewCount;
     private GraphPassId _traversalPass;
+    private GraphPassId _phaseOneCullPass;
+    private GraphPassId _phaseTwoCullPass;
+    private GraphPassId _phaseOneDepthMergePass;
+    private GraphPassId _phaseTwoDepthMergePass;
+    private GraphPassId _phaseOneHiZPass;
+    private GraphPassId _phaseTwoHiZPass;
+    private GraphPassId _shadeResolvePass;
     private ClusterPipelineOutputs _outputs;
     private ulong _installedMaterialTopologyVersion;
     private bool _cullingEnabled;
@@ -83,6 +101,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private ClusterResidencyPublication? _pendingResidencyPublication;
     private BufferRange[] _pendingResidentPageRanges = [];
     private bool _bindingScratchReadsPageHeap;
+    private bool _recordStagePasses;
+    private List<GraphPassId>? _stagePassDestination;
+    private List<GraphPassId>? _stagePassGroupDestination;
     private bool _hasPendingFrame;
     private bool _created;
 
@@ -97,9 +118,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterShaders configuration,
         global::SomeEngine.RenderGraph.RenderGraph graph,
         in ClusterPipelineOutputDescription outputDescription,
-        ClusterRasterExecutor rasterExecutor,
         ClusterStreamingFeedbackChannel streamingFeedback,
-        IClusterShadeResourceProvider? shadeResourceProvider = null,
+        IClusterStageResourceProvider? stageResourceProvider = null,
         ClusterPipelineOptions? options = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -116,9 +136,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (!ReferenceEquals(graph.Device, device))
             throw new ArgumentException("The Cluster pipeline and RenderGraph must use the same Device.", nameof(graph));
         _outputDescription = outputDescription;
-        _rasterExecutor = rasterExecutor ?? throw new ArgumentNullException(nameof(rasterExecutor));
         _streamingFeedback = streamingFeedback ?? throw new ArgumentNullException(nameof(streamingFeedback));
-        _shadeResourceProvider = shadeResourceProvider;
+        _stageResourceProvider = stageResourceProvider;
         _options = options ?? new ClusterPipelineOptions();
         _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCapacity)];
         _stagedViews = new RenderView[checked((int)outputDescription.ViewCapacity)];
@@ -165,13 +184,20 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _deformStages = new ClusterDeformStages(
                 _backend,
                 _device,
-                _pipelines!.VertexEncoding);
-            _rasterStages = new ClusterRasterStages(_pipelines!.HardwareRaster);
+                _stageResourceProvider);
+            _rasterStages = new ClusterRasterStages(
+                _backend,
+                _device,
+                _pipelines!.DefaultRasterVertexEncoding,
+                _pipelines.SoftwareRaster,
+                _pipelines.HardwareRaster,
+                _pipelines.TessellationFactor,
+                _pipelines.TessellationDice,
+                _stageResourceProvider);
             _shadeStages = new ClusterShadeStages(
                 _backend,
                 _device,
-                _pipelines.VertexEncoding,
-                _shadeResourceProvider);
+                _stageResourceProvider);
             _history = new ClusterCullingHistory(
                 _backend,
                 _device,
@@ -186,6 +212,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _shadeStages = null;
             _deformStages?.Dispose();
             _deformStages = null;
+            _rasterStages?.Dispose();
             _rasterStages = null;
             _pipelines?.Dispose();
             _pipelines = null;
@@ -206,12 +233,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
-        _resources.RequireVertexEncoding(_pipelines!.VertexEncoding);
         ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
         if (assignments.MaterialCount == 0)
             throw new InvalidOperationException("The Cluster scene has no published materials.");
         if (_graphInstalled &&
             _installedMaterialTopologyVersion == assignments.TopologyVersion &&
+            _installedDeformStages is { IsCurrent: true } &&
+            _installedRasterStages is { IsCurrent: true } &&
             _installedShadeStages is { IsCurrent: true })
         {
             return _outputs;
@@ -222,18 +250,30 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             "The Cluster raster stages were not created.")).Resolve(assignments);
         ClusterShadeStageSet shadeStages = (_shadeStages ?? throw new InvalidOperationException(
             "The Cluster shade stages were not created.")).Resolve(assignments);
-        bool cullingEnabled = _pipelines.CullingEnabled && deformStages.HasFiniteBounds;
+        bool cullingEnabled = (_pipelines ?? throw new InvalidOperationException(
+            "The Cluster pipelines were not created.")).DefaultRasterCullingEnabled &&
+            deformStages.HasFiniteBounds &&
+            rasterStages.HasFiniteBounds;
         if (_graphInstalled)
         {
-            if (_installedMaterialTopologyVersion != assignments.TopologyVersion ||
-                _installedDeformStages is null ||
-                !_installedDeformStages.HasSameTopology(deformStages) ||
-                _installedShadeStages is null ||
-                !_installedShadeStages.HasSameTopology(shadeStages))
+            bool deformChanged = _installedDeformStages is null ||
+                !_installedDeformStages.HasSameTopology(deformStages);
+            bool rasterChanged = _installedRasterStages is null ||
+                !_installedRasterStages.HasSameTopology(rasterStages);
+            bool shadeChanged = _installedShadeStages is null ||
+                !_installedShadeStages.HasSameTopology(shadeStages);
+            if (deformChanged || rasterChanged || shadeChanged)
             {
-                throw new InvalidOperationException(
-                    "Cluster material-stage topology changed after retained graph installation.");
+                ReconcileStageRegion(
+                    assignments,
+                    deformStages,
+                    rasterStages,
+                    shadeStages,
+                    deformChanged,
+                    rasterChanged,
+                    shadeChanged);
             }
+            _installedMaterialTopologyVersion = assignments.TopologyVersion;
             _installedDeformStages = deformStages;
             _installedRasterStages = rasterStages;
             _installedShadeStages = shadeStages;
@@ -251,6 +291,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             RenderGraphEdit edit = _graph.BeginEdit();
             try
             {
+                uploads.BeginDeclarations();
                 InstallGraph(
                     ref edit,
                     in _outputDescription,
@@ -258,7 +299,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     deformStages,
                     rasterStages,
                     shadeStages);
+                uploads.CompleteDeclarations(ref edit);
                 edit.Commit();
+            }
+            catch
+            {
+                uploads.CancelDeclarations();
+                throw;
             }
             finally
             {
@@ -277,6 +324,21 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _uploads = null;
             uploads.Dispose();
             _historyInitializationPasses.Clear();
+            _stagePasses.Clear();
+            _geometryStagePasses.Clear();
+            _shadeStagePasses.Clear();
+            for (int phase = 0; phase < 2; phase++)
+            {
+                _binningStagePasses[phase].Clear();
+                _deformStagePasses[phase].Clear();
+                _rasterBeforeDepthStagePasses[phase].Clear();
+                _hardwareRasterStagePasses[phase].Clear();
+            }
+            _deformPassBindings.Clear();
+            _softwareRasterPassBindings.Clear();
+            _hardwareRasterPassBindings.Clear();
+            _tessellationFactorPassBindings.Clear();
+            _tessellationDicePassBindings.Clear();
             _layerDispatches.Clear();
             _depthMergePasses.Clear();
             _pageHeapReaderPasses.Clear();
@@ -286,6 +348,174 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _outputs = default;
             _shadePasses = [];
             throw;
+        }
+    }
+
+    private void ReconcileStageRegion(
+        ClusterMaterialAssignmentSet assignments,
+        ClusterDeformStageSet deformStages,
+        ClusterRasterStageSet rasterStages,
+        ClusterShadeStageSet shadeStages,
+        bool deformChanged,
+        bool rasterChanged,
+        bool shadeChanged)
+    {
+        bool geometryChanged = deformChanged || rasterChanged;
+        ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException(
+            "Cluster retained upload storage was not created.");
+        GraphPassId[] previousStagePasses = [.. _stagePasses];
+        GraphPassId[] previousGeometryStagePasses = [.. _geometryStagePasses];
+        GraphPassId[] previousShadeStagePasses = [.. _shadeStagePasses];
+        GraphPassId[][] previousBinningStagePasses =
+            [[.. _binningStagePasses[0]], [.. _binningStagePasses[1]]];
+        GraphPassId[][] previousDeformStagePasses =
+            [[.. _deformStagePasses[0]], [.. _deformStagePasses[1]]];
+        GraphPassId[][] previousRasterBeforeDepthStagePasses =
+            [[.. _rasterBeforeDepthStagePasses[0]], [.. _rasterBeforeDepthStagePasses[1]]];
+        GraphPassId[][] previousHardwareRasterStagePasses =
+            [[.. _hardwareRasterStagePasses[0]], [.. _hardwareRasterStagePasses[1]]];
+        ClusterDeformPassBinding[] previousDeformPassBindings = [.. _deformPassBindings];
+        ClusterSoftwareRasterPassBinding[] previousSoftwareRasterPassBindings = [.. _softwareRasterPassBindings];
+        ClusterHardwareRasterPassBinding[] previousHardwareRasterPassBindings = [.. _hardwareRasterPassBindings];
+        ClusterTessellationPassBinding[] previousTessellationFactorPassBindings = [.. _tessellationFactorPassBindings];
+        ClusterTessellationPassBinding[] previousTessellationDicePassBindings = [.. _tessellationDicePassBindings];
+        ClusterLayerDispatch[] previousLayerDispatches = [.. _layerDispatches];
+        GraphPassId[] previousDepthMergePasses = [.. _depthMergePasses];
+        GraphPassId[] previousPageHeapReaders = [.. _pageHeapReaderPasses];
+        GraphPassId[] previousShadePasses = _shadePasses;
+        FrameResources previousFrameResources = _frameResources;
+
+        RenderGraphEdit edit = _graph.BeginEdit();
+        try
+        {
+            var removal = new HashSet<GraphPassId>();
+            if (geometryChanged)
+            {
+                foreach (GraphPassId pass in previousBinningStagePasses[0]) removal.Add(pass);
+                foreach (GraphPassId pass in previousBinningStagePasses[1]) removal.Add(pass);
+                if (deformChanged)
+                {
+                    foreach (GraphPassId pass in previousDeformStagePasses[0]) removal.Add(pass);
+                    foreach (GraphPassId pass in previousDeformStagePasses[1]) removal.Add(pass);
+                }
+                if (rasterChanged)
+                {
+                    foreach (GraphPassId pass in previousRasterBeforeDepthStagePasses[0]) removal.Add(pass);
+                    foreach (GraphPassId pass in previousRasterBeforeDepthStagePasses[1]) removal.Add(pass);
+                    foreach (GraphPassId pass in previousHardwareRasterStagePasses[0]) removal.Add(pass);
+                    foreach (GraphPassId pass in previousHardwareRasterStagePasses[1]) removal.Add(pass);
+                }
+            }
+            if (shadeChanged)
+                foreach (GraphPassId pass in previousShadeStagePasses) removal.Add(pass);
+            GraphPassId[] removedPasses = [.. removal];
+            foreach (GraphPassId pass in removedPasses)
+                edit.Remove(pass);
+
+            var removed = new HashSet<GraphPassId>(removedPasses);
+            _stagePasses.RemoveAll(removed.Contains);
+            if (geometryChanged)
+            {
+                _geometryStagePasses.RemoveAll(removed.Contains);
+                _binningStagePasses[0].Clear();
+                _binningStagePasses[1].Clear();
+                if (deformChanged)
+                {
+                    _deformStagePasses[0].Clear();
+                    _deformStagePasses[1].Clear();
+                    _deformPassBindings.Clear();
+                }
+                if (rasterChanged)
+                {
+                    _rasterBeforeDepthStagePasses[0].Clear();
+                    _rasterBeforeDepthStagePasses[1].Clear();
+                    _hardwareRasterStagePasses[0].Clear();
+                    _hardwareRasterStagePasses[1].Clear();
+                    _softwareRasterPassBindings.Clear();
+                    _hardwareRasterPassBindings.Clear();
+                    _tessellationFactorPassBindings.Clear();
+                    _tessellationDicePassBindings.Clear();
+                }
+            }
+            if (shadeChanged)
+            {
+                _shadeStagePasses.Clear();
+                _shadePasses = [];
+            }
+            _layerDispatches.RemoveAll(dispatch => removed.Contains(dispatch.Pass));
+            _pageHeapReaderPasses.RemoveAll(removed.Contains);
+
+            uploads.BeginDeclarations();
+            ReconcileStageResources(
+                ref edit,
+                assignments,
+                deformStages,
+                rasterStages,
+                shadeStages);
+            if (geometryChanged)
+            {
+                RecordGeometryStageRegion(
+                    ref edit,
+                    _frameResources,
+                    deformStages,
+                    rasterStages,
+                    _frameResources.PackedViews,
+                    deformChanged,
+                    rasterChanged);
+            }
+            if (shadeChanged)
+            {
+                RecordShadeStageRegion(
+                    ref edit,
+                    _frameResources,
+                    shadeStages);
+            }
+            uploads.CompleteDeclarations(ref edit);
+            edit.Commit();
+        }
+        catch
+        {
+            uploads.CancelDeclarations();
+            _stagePasses.Clear();
+            _stagePasses.AddRange(previousStagePasses);
+            _geometryStagePasses.Clear();
+            _geometryStagePasses.AddRange(previousGeometryStagePasses);
+            _shadeStagePasses.Clear();
+            _shadeStagePasses.AddRange(previousShadeStagePasses);
+            for (int phase = 0; phase < 2; phase++)
+            {
+                _binningStagePasses[phase].Clear();
+                _binningStagePasses[phase].AddRange(previousBinningStagePasses[phase]);
+                _deformStagePasses[phase].Clear();
+                _deformStagePasses[phase].AddRange(previousDeformStagePasses[phase]);
+                _rasterBeforeDepthStagePasses[phase].Clear();
+                _rasterBeforeDepthStagePasses[phase].AddRange(previousRasterBeforeDepthStagePasses[phase]);
+                _hardwareRasterStagePasses[phase].Clear();
+                _hardwareRasterStagePasses[phase].AddRange(previousHardwareRasterStagePasses[phase]);
+            }
+            _deformPassBindings.Clear();
+            _deformPassBindings.AddRange(previousDeformPassBindings);
+            _softwareRasterPassBindings.Clear();
+            _softwareRasterPassBindings.AddRange(previousSoftwareRasterPassBindings);
+            _hardwareRasterPassBindings.Clear();
+            _hardwareRasterPassBindings.AddRange(previousHardwareRasterPassBindings);
+            _tessellationFactorPassBindings.Clear();
+            _tessellationFactorPassBindings.AddRange(previousTessellationFactorPassBindings);
+            _tessellationDicePassBindings.Clear();
+            _tessellationDicePassBindings.AddRange(previousTessellationDicePassBindings);
+            _layerDispatches.Clear();
+            _layerDispatches.AddRange(previousLayerDispatches);
+            _depthMergePasses.Clear();
+            _depthMergePasses.AddRange(previousDepthMergePasses);
+            _pageHeapReaderPasses.Clear();
+            _pageHeapReaderPasses.AddRange(previousPageHeapReaders);
+            _shadePasses = previousShadePasses;
+            _frameResources = previousFrameResources;
+            throw;
+        }
+        finally
+        {
+            edit.Dispose();
         }
     }
 
@@ -456,6 +686,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _installedRasterStages ?? throw new InvalidOperationException("Raster stages were not installed."),
                 _installedShadeStages ?? throw new InvalidOperationException("Shade stages were not installed."),
                 packedViews);
+            BindDeformStages(
+                ref graph,
+                _installedDeformStages);
+            BindRasterStages(
+                ref graph,
+                _installedRasterStages);
             BindShadeStages(
                 ref graph,
                 _installedShadeStages);
@@ -565,8 +801,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Dispose(ref _uploads, ref failures);
         Dispose(ref _shadeStages, ref failures);
         Dispose(ref _deformStages, ref failures);
+        Dispose(ref _rasterStages, ref failures);
         DisposeMaterialSamplers(ref failures);
-        _rasterStages = null;
         Dispose(ref _pipelines, ref failures);
         Dispose(ref _history, ref failures);
         Dispose(ref _dispatchIndirectLayout, ref failures);
@@ -602,6 +838,21 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _preferredReadbackGeneration = 0;
         _latestFrameMetrics = null;
         _historyInitializationPasses.Clear();
+        _stagePasses.Clear();
+        _geometryStagePasses.Clear();
+        _shadeStagePasses.Clear();
+        for (int phase = 0; phase < 2; phase++)
+        {
+            _binningStagePasses[phase].Clear();
+            _deformStagePasses[phase].Clear();
+            _rasterBeforeDepthStagePasses[phase].Clear();
+            _hardwareRasterStagePasses[phase].Clear();
+        }
+        _deformPassBindings.Clear();
+        _softwareRasterPassBindings.Clear();
+        _hardwareRasterPassBindings.Clear();
+        _tessellationFactorPassBindings.Clear();
+        _tessellationDicePassBindings.Clear();
         _layerDispatches.Clear();
         _depthMergePasses.Clear();
         _traversalPass = default;
@@ -613,6 +864,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _shadePasses = [];
         _installedMaterialTopologyVersion = 0;
         _graphInstalled = false;
+        _recordStagePasses = false;
+        _stagePassDestination = null;
+        _stagePassGroupDestination = null;
         ClearPendingFrame();
         Array.Clear(_stagedViews);
         _stagedViewCount = 0;

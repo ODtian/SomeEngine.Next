@@ -10,6 +10,7 @@ internal static partial class SlangMaterialMeta
     public const byte Texture = 0;
     public const byte Sampler = 1;
     public const byte Buffer = 2;
+    public const byte AccelerationStructure = 3;
     public const byte Unknown = 255;
 
     public static void BindEntry(
@@ -188,6 +189,9 @@ internal static partial class SlangMaterialMeta
         {
             SlangTypeKind.SamplerState => Sampler,
             SlangTypeKind.ConstantBuffer => Buffer,
+            SlangTypeKind.Resource when
+                shape == SlangResourceShape.AccelerationStructure =>
+                AccelerationStructure,
             SlangTypeKind.Resource
             or SlangTypeKind.TextureBuffer
             or SlangTypeKind.ShaderStorageBuffer =>

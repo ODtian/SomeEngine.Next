@@ -11,14 +11,14 @@ namespace SomeEngine.Render.Features.Lighting;
 public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 {
     private readonly LightingFeature _feature;
-    private readonly RenderLightSetPublication _lights;
+    private readonly RenderLightSetSystem _lights;
     private readonly RenderView[] _views;
     private readonly ViewCollector _collector;
     private QueryHandle _viewQuery;
 
     public LightingFeatureSystem(
         LightingFeature feature,
-        RenderLightSetPublication lights,
+        RenderLightSetSystem lights,
         uint viewCapacity)
     {
         _feature = feature ?? throw new ArgumentNullException(nameof(feature));

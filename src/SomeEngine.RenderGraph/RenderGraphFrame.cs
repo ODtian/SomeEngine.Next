@@ -41,6 +41,16 @@ public ref struct RenderGraphFrame
         State.RetireAfterSubmittedFrames(value);
     }
 
+    /// <summary>
+    /// Retires an object after this frame finishes and every queue submission visible at that
+    /// point has completed. If this frame is cancelled, only earlier submitted work is awaited.
+    /// </summary>
+    public void RetireAfterFrame(IDisposable value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        State.RetireAfterFrame(value);
+    }
+
     internal void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
     {
         ArgumentNullException.ThrowIfNull(observer);

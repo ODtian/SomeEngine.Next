@@ -169,7 +169,7 @@ public partial class Material
             if (Equals(current._slotValues![index], next))
                 continue;
             current._slotValues[index] = next;
-            current.MarkSlotChanged(index);
+            current._slotRevisions![index] = checked(current._slotRevisions[index] + 1);
         }
         current.Revision = checked(current.Revision + 1);
         return ValueTask.CompletedTask;

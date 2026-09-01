@@ -142,14 +142,17 @@ public partial class Texture : IDisposable, IAsyncDisposable
         ValidateRoot(replacement);
         ulong nextRevision = checked(current.Revision + 1);
 
+        ChunkRequestScheduler? previousScheduler = null;
+        BinaryDocument<Texture>? previousDocument = null;
+        ResidentChunkLease[] previousBootstrap = [];
         ChunkRequestScheduler? nextScheduler = Interlocked.Exchange(ref replacement._scheduler, null);
         BinaryDocument<Texture>? nextDocument = Interlocked.Exchange(ref replacement._document, null);
         ResidentChunkLease[] nextBootstrap = Interlocked.Exchange(
             ref replacement._bootstrap,
             []);
-        ChunkRequestScheduler? previousScheduler = Interlocked.Exchange(ref current._scheduler, nextScheduler);
-        BinaryDocument<Texture>? previousDocument = Interlocked.Exchange(ref current._document, nextDocument);
-        ResidentChunkLease[] previousBootstrap = Interlocked.Exchange(
+        previousScheduler = Interlocked.Exchange(ref current._scheduler, nextScheduler);
+        previousDocument = Interlocked.Exchange(ref current._document, nextDocument);
+        previousBootstrap = Interlocked.Exchange(
             ref current._bootstrap,
             nextBootstrap);
 

@@ -13,7 +13,7 @@ struct ShadeUniforms
     uint ScreenHeight;
     uint ShadingBin;
     uint ShadeBinCount;
-    uint Pad1;
+    uint MaterialSlotCapacity;
     uint Pad2;
     uint Pad3;
 };
@@ -49,6 +49,7 @@ struct TriangleInfo
     uint vertexBlobSize;
     uint vertexCount;
     uint viewIndex;
+    uint materialSlot;
 };
 
 bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
@@ -81,6 +82,26 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
         tStart,
         packedCounts);
     tri.vertexCount = packedCounts & 0xFFu;
+
+    uint clusterOffset =
+        req.PageOffset + PageHeap.Load(req.PageOffset + 16u) +
+        req.ClusterID * PACKED_CLUSTER_STRIDE_BYTES;
+    uint localMaterial = LocalMaterial(
+        PageHeap.Load(clusterOffset + 68u),
+        PageHeap.Load(clusterOffset + 72u),
+        tri.triangleID);
+    uint slotOffset = LoadClusterMaterialSlotOffset(
+        InstanceData,
+        LoadRenderInstanceMetadata(
+            InstanceProperties,
+            CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
+        tri.instanceID);
+    if (slotOffset >= Uniforms.MaterialSlotCapacity ||
+        localMaterial >= Uniforms.MaterialSlotCapacity - slotOffset)
+    {
+        return false;
+    }
+    tri.materialSlot = slotOffset + localMaterial;
 
     uint idxOffset = PageHeap.Load(req.PageOffset + 24u);
 
@@ -179,9 +200,9 @@ bool loadTriangleVertices<TVE : IVertexEvaluate>(
     return true;
 }
 
-float3 computeTriangleBarycentric<TVE : IVertexEvaluate>(
+float3 computeTriangleBarycentricAt<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
-    uint2 pixelCoord,
+    float2 pixelPosition,
     ClusterViewUniforms view,
     TVE.DeformedVertex v0,
     TVE.DeformedVertex v1,
@@ -193,7 +214,24 @@ float3 computeTriangleBarycentric<TVE : IVertexEvaluate>(
     ScreenProjection sp0 = ProjectToScreenProjection(p0, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     ScreenProjection sp1 = ProjectToScreenProjection(p1, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     ScreenProjection sp2 = ProjectToScreenProjection(p2, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    return ComputePerspectiveBarycentric(float2(pixelCoord) + 0.5, sp0, sp1, sp2);
+    return ComputePerspectiveBarycentric(pixelPosition, sp0, sp1, sp2);
+}
+
+float3 computeTriangleBarycentric<TVE : IVertexEvaluate>(
+    uniform TVE evaluator,
+    uint2 pixelCoord,
+    ClusterViewUniforms view,
+    TVE.DeformedVertex v0,
+    TVE.DeformedVertex v1,
+    TVE.DeformedVertex v2)
+{
+    return computeTriangleBarycentricAt(
+        evaluator,
+        float2(pixelCoord) + 0.5,
+        view,
+        v0,
+        v1,
+        v2);
 }
 
 SurfaceVertex MakeSurfaceVertex<TVE : IVertexEvaluate>(
@@ -219,11 +257,13 @@ Triangle MakeSurfaceTriangle<TVE : IVertexEvaluate>(
         MakeSurfaceVertex(evaluator, v2));
 }
 
-float3 ReconstructWorldPosition(uint3 pixelCoord, ClusterViewUniforms view)
+float3 ReconstructWorldPositionAt(
+    float2 pixelPosition,
+    float depth,
+    ClusterViewUniforms view)
 {
-    float2 uv = (float2(pixelCoord.xy) + 0.5) /
+    float2 uv = pixelPosition /
         float2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    float depth = DepthBuffer.Load(int4(pixelCoord, 0));
     float4 world = mul(
         float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0),
         view.ClipToWorld);
@@ -242,14 +282,28 @@ SurfaceBarycentrics ResolveBarycentrics<
     TVE.DeformedVertex v1,
     TVE.DeformedVertex v2)
 {
-    float3 seed = computeTriangleBarycentric(evaluator, pixelCoord.xy, view, v0, v1, v2);
-    return ResolveTriangleSurface(
-        surface,
-        triangle,
-        ReconstructWorldPosition(pixelCoord, view),
-        seed,
-        view.ViewProj,
-        uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight));
+    float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
+    float3 seed = computeTriangleBarycentricAt(
+        evaluator, pixelCenter, view, v0, v1, v2);
+    float3 seedX = computeTriangleBarycentricAt(
+        evaluator, pixelCenter + float2(1.0, 0.0), view, v0, v1, v2);
+    float3 seedY = computeTriangleBarycentricAt(
+        evaluator, pixelCenter + float2(0.0, 1.0), view, v0, v1, v2);
+    float depth = DepthBuffer.Load(int4(pixelCoord, 0));
+
+    SurfaceReconstructionInput input;
+    input.TargetPosition = ReconstructWorldPositionAt(pixelCenter, depth, view);
+    input.TargetPositionDx = ReconstructWorldPositionAt(
+        pixelCenter + float2(1.0, 0.0), depth, view);
+    input.TargetPositionDy = ReconstructWorldPositionAt(
+        pixelCenter + float2(0.0, 1.0), depth, view);
+    input.CameraPosition = view.CameraPos;
+    input.ParentValue = seed;
+    input.ParentDx = seedX - seed;
+    input.ParentDy = seedY - seed;
+    input.ViewProjection = view.ViewProj;
+    input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    return surface.reconstruct(triangle, input);
 }
 
 void CSShadeCore<
@@ -305,6 +359,7 @@ void CSShadeCore<
             Uniforms.DebugMode,
             pixelCoord,
             tri.instanceID,
+            tri.materialSlot,
             surfaceEval,
             bary,
             v0,
@@ -318,6 +373,7 @@ void CSShadeCore<
         vertexEval,
         pixelCoord,
         tri.instanceID,
+        tri.materialSlot,
         surfaceEval,
         bary,
         v0,

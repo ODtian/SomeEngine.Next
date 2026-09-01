@@ -577,27 +577,15 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             _placementHistoryReady = false;
         }
 
-        bool retainedSetChanged = _placementTokens.Count != structureIndex.TransientPlacements.Count;
-        if (!retainedSetChanged)
-        {
-            foreach ((GraphIdentity identity, GraphTransientPlacementState placement) in
-                     structureIndex.TransientPlacements)
-            {
-                if (_placementTokens.TryGetValue(identity, out ulong token) &&
-                    token == placement.Token)
-                    continue;
-                retainedSetChanged = true;
-                break;
-            }
-        }
-        if (retainedSetChanged) ClearCache();
-        foreach (GraphIdentity identity in _placementTokens.Keys.ToArray())
+        foreach ((GraphIdentity identity, ulong token) in _placementTokens.ToArray())
         {
             if (structureIndex.TransientPlacements.TryGetValue(
                     identity,
                     out GraphTransientPlacementState placement) &&
-                _placementTokens[identity] == placement.Token)
+                token == placement.Token)
                 continue;
+            InvalidateCachedResource(GraphAccessTargetKind.Buffer, identity);
+            InvalidateCachedResource(GraphAccessTargetKind.Texture, identity);
             _previousPlacements.Remove(identity);
         }
         _placementTokens.Clear();
@@ -889,9 +877,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             resourceIndex);
         var signature = new PlacementSignature(best.Heap, offset, sizeValue);
         if (hasExpected) ReleaseReservation(expected);
-        if (_placementHistoryReady &&
-            (!_previousPlacements.TryGetValue(identity, out PlacementSignature retained) ||
-             retained != signature))
+        if (_placementHistoryReady && hasExpected && expected != signature)
         {
             throw new InvalidOperationException(
                 "A stable transient placement changed without a RenderGraph structural invalidation.");
@@ -959,6 +945,31 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             cached.Resource.Dispose();
         _resourceCache.Clear();
         _cachedResources.Clear();
+    }
+
+    private void InvalidateCachedResource(
+        GraphAccessTargetKind kind,
+        in GraphIdentity identity)
+    {
+        var key = new TransientResourceCacheKey(kind, identity);
+        if (!_resourceCache.Remove(key, out CachedTransientResource? cached))
+            return;
+
+        foreach ((GraphIdentity viewIdentity, CachedTransientView view) in _viewCache.ToArray())
+        {
+            if (!ReferenceEquals(view.Primary, cached.Resource) &&
+                !ReferenceEquals(view.Secondary, cached.Resource))
+            {
+                continue;
+            }
+            _viewCache.Remove(viewIdentity);
+            view.View.Dispose();
+        }
+
+        _cachedResources.Remove(cached.Resource);
+        foreach (TransientHeapPage page in _pages)
+            page.ForgetResource(cached.Resource);
+        cached.Resource.Dispose();
     }
 
     private static ulong AlignUp(ulong value, ulong alignment)

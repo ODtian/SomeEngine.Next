@@ -46,10 +46,11 @@ public sealed class ClusterMaterialAssignments
 public sealed class ClusterMaterialAssignmentSet
 {
     internal static ClusterMaterialAssignmentSet Empty { get; } =
-        new([], [], [], [], []);
+        new([], [], [], [], [], []);
 
     private readonly ClusterMaterialSequence[] _sequences;
     private readonly Material[] _slots;
+    private readonly string[] _vertexEncodings;
     private readonly int[] _entityGenerations;
     private readonly uint[] _entityOffsets;
     private ulong _topologyVersion;
@@ -57,12 +58,16 @@ public sealed class ClusterMaterialAssignmentSet
     internal ClusterMaterialAssignmentSet(
         ClusterMaterialSequence[] sequences,
         Material[] slots,
+        string[] vertexEncodings,
         Material[] distinctMaterials,
         int[] entityGenerations,
         uint[] entityOffsets)
     {
+        if (slots.Length != vertexEncodings.Length)
+            throw new ArgumentException("Material slots and vertex encodings must have identical lengths.");
         _sequences = sequences;
         _slots = slots;
+        _vertexEncodings = vertexEncodings;
         DistinctMaterials = distinctMaterials;
         _entityGenerations = entityGenerations;
         _entityOffsets = entityOffsets;
@@ -71,6 +76,8 @@ public sealed class ClusterMaterialAssignmentSet
     public ulong TopologyVersion => _topologyVersion;
 
     public ReadOnlyMemory<Material> Slots => _slots;
+
+    internal ReadOnlyMemory<string> VertexEncodings => _vertexEncodings;
 
     public IReadOnlyList<Material> DistinctMaterials { get; }
 
@@ -93,7 +100,8 @@ public sealed class ClusterMaterialAssignmentSet
         }
 
         for (int index = 0; index < _slots.Length; index++)
-            if (!ReferenceEquals(_slots[index], other._slots[index]))
+            if (!ReferenceEquals(_slots[index], other._slots[index]) ||
+                !string.Equals(_vertexEncodings[index], other._vertexEncodings[index], StringComparison.Ordinal))
                 return false;
         for (int index = 0; index < DistinctMaterials.Count; index++)
             if (!ReferenceEquals(DistinctMaterials[index], other.DistinctMaterials[index]))
@@ -102,7 +110,8 @@ public sealed class ClusterMaterialAssignmentSet
         {
             ClusterMaterialSequence left = _sequences[index];
             ClusterMaterialSequence right = other._sequences[index];
-            if (left.Offset != right.Offset || left.Materials.Length != right.Materials.Length)
+            if (left.Offset != right.Offset || left.Materials.Length != right.Materials.Length ||
+                !string.Equals(left.VertexEncoding, right.VertexEncoding, StringComparison.Ordinal))
                 return false;
             for (int material = 0; material < left.Materials.Length; material++)
                 if (!ReferenceEquals(left.Materials[material], right.Materials[material]))
@@ -141,7 +150,10 @@ public sealed class ClusterMaterialAssignmentSet
     }
 }
 
-internal readonly record struct ClusterMaterialSequence(Material[] Materials, uint Offset);
+internal readonly record struct ClusterMaterialSequence(
+    Material[] Materials,
+    string VertexEncoding,
+    uint Offset);
 
 /// <summary>Publishes direct material assignments before instance properties consume offsets.</summary>
 public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSystemContext>
@@ -187,7 +199,8 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                 {
                     foreach (QueryChunkView chunk in cursor.Chunks)
                     {
-                        if (!chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>())
+                        if (!chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>() &&
+                            !chunk.HasChangedSinceLastSystemVersion<RenderMesh>())
                             continue;
                         state = true;
                         return;
@@ -220,6 +233,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
     {
         private readonly List<ClusterMaterialSequence> _sequences = [];
         private readonly List<Material> _slots = [];
+        private readonly List<string> _vertexEncodings = [];
         private readonly List<Material> _distinctMaterials = [];
         private readonly HashSet<Material> _distinctSet =
             new(ReferenceEqualityComparer.Instance);
@@ -234,7 +248,10 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                     row.ReadBuffer<RenderMaterialBinding>().AsSpan();
                 if (bindings.IsEmpty)
                     throw new InvalidOperationException("A Cluster mesh instance has no material binding.");
-                uint offset = ResolveSequence(bindings);
+                Mesh mesh = row.Read<RenderMesh>().Mesh;
+                string vertexEncoding = mesh.VertexEncoding ?? throw new InvalidDataException(
+                    $"Cluster mesh '{mesh.Name}' has no vertex encoding compatibility.");
+                uint offset = ResolveSequence(bindings, vertexEncoding);
                 Entity entity = row.Entity;
                 EnsureEntityCapacity(checked(entity.Index + 1));
                 _entityGenerations[entity.Index] = entity.Generation;
@@ -242,11 +259,14 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             }
         }
 
-        private uint ResolveSequence(ReadOnlySpan<RenderMaterialBinding> bindings)
+        private uint ResolveSequence(
+            ReadOnlySpan<RenderMaterialBinding> bindings,
+            string vertexEncoding)
         {
             foreach (ClusterMaterialSequence sequence in _sequences)
             {
-                if (sequence.Materials.Length != bindings.Length)
+                if (sequence.Materials.Length != bindings.Length ||
+                    !string.Equals(sequence.VertexEncoding, vertexEncoding, StringComparison.Ordinal))
                     continue;
                 bool equal = true;
                 for (int index = 0; index < bindings.Length; index++)
@@ -268,16 +288,18 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                 ArgumentNullException.ThrowIfNull(material);
                 materials[index] = material;
                 _slots.Add(material);
+                _vertexEncodings.Add(vertexEncoding);
                 if (_distinctSet.Add(material))
                     _distinctMaterials.Add(material);
             }
-            _sequences.Add(new ClusterMaterialSequence(materials, offset));
+            _sequences.Add(new ClusterMaterialSequence(materials, vertexEncoding, offset));
             return offset;
         }
 
         internal ClusterMaterialAssignmentSet Build() => new(
             [.. _sequences],
             [.. _slots],
+            [.. _vertexEncodings],
             [.. _distinctMaterials],
             _entityGenerations,
             _entityOffsets);
@@ -311,7 +333,8 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
     public RenderInstanceChanges GetChanges(
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion) =>
-        packet.BufferChangedSince<RenderMaterialBinding>(lastSystemVersion)
+        packet.BufferChangedSince<RenderMaterialBinding>(lastSystemVersion) ||
+        packet.ChangedSince<RenderMesh>(lastSystemVersion)
             ? RenderInstanceChanges.Values
             : RenderInstanceChanges.None;
 

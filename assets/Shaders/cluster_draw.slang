@@ -3,10 +3,10 @@
 
 struct DrawUniforms
 {
-    uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
     uint Pad0;
+    uint Pad1;
 };
 
 struct DrawDispatchUniforms
@@ -229,15 +229,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
     output.UV = vertex.uv0;
     output.RenderTargetIndex = viewIndex;
 
-    if (Uniforms.DebugMode == 2u)
-    {
-        float l = float(lodLevel) / 10.0;
-        output.Color = float3(l, 1.0 - l, 0.0);
-    }
-    else
-    {
-        output.Color = vertex.worldNormal * 0.5 + 0.5;
-    }
+    output.Color = vertex.worldNormal * 0.5 + 0.5;
 
     return output;
 }
@@ -245,12 +237,6 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 [shader("pixel")]
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    if (Uniforms.DebugMode == 1u)
-    {
-        uint h = PCGHash(input.ClusterID);
-        return float4(ColorFromHash(h), 1.0);
-    }
-
     return float4(input.Color, 1.0);
 }
 

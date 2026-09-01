@@ -106,8 +106,13 @@ public sealed partial class RenderDevice : IDisposable
         }
     }
 
-    internal void Retire(IDisposable value)
+    /// <summary>
+    /// Defers disposal until every Queue completion currently tracked for this Device has finished.
+    /// Callers must stop publishing future uses of <paramref name="value"/> before calling this.
+    /// </summary>
+    public void RetireAfterTrackedSubmissions(IDisposable value)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(value);
         lock (_completionGate)
         {
@@ -120,6 +125,8 @@ public sealed partial class RenderDevice : IDisposable
             _retired.Add(new RetiredResource(value, [.. _submitted]));
         }
     }
+
+    internal void Retire(IDisposable value) => RetireAfterTrackedSubmissions(value);
 
     public void Dispose()
     {

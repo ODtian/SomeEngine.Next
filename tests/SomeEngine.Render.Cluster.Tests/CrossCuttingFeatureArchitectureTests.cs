@@ -107,11 +107,11 @@ public sealed class CrossCuttingFeatureArchitectureTests
     }
 
     [Fact]
-    public void Lighting_is_resolved_once_through_the_generic_shade_resource_boundary()
+    public void Lighting_is_resolved_once_through_the_generic_stage_resource_boundary()
     {
         Assert.Contains(
             typeof(LightingFeature).GetInterfaces(),
-            static contract => contract == typeof(IClusterShadeResourceProvider));
+            static contract => contract == typeof(IClusterStageResourceProvider));
 
         Type invocation = typeof(ClusterPipelineSystem).Assembly.GetType(
             "SomeEngine.Render.Cluster.Pipeline.ClusterShadeInvocation",
@@ -119,10 +119,10 @@ public sealed class CrossCuttingFeatureArchitectureTests
         PropertyInfo binders = invocation.GetProperty(
             "FeatureResourceBinders",
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
-        Assert.Equal(typeof(ClusterShadeResourceBinder[]), binders.PropertyType);
+        Assert.Equal(typeof(ClusterStageResourceBinder[]), binders.PropertyType);
         Assert.DoesNotContain(
             invocation.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic),
-            static property => property.PropertyType == typeof(IClusterShadeResourceProvider));
+            static property => property.PropertyType == typeof(IClusterStageResourceProvider));
     }
 
     [Fact]

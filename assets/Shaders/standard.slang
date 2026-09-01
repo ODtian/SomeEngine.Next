@@ -82,6 +82,7 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         uniform StaticVertexEval eval,
         uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
@@ -102,7 +103,7 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
         float3 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
         float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
-        StandardScalars scalars = LoadMaterialScalars<StandardScalars>();
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialSlot);
 
         // TBN matrix: transform normal from tangent space to world space
         float3 N_geom = normalize(ctx.worldNormal);
@@ -189,6 +190,7 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         uint debugMode,
         uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,

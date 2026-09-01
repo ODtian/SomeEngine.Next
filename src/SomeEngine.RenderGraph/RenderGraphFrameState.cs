@@ -102,6 +102,12 @@ internal sealed class RenderGraphFrameState
         Graph.RetireAfterSubmittedFrames(value);
     }
 
+    internal void RetireAfterFrame(IDisposable value)
+    {
+        EnsureAuthoring();
+        _executionObservers.Add(new FrameRetirement(Graph, value));
+    }
+
     internal void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
     {
         EnsureAuthoring();
@@ -1348,6 +1354,19 @@ internal sealed class RenderGraphFrameState
         _executionObservers.Clear();
         foreach (IRenderGraphFrameExecutionObserver observer in observers)
             observer.OnRenderGraphFrameFinished(executed);
+    }
+
+    private sealed class FrameRetirement(RenderGraph graph, IDisposable value)
+        : IRenderGraphFrameExecutionObserver
+    {
+        private IDisposable? _value = value;
+
+        public void OnRenderGraphFrameFinished(bool executed)
+        {
+            IDisposable? retired = Interlocked.Exchange(ref _value, null);
+            if (retired is not null)
+                graph.RetireAfterSubmittedFrames(retired);
+        }
     }
 }
 

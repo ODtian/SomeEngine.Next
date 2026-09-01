@@ -142,6 +142,21 @@ internal sealed class GraphStructureIndex
 
         ValidateTouched(graph, structure, changes, resourceAccesses, resourceViews);
 
+        GraphIdentity[] passIds = changes.Passes.Count == 0 && !ReferenceEquals(previous, Empty)
+            ? previous.PassIds
+            : BuildIds(graph.Identity, structure.Passes);
+        var hazardOrderDirty = new HashSet<GraphIdentity>(changes.AffectedPasses);
+        hazardOrderDirty.UnionWith(changes.OrderPasses);
+        GraphIdentity[] hazardOrder = RepairTopologicalSchedule(
+            structure,
+            passIds,
+            previous.TopologicalSchedule,
+            explicitPredecessorIdentities,
+            explicitSuccessorIdentities,
+            hazardOrderDirty,
+            out _);
+        Dictionary<GraphIdentity, int> hazardOrderPositions = BuildPositions(hazardOrder);
+
         var hazardTimelines = new Dictionary<GraphIdentity, GraphHazardTimeline>(previous.HazardTimelines);
         var hazardEdgeCounts = new Dictionary<GraphDependencyEdge, int>(previous.HazardEdgeCounts);
         var changedEdges = new HashSet<GraphDependencyEdge>();
@@ -162,7 +177,8 @@ internal sealed class GraphStructureIndex
             if (!ContainsResource(structure, resource)) continue;
             GraphHazardTimeline timeline = BuildHazardTimeline(
                 structure,
-                resourceAccesses.GetValueOrDefault(resource, []));
+                resourceAccesses.GetValueOrDefault(resource, []),
+                hazardOrderPositions);
             hazardTimelines.Add(resource, timeline);
             hazardEdgesRebuilt += timeline.Edges.Length;
             foreach (GraphDependencyEdge edge in timeline.Edges)
@@ -213,9 +229,6 @@ internal sealed class GraphStructureIndex
             dependencySuccessors.Remove(removed);
         }
 
-        GraphIdentity[] passIds = changes.Passes.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.PassIds
-            : BuildIds(graph.Identity, structure.Passes);
         GraphIdentity[] schedule = RepairTopologicalSchedule(
             structure,
             passIds,
@@ -571,7 +584,8 @@ internal sealed class GraphStructureIndex
 
     private static GraphHazardTimeline BuildHazardTimeline(
         GraphStructure structure,
-        GraphIdentity[] accessIds)
+        GraphIdentity[] accessIds,
+        IReadOnlyDictionary<GraphIdentity, int> orderPositions)
     {
         var accesses = new List<(GraphIdentity Id, PassResourceAccess Access)>(accessIds.Length);
         foreach (GraphIdentity accessId in accessIds)
@@ -579,8 +593,13 @@ internal sealed class GraphStructureIndex
                 accesses.Add((accessId, structure.Accesses.Get(accessId)));
         accesses.Sort((left, right) =>
         {
-            int ordinal = structure.Passes.Get(left.Access.Pass).DeclarationOrdinal.CompareTo(
+            int leftPosition = orderPositions.GetValueOrDefault(
+                left.Access.Pass,
+                structure.Passes.Get(left.Access.Pass).DeclarationOrdinal);
+            int rightPosition = orderPositions.GetValueOrDefault(
+                right.Access.Pass,
                 structure.Passes.Get(right.Access.Pass).DeclarationOrdinal);
+            int ordinal = leftPosition.CompareTo(rightPosition);
             if (ordinal != 0) return ordinal;
             int slot = left.Id.Slot.CompareTo(right.Id.Slot);
             return slot != 0 ? slot : left.Id.Generation.CompareTo(right.Id.Generation);

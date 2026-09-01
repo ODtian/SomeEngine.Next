@@ -54,6 +54,27 @@ internal readonly record struct ClusterLayerDispatch(
     uint GroupX,
     uint GroupY);
 
+internal readonly record struct ClusterDeformPassBinding(
+    GraphPassId Pass,
+    uint Invocation,
+    GraphBufferId Uniforms);
+
+internal readonly record struct ClusterSoftwareRasterPassBinding(
+    GraphPassId Pass,
+    uint Invocation,
+    GraphBufferId Uniforms);
+
+internal readonly record struct ClusterHardwareRasterPassBinding(
+    GraphPassId Pass,
+    uint Invocation,
+    GraphBufferId Uniforms,
+    GraphBufferId DispatchUniforms);
+
+internal readonly record struct ClusterTessellationPassBinding(
+    GraphPassId Pass,
+    uint Invocation,
+    GraphBufferId Uniforms);
+
 internal readonly record struct ClusterBufferClearParameters(GraphBufferId Buffer)
 {
     internal static void Record(

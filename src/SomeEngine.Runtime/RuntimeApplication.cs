@@ -374,7 +374,7 @@ internal static class RuntimeApplication
             outputDescription,
             lightingShader,
             boot.LightingEntryPoint);
-        var lightPublication = new RenderLightSetPublication();
+        var lightSystem = new RenderLightSetSystem();
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
         ClusterPipelineSystem pipeline = CreatePipeline();
@@ -404,7 +404,6 @@ internal static class RuntimeApplication
             pipelineConfiguration,
             renderGraph,
             outputDescription,
-            ClusterRasterExecutor.Indirect,
             streamingFeedback,
             lighting,
             new ClusterPipelineOptions
@@ -417,10 +416,10 @@ internal static class RuntimeApplication
         RenderFrameSystems CreateFrameSystems(ClusterPipelineSystem system)
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
-            _ = systems.Add(new RenderLightSetSystem(lightPublication));
+            _ = systems.Add(lightSystem);
             _ = systems.Add(new LightingFeatureSystem(
                 lighting,
-                lightPublication,
+                lightSystem,
                 outputDescription.ViewCapacity));
             _ = systems.Add(system);
             return systems;

@@ -98,6 +98,21 @@ public sealed class ClusterMaterialStageTests
     }
 
     [Fact]
+    public void Stage_bin_indices_survive_unrelated_registration_changes()
+    {
+        var bins = new ClusterBinIndexMap<string>();
+        bins.Reconcile(["first", "second"]);
+        uint first = bins.Get("first");
+        uint second = bins.Get("second");
+
+        bins.Reconcile(["second", "third"]);
+
+        Assert.Equal(second, bins.Get("second"));
+        Assert.Equal(first, bins.Get("third"));
+        Assert.Equal(2u, bins.Range);
+    }
+
+    [Fact]
     public void Descriptor_and_scalar_value_changes_do_not_change_a_stage_key()
     {
         CookedShaderProgram cooked = CookedShaderTestProgram.Create();
@@ -248,6 +263,7 @@ public sealed class ClusterMaterialStageTests
         Assert.Contains("PixelCoordBuffer", names);
         Assert.Contains("OutputColor", names);
         Assert.Contains("MaterialScalarRegion", names);
+        Assert.Contains("MaterialScalarOffsets", names);
         Assert.Contains(texture0, names);
         if (texture1 is not null) Assert.Contains(texture1, names);
         if (texture2 is not null) Assert.Contains(texture2, names);
@@ -260,8 +276,9 @@ public sealed class ClusterMaterialStageTests
     }
 
     private static ClusterMaterialAssignmentSet Assignment(Material material) => new(
-        [new ClusterMaterialSequence([material], 0)],
+        [new ClusterMaterialSequence([material], ClusterTestAssets.StandardVertexEncoding, 0)],
         [material],
+        [ClusterTestAssets.StandardVertexEncoding],
         [material],
         [],
         []);

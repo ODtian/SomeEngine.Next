@@ -80,7 +80,7 @@ public sealed record ClusterPipelineOptions
         }
         _ = checked((ulong)MaxCandidates * 12ul);
         _ = checked((ulong)MaxCandidates * 16ul);
-        _ = checked((ulong)MaxTessellationSplitWorkItems * 16ul);
+        _ = checked((ulong)MaxTessellationSplitWorkItems * 20ul);
         _ = checked((ulong)MaxDicedTriangles * 48ul);
     }
 }
