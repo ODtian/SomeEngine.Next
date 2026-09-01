@@ -1,13 +1,38 @@
-#ifndef STANDARD_PBR_SLANG
-#define STANDARD_PBR_SLANG
+#ifndef STANDARD_SLANG
+#define STANDARD_SLANG
 
 #include "material_interfaces.slang"
 #include "cluster_shade_pipeline.slang"
+#include "render_lighting.slang"
+#include "brdf.slang"
+
+StructuredBuffer<ClusteredLightGridParameters> LightingViews;
+StructuredBuffer<GPULight> LightBuffer;
+StructuredBuffer<uint2> ClusteredLightGrid;
+StructuredBuffer<uint> LightIndexList;
+Texture2DArray<float4> LightingCookieAtlas;
+
+float EvaluateLightingCookie(GPULight light, float3 worldPosition)
+{
+    if (light.CookieIndex < 0)
+        return 1.0;
+    float4 cookiePosition = mul(float4(worldPosition, 1.0), light.WorldToLightCookie);
+    float2 uv = cookiePosition.xy / max(abs(cookiePosition.w), 1e-5);
+    uv = uv * light.CookieScaleOffset.xy + light.CookieScaleOffset.zw;
+    uint width;
+    uint height;
+    uint layers;
+    LightingCookieAtlas.GetDimensions(width, height, layers);
+    int2 pixel = int2(saturate(uv) * float2(max(width, 1u) - 1u, max(height, 1u) - 1u));
+    uint layer = min((uint)light.CookieIndex, max(layers, 1u) - 1u);
+    float cookie = LightingCookieAtlas.Load(int4(pixel, layer, 0)).r;
+    return lerp(1.0, cookie, saturate(light.CookieStrength));
+}
 
 // C# imports this marked struct through Slang reflection and writes the material
 // scalar payload using Slang's own field offsets and type size.
 [MaterialScalars]
-struct StandardPBRScalars
+struct StandardScalars
 {
     float4 BaseColorTint;
     float MetallicFactor;
@@ -15,7 +40,7 @@ struct StandardPBRScalars
     float3 EmissiveFactor;
 };
 
-struct StandardPBRPixelContext
+struct StandardPixelContext
 {
     uint3 pixelCoord;
     uint instanceID;
@@ -25,7 +50,7 @@ struct StandardPBRPixelContext
     float2 uv0;
 };
 
-StandardPBRPixelContext BuildStandardPBRPixelContext(
+StandardPixelContext BuildStandardPixelContext(
     uint3 pixelCoord,
     uint instanceID,
     SurfaceEval surface,
@@ -34,7 +59,7 @@ StandardPBRPixelContext BuildStandardPBRPixelContext(
     StaticVertexEval.DeformedVertex v1,
     StaticVertexEval.DeformedVertex v2)
 {
-    StandardPBRPixelContext ctx;
+    StandardPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
     ctx.instanceID = instanceID;
     ctx.surfacePosition = surface.Position;
@@ -45,7 +70,7 @@ StandardPBRPixelContext BuildStandardPBRPixelContext(
     return ctx;
 }
 
-struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
+struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
 {
     // Textures
     Texture2D AlbedoMap;
@@ -64,7 +89,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         StaticVertexEval.DeformedVertex v2,
         RWTexture2DArray<float4> outputColor)
     {
-        StandardPBRPixelContext ctx = BuildStandardPBRPixelContext(
+        StandardPixelContext ctx = BuildStandardPixelContext(
             pixelCoord,
             instanceID,
             surface,
@@ -77,7 +102,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
         float3 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
         float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
-        StandardPBRScalars scalars = LoadMaterialScalars<StandardPBRScalars>();
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>();
 
         // TBN matrix: transform normal from tangent space to world space
         float3 N_geom = normalize(ctx.worldNormal);
@@ -88,10 +113,73 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
         float metallic = saturate(armSample.b * scalars.MetallicFactor);
-        float facing = 0.5 + 0.5 * saturate(mappedNormal.y);
-        float materialResponse = lerp(1.0, 0.85, metallic) * lerp(1.0, 0.9, roughness);
-        float3 finalColor = baseColor * armSample.r * facing * materialResponse +
-            scalars.EmissiveFactor;
+        roughness = max(roughness, 0.04);
+        ClusteredLightGridParameters lighting = LightingViews[ctx.pixelCoord.z];
+        float3 viewPosition = mul(float4(ctx.surfacePosition, 1.0), lighting.View).xyz;
+        float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
+        float3 V = normalize(Views[ctx.pixelCoord.z].CameraPos - ctx.surfacePosition);
+        float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
+
+        for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
+        {
+            GPULight light = LightBuffer[lightIndex];
+            finalColor += EvaluateDirectionalLight(
+                baseColor,
+                metallic,
+                roughness,
+                mappedNormal,
+                V,
+                -normalize(light.Direction),
+                light.Color * light.Intensity,
+                EvaluateLightingCookie(light, ctx.surfacePosition));
+        }
+
+        uint cell = ClusteredLightCellIndex(
+            lighting,
+            ctx.pixelCoord.z,
+            ctx.pixelCoord.xy,
+            viewDepth);
+        uint localCount = min(
+            ClusteredLightGrid[cell].y,
+            lighting.MaxLightsPerCluster);
+        uint firstIndex = cell * lighting.MaxLightsPerCluster;
+        for (uint localIndex = 0u; localIndex < localCount; localIndex++)
+        {
+            uint lightIndex = LightIndexList[firstIndex + localIndex];
+            GPULight light = LightBuffer[lightIndex];
+            float3 radiance = light.Color * light.Intensity;
+            if (dot(light.Direction, light.Direction) > 1e-8 && light.OuterConeCos > 0.0)
+            {
+                finalColor += EvaluateSpotLight(
+                    baseColor,
+                    metallic,
+                    roughness,
+                    mappedNormal,
+                    V,
+                    ctx.surfacePosition,
+                    light.Position,
+                    light.Range,
+                    light.Direction,
+                    light.InnerConeCos,
+                    light.OuterConeCos,
+                    radiance,
+                    EvaluateLightingCookie(light, ctx.surfacePosition));
+            }
+            else
+            {
+                finalColor += EvaluatePointLight(
+                    baseColor,
+                    metallic,
+                    roughness,
+                    mappedNormal,
+                    V,
+                    ctx.surfacePosition,
+                    light.Position,
+                    light.Range,
+                    radiance,
+                    EvaluateLightingCookie(light, ctx.surfacePosition));
+            }
+        }
 
         outputColor[ctx.pixelCoord] = float4(finalColor, 1.0);
     }
@@ -114,7 +202,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
             return;
         }
 
-        StandardPBRPixelContext ctx = BuildStandardPBRPixelContext(
+        StandardPixelContext ctx = BuildStandardPixelContext(
             pixelCoord,
             instanceID,
             surface,

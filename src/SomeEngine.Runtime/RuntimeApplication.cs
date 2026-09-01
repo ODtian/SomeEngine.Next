@@ -12,7 +12,13 @@ using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
+using SomeEngine.Render.Features.Debugging;
+using SomeEngine.Render.Features.Lighting;
+using SomeEngine.Render.Features.Motion;
+using SomeEngine.Render.Features.Temporal;
+using SomeEngine.Render.Features.Translucency;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 
@@ -46,6 +52,16 @@ internal static class RuntimeApplication
             ParseRasterShaders(value.UiShaders, nameof(value.UiShaders));
         (AssetGuid presentationShader, string presentationVertexEntry, string presentationPixelEntry) =
             ParseRasterShaders(value.PresentationShaders, nameof(value.PresentationShaders));
+        (AssetGuid lightingShader, string lightingEntryPoint) =
+            ParseComputeShader(value.LightingShader, nameof(value.LightingShader));
+        (AssetGuid motionShader, string motionEntryPoint) =
+            ParseComputeShader(value.MotionShader, nameof(value.MotionShader));
+        (AssetGuid temporalShader, string temporalVertexEntry, string temporalPixelEntry) =
+            ParseRasterShaders(value.TemporalShaders, nameof(value.TemporalShaders));
+        (AssetGuid translucencyShader, string translucencyVertexEntry, string translucencyPixelEntry) =
+            ParseRasterShaders(value.TranslucencyShaders, nameof(value.TranslucencyShaders));
+        (AssetGuid debugShader, string debugVertexEntry, string debugPixelEntry) =
+            ParseRasterShaders(value.DebugShaders, nameof(value.DebugShaders));
         var boot = new BootConfiguration(
             ParseGuid(value.SceneGuid, nameof(value.SceneGuid)),
             ParseGuid(value.ClusterPipelineGuid, nameof(value.ClusterPipelineGuid)),
@@ -55,6 +71,19 @@ internal static class RuntimeApplication
             presentationShader,
             presentationVertexEntry,
             presentationPixelEntry,
+            lightingShader,
+            lightingEntryPoint,
+            motionShader,
+            motionEntryPoint,
+            temporalShader,
+            temporalVertexEntry,
+            temporalPixelEntry,
+            translucencyShader,
+            translucencyVertexEntry,
+            translucencyPixelEntry,
+            debugShader,
+            debugVertexEntry,
+            debugPixelEntry,
             checked((int)value.WindowWidth),
             checked((int)value.WindowHeight),
             string.IsNullOrWhiteSpace(value.Name) ? "SomeEngine" : value.Name);
@@ -65,7 +94,31 @@ internal static class RuntimeApplication
         Task<Shader> presentationShaderTask = assets
             .LoadAsync(new AssetId<Shader>(boot.PresentationShader))
             .AsTask();
-        await Task.WhenAll(sceneTask, pipelineTask, uiShaderTask, presentationShaderTask)
+        Task<Shader> lightingShaderTask = assets
+            .LoadAsync(new AssetId<Shader>(boot.LightingShader))
+            .AsTask();
+        Task<Shader> motionShaderTask = assets
+            .LoadAsync(new AssetId<Shader>(boot.MotionShader))
+            .AsTask();
+        Task<Shader> temporalShaderTask = assets
+            .LoadAsync(new AssetId<Shader>(boot.TemporalShader))
+            .AsTask();
+        Task<Shader> translucencyShaderTask = assets
+            .LoadAsync(new AssetId<Shader>(boot.TranslucencyShader))
+            .AsTask();
+        Task<Shader> debugShaderTask = assets
+            .LoadAsync(new AssetId<Shader>(boot.DebugShader))
+            .AsTask();
+        await Task.WhenAll(
+                sceneTask,
+                pipelineTask,
+                uiShaderTask,
+                presentationShaderTask,
+                lightingShaderTask,
+                motionShaderTask,
+                temporalShaderTask,
+                translucencyShaderTask,
+                debugShaderTask)
             .ConfigureAwait(false);
 
         using var window = new NativeWindow(boot.Title, boot.Width, boot.Height);
@@ -115,6 +168,11 @@ internal static class RuntimeApplication
             pipelineTask.Result,
             uiShaderTask.Result,
             presentationShaderTask.Result,
+            lightingShaderTask.Result,
+            motionShaderTask.Result,
+            temporalShaderTask.Result,
+            translucencyShaderTask.Result,
+            debugShaderTask.Result,
             boot,
             forceHardwareRaster: useWarp);
     }
@@ -239,6 +297,11 @@ internal static class RuntimeApplication
         ClusterShaders pipelineConfiguration,
         Shader uiShader,
         Shader presentationShader,
+        Shader lightingShader,
+        Shader motionShader,
+        Shader temporalShader,
+        Shader translucencyShader,
+        Shader debugShader,
         BootConfiguration boot,
         bool forceHardwareRaster)
     {
@@ -303,6 +366,17 @@ internal static class RuntimeApplication
             new RenderGraphDesc(
                 MaximumFramesInFlight: 3,
                 Label: "SomeEngine Runtime Render Graph"));
+        var outputDescription = new ClusterPipelineOutputDescription(boot.Width, boot.Height, 4);
+        using var lighting = new LightingFeature(
+            backend,
+            device,
+            renderGraph,
+            outputDescription,
+            lightingShader,
+            boot.LightingEntryPoint);
+        var lightPublication = new RenderLightSetPublication();
+        var streamingFeedback = new ClusterStreamingFeedbackChannel();
+        var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
         ClusterPipelineSystem pipeline = CreatePipeline();
         RenderFrameSystems frameSystems = CreateFrameSystems(pipeline);
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
@@ -310,6 +384,10 @@ internal static class RuntimeApplication
         FrameOutputVerifier? outputVerifier = null;
         RuntimeUiRenderer? ui = null;
         RuntimePresentationPipeline? presentation = null;
+        MotionFeature? motion = null;
+        TemporalFeature? temporal = null;
+        TranslucencyFeature? translucency = null;
+        DebugFeature? debug = null;
         Task? nextGameUpdate = null;
         var input = new RuntimeInput();
         int width = boot.Width;
@@ -325,8 +403,10 @@ internal static class RuntimeApplication
             materialAssignments,
             pipelineConfiguration,
             renderGraph,
-            new ClusterPipelineOutputDescription(boot.Width, boot.Height, 4),
+            outputDescription,
             ClusterRasterExecutor.Indirect,
+            streamingFeedback,
+            lighting,
             new ClusterPipelineOptions
             {
                 EnableAsyncCompute = options.AsyncCompute,
@@ -337,6 +417,11 @@ internal static class RuntimeApplication
         RenderFrameSystems CreateFrameSystems(ClusterPipelineSystem system)
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
+            _ = systems.Add(new RenderLightSetSystem(lightPublication));
+            _ = systems.Add(new LightingFeatureSystem(
+                lighting,
+                lightPublication,
+                outputDescription.ViewCapacity));
             _ = systems.Add(system);
             return systems;
         }
@@ -506,7 +591,13 @@ internal static class RuntimeApplication
                     RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
                     nextGameUpdate = null;
                 }
-                Prepare(prepareSystems, cluster, coordinator, window, reportMilestones);
+                Prepare(
+                    prepareSystems,
+                    cluster,
+                    streamingConsumer,
+                    coordinator,
+                    window,
+                    reportMilestones);
                 bool hasFutureFrame =
                     options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
                 if (hasFutureFrame)
@@ -523,11 +614,48 @@ internal static class RuntimeApplication
                     });
                 }
                 ClusterPipelineOutputs clusterOutputs = pipeline.ReconcileGraph();
-                presentation ??= new RuntimePresentationPipeline(
+                motion ??= new MotionFeature(
                     backend,
                     device,
                     renderGraph,
                     clusterOutputs,
+                    motionShader,
+                    boot.MotionEntryPoint);
+                temporal ??= new TemporalFeature(
+                    backend,
+                    device,
+                    renderGraph,
+                    boot.Width,
+                    boot.Height,
+                    temporalShader,
+                    boot.TemporalVertexEntry,
+                    boot.TemporalPixelEntry);
+                translucency ??= new TranslucencyFeature(
+                    backend,
+                    device,
+                    renderGraph,
+                    boot.Width,
+                    boot.Height,
+                    translucencyShader,
+                    boot.TranslucencyVertexEntry,
+                    boot.TranslucencyPixelEntry);
+                debug ??= new DebugFeature(
+                    backend,
+                    device,
+                    renderGraph,
+                    boot.Width,
+                    boot.Height,
+                    debugShader,
+                    boot.DebugVertexEntry,
+                    boot.DebugPixelEntry);
+                presentation ??= new RuntimePresentationPipeline(
+                    backend,
+                    device,
+                    renderGraph,
+                    debug.Output.Color,
+                    debug.Output.Format,
+                    debug.Output.Width,
+                    debug.Output.Height,
                     presentationShader,
                     boot.PresentationVertexEntry,
                     boot.PresentationPixelEntry,
@@ -544,6 +672,11 @@ internal static class RuntimeApplication
                     coordinator,
                     frameSystems,
                     pipeline,
+                    clusterOutputs,
+                    motion,
+                    temporal,
+                    translucency,
+                    debug,
                     presentation,
                     ui,
                     image,
@@ -551,6 +684,7 @@ internal static class RuntimeApplication
                     height,
                     window,
                     reportMilestones,
+                    cameraCut,
                     outputVerifier);
                 if (frameOutput is FrameOutputMetrics output)
                     verifiedOutput = output;
@@ -654,6 +788,10 @@ internal static class RuntimeApplication
             coordinator.WaitForTrackedSubmissions();
             ui?.Dispose();
             presentation?.Dispose();
+            debug?.Dispose();
+            translucency?.Dispose();
+            temporal?.Dispose();
+            motion?.Dispose();
             frameSystems.Dispose();
             Shutdown(prepareSystems, cluster, instances, coordinator);
             scene.Dispose();
@@ -664,6 +802,7 @@ internal static class RuntimeApplication
     private static void Prepare(
         RenderPrepareSystems systems,
         ClusterRenderResources cluster,
+        ClusterStreamingFeedbackConsumer streamingFeedback,
         RenderFrameCoordinator coordinator,
         NativeWindow window,
         bool reportMilestones)
@@ -691,7 +830,7 @@ internal static class RuntimeApplication
                 throw new InvalidOperationException(
                     $"{meshPrepare.UnresolvedMeshes} scene mesh assets were unresolved during Cluster preparation.");
             }
-            cluster.PumpStreaming();
+            streamingFeedback.Pump();
             if (reportMilestones)
                 Console.WriteLine("First frame: publishing prepare systems.");
             systems.Update(scope);
@@ -708,6 +847,11 @@ internal static class RuntimeApplication
         RenderFrameCoordinator coordinator,
         RenderFrameSystems systems,
         ClusterPipelineSystem pipeline,
+        in ClusterPipelineOutputs clusterOutputs,
+        MotionFeature motion,
+        TemporalFeature temporal,
+        TranslucencyFeature translucency,
+        DebugFeature debug,
         RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
         SwapchainImage image,
@@ -715,6 +859,7 @@ internal static class RuntimeApplication
         int height,
         NativeWindow window,
         bool reportMilestones,
+        bool cameraCut,
         FrameOutputVerifier? outputVerifier)
     {
         if (!coordinator.TryBeginFrame(out RenderFrame? frame))
@@ -733,6 +878,7 @@ internal static class RuntimeApplication
             FrameOutputMetrics? frameOutput = null;
             bool pipelineCommitted = false;
             bool uiCommitted = false;
+            bool temporalCommitted = false;
             completionSlots.AsSpan().Clear();
             try
             {
@@ -743,6 +889,24 @@ internal static class RuntimeApplication
                         Console.WriteLine("First frame: recording render systems.");
                     presentation.Bind(ref graphFrame, image, graphicsQueue);
                     systems.Update(frame, graphFrame);
+                    motion.Record(ref graphFrame);
+                    temporal.Record(
+                        ref graphFrame,
+                        clusterOutputs.MaterialColor,
+                        clusterOutputs.Depth,
+                        motion.Output,
+                        TemporalResolveSettings.Default,
+                        enabled: true,
+                        cameraCut: cameraCut);
+                    translucency.Record(
+                        ref graphFrame,
+                        temporal.Output.ResolvedColor,
+                        enabled: false);
+                    debug.Record(
+                        ref graphFrame,
+                        translucency.Output.Color,
+                        clusterOutputs.Depth,
+                        DebugVisualizationMode.None);
                     ui.Record(ref graphFrame, presentation.Target, width, height);
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
                     if (reportMilestones)
@@ -758,6 +922,8 @@ internal static class RuntimeApplication
                     pipelineCommitted = true;
                     ui.Commit(execution);
                     uiCommitted = true;
+                    temporal.Commit();
+                    temporalCommitted = true;
                     frame.Complete(execution);
                     if (outputVerifier is not null)
                     {
@@ -790,6 +956,11 @@ internal static class RuntimeApplication
                         ui.Commit(accepted);
                         uiCommitted = true;
                     }
+                    if (!temporalCommitted)
+                    {
+                        temporal.Commit();
+                        temporalCommitted = true;
+                    }
                     if (!frame.IsClosed) frame.Complete(accepted);
                 }
                 throw;
@@ -798,6 +969,7 @@ internal static class RuntimeApplication
             {
                 if (!pipelineCommitted) pipeline.Discard();
                 if (!uiCommitted) ui.Discard();
+                if (!temporalCommitted) temporal.Discard();
             }
         }
     }
@@ -938,6 +1110,18 @@ internal static class RuntimeApplication
         return (vertexGuid, vertex.EntryPoint, pixel.EntryPoint);
     }
 
+    private static (AssetGuid Shader, string EntryPoint) ParseComputeShader(
+        ShaderRef? shader,
+        string field)
+    {
+        if (shader is null || shader.Stage != ShaderStage.Compute)
+            throw new InvalidDataException($"Runtime field '{field}' must contain one compute shader.");
+        AssetGuid guid = ParseGuid(shader.AssetGuid, $"{field}.AssetGuid");
+        if (string.IsNullOrWhiteSpace(shader.EntryPoint))
+            throw new InvalidDataException($"Runtime field '{field}' shader entry point is missing.");
+        return (guid, shader.EntryPoint);
+    }
+
     private static string contentRootLabel(string value) => Path.GetFullPath(value);
 
     private readonly record struct BootConfiguration(
@@ -949,6 +1133,19 @@ internal static class RuntimeApplication
         AssetGuid PresentationShader,
         string PresentationVertexEntry,
         string PresentationPixelEntry,
+        AssetGuid LightingShader,
+        string LightingEntryPoint,
+        AssetGuid MotionShader,
+        string MotionEntryPoint,
+        AssetGuid TemporalShader,
+        string TemporalVertexEntry,
+        string TemporalPixelEntry,
+        AssetGuid TranslucencyShader,
+        string TranslucencyVertexEntry,
+        string TranslucencyPixelEntry,
+        AssetGuid DebugShader,
+        string DebugVertexEntry,
+        string DebugPixelEntry,
         int Width,
         int Height,
         string Title);

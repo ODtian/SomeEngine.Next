@@ -100,6 +100,60 @@ public sealed class CookedClusterShaderContractTests
             ResourceNames(shader, entryPoint));
     }
 
+    [Fact]
+    public async Task StandardShadeEntryExplicitlyConsumesLightingFeatureResources()
+    {
+        Shader shader = await ReadCookedShader("cluster_shade_material.shader.asset");
+        string[] resources = ResourceNames(shader, "CSMaterialShadeCached");
+
+        Assert.Contains("LightingViews", resources);
+        Assert.Contains("LightBuffer", resources);
+        Assert.Contains("ClusteredLightGrid", resources);
+        Assert.Contains("LightIndexList", resources);
+        Assert.Contains("LightingCookieAtlas", resources);
+    }
+
+    [Theory]
+    [InlineData(
+        "clustered_light_grid.shader.asset",
+        "BuildClusteredLightGrid",
+        "ClusteredLightGrid|LightBuffer|LightIndexList|LightingViews")]
+    [InlineData(
+        "render_motion.shader.asset",
+        "BuildMotionVectors",
+        "CacheOffsets|DeformCache|InstanceData|InstanceProperties|MotionUniforms|OutputMotionVectors|PageHeap|Views|VisBuffer|VisibleClusters")]
+    [InlineData(
+        "temporal_resolve.shader.asset",
+        "PSMain",
+        "MotionVectors|PreviousMotionVectors|PreviousSceneColor|PreviousSceneDepth|SceneColor|SceneDepth|TemporalResolveUniforms")]
+    [InlineData(
+        "render_debug_overlay.shader.asset",
+        "PSMain",
+        "DebugUniforms|InputColor|InputDepth")]
+    [InlineData(
+        "translucency_composite.shader.asset",
+        "PSMain",
+        "CompositionUniforms|OpaqueColor|TranslucencyAccumulation|TranslucencyRevealage")]
+    [InlineData(
+        "stream_output_geometry.shader.asset",
+        "BuildStreamOutput",
+        "ExportUniforms|PhaseOneCounts|PhaseTwoCounts|StreamOutputClusters|StreamOutputCount|VisibleClusters")]
+    [InlineData(
+        "ray_tracing_geometry.shader.asset",
+        "BuildRayTracingGeometry",
+        "ExportUniforms|PageHeap|PhaseOneCounts|PhaseTwoCounts|RayTracingClusterCount|RayTracingClusters|VisibleClusters")]
+    public async Task IndependentFeatureEntriesExposeExactOwnedResourceContracts(
+        string assetName,
+        string entryPoint,
+        string expectedResources)
+    {
+        Shader shader = await ReadCookedShader(assetName);
+
+        Assert.Equal(
+            Sorted(expectedResources.Split('|', StringSplitOptions.RemoveEmptyEntries)),
+            ResourceNames(shader, entryPoint));
+    }
+
     private static async Task<(Shader Shader, string EntryPoint)> ConfiguredComputeOperation(
         ClusterShaderOperationRole role)
     {
@@ -133,6 +187,13 @@ public sealed class CookedClusterShaderContractTests
         Array.Sort(names, StringComparer.Ordinal);
         return names;
     }
+
+    private static ValueTask<Shader> ReadCookedShader(string assetName) =>
+        Shader.ReadAsync(Path.Combine(
+            TestProjectPaths.ProjectRoot(),
+            "assets",
+            "Shaders",
+            assetName));
 
     private static string[] Sorted(params string[] names)
     {

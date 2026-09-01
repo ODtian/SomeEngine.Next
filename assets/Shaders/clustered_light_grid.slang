@@ -2,7 +2,7 @@
 #include "render_lighting.slang"
 #include "resource_effects.slang"
 
-ConstantBuffer<ClusteredLightGridParameters> LightGridUniforms;
+StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint2> ClusteredLightGrid;
@@ -40,13 +40,14 @@ void GetClusteredLightBoundingSphere(
 }
 
 bool GetClusteredLightTileBounds(
+    ClusteredLightGridParameters parameters,
     float3 viewPosition,
     float radius,
     out uint2 minimumTile,
     out uint2 maximumTile)
 {
     float viewDepth = -viewPosition.z;
-    float nearDepth = LightGridUniforms.ZParams.x;
+    float nearDepth = parameters.ZParams.x;
     if (viewDepth + radius <= nearDepth)
         return false;
 
@@ -54,8 +55,8 @@ bool GetClusteredLightTileBounds(
     {
         minimumTile = uint2(0u, 0u);
         maximumTile = uint2(
-            LightGridUniforms.TileCountX - 1u,
-            LightGridUniforms.TileCountY - 1u);
+            parameters.TileCountX - 1u,
+            parameters.TileCountY - 1u);
         return true;
     }
 
@@ -63,44 +64,44 @@ bool GetClusteredLightTileBounds(
         viewDepth * viewDepth - radius * radius,
         1e-8));
     float2 ndcCenter = float2(
-        viewPosition.x * LightGridUniforms.P00 / viewDepth,
-        viewPosition.y * LightGridUniforms.P11 / viewDepth);
+        viewPosition.x * parameters.P00 / viewDepth,
+        viewPosition.y * parameters.P11 / viewDepth);
     float2 ndcRadius = abs(float2(
-        LightGridUniforms.P00,
-        LightGridUniforms.P11)) * radius * inverseTangentDistance;
+        parameters.P00,
+        parameters.P11)) * radius * inverseTangentDistance;
     float2 pixelCenter = float2(
-        (ndcCenter.x * 0.5 + 0.5) * float(LightGridUniforms.ScreenWidth),
-        (1.0 - (ndcCenter.y * 0.5 + 0.5)) * float(LightGridUniforms.ScreenHeight));
+        (ndcCenter.x * 0.5 + 0.5) * float(parameters.ScreenWidth),
+        (1.0 - (ndcCenter.y * 0.5 + 0.5)) * float(parameters.ScreenHeight));
     float2 pixelRadius = ndcRadius * 0.5 * float2(
-        LightGridUniforms.ScreenWidth,
-        LightGridUniforms.ScreenHeight);
+        parameters.ScreenWidth,
+        parameters.ScreenHeight);
     float2 pixelMinimum = pixelCenter - pixelRadius;
     float2 pixelMaximum = pixelCenter + pixelRadius;
     if (pixelMaximum.x < 0.0 || pixelMaximum.y < 0.0 ||
-        pixelMinimum.x >= float(LightGridUniforms.ScreenWidth) ||
-        pixelMinimum.y >= float(LightGridUniforms.ScreenHeight))
+        pixelMinimum.x >= float(parameters.ScreenWidth) ||
+        pixelMinimum.y >= float(parameters.ScreenHeight))
     {
         return false;
     }
 
     int2 tileMinimum = int2(floor(pixelMinimum / float2(
-        LightGridUniforms.TileSizeX,
-        LightGridUniforms.TileSizeY)));
+        parameters.TileSizeX,
+        parameters.TileSizeY)));
     int2 tileMaximum = int2(floor(pixelMaximum / float2(
-        LightGridUniforms.TileSizeX,
-        LightGridUniforms.TileSizeY)));
+        parameters.TileSizeX,
+        parameters.TileSizeY)));
     minimumTile = uint2(clamp(
         tileMinimum,
         int2(0, 0),
         int2(
-            int(LightGridUniforms.TileCountX) - 1,
-            int(LightGridUniforms.TileCountY) - 1)));
+            int(parameters.TileCountX) - 1,
+            int(parameters.TileCountY) - 1)));
     maximumTile = uint2(clamp(
         tileMaximum,
         int2(0, 0),
         int2(
-            int(LightGridUniforms.TileCountX) - 1,
-            int(LightGridUniforms.TileCountY) - 1)));
+            int(parameters.TileCountX) - 1,
+            int(parameters.TileCountY) - 1)));
     return true;
 }
 
@@ -108,11 +109,13 @@ bool GetClusteredLightTileBounds(
 [numthreads(64, 1, 1)]
 void BuildClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
+    uint viewIndex = dispatchThreadId.y;
+    ClusteredLightGridParameters parameters = LightingViews[viewIndex];
     uint localLightIndex = dispatchThreadId.x;
-    if (localLightIndex >= LightGridUniforms.NonDirectionalCount)
+    if (localLightIndex >= parameters.NonDirectionalCount)
         return;
 
-    uint lightIndex = LightGridUniforms.DirectionalCount + localLightIndex;
+    uint lightIndex = parameters.DirectionalCount + localLightIndex;
     GPULight light = LightBuffer[lightIndex];
     float3 worldCenter;
     float radius;
@@ -122,10 +125,10 @@ void BuildClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     float3 viewPosition = mul(
         float4(worldCenter, 1.0),
-        LightGridUniforms.View).xyz;
+        parameters.View).xyz;
     float viewDepth = -viewPosition.z;
-    float nearDepth = LightGridUniforms.ZParams.x;
-    float farDepth = LightGridUniforms.ZParams.y;
+    float nearDepth = parameters.ZParams.x;
+    float farDepth = parameters.ZParams.y;
     float minimumDepth = max(nearDepth, viewDepth - radius);
     float maximumDepth = min(farDepth, viewDepth + radius);
     if (maximumDepth < nearDepth || minimumDepth > farDepth)
@@ -134,6 +137,7 @@ void BuildClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
     uint2 minimumTile;
     uint2 maximumTile;
     if (!GetClusteredLightTileBounds(
+            parameters,
             viewPosition,
             radius,
             minimumTile,
@@ -143,28 +147,29 @@ void BuildClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
 
     uint minimumSlice = ClusteredLightDepthSlice(
-        LightGridUniforms,
+        parameters,
         minimumDepth);
     uint maximumSlice = ClusteredLightDepthSlice(
-        LightGridUniforms,
+        parameters,
         maximumDepth);
     uint cellsPerSlice =
-        LightGridUniforms.TileCountX * LightGridUniforms.TileCountY;
+        parameters.TileCountX * parameters.TileCountY;
+    uint viewOffset = viewIndex * parameters.CellCountPerView;
     for (uint slice = minimumSlice; slice <= maximumSlice; slice++)
     {
         uint sliceOffset = slice * cellsPerSlice;
         for (uint tileY = minimumTile.y; tileY <= maximumTile.y; tileY++)
         {
-            uint rowOffset = sliceOffset + tileY * LightGridUniforms.TileCountX;
+            uint rowOffset = viewOffset + sliceOffset + tileY * parameters.TileCountX;
             for (uint tileX = minimumTile.x; tileX <= maximumTile.x; tileX++)
             {
                 uint cell = rowOffset + tileX;
                 uint slot;
                 InterlockedAdd(ClusteredLightGrid[cell].y, 1u, slot);
-                if (slot < LightGridUniforms.MaxLightsPerCluster)
+                if (slot < parameters.MaxLightsPerCluster)
                 {
                     uint outputOffset =
-                        cell * LightGridUniforms.MaxLightsPerCluster;
+                        cell * parameters.MaxLightsPerCluster;
                     LightIndexList[outputOffset + slot] = lightIndex;
                 }
             }

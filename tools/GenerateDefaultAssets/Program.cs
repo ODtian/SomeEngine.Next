@@ -76,6 +76,7 @@ string[] shaderSources =
     "cluster_shade_unlit.slang",
     "cluster_tessellation_phong.slang",
     "cluster_tessellation_visibility.slang",
+    "clustered_light_grid.slang",
     "debug_args_copy.slang",
     "debug_sphere.slang",
     "depth_merge.slang",
@@ -85,10 +86,18 @@ string[] shaderSources =
     "hiz_reduce_pair.slang",
     "imgui.slang",
     "post_tonemap.slang",
+    "ray_tracing_geometry.slang",
+    "render_debug_overlay.slang",
+    "render_motion.slang",
     "shader_contract_probe.slang",
+    "stream_output_geometry.slang",
     "sw_raster.slang",
     "temporal_resolve.slang",
+    "translucency_composite.slang",
     "triangle.slang",
+    "vsm_allocate_pages.slang",
+    "vsm_clear_pages.slang",
+    "vsm_mark_pages.slang",
 ];
 
 foreach (string shaderName in shaderSources)
@@ -101,9 +110,10 @@ foreach (string shaderName in shaderSources)
 }
 
 AssetGuid clusterPipelineGuid = GenerateClusterPipeline(project);
-AssetGuid defaultPbrMaterialGuid = GenerateMaterialTemplate(
+_ = GenerateVirtualShadowMapShaders(project);
+AssetGuid standardMaterialGuid = GenerateMaterialTemplate(
     project,
-    "DefaultPBR",
+    "Standard",
     deformShaderGuid: ResolveRequired(project, "assets/Shaders/cluster_deform.slang"),
     deformEntryPoint: "CSDeformWave",
     shadeShaderGuid: ResolveRequired(project, "assets/Shaders/cluster_shade_material.slang"),
@@ -111,7 +121,7 @@ AssetGuid defaultPbrMaterialGuid = GenerateMaterialTemplate(
     defaultWhiteTextureGuid,
     defaultNormalTextureGuid,
     defaultArmTextureGuid,
-    pbrScalars: true
+    standardScalars: true
 );
 _ = GenerateMaterialTemplate(
     project,
@@ -123,7 +133,7 @@ _ = GenerateMaterialTemplate(
     defaultWhiteTextureGuid,
     defaultNormalTextureGuid,
     defaultArmTextureGuid,
-    pbrScalars: false
+    standardScalars: false
 );
 
 string icoSpherePath = Path.Combine(projectRoot, "samples", "IcoSphere.glb");
@@ -133,7 +143,7 @@ if (File.Exists(icoSpherePath))
     AssetGuid meshGuid = imported.Single(guid =>
         project.Manifest.TryGetAsset(guid, out AssetManifestRecord record)
         && string.Equals(record.AssetType, AssetType<Mesh>.Name, StringComparison.Ordinal));
-    AssetGuid sceneGuid = GenerateDefaultScene(project, meshGuid, defaultPbrMaterialGuid);
+    AssetGuid sceneGuid = GenerateDefaultScene(project, meshGuid, standardMaterialGuid);
     GenerateRuntimeConfiguration(project, sceneGuid, clusterPipelineGuid);
 }
 else
@@ -342,7 +352,7 @@ static AssetGuid GenerateMaterialTemplate(
     AssetGuid defaultWhiteTextureGuid,
     AssetGuid defaultNormalTextureGuid,
     AssetGuid defaultArmTextureGuid,
-    bool pbrScalars
+    bool standardScalars
 )
 {
     string outputPath = $"assets/Materials/{name}.material.asset";
@@ -369,9 +379,9 @@ static AssetGuid GenerateMaterialTemplate(
                 defaultWhiteTextureGuid,
                 defaultNormalTextureGuid,
                 defaultArmTextureGuid,
-                pbrScalars
+                standardScalars
             ),
-            Scalars = CreateDefaultScalars(pbrScalars),
+            Scalars = CreateDefaultScalars(standardScalars),
         }
     );
     Console.WriteLine($"  Material: {outputPath}");
@@ -621,6 +631,47 @@ static void GenerateRuntimeConfiguration(
                     "PSMain",
                     ShaderStage.Pixel),
             ],
+            LightingShader = Shader(
+                ResolveRequired(project, "assets/Shaders/clustered_light_grid.slang"),
+                "BuildClusteredLightGrid",
+                ShaderStage.Compute),
+            MotionShader = Shader(
+                ResolveRequired(project, "assets/Shaders/render_motion.slang"),
+                "BuildMotionVectors",
+                ShaderStage.Compute),
+            TemporalShaders =
+            [
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/temporal_resolve.slang"),
+                    "VSMain",
+                    ShaderStage.Vertex),
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/temporal_resolve.slang"),
+                    "PSMain",
+                    ShaderStage.Pixel),
+            ],
+            TranslucencyShaders =
+            [
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/translucency_composite.slang"),
+                    "VSMain",
+                    ShaderStage.Vertex),
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/translucency_composite.slang"),
+                    "PSMain",
+                    ShaderStage.Pixel),
+            ],
+            DebugShaders =
+            [
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/render_debug_overlay.slang"),
+                    "VSMain",
+                    ShaderStage.Vertex),
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/render_debug_overlay.slang"),
+                    "PSMain",
+                    ShaderStage.Pixel),
+            ],
             WindowWidth = 1280,
             WindowHeight = 720,
         });
@@ -636,6 +687,31 @@ static ShaderRef Shader(AssetGuid shaderGuid, string entryPoint, ShaderStage sta
         EntryPoint = entryPoint,
         Stage = stage,
     };
+
+static AssetGuid GenerateVirtualShadowMapShaders(AssetProject project)
+{
+    const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
+    AssetGuid guid = project.CreateAsset(
+        outputPath,
+        new VirtualShadowMapShaders
+        {
+            Name = "Default Virtual Shadow",
+            MarkPages = Shader(
+                ResolveRequired(project, "assets/Shaders/vsm_mark_pages.slang"),
+                "MarkVirtualShadowPages",
+                ShaderStage.Compute),
+            AllocatePages = Shader(
+                ResolveRequired(project, "assets/Shaders/vsm_allocate_pages.slang"),
+                "AllocateVirtualShadowPages",
+                ShaderStage.Compute),
+            ClearPages = Shader(
+                ResolveRequired(project, "assets/Shaders/vsm_clear_pages.slang"),
+                "ClearVirtualShadowPages",
+                ShaderStage.Compute),
+        });
+    Console.WriteLine($"  VirtualShadowMap: {outputPath}");
+    return guid;
+}
 
 static ClusterShaderOperation ComputeOperation(
     ClusterShaderOperationRole role,

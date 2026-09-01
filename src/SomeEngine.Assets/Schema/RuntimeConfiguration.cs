@@ -22,6 +22,16 @@ public sealed partial class RuntimeConfiguration
 
     public IList<ShaderRef>? PresentationShaders { get; set; }
 
+    public ShaderRef? LightingShader { get; set; }
+
+    public ShaderRef? MotionShader { get; set; }
+
+    public IList<ShaderRef>? TemporalShaders { get; set; }
+
+    public IList<ShaderRef>? TranslucencyShaders { get; set; }
+
+    public IList<ShaderRef>? DebugShaders { get; set; }
+
     public uint WindowWidth { get; set; } = 1280;
 
     public uint WindowHeight { get; set; } = 720;

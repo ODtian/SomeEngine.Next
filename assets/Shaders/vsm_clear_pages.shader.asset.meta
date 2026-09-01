@@ -1,0 +1,13 @@
+{
+  "asset_guid": "a9a22745-3926-5a80-b5ce-0c0ed50716bd",
+  "source_guid": "cad46fc6-2bd8-47b3-ba33-f47cf2541898",
+  "sub_asset_key": "shader:main",
+  "content_fingerprint": "f82e36d3f1d85708a4cbb346a46f4c6a10199a3eb0afbda74c14ee93f9204510",
+  "dependencies": [
+    {
+      "path": "assets/Shaders/vsm_clear_pages.slang",
+      "hash": "cbdafe9ad3c4c6d61f9983b9bdc7d743a5e7d5e98fda545721638faf74dbc090"
+    }
+  ],
+  "importer_version": 26
+}

@@ -2,11 +2,11 @@
   "asset_guid": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
   "sub_asset_key": "material:0:Default",
-  "content_fingerprint": "2e336be316c32eb08224e68db0897d231ecf1d26128707eb013bc5aa31d567da",
+  "content_fingerprint": "d5e377e1aa795e3f3377f970aacac47955db62bbdc34897adb3d8ba8dc5be7a0",
   "dependencies": [
     {
-      "path": "assets/Materials/DefaultPBR.material.asset",
-      "hash": "9ce148d70c6d0c6e9b81e287c8acee2717fbf30a25b42a4ba2535a550c418a42"
+      "path": "assets/Materials/Standard.material.asset",
+      "hash": "393c3fad57445fc7e6e5a08a666d1dee6305421649977abc73ef51c0b20bf228"
     },
     {
       "path": "assets/Materials/TestUnlit_1.material.asset",

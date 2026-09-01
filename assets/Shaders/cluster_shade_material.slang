@@ -1,8 +1,8 @@
 #include "cluster_shade_pipeline.slang"
 #include "phong_tessellation.slang"
-#include "standard_pbr.slang"
+#include "standard.slang"
 
-StandardPBRMaterial Material;
+StandardMaterial Material;
 
 [MaterialTarget("cluster.shade")]
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]

@@ -180,7 +180,7 @@ public class GltfSourceImporterTests
         Directory.CreateDirectory(templateDir);
         WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", LitShaderGuid);
         WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", UnlitShaderGuid);
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "DefaultPBR", LitShaderGuid);
+        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "Standard", LitShaderGuid);
         WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultUnlitMaterialTemplate), "TestUnlit_1", UnlitShaderGuid);
 
         string modelDir = Path.Combine(dir, "assets", "Models");

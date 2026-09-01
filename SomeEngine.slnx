@@ -22,6 +22,7 @@
   <Project Path="src\SomeEngine.Render.MaterialBindless\SomeEngine.Render.MaterialBindless.csproj" />
   <Project Path="src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
   <Project Path="src\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
+  <Project Path="src\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />

@@ -33,6 +33,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly ClusterPipelineOutputDescription _outputDescription;
     private readonly ClusterRasterExecutor _rasterExecutor;
+    private readonly IClusterShadeResourceProvider? _shadeResourceProvider;
+    private readonly ClusterStreamingFeedbackChannel _streamingFeedback;
     private readonly ClusterPipelineOptions _options;
     private QueryHandle _viewQuery;
     private ClusterPipelineSet? _pipelines;
@@ -51,6 +53,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly List<GraphPassId> _depthMergePasses = [];
     private readonly List<GraphPassId> _pageHeapReaderPasses = [];
     private readonly ClusterViewUniforms[] _packedViews;
+    private readonly RenderView[] _stagedViews;
+    private int _stagedViewCount;
     private GraphPassId _traversalPass;
     private ClusterPipelineOutputs _outputs;
     private ulong _installedMaterialTopologyVersion;
@@ -94,6 +98,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         global::SomeEngine.RenderGraph.RenderGraph graph,
         in ClusterPipelineOutputDescription outputDescription,
         ClusterRasterExecutor rasterExecutor,
+        ClusterStreamingFeedbackChannel streamingFeedback,
+        IClusterShadeResourceProvider? shadeResourceProvider = null,
         ClusterPipelineOptions? options = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -111,13 +117,38 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new ArgumentException("The Cluster pipeline and RenderGraph must use the same Device.", nameof(graph));
         _outputDescription = outputDescription;
         _rasterExecutor = rasterExecutor ?? throw new ArgumentNullException(nameof(rasterExecutor));
+        _streamingFeedback = streamingFeedback ?? throw new ArgumentNullException(nameof(streamingFeedback));
+        _shadeResourceProvider = shadeResourceProvider;
         _options = options ?? new ClusterPipelineOptions();
         _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCapacity)];
+        _stagedViews = new RenderView[checked((int)outputDescription.ViewCapacity)];
     }
 
     public ClusterPipelineOutputs Outputs => _outputs.IsValid
         ? _outputs
         : throw new InvalidOperationException("The Cluster retained graph has not been installed.");
+
+    /// <summary>
+    /// Stages one feature-neutral unified view set for the next geometry update. VSM, reflections,
+    /// stereo, and other view producers call this boundary; Cluster never receives their semantics.
+    /// </summary>
+    public void StageViews(scoped ReadOnlySpan<RenderView> views)
+    {
+        if (!_created)
+            throw new InvalidOperationException("The Cluster pipeline was not created.");
+        if (_hasPendingFrame)
+            throw new InvalidOperationException("Views cannot be staged while a Cluster frame is pending.");
+        if (_stagedViewCount != 0)
+            throw new InvalidOperationException("A unified Cluster view set is already staged.");
+        if (views.Length == 0 || views.Length > _stagedViews.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(views),
+                $"Cluster accepts 1..{_stagedViews.Length} unified views.");
+        }
+        views.CopyTo(_stagedViews);
+        _stagedViewCount = views.Length;
+    }
 
     public void OnCreate(ref RenderFrameSystemContext context)
     {
@@ -139,7 +170,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _shadeStages = new ClusterShadeStages(
                 _backend,
                 _device,
-                _pipelines.VertexEncoding);
+                _pipelines.VertexEncoding,
+                _shadeResourceProvider);
             _history = new ClusterCullingHistory(
                 _backend,
                 _device,
@@ -299,8 +331,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("ReconcileGraph must install Cluster before frame execution.");
         if (_hasPendingFrame)
             throw new InvalidOperationException("The previous Cluster frame has not been committed or discarded.");
-        _resources.PumpStreaming();
-
         RenderInstanceBatches<RenderInstanceSingleGroup>? current = _instances.Current;
         if (current is null || current.GroupCount != 1)
         {
@@ -316,17 +346,24 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         viewCollector.Clear();
         try
         {
-            context.World.ExecuteQuery(
-                _viewQuery,
-                ref viewCollector,
-                static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
-            if (viewCollector.Views.Count == 0 ||
-                viewCollector.Views.Count > _packedViews.Length)
+            ReadOnlySpan<RenderView> views;
+            if (_stagedViewCount != 0)
+            {
+                views = _stagedViews.AsSpan(0, _stagedViewCount);
+            }
+            else
+            {
+                context.World.ExecuteQuery(
+                    _viewQuery,
+                    ref viewCollector,
+                    static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
+                views = CollectionsMarshal.AsSpan(viewCollector.Views);
+            }
+            if (views.Length == 0 || views.Length > _packedViews.Length)
             {
                 throw new InvalidOperationException(
                     $"The Cluster pipeline requires 1..{_packedViews.Length} render views.");
             }
-            ReadOnlySpan<RenderView> views = CollectionsMarshal.AsSpan(viewCollector.Views);
             for (int viewIndex = 0; viewIndex < views.Length; viewIndex++)
             {
                 ref readonly RenderView view = ref views[viewIndex];
@@ -343,6 +380,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         finally
         {
             viewCollector.Clear();
+            _stagedViews.AsSpan(0, _stagedViewCount).Clear();
+            _stagedViewCount = 0;
         }
     }
 
@@ -400,6 +439,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _pendingReadbackEpoch = binding.ReadbackEpoch;
             _pendingResidencyPublication = binding.Publication;
             _pendingResidentPageRanges = binding.ResidentPageRanges;
+            _outputs.Geometry.SetResidentPageRanges(_pendingResidentPageRanges);
             _hasPendingFrame = true;
 
             RenderGraphFrame graph = context.Graph;
@@ -507,6 +547,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     private void ClearPendingFrame()
     {
+        if (_outputs.IsValid)
+            _outputs.Geometry.ClearFrame();
         _pendingReadbackEpoch = default;
         _pendingResidencyPublication = null;
         _pendingResidentPageRanges = [];
@@ -572,6 +614,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _installedMaterialTopologyVersion = 0;
         _graphInstalled = false;
         ClearPendingFrame();
+        Array.Clear(_stagedViews);
+        _stagedViewCount = 0;
         _created = false;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
@@ -744,7 +788,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             if (!ticket.IsValid)
                 throw new InvalidOperationException("Cluster page-fault readback ticket was lost.");
             ReadMappedBuffer(pageFaultReadback, _pageFaultReadbackBytes);
-            _resources.IngestPageFaultReadback(ticket, _pageFaultReadbackBytes);
+            _streamingFeedback.Publish(ticket, _pageFaultReadbackBytes);
             _pageFaultReadbackTickets[generation] = default;
             _pageFaultReadbackPending[generation] = false;
 

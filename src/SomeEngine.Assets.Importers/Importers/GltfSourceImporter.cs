@@ -353,7 +353,7 @@ public sealed partial class GltfSourceImporter
         List<ImportedAsset> importedTextures)
     {
         ApplySurfaceTags(asset, material);
-        ApplyPbrScalars(asset, material);
+        ApplyStandardScalars(asset, material);
         ApplyTextureBindings(asset, material, context, importedTextures);
     }
 
@@ -386,7 +386,7 @@ public sealed partial class GltfSourceImporter
         }
     }
 
-    private static void ApplyPbrScalars(Material asset, GltfMaterial material)
+    private static void ApplyStandardScalars(Material asset, GltfMaterial material)
     {
         var baseColor = material.FindChannel("BaseColor");
         var metallicRoughness = material.FindChannel("MetallicRoughness");

@@ -28,6 +28,7 @@ public sealed class ClusterPipelineOutputTests
             default,
             default,
             default,
+            null!,
             64,
             32,
             4);

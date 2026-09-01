@@ -26,6 +26,7 @@
     <ProjectReference Include="..\SomeEngine.Render\SomeEngine.Render.csproj" />
     <ProjectReference Include="..\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
     <ProjectReference Include="..\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
+    <ProjectReference Include="..\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\SomeEngine.RenderGraph.Diagnostics\SomeEngine.RenderGraph.Diagnostics.csproj" />
     <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />

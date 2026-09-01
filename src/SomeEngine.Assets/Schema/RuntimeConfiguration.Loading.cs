@@ -16,6 +16,15 @@ public sealed partial class RuntimeConfiguration
         AssetGuid presentationShader = RequireRasterShaderPair(
             asset.PresentationShaders,
             nameof(PresentationShaders));
+        AssetGuid lightingShader = RequireComputeShader(
+            asset.LightingShader,
+            nameof(LightingShader));
+        AssetGuid motionShader = RequireComputeShader(asset.MotionShader, nameof(MotionShader));
+        AssetGuid temporalShader = RequireRasterShaderPair(asset.TemporalShaders, nameof(TemporalShaders));
+        AssetGuid translucencyShader = RequireRasterShaderPair(
+            asset.TranslucencyShaders,
+            nameof(TranslucencyShaders));
+        AssetGuid debugShader = RequireRasterShaderPair(asset.DebugShaders, nameof(DebugShaders));
         if (asset.WindowWidth == 0 || asset.WindowHeight == 0)
             throw new InvalidDataException("Runtime configuration requires a non-empty window.");
 
@@ -26,6 +35,16 @@ public sealed partial class RuntimeConfiguration
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(uiShader)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(presentationShader)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<Shader>(lightingShader)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<Shader>(motionShader)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<Shader>(temporalShader)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<Shader>(translucencyShader)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<Shader>(debugShader)).ConfigureAwait(false);
         return asset;
     }
 
@@ -39,8 +58,20 @@ public sealed partial class RuntimeConfiguration
             Require(ClusterPipelineGuid, nameof(ClusterPipelineGuid)),
             RequireRasterShaderPair(UiShaders, nameof(UiShaders)),
             RequireRasterShaderPair(PresentationShaders, nameof(PresentationShaders)),
+            RequireComputeShader(LightingShader, nameof(LightingShader)),
+            RequireComputeShader(MotionShader, nameof(MotionShader)),
+            RequireRasterShaderPair(TemporalShaders, nameof(TemporalShaders)),
+            RequireRasterShaderPair(TranslucencyShaders, nameof(TranslucencyShaders)),
+            RequireRasterShaderPair(DebugShaders, nameof(DebugShaders)),
         ];
     }
+
+    private static AssetGuid RequireComputeShader(ShaderRef? shader, string field) =>
+        ShaderRef.Require(
+            shader,
+            "Runtime configuration",
+            field,
+            ShaderStage.Compute);
 
     private static AssetGuid RequireRasterShaderPair(
         IList<ShaderRef>? shaders,

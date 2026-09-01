@@ -49,8 +49,10 @@ public sealed partial class ClusterPipelineSystem
                 BufferUsages.ShaderRead,
                 $"Cluster shade invocation {index} scalars");
 
-            foreach (ref readonly ClusterLinkedStageResource resource in invocation.Resources.Resources)
+            ReadOnlySpan<ClusterLinkedStageResource> resources = invocation.Resources.Resources;
+            for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
             {
+                ref readonly ClusterLinkedStageResource resource = ref resources[resourceIndex];
                 if (resource.Element != 0)
                 {
                     throw new NotSupportedException(
@@ -63,6 +65,11 @@ public sealed partial class ClusterPipelineSystem
                         uniformBuffer,
                         scalarBuffer))
                 {
+                    continue;
+                }
+                if (invocation.FeatureResourceBinders[resourceIndex] is { } featureBinder)
+                {
+                    featureBinder(ref graph, ref pass);
                     continue;
                 }
                 BindShadeMaterialResource(

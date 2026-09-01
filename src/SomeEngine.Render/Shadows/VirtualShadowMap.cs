@@ -30,6 +30,8 @@ public sealed class VirtualShadowMap : IDisposable
     private readonly TextureBoundaryState[] _atlasEndpoint;
     private readonly VirtualShadowView[] _views;
     private readonly VirtualShadowView[] _committedViews;
+    private readonly Matrix4x4[] _preparedLightViews;
+    private readonly Matrix4x4[] _preparedLightProjections;
     private bool _initialized;
     private bool _pending;
     private bool _disposed;
@@ -60,6 +62,8 @@ public sealed class VirtualShadowMap : IDisposable
         settings.Validate();
         _views = new VirtualShadowView[settings.MaxShadowViews];
         _committedViews = new VirtualShadowView[settings.MaxShadowViews];
+        _preparedLightViews = new Matrix4x4[settings.MaxShadowViews];
+        _preparedLightProjections = new Matrix4x4[settings.MaxShadowViews];
 
         LinkedComputePipeline? markPages = null;
         LinkedComputePipeline? allocatePages = null;
@@ -289,6 +293,8 @@ public sealed class VirtualShadowMap : IDisposable
                     FirstClipmapLevel = Settings.DirectionalFirstClipmapLevel,
                     ClipmapLevelCount = Settings.DirectionalClipmapLevels,
                 };
+                _preparedLightViews[viewIndex] = lightView;
+                _preparedLightProjections[viewIndex] = lightProjection;
             }
         }
 
@@ -320,6 +326,34 @@ public sealed class VirtualShadowMap : IDisposable
         for (int index = 0; index < viewCount; index++)
             _views[index].CacheGeneration = _pendingCacheGeneration;
         return _views.AsSpan(0, viewCount);
+    }
+
+    /// <summary>
+    /// Copies the feature-owned caster views prepared for this frame. The caller supplies the
+    /// unified Cluster output extent; no shadow semantics cross the geometry boundary.
+    /// </summary>
+    public int CopyPreparedRenderViews(
+        Span<RenderView> destination,
+        uint viewportWidth,
+        uint viewportHeight)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_pending)
+            throw new InvalidOperationException("Virtual-shadow views have not been prepared for this frame.");
+        ArgumentOutOfRangeException.ThrowIfZero(viewportWidth);
+        ArgumentOutOfRangeException.ThrowIfZero(viewportHeight);
+        if (destination.Length < _pendingViewCount)
+            throw new ArgumentException("The destination cannot hold all prepared shadow views.", nameof(destination));
+        for (int index = 0; index < _pendingViewCount; index++)
+        {
+            destination[index] = new RenderView(
+                _preparedLightViews[index],
+                _preparedLightProjections[index],
+                viewportWidth,
+                viewportHeight,
+                CameraCut: _pendingCacheReset);
+        }
+        return _pendingViewCount;
     }
 
     public VirtualShadowMapFrameResources BeginFrame()
@@ -511,6 +545,8 @@ public sealed class VirtualShadowMap : IDisposable
         Array.Clear(_atlasEndpoint);
         Array.Clear(_views);
         Array.Clear(_committedViews);
+        Array.Clear(_preparedLightViews);
+        Array.Clear(_preparedLightProjections);
         _pending = false;
         _pendingCacheReset = false;
         _pendingViewCount = 0;

@@ -91,6 +91,59 @@ The asset transport/cooking boundary is the exact-schema `BinaryDocument<Mesh>` 
 
 A Cluster product `Pipelines` folder is likewise outside the Cluster domain/model.
 
+## Cross-cutting render features
+
+`SomeEngine.Render.Features` owns render work that consumes geometry but is not part of Cluster's
+geometry ABI. Lighting, virtual shadows, motion, temporal resolve, translucency composition, debug
+visualization, ray-tracing geometry preparation, and stream-output preparation have independent
+resource, retained-pass, and disposal lifetimes in this assembly. Presentation remains owned by the
+runtime because it terminates at a runtime-provided swapchain image. Removing or disabling one of
+these features does not add a `ClusterShaderOperationRole`, change `ClusterPipelineOutputs`, or add a
+feature-assembly dependency to `SomeEngine.Render.Cluster.Pipeline`.
+
+Cluster publishes one feature-neutral `ClusterGeometryCapabilities` value containing visibility,
+depth, packed views, visible-cluster work, instance data, deform data, and authenticated resident
+page ranges. Consumers bind only the capabilities they actually read. The page-heap descriptor
+remains stable, while each consumer declares the exact resident ranges in Render Graph; an empty
+active work set binds the descriptor and reads no range. Stream-output and ray-tracing preparation
+therefore have their own bounded buffers and compute passes. Disabling either pass writes an empty
+count through the same output ABI rather than entering a fallback geometry path.
+
+Unified geometry views cross one boundary. A view producer stages an ordered, bounded
+`ReadOnlySpan<RenderView>` through `ClusterPipelineSystem.StageViews`; Cluster consumes that set on
+its next update without receiving shadow, stereo, reflection, or receiver/caster semantics.
+`VirtualShadowFeature` owns its `VirtualShadowMap`, persistent page table, allocator, physical atlas,
+page cache, and mark/allocate/clear pipelines. It constructs receiver-plus-caster views and invokes
+Cluster only through the unified view boundary. Its commit/discard lifecycle remains paired with the
+shadow resource owner.
+
+Lighting owns ECS light conversion, per-view clustered-grid parameters, the bounded light grid and
+index list, its cookie atlas, and clear/build passes. Standard material shade explicitly consumes
+`LightingViews`, `LightBuffer`, `ClusteredLightGrid`, `LightIndexList`, and `LightingCookieAtlas` from
+the final linked shader layout. Cluster recognizes no lighting-specific resource name in its core
+passes. During retained graph reconciliation, the generic `IClusterShadeResourceProvider` resolves
+each non-core linked resource to a fixed binder delegate. Frame recording invokes those delegates
+without shader reflection, string lookup, a registry, or a feature-type branch.
+
+The built-in material implementation has one identity: `Standard`. Its source is `standard.slang`,
+its material type is `StandardMaterial`, and its generated template is `Standard.material.asset`.
+Physical-lighting terminology may describe the BRDF algorithm, but it is not a second material
+name, type family, asset alias, or Material core contract.
+
+Motion consumes visibility and geometry capability and produces an independent motion-vector
+texture. Temporal resolve consumes scene color, depth, and motion, owns double-buffered color,
+motion, and depth histories, and advances history only after successful submission. Translucency
+owns accumulation, revealage, clear, and composition outputs; its disabled state is an explicit
+pass-through composition. Debug visualization similarly consumes explicit color/depth inputs and
+owns its output pass. The runtime composes these outputs in order and gives only the final color to
+its tone-map/presentation pass.
+
+GPU page-fault generation and streaming policy meet at a fixed two-packet publication channel.
+Cluster authenticates readback with the exact epoch and submitted-frame ticket, copies the completed
+payload, and publishes it. `ClusterStreamingFeedbackConsumer` alone ingests packets and advances
+streaming. If the consumer does not drain the fixed channel, publication fails at capacity; Cluster
+does not allocate, retry, recover, or synchronously stream from the geometry update.
+
 ## Boundary integrity
 
 Observable behavior is defined by current owners, immutable facts, explicit algorithms, and

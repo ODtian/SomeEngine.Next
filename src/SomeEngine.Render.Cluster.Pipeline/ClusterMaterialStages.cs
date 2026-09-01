@@ -224,18 +224,21 @@ internal sealed class ClusterShadeStages : IDisposable
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly string _vertexEncoding;
+    private readonly IClusterShadeResourceProvider? _featureResources;
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterComputePipeline> _pipelines = [];
     private bool _disposed;
 
     internal ClusterShadeStages(
         IGraphicsBackend backend,
         Device device,
-        string vertexEncoding)
+        string vertexEncoding,
+        IClusterShadeResourceProvider? featureResources)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexEncoding);
         _vertexEncoding = vertexEncoding;
+        _featureResources = featureResources;
     }
 
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments)
@@ -289,6 +292,9 @@ internal sealed class ClusterShadeStages : IDisposable
         ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(pipeline.ParameterLayout);
         Dictionary<string, byte> materialResources = ResolveMaterialResources(shader);
         resources.ValidateMaterialResources(materialResources);
+        ClusterShadeResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
+            materialResources,
+            _featureResources);
         return new ClusterShadeInvocation(
             material,
             material.Revision,
@@ -296,7 +302,8 @@ internal sealed class ClusterShadeStages : IDisposable
             pipeline,
             resources,
             scalars,
-            materialResources);
+            materialResources,
+            featureResourceBinders);
     }
 
     private static (Shader Shader, string EntryPoint) ResolveEntry(Material material)
@@ -424,7 +431,8 @@ internal sealed record ClusterShadeInvocation(
     ClusterComputePipeline Pipeline,
     ClusterLinkedStageLayout Resources,
     ScalarLayout Scalars,
-    IReadOnlyDictionary<string, byte> MaterialResources);
+    IReadOnlyDictionary<string, byte> MaterialResources,
+    ClusterShadeResourceBinder?[] FeatureResourceBinders);
 
 /// <summary>Bounded resource order captured from the final linked Slang program.</summary>
 internal sealed class ClusterLinkedStageLayout
@@ -529,6 +537,37 @@ internal sealed class ClusterLinkedStageLayout
         }
     }
 
+    internal ClusterShadeResourceBinder?[] ResolveFeatureResources(
+        IReadOnlyDictionary<string, byte> materialResources,
+        IClusterShadeResourceProvider? provider)
+    {
+        var result = new ClusterShadeResourceBinder?[_resources.Length];
+        for (int index = 0; index < _resources.Length; index++)
+        {
+            ClusterLinkedStageResource resource = _resources[index];
+            if (ClusterShadeCoreResources.Contains(resource.Name) ||
+                materialResources.ContainsKey(resource.Name))
+            {
+                continue;
+            }
+            if (resource.Element != 0)
+            {
+                throw new NotSupportedException(
+                    $"Feature shade resource arrays are not supported: '{resource.Name}[{resource.Element}]'.");
+            }
+            if (provider is null ||
+                !provider.TryResolve(resource.Name, resource.Type, out ClusterShadeResourceBinder? binder) ||
+                binder is null)
+            {
+                throw new InvalidDataException(
+                    $"Final shade entry requires feature resource '{resource.Name}' ({resource.Type}), " +
+                    "but no installed feature owns it.");
+            }
+            result[index] = binder;
+        }
+        return result;
+    }
+
     private static ResourceBindingType ExpectedType(
         SlangBindingType reflected,
         SlangParameterCategory category)
@@ -582,6 +621,26 @@ internal readonly record struct ClusterLinkedStageResource(
     string Name,
     ResourceBindingType Type,
     uint Element);
+
+internal static class ClusterShadeCoreResources
+{
+    internal static bool Contains(string name) => name is
+        "InstanceData" or
+        "InstanceProperties" or
+        "Uniforms" or
+        "Views" or
+        "PixelCoordBuffer" or
+        "BinOffsets" or
+        "BinCounts" or
+        "VisBuffer" or
+        "DepthBuffer" or
+        "VisibleClusters" or
+        "PageHeap" or
+        "OutputColor" or
+        "DeformCache" or
+        "CacheOffsets" or
+        "MaterialScalarRegion";
+}
 
 internal static class ClusterStageTargets
 {

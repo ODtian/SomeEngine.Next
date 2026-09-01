@@ -1,7 +1,6 @@
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
-using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.RenderGraph;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
@@ -21,7 +20,10 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         IGraphicsBackend backend,
         Device device,
         global::SomeEngine.RenderGraph.RenderGraph graph,
-        in ClusterPipelineOutputs input,
+        GraphTextureId inputColor,
+        Format inputFormat,
+        int inputWidth,
+        int inputHeight,
         Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
@@ -31,8 +33,10 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(shader);
-        if (!input.IsValid)
-            throw new ArgumentException("Presentation requires valid geometry outputs.", nameof(input));
+        if (inputColor == default)
+            throw new ArgumentException("Presentation requires a valid color input.", nameof(inputColor));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputHeight);
         if (!ReferenceEquals(graph.Device, device))
             throw new ArgumentException("Presentation and RenderGraph must use the same Device.", nameof(graph));
 
@@ -73,8 +77,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             {
                 GraphTextureId target = edit.DeclareExternalTexture(new TextureDesc(
                     TextureDimension.Texture2D,
-                    checked((uint)input.Width),
-                    checked((uint)input.Height),
+                    checked((uint)inputWidth),
+                    checked((uint)inputHeight),
                     1,
                     1,
                     1,
@@ -83,15 +87,15 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     TextureUsages.ColorAttachment | TextureUsages.CopySource,
                     label: "Runtime presentation target"));
                 GraphTextureSrvId source = edit.CreateTextureSrv(
-                    input.MaterialColor,
+                    inputColor,
                     new TextureSubresourceRange(
                         0,
                         1,
                         0,
                         1,
                         TextureAspects.Color),
-                    format: Format.R16G16B16A16Float,
-                    dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
+                    format: inputFormat,
+                    dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
                     label: "Runtime presentation source");
                 GraphColorAttachmentViewId output = edit.CreateColorAttachmentView(
                     target,
@@ -100,8 +104,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     label: "Runtime presentation output");
                 RuntimePresentationPassData data = new(
                     output,
-                    input.Width,
-                    input.Height);
+                    inputWidth,
+                    inputHeight);
                 GraphParameterResourceBinding[] bindings =
                 [
                     GraphParameterResourceBinding.SampledTexture(
