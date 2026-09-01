@@ -193,7 +193,9 @@ internal readonly record struct ClusterDepthAttachmentClearParameters(
 
 internal readonly record struct ClusterBufferCopyParameters(
     GraphBufferId Source,
+    ulong SourceOffset,
     GraphBufferId Destination,
+    ulong DestinationOffset,
     ulong ByteCount)
 {
     internal static void Record(
@@ -204,9 +206,9 @@ internal readonly record struct ClusterBufferCopyParameters(
         Buffer destination = commands.GetBuffer(parameters.Destination);
         commands.CopyBuffer(new BufferCopy(
             source,
-            0,
+            parameters.SourceOffset,
             destination,
-            0,
+            parameters.DestinationOffset,
             parameters.ByteCount));
     }
 }

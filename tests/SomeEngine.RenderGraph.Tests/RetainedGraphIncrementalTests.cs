@@ -217,6 +217,79 @@ public sealed class RetainedGraphIncrementalTests
     }
 
     [Fact]
+    public void DescriptorOnlySrvTracksExplicitResidentRangesWithoutOrderingFreshUploads()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using Buffer pageHeap = support.Backend.CreateBuffer(
+            support.Device,
+            new BufferDesc(
+                64,
+                BufferUsages.ShaderRead | BufferUsages.CopyDestination,
+                "range-tracked page heap"),
+            MemoryType.DeviceLocal);
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue, support.CopyQueue]);
+        GraphBufferId pageHeapId;
+        GraphPassId reader;
+        GraphPassId upload;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            pageHeapId = edit.RegisterExternalBuffer(
+                pageHeap,
+                [new BufferBoundaryState(
+                    new BufferRange(0, 64),
+                    pageHeap.InitialSync,
+                    pageHeap.InitialAccess,
+                    ResourceContentState.Defined)]);
+            GraphBufferSrvId wholeHeap = edit.CreateBufferSrv(pageHeapId, BufferRange.Whole);
+            var readState = new ResidentReadState(pageHeapId, wholeHeap);
+            reader = edit.AddComputePass<ResidentReadState, byte>(
+                "read old resident range",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                readState,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref ResidentReadState state) =>
+                {
+                    pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(state.View));
+                    state.Access = pass.Read(
+                        state.Buffer,
+                        new BufferRange(0, 32),
+                        PipelineSync.ComputeShading,
+                        ResourceAccess.ShaderResource);
+                },
+                static (ref ComputePassCommandScope _, in ResidentReadState _, in byte _) => { });
+            var uploadState = new DeclarationState(pageHeapId);
+            upload = edit.AddCopyPass<DeclarationState, byte>(
+                "upload fresh unpublished range",
+                PassQueueSelection.Exact(support.CopyQueue),
+                uploadState,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition pass, ref DeclarationState state) =>
+                    state.Access = pass.Write(
+                        state.Buffer,
+                        new BufferRange(32, 32),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        WriteCoverage.Complete),
+                static (ref CopyPassCommandScope _, in DeclarationState _, in byte _) => { });
+            edit.Commit();
+        }
+
+        GraphStructureIndex index = graph.StructureIndex;
+        GraphIdentity[] accesses = index.ResourceAccesses[pageHeapId.Value];
+        Assert.Equal(2, accesses.Length);
+        Assert.Contains(accesses, id =>
+            index.Structure.Accesses.Get(id).BufferRange == new BufferRange(0, 32));
+        Assert.Contains(accesses, id =>
+            index.Structure.Accesses.Get(id).BufferRange == new BufferRange(32, 32));
+        Assert.Empty(index.HazardTimelines[pageHeapId.Value].Edges);
+        Assert.DoesNotContain(reader.Value, index.DependencyPredecessors.GetValueOrDefault(upload.Value, []));
+        Assert.DoesNotContain(upload.Value, index.DependencyPredecessors.GetValueOrDefault(reader.Value, []));
+    }
+
+    [Fact]
     public void UnchangedTransientKeepsPhysicalHeapOffsetAcrossLocalResize()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -372,6 +445,13 @@ public sealed class RetainedGraphIncrementalTests
     private sealed class DeclarationState(GraphBufferId buffer)
     {
         internal GraphBufferId Buffer { get; } = buffer;
+        internal GraphBufferAccessId Access { get; set; }
+    }
+
+    private sealed class ResidentReadState(GraphBufferId buffer, GraphBufferSrvId view)
+    {
+        internal GraphBufferId Buffer { get; } = buffer;
+        internal GraphBufferSrvId View { get; } = view;
         internal GraphBufferAccessId Access { get; set; }
     }
 

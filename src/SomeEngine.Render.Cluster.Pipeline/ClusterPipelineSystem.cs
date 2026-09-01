@@ -49,6 +49,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly List<GraphPassId> _historyInitializationPasses = [];
     private readonly List<ClusterLayerDispatch> _layerDispatches = [];
     private readonly List<GraphPassId> _depthMergePasses = [];
+    private readonly List<GraphPassId> _pageHeapReaderPasses = [];
     private readonly ClusterViewUniforms[] _packedViews;
     private GraphPassId _traversalPass;
     private ClusterPipelineOutputs _outputs;
@@ -75,6 +76,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private int _preferredReadbackGeneration;
     private ClusterFrameMetrics? _latestFrameMetrics;
     private ClusterEpochId _pendingReadbackEpoch;
+    private ClusterResidencyPublication? _pendingResidencyPublication;
+    private BufferRange[] _pendingResidentPageRanges = [];
+    private bool _bindingScratchReadsPageHeap;
     private bool _hasPendingFrame;
     private bool _created;
 
@@ -243,6 +247,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _historyInitializationPasses.Clear();
             _layerDispatches.Clear();
             _depthMergePasses.Clear();
+            _pageHeapReaderPasses.Clear();
+            _bindingScratchReadsPageHeap = false;
             _traversalPass = default;
             _frameResources = default;
             _outputs = default;
@@ -392,6 +398,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
 
             _pendingReadbackEpoch = binding.ReadbackEpoch;
+            _pendingResidencyPublication = binding.Publication;
+            _pendingResidentPageRanges = binding.ResidentPageRanges;
             _hasPendingFrame = true;
 
             RenderGraphFrame graph = context.Graph;
@@ -399,6 +407,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 ref graph,
                 in binding,
                 history);
+            RecordResidencyUploads(ref graph, in binding);
+            DeclareResidencyReads(ref graph, in binding);
             WriteFrameUploads(
                 ref graph,
                 RequireReadbackWriteGeneration(),
@@ -452,6 +462,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (!_hasPendingFrame)
             throw new InvalidOperationException("No authored Cluster frame is waiting for commit.");
         int generation = RequireReadbackWriteGeneration();
+        if (_pendingResidencyPublication is { } publication)
+        {
+            QueueCompletion[][] retirements = CaptureRetirementCompletions(publication);
+            _resources.CommitResidencyPublication(publication, retirements);
+            _pendingResidencyPublication = null;
+        }
         QueueCompletion[] fences = _readbackFences[generation];
         if (fences.Length != completions.Length)
             fences = new QueueCompletion[completions.Length];
@@ -481,6 +497,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     public void Discard()
     {
         if (!_hasPendingFrame) return;
+        if (_pendingResidencyPublication is { } publication)
+            _resources.RetainResidencyPublication(publication);
         _history?.Discard();
         ClearPendingFrame();
     }
@@ -488,6 +506,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private void ClearPendingFrame()
     {
         _pendingReadbackEpoch = default;
+        _pendingResidencyPublication = null;
+        _pendingResidentPageRanges = [];
         _readbackWriteGeneration = -1;
         _hasPendingFrame = false;
     }

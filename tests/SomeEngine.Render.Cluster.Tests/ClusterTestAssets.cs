@@ -83,7 +83,7 @@ internal static class ClusterTestAssets
         ClusterMeshes manager,
         uint pageId,
         CancellationToken cancellationToken = default)
-        => manager.LoadPageIntoFinalOwnerAsync(pageId, cancellationToken);
+        => manager.LoadPageIntoStagingAsync(pageId, cancellationToken);
 
     internal static T AssertSingle<T>(ReadOnlySpan<T> items)
     {

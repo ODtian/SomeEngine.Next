@@ -180,7 +180,7 @@ public sealed class MeshStreamingTests
 
     private static void CompletePublication(ClusterMeshes manager)
     {
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
     }
 
     private static MeshPayloadSource RetainPayloadSource(Mesh mesh)

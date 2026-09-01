@@ -106,10 +106,8 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = shadeBinCount,
             SlotCapacity = assignments.SlotCapacity,
             PageFaultCapacity = pageFaultCapacity,
-            PageHeap = DeclareExternalBuffer(ref graph, residency.PageHeap.Info.Size, BufferUsages.ShaderRead,
-                "Cluster page heap"),
-            Bvh = DeclareExternalBuffer(ref graph, residency.Bvh.Info.Size, BufferUsages.ShaderRead,
-                "Cluster BVH"),
+            PageHeap = graph.RegisterExternalBuffer(residency.PageHeap, []),
+            Bvh = graph.RegisterExternalBuffer(residency.Bvh, []),
             InstanceData = DeclareExternalBuffer(ref graph, instanceDataBytes, BufferUsages.ShaderRead,
                 "Cluster instance data"),
             InstanceProperties = DeclareExternalBuffer(ref graph, instanceMetadataBytes, BufferUsages.Constant,
@@ -361,12 +359,6 @@ public sealed partial class ClusterPipelineSystem
         ClusterCullingHistory history)
     {
         FrameResources frame = _frameResources;
-        BindBuffer(ref graph, frame.PageHeap, binding.PageHeap,
-            PipelineSync.AllShading, ResourceAccess.ShaderResource,
-            ResourceContentState.Defined);
-        BindBuffer(ref graph, frame.Bvh, binding.Bvh,
-            PipelineSync.AllShading, ResourceAccess.ShaderResource,
-            ResourceContentState.Defined);
         BindBuffer(ref graph, frame.InstanceData, binding.PropertyData,
             PipelineSync.AllShading, ResourceAccess.ShaderResource,
             ResourceContentState.Defined);
@@ -408,6 +400,137 @@ public sealed partial class ClusterPipelineSystem
             frame.CurrentHiZ,
             history.CurrentHiZ,
             history.CurrentHiZEndpoints);
+    }
+
+    private void RecordResidencyUploads(
+        ref RenderGraphFrame graph,
+        in ClusterRenderBinding binding)
+    {
+        if (binding.Publication is not { } publication)
+            return;
+
+        ClusterMeshPublication meshes = publication.Meshes;
+        var pagePasses = new GraphPassId[meshes.PageUploads.Length];
+        for (int index = 0; index < meshes.PageUploads.Length; index++)
+        {
+            pagePasses[index] = AddUpload(
+                ref graph,
+                meshes.PageUploads[index],
+                _frameResources.PageHeap,
+                $"Upload Cluster page {index}");
+        }
+
+        GraphPassId previousBvhPass = default;
+        for (int index = 0; index < meshes.Bvh.Uploads.Length; index++)
+        {
+            GraphPassId pass = AddUpload(
+                ref graph,
+                meshes.Bvh.Uploads[index],
+                _frameResources.Bvh,
+                $"Patch Cluster BVH range {index}");
+            if (previousBvhPass != default)
+                graph.OrderAfter(pass, previousBvhPass);
+            else
+                foreach (GraphPassId pagePass in pagePasses)
+                    graph.OrderAfter(pass, pagePass);
+            previousBvhPass = pass;
+        }
+        if (previousBvhPass != default)
+            graph.OrderAfter(_traversalPass, previousBvhPass);
+
+        static GraphPassId AddUpload(
+            ref RenderGraphFrame activeGraph,
+            in ClusterStagedUpload upload,
+            GraphBufferId destination,
+            string label)
+        {
+            GraphBufferId source = activeGraph.Upload(
+                upload.Bytes.Span,
+                BufferUsages.CopySource,
+                $"{label} staging");
+            var data = new ClusterBufferCopyParameters(
+                source,
+                0,
+                destination,
+                upload.Offset,
+                checked((ulong)upload.Bytes.Length));
+            return activeGraph.AddCopyPass(
+                label,
+                PassQueueSelection.AnyOfType(QueueType.Copy),
+                data,
+                default,
+                static (ref PassDefinition access, ref ClusterBufferCopyParameters copy) =>
+                {
+                    _ = access.Read(
+                        copy.Source,
+                        new BufferRange(copy.SourceOffset, copy.ByteCount),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopySource);
+                    _ = access.Write(
+                        copy.Destination,
+                        new BufferRange(copy.DestinationOffset, copy.ByteCount),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        WriteCoverage.Complete);
+                },
+                ClusterBufferCopyParameters.Record);
+        }
+    }
+
+    private void DeclareResidencyReads(
+        ref RenderGraphFrame graph,
+        in ClusterRenderBinding binding)
+    {
+        foreach (GraphPassId passId in _pageHeapReaderPasses)
+        {
+            PassDefinition pass = graph.GetPass(passId);
+            foreach (ref readonly BufferRange range in binding.ResidentPageRanges.AsSpan())
+            {
+                _ = pass.Read(
+                    _frameResources.PageHeap,
+                    range,
+                    PipelineSync.AllShading,
+                    ResourceAccess.ShaderResource);
+            }
+        }
+
+        if (!binding.BvhRange.IsWhole && binding.BvhRange.Size != 0)
+        {
+            PassDefinition traversal = graph.GetPass(_traversalPass);
+            _ = traversal.Read(
+                _frameResources.Bvh,
+                binding.BvhRange,
+                PipelineSync.ComputeShading,
+                ResourceAccess.ShaderResource);
+        }
+    }
+
+    private QueueCompletion[][] CaptureRetirementCompletions(
+        ClusterResidencyPublication publication)
+    {
+        PageRetirement[] retirements = publication.Meshes.Retirements;
+        var result = new QueueCompletion[retirements.Length][];
+        Buffer pageHeap = _resources.Residency.GetBinding().PageHeap;
+        for (int index = 0; index < retirements.Length; index++)
+        {
+            PageRetirement retirement = retirements[index];
+            var range = new BufferRange(retirement.Offset, retirement.Size);
+            int count = _graph.GetRangeCompletionCount(pageHeap, range);
+            if (count == 0)
+            {
+                result[index] = [];
+                continue;
+            }
+            var completions = new QueueCompletion[count];
+            int copied = _graph.CopyRangeCompletions(
+                pageHeap,
+                range,
+                completions);
+            if (copied != count)
+                throw new InvalidOperationException("Cluster page retirement completions changed during capture.");
+            result[index] = completions;
+        }
+        return result;
     }
 
     private void WriteFrameUploads(
@@ -704,7 +827,9 @@ public sealed partial class ClusterPipelineSystem
 
         ClusterBufferCopyParameters copy = new(
             frame.CandidateArgsInitialization,
+            0,
             frame.CandidateArgs,
+            0,
             16);
         _ = graph.AddCopyFramePass(
             "Initialize Cluster candidate dispatch arguments",
@@ -715,12 +840,12 @@ public sealed partial class ClusterPipelineSystem
             {
                 _ = access.Read(
                     data.Source,
-                    new BufferRange(0, data.ByteCount),
+                    new BufferRange(data.SourceOffset, data.ByteCount),
                     PipelineSync.Copy,
                     ResourceAccess.CopySource);
                 _ = access.Write(
                     data.Destination,
-                    new BufferRange(0, data.ByteCount),
+                    new BufferRange(data.DestinationOffset, data.ByteCount),
                     PipelineSync.Copy,
                     ResourceAccess.CopyDestination,
                     WriteCoverage.Complete);

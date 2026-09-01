@@ -35,6 +35,10 @@ internal readonly record struct ClusterBvhPatch(
     uint Value,
     Memory<byte> Destination);
 internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
+internal sealed record ClusterBvhPublication(
+    int PatchCount,
+    Mesh[] RootMeshes,
+    ClusterStagedUpload[] Uploads);
 
 internal sealed class ClusterBvh
 {
@@ -61,6 +65,7 @@ internal sealed class ClusterBvh
 
     public int RegisteredCount => _roots.Count;
     public int PublishedCount => _publishedCount;
+    public ulong ByteLength => checked((ulong)_count * NodeBytes);
     public bool HasPendingPublication
         => _pendingPatches.Count != 0 ||
            _pendingRootMeshes.Count != 0;
@@ -262,12 +267,16 @@ internal sealed class ClusterBvh
             _pendingPatches.Count - checkpoint.PatchCount);
     }
 
-    public void PreparePublication()
+    public ClusterBvhPublication PreparePublication()
     {
         foreach (ClusterBvhPatch patch in _pendingPatches)
         {
             if (patch.Destination.Length != sizeof(uint))
                 throw new InvalidOperationException($"Cluster BVH patch at {patch.Offset} has an invalid destination.");
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                patch.Destination.Span,
+                patch.Value);
+            _storage.Stage(patch.Offset, sizeof(uint));
         }
         foreach (Mesh mesh in _pendingRootMeshes)
         {
@@ -276,27 +285,35 @@ internal sealed class ClusterBvh
                 throw new InvalidOperationException("Pending Cluster root metadata is inconsistent.");
             }
         }
+        return new ClusterBvhPublication(
+            _pendingPatches.Count,
+            [.. _pendingRootMeshes],
+            _storage.CaptureStagedUploads());
     }
 
-    public void PublishPending()
+    public void CommitPublication(ClusterBvhPublication publication)
     {
-        foreach (ClusterBvhPatch patch in _pendingPatches)
+        ArgumentNullException.ThrowIfNull(publication);
+        if (publication.PatchCount > _pendingPatches.Count ||
+            publication.RootMeshes.Length > _pendingRootMeshes.Count)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(
-                patch.Destination.Span,
-                patch.Value);
-            _storage.Stage(patch.Offset, sizeof(uint));
+            throw new InvalidOperationException("The prepared Cluster BVH publication is ahead of pending state.");
         }
-        _storage.Publish();
-        foreach (Mesh mesh in _pendingRootMeshes)
+        for (int index = 0; index < publication.RootMeshes.Length; index++)
         {
+            Mesh mesh = publication.RootMeshes[index];
+            if (!ReferenceEquals(mesh, _pendingRootMeshes[index]))
+                throw new InvalidOperationException("The prepared Cluster BVH root publication is stale.");
             ClusterRootState root = _roots[mesh];
+            if (root.Published)
+                throw new InvalidOperationException("The prepared Cluster BVH root is already published.");
             _roots[mesh] = root with { Published = true };
             _publishedCount = checked(_publishedCount + 1);
         }
 
-        _pendingPatches.Clear();
-        _pendingRootMeshes.Clear();
+        _storage.CompleteStagedUploads(publication.Uploads);
+        _pendingPatches.RemoveRange(0, publication.PatchCount);
+        _pendingRootMeshes.RemoveRange(0, publication.RootMeshes.Length);
     }
 
     public Exception? Clear()

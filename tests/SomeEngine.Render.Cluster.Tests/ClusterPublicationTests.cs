@@ -36,7 +36,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(PageAllocationBytes, registered.Heap.FreeBytes);
         Assert.False(manager.TryGetPublishedRoot(handle, out _));
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
 
         ClusterMeshesSnapshot published = manager.CaptureSnapshot();
         Assert.Equal(0u, published.Pages.Resident);
@@ -46,7 +46,7 @@ public sealed class ClusterPublicationTests
         Assert.True(published.ManagerStateRevision > registered.ManagerStateRevision);
         Assert.True(manager.TryGetPublishedRoot(handle, out uint root));
         Assert.Equal(ClusterBvh.PageFaultMarker, ReadChildPointer(globalBvh, root));
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
 
         Assert.Equal(
             PageLoadResult.Staged,
@@ -61,7 +61,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(root, unchangedRoot);
         Assert.Equal(ClusterBvh.PageFaultMarker, ReadChildPointer(globalBvh, root));
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
 
         ClusterMeshesSnapshot resident = manager.CaptureSnapshot();
         Assert.Equal(1u, resident.Pages.Resident);
@@ -70,7 +70,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(0u, resident.Heap.FreeBytes);
         Assert.Equal(PageAllocationBytes, resident.Residency.GpuUsedBytes);
         Assert.Equal(0u, ReadChildPointer(globalBvh, root));
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
@@ -96,12 +96,12 @@ public sealed class ClusterPublicationTests
         Assert.False(manager.TryGetPublishedRoot(firstHandle, out _));
         Assert.False(manager.TryGetPublishedRoot(secondHandle, out _));
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.True(manager.TryGetPublishedRoot(firstHandle, out uint firstRoot));
         Assert.True(manager.TryGetPublishedRoot(secondHandle, out uint secondRoot));
         Assert.NotEqual(firstRoot, secondRoot);
         Assert.Equal(2, manager.CaptureSnapshot().PublishedMeshCount);
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(ClusterLifecycle.Disposed, terminal.Lifecycle);
         Assert.Equal(0, terminal.PublishedMeshCount);
         Assert.Equal(PageAllocationBytes, terminal.Heap.FreeBytes);
-        Assert.Throws<ObjectDisposedException>(() => manager.PublishPending());
+        Assert.Throws<ObjectDisposedException>(() => manager.SubmitPending());
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public sealed class ClusterPublicationTests
 
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => ClusterTestAssets.LoadPageAsync(manager, registration.FirstPageId).AsTask());
-        Assert.Throws<ObjectDisposedException>(() => manager.PublishPending());
+        Assert.Throws<ObjectDisposedException>(() => manager.SubmitPending());
         Assert.Throws<ObjectDisposedException>(() => manager.TryGetPublishedRoot(handle, out _));
     }
 
@@ -241,7 +241,7 @@ public sealed class ClusterPublicationTests
         int publishedCount = 0;
         Parallel.For(0, 32, _ =>
         {
-            if (manager.PublishPending())
+            if (manager.SubmitPending())
                 Interlocked.Increment(ref publishedCount);
         });
 
@@ -252,11 +252,11 @@ public sealed class ClusterPublicationTests
         Assert.Equal(PageAllocationBytes, published.Residency.GpuUsedBytes);
         Assert.Equal(1, published.PublishedMeshCount);
         Assert.True(manager.TryGetPublishedRoot(handle, out _));
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
-    public async Task EvictedAllocationIsRetiredOnlyWhenPublishedAndReloadReadsDirectlyIntoFinalOwner()
+    public async Task EvictedAllocationIsRetiredOnlyWhenPublishedAndReloadUsesFreshStaging()
     {
         var pageStorageBytes = new byte[PageAllocationBytes];
         using var manager = new ClusterMeshes(
@@ -282,28 +282,28 @@ public sealed class ClusterPublicationTests
         Assert.Equal(1, evictionPending.Pages.UncompletedEvictions);
         Assert.Equal(0u, evictionPending.Heap.FreeBytes);
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         ClusterMeshesSnapshot evicted = manager.CaptureSnapshot();
         Assert.Equal(0u, evicted.Pages.Resident);
         Assert.Equal(0, evicted.Pages.UncompletedEvictions);
         Assert.Equal(PageAllocationBytes, evicted.Heap.FreeBytes);
 
-        bool usedFinalDestination = false;
+        bool usedStagingDestination = false;
         controlled.Source.AfterRead = (_, destination) =>
         {
             Assert.True(MemoryMarshal.TryGetArray((ReadOnlyMemory<byte>)destination, out ArraySegment<byte> segment));
             Assert.Same(pageStorageBytes, segment.Array);
-            usedFinalDestination = true;
+            usedStagingDestination = true;
         };
         Assert.Equal(
             PageLoadResult.Staged,
             await ClusterTestAssets.LoadPageAsync(manager, pageId));
 
-        Assert.True(usedFinalDestination);
+        Assert.True(usedStagingDestination);
         Assert.Equal(0u, manager.CaptureSnapshot().Pages.Resident);
         Assert.Equal(0u, manager.CaptureSnapshot().Heap.FreeBytes);
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         ClusterMeshesSnapshot reloaded = manager.CaptureSnapshot();
         Assert.Equal(1u, reloaded.Pages.Resident);
         Assert.Equal(0, reloaded.Pages.UncompletedLoads);
@@ -333,7 +333,7 @@ public sealed class ClusterPublicationTests
             () => ClusterTestAssets.LoadPageAsync(manager, pageId).AsTask());
 
         AssertEquivalentExceptRevision(checkpoint, manager.CaptureSnapshot());
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
@@ -380,7 +380,7 @@ public sealed class ClusterPublicationTests
             PageLoadResult.NoCapacity,
             await ClusterTestAssets.LoadPageAsync(manager, registration.FirstPageId));
         Assert.Equal(16u, manager.CaptureSnapshot().Heap.FreeBytes);
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
@@ -420,7 +420,7 @@ public sealed class ClusterPublicationTests
         ClusterMeshesSnapshot evictionPending = manager.CaptureSnapshot();
         Assert.Equal(1, evictionPending.Pages.UncompletedEvictions);
         Assert.Equal(PageAllocationBytes * 2, evictionPending.Residency.GpuUsedBytes);
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
 
         Assert.Equal(
             PageFaultResolutionKind.Satisfied,
@@ -429,7 +429,7 @@ public sealed class ClusterPublicationTests
             PageFaultResolutionKind.NeedsLoad,
             manager.ResolvePageFault(secondLeaf).Kind);
         Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, incomingPageId));
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.Equal(PageAllocationBytes * 2, manager.CaptureSnapshot().Residency.GpuUsedBytes);
     }
 
@@ -478,7 +478,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(0u, rejected.Pages.Registered);
         Assert.Equal(0, rejected.PublishedMeshCount);
         Assert.Equal(PageAllocationBytes, rejected.Heap.FreeBytes);
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
 
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(
             MeshWithBvh("Valid", Leaf()));
@@ -487,7 +487,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(1u, registration.PageCount);
         Assert.Equal(1u, manager.CaptureSnapshot().Pages.Registered);
         Assert.False(manager.TryGetPublishedRoot(handle, out _));
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.True(manager.TryGetPublishedRoot(handle, out _));
     }
 
@@ -503,7 +503,7 @@ public sealed class ClusterPublicationTests
         ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(asset);
 
         Assert.Equal(1u, registration.PageCount);
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.True(manager.TryGetPublishedRoot(registration.Mesh, out _));
     }
 
@@ -686,7 +686,7 @@ public sealed class ClusterPublicationTests
         }
         Assert.Equal(meshCount, registeredPages.Count);
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
 
         Assert.Equal(meshCount, manager.CaptureSnapshot().PublishedMeshCount);
         var publishedRoots = new HashSet<uint>();
@@ -696,7 +696,7 @@ public sealed class ClusterPublicationTests
             Assert.True(publishedRoots.Add(root));
         }
         Assert.Equal(meshCount, publishedRoots.Count);
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
@@ -750,7 +750,7 @@ public sealed class ClusterPublicationTests
     }
 
     private static void CompletePublication(ClusterMeshes manager)
-        => Assert.True(manager.PublishPending());
+        => Assert.True(manager.SubmitPending());
 
     private static uint ReadChildPointer(ReadOnlySpan<byte> globalBvh, uint nodeIndex)
     {
@@ -881,7 +881,7 @@ public sealed class ClusterPublicationTests
         Assert.Equal(1u, rejected.Pages.Missing);
         Assert.Equal(PageAllocationBytes, rejected.Heap.FreeBytes);
         Assert.Equal(0, rejected.Residency.GpuUsedBytes);
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
     }
 
     private static void AssertEquivalentExceptRevision(
@@ -901,7 +901,7 @@ public sealed class ClusterPublicationTests
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => manager.AddAuthoredMeshAsync(asset).AsTask());
         Assert.Equal(0u, manager.CaptureSnapshot().Pages.Registered);
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
         return error;
     }
 
@@ -925,8 +925,11 @@ public sealed class ClusterPublicationTests
         public void Stage(ulong offset, int length)
             => _inner.Stage(offset, length);
 
-        public void Publish()
-            => _inner.Publish();
+        public ClusterStagedUpload[] CaptureStagedUploads()
+            => _inner.CaptureStagedUploads();
+
+        public void CompleteStagedUploads(ReadOnlySpan<ClusterStagedUpload> uploads)
+            => _inner.CompleteStagedUploads(uploads);
 
         public void Release(ulong offset, int length)
         {

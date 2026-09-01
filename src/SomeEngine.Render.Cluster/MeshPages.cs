@@ -439,13 +439,6 @@ internal sealed class MeshPages
         ReadOnlySpan<uint> residentPages,
         ReadOnlySpan<PageRetirement> retirements)
     {
-        if (residentPages.Length != _pendingLoads.Count ||
-            retirements.Length != _pendingEvictions.Count)
-        {
-            throw new InvalidOperationException(
-                "Prepared page state does not cover the pending residency publication.");
-        }
-
         foreach (uint pageId in residentPages)
         {
             if (!_pendingLoads.Contains(pageId) ||

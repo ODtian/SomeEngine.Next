@@ -158,7 +158,19 @@ public sealed partial class ClusterPipelineSystem
                 BindReadOnly(ref graph, ref pass, frame.VisibleClusters, VisibleClusterStride, resource.Name);
                 return true;
             case "PageHeap":
-                BindReadOnly(ref graph, ref pass, frame.PageHeap, 0, resource.Name);
+                RequireBindingType(resource, ResourceBindingType.BufferSrv);
+                pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
+                    graph.CreateBufferSrv(
+                        frame.PageHeap,
+                        label: "Cluster shade PageHeap")));
+                foreach (ref readonly BufferRange range in _pendingResidentPageRanges.AsSpan())
+                {
+                    _ = pass.Read(
+                        frame.PageHeap,
+                        range,
+                        PipelineSync.ComputeShading,
+                        ResourceAccess.ShaderResource);
+                }
                 return true;
             case "OutputColor":
                 RequireBindingType(resource, ResourceBindingType.TextureUav);

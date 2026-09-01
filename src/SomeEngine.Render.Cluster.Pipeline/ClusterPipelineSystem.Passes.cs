@@ -149,7 +149,9 @@ public sealed partial class ClusterPipelineSystem
         BufferRange range = new(0, byteCount);
         ClusterBufferCopyParameters passData = new(
             frame.PageFaults,
+            0,
             frame.PageFaultReadback,
+            0,
             byteCount);
         _ = graph.AddCopyFramePass(
             "Read back Cluster page faults",
@@ -180,8 +182,8 @@ public sealed partial class ClusterPipelineSystem
                 packedViews,
                 ClusterViewUniforms.SizeInBytes),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.Bvh, stride: 64), PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
+            CreateReadOnlyBufferView(graph, frame.Bvh, stride: 64)));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.InstanceData), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
@@ -234,8 +236,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.CandidateClusters, CandidateStride),
             PipelineSync.ComputeShading));
@@ -291,8 +292,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, frame.InstanceProperties, frame.InstancePropertiesRange),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.Phase2CandidateClusters, CandidateStride),
             PipelineSync.ComputeShading));
@@ -433,8 +433,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.DeformSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.DeformBinMeta, DeformBinStride),
             PipelineSync.ComputeShading));
@@ -525,8 +524,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.DeformSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.DeformBinMeta, DeformBinStride),
             PipelineSync.ComputeShading));
@@ -578,7 +576,9 @@ public sealed partial class ClusterPipelineSystem
         ulong bytes = checked((ulong)frame.RasterBinCount * ClusterIndirectAbi.DrawBytes);
         ClusterBufferCopyParameters passData = new(
             frame.BinnedHardwareDrawArgs,
+            0,
             frame.HardwareIndirectArgs,
+            0,
             bytes);
         _ = graph.AddCopyFramePass(
             phaseOne
@@ -809,9 +809,9 @@ public sealed partial class ClusterPipelineSystem
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(graph, pushConstants),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.PageHeap),
-                PipelineSync.ComputeShading));
+            AddPageHeapBinding(
+                ref bindingCount,
+                CreateReadOnlyBufferView(graph, frame.PageHeap));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
                     graph,
@@ -903,9 +903,9 @@ public sealed partial class ClusterPipelineSystem
                     packedViews,
                     ClusterViewUniforms.SizeInBytes),
                 PipelineSync.ComputeShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.PageHeap),
-                PipelineSync.ComputeShading));
+            AddPageHeapBinding(
+                ref bindingCount,
+                CreateReadOnlyBufferView(graph, frame.PageHeap));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
                     graph,
@@ -1116,9 +1116,9 @@ public sealed partial class ClusterPipelineSystem
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
                 CreateConstantBufferView(graph, dispatchUniforms),
                 PipelineSync.AllShading));
-            AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-                CreateReadOnlyBufferView(graph, frame.PageHeap),
-                PipelineSync.AllShading));
+            AddPageHeapBinding(
+                ref bindingCount,
+                CreateReadOnlyBufferView(graph, frame.PageHeap));
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
                 CreateReadOnlyBufferView(
                     graph,
@@ -1402,8 +1402,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.ShadeSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         ClusterDispatchParameters count = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
         GraphPassId countPass = AddComputePass(ref graph, "Count Cluster shade bins",
@@ -1467,8 +1466,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.ShadeScatterCounts, sizeof(uint)),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.PixelCoordinates, 2 * sizeof(uint)),
             PipelineSync.ComputeShading));
@@ -1523,8 +1521,7 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
             PipelineSync.ComputeShading));
-        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
+        AddPageHeapBinding(ref bindingCount, CreateReadOnlyBufferView(graph, frame.PageHeap));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
             CreateStorageTextureView(
                 graph,
@@ -1583,11 +1580,13 @@ public sealed partial class ClusterPipelineSystem
         PassDeclaration<TState> declaration,
         RasterFrameCallback<TState> callback)
     {
+        bool readsPageHeap = _bindingScratchReadsPageHeap;
+        _bindingScratchReadsPageHeap = false;
         Span<GraphParameterResourceBinding> bindings =
             _renderGraphBindings.AsSpan(0, bindingCount);
         try
         {
-            return graph.AddRasterFramePass(
+            GraphPassId pass = graph.AddRasterFramePass(
                 name,
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 state,
@@ -1597,6 +1596,9 @@ public sealed partial class ClusterPipelineSystem
                 bindings,
                 declaration,
                 callback);
+            if (readsPageHeap)
+                _pageHeapReaderPasses.Add(pass);
+            return pass;
         }
         finally
         {
@@ -1624,11 +1626,13 @@ public sealed partial class ClusterPipelineSystem
         ComputeFrameCallback<TState> callback,
         bool asyncCompute = false)
     {
+        bool readsPageHeap = _bindingScratchReadsPageHeap;
+        _bindingScratchReadsPageHeap = false;
         Span<GraphParameterResourceBinding> bindings =
             _renderGraphBindings.AsSpan(0, bindingCount);
         try
         {
-            return graph.AddComputeFramePass(
+            GraphPassId pass = graph.AddComputeFramePass(
                 name,
                 PassQueueSelection.AnyOfType(_options.EnableAsyncCompute && asyncCompute
                     ? QueueType.Compute
@@ -1640,6 +1644,9 @@ public sealed partial class ClusterPipelineSystem
                 bindings,
                 declaration,
                 callback);
+            if (readsPageHeap)
+                _pageHeapReaderPasses.Add(pass);
+            return pass;
         }
         finally
         {
@@ -1663,6 +1670,16 @@ public sealed partial class ClusterPipelineSystem
         if ((uint)count >= (uint)_renderGraphBindings.Length)
             throw new InvalidOperationException("A Cluster Pass exceeds the binding scratch capacity.");
         _renderGraphBindings[count++] = binding;
+    }
+
+    private void AddPageHeapBinding(ref int count, GraphBufferSrvId view)
+    {
+        if (_bindingScratchReadsPageHeap)
+            throw new InvalidOperationException("A Cluster Pass cannot bind the page heap twice.");
+        _bindingScratchReadsPageHeap = true;
+        AddBinding(
+            ref count,
+            GraphParameterResourceBinding.ReadOnlyBufferDescriptor(view));
     }
 
     private static void DeclareNoAdditionalAccess<TState>(

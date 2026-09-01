@@ -194,7 +194,7 @@ public sealed class ClusterRegistrationTests
         using Mesh second = await ClusterTestAssets.OpenRuntimeMeshAsync(
             ClusterTestAssets.CreateSinglePageMesh("revision-two"));
         _ = await manager.AddMeshAsync(first);
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.True(manager.IsMeshRegistered(first));
         Assert.True(manager.TryGetPublishedRoot(first, out uint rootBefore));
 
@@ -266,8 +266,11 @@ public sealed class ClusterRegistrationTests
         public void Stage(ulong offset, int length)
             => _inner.Stage(offset, length);
 
-        public void Publish()
-            => _inner.Publish();
+        public ClusterStagedUpload[] CaptureStagedUploads()
+            => _inner.CaptureStagedUploads();
+
+        public void CompleteStagedUploads(ReadOnlySpan<ClusterStagedUpload> uploads)
+            => _inner.CompleteStagedUploads(uploads);
 
         public void Release(ulong offset, int length)
             => _inner.Release(offset, length);

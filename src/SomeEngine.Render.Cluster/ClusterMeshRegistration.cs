@@ -288,8 +288,8 @@ internal sealed partial class ClusterMeshes
                 throw new InvalidOperationException(
                     "A Cluster epoch cannot be disposed while a page stream still owns its lifecycle.");
             }
-            if (_directLoads.Count != 0)
-                throw new InvalidOperationException("A Cluster epoch cannot be disposed while direct page IO is active.");
+            if (_stagingLoads.Count != 0)
+                throw new InvalidOperationException("A Cluster epoch cannot be disposed while staged page IO is active.");
             if (_registrationOperationCount != 0)
                 throw new InvalidOperationException("A Cluster epoch cannot be disposed while mesh registration IO is active.");
         }

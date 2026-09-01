@@ -18,7 +18,8 @@ public readonly struct GraphParameterResourceBinding
         ResourceContentState? resultContents,
         in BufferRange bufferRange,
         in TextureSubresourceRange textureRange,
-        in TextureSubresourceRange secondaryTextureRange)
+        in TextureSubresourceRange secondaryTextureRange,
+        bool requiresExplicitAccess = false)
     {
         Type = type;
         Value = value;
@@ -32,6 +33,7 @@ public readonly struct GraphParameterResourceBinding
         BufferRange = bufferRange;
         TextureRange = textureRange;
         SecondaryTextureRange = secondaryTextureRange;
+        RequiresExplicitAccess = requiresExplicitAccess;
     }
 
     internal ResourceBindingType Type { get; }
@@ -49,6 +51,7 @@ public readonly struct GraphParameterResourceBinding
     internal BufferRange BufferRange { get; }
     internal TextureSubresourceRange TextureRange { get; }
     internal TextureSubresourceRange SecondaryTextureRange { get; }
+    internal bool RequiresExplicitAccess { get; }
 
     public static GraphParameterResourceBinding ConstantBuffer(
         GraphBufferCbvId view,
@@ -63,6 +66,16 @@ public readonly struct GraphParameterResourceBinding
         ForGraphView(ResourceBindingType.BufferSrv, view.Value,
             GraphAccessMode.Read, WriteCoverage.Partial, sync,
             TextureLayout.Undefined, null);
+
+    /// <summary>
+    /// Binds a whole Buffer SRV descriptor without inferring a whole-buffer synchronization read.
+    /// The Pass must separately declare every range the shader can actually access.
+    /// </summary>
+    public static GraphParameterResourceBinding ReadOnlyBufferDescriptor(
+        GraphBufferSrvId view) =>
+        ForGraphView(ResourceBindingType.BufferSrv, view.Value,
+            GraphAccessMode.Read, WriteCoverage.Partial, PipelineSync.None,
+            TextureLayout.Undefined, null, requiresExplicitAccess: true);
 
     public static GraphParameterResourceBinding WritableBuffer(
         GraphBufferUavId view,
@@ -177,7 +190,8 @@ public readonly struct GraphParameterResourceBinding
         WriteCoverage coverage,
         PipelineSync sync,
         TextureLayout layout,
-        ResourceContentState? resultContents) =>
+        ResourceContentState? resultContents,
+        bool requiresExplicitAccess = false) =>
         new(
             type,
             view,
@@ -190,7 +204,8 @@ public readonly struct GraphParameterResourceBinding
             resultContents,
             default,
             default,
-            default);
+            default,
+            requiresExplicitAccess);
 
     internal void ValidateStatic(GraphStructure structure, Device device)
     {

@@ -129,6 +129,8 @@ public ref struct PassDefinition
 
     private void DeclareParameterBinding(in GraphParameterResourceBinding binding)
     {
+        if (binding.RequiresExplicitAccess)
+            return;
         switch (binding.Type)
         {
             case ResourceBindingType.ConstantBuffer:

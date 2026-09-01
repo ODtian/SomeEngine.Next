@@ -43,6 +43,9 @@ internal readonly ref struct ClusterRenderBinding
         PageHeap = residency.PageHeap;
         Bvh = residency.Bvh;
         PageFaultCapacity = residency.PageFaultCapacity;
+        ResidentPageRanges = residency.ResidentPageRanges;
+        BvhRange = residency.BvhRange;
+        Publication = residency.Publication;
         PropertyData = instanceProperties.PropertyData ??
             throw new ArgumentException(
                 "Cluster rendering requires materialized instance-property data.",
@@ -65,6 +68,12 @@ internal readonly ref struct ClusterRenderBinding
     internal Buffer Bvh { get; }
 
     internal int PageFaultCapacity { get; }
+
+    internal BufferRange[] ResidentPageRanges { get; }
+
+    internal BufferRange BvhRange { get; }
+
+    internal ClusterResidencyPublication? Publication { get; }
 
     internal Buffer PropertyData { get; }
 
@@ -292,20 +301,55 @@ public sealed class ClusterRenderResources : IDisposable
                     using RenderTimelineLease residencyLease =
                         scope.AcquireTimeline(_residencyTimeline);
 
-                    if (_residency.CaptureMeshesSnapshot().HasPendingPublication
-                        && !_residencyTimeline.WaitForGeneration(0, _shutdownTimeout))
-                    {
-                        throw new TimeoutException(
-                            "Cluster residency storage did not retire before pending publication.");
-                    }
-                    bool published = _residency.PublishPending();
-                    return new ClusterPrepareResult(published);
+                    bool prepared = _residency.PreparePublication();
+                    return new ClusterPrepareResult(prepared);
                 }
                 finally
                 {
                     _aggregateMutationActive = false;
                 }
             }
+        }
+        finally
+        {
+            ExitActiveOperation();
+        }
+    }
+
+    internal void CommitResidencyPublication(
+        ClusterResidencyPublication publication,
+        QueueCompletion[][] retirementCompletions)
+    {
+        EnterActiveOperation();
+        try
+        {
+            lock (_aggregateStateGate)
+            {
+                if (_aggregateMutationActive)
+                    throw new InvalidOperationException("Cluster aggregate mutation is already active.");
+                _aggregateMutationActive = true;
+                try
+                {
+                    _residency.CommitPublication(publication, retirementCompletions);
+                }
+                finally
+                {
+                    _aggregateMutationActive = false;
+                }
+            }
+        }
+        finally
+        {
+            ExitActiveOperation();
+        }
+    }
+
+    internal void RetainResidencyPublication(ClusterResidencyPublication publication)
+    {
+        EnterActiveOperation();
+        try
+        {
+            _residency.RetainPublication(publication);
         }
         finally
         {
@@ -476,6 +520,11 @@ public sealed class ClusterRenderResources : IDisposable
             {
                 _residency.StopStreaming(Remaining(started));
                 _streamStopped = true;
+            }
+            if (!_residencyTimeline.WaitForGeneration(0, Remaining(started)))
+            {
+                throw new TimeoutException(
+                    "Cluster residency readers did not retire before resource shutdown.");
             }
             if (!_residencyDestroyed)
             {

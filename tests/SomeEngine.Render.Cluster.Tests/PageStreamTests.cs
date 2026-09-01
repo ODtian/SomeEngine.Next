@@ -147,7 +147,7 @@ public sealed class PageStreamTests
         ClusterMeshRegistration waitingRegistration = await manager.AddMeshAsync(
             waiting.Mesh);
         Mesh waitingHandle = waitingRegistration.Mesh;
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.True(manager.TryGetPublishedRoot(waitingHandle, out uint waitingFaultNode));
 
         Assert.Equal(1u, firstRegistration.PageCount);
@@ -157,21 +157,21 @@ public sealed class PageStreamTests
         Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, firstPageID));
         Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, waitingPageID));
         waiting.Source.Arm();
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(0u, manager.CaptureSnapshot().Heap.FreeBytes);
 
         Assert.True(manager.EvictPage(waitingPageID));
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(PageAllocationBytes, manager.CaptureSnapshot().Heap.FreeBytes);
 
         ClusterMeshRegistration replacementRegistration = await manager.AddAuthoredMeshAsync(
             MeshWithBvh("Replacement", Leaf()));
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(1u, replacementRegistration.PageCount);
         Assert.Equal(
             PageLoadResult.Staged,
             await ClusterTestAssets.LoadPageAsync(manager, replacementRegistration.FirstPageId));
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(0u, manager.CaptureSnapshot().Heap.FreeBytes);
 
         await using var stream = new PageStream(manager);
@@ -200,7 +200,7 @@ public sealed class PageStreamTests
         Assert.Equal(0, stillDeferred.Work.QueuedPages);
         Assert.Equal(1, manager.CaptureSnapshot().Pages.UncompletedEvictions);
 
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(PageAllocationBytes, manager.CaptureSnapshot().Heap.FreeBytes);
 
         await UpdateUntilAsync(
@@ -213,7 +213,7 @@ public sealed class PageStreamTests
         Assert.Equal(1u, reloaded.LastUpdate.StagedPages);
         Assert.Equal(1u, manager.CaptureSnapshot().Pages.Resident);
 
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(2u, manager.CaptureSnapshot().Pages.Resident);
     }
 
@@ -286,7 +286,7 @@ public sealed class PageStreamTests
             meshes[index] = registration.Mesh;
             Assert.Equal(1u, registration.PageCount);
         }
-        PublishPending(manager);
+        SubmitPublication(manager);
         var faultNodes = new uint[pageCount];
         for (int index = 0; index < faultNodes.Length; index++)
             Assert.True(manager.TryGetPublishedRoot(meshes[index], out faultNodes[index]));
@@ -448,7 +448,7 @@ public sealed class PageStreamTests
         await WaitUntilAsync(
             () => manager.CaptureSnapshot().ActivePageStreams == 0 &&
                 manager.CaptureSnapshot().Residency.GpuUsedBytes == 0,
-            "The late page completion did not release its final PageHeap reservation.");
+            "The late page completion did not release its PageHeap reservation.");
 
         Assert.Equal(0, manager.CaptureSnapshot().Residency.GpuUsedBytes);
         Assert.Equal(0u, manager.CaptureSnapshot().Heap.UsedBytes);
@@ -646,7 +646,7 @@ public sealed class PageStreamTests
             };
             Assert.Equal(1u, registration.PageCount);
         }
-        PublishPending(manager);
+        SubmitPublication(manager);
         var faultNodes = new uint[pageCount];
         for (int index = 0; index < faultNodes.Length; index++)
             Assert.True(manager.TryGetPublishedRoot(meshes[index], out faultNodes[index]));
@@ -687,13 +687,13 @@ public sealed class PageStreamTests
             PageBytes);
         ClusterMeshRegistration registration = await manager.AddMeshAsync(controlled.Mesh);
         Mesh mesh = registration.Mesh;
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.True(manager.TryGetPublishedRoot(mesh, out uint faultNode));
         Assert.Equal(1u, registration.PageCount);
         uint pageID = registration.FirstPageId;
         Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, pageID));
         controlled.Source.Arm();
-        PublishPending(manager);
+        SubmitPublication(manager);
 
         Assert.True(manager.EvictPage(pageID));
         ClusterMeshesSnapshot pendingEviction = manager.CaptureSnapshot();
@@ -718,7 +718,7 @@ public sealed class PageStreamTests
         Assert.Equal(1u, cancelledEviction.Pages.Resident);
         Assert.Equal(0u, cancelledEviction.Heap.FreeBytes);
 
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.Equal(
             PageFaultResolutionKind.Satisfied,
             manager.ResolvePageFault(faultNode).Kind);
@@ -761,7 +761,7 @@ public sealed class PageStreamTests
         Assert.Equal(0, stagedStream.Work.QueuedPages);
         Assert.Equal(1, staged.Pages.UncompletedLoads);
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
 
         ClusterMeshesSnapshot published = manager.CaptureSnapshot();
         Assert.Equal(1u, published.Pages.Resident);
@@ -825,7 +825,7 @@ public sealed class PageStreamTests
             : new ClusterMeshes(PageHeap.CapacityBytes, residency: null, pageStorage);
         await manager.AddAuthoredMeshAsync(
             MeshWithBvh("Seed", Leaf(), Internal(firstChild: 0, childCount: 1)));
-        PublishPending(manager);
+        SubmitPublication(manager);
 
         Mesh asset = MeshWithBvh("PageStream", Leaf());
         using ControlledRuntimeMesh controlled = await ClusterTestAssets.OpenControlledRuntimeMeshAsync(
@@ -841,7 +841,7 @@ public sealed class PageStreamTests
         Assert.Equal(0u, pendingRegistration.Pages.Resident);
         Assert.Equal(1, pendingRegistration.PublishedMeshCount);
 
-        PublishPending(manager);
+        SubmitPublication(manager);
         Assert.True(manager.TryGetPublishedRoot(mesh, out uint globalNodeIndex));
         ClusterMeshesSnapshot published = manager.CaptureSnapshot();
         Assert.Equal(0u, published.Pages.Resident);
@@ -868,9 +868,9 @@ public sealed class PageStreamTests
         uint FaultNode,
         ControlledRangeSource Source);
 
-    private static void PublishPending(ClusterMeshes manager)
+    private static void SubmitPublication(ClusterMeshes manager)
     {
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
     }
 
     private static async Task UpdateUntilAsync(PageStream stream, Func<bool> condition)
