@@ -65,7 +65,7 @@ public partial class Mesh : IDisposable, IAsyncDisposable
         current.AssetGuid = replacement.AssetGuid;
         current.Name = replacement.Name;
         current.Bounds = replacement.Bounds;
-        current.VertexStride = replacement.VertexStride;
+        current.VertexEncoding = replacement.VertexEncoding;
         current.PayloadKey = replacement.PayloadKey;
         current.PayloadLength = replacement.PayloadLength;
         current.Payload = replacement.Payload;
@@ -73,8 +73,6 @@ public partial class Mesh : IDisposable, IAsyncDisposable
         current.PageDigests = replacement.PageDigests;
         current.BvhLength = replacement.BvhLength;
         current.BvhSha256 = replacement.BvhSha256;
-        current.QuantOrigin = replacement.QuantOrigin;
-        current.QuantStep = replacement.QuantStep;
         current.Regions = replacement.Regions;
         current.MaterialGuids = replacement.MaterialGuids;
         current.Revision = checked(current.Revision + 1);

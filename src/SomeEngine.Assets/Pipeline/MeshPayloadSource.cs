@@ -194,17 +194,13 @@ internal sealed class MeshPayloadSource : IDisposable
             {
                 MeshPayloadPageDigest digest = digests[index]
                     ?? throw new InvalidDataException($"Mesh page digest {index} is null.");
-                Vec3 origin = digest.QuantOrigin
-                    ?? throw new InvalidDataException($"Mesh page digest {index} has no quantization origin.");
                 ReadOnlyMemory<byte> sha256 = digest.Sha256
                     ?? throw new InvalidDataException($"Mesh page digest {index} has no SHA-256 digest.");
                 return new MeshPayloadPage(
                     checked((long)digest.Offset),
                     checked((int)digest.Length),
                     digest.ClusterCount,
-                    digest.VertexStride,
-                    new System.Numerics.Vector3(origin.X, origin.Y, origin.Z),
-                    digest.QuantStep,
+                    digest.VertexEncodingHash,
                     sha256);
             }
         }

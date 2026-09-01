@@ -78,7 +78,7 @@ PSInput VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
     uint clusterID = req.ClusterID;
     uint clustersStartOffset = PageHeap.Load(pageOffset + 16);
 
-    uint clusterStride = GPU_CLUSTER_STRIDE_BYTES;
+    uint clusterStride = PACKED_CLUSTER_STRIDE_BYTES;
     uint clusterOffset = pageOffset + clustersStartOffset + clusterID * clusterStride;
 
     float4 v0 = asfloat(PageHeap.Load4(clusterOffset + 16));

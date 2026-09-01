@@ -110,13 +110,8 @@ uint CountBits2(uint2 v)
 }
 
 VertexEvalContext MakeDeformVertexEvalContext(
-    uint pageOffset,
-    uint posOffset,
-    uint attrOffset,
-    uint idxOffset,
-    uint totalVertexCount,
-    uint vStart,
-    int3 intBase,
+    uint vertexBlobAddress,
+    uint vertexBlobSize,
     uint localVertIdx,
     uint instanceID,
     RenderInstanceTransform transform,
@@ -124,15 +119,9 @@ VertexEvalContext MakeDeformVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.pageOffset = pageOffset;
-    ctx.posOffset = posOffset;
-    ctx.attrOffset = attrOffset;
-    ctx.vertexStride = PageHeap.Load(pageOffset + 44u);
-    ctx.idxOffset = idxOffset;
-    ctx.vStart = vStart;
-    ctx.totalVertexCount = totalVertexCount;
-    ctx.localVertIdx = localVertIdx;
-    ctx.intBase = intBase;
+    ctx.vertexBlobAddress = vertexBlobAddress;
+    ctx.vertexBlobSize = vertexBlobSize;
+    ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;
     ctx.IsPreviousFrame = isPreviousFrame;
@@ -205,24 +194,18 @@ void DeformKernel<TVE : IVertexEvaluate>(
     uint clusterID      = req.y;
     uint realInstanceID = req.z;
 
-    uint totalVertexCount = PageHeap.Load(pageOffset + 4);
-    uint4 header1 = PageHeap.Load4(pageOffset + 16);
-    uint clustersOff = header1.x;
-    uint posOffset   = header1.y;
-    uint attrOffset  = header1.z;
-    uint idxOffset   = header1.w;
-
-    uint clusterByteOff = pageOffset + clustersOff + clusterID * GPU_CLUSTER_STRIDE_BYTES;
-
-    int3 intBase;
-    intBase.x = asint(PageHeap.Load(clusterByteOff + 0));
-    intBase.y = asint(PageHeap.Load(clusterByteOff + 4));
-    intBase.z = asint(PageHeap.Load(clusterByteOff + 8));
-
-    uint packedLodVStart = PageHeap.Load(clusterByteOff + 36);
-    uint vStart = (packedLodVStart >> 16) & 0xFFFF;
-
-    uint packedCounts = PageHeap.Load(clusterByteOff + 44);
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
+    uint tStart;
+    uint packedCounts;
+    LoadClusterInfo(
+        PageHeap,
+        pageOffset,
+        clusterID,
+        vertexBlobAddress,
+        vertexBlobSize,
+        tStart,
+        packedCounts);
     uint vertexCount  = packedCounts & 0xFF;
     if (vertexCount == 0u || vertexCount > Uniforms.MaxClusterVertices)
         return;
@@ -256,13 +239,8 @@ void DeformKernel<TVE : IVertexEvaluate>(
     RenderInstanceTransform previousTransform = GetPreviousInstanceTransform(realInstanceID);
 
     VertexEvalContext ctx = MakeDeformVertexEvalContext(
-        pageOffset,
-        posOffset,
-        attrOffset,
-        idxOffset,
-        totalVertexCount,
-        vStart,
-        intBase,
+        vertexBlobAddress,
+        vertexBlobSize,
         localVertIdx,
         realInstanceID,
         transform,
@@ -270,13 +248,8 @@ void DeformKernel<TVE : IVertexEvaluate>(
     TVE.DeformedVertex v = evaluator.evaluate(ctx);
 
     VertexEvalContext previousCtx = MakeDeformVertexEvalContext(
-        pageOffset,
-        posOffset,
-        attrOffset,
-        idxOffset,
-        totalVertexCount,
-        vStart,
-        intBase,
+        vertexBlobAddress,
+        vertexBlobSize,
         localVertIdx,
         realInstanceID,
         previousTransform,
@@ -287,6 +260,8 @@ void DeformKernel<TVE : IVertexEvaluate>(
 }
 
 [MaterialTarget("cluster.deform.eval")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void CSDeformStatic(uint3 groupID : SV_GroupID, uint gtid : SV_GroupThreadID)
@@ -296,6 +271,8 @@ void CSDeformStatic(uint3 groupID : SV_GroupID, uint gtid : SV_GroupThreadID)
 }
 
 [MaterialTarget("cluster.deform.eval")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void CSDeformWave(uint3 groupID : SV_GroupID, uint gtid : SV_GroupThreadID)

@@ -48,14 +48,9 @@ struct TriangleInfo
     uint vi0;
     uint vi1;
     uint vi2;
-    uint pageOffset;
-    int3 intBase;
-    uint vStart;
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
     uint vertexCount;
-    uint totalVertexCount;
-    uint posOffset;
-    uint attrOffset;
-    uint idxOffset;
 };
 
 bool decodeTriangle(uint2 pixelCoord, out TriangleInfo tri)
@@ -72,23 +67,25 @@ bool decodeTriangle(uint2 pixelCoord, out TriangleInfo tri)
     tri.triangleID = DecodeVisBufferTriangleID(visData);
 
     DrawRequest req = VisibleClusters[tri.visibleClusterIndex];
-    tri.pageOffset = req.PageOffset;
     tri.instanceID = req.InstanceID;
 
     uint tStart;
     uint packedCounts;
-    LoadClusterInfo(PageHeap, tri.pageOffset, req.ClusterID, tri.intBase, tri.vStart, tStart, packedCounts);
+    LoadClusterInfo(
+        PageHeap,
+        req.PageOffset,
+        req.ClusterID,
+        tri.vertexBlobAddress,
+        tri.vertexBlobSize,
+        tStart,
+        packedCounts);
     tri.vertexCount = packedCounts & 0xFFu;
 
-    tri.totalVertexCount = PageHeap.Load(tri.pageOffset + 4);
-    uint4 header1 = PageHeap.Load4(tri.pageOffset + 16);
-    tri.posOffset = header1.y;
-    tri.attrOffset = header1.z;
-    tri.idxOffset = header1.w;
+    uint idxOffset = PageHeap.Load(req.PageOffset + 24u);
 
-    tri.vi0 = FetchVertexIndex(PageHeap, tri.pageOffset, tri.idxOffset, tStart, tri.triangleID, 0);
-    tri.vi1 = FetchVertexIndex(PageHeap, tri.pageOffset, tri.idxOffset, tStart, tri.triangleID, 1);
-    tri.vi2 = FetchVertexIndex(PageHeap, tri.pageOffset, tri.idxOffset, tStart, tri.triangleID, 2);
+    tri.vi0 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 0);
+    tri.vi1 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 1);
+    tri.vi2 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 2);
     return true;
 }
 
@@ -100,15 +97,9 @@ VertexEvalContext makeVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.pageOffset = tri.pageOffset;
-    ctx.posOffset = tri.posOffset;
-    ctx.attrOffset = tri.attrOffset;
-    ctx.vertexStride = PageHeap.Load(tri.pageOffset + 44u);
-    ctx.idxOffset = tri.idxOffset;
-    ctx.vStart = tri.vStart;
-    ctx.totalVertexCount = tri.totalVertexCount;
-    ctx.localVertIdx = localVertIdx;
-    ctx.intBase = tri.intBase;
+    ctx.vertexBlobAddress = tri.vertexBlobAddress;
+    ctx.vertexBlobSize = tri.vertexBlobSize;
+    ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = tri.instanceID;
     ctx.transform = transform;
     ctx.IsPreviousFrame = isPreviousFrame;

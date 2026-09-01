@@ -168,31 +168,20 @@ VertexDedup DeduplicateVertIndexes(uint3 vertIndexes, uint laneIndex, bool bTriV
 // ─── Vertex Fetch (from PageHeap, same as cluster_draw.slang) ───
 
 void LoadClusterGeometry(uint pageOffset, uint clusterID,
-    out int3 intBase, out uint vStart, out uint tStart,
+    out uint vertexBlobAddress, out uint vertexBlobSize, out uint tStart,
     out uint vertexCount, out uint triangleCount,
-    out uint posOffset, out uint idxOffset,
-    out uint attrOffset, out uint totalVertexCount)
+    out uint idxOffset)
 {
-    totalVertexCount = PageHeap.Load(pageOffset + 4);
-    uint4 header1 = PageHeap.Load4(pageOffset + 16);
-    uint clustersOff = header1.x;
-    posOffset = header1.y;
-    attrOffset = header1.z;
-    idxOffset = header1.w;
-
-    uint clusterOffset = pageOffset + clustersOff + clusterID * GPU_CLUSTER_STRIDE_BYTES;
-
-    intBase.x = asint(PageHeap.Load(clusterOffset + 0));
-    intBase.y = asint(PageHeap.Load(clusterOffset + 4));
-    intBase.z = asint(PageHeap.Load(clusterOffset + 8));
-
-    uint packedLodVStart = PageHeap.Load(clusterOffset + 36);
-    vStart = (packedLodVStart >> 16) & 0xFFFF;
-
-    uint packedTStartGroup = PageHeap.Load(clusterOffset + 40);
-    tStart = packedTStartGroup & 0xFFFF;
-
-    uint packedCounts = PageHeap.Load(clusterOffset + 44);
+    idxOffset = PageHeap.Load(pageOffset + 24u);
+    uint packedCounts;
+    LoadClusterInfo(
+        PageHeap,
+        pageOffset,
+        clusterID,
+        vertexBlobAddress,
+        vertexBlobSize,
+        tStart,
+        packedCounts);
     vertexCount  = packedCounts & 0xFF;
     triangleCount = (packedCounts >> 8) & 0xFF;
 }
@@ -206,28 +195,17 @@ uint FetchVertexIndex(uint pageOffset, uint idxOffset, uint tStart, uint triIdx,
 }
 
 VertexEvalContext MakeSWRasterVertexEvalContext(
-    uint pageOffset,
-    uint posOffset,
-    uint attrOffset,
-    uint idxOffset,
-    uint totalVertexCount,
-    uint vStart,
-    int3 intBase,
+    uint vertexBlobAddress,
+    uint vertexBlobSize,
     uint localVertIdx,
     uint instanceID,
     RenderInstanceTransform transform)
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.pageOffset = pageOffset;
-    ctx.posOffset = posOffset;
-    ctx.attrOffset = attrOffset;
-    ctx.vertexStride = PageHeap.Load(pageOffset + 44u);
-    ctx.idxOffset = idxOffset;
-    ctx.vStart = vStart;
-    ctx.totalVertexCount = totalVertexCount;
-    ctx.localVertIdx = localVertIdx;
-    ctx.intBase = intBase;
+    ctx.vertexBlobAddress = vertexBlobAddress;
+    ctx.vertexBlobSize = vertexBlobSize;
+    ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;
     ctx.IsPreviousFrame = 0u;
@@ -248,7 +226,7 @@ float4 EvaluateSWRasterClipPosition<TVE : IVertexEvaluate>(
         if (cacheBaseByte >= SW_CACHE_OFFSET_INVALID)
             vertex = evaluator.evaluate(ctx);
         else
-            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertIdx);
+            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertexIndex);
     }
     else
     {
@@ -468,12 +446,9 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
     uint realInstanceID = req.z;
 
     // ─── Load Cluster Geometry ───
-    int3 intBase;
-    uint vStart, tStart, vertexCount, triangleCount, posOffset, idxOffset;
-    uint attrOffset, totalVertexCount;
+    uint vertexBlobAddress, vertexBlobSize, tStart, vertexCount, triangleCount, idxOffset;
     LoadClusterGeometry(pageOffset, clusterID,
-        intBase, vStart, tStart, vertexCount, triangleCount,
-        posOffset, idxOffset, attrOffset, totalVertexCount);
+        vertexBlobAddress, vertexBlobSize, tStart, vertexCount, triangleCount, idxOffset);
 
     RenderInstanceTransform transform = GetCurrentInstanceTransform(realInstanceID);
 
@@ -543,13 +518,8 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
         if (waveLane < min(dedup.numUniqueVerts, waveSize))
         {
             VertexEvalContext ctx = MakeSWRasterVertexEvalContext(
-                pageOffset,
-                posOffset,
-                attrOffset,
-                idxOffset,
-                totalVertexCount,
-                vStart,
-                intBase,
+                vertexBlobAddress,
+                vertexBlobSize,
                 dedup.laneVertIndex,
                 realInstanceID,
                 transform);
@@ -607,6 +577,8 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
 // ─── Default Entry Point (Static mesh, inline vertex eval) ───
 
 [MaterialTarget("cluster.raster.sw")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void CSSWRaster(uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)
@@ -616,6 +588,8 @@ void CSSWRaster(uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThre
 }
 
 [MaterialTarget("cluster.raster.sw.cached")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
 void CSSWRasterCached(uint3 groupID : SV_GroupID, uint groupThreadIndex : SV_GroupThreadID)

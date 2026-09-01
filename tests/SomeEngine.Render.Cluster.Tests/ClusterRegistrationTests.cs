@@ -205,6 +205,29 @@ public sealed class ClusterRegistrationTests
         Assert.Equal(rootBefore, rootAfter);
     }
 
+    [Fact]
+    public async Task VertexEncodingCompatibilityIsLockedAtReconcileBeforeFrameExecution()
+    {
+        using var manager = new ClusterMeshes();
+        Mesh standard = ClusterTestAssets.CreateSinglePageMesh("standard");
+        _ = await manager.AddAuthoredMeshAsync(standard);
+
+        manager.RequireVertexEncoding(ClusterTestAssets.StandardVertexEncoding);
+        InvalidOperationException changedPipeline = Assert.Throws<InvalidOperationException>(
+            () => manager.RequireVertexEncoding("test.vertex.other.v1"));
+        Assert.Contains("already requires", changedPipeline.Message, StringComparison.Ordinal);
+
+        Mesh incompatible = ClusterTestAssets.CreateSinglePageMesh("incompatible");
+        incompatible.VertexEncoding = "test.vertex.other.v1";
+        MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(incompatible.Payload!.Value.Span);
+        header.VertexEncodingHash = VertexEncodingCompatibility.Hash(incompatible.VertexEncoding);
+        MemoryMarshal.Write(incompatible.Payload.Value.Span, in header);
+
+        InvalidDataException incompatibleMesh = await Assert.ThrowsAsync<InvalidDataException>(
+            () => manager.AddAuthoredMeshAsync(incompatible).AsTask());
+        Assert.Contains("vertex encoding", incompatibleMesh.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ValueTask<ControlledRuntimeMesh> OpenControlledAsync(string name)
         => ClusterTestAssets.OpenControlledRuntimeMeshAsync(
             ClusterTestAssets.CreateSinglePageMesh(name),

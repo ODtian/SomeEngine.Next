@@ -202,6 +202,19 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
+    internal void RequireVertexEncoding(string expected)
+    {
+        EnterActiveOperation();
+        try
+        {
+            _residency.RequireVertexEncoding(expected);
+        }
+        finally
+        {
+            ExitActiveOperation();
+        }
+    }
+
     internal ClusterResidency Residency => _residency;
 
     internal RenderWorld World => _renderWorld;

@@ -26,13 +26,19 @@ internal sealed class ClusterDeformStages : IDisposable
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly string _vertexEncoding;
     private readonly Dictionary<ClusterDeformCompatibilityKey, ClusterComputePipeline> _pipelines = [];
     private bool _disposed;
 
-    internal ClusterDeformStages(IGraphicsBackend backend, Device device)
+    internal ClusterDeformStages(
+        IGraphicsBackend backend,
+        Device device,
+        string vertexEncoding)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        ArgumentException.ThrowIfNullOrWhiteSpace(vertexEncoding);
+        _vertexEncoding = vertexEncoding;
     }
 
     internal ClusterDeformStageSet Resolve(ClusterMaterialAssignmentSet assignments)
@@ -73,6 +79,16 @@ internal sealed class ClusterDeformStages : IDisposable
                 $"Material '{material.Name}' deform entry '{compatibility.EntryPoint}' " +
                 $"does not implement '{Target}'.");
         }
+        string subject = $"Material '{material.Name}' deform";
+        ClusterStageTargets.RequireVertexEncoding(
+            shader,
+            compatibility.EntryPoint,
+            _vertexEncoding,
+            subject);
+        ClusterConservativeBounds bounds = ClusterGeometryContracts.RequireConservativeBounds(
+            shader,
+            compatibility.EntryPoint,
+            subject);
         CookedShaderEntry cooked = shader.RequireEntry(
             _device.Capabilities.ShaderTarget,
             compatibility.EntryPoint,
@@ -87,7 +103,7 @@ internal sealed class ClusterDeformStages : IDisposable
                 $"Cluster deform {compatibility.EntryPoint}");
             _pipelines.Add(key, pipeline);
         }
-        return new ClusterDeformInvocation(compatibility, key, pipeline);
+        return new ClusterDeformInvocation(compatibility, key, pipeline, bounds);
     }
 
     private static ShaderRef ResolveEntry(Material material)
@@ -138,6 +154,8 @@ internal sealed class ClusterDeformStageSet
     internal ReadOnlyMemory<uint> Slots { get; }
     internal IReadOnlyList<ClusterDeformInvocation> Invocations => _invocations;
     internal uint BinCount => checked((uint)_invocations.Length);
+    internal bool HasFiniteBounds => _invocations.All(
+        static invocation => invocation.Bounds == ClusterConservativeBounds.Finite);
 
     internal bool HasSameTopology(ClusterDeformStageSet other)
     {
@@ -157,7 +175,8 @@ internal sealed class ClusterDeformStageSet
 internal sealed record ClusterDeformInvocation(
     MaterialDeformCompatibility CookCompatibility,
     ClusterDeformCompatibilityKey Key,
-    ClusterComputePipeline Pipeline);
+    ClusterComputePipeline Pipeline,
+    ClusterConservativeBounds Bounds);
 
 /// <summary>Owns raster-only compatibility grouping and its material-slot mapping.</summary>
 internal sealed class ClusterRasterStages
@@ -204,13 +223,19 @@ internal sealed class ClusterShadeStages : IDisposable
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly string _vertexEncoding;
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterComputePipeline> _pipelines = [];
     private bool _disposed;
 
-    internal ClusterShadeStages(IGraphicsBackend backend, Device device)
+    internal ClusterShadeStages(
+        IGraphicsBackend backend,
+        Device device,
+        string vertexEncoding)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        ArgumentException.ThrowIfNullOrWhiteSpace(vertexEncoding);
+        _vertexEncoding = vertexEncoding;
     }
 
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments)
@@ -240,6 +265,11 @@ internal sealed class ClusterShadeStages : IDisposable
     private ClusterShadeInvocation CreateInvocation(Material material)
     {
         (Shader shader, string entryPoint) = ResolveEntry(material);
+        ClusterStageTargets.RequireVertexEncoding(
+            shader,
+            entryPoint,
+            _vertexEncoding,
+            $"Material '{material.Name}' shade");
         CookedShaderEntry cooked = shader.RequireEntry(
             _device.Capabilities.ShaderTarget,
             entryPoint,
@@ -555,6 +585,24 @@ internal readonly record struct ClusterLinkedStageResource(
 
 internal static class ClusterStageTargets
 {
+    internal static void RequireVertexEncoding(
+        Shader shader,
+        string entryPoint,
+        string expected,
+        string subject)
+    {
+        string actual = ClusterGeometryContracts.RequireVertexEncoding(
+            shader,
+            entryPoint,
+            subject);
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"{subject} entry '{entryPoint}' accepts vertex encoding '{actual}', but the " +
+                $"Cluster pipeline requires '{expected}'.");
+        }
+    }
+
     internal static bool HasTarget(Shader shader, string entryPoint, string target)
     {
         foreach (ShaderEntryPointAttribute attribute in shader.EntryPointAttributes ?? [])

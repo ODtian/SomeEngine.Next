@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -12,11 +11,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class ClusterPublicationTests
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const uint VertexStride = 16;
-    private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
-        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int PageBytes = ClusterTestAssets.PageBytes;
     private const uint PageAllocationBytes = (uint)((PageBytes + 15) & ~15);
 
     [Fact]
@@ -456,8 +451,8 @@ public sealed class ClusterPublicationTests
                 MeshWithBvh("Disconnected", Leaf(), Leaf())).AsTask());
 
         Mesh badVertexRange = MeshWithBvh("BadVertexRange", Leaf());
-        GPUCluster cluster = ReadCluster(badVertexRange);
-        cluster.VertexStart = 1;
+        PackedCluster cluster = ReadCluster(badVertexRange);
+        cluster.VertexBlobOffset = 1;
         WriteCluster(badVertexRange, cluster);
         await AssertClusterPayloadRejectedAsync(badVertexRange);
 
@@ -501,7 +496,7 @@ public sealed class ClusterPublicationTests
     {
         var manager = new ClusterMeshes(PageAllocationBytes);
         Mesh asset = MeshWithBvh("ExplicitDeform", Leaf());
-        GPUCluster cluster = ReadCluster(asset);
+        PackedCluster cluster = ReadCluster(asset);
         cluster.PackedCounts |= 17u << 24;
         WriteCluster(asset, cluster);
 
@@ -519,7 +514,7 @@ public sealed class ClusterPublicationTests
     public async Task UndefinedSlowMaterialTableOffsetsFailClosed(uint materialTableOffset)
     {
         Mesh asset = MeshWithBvh("SlowMaterial", Leaf());
-        GPUCluster cluster = ReadCluster(asset);
+        PackedCluster cluster = ReadCluster(asset);
         cluster.MaterialTableOffset = materialTableOffset;
         WriteCluster(asset, cluster);
 
@@ -536,7 +531,7 @@ public sealed class ClusterPublicationTests
         uint packedRanges)
     {
         Mesh asset = MeshWithBvh("FastMaterial", Leaf());
-        GPUCluster cluster = ReadCluster(asset);
+        PackedCluster cluster = ReadCluster(asset);
         cluster.PackedMaterials = packedMaterials;
         cluster.PackedRanges = packedRanges;
         WriteCluster(asset, cluster);
@@ -552,7 +547,7 @@ public sealed class ClusterPublicationTests
     public async Task NonCanonicalVrbEncodingsFailClosed(uint vrbBatchInfo)
     {
         Mesh asset = MeshWithBvh("VRB", Leaf());
-        GPUCluster cluster = ReadCluster(asset);
+        PackedCluster cluster = ReadCluster(asset);
         cluster.VRBBatchInfo = vrbBatchInfo;
         WriteCluster(asset, cluster);
 
@@ -560,43 +555,35 @@ public sealed class ClusterPublicationTests
     }
 
     [Fact]
-    public async Task QuantizedVertexIntegerAdditionCannotOverflow()
+    public async Task NonCanonicalVertexBlobStartsFailClosed()
     {
-        Mesh asset = MeshWithBvh("IntegerOverflow", Leaf());
-        MeshPageHeader header = ReadPageHeader(asset);
-        GPUCluster cluster = ReadCluster(asset);
-        cluster.IntBaseX = int.MaxValue;
-        WriteCluster(asset, cluster);
-        BinaryPrimitives.WriteUInt16LittleEndian(
-            asset.Payload!.Value.Span.Slice(checked((int)header.PositionsOffset), sizeof(ushort)),
-            1);
-
-        await AssertClusterPayloadRejectedAsync(asset);
-    }
-
-    [Fact]
-    public async Task FiniteQuantizationInputsCannotDecodeANonFiniteCoordinate()
-    {
-        Mesh asset = MeshWithBvh("CoordinateInfinity", Leaf());
-        MeshPageHeader header = ReadPageHeader(asset);
-        header.QuantStep = float.MaxValue;
-        WritePageHeader(asset, header);
-        GPUCluster cluster = ReadCluster(asset);
-        cluster.IntBaseX = 2;
+        Mesh asset = MeshWithBvh("BlobStart", Leaf());
+        PackedCluster cluster = ReadCluster(asset);
+        cluster.VertexBlobOffset = 1;
         WriteCluster(asset, cluster);
 
         await AssertClusterPayloadRejectedAsync(asset);
     }
 
     [Fact]
-    public async Task FiniteQuantizationInputsCannotDecodeANonFiniteRadius()
+    public async Task ClusterExtensionsMustStayInsideTheDeclaredExtensionStream()
     {
-        Mesh asset = MeshWithBvh("RadiusInfinity", Leaf());
+        Mesh asset = MeshWithBvh("ExtensionRange", Leaf());
         MeshPageHeader header = ReadPageHeader(asset);
-        header.QuantStep = float.MaxValue;
-        WritePageHeader(asset, header);
-        GPUCluster cluster = ReadCluster(asset);
-        cluster.PackedCenterZRadius = 2u << 16;
+        PackedCluster cluster = ReadCluster(asset);
+        cluster.ExtensionOffset = header.ExtensionDataOffset;
+        cluster.ExtensionSize = 1;
+        WriteCluster(asset, cluster);
+
+        await AssertClusterPayloadRejectedAsync(asset);
+    }
+
+    [Fact]
+    public async Task ReservedClusterProtocolBitsFailClosed()
+    {
+        Mesh asset = MeshWithBvh("ReservedBits", Leaf());
+        PackedCluster cluster = ReadCluster(asset);
+        cluster.Reserved = 1;
         WriteCluster(asset, cluster);
 
         await AssertClusterPayloadRejectedAsync(asset);
@@ -772,23 +759,18 @@ public sealed class ClusterPublicationTests
             globalBvh.Slice(nodeOffset, checked((int)ClusterBvh.NodeBytes))).ChildPointer;
     }
 
-    private static GPUCluster ReadCluster(Mesh asset)
-        => MemoryMarshal.Read<GPUCluster>(
-            asset.Payload!.Value.Span.Slice(MeshPageHeader.Size, GPUCluster.SizeInBytes));
+    private static PackedCluster ReadCluster(Mesh asset)
+        => MemoryMarshal.Read<PackedCluster>(
+            asset.Payload!.Value.Span.Slice(MeshPageHeader.Size, PackedCluster.SizeInBytes));
 
     private static MeshPageHeader ReadPageHeader(Mesh asset)
         => MemoryMarshal.Read<MeshPageHeader>(
             asset.Payload!.Value.Span.Slice(0, MeshPageHeader.Size));
 
-    private static void WriteCluster(Mesh asset, in GPUCluster cluster)
+    private static void WriteCluster(Mesh asset, in PackedCluster cluster)
         => MemoryMarshal.Write(
-            asset.Payload!.Value.Span.Slice(MeshPageHeader.Size, GPUCluster.SizeInBytes),
+            asset.Payload!.Value.Span.Slice(MeshPageHeader.Size, PackedCluster.SizeInBytes),
             in cluster);
-
-    private static void WritePageHeader(Mesh asset, in MeshPageHeader header)
-        => MemoryMarshal.Write(
-            asset.Payload!.Value.Span.Slice(0, MeshPageHeader.Size),
-            in header);
 
     private static Mesh MeshWithBvh(string name, params ClusterBVHNode[] nodes)
         => MeshWithPagesAndBvh(name, [PageData()], nodes);
@@ -813,9 +795,8 @@ public sealed class ClusterPublicationTests
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
             Payload = payload,
-            VertexStride = VertexStride,
+            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
             BvhOffset = checked((ulong)pageBytes),
-            QuantStep = 1f,
         };
     }
 
@@ -843,41 +824,40 @@ public sealed class ClusterPublicationTests
 
     private static byte[] PageData(uint clusterCount = 1)
     {
-        int clusterBytes = checked((int)clusterCount * GPUCluster.SizeInBytes);
-        int positionBytes = checked((int)clusterCount * PositionBytes);
-        int vertexBytes = checked((int)clusterCount * (int)VertexStride);
-        int indexBytes = checked((int)clusterCount * IndexBytes);
-        int pageBytes = checked(MeshPageHeader.Size + clusterBytes + positionBytes
-            + vertexBytes + indexBytes);
+        int clusterBytes = checked((int)clusterCount * PackedCluster.SizeInBytes);
+        int vertexBlobBytes = checked((int)clusterCount * ClusterTestAssets.VertexBlobBytes);
+        int indexBytes = checked((int)clusterCount * ClusterTestAssets.IndexBytes);
+        int pageBytes = checked(MeshPageHeader.Size + clusterBytes + vertexBlobBytes + indexBytes);
         byte[] data = new byte[pageBytes];
         var header = new MeshPageHeader
         {
             ClusterCount = clusterCount,
             TotalVertexCount = clusterCount,
             TotalTriangleCount = clusterCount,
+            VertexBlobBytes = checked((uint)vertexBlobBytes),
             ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = checked((uint)(MeshPageHeader.Size + clusterBytes)),
-            AttributesOffset = checked((uint)(MeshPageHeader.Size + clusterBytes + positionBytes)),
-            IndicesOffset = checked((uint)(MeshPageHeader.Size + clusterBytes
-                + positionBytes + vertexBytes)),
-            VertexStride = VertexStride,
-            QuantStep = 1f,
+            VertexBlobsOffset = checked((uint)(MeshPageHeader.Size + clusterBytes)),
+            IndicesOffset = checked((uint)(MeshPageHeader.Size + clusterBytes + vertexBlobBytes)),
+            ExtensionDataOffset = checked((uint)pageBytes),
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(
+                ClusterTestAssets.StandardVertexEncoding),
         };
         MemoryMarshal.Write(data.AsSpan(), in header);
         for (uint index = 0; index < clusterCount; index++)
         {
-            var cluster = new GPUCluster
+            var cluster = new PackedCluster
             {
+                VertexBlobOffset = checked(index * (uint)ClusterTestAssets.VertexBlobBytes),
+                VertexBlobSize = ClusterTestAssets.VertexBlobBytes,
+                ExtensionOffset = uint.MaxValue,
                 LODRadius = 1f,
-                PackedCenterZRadius = 1u << 16,
-                VertexStart = checked((ushort)index),
-                TriangleStart = checked((ushort)(index * IndexBytes)),
                 PackedCounts = 1u | (1u << 8),
                 MaterialTableOffset = uint.MaxValue,
                 BoundMax = Vector3.One,
             };
-            int clusterOffset = checked(MeshPageHeader.Size + ((int)index * GPUCluster.SizeInBytes));
-            MemoryMarshal.Write(data.AsSpan(clusterOffset, GPUCluster.SizeInBytes), in cluster);
+            cluster.TriangleStart = checked((ushort)(index * ClusterTestAssets.IndexBytes));
+            int clusterOffset = checked(MeshPageHeader.Size + ((int)index * PackedCluster.SizeInBytes));
+            MemoryMarshal.Write(data.AsSpan(clusterOffset, PackedCluster.SizeInBytes), in cluster);
         }
         return data;
     }

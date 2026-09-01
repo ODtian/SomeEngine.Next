@@ -1,83 +1,55 @@
 #ifndef CLUSTER_STRUCTURES_SLANG
 #define CLUSTER_STRUCTURES_SLANG
 
-static const uint GPU_CLUSTER_STRIDE_BYTES = 88;
+static const uint PACKED_CLUSTER_STRIDE_BYTES = 88;
 static const uint SLOT_INVALID = 0xFFFFu;
 static const uint BIN_INVALID = 0xFFFFFFFFu;
 
-struct GPUPageHeader
+struct PackedCluster
 {
-    uint ClusterCount;        //  0
-    uint TotalVertexCount;    //  4
-    uint TotalTriangleCount;  //  8
-    float QuantOriginX;       // 12
-    uint ClustersOffset;      // 16
-    uint PositionsOffset;     // 20
-    uint AttributesOffset;    // 24
-    uint IndicesOffset;       // 28
-    float QuantOriginY;       // 32
-    float QuantOriginZ;       // 36
-    float QuantStep;          // 40
-    uint VertexStride;        // 44
+    uint VertexBlobOffset;              //  0 — relative to the page header's VertexBlobsOffset
+    uint VertexBlobSize;                //  4
+    uint ExtensionOffset;               //  8 — page-relative, 0xFFFFFFFF when absent
+    uint ExtensionSize;                 // 12
+    float3 LODCenter;                   // 16
+    float LODRadius;                    // 28
+    float3 BoundMin;                    // 32 — conservative object-space AABB min
+    float3 BoundMax;                    // 44 — conservative object-space AABB max
+    uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
+    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][DeformMaterialIndex:8]
+    uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
+    uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
+    uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
+    uint MaterialTableOffset;           // 76 — must be 0xFFFFFFFF
+    uint VRBBatchInfo;                  // 80
+    uint Reserved;                      // 84
 };
 
-struct GPUCluster
+float3 GetClusterCenter(PackedCluster c)
 {
-    int3 IntBase;               //  0 (12 bytes)
-    uint PackedCenterXY;        // 12 — CenterOffsetX:16 | CenterOffsetY:16
-    float3 LODCenter;           // 16 (12 bytes)
-    float LODRadius;            // 28
-    uint PackedCenterZRadius;   // 32 — CenterOffsetZ:16 | RadiusQuant:16
-    uint PackedLodErrVStart;    // 36 — LODErrorHalf:16 | VertexStart:16
-    uint PackedTStartGroup;     // 40 — TriangleStart:16 | GroupId(i16):16
-    uint PackedCounts;          // 44 — [VertexCount:8][TriangleCount:8][LODLevel:8][DeformMaterialIndex:8]
-    //  Total: 48 bytes
-    
-    uint PackedMaterials;       // 48 — [mat0:8][mat1:8][mat2:8][SlowPathFlag:8] (0xFF = slow path)
-    uint PackedRanges;          // 52 — [range0End:8][range1End:8][Pad:16]
-    uint MaterialTableOffset;   // 56 — slow path external table byte offset (0xFFFFFFFF = fast path)
-    uint VRBBatchInfo;          // 60 — VRB batch encoding (fast: ≤5 batches packed)
-    float3 BoundMin;            // 64 — object-space cluster AABB min
-    float3 BoundMax;            // 76 — object-space cluster AABB max
-    //  Total: 88 bytes
-};
-
-// Decode helpers
-float3 DecodeClusterCenter(GPUCluster c, float3 quantOrigin, float quantStep)
-{
-    uint centerOffX = c.PackedCenterXY & 0xFFFF;
-    uint centerOffY = (c.PackedCenterXY >> 16) & 0xFFFF;
-    uint centerOffZ = c.PackedCenterZRadius & 0xFFFF;
-    int3 centerInt = c.IntBase + int3(int(centerOffX), int(centerOffY), int(centerOffZ));
-    return float3(centerInt) * quantStep + quantOrigin;
+    return (c.BoundMin + c.BoundMax) * 0.5;
 }
 
-float DecodeClusterRadius(GPUCluster c, float quantStep)
+float GetClusterRadius(PackedCluster c)
 {
-    uint radiusQuant = (c.PackedCenterZRadius >> 16) & 0xFFFF;
-    return float(radiusQuant) * quantStep;
+    return length(c.BoundMax - c.BoundMin) * 0.5;
 }
 
-float DecodeClusterLODError(GPUCluster c)
+float DecodeClusterLODError(PackedCluster c)
 {
-    uint lodErrBits = c.PackedLodErrVStart & 0xFFFF;
+    uint lodErrBits = c.PackedLodErrorTriangleStart & 0xFFFF;
     return f16tof32(lodErrBits);
 }
 
-uint DecodeVertexStart(GPUCluster c)
+uint DecodeTriangleStart(PackedCluster c)
 {
-    return (c.PackedLodErrVStart >> 16) & 0xFFFF;
+    return c.PackedLodErrorTriangleStart >> 16;
 }
 
-uint DecodeTriangleStart(GPUCluster c)
-{
-    return c.PackedTStartGroup & 0xFFFF;
-}
-
-int DecodeGroupId(GPUCluster c)
+int DecodeGroupId(PackedCluster c)
 {
     // Sign-extend from 16-bit
-    int raw = int(c.PackedTStartGroup >> 16);
+    int raw = int(c.PackedGroup & 0xFFFFu);
     return (raw << 16) >> 16;
 }
 
@@ -89,12 +61,12 @@ struct VRBBatch
     uint count; // number of triangles
 };
 
-uint DecodeVRBBatchCount(GPUCluster c)
+uint DecodeVRBBatchCount(PackedCluster c)
 {
     return ((c.VRBBatchInfo >> 25) & 0x7) + 1;
 }
 
-VRBBatch DecodeVRBBatch(GPUCluster c, uint batchIdx)
+VRBBatch DecodeVRBBatch(PackedCluster c, uint batchIdx)
 {
     VRBBatch batch;
     batch.start = 0;
@@ -105,7 +77,7 @@ VRBBatch DecodeVRBBatch(GPUCluster c, uint batchIdx)
 }
 
 // Total triangles covered by encoded VRB batches (fast path portion)
-uint DecodeVRBTotalFastTris(GPUCluster c)
+uint DecodeVRBTotalFastTris(PackedCluster c)
 {
     uint batchCount = DecodeVRBBatchCount(c);
     uint total = 0;
@@ -114,7 +86,7 @@ uint DecodeVRBTotalFastTris(GPUCluster c)
     return total;
 }
 
-uint DecodeTriangleCount(GPUCluster c)
+uint DecodeTriangleCount(PackedCluster c)
 {
     return (c.PackedCounts >> 8) & 0xFF;
 }
@@ -148,7 +120,7 @@ uint GetStageSlot(
     return stageSlots[slotOffset + localMaterialIndex];
 }
 
-uint DecodeDeformMaterialIndex(GPUCluster c)
+uint DecodeDeformMaterialIndex(PackedCluster c)
 {
     return c.PackedCounts >> 24;
 }

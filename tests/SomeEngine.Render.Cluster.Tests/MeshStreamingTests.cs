@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Data;
@@ -12,11 +11,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class MeshStreamingTests
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const uint VertexStride = 16;
-    private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
-        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int PageBytes = ClusterTestAssets.PageBytes;
 
     [Fact]
     public async Task StreamedOpenAndOneHundredDuplicateFaultsReadOnlyOneRequestedPage()
@@ -132,8 +127,9 @@ public sealed class MeshStreamingTests
             PageBytes,
             static bytes =>
             {
-                int quantStepOffset = checked((int)Marshal.OffsetOf<MeshPageHeader>(nameof(MeshPageHeader.QuantStep)));
-                bytes[quantStepOffset] ^= 0x01;
+                int encodingHashOffset = checked((int)Marshal.OffsetOf<MeshPageHeader>(
+                    nameof(MeshPageHeader.VertexEncodingHash)));
+                bytes[encodingHashOffset] ^= 0x01;
             });
         using (Mesh corrupted = await Mesh.OpenStreamedAsync(
             headerCorruption,
@@ -151,7 +147,7 @@ public sealed class MeshStreamingTests
             FileRangeSource.Open(path),
             firstPageOffset,
             PageBytes,
-            static bytes => bytes[MeshPageHeader.Size + GPUCluster.SizeInBytes] ^= 0x01);
+            static bytes => bytes[MeshPageHeader.Size + PackedCluster.SizeInBytes] ^= 0x01);
         using (Mesh corrupted = await Mesh.OpenStreamedAsync(
             pageCorruption,
             ownsSource: true))
@@ -215,40 +211,14 @@ public sealed class MeshStreamingTests
         {
             Name = "RangeStreamedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            VertexStride = VertexStride,
+            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
             Payload = payload,
             BvhOffset = 2 * PageBytes,
-            QuantStep = 1f,
         };
     }
 
     private static byte[] PageData(byte marker)
-    {
-        byte[] data = new byte[PageBytes];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
-            AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + VertexStride,
-            VertexStride = VertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(data.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new GPUCluster
-        {
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-            BoundMax = new Vector3(marker),
-        };
-        MemoryMarshal.Write(data.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes), in cluster);
-        data[^1] = 0;
-        return data;
-    }
+        => ClusterTestAssets.CreatePageData(marker);
 
     private static ClusterBVHNode Leaf(uint localPage)
     {

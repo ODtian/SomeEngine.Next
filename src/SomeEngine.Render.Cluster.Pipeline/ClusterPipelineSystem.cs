@@ -48,6 +48,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private GraphPassId _traversalPass;
     private ClusterPipelineOutputs _outputs;
     private ulong _installedMaterialTopologyVersion;
+    private bool _cullingEnabled;
     private bool _graphInstalled;
     private IndirectCommandLayout? _dispatchIndirectLayout;
     private IndirectCommandLayout? _drawIndirectLayout;
@@ -118,9 +119,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
             _viewQuery = view;
             EnsurePipelineResources();
-            _deformStages = new ClusterDeformStages(_backend, _device);
+            _deformStages = new ClusterDeformStages(
+                _backend,
+                _device,
+                _pipelines!.VertexEncoding);
             _rasterStages = new ClusterRasterStages(_pipelines!.HardwareRaster);
-            _shadeStages = new ClusterShadeStages(_backend, _device);
+            _shadeStages = new ClusterShadeStages(
+                _backend,
+                _device,
+                _pipelines.VertexEncoding);
             _history = new ClusterCullingHistory(_backend, _device);
             _created = true;
         }
@@ -152,6 +159,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
+        _resources.RequireVertexEncoding(_pipelines!.VertexEncoding);
         ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
         if (assignments.MaterialCount == 0)
             throw new InvalidOperationException("The Cluster scene has no published materials.");
@@ -167,6 +175,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             "The Cluster raster stages were not created.")).Resolve(assignments);
         ClusterShadeStageSet shadeStages = (_shadeStages ?? throw new InvalidOperationException(
             "The Cluster shade stages were not created.")).Resolve(assignments);
+        bool cullingEnabled = _pipelines.CullingEnabled && deformStages.HasFiniteBounds;
         if (_graphInstalled)
         {
             if (_installedMaterialTopologyVersion != assignments.TopologyVersion ||
@@ -181,6 +190,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _installedDeformStages = deformStages;
             _installedRasterStages = rasterStages;
             _installedShadeStages = shadeStages;
+            _cullingEnabled = cullingEnabled;
             return _outputs;
         }
 
@@ -215,6 +225,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _installedDeformStages = deformStages;
             _installedRasterStages = rasterStages;
             _installedShadeStages = shadeStages;
+            _cullingEnabled = cullingEnabled;
             _graphInstalled = true;
             return _outputs;
         }
@@ -324,7 +335,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 ClusterViewUniforms uniforms = ClusterViewUniforms.Create(
                     in view,
                     _options,
-                    _pipelines!.CullingEnabled,
+                    _cullingEnabled,
                     binding.DispatchExtent,
                     binding.PageFaultCapacity);
                 bool hasHistory = history.Prepare(

@@ -42,6 +42,23 @@ internal sealed partial class ClusterMeshes
             mesh,
             cancellationToken).ConfigureAwait(false);
 
+    internal void RequireVertexEncoding(string expected)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expected);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_vertexEncoding is not null &&
+                !string.Equals(_vertexEncoding, expected, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Cluster residency already requires vertex encoding '{_vertexEncoding}', not '{expected}'.");
+            }
+            _pages.ValidateVertexEncoding(expected);
+            _vertexEncoding = expected;
+        }
+    }
+
     private async ValueTask<ClusterMeshRegistrationResult> RegisterMeshCoreAsync(
         Mesh mesh,
         CancellationToken cancellationToken)
@@ -80,6 +97,7 @@ internal sealed partial class ClusterMeshes
                 ThrowIfDisposed();
                 if (_registrationsStopping)
                     throw new ObjectDisposedException(nameof(ClusterMeshes));
+                ValidateVertexEncoding(mesh);
 
                 bool pagesRegistered = _pages.TryRegistration(
                     mesh,
@@ -196,6 +214,20 @@ internal sealed partial class ClusterMeshes
             }
             if (operationEntered)
                 ExitRegistrationOperation();
+        }
+    }
+
+    private void ValidateVertexEncoding(Mesh mesh)
+    {
+        if (_vertexEncoding is null)
+            return;
+        string actual = mesh.VertexEncoding ?? throw new InvalidDataException(
+            $"Cluster mesh '{mesh.Name}' has no vertex encoding compatibility.");
+        if (!string.Equals(actual, _vertexEncoding, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Cluster mesh '{mesh.Name}' uses vertex encoding '{actual}', but the installed " +
+                $"Cluster pipeline requires '{_vertexEncoding}'.");
         }
     }
 

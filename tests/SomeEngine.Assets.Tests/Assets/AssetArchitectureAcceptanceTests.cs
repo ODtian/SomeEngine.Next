@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Numerics;
 using SomeEngine.Assets.Data;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
@@ -128,31 +129,14 @@ public sealed class AssetArchitectureAcceptanceTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("range.mesh.asset");
-        const uint vertexStride = 32;
-        int pageBytes = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes
-            + (3 * sizeof(ushort)) + (int)vertexStride + 3);
-        byte[] payload = new byte[pageBytes + Marshal.SizeOf<ClusterBVHNode>()];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes)),
-            AttributesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes + (3 * sizeof(ushort)))),
-            IndicesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + (3 * sizeof(ushort)) + vertexStride)),
-            VertexStride = vertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(payload, in header);
+        byte[] payload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
         AssetWriter.Write(new Mesh
         {
             AssetGuid = AssetGuid.New().ToFlatString(),
             Name = "range-mesh",
             Payload = payload,
-            BvhOffset = checked((ulong)pageBytes),
-            VertexStride = vertexStride,
+            BvhOffset = bvhOffset,
+            VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility,
             Regions = [],
         }, path);
 
@@ -203,7 +187,9 @@ public sealed class AssetArchitectureAcceptanceTests
         AssetWriter.Write(new Mesh
         {
             AssetGuid = meshGuid.ToFlatString(), Name = "mesh", Payload = streamedMeshPayload,
-            BvhOffset = bvhOffset, VertexStride = 32, Regions = [],
+            BvhOffset = bvhOffset,
+            VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility,
+            Regions = [],
         }, meshPath);
         AssetWriter.Write(new Shader
         {
@@ -267,9 +253,6 @@ public sealed class AssetArchitectureAcceptanceTests
         var result = new ClusterShaderOperation
         {
             Role = role,
-            BoundsSupport = IsPositionOperation(role)
-                ? ClusterBoundsSupport.Finite
-                : ClusterBoundsSupport.NotApplicable,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.SoftwareDepthMerge)
@@ -318,27 +301,39 @@ public sealed class AssetArchitectureAcceptanceTests
 
     private static byte[] CreateMinimalStreamedMeshPayload(out ulong bvhOffset)
     {
-        int pageSize = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes);
+        const int vertexBlobSize = StandardClusterVertexEncoder.HeaderSize;
+        int pageSize = checked(MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobSize + 3);
         byte[] payload = new byte[checked(pageSize + Marshal.SizeOf<ClusterBVHNode>())];
         var header = new MeshPageHeader
         {
             ClusterCount = 1,
+            TotalVertexCount = 1,
+            TotalTriangleCount = 1,
+            VertexBlobBytes = vertexBlobSize,
             ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = checked((uint)pageSize),
-            AttributesOffset = checked((uint)pageSize),
-            IndicesOffset = checked((uint)pageSize),
-            VertexStride = 32,
-            QuantStep = 1f,
+            VertexBlobsOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes,
+            IndicesOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobSize,
+            ExtensionDataOffset = checked((uint)pageSize),
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(
+                StandardClusterVertexEncoder.EncodingCompatibility),
         };
         MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
+        var cluster = new PackedCluster
+        {
+            VertexBlobSize = vertexBlobSize,
+            ExtensionOffset = uint.MaxValue,
+            LODRadius = 1,
+            BoundMax = Vector3.One,
+            PackedCounts = 1u | (1u << 8),
+            PackedRanges = 0x00000101u,
+            MaterialTableOffset = uint.MaxValue,
+        };
+        MemoryMarshal.Write(
+            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
+            in cluster);
         bvhOffset = checked((ulong)pageSize);
         return payload;
     }
-
-    private static bool IsPositionOperation(ClusterShaderOperationRole role)
-        => role is ClusterShaderOperationRole.SoftwareVisibilityRaster
-            or ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.VisibilityResolve;
 
     private sealed class TemporaryDirectory : IDisposable
     {

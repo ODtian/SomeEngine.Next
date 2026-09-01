@@ -38,7 +38,7 @@ public class IcoSphereTest
         Assert.True(meshAsset.Payload.Value.Length > 0);
 
         // The runtime contract is one opaque raw vertex record, not a fixed attribute schema.
-        Assert.True(meshAsset.VertexStride > 0);
+        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, meshAsset.VertexEncoding);
 
         // Save to test output, not the excluded samples workspace.
         string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh.asset");

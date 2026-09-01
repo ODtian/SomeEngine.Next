@@ -214,6 +214,12 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         return _meshes.IsMeshRegistered(mesh);
     }
 
+    internal void RequireVertexEncoding(string expected)
+    {
+        ThrowIfNotActive();
+        _meshes.RequireVertexEncoding(expected);
+    }
+
     /// <summary>Advances page-fault ingestion and page IO without publishing GPU-visible data.</summary>
     internal void PumpStreaming()
     {

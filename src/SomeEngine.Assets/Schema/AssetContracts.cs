@@ -96,7 +96,7 @@ public sealed partial class Mesh
     public string? AssetGuid { get; set; }
     public string? Name { get; set; }
     public Bounds? Bounds { get; set; }
-    public uint VertexStride { get; set; }
+    public string? VertexEncoding { get; set; }
     public ulong PayloadKey { get; set; }
     public ulong PayloadLength { get; set; }
     [BinaryChunk(nameof(PayloadKey), nameof(PayloadLength))]
@@ -106,8 +106,6 @@ public sealed partial class Mesh
     public IList<MeshPayloadPageDigest>? PageDigests { get; set; }
     public ulong BvhLength { get; set; }
     public Memory<byte>? BvhSha256 { get; set; }
-    public Vec3? QuantOrigin { get; set; }
-    public float QuantStep { get; set; }
     public IList<MeshRegion>? Regions { get; set; }
     public IList<string>? MaterialGuids { get; set; }
 }
@@ -128,9 +126,7 @@ public partial class MeshPayloadPageDigest
     public ulong Offset { get; set; }
     public uint Length { get; set; }
     public uint ClusterCount { get; set; }
-    public uint VertexStride { get; set; }
-    public Vec3? QuantOrigin { get; set; }
-    public float QuantStep { get; set; }
+    public ulong VertexEncodingHash { get; set; }
     public Memory<byte>? Sha256 { get; set; }
 }
 
@@ -516,13 +512,6 @@ public enum ClusterShaderOperationRole : byte
     VisibilityResolve = 20,
 }
 
-public enum ClusterBoundsSupport : byte
-{
-    NotApplicable = 0,
-    Finite = 1,
-    Unbounded = 2,
-}
-
 [BinaryContract(BinaryCompatibility.ExactSchema)]
 public sealed partial class ClusterShaderOperation
 {
@@ -532,7 +521,6 @@ public sealed partial class ClusterShaderOperation
 
 
     public ClusterShaderOperationRole Role { get; set; }
-    public ClusterBoundsSupport BoundsSupport { get; set; }
     public IList<ShaderRef>? Shaders { get; set; }
 }
 

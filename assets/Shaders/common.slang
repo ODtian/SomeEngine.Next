@@ -3,5 +3,7 @@
 
 [__AttributeUsage(_AttributeTargets.Function)]
 struct MaterialTargetAttribute { string target; };
+struct VertexEncodingAttribute { string compatibility; };
+struct ConservativeBoundsAttribute { string support; };
 
 #endif

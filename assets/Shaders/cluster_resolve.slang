@@ -1,4 +1,4 @@
-#include "cluster_common.slang"
+#include "vertex_evaluate.slang"
 
 struct ResolveUniforms
 {
@@ -19,6 +19,8 @@ ByteAddressBuffer PageHeap;
 
 RWTexture2D<float4> OutputColor;
 
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
@@ -47,34 +49,48 @@ void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
     uint realInstanceID = req.InstanceID;
 
     // Load cluster info
-    int3 intBase;
-    uint vStart;
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
     uint tStart;
     uint packedCounts;
-    LoadClusterInfo(PageHeap, pageOffset, clusterID, intBase, vStart, tStart, packedCounts);
+    LoadClusterInfo(
+        PageHeap,
+        pageOffset,
+        clusterID,
+        vertexBlobAddress,
+        vertexBlobSize,
+        tStart,
+        packedCounts);
 
     uint lodLevel = (packedCounts >> 16) & 0xFF;
 
     // Load header offsets
-    uint4 header1 = PageHeap.Load4(pageOffset + 16);
-    uint posOffset = header1.y;
-    uint idxOffset = header1.w;
+    uint idxOffset = PageHeap.Load(pageOffset + 24u);
 
     // Fetch 3 vertex indices for this triangle
     uint vi0 = FetchVertexIndex(PageHeap, pageOffset, idxOffset, tStart, triangleID, 0);
     uint vi1 = FetchVertexIndex(PageHeap, pageOffset, idxOffset, tStart, triangleID, 1);
     uint vi2 = FetchVertexIndex(PageHeap, pageOffset, idxOffset, tStart, triangleID, 2);
 
-    // Fetch 3 vertex positions (object space, dequantized)
-    float3 pos0 = FetchVertexPosition(PageHeap, pageOffset, posOffset, vStart, vi0, intBase);
-    float3 pos1 = FetchVertexPosition(PageHeap, pageOffset, posOffset, vStart, vi1, intBase);
-    float3 pos2 = FetchVertexPosition(PageHeap, pageOffset, posOffset, vStart, vi2, intBase);
-
-    // Transform to world space
     RenderInstanceTransform t = GetCurrentInstanceTransform(realInstanceID);
-    float3 wp0 = TransformInstanceLocalPosition(pos0, t);
-    float3 wp1 = TransformInstanceLocalPosition(pos1, t);
-    float3 wp2 = TransformInstanceLocalPosition(pos2, t);
+    VertexEvalContext context;
+    context.pageHeap = PageHeap;
+    context.vertexBlobAddress = vertexBlobAddress;
+    context.vertexBlobSize = vertexBlobSize;
+    context.instanceID = realInstanceID;
+    context.transform = t;
+    context.IsPreviousFrame = 0u;
+
+    StaticVertexEval evaluator;
+    context.localVertexIndex = vi0;
+    StaticVertexEval.DeformedVertex v0 = evaluator.evaluate(context);
+    context.localVertexIndex = vi1;
+    StaticVertexEval.DeformedVertex v1 = evaluator.evaluate(context);
+    context.localVertexIndex = vi2;
+    StaticVertexEval.DeformedVertex v2 = evaluator.evaluate(context);
+    float3 wp0 = evaluator.getPosition(v0);
+    float3 wp1 = evaluator.getPosition(v1);
+    float3 wp2 = evaluator.getPosition(v2);
 
     // Compute face normal from world-space triangle
     float3 edge1 = wp1 - wp0;

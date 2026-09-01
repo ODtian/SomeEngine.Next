@@ -19,6 +19,7 @@ namespace SomeEngine.Assets.Importers;
 public sealed class ClusterBuilderOptions
 {
     public bool GenerateMissingTangents { get; init; }
+    public IClusterVertexEncoder VertexEncoder { get; init; } = StandardClusterVertexEncoder.Instance;
 }
 
 public struct ClusterLodConfig
@@ -114,18 +115,6 @@ public static partial class ClusterBuilder
         public Vector3 Center;
         public float Radius;
         public float Error;
-    }
-
-    private struct MeshPageInfo
-    {
-        public uint ClusterCount;
-        public uint TotalVertexCount;
-        public uint TotalTriangleCount;
-        public uint ClustersOffset;
-        public uint PositionsOffset;
-        public uint AttributesOffset;
-        public uint IndicesOffset;
-        public long FileOffset;
     }
 
     private struct ClusterInfo
@@ -401,7 +390,8 @@ public static partial class ClusterBuilder
             meshData.RawAttributes,
             meshData.Indices,
             meshData.MaterialSlots,
-            name);
+            name,
+            options?.VertexEncoder ?? StandardClusterVertexEncoder.Instance);
     }
 
     private static MeshProcessingData BuildMeshProcessingData(
@@ -903,9 +893,16 @@ public static partial class ClusterBuilder
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
-        string name)
+        string name,
+        IClusterVertexEncoder? vertexEncoder = null)
     {
-        return ProcessRawCore(rawPos, rawAttributes, rawIndices, materialSlots, name);
+        return ProcessRawCore(
+            rawPos,
+            rawAttributes,
+            rawIndices,
+            materialSlots,
+            name,
+            vertexEncoder ?? StandardClusterVertexEncoder.Instance);
     }
 
     private static void BuildClusterLod(
@@ -1256,63 +1253,6 @@ public static partial class ClusterBuilder
 
 public static partial class ClusterBuilder
 {
-    private static void PackAttribute(List<byte> output, RawAttribute attr, int index)
-    {
-        int baseIdx = index * attr.Dimension;
-
-        for (int c = 0; c < attr.NumComponents; ++c)
-        {
-            float val = (c < attr.Dimension) ? attr.Data[baseIdx + c] : 0.0f;
-
-            switch (attr.TargetType)
-            {
-                case ValueType.Int8:
-                    if (attr.Normalized)
-                        output.Add((byte)(sbyte)Math.Clamp(val * 127.0f, -128, 127));
-                    else
-                        output.Add((byte)(sbyte)Math.Clamp(val, -128, 127));
-                    break;
-                case ValueType.UInt8:
-                    if (attr.Normalized)
-                        output.Add((byte)Math.Clamp(val * 255.0f, 0, 255));
-                    else
-                        output.Add((byte)Math.Clamp(val, 0, 255));
-                    break;
-                case ValueType.Int16:
-                    short s = attr.Normalized
-                        ? (short)Math.Clamp(val * 32767.0f, -32768, 32767)
-                        : (short)val;
-                    output.Add((byte)(s & 0xFF));
-                    output.Add((byte)((s >> 8) & 0xFF));
-                    break;
-                case ValueType.UInt16:
-                    ushort us = attr.Normalized
-                        ? (ushort)Math.Clamp(val * 65535.0f, 0, 65535)
-                        : (ushort)val;
-                    output.Add((byte)(us & 0xFF));
-                    output.Add((byte)((us >> 8) & 0xFF));
-                    break;
-                case ValueType.Float16:
-                    Half h = (Half)val;
-                    ushort hs = BitConverter.HalfToUInt16Bits(h);
-                    output.Add((byte)(hs & 0xFF));
-                    output.Add((byte)((hs >> 8) & 0xFF));
-                    break;
-                case ValueType.Float32:
-                    unsafe
-                    {
-                        uint u = *(uint*)&val;
-                        output.Add((byte)(u & 0xFF));
-                        output.Add((byte)((u >> 8) & 0xFF));
-                        output.Add((byte)((u >> 16) & 0xFF));
-                        output.Add((byte)((u >> 24) & 0xFF));
-                    }
-                    break;
-                // TODO: Other types
-            }
-        }
-    }
-
     private static unsafe nuint BuildRemap(
         Span<uint> destination,
         ReadOnlySpan<uint> indices,

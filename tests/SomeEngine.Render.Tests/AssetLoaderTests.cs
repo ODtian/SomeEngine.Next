@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Numerics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Data;
 using SomeEngine.Assets.Pipeline;
@@ -354,26 +355,44 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.mesh.asset");
-        int pageSize = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes);
+        const string vertexEncoding = "someengine.vertex.standard.cluster.v1";
+        const int vertexBlobBytes = 1;
+        const int indexBytes = 3;
+        int pageSize = checked(MeshPageHeader.Size + PackedCluster.SizeInBytes
+            + vertexBlobBytes + indexBytes);
         byte[] payload = new byte[checked(pageSize + Marshal.SizeOf<ClusterBVHNode>())];
         var header = new MeshPageHeader
         {
             ClusterCount = 1,
+            TotalVertexCount = 1,
+            TotalTriangleCount = 1,
+            VertexBlobBytes = vertexBlobBytes,
             ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = checked((uint)pageSize),
-            AttributesOffset = checked((uint)pageSize),
-            IndicesOffset = checked((uint)pageSize),
-            VertexStride = 32,
-            QuantStep = 1f,
+            VertexBlobsOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes,
+            IndicesOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes + vertexBlobBytes,
+            ExtensionDataOffset = checked((uint)pageSize),
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(vertexEncoding),
         };
         MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
+        var cluster = new PackedCluster
+        {
+            VertexBlobSize = vertexBlobBytes,
+            ExtensionOffset = uint.MaxValue,
+            LODRadius = 1,
+            BoundMax = Vector3.One,
+            PackedCounts = 1u | (1u << 8),
+            MaterialTableOffset = uint.MaxValue,
+        };
+        MemoryMarshal.Write(
+            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
+            in cluster);
         AssetWriter.Write(new Mesh
         {
             AssetGuid = guid.ToFlatString(),
             Name = "stored-mesh",
             BvhOffset = checked((ulong)pageSize),
             Payload = payload,
-            VertexStride = 32,
+            VertexEncoding = vertexEncoding,
             Regions = [],
         }, path);
         return File.ReadAllBytes(path);

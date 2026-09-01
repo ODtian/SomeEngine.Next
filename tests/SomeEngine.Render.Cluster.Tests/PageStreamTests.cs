@@ -10,11 +10,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class PageStreamTests
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const uint VertexStride = 16;
-    private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
-        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int PageBytes = ClusterTestAssets.PageBytes;
     private const uint PageAllocationBytes = (uint)((PageBytes + 15) & ~15);
 
     [Fact]
@@ -783,7 +779,7 @@ public sealed class PageStreamTests
         fixture.Source.AfterRead = static (_, destination) =>
         {
             MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(destination.Span);
-            header.QuantStep = float.NaN;
+            header.Reserved = 1;
             MemoryMarshal.Write(destination.Span, in header);
         };
         await using var stream = new PageStream(manager);
@@ -905,26 +901,7 @@ public sealed class PageStreamTests
     private static Mesh MeshWithBvh(string name, params ClusterBVHNode[] nodes)
     {
         byte[] payload = new byte[PageBytes + nodes.Length * Marshal.SizeOf<ClusterBVHNode>()];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
-            AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + VertexStride,
-            VertexStride = VertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(payload.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new GPUCluster
-        {
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-        };
-        MemoryMarshal.Write(payload.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes), in cluster);
+        ClusterTestAssets.CreatePageData().CopyTo(payload, 0);
         MemoryMarshal.AsBytes(nodes.AsSpan()).CopyTo(payload.AsSpan(PageBytes));
         return new Mesh
         {
@@ -932,9 +909,8 @@ public sealed class PageStreamTests
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
             Payload = payload,
-            VertexStride = VertexStride,
+            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
             BvhOffset = PageBytes,
-            QuantStep = 1f,
         };
     }
 
@@ -958,29 +934,6 @@ public sealed class PageStreamTests
         };
 
     private static byte[] PageData()
-    {
-        byte[] data = new byte[PageBytes];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
-            AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + VertexStride,
-            VertexStride = VertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(data.AsSpan(), in header);
-        var cluster = new GPUCluster
-        {
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-        };
-        MemoryMarshal.Write(data.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes), in cluster);
-        return data;
-    }
+        => ClusterTestAssets.CreatePageData();
 
 }

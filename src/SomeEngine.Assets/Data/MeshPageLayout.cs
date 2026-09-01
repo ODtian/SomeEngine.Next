@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace SomeEngine.Assets.Data;
 
 /// <summary>
-/// Page header (48 bytes). Contains raw vertex-record stride, stream offsets, and quantization.
+/// Page header (48 bytes). Cluster owns only topology and opaque vertex-blob locations.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct MeshPageHeader
@@ -11,15 +11,14 @@ public struct MeshPageHeader
     public uint ClusterCount;        //  0
     public uint TotalVertexCount;    //  4
     public uint TotalTriangleCount;  //  8
-    public float QuantOriginX;       // 12 (was PageSize)
+    public uint VertexBlobBytes;     // 12
     public uint ClustersOffset;      // 16
-    public uint PositionsOffset;     // 20
-    public uint AttributesOffset;    // 24
-    public uint IndicesOffset;       // 28
-    public float QuantOriginY;       // 32
-    public float QuantOriginZ;       // 36
-    public float QuantStep;          // 40
-    public uint VertexStride;        // 44
+    public uint VertexBlobsOffset;   // 20
+    public uint IndicesOffset;       // 24
+    public uint ExtensionDataOffset; // 28
+    public ulong VertexEncodingHash; // 32
+    public uint ExtensionDataSize;   // 40
+    public uint Reserved;            // 44
 
     public const int Size = 48;
     public const int MaxPageSize = 131072;

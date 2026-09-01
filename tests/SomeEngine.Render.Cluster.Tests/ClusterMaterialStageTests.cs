@@ -125,6 +125,73 @@ public sealed class ClusterMaterialStageTests
         Assert.Equal(key, afterValuesChanged);
     }
 
+    [Theory]
+    [InlineData("finite", "Finite")]
+    [InlineData("unbounded", "Unbounded")]
+    public void Final_geometry_entry_declares_vertex_encoding_and_conservative_bounds(
+        string boundsValue,
+        string expectedBounds)
+    {
+        CookedShaderProgram cooked = CookedShaderTestProgram.Create();
+        string entryPoint = cooked.Program!.EntryPoints[0].Name;
+        var shader = new Shader
+        {
+            Programs = [cooked],
+            EntryPointAttributes =
+            [
+                new ShaderEntryPointAttribute
+                {
+                    ProgramIndex = 0,
+                    EntryPointIndex = 0,
+                    Name = ClusterGeometryContracts.VertexEncodingAttribute,
+                    Args = [ClusterTestAssets.StandardVertexEncoding],
+                },
+                new ShaderEntryPointAttribute
+                {
+                    ProgramIndex = 0,
+                    EntryPointIndex = 0,
+                    Name = ClusterGeometryContracts.ConservativeBoundsAttribute,
+                    Args = [boundsValue],
+                },
+            ],
+        };
+
+        Assert.Equal(
+            ClusterTestAssets.StandardVertexEncoding,
+            ClusterGeometryContracts.RequireVertexEncoding(shader, entryPoint, "test geometry"));
+        Assert.Equal(
+            expectedBounds,
+            ClusterGeometryContracts.RequireConservativeBounds(
+                shader,
+                entryPoint,
+                "test geometry").ToString());
+    }
+
+    [Fact]
+    public void Missing_conservative_bounds_declaration_fails_during_stage_resolution()
+    {
+        CookedShaderProgram cooked = CookedShaderTestProgram.Create();
+        string entryPoint = cooked.Program!.EntryPoints[0].Name;
+        var shader = new Shader
+        {
+            Programs = [cooked],
+            EntryPointAttributes =
+            [
+                new ShaderEntryPointAttribute
+                {
+                    ProgramIndex = 0,
+                    EntryPointIndex = 0,
+                    Name = ClusterGeometryContracts.VertexEncodingAttribute,
+                    Args = [ClusterTestAssets.StandardVertexEncoding],
+                },
+            ],
+        };
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
+            ClusterGeometryContracts.RequireConservativeBounds(shader, entryPoint, "test geometry"));
+        Assert.Contains("must declare", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Universal_material_device_record_types_do_not_exist()
     {

@@ -3,7 +3,6 @@ using SomeEngine.Assets.Data;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
-using System.Numerics;
 using System.Security.Cryptography;
 
 namespace SomeEngine.Assets.Schema;
@@ -143,6 +142,9 @@ public partial class Mesh
             IList<MeshPayloadPageDigest>? rootPages = root.PageDigests;
             if (rootPages is null || rootPages.Count == 0)
                 throw new InvalidDataException("Streamed mesh root contains no authenticated page descriptors.");
+            ulong vertexEncodingHash = VertexEncodingCompatibility.Hash(
+                root.VertexEncoding ?? throw new InvalidDataException(
+                    "Streamed mesh root has no vertex encoding compatibility."));
 
             long pageOffset = 0;
             for (int pageIndex = 0; pageIndex < rootPages.Count; pageIndex++)
@@ -154,17 +156,10 @@ public partial class Mesh
                     throw new InvalidDataException(
                         $"Mesh page digest {pageIndex} starts at {authenticated.Offset}, but canonical layout requires {pageOffset}.");
                 }
-                Vec3 origin = authenticated.QuantOrigin
-                    ?? throw new InvalidDataException($"Mesh page digest {pageIndex} has no quantization origin.");
                 if (authenticated.Length < MeshPageHeader.Size ||
                     authenticated.Length > MeshPageHeader.MaxPageSize ||
                     authenticated.ClusterCount == 0 ||
-                    authenticated.VertexStride != root.VertexStride ||
-                    !float.IsFinite(origin.X) ||
-                    !float.IsFinite(origin.Y) ||
-                    !float.IsFinite(origin.Z) ||
-                    !float.IsFinite(authenticated.QuantStep) ||
-                    authenticated.QuantStep <= 0)
+                    authenticated.VertexEncodingHash != vertexEncodingHash)
                 {
                     throw new InvalidDataException($"Mesh page digest {pageIndex} has invalid authenticated layout metadata.");
                 }
@@ -237,6 +232,9 @@ public partial class Mesh
         }
 
         List<MeshPayloadPageDigest> pageDigests = [];
+        ulong vertexEncodingHash = VertexEncodingCompatibility.Hash(
+            root.VertexEncoding ?? throw new InvalidDataException(
+                "Mesh root has no vertex encoding compatibility."));
         int pageOffset = 0;
         while (pageOffset < bvhOffset)
         {
@@ -244,11 +242,11 @@ public partial class Mesh
                 payload[pageOffset..],
                 pageOffset,
                 bvhOffset);
-            if (page.VertexStride != root.VertexStride)
+            if (page.VertexEncodingHash != vertexEncodingHash)
             {
                 throw new InvalidDataException(
-                    $"Mesh page at byte {pageOffset} declares vertex stride {page.VertexStride}, " +
-                    $"but the root declares {root.VertexStride}.");
+                    $"Mesh page at byte {pageOffset} uses vertex encoding hash " +
+                    $"0x{page.VertexEncodingHash:X16}, but the root requires 0x{vertexEncodingHash:X16}.");
             }
             ReadOnlySpan<byte> pageBytes = payload.Slice(pageOffset, page.Size);
             pageDigests.Add(new MeshPayloadPageDigest
@@ -256,14 +254,7 @@ public partial class Mesh
                 Offset = checked((ulong)page.Offset),
                 Length = checked((uint)page.Size),
                 ClusterCount = page.ClusterCount,
-                VertexStride = page.VertexStride,
-                QuantOrigin = new Vec3
-                {
-                    X = page.QuantOrigin.X,
-                    Y = page.QuantOrigin.Y,
-                    Z = page.QuantOrigin.Z,
-                },
-                QuantStep = page.QuantStep,
+                VertexEncodingHash = page.VertexEncodingHash,
                 Sha256 = SHA256.HashData(pageBytes),
             });
             pageOffset = checked(pageOffset + page.Size);
@@ -282,15 +273,9 @@ public partial class Mesh
         in MeshPayloadPage actual,
         MeshPayloadPageDigest authenticated)
     {
-        Vec3 origin = authenticated.QuantOrigin
-            ?? throw new InvalidDataException($"Mesh page digest {pageIndex} has no quantization origin.");
         if (authenticated.Length != checked((uint)actual.Size) ||
             authenticated.ClusterCount != actual.ClusterCount ||
-            authenticated.VertexStride != actual.VertexStride ||
-            !SameFloat(origin.X, actual.QuantOrigin.X) ||
-            !SameFloat(origin.Y, actual.QuantOrigin.Y) ||
-            !SameFloat(origin.Z, actual.QuantOrigin.Z) ||
-            !SameFloat(authenticated.QuantStep, actual.QuantStep))
+            authenticated.VertexEncodingHash != actual.VertexEncodingHash)
         {
             throw new InvalidDataException(
                 $"Mesh page header {pageIndex} does not match its root-authenticated layout descriptor.");
@@ -303,8 +288,5 @@ public partial class Mesh
             throw new InvalidDataException($"{subject} must carry exactly one SHA-256 digest.");
         return value.Value;
     }
-
-    private static bool SameFloat(float left, float right)
-        => BitConverter.SingleToInt32Bits(left) == BitConverter.SingleToInt32Bits(right);
 
 }

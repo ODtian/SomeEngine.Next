@@ -617,7 +617,6 @@ static ClusterShaderOperation ComputeOperation(
     => new()
     {
         Role = role,
-        BoundsSupport = DefaultBoundsSupport(role),
         Shaders = [Shader(shaderGuid, entryPoint, ShaderStage.Compute)],
     };
 
@@ -629,18 +628,12 @@ static ClusterShaderOperation RasterOperation(
     => new()
     {
         Role = role,
-        BoundsSupport = DefaultBoundsSupport(role),
         Shaders =
         [
             Shader(shaderGuid, vertexEntryPoint, ShaderStage.Vertex),
             Shader(shaderGuid, pixelEntryPoint, ShaderStage.Pixel),
         ],
     };
-
-static ClusterBoundsSupport DefaultBoundsSupport(ClusterShaderOperationRole role)
-    => ClusterShaders.IsPositionOperation(role)
-        ? ClusterBoundsSupport.Finite
-        : ClusterBoundsSupport.NotApplicable;
 
 static AssetGuid ResolveRequired(AssetProject project, string sourcePath) =>
     project.Resolve(sourcePath)

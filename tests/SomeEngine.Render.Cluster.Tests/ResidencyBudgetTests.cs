@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Data;
@@ -11,11 +10,7 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class ResidencyBudgetTests
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const uint VertexStride = 16;
-    private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
-        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int PageBytes = ClusterTestAssets.PageBytes;
     private const int GpuPageBytes = (PageBytes + 15) & ~15;
 
     [Fact]
@@ -499,39 +494,14 @@ public sealed class ResidencyBudgetTests
             AssetGuid = AssetGuid.New().ToFlatString(),
             Name = "BudgetedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            VertexStride = VertexStride,
+            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
             Payload = payload,
             BvhOffset = checked((ulong)pageRegionBytes),
-            QuantStep = 1f,
         };
     }
 
     private static byte[] PageData()
-    {
-        byte[] data = new byte[PageBytes];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
-            AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + VertexStride,
-            VertexStride = VertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(data.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new GPUCluster
-        {
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-            BoundMax = Vector3.One,
-        };
-        MemoryMarshal.Write(data.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes), in cluster);
-        return data;
-    }
+        => ClusterTestAssets.CreatePageData();
 
     private static ClusterBVHNode Leaf(uint localPage)
     {

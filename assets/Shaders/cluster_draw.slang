@@ -70,14 +70,9 @@ bool DecodeDrawVertex(
     out uint lodLevel,
     out uint triangleID,
     out uint localVertIdx,
-    out uint pageOffset,
-    out uint posOffset,
-    out uint attrOffset,
-    out uint idxOffset,
-    out uint totalVertexCount,
-    out uint vStart,
-    out uint vertexCount,
-    out int3 intBase)
+    out uint vertexBlobAddress,
+    out uint vertexBlobSize,
+    out uint vertexCount)
 {
     uint binnedIndex = GetBinnedClusterIndex(instanceID);
     uint2 binEntry = BinnedClusterIndexBuffer[binnedIndex];
@@ -85,19 +80,21 @@ bool DecodeDrawVertex(
     uint packedRange = binEntry.y;
 
     uint4 req = VisibleClusters[visibleClusterIndex];
-    pageOffset = req.x;
+    uint pageOffset = req.x;
     clusterID = req.y;
     realInstanceID = req.z;
-    totalVertexCount = PageHeap.Load(pageOffset + 4u);
-
-    uint4 header1 = PageHeap.Load4(pageOffset + 16u);
-    posOffset = header1.y;
-    attrOffset = header1.z;
-    idxOffset = header1.w;
+    uint idxOffset = PageHeap.Load(pageOffset + 24u);
 
     uint tStart;
     uint packedCounts;
-    LoadClusterInfo(PageHeap, pageOffset, clusterID, intBase, vStart, tStart, packedCounts);
+    LoadClusterInfo(
+        PageHeap,
+        pageOffset,
+        clusterID,
+        vertexBlobAddress,
+        vertexBlobSize,
+        tStart,
+        packedCounts);
     vertexCount = packedCounts & 0xFFu;
     lodLevel = (packedCounts >> 16u) & 0xFFu;
 
@@ -117,28 +114,17 @@ bool DecodeDrawVertex(
 }
 
 VertexEvalContext MakeDrawVertexEvalContext(
-    uint pageOffset,
-    uint posOffset,
-    uint attrOffset,
-    uint idxOffset,
-    uint totalVertexCount,
-    uint vStart,
-    int3 intBase,
+    uint vertexBlobAddress,
+    uint vertexBlobSize,
     uint localVertIdx,
     uint instanceID,
     RenderInstanceTransform transform)
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.pageOffset = pageOffset;
-    ctx.posOffset = posOffset;
-    ctx.attrOffset = attrOffset;
-    ctx.vertexStride = PageHeap.Load(pageOffset + 44u);
-    ctx.idxOffset = idxOffset;
-    ctx.vStart = vStart;
-    ctx.totalVertexCount = totalVertexCount;
-    ctx.localVertIdx = localVertIdx;
-    ctx.intBase = intBase;
+    ctx.vertexBlobAddress = vertexBlobAddress;
+    ctx.vertexBlobSize = vertexBlobSize;
+    ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = instanceID;
     ctx.transform = transform;
     ctx.IsPreviousFrame = 0u;
@@ -159,7 +145,7 @@ void LoadDrawDeformedVertex<TVE : IVertexEvaluate>(
         if (cacheBaseByte >= DRAW_CACHE_OFFSET_INVALID)
             vertex = evaluator.evaluate(ctx);
         else
-            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertIdx);
+            vertex = evaluator.readCache(DeformCache, cacheBaseByte, vertexCount, ctx.localVertexIndex);
         return;
     }
 
@@ -175,6 +161,8 @@ void WriteInvalidPSInput(out PSInput output)
     output.ClusterID = 0u;
 }
 
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("vertex")]
 PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 {
@@ -186,14 +174,9 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
     uint lodLevel;
     uint triangleID;
     uint localVertIdx;
-    uint pageOffset;
-    uint posOffset;
-    uint attrOffset;
-    uint idxOffset;
-    uint totalVertexCount;
-    uint vStart;
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
     uint vertexCount;
-    int3 intBase;
 
     if (!DecodeDrawVertex(
             vertexID,
@@ -204,14 +187,9 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
             lodLevel,
             triangleID,
             localVertIdx,
-            pageOffset,
-            posOffset,
-            attrOffset,
-            idxOffset,
-            totalVertexCount,
-            vStart,
-            vertexCount,
-            intBase))
+            vertexBlobAddress,
+            vertexBlobSize,
+            vertexCount))
     {
         WriteInvalidPSInput(output);
         return output;
@@ -219,13 +197,8 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 
     StaticVertexEval eval;
     VertexEvalContext ctx = MakeDrawVertexEvalContext(
-        pageOffset,
-        posOffset,
-        attrOffset,
-        idxOffset,
-        totalVertexCount,
-        vStart,
-        intBase,
+        vertexBlobAddress,
+        vertexBlobSize,
         localVertIdx,
         realInstanceID,
         GetCurrentInstanceTransform(realInstanceID));
@@ -282,14 +255,9 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
     uint lodLevel;
     uint triangleID;
     uint localVertIdx;
-    uint pageOffset;
-    uint posOffset;
-    uint attrOffset;
-    uint idxOffset;
-    uint totalVertexCount;
-    uint vStart;
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
     uint vertexCount;
-    int3 intBase;
 
     output.VisibleClusterIndex = 0u;
     output.TriangleID = 0u;
@@ -303,27 +271,17 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
             lodLevel,
             triangleID,
             localVertIdx,
-            pageOffset,
-            posOffset,
-            attrOffset,
-            idxOffset,
-            totalVertexCount,
-            vStart,
-            vertexCount,
-            intBase))
+            vertexBlobAddress,
+            vertexBlobSize,
+            vertexCount))
     {
         output.Pos = asfloat(uint4(0x7FC00000, 0x7FC00000, 0x7FC00000, 0x7FC00000));
         return output;
     }
 
     VertexEvalContext ctx = MakeDrawVertexEvalContext(
-        pageOffset,
-        posOffset,
-        attrOffset,
-        idxOffset,
-        totalVertexCount,
-        vStart,
-        intBase,
+        vertexBlobAddress,
+        vertexBlobSize,
         localVertIdx,
         realInstanceID,
         GetCurrentInstanceTransform(realInstanceID));
@@ -337,6 +295,8 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
 }
 
 [MaterialTarget("cluster.raster.vs")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("vertex")]
 PSVisBufferInput VSVisBuffer(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 {
@@ -345,6 +305,8 @@ PSVisBufferInput VSVisBuffer(uint vertexID: SV_VertexID, uint instanceID: SV_Ins
 }
 
 [MaterialTarget("cluster.raster.vs.cached")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
+[ConservativeBounds("finite")]
 [shader("vertex")]
 PSVisBufferInput VSVisBufferCached(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
 {

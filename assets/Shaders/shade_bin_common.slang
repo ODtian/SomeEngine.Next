@@ -27,10 +27,10 @@ uint FindShadeBin(
     uint triangle)
 {
     uint clusterOffset =
-        cluster.x + pageHeap.Load(cluster.x + 16u) + cluster.y * GPU_CLUSTER_STRIDE_BYTES;
+        cluster.x + pageHeap.Load(cluster.x + 16u) + cluster.y * PACKED_CLUSTER_STRIDE_BYTES;
     uint material = LocalMaterial(
-        pageHeap.Load(clusterOffset + 48u),
-        pageHeap.Load(clusterOffset + 52u),
+        pageHeap.Load(clusterOffset + 68u),
+        pageHeap.Load(clusterOffset + 72u),
         triangle);
     return SlotBin(
         slots,

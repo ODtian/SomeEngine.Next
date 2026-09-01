@@ -2,11 +2,11 @@
   "asset_guid": "842453b7-81b6-54d6-8be0-352acbba2c73",
   "source_guid": "a37a154e-1fff-46ee-a0e8-7c599ba77ec0",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "4a374f5f1bbc2ef22cfa35af2f00d324e233d5c8ea6fd1589248ad6e87724081",
+  "content_fingerprint": "587de71e5e48f4849fcc80063b533238f0edf0108fe94a24198afc755f6ed501",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
-      "hash": "2c4e323f5a2ba46bdb975b71caa7d00de91a72c96441cc1fc6bbbbd605a2cf03"
+      "hash": "0415c4fe277f2286d2ffe6d44e81d71a64b047224c729760e50110f1576c4cc2"
     },
     {
       "path": "assets/Shaders/cluster_instance_properties.slang",
@@ -14,19 +14,23 @@
     },
     {
       "path": "assets/Shaders/cluster_resolve.slang",
-      "hash": "d1a04418dcceae620d4f3f2e15687ad20199d32f70476c290103d131fbb61597"
+      "hash": "80d146b50a31832dca99acdd092386667b98e372571d7a9b05f6726d9e513661"
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "224f9f1a7d24d53bec718ac60fa1902f93905322d6d6254a0aa0e004c60d92ee"
+      "hash": "82c4fcf62dd0406227c38cfc51222849787922ee9e6299df1bf94715c5686ed6"
     },
     {
       "path": "assets/Shaders/common.slang",
-      "hash": "f81e8163471b33ca43a9aa2d6db7d382630d695b08845f8a0bad976738d5a19a"
+      "hash": "5c7a31b3c19cbbdfdb68508c0fae127ac5c6a805fbb7a61bfacb1203f43c1a9c"
     },
     {
       "path": "assets/Shaders/generated/render_instance_layout.slang",
       "hash": "cf8fa08c7f1b56d2cfe5e5419fcbf8664c8906c14123109c48d0064d6d65d738"
+    },
+    {
+      "path": "assets/Shaders/material_vertex_interfaces.slang",
+      "hash": "9b6321981c453bb8a4ddadc5b333ded36a547cc7c8d153aceaee59405d30e141"
     },
     {
       "path": "assets/Shaders/render_instance_properties.slang",
@@ -35,6 +39,10 @@
     {
       "path": "assets/Shaders/render_instance_transform.slang",
       "hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
+    },
+    {
+      "path": "assets/Shaders/vertex_evaluate.slang",
+      "hash": "b0f9001708e154511c873094f1f01bed8deb027ae6c52c3eb9b3441b0e3b3552"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",

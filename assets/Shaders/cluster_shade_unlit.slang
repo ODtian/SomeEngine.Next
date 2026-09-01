@@ -117,6 +117,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
 UnlitMaterial Material;
 
 [MaterialTarget("cluster.shade")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
@@ -127,6 +128,7 @@ void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
 }
 
 [MaterialTarget("cluster.shade.cached")]
+[VertexEncoding("someengine.vertex.standard.cluster.v1")]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void CSUnlitShadeCached(uint3 tid : SV_DispatchThreadID)

@@ -124,9 +124,6 @@ public sealed class ClusterAssetLoaderTests
         var result = new ClusterShaderOperation
         {
             Role = role,
-            BoundsSupport = IsPositionOperation(role)
-                ? ClusterBoundsSupport.Finite
-                : ClusterBoundsSupport.NotApplicable,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.SoftwareDepthMerge)
@@ -161,11 +158,6 @@ public sealed class ClusterAssetLoaderTests
         }
         return result;
     }
-
-    private static bool IsPositionOperation(ClusterShaderOperationRole role)
-        => role is ClusterShaderOperationRole.SoftwareVisibilityRaster
-            or ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.VisibilityResolve;
 
     private sealed class DependencyCountingStorage : IAssetStorage
     {

@@ -31,9 +31,9 @@ internal sealed class ClusterPipelineSet : IDisposable
         {
             Dictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations =
                 IndexOperations(configuration);
-            CullingEnabled = operations.Values
-                .Where(static operation => ClusterShaders.IsPositionOperation(operation.Role))
-                .All(static operation => operation.BoundsSupport == ClusterBoundsSupport.Finite);
+            ClusterCoreGeometryContract geometry = ResolveGeometryContract(operations);
+            VertexEncoding = geometry.VertexEncoding;
+            CullingEnabled = geometry.Bounds == ClusterConservativeBounds.Finite;
 
             ClusterComputePipeline Compute(ClusterShaderOperationRole role, string name) =>
                 CreateCompute(backend, device, operations, _pipelines, role, name);
@@ -140,6 +140,7 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 
     internal ClusterComputePipeline Traversal { get; }
+    internal string VertexEncoding { get; }
     internal bool CullingEnabled { get; }
     internal ClusterComputePipeline CullReset { get; }
     internal ClusterComputePipeline CullPhase1 { get; }
@@ -274,6 +275,47 @@ internal sealed class ClusterPipelineSet : IDisposable
             : throw new InvalidDataException(
                 $"Cluster render asset has no '{role}' shader operation.");
 
+    private static ClusterCoreGeometryContract ResolveGeometryContract(
+        IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations)
+    {
+        string? vertexEncoding = null;
+        ClusterConservativeBounds bounds = ClusterConservativeBounds.Finite;
+        foreach (ClusterShaderOperation operation in operations.Values)
+        {
+            if (!ClusterShaders.IsPositionOperation(operation.Role))
+                continue;
+            ShaderStage stage = IsRasterOperation(operation.Role)
+                ? ShaderStage.Vertex
+                : ShaderStage.Compute;
+            ShaderRef shaderReference = GetShader(operation, operation.Role, stage);
+            Shader shader = shaderReference.Asset ?? throw new InvalidDataException(
+                $"Cluster shader operation '{operation.Role}' has no resolved shader asset.");
+            string entryPoint = shaderReference.EntryPoint!;
+            string subject = $"Cluster shader operation '{operation.Role}'";
+            string currentEncoding = ClusterGeometryContracts.RequireVertexEncoding(
+                shader,
+                entryPoint,
+                subject);
+            if (vertexEncoding is not null &&
+                !string.Equals(vertexEncoding, currentEncoding, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"{subject} accepts vertex encoding '{currentEncoding}', but the Cluster pipeline " +
+                    $"already requires '{vertexEncoding}'.");
+            }
+            vertexEncoding = currentEncoding;
+            if (ClusterGeometryContracts.RequireConservativeBounds(shader, entryPoint, subject) ==
+                ClusterConservativeBounds.Unbounded)
+            {
+                bounds = ClusterConservativeBounds.Unbounded;
+            }
+        }
+        return new ClusterCoreGeometryContract(
+            vertexEncoding ?? throw new InvalidDataException(
+                "Cluster render asset has no vertex-evaluating shader operation."),
+            bounds);
+    }
+
     private static ShaderRef GetShader(
         ClusterShaderOperation operation,
         ClusterShaderOperationRole role,
@@ -332,17 +374,6 @@ internal sealed class ClusterPipelineSet : IDisposable
             {
                 throw new InvalidDataException(
                     "Cluster render asset contains an invalid shader-operation role.");
-            }
-            bool affectsPosition = ClusterShaders.IsPositionOperation(operation.Role);
-            bool validBounds = affectsPosition
-                ? operation.BoundsSupport is ClusterBoundsSupport.Finite or ClusterBoundsSupport.Unbounded
-                : operation.BoundsSupport == ClusterBoundsSupport.NotApplicable;
-            if (!validBounds)
-            {
-                throw new InvalidDataException(
-                    affectsPosition
-                        ? $"Cluster shader operation '{operation.Role}' must declare Finite or Unbounded bounds support."
-                        : $"Cluster shader operation '{operation.Role}' cannot declare geometry bounds support.");
             }
             bool isRaster = IsRasterOperation(operation.Role);
             IList<ShaderRef>? shaders = operation.Shaders;
@@ -422,3 +453,7 @@ internal sealed class ClusterPipelineSet : IDisposable
         catch (Exception failure) { (failures ??= []).Add(failure); }
     }
 }
+
+internal readonly record struct ClusterCoreGeometryContract(
+    string VertexEncoding,
+    ClusterConservativeBounds Bounds);

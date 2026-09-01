@@ -34,6 +34,7 @@ internal readonly record struct ClusterMeshRegistration(
 
 internal sealed partial class ClusterMeshes : IDisposable
 {
+    private string? _vertexEncoding;
     private static long s_nextEpochId;
 
     private readonly PageHeap _heap;
@@ -485,39 +486,41 @@ internal sealed partial class ClusterMeshes : IDisposable
         in MeshPageHeader header,
         int payloadOffset)
     {
-        int clusterBytes = checked((int)header.ClusterCount * GPUCluster.SizeInBytes);
-        ReadOnlySpan<GPUCluster> clusters = MemoryMarshal.Cast<byte, GPUCluster>(
+        int clusterBytes = checked((int)header.ClusterCount * PackedCluster.SizeInBytes);
+        ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
             page.Slice(checked((int)header.ClustersOffset), clusterBytes));
-        int positionBytes = checked((int)header.TotalVertexCount * 3 * sizeof(ushort));
-        ReadOnlySpan<ushort> positions = MemoryMarshal.Cast<byte, ushort>(
-            page.Slice(checked((int)header.PositionsOffset), positionBytes));
-        uint expectedVertexStart = 0;
+        uint expectedVertexBlobStart = 0;
+        uint expectedVertexCount = 0;
         uint expectedIndexStart = 0;
         uint totalIndexCount = checked(header.TotalTriangleCount * 3);
 
         for (int index = 0; index < clusters.Length; index++)
         {
-            ref readonly GPUCluster cluster = ref clusters[index];
+            ref readonly PackedCluster cluster = ref clusters[index];
             uint vertexCount = cluster.PackedCounts & 0xFF;
             uint triangleCount = (cluster.PackedCounts >> 8) & 0xFF;
-            if (vertexCount == 0 || triangleCount == 0)
+            if (vertexCount == 0 || triangleCount == 0 || cluster.VertexBlobSize == 0)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} has invalid encoded counts in cluster {index}.");
             }
-            if (cluster.VertexStart != expectedVertexStart || cluster.TriangleStart != expectedIndexStart)
+            if (cluster.VertexBlobOffset != expectedVertexBlobStart ||
+                cluster.TriangleStart != expectedIndexStart)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} has non-canonical stream starts in cluster {index}: " +
-                    $"vertex={cluster.VertexStart}, index={cluster.TriangleStart}.");
+                    $"vertexBlob={cluster.VertexBlobOffset}, index={cluster.TriangleStart}.");
             }
 
-            expectedVertexStart = checked(expectedVertexStart + vertexCount);
+            expectedVertexBlobStart = checked(expectedVertexBlobStart + cluster.VertexBlobSize);
+            expectedVertexCount = checked(expectedVertexCount + vertexCount);
             expectedIndexStart = checked(expectedIndexStart + (triangleCount * 3));
-            if (expectedVertexStart > header.TotalVertexCount || expectedIndexStart > totalIndexCount)
+            if (expectedVertexBlobStart > header.VertexBlobBytes ||
+                expectedVertexCount > header.TotalVertexCount ||
+                expectedIndexStart > totalIndexCount)
             {
                 throw new InvalidDataException(
-                    $"Cluster page at byte {payloadOffset} cluster {index} exceeds its declared vertex or index stream.");
+                    $"Cluster page at byte {payloadOffset} cluster {index} exceeds its declared blob, vertex, or index stream.");
             }
 
             float lodError = (float)BitConverter.UInt16BitsToHalf(cluster.LODErrorHalf);
@@ -537,9 +540,14 @@ internal sealed partial class ClusterMeshes : IDisposable
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {index} requests an undefined slow material-table path.");
             }
+            ValidateExtensionRange(cluster, header, payloadOffset, index);
+            if ((cluster.PackedGroup & 0xFFFF0000u) != 0 || cluster.Reserved != 0)
+            {
+                throw new InvalidDataException(
+                    $"Cluster page at byte {payloadOffset} cluster {index} has non-zero reserved protocol bits.");
+            }
             ValidateFastMaterialEncoding(cluster, triangleCount, payloadOffset, index);
             ValidateVrbEncoding(cluster.VRBBatchInfo, triangleCount, payloadOffset, index);
-            ValidateDecodedCoordinates(cluster, positions, vertexCount, header, payloadOffset, index);
 
             int indicesStart = checked((int)header.IndicesOffset + cluster.TriangleStart);
             int indicesLength = checked((int)triangleCount * 3);
@@ -554,10 +562,37 @@ internal sealed partial class ClusterMeshes : IDisposable
             }
         }
 
-        if (expectedVertexStart != header.TotalVertexCount || expectedIndexStart != totalIndexCount)
+        if (expectedVertexBlobStart != header.VertexBlobBytes ||
+            expectedVertexCount != header.TotalVertexCount ||
+            expectedIndexStart != totalIndexCount)
         {
             throw new InvalidDataException(
-                $"Cluster page at byte {payloadOffset} does not completely describe its vertex and index streams.");
+                $"Cluster page at byte {payloadOffset} does not completely describe its blob, vertex, and index streams.");
+        }
+    }
+
+    private static void ValidateExtensionRange(
+        in PackedCluster cluster,
+        in MeshPageHeader header,
+        int payloadOffset,
+        int clusterIndex)
+    {
+        if (cluster.ExtensionSize == 0)
+        {
+            if (cluster.ExtensionOffset != uint.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"Cluster page at byte {payloadOffset} cluster {clusterIndex} has a non-canonical empty extension.");
+            }
+            return;
+        }
+
+        ulong extensionEnd = checked((ulong)header.ExtensionDataOffset + header.ExtensionDataSize);
+        ulong clusterExtensionEnd = checked((ulong)cluster.ExtensionOffset + cluster.ExtensionSize);
+        if (cluster.ExtensionOffset < header.ExtensionDataOffset || clusterExtensionEnd > extensionEnd)
+        {
+            throw new InvalidDataException(
+                $"Cluster page at byte {payloadOffset} cluster {clusterIndex} has an out-of-range extension.");
         }
     }
 
@@ -585,7 +620,7 @@ internal sealed partial class ClusterMeshes : IDisposable
         => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 
     private static void ValidateFastMaterialEncoding(
-        in GPUCluster cluster,
+        in PackedCluster cluster,
         uint triangleCount,
         int payloadOffset,
         int clusterIndex)
@@ -634,51 +669,6 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    private static void ValidateDecodedCoordinates(
-        in GPUCluster cluster,
-        ReadOnlySpan<ushort> positions,
-        uint vertexCount,
-        in MeshPageHeader header,
-        int payloadOffset,
-        int clusterIndex)
-    {
-        int firstWord = checked((int)cluster.VertexStart * 3);
-        for (int vertex = 0; vertex < checked((int)vertexCount); vertex++)
-        {
-            int word = checked(firstWord + (vertex * 3));
-            ValidateDecodedCoordinate(cluster.IntBaseX, positions[word], header.QuantStep, header.QuantOriginX, payloadOffset, clusterIndex);
-            ValidateDecodedCoordinate(cluster.IntBaseY, positions[word + 1], header.QuantStep, header.QuantOriginY, payloadOffset, clusterIndex);
-            ValidateDecodedCoordinate(cluster.IntBaseZ, positions[word + 2], header.QuantStep, header.QuantOriginZ, payloadOffset, clusterIndex);
-        }
-
-        (ushort centerX, ushort centerY) = GPUCluster.UnpackU16(cluster.PackedCenterXY);
-        (ushort centerZ, ushort radius) = GPUCluster.UnpackU16(cluster.PackedCenterZRadius);
-        ValidateDecodedCoordinate(cluster.IntBaseX, centerX, header.QuantStep, header.QuantOriginX, payloadOffset, clusterIndex);
-        ValidateDecodedCoordinate(cluster.IntBaseY, centerY, header.QuantStep, header.QuantOriginY, payloadOffset, clusterIndex);
-        ValidateDecodedCoordinate(cluster.IntBaseZ, centerZ, header.QuantStep, header.QuantOriginZ, payloadOffset, clusterIndex);
-        if (!float.IsFinite(radius * header.QuantStep))
-        {
-            throw new InvalidDataException(
-                $"Cluster page at byte {payloadOffset} cluster {clusterIndex} decodes a non-finite quantized radius.");
-        }
-    }
-
-    private static void ValidateDecodedCoordinate(
-        int integerBase,
-        ushort local,
-        float quantStep,
-        float quantOrigin,
-        int payloadOffset,
-        int clusterIndex)
-    {
-        long integer = (long)integerBase + local;
-        if (integer is < int.MinValue or > int.MaxValue ||
-            !float.IsFinite(((float)integer * quantStep) + quantOrigin))
-        {
-            throw new InvalidDataException(
-                $"Cluster page at byte {payloadOffset} cluster {clusterIndex} decodes a non-finite or overflowing coordinate.");
-        }
-    }
     public bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         lock (_gate)

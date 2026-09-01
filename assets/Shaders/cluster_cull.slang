@@ -42,56 +42,38 @@ float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
         buffer.Load(offset + 8)));
 }
 
-GPUCluster LoadCluster(uint pageOffset, uint clusterIndex)
+PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
 {
     uint headerOffset = pageOffset;
     uint clustersOffset = PageHeap.Load(headerOffset + 16);
-    uint offset = headerOffset + clustersOffset + (clusterIndex * GPU_CLUSTER_STRIDE_BYTES);
-    GPUCluster c;
+    uint offset = headerOffset + clustersOffset + (clusterIndex * PACKED_CLUSTER_STRIDE_BYTES);
+    PackedCluster c;
 
-    // IntBase (0..11)
-    c.IntBase.x = asint(PageHeap.Load(offset + 0));
-    c.IntBase.y = asint(PageHeap.Load(offset + 4));
-    c.IntBase.z = asint(PageHeap.Load(offset + 8));
-
-    // PackedCenterXY (12)
-    c.PackedCenterXY = PageHeap.Load(offset + 12);
+    c.VertexBlobOffset = PageHeap.Load(offset + 0);
+    c.VertexBlobSize = PageHeap.Load(offset + 4);
+    c.ExtensionOffset = PageHeap.Load(offset + 8);
+    c.ExtensionSize = PageHeap.Load(offset + 12);
 
     // LODCenter (16..27), LODRadius (28)
     uint4 uLOD = PageHeap.Load<uint4>(offset + 16);
     c.LODCenter = asfloat(uLOD.xyz);
     c.LODRadius = asfloat(uLOD.w);
 
-    // PackedCenterZRadius (32)
-    c.PackedCenterZRadius = PageHeap.Load(offset + 32);
-
-    // PackedLodErrVStart (36)
-    c.PackedLodErrVStart = PageHeap.Load(offset + 36);
-
-    // PackedTStartGroup (40)
-    c.PackedTStartGroup = PageHeap.Load(offset + 40);
-
-    // PackedCounts (44)
-    c.PackedCounts = PageHeap.Load(offset + 44);
-
-    // PackedMaterials (48)
-    c.PackedMaterials = PageHeap.Load(offset + 48);
-
-    // PackedRanges (52)
-    c.PackedRanges = PageHeap.Load(offset + 52);
-
-    // MaterialTableOffset (56), VRBBatchInfo (60)
-    c.MaterialTableOffset = PageHeap.Load(offset + 56);
-    c.VRBBatchInfo = PageHeap.Load(offset + 60);
-
-    // BoundMin (64..75), BoundMax (76..87)
-    c.BoundMin = LoadFloat3(PageHeap, offset + 64);
-    c.BoundMax = LoadFloat3(PageHeap, offset + 76);
+    c.BoundMin = LoadFloat3(PageHeap, offset + 32);
+    c.BoundMax = LoadFloat3(PageHeap, offset + 44);
+    c.PackedLodErrorTriangleStart = PageHeap.Load(offset + 56);
+    c.PackedCounts = PageHeap.Load(offset + 60);
+    c.PackedGroup = PageHeap.Load(offset + 64);
+    c.PackedMaterials = PageHeap.Load(offset + 68);
+    c.PackedRanges = PageHeap.Load(offset + 72);
+    c.MaterialTableOffset = PageHeap.Load(offset + 76);
+    c.VRBBatchInfo = PageHeap.Load(offset + 80);
+    c.Reserved = PageHeap.Load(offset + 84);
 
     return c;
 }
 
-bool PassesLODFilter(GPUCluster cluster, RenderInstanceTransform t)
+bool PassesLODFilter(PackedCluster cluster, RenderInstanceTransform t)
 {
     if (Uniforms.CullingEnabled == 0u)
         return true;
@@ -187,7 +169,7 @@ void BuildWorldAabbScreenBoundsAndNearDepth(
 }
 
 void BuildClusterAabbScreenBoundsAndNearDepth(
-    GPUCluster cluster,
+    PackedCluster cluster,
     RenderInstanceTransform transform,
     bool usePrev,
     float boundsExpansion,
@@ -270,7 +252,7 @@ float SampleHiZMax(float2 minUv, float2 maxUv, uint mipLevel)
 }
 
 bool IsOccludedByHiZ(
-    GPUCluster cluster,
+    PackedCluster cluster,
     RenderInstanceTransform transform,
     float boundsExpansion,
     bool usePrev,
@@ -356,14 +338,14 @@ bool LoadAndFilterCandidate(
     out uint pageOffset,
     out uint clusterID,
     out uint instanceID,
-    out GPUCluster cluster,
+    out PackedCluster cluster,
     out RenderInstanceTransform t,
     out float boundsExpansion)
 {
     pageOffset = 0;
     clusterID = 0;
     instanceID = 0;
-    cluster = (GPUCluster)0;
+    cluster = (PackedCluster)0;
     t = (RenderInstanceTransform)0;
     boundsExpansion = 0.0;
 
@@ -407,7 +389,7 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     uint pageOffset;
     uint clusterID;
     uint instanceID;
-    GPUCluster cluster;
+    PackedCluster cluster;
     RenderInstanceTransform t;
     float boundsExpansion;
     if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))
@@ -471,7 +453,7 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     uint pageOffset;
     uint clusterID;
     uint instanceID;
-    GPUCluster cluster;
+    PackedCluster cluster;
     RenderInstanceTransform t;
     float boundsExpansion;
     if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))

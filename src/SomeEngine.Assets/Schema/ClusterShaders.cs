@@ -25,19 +25,6 @@ public partial class ClusterShaders
             if (!roles.Add(operation.Role))
                 throw Invalid(path, $"{field}.Role '{operation.Role}' is duplicated.");
 
-            bool affectsPosition = IsPositionOperation(operation.Role);
-            bool validBounds = affectsPosition
-                ? operation.BoundsSupport is ClusterBoundsSupport.Finite or ClusterBoundsSupport.Unbounded
-                : operation.BoundsSupport == ClusterBoundsSupport.NotApplicable;
-            if (!validBounds)
-            {
-                throw Invalid(
-                    path,
-                    affectsPosition
-                        ? $"{field}.BoundsSupport must explicitly be Finite or Unbounded."
-                        : $"{field}.BoundsSupport must be NotApplicable for this operation.");
-            }
-
             IList<ShaderRef> shaders = operation.Shaders
                 ?? throw Invalid(path, $"{field}.Shaders is missing.");
             bool isCompute =
