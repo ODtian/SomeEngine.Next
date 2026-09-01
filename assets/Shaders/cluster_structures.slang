@@ -30,7 +30,7 @@ struct GPUCluster
     uint PackedCenterZRadius;   // 32 — CenterOffsetZ:16 | RadiusQuant:16
     uint PackedLodErrVStart;    // 36 — LODErrorHalf:16 | VertexStart:16
     uint PackedTStartGroup;     // 40 — TriangleStart:16 | GroupId(i16):16
-    uint PackedCounts;          // 44 — [VertexCount:8][TriangleCount:8][LODLevel:8][Pad:8]
+    uint PackedCounts;          // 44 — [VertexCount:8][TriangleCount:8][LODLevel:8][DeformMaterialIndex:8]
     //  Total: 48 bytes
     
     uint PackedMaterials;       // 48 — [mat0:8][mat1:8][mat2:8][SlowPathFlag:8] (0xFF = slow path)
@@ -146,6 +146,11 @@ uint GetStageSlot(
         return SLOT_INVALID;
 
     return stageSlots[slotOffset + localMaterialIndex];
+}
+
+uint DecodeDeformMaterialIndex(GPUCluster c)
+{
+    return c.PackedCounts >> 24;
 }
 
 uint LocalMaterial(uint packedMaterials, uint packedRanges, uint triStart)

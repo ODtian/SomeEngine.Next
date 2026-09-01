@@ -103,6 +103,7 @@ public static partial class ClusterBuilder
         public byte Mat2;
         public byte Range0End;
         public byte Range1End;
+        public byte DeformMaterialIndex;
 
         // VRB batch info (packed uint, see BuildVrb)
         public uint VRBBatchInfo;
@@ -367,12 +368,13 @@ public static partial class ClusterBuilder
 {
 
 
-    public static Mesh Process(string filePath, Func<string, AssetGuid>? materialGuidResolver = null)
+    public static Mesh Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
     {
+        ArgumentNullException.ThrowIfNull(materialResolver);
         var model = ModelRoot.Load(filePath);
         var mesh = model.LogicalMeshes[0];
         IReadOnlyList<MeshMaterialSlot> materialSlots = mesh.Primitives
-            .Select(primitive => new MeshMaterialSlot(materialGuidResolver?.Invoke(primitive.Material?.Name ?? string.Empty) ?? AssetGuid.Empty))
+            .Select(primitive => materialResolver(primitive.Material?.Name ?? string.Empty))
             .ToArray();
         return ProcessMesh(mesh, materialSlots, mesh.Name ?? "Unnamed");
     }
@@ -516,7 +518,8 @@ public static partial class ClusterBuilder
         state.MaterialSlots.Add(
             primitiveIndex < materialSlots.Count
                 ? materialSlots[primitiveIndex]
-                : new MeshMaterialSlot(AssetGuid.Empty));
+                : throw new InvalidDataException(
+                    $"Mesh primitive {primitiveIndex} has no material/deform cook slot."));
         AddMaterialIndices(state.MaterialIndices, primitiveIndex, positions.Length);
         return vertexOffset + (uint)positions.Length;
     }
@@ -902,15 +905,7 @@ public static partial class ClusterBuilder
         IReadOnlyList<MeshMaterialSlot> materialSlots,
         string name)
     {
-        List<string> regionNames = materialSlots
-            .Select(static (slot, index) => $"region_{index}")
-            .ToList();
-        return ProcessRaw(
-            rawPos,
-            rawAttributes,
-            rawIndices,
-            regionNames,
-            name);
+        return ProcessRawCore(rawPos, rawAttributes, rawIndices, materialSlots, name);
     }
 
     private static void BuildClusterLod(
@@ -918,6 +913,7 @@ public static partial class ClusterBuilder
         ReadOnlySpan<Vector3> positions,
         ReadOnlySpan<uint> indices,
         float[] materialIndicesArray,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices
     )
@@ -927,12 +923,20 @@ public static partial class ClusterBuilder
         try
         {
             GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
-            Clusterize(config, indices, positions, materialIndicesArray, clusters, globalIndices);
+            Clusterize(
+                config,
+                indices,
+                positions,
+                materialIndicesArray,
+                deformCompatibilities,
+                clusters,
+                globalIndices);
             int nextGroupId = InitializeLeafClusters(positions, clusters, globalIndices);
             ReduceClusterLod(
                 config,
                 positions,
                 materialIndicesArray,
+                deformCompatibilities,
                 clusters,
                 globalIndices,
                 locks.AsSpan(0, positions.Length),
@@ -996,6 +1000,7 @@ public static partial class ClusterBuilder
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
         Span<byte> locks,
@@ -1011,6 +1016,7 @@ public static partial class ClusterBuilder
                 config,
                 positions,
                 materialIndicesArray,
+                deformCompatibilities,
                 clusters,
                 globalIndices,
                 locks,
@@ -1039,6 +1045,7 @@ public static partial class ClusterBuilder
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
         Span<byte> locks,
@@ -1059,6 +1066,7 @@ public static partial class ClusterBuilder
                 config,
                 positions,
                 materialIndicesArray,
+                deformCompatibilities,
                 clusters,
                 globalIndices,
                 locks,
@@ -1086,6 +1094,7 @@ public static partial class ClusterBuilder
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
         Span<byte> locks,
@@ -1112,6 +1121,7 @@ public static partial class ClusterBuilder
             config,
             positions,
             materialIndicesArray,
+            deformCompatibilities,
             clusters,
             globalIndices,
             workspace.SimplifiedIndices,
@@ -1173,6 +1183,7 @@ public static partial class ClusterBuilder
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices,
         List<uint> simplifiedIndices,
@@ -1183,7 +1194,14 @@ public static partial class ClusterBuilder
         List<int> nextPending)
     {
         int start = clusters.Count;
-        Clusterize(config, CollectionsMarshal.AsSpan(simplifiedIndices), positions, materialIndicesArray, clusters, globalIndices);
+        Clusterize(
+            config,
+            CollectionsMarshal.AsSpan(simplifiedIndices),
+            positions,
+            materialIndicesArray,
+            deformCompatibilities,
+            clusters,
+            globalIndices);
         for (int index = start; index < clusters.Count; index++)
         {
             clusters[index] = InitializeParentCluster(
@@ -1238,19 +1256,6 @@ public static partial class ClusterBuilder
 
 public static partial class ClusterBuilder
 {
-
-
-    public static Mesh ProcessRaw(
-        Vector3[] rawPos,
-        List<RawAttribute> rawAttributes,
-        uint[] rawIndices,
-        List<string> regionNames,
-        string name
-    )
-    {
-        return ProcessRawCore(rawPos, rawAttributes, rawIndices, regionNames, name);
-    }
-
     private static void PackAttribute(List<byte> output, RawAttribute attr, int index)
     {
         int baseIdx = index * attr.Dimension;
@@ -1371,6 +1376,7 @@ public static partial class ClusterBuilder
 
     private static void EmitSplitMeshlet(
         ReadOnlySpan<TempTri> tris,
+        byte deformMaterialIndex,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices
     )
@@ -1417,6 +1423,7 @@ public static partial class ClusterBuilder
                 Mat2 = uniqueMats.Count > 2 ? uniqueMats[2] : (byte)0,
                 Range0End = (byte)range0End,
                 Range1End = (byte)range1End,
+                DeformMaterialIndex = deformMaterialIndex,
                 VRBBatchInfo = vrbBatchInfo,
             }
         );
@@ -1558,6 +1565,7 @@ public static partial class ClusterBuilder
         ReadOnlySpan<uint> indices,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices
     )
@@ -1567,16 +1575,91 @@ public static partial class ClusterBuilder
             return;
         }
 
-        MeshletScratch scratch = RentMeshletScratch(config, indices.Length);
-        try
+        if (indices.Length % 3 != 0)
+            throw new InvalidDataException("Cluster triangle indices are not divisible by three.");
+
+        var partitionByCompatibility =
+            new Dictionary<MaterialDeformCompatibility, int>();
+        var partitions = new List<List<uint>>();
+        for (int triangle = 0; triangle < indices.Length; triangle += 3)
         {
-            nuint meshletCount = BuildMeshlets(config, indices, positions, scratch);
-            EmitMeshlets(scratch, meshletCount, materialIndicesArray, clusters, globalIndices, config.OptimizeClusters);
+            MaterialDeformCompatibility compatibility = ResolveTriangleDeformCompatibility(
+                indices.Slice(triangle, 3),
+                materialIndicesArray,
+                deformCompatibilities);
+            if (!partitionByCompatibility.TryGetValue(compatibility, out int partition))
+            {
+                partition = partitions.Count;
+                partitionByCompatibility.Add(compatibility, partition);
+                partitions.Add([]);
+            }
+            partitions[partition].Add(indices[triangle]);
+            partitions[partition].Add(indices[triangle + 1]);
+            partitions[partition].Add(indices[triangle + 2]);
         }
-        finally
+
+        foreach (List<uint> partition in partitions)
         {
-            scratch.Return();
+            MeshletScratch scratch = RentMeshletScratch(config, partition.Count);
+            try
+            {
+                nuint meshletCount = BuildMeshlets(
+                    config,
+                    CollectionsMarshal.AsSpan(partition),
+                    positions,
+                    scratch);
+                EmitMeshlets(
+                    scratch,
+                    meshletCount,
+                    materialIndicesArray,
+                    clusters,
+                    globalIndices,
+                    config.OptimizeClusters);
+            }
+            finally
+            {
+                scratch.Return();
+            }
         }
+    }
+
+    private static MaterialDeformCompatibility ResolveTriangleDeformCompatibility(
+        ReadOnlySpan<uint> triangle,
+        float[] materialIndices,
+        ReadOnlySpan<MaterialDeformCompatibility> deformCompatibilities)
+    {
+        byte material0 = ResolveTriangleMaterial(triangle[0], materialIndices, deformCompatibilities.Length);
+        byte material1 = ResolveTriangleMaterial(triangle[1], materialIndices, deformCompatibilities.Length);
+        byte material2 = ResolveTriangleMaterial(triangle[2], materialIndices, deformCompatibilities.Length);
+        MaterialDeformCompatibility compatibility = deformCompatibilities[material0];
+        if (compatibility.ShaderGuid.IsEmpty || string.IsNullOrWhiteSpace(compatibility.EntryPoint))
+            throw new InvalidDataException($"Material {material0} has no deform cook compatibility.");
+        if (compatibility != deformCompatibilities[material1] ||
+            compatibility != deformCompatibilities[material2])
+        {
+            throw new InvalidDataException(
+                "A cooked triangle crosses multiple deform compatibility partitions.");
+        }
+        return compatibility;
+    }
+
+    private static byte ResolveTriangleMaterial(
+        uint vertex,
+        float[] materialIndices,
+        int materialCount)
+    {
+        if (vertex >= materialIndices.Length)
+            throw new InvalidDataException($"Vertex {vertex} has no material index.");
+        float encoded = materialIndices[vertex];
+        if (!float.IsFinite(encoded) ||
+            encoded < 0 ||
+            encoded >= materialCount ||
+            encoded != MathF.Truncate(encoded))
+        {
+            throw new InvalidDataException($"Vertex {vertex} has invalid material index {encoded}.");
+        }
+        int material = (int)encoded;
+        return checked((byte)material);
     }
 
     private static MeshletScratch RentMeshletScratch(ClusterLodConfig config, int indexCount)
@@ -1668,7 +1751,7 @@ public static partial class ClusterBuilder
 
         TempTri[] triangles = ReadMeshletTriangles(scratch, meshlet, materialIndicesArray);
         SortTrianglesByMaterial(triangles);
-        EmitMaterialChunks(triangles, clusters, globalIndices);
+        EmitMaterialChunks(triangles, triangles[0].mat, clusters, globalIndices);
     }
 
     private static void OptimizeMeshlet(MeshletScratch scratch, MeshOptimizer.Meshlet meshlet)
@@ -1744,6 +1827,7 @@ public static partial class ClusterBuilder
 
     private static void EmitMaterialChunks(
         TempTri[] triangles,
+        byte deformMaterialIndex,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices)
     {
@@ -1751,18 +1835,31 @@ public static partial class ClusterBuilder
         int chunkStart = 0;
         for (int index = 0; index < triangles.Length; index++)
         {
-            if (TryStartMaterialChunk(triangles, index, uniqueMaterials, ref chunkStart, clusters, globalIndices))
+            if (TryStartMaterialChunk(
+                    triangles,
+                    index,
+                    deformMaterialIndex,
+                    uniqueMaterials,
+                    ref chunkStart,
+                    clusters,
+                    globalIndices))
             {
                 continue;
             }
         }
 
-        EmitRemainingMaterialChunk(triangles, chunkStart, clusters, globalIndices);
+        EmitRemainingMaterialChunk(
+            triangles,
+            deformMaterialIndex,
+            chunkStart,
+            clusters,
+            globalIndices);
     }
 
     private static bool TryStartMaterialChunk(
         TempTri[] triangles,
         int index,
+        byte deformMaterialIndex,
         List<byte> uniqueMaterials,
         ref int chunkStart,
         List<BuilderMeshlet> clusters,
@@ -1775,7 +1872,11 @@ public static partial class ClusterBuilder
 
         if (uniqueMaterials.Count == 3)
         {
-            EmitSplitMeshlet(new ReadOnlySpan<TempTri>(triangles, chunkStart, index - chunkStart), clusters, globalIndices);
+            EmitSplitMeshlet(
+                new ReadOnlySpan<TempTri>(triangles, chunkStart, index - chunkStart),
+                deformMaterialIndex,
+                clusters,
+                globalIndices);
             uniqueMaterials.Clear();
             chunkStart = index;
         }
@@ -1786,13 +1887,18 @@ public static partial class ClusterBuilder
 
     private static void EmitRemainingMaterialChunk(
         TempTri[] triangles,
+        byte deformMaterialIndex,
         int chunkStart,
         List<BuilderMeshlet> clusters,
         List<uint> globalIndices)
     {
         if (chunkStart < triangles.Length)
         {
-            EmitSplitMeshlet(new ReadOnlySpan<TempTri>(triangles, chunkStart, triangles.Length - chunkStart), clusters, globalIndices);
+            EmitSplitMeshlet(
+                new ReadOnlySpan<TempTri>(triangles, chunkStart, triangles.Length - chunkStart),
+                deformMaterialIndex,
+                clusters,
+                globalIndices);
         }
     }
 

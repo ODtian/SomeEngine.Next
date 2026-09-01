@@ -75,18 +75,16 @@ void ScatterDeformCluster(
     uint visibleIndex,
     uint slotOffset,
     uint triangleCount,
-    uint packedMaterials,
-    uint packedRanges)
+    uint deformMaterialIndex)
 {
     if (triangleCount == 0u)
         return;
 
-    uint material = LocalMaterial(packedMaterials, packedRanges, 0u);
     ScatterDeform(
         DeformBinMeta,
         DeformBinnedClusterIndexBuffer,
         CacheOffsetsWrite,
-        DeformKey(DeformSlots, Uniforms, slotOffset, material),
+        DeformKey(DeformSlots, Uniforms, slotOffset, deformMaterialIndex),
         visibleIndex,
         CACHE_OFFSET_UNINITIALIZED);
 }
@@ -113,6 +111,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
     uint4 entry = VisibleClusters[visibleIndex];
     uint vrbInfo;
     uint triangleCount;
+    uint deformMaterialIndex;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
@@ -120,6 +119,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         entry,
         vrbInfo,
         triangleCount,
+        deformMaterialIndex,
         packedMaterials,
         packedRanges);
     uint slotOffset = LoadClusterMaterialSlotOffset(
@@ -140,6 +140,5 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         visibleIndex,
         slotOffset,
         triangleCount,
-        packedMaterials,
-        packedRanges);
+        deformMaterialIndex);
 }

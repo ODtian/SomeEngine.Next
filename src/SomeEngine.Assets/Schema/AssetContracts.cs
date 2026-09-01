@@ -109,6 +109,7 @@ public sealed partial class Mesh
     public Vec3? QuantOrigin { get; set; }
     public float QuantStep { get; set; }
     public IList<MeshRegion>? Regions { get; set; }
+    public IList<string>? MaterialGuids { get; set; }
 }
 
 /// <summary>
@@ -502,18 +503,17 @@ public enum ClusterShaderOperationRole : byte
     RasterDeformBinningCount = 7,
     RasterDeformBinningReserve = 8,
     RasterDeformBinningScatter = 9,
-    DeformCachePopulate = 10,
-    SoftwareVisibilityRaster = 11,
-    HardwareVisibilityRaster = 12,
-    SoftwareDepthMerge = 13,
-    HiZInitialize = 14,
-    HiZReduce = 15,
-    HiZReducePair = 16,
-    MaterialBinningReset = 17,
-    MaterialBinningCount = 18,
-    MaterialBinningReserve = 19,
-    MaterialBinningScatter = 20,
-    VisibilityResolve = 21,
+    SoftwareVisibilityRaster = 10,
+    HardwareVisibilityRaster = 11,
+    SoftwareDepthMerge = 12,
+    HiZInitialize = 13,
+    HiZReduce = 14,
+    HiZReducePair = 15,
+    MaterialBinningReset = 16,
+    MaterialBinningCount = 17,
+    MaterialBinningReserve = 18,
+    MaterialBinningScatter = 19,
+    VisibilityResolve = 20,
 }
 
 public enum ClusterBoundsSupport : byte

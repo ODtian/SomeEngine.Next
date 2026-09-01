@@ -101,6 +101,8 @@ AssetGuid clusterPipelineGuid = GenerateClusterPipeline(project);
 AssetGuid defaultPbrMaterialGuid = GenerateMaterialTemplate(
     project,
     "DefaultPBR",
+    deformShaderGuid: ResolveRequired(project, "assets/Shaders/cluster_deform.slang"),
+    deformEntryPoint: "CSDeformWave",
     shadeShaderGuid: ResolveRequired(project, "assets/Shaders/cluster_shade_material.slang"),
     shadeEntryPoint: "CSMaterialShadeCached",
     defaultWhiteTextureGuid,
@@ -111,6 +113,8 @@ AssetGuid defaultPbrMaterialGuid = GenerateMaterialTemplate(
 _ = GenerateMaterialTemplate(
     project,
     "TestUnlit_1",
+    deformShaderGuid: ResolveRequired(project, "assets/Shaders/cluster_deform.slang"),
+    deformEntryPoint: "CSDeformWave",
     shadeShaderGuid: ResolveRequired(project, "assets/Shaders/cluster_shade_unlit.slang"),
     shadeEntryPoint: "CSUnlitShadeCached",
     defaultWhiteTextureGuid,
@@ -328,6 +332,8 @@ static uint PackRgba(byte r, byte g, byte b, byte a)
 static AssetGuid GenerateMaterialTemplate(
     AssetProject project,
     string name,
+    AssetGuid deformShaderGuid,
+    string deformEntryPoint,
     AssetGuid shadeShaderGuid,
     string shadeEntryPoint,
     AssetGuid defaultWhiteTextureGuid,
@@ -345,6 +351,11 @@ static AssetGuid GenerateMaterialTemplate(
             Name = name,
             Passes =
             [
+                new PassEntry
+                {
+                    Shader = Shader(deformShaderGuid, deformEntryPoint, ShaderStage.Compute),
+                    Tags = [new TagEntry { Name = Material.DeformPassTag }],
+                },
                 new PassEntry
                 {
                     Shader = Shader(shadeShaderGuid, shadeEntryPoint, ShaderStage.Compute),
@@ -404,10 +415,6 @@ static AssetGuid GenerateClusterPipeline(AssetProject project)
                 ClusterShaderOperationRole.RasterDeformBinningScatter,
                 ResolveRequired(project, "assets/Shaders/cluster_bin_scatter.slang"),
                 "ScatterBins"),
-            ComputeOperation(
-                ClusterShaderOperationRole.DeformCachePopulate,
-                ResolveRequired(project, "assets/Shaders/cluster_deform.slang"),
-                "CSDeformWave"),
             ComputeOperation(
                 ClusterShaderOperationRole.SoftwareVisibilityRaster,
                 ResolveRequired(project, "assets/Shaders/sw_raster.slang"),

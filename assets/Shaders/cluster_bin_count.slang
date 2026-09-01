@@ -60,15 +60,13 @@ void CountRasterBatches(
 void CountDeformCluster(
     uint slotOffset,
     uint triangleCount,
-    uint packedMaterials,
-    uint packedRanges)
+    uint deformMaterialIndex)
 {
     if (triangleCount == 0u)
         return;
-    uint material = LocalMaterial(packedMaterials, packedRanges, 0u);
     CountDeform(
         DeformBinMeta,
-        DeformKey(DeformSlots, Uniforms, slotOffset, material));
+        DeformKey(DeformSlots, Uniforms, slotOffset, deformMaterialIndex));
 }
 
 [shader("compute")]
@@ -94,6 +92,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
     CacheOffsetsWrite[visibleIndex] = CACHE_OFFSET_OVERFLOW;
     uint vrbInfo;
     uint triangleCount;
+    uint deformMaterialIndex;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
@@ -101,6 +100,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         entry,
         vrbInfo,
         triangleCount,
+        deformMaterialIndex,
         packedMaterials,
         packedRanges);
     uint slotOffset = LoadClusterMaterialSlotOffset(
@@ -116,5 +116,5 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         packedMaterials,
         packedRanges,
         isSoftware);
-    CountDeformCluster(slotOffset, triangleCount, packedMaterials, packedRanges);
+    CountDeformCluster(slotOffset, triangleCount, deformMaterialIndex);
 }

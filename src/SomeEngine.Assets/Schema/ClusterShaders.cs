@@ -88,7 +88,6 @@ public partial class ClusterShaders
         => new($"Cluster render asset '{path}' {message}");
 
     public static bool IsPositionOperation(ClusterShaderOperationRole role) => role is
-        ClusterShaderOperationRole.DeformCachePopulate or
         ClusterShaderOperationRole.SoftwareVisibilityRaster or
         ClusterShaderOperationRole.HardwareVisibilityRaster or
         ClusterShaderOperationRole.VisibilityResolve;

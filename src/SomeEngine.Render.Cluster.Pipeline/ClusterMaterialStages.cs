@@ -7,7 +7,8 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 internal readonly record struct ClusterDeformCompatibilityKey(
     ShaderProgram Program,
-    uint StageAbiRevision);
+    ShaderEntryPoint EntryPoint,
+    string Target);
 
 internal readonly record struct ClusterRasterCompatibilityKey(
     ShaderProgram Program,
@@ -19,39 +20,144 @@ internal readonly record struct ClusterShadeCompatibilityKey(
     string Target);
 
 /// <summary>Owns deform-only compatibility grouping and its material-slot mapping.</summary>
-internal sealed class ClusterDeformStages
+internal sealed class ClusterDeformStages : IDisposable
 {
-    private readonly ClusterDeformCompatibilityKey _key;
+    internal const string Target = "cluster.deform.eval";
 
-    internal ClusterDeformStages(ClusterComputePipeline pipeline)
+    private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
+    private readonly Dictionary<ClusterDeformCompatibilityKey, ClusterComputePipeline> _pipelines = [];
+    private bool _disposed;
+
+    internal ClusterDeformStages(IGraphicsBackend backend, Device device)
     {
-        ArgumentNullException.ThrowIfNull(pipeline);
-        _key = new ClusterDeformCompatibilityKey(pipeline.Program, StageAbiRevision: 1);
+        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
+        _device = device ?? throw new ArgumentNullException(nameof(device));
     }
 
     internal ClusterDeformStageSet Resolve(ClusterMaterialAssignmentSet assignments)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(assignments);
-        return new ClusterDeformStageSet(
-            _key,
-            new uint[checked((int)assignments.SlotCapacity)]);
+        ReadOnlySpan<Material> materialSlots = assignments.Slots.Span;
+        var invocations = new List<ClusterDeformInvocation>();
+        var invocationByCompatibility = new Dictionary<MaterialDeformCompatibility, uint>();
+        var slots = new uint[checked((int)assignments.SlotCapacity)];
+
+        for (int slot = 0; slot < materialSlots.Length; slot++)
+        {
+            Material material = materialSlots[slot];
+            MaterialDeformCompatibility compatibility = material.RequireDeformCompatibility();
+            if (!invocationByCompatibility.TryGetValue(compatibility, out uint invocationIndex))
+            {
+                invocationIndex = checked((uint)invocations.Count);
+                invocationByCompatibility.Add(compatibility, invocationIndex);
+                invocations.Add(CreateInvocation(material, compatibility));
+            }
+            slots[slot] = invocationIndex;
+        }
+
+        return new ClusterDeformStageSet(slots, [.. invocations]);
+    }
+
+    private ClusterDeformInvocation CreateInvocation(
+        Material material,
+        MaterialDeformCompatibility compatibility)
+    {
+        ShaderRef shaderReference = ResolveEntry(material);
+        Shader shader = shaderReference.Asset ?? throw new InvalidDataException(
+            $"Material '{material.Name}' has no resolved deform shader asset.");
+        if (!ClusterStageTargets.HasTarget(shader, compatibility.EntryPoint, Target))
+        {
+            throw new InvalidDataException(
+                $"Material '{material.Name}' deform entry '{compatibility.EntryPoint}' " +
+                $"does not implement '{Target}'.");
+        }
+        CookedShaderEntry cooked = shader.RequireEntry(
+            _device.Capabilities.ShaderTarget,
+            compatibility.EntryPoint,
+            ShaderStage.Compute);
+        var key = new ClusterDeformCompatibilityKey(cooked.Program, cooked.EntryPoint, Target);
+        if (!_pipelines.TryGetValue(key, out ClusterComputePipeline? pipeline))
+        {
+            pipeline = ClusterComputePipeline.Create(
+                _backend,
+                _device,
+                cooked,
+                $"Cluster deform {compatibility.EntryPoint}");
+            _pipelines.Add(key, pipeline);
+        }
+        return new ClusterDeformInvocation(compatibility, key, pipeline);
+    }
+
+    private static ShaderRef ResolveEntry(Material material)
+    {
+        ShaderRef? selected = null;
+        foreach (PassEntry pass in material.Passes ?? [])
+        {
+            if (pass.Tags?.Any(static tag =>
+                    string.Equals(tag.Name, Material.DeformPassTag, StringComparison.Ordinal)) != true)
+            {
+                continue;
+            }
+            if (selected is not null)
+                throw new InvalidDataException($"Material '{material.Name}' has multiple deform passes.");
+            selected = pass.Shader;
+        }
+        return selected ?? throw new InvalidDataException(
+            $"Material '{material.Name}' has no deform pass.");
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        List<Exception>? failures = null;
+        foreach (ClusterComputePipeline pipeline in _pipelines.Values)
+        {
+            try { pipeline.Dispose(); }
+            catch (Exception failure) { (failures ??= []).Add(failure); }
+        }
+        _pipelines.Clear();
+        _disposed = true;
+        if (failures is not null)
+            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
     }
 }
 
 internal sealed class ClusterDeformStageSet
 {
-    internal ClusterDeformStageSet(
-        ClusterDeformCompatibilityKey key,
-        uint[] slots)
+    private readonly ClusterDeformInvocation[] _invocations;
+
+    internal ClusterDeformStageSet(uint[] slots, ClusterDeformInvocation[] invocations)
     {
-        Key = key;
         Slots = slots;
+        _invocations = invocations;
     }
 
-    internal ClusterDeformCompatibilityKey Key { get; }
     internal ReadOnlyMemory<uint> Slots { get; }
-    internal uint BinCount => 1;
+    internal IReadOnlyList<ClusterDeformInvocation> Invocations => _invocations;
+    internal uint BinCount => checked((uint)_invocations.Length);
+
+    internal bool HasSameTopology(ClusterDeformStageSet other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (!Slots.Span.SequenceEqual(other.Slots.Span) ||
+            _invocations.Length != other._invocations.Length)
+        {
+            return false;
+        }
+        for (int index = 0; index < _invocations.Length; index++)
+            if (_invocations[index].Key != other._invocations[index].Key)
+                return false;
+        return true;
+    }
 }
+
+internal sealed record ClusterDeformInvocation(
+    MaterialDeformCompatibility CookCompatibility,
+    ClusterDeformCompatibilityKey Key,
+    ClusterComputePipeline Pipeline);
 
 /// <summary>Owns raster-only compatibility grouping and its material-slot mapping.</summary>
 internal sealed class ClusterRasterStages
@@ -174,7 +280,7 @@ internal sealed class ClusterShadeStages : IDisposable
             if (shaderReference.Stage != ShaderStage.Compute ||
                 string.IsNullOrWhiteSpace(shaderReference.EntryPoint) ||
                 shaderReference.Asset is not { } shader ||
-                !HasTarget(shader, shaderReference.EntryPoint, Target))
+                !ClusterStageTargets.HasTarget(shader, shaderReference.EntryPoint, Target))
             {
                 continue;
             }
@@ -191,23 +297,6 @@ internal sealed class ClusterShadeStages : IDisposable
             ? (selectedShader, selectedEntry)
             : throw new InvalidDataException(
                 $"Material '{material.Name}' has no final cooked '{Target}' implementation.");
-    }
-
-    private static bool HasTarget(Shader shader, string entryPoint, string target)
-    {
-        foreach (ShaderEntryPointAttribute attribute in shader.EntryPointAttributes ?? [])
-        {
-            if (!string.Equals(attribute.Name, "MaterialTarget", StringComparison.Ordinal) ||
-                attribute.Args is not { Count: > 0 } args ||
-                !args.Contains(target, StringComparer.Ordinal) ||
-                !shader.TryEntry(attribute, entryPoint, out ShaderEntryPoint reflected) ||
-                reflected.Stage != SlangStage.Compute)
-            {
-                continue;
-            }
-            return true;
-        }
-        return false;
     }
 
     private static ScalarLayout ResolveScalarLayout(Shader shader)
@@ -463,3 +552,23 @@ internal readonly record struct ClusterLinkedStageResource(
     string Name,
     ResourceBindingType Type,
     uint Element);
+
+internal static class ClusterStageTargets
+{
+    internal static bool HasTarget(Shader shader, string entryPoint, string target)
+    {
+        foreach (ShaderEntryPointAttribute attribute in shader.EntryPointAttributes ?? [])
+        {
+            if (!string.Equals(attribute.Name, "MaterialTarget", StringComparison.Ordinal) ||
+                attribute.Args is not { Count: > 0 } args ||
+                !args.Contains(target, StringComparer.Ordinal) ||
+                !shader.TryEntry(attribute, entryPoint, out ShaderEntryPoint reflected) ||
+                reflected.Stage != SlangStage.Compute)
+            {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+}

@@ -496,6 +496,22 @@ public sealed class ClusterPublicationTests
         Assert.True(manager.TryGetPublishedRoot(handle, out _));
     }
 
+    [Fact]
+    public async Task ExplicitDeformMaterialIndexInPackedCountsIsAccepted()
+    {
+        var manager = new ClusterMeshes(PageAllocationBytes);
+        Mesh asset = MeshWithBvh("ExplicitDeform", Leaf());
+        GPUCluster cluster = ReadCluster(asset);
+        cluster.PackedCounts |= 17u << 24;
+        WriteCluster(asset, cluster);
+
+        ClusterMeshRegistration registration = await manager.AddAuthoredMeshAsync(asset);
+
+        Assert.Equal(1u, registration.PageCount);
+        Assert.True(manager.PublishPending());
+        Assert.True(manager.TryGetPublishedRoot(registration.Mesh, out _));
+    }
+
     [Theory]
     [InlineData(0u)]
     [InlineData(1u)]

@@ -336,8 +336,7 @@ public sealed class AssetArchitectureAcceptanceTests
     }
 
     private static bool IsPositionOperation(ClusterShaderOperationRole role)
-        => role is ClusterShaderOperationRole.DeformCachePopulate
-            or ClusterShaderOperationRole.SoftwareVisibilityRaster
+        => role is ClusterShaderOperationRole.SoftwareVisibilityRaster
             or ClusterShaderOperationRole.HardwareVisibilityRaster
             or ClusterShaderOperationRole.VisibilityResolve;
 

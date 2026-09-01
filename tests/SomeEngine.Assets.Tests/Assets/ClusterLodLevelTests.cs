@@ -10,7 +10,12 @@ public sealed class ClusterLodLevelTests
     public void ProcessedIcoSphereContainsLowerLodLevels()
     {
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(5);
-        var meshAsset = ClusterBuilder.ProcessRaw(vertices, attributes, indices, new List<string>(), "TestLOD");
+        var meshAsset = ClusterBuilder.ProcessRaw(
+            vertices,
+            attributes,
+            indices,
+            ClusterBuilderTestMaterials.Slots(),
+            "TestLOD");
 
         (int[] levelCounts, int maxLevel, _) = ReadLevelCounts(meshAsset.Payload!.Value);
 

@@ -76,6 +76,7 @@ public partial class Mesh : IDisposable, IAsyncDisposable
         current.QuantOrigin = replacement.QuantOrigin;
         current.QuantStep = replacement.QuantStep;
         current.Regions = replacement.Regions;
+        current.MaterialGuids = replacement.MaterialGuids;
         current.Revision = checked(current.Revision + 1);
         previous?.Dispose();
         return ValueTask.CompletedTask;

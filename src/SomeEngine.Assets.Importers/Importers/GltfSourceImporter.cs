@@ -189,7 +189,9 @@ public sealed partial class GltfSourceImporter : IAssetImporter
     {
         return new ImportedMaterialInfo(
             index,
-            new MeshMaterialSlot(AssetGuid.Parse(asset.AssetGuid!)),
+            new MeshMaterialSlot(
+                AssetGuid.Parse(asset.AssetGuid!),
+                asset.RequireDeformCompatibility()),
             ImportedAsset.Create(asset, exportPath.SubAssetKey, exportPath.OutputPath));
     }
 
@@ -307,7 +309,8 @@ public sealed partial class GltfSourceImporter
             .Select(index =>
                 index >= 0 && index < importedMaterials.Count
                     ? importedMaterials[index].MeshMaterialSlot
-                    : new MeshMaterialSlot(AssetGuid.Empty))
+                    : throw new InvalidDataException(
+                        "Every imported mesh primitive must reference a material with a deform implementation."))
             .ToArray();
     }
 

@@ -20,20 +20,30 @@ public static partial class ClusterBuilder
         Vector3[] rawPos,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,
-        List<string> regionNames,
+        IReadOnlyList<MeshMaterialSlot> materialSlots,
         string name)
     {
+        if (materialSlots.Count is 0 or > 256)
+            throw new ArgumentOutOfRangeException(
+                nameof(materialSlots),
+                "Cluster meshes require between one and 256 material/deform cook slots.");
         using FileStream stream = CreatePageStream();
         var scratch = new RawMeshScratch(rawPos.Length);
         try
         {
             PreparedRawMesh prepared = PrepareRawMesh(rawPos, rawAttributes, rawIndices, scratch);
-            MeshletBuild meshletBuild = BuildMeshletData(prepared);
+            MeshletBuild meshletBuild = BuildMeshletData(prepared, materialSlots);
             SortMeshlets(meshletBuild.Meshlets, meshletBuild.Quantization);
             List<VertexAttributeDescriptor> descriptors = CreateVertexDescriptors(prepared.Attributes);
             PageBuildOutput pageOutput = WriteMeshPages(stream, scratch.PageBuffer, prepared, meshletBuild, descriptors);
             long bvhOffset = WriteBvh(stream, pageOutput.ClusterInfos);
-            return CreateMeshAsset(name, regionNames, stream, meshletBuild.Quantization, descriptors, bvhOffset);
+            return CreateMeshAsset(
+                name,
+                materialSlots,
+                stream,
+                meshletBuild.Quantization,
+                descriptors,
+                bvhOffset);
         }
         finally
         {
@@ -164,16 +174,22 @@ public static partial class ClusterBuilder
         }
     }
 
-    private static MeshletBuild BuildMeshletData(PreparedRawMesh prepared)
+    private static MeshletBuild BuildMeshletData(
+        PreparedRawMesh prepared,
+        IReadOnlyList<MeshMaterialSlot> materialSlots)
     {
         var meshlets = new List<BuilderMeshlet>();
         var globalIndices = new List<uint>();
         float[] materialIndices = ExtractMaterialIndices(prepared);
+        MaterialDeformCompatibility[] deformCompatibilities = materialSlots
+            .Select(static slot => slot.DeformCompatibility)
+            .ToArray();
         BuildClusterLod(
             ClusterLodConfig.GetDefault() with { ClusterSpatial = true },
             new ReadOnlySpan<Vector3>(prepared.Positions, 0, prepared.VertexCount),
             new ReadOnlySpan<uint>(prepared.Indices, 0, prepared.IndexCount),
             materialIndices,
+            deformCompatibilities,
             meshlets,
             globalIndices);
         RemoveInternalMaterialAttribute(prepared.Attributes);
@@ -290,7 +306,7 @@ public static partial class ClusterBuilder
 
     private static Mesh CreateMeshAsset(
         string name,
-        List<string> regionNames,
+        IReadOnlyList<MeshMaterialSlot> materialSlots,
         FileStream stream,
         QuantizationInfo quantization,
         List<VertexAttributeDescriptor> descriptors,
@@ -305,7 +321,12 @@ public static partial class ClusterBuilder
             BvhOffset = (ulong)bvhOffset,
             QuantOrigin = CreateVec3(quantization.Origin),
             QuantStep = quantization.Step,
-            Regions = CreateMeshRegions(regionNames),
+            Regions = CreateMeshRegions(materialSlots.Count),
+            MaterialGuids = materialSlots
+                .Where(static slot => !slot.MaterialGuid.IsEmpty)
+                .Select(static slot => slot.MaterialGuid.ToFlatString())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
         };
         stream.Seek(0, SeekOrigin.Begin);
         meshAsset.Payload!.Value.Span.Clear();
@@ -333,8 +354,13 @@ public static partial class ClusterBuilder
         };
     }
 
-    private static MeshRegion[] CreateMeshRegions(List<string> regionNames)
-        => regionNames.Select(static regionName => new MeshRegion { Name = regionName }).ToArray();
+    private static MeshRegion[] CreateMeshRegions(int count)
+    {
+        var regions = new MeshRegion[count];
+        for (int index = 0; index < count; index++)
+            regions[index] = new MeshRegion { Name = $"region_{index}" };
+        return regions;
+    }
 
     private sealed class RawMeshScratch
     {
@@ -722,7 +748,10 @@ public static partial class ClusterBuilder
                 VertexStart = (ushort)starts.Vertex,
                 TriangleStart = (ushort)starts.Triangle,
                 GroupId = (short)meshlet.GroupId,
-                PackedCounts = PackedCounts(encoded.VertexCount, meshlet.Level),
+                PackedCounts = PackedCounts(
+                    encoded.VertexCount,
+                    meshlet.Level,
+                    meshlet.DeformMaterialIndex),
                 PackedMaterials = PackedMaterials(meshlet),
                 PackedRanges = PackedRanges(meshlet),
                 MaterialTableOffset = 0xFFFFFFFF,
@@ -754,10 +783,11 @@ public static partial class ClusterBuilder
                     65535));
         }
 
-        private uint PackedCounts(int vertexCount, int level)
+        private uint PackedCounts(int vertexCount, int level, byte deformMaterialIndex)
             => (uint)vertexCount
                 | ((uint)(LocalIndices.Count / 3) << 8)
-                | ((uint)(byte)level << 16);
+                | ((uint)(byte)level << 16)
+                | ((uint)deformMaterialIndex << 24);
 
         private static uint PackedMaterials(BuilderMeshlet meshlet)
             => (uint)meshlet.Mat0 | ((uint)meshlet.Mat1 << 8) | ((uint)meshlet.Mat2 << 16);

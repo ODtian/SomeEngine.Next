@@ -40,7 +40,7 @@ public struct GPUCluster
     // 42: short GroupId
     public short GroupId;
 
-    // 44: uint PackedCounts — [VertexCount:8][TriangleCount:8][LODLevel:8][Pad:8]
+    // 44: uint PackedCounts — [VertexCount:8][TriangleCount:8][LODLevel:8][DeformMaterialIndex:8]
     public uint PackedCounts;
 
     // 48: uint PackedMaterials — [mat0:8][mat1:8][mat2:8][Pad:8]

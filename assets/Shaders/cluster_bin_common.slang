@@ -45,6 +45,7 @@ void ReadClusterBinData(
     uint4 entry,
     out uint vrbInfo,
     out uint triangleCount,
+    out uint deformMaterialIndex,
     out uint packedMaterials,
     out uint packedRanges)
 {
@@ -52,6 +53,7 @@ void ReadClusterBinData(
         entry.x + pageHeap.Load(entry.x + 16u) + entry.y * GPU_CLUSTER_STRIDE_BYTES;
     uint packedCounts = pageHeap.Load(clusterOffset + 44u);
     triangleCount = (packedCounts >> 8u) & 0xFFu;
+    deformMaterialIndex = packedCounts >> 24u;
     packedMaterials = pageHeap.Load(clusterOffset + 48u);
     packedRanges = pageHeap.Load(clusterOffset + 52u);
     vrbInfo = pageHeap.Load(clusterOffset + 60u);

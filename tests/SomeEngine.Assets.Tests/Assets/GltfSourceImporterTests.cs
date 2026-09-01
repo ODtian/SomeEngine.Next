@@ -36,7 +36,7 @@ public class GltfSourceImporterTests
     }
 
     [Fact]
-    public async Task Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndMeshRegionsWithoutMaterialDependencies()
+    public async Task Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndDeformDependencies()
     {
         string dir = CreateTempDir();
 
@@ -92,12 +92,16 @@ public class GltfSourceImporterTests
             Assert.NotNull(bodyAsset.Regions);
             Assert.Single(bodyAsset.Regions);
             Assert.Equal("region_0", bodyAsset.Regions[0].Name);
+            Assert.Equal([maskedMaterial.AssetGuid.ToFlatString()], bodyAsset.MaterialGuids);
+            Assert.Equal([maskedMaterial.AssetGuid], bodyMesh.Dependencies);
             Assert.NotNull(bodyMeshMeta);
             Assert.Equal(GltfSourceImporter.ImporterVersion, bodyMeshMeta!.ImporterVersion);
 
             Assert.NotNull(eyesAsset.Regions);
             Assert.Single(eyesAsset.Regions);
             Assert.Equal("region_0", eyesAsset.Regions[0].Name);
+            Assert.Equal([transparentMaterial.AssetGuid.ToFlatString()], eyesAsset.MaterialGuids);
+            Assert.Equal([transparentMaterial.AssetGuid], eyesMesh.Dependencies);
 
             // Verify texture sub-assets are produced and texture bindings use GUIDs
             var textureKeys = first.Where(asset => asset.SubAssetKey.StartsWith("texture:")).ToArray();
@@ -243,6 +247,16 @@ public class GltfSourceImporterTests
                             Json = "{\"Layer\":5}",
                         },
                     ],
+                },
+                new PassEntry
+                {
+                    Shader = new ShaderRef
+                    {
+                        AssetGuid = shaderGuid,
+                        EntryPoint = "deform",
+                        Stage = ShaderStage.Compute,
+                    },
+                    Tags = [new TagEntry { Name = Material.DeformPassTag }],
                 },
             ],
             Textures = [],

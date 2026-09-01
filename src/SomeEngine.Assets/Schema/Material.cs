@@ -6,6 +6,8 @@ namespace SomeEngine.Assets.Schema;
 [global::SomeEngine.Assets.Asset(".material.asset")]
 public partial class Material
 {
+    public const string DeformPassTag = "deform";
+
     private MaterialSlotDefinition[]? _slotDefinitions;
     private object?[]? _slotValues;
     private ulong[]? _slotRevisions;
@@ -19,6 +21,32 @@ public partial class Material
 
     [BinaryIgnore]
     public int SlotCount => EnsureSlots().Length;
+
+    public MaterialDeformCompatibility RequireDeformCompatibility()
+    {
+        ShaderRef? selected = null;
+        foreach (PassEntry pass in Passes ?? [])
+        {
+            if (pass.Tags?.Any(static tag =>
+                    string.Equals(tag.Name, DeformPassTag, StringComparison.Ordinal)) != true)
+            {
+                continue;
+            }
+            if (selected is not null)
+            {
+                throw new InvalidDataException(
+                    $"Material '{Name}' has more than one deform implementation.");
+            }
+            selected = pass.Shader;
+        }
+
+        AssetGuid shader = ShaderRef.Require(
+            selected,
+            $"Material '{Name}'",
+            "deform pass",
+            ShaderStage.Compute);
+        return new MaterialDeformCompatibility(shader, selected!.EntryPoint!);
+    }
 
     public object? GetSlotValue(uint slot)
     {
@@ -237,3 +265,8 @@ public partial class Material
 }
 
 public readonly record struct MaterialSlotDefinition(uint Slot, string Name, Type ValueType);
+
+/// <summary>Stable cook identity of one Material's deform implementation.</summary>
+public readonly record struct MaterialDeformCompatibility(
+    AssetGuid ShaderGuid,
+    string EntryPoint);

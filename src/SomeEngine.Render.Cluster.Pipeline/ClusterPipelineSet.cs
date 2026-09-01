@@ -82,9 +82,6 @@ internal sealed class ClusterPipelineSet : IDisposable
                 RasterDeformBinScatter = Compute(
                     ClusterShaderOperationRole.RasterDeformBinningScatter,
                     "Cluster raster/deform bins scatter");
-                DeformCachePopulate = Compute(
-                    ClusterShaderOperationRole.DeformCachePopulate,
-                    "Cluster deform cache populate");
                 SoftwareRaster = Compute(
                     ClusterShaderOperationRole.SoftwareVisibilityRaster,
                     "Cluster software visibility raster");
@@ -151,7 +148,6 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline RasterDeformBinCount { get; }
     internal ClusterComputePipeline RasterDeformBinReserve { get; }
     internal ClusterComputePipeline RasterDeformBinScatter { get; }
-    internal ClusterComputePipeline DeformCachePopulate { get; }
     internal ClusterComputePipeline SoftwareRaster { get; }
     internal ClusterRasterPipeline HardwareRaster { get; }
     internal ClusterRasterPipeline DepthMerge { get; }

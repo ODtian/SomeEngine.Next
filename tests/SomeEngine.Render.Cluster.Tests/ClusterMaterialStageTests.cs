@@ -1,4 +1,5 @@
 using System.Reflection;
+using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
@@ -45,6 +46,30 @@ public sealed class ClusterMaterialStageTests
         Assert.DoesNotContain(shadeFields, static type =>
             type.Name.Contains("Descriptor", StringComparison.Ordinal) ||
             type.Name.Contains("Binding", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Material_deform_compatibility_depends_only_on_the_final_shader_entry()
+    {
+        AssetGuid shader = AssetGuid.New();
+        Material first = DeformMaterial(shader, "CSDeformWave");
+        Material second = DeformMaterial(shader, "CSDeformWave");
+        second.Scalars =
+        [
+            new ScalarParam
+            {
+                Name = "Amplitude",
+                Value = new ParamValue(new FloatVal { V = 3.0f }),
+            },
+        ];
+        Material differentEntry = DeformMaterial(shader, "CSDeformStatic");
+
+        Assert.Equal(
+            first.RequireDeformCompatibility(),
+            second.RequireDeformCompatibility());
+        Assert.NotEqual(
+            first.RequireDeformCompatibility(),
+            differentEntry.RequireDeformCompatibility());
     }
 
     [Fact]
@@ -173,6 +198,24 @@ public sealed class ClusterMaterialStageTests
         [material],
         [],
         []);
+
+    private static Material DeformMaterial(AssetGuid shader, string entryPoint) => new()
+    {
+        Name = entryPoint,
+        Passes =
+        [
+            new PassEntry
+            {
+                Tags = [new TagEntry { Name = Material.DeformPassTag }],
+                Shader = new ShaderRef
+                {
+                    AssetGuid = shader.ToFlatString(),
+                    EntryPoint = entryPoint,
+                    Stage = ShaderStage.Compute,
+                },
+            },
+        ],
+    };
 
     private sealed class MutableMaterial : Material
     {

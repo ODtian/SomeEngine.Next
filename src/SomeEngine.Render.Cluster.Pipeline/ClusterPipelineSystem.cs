@@ -118,8 +118,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
             _viewQuery = view;
             EnsurePipelineResources();
-            _deformStages = new ClusterDeformStages(_pipelines!.DeformCachePopulate);
-            _rasterStages = new ClusterRasterStages(_pipelines.HardwareRaster);
+            _deformStages = new ClusterDeformStages(_backend, _device);
+            _rasterStages = new ClusterRasterStages(_pipelines!.HardwareRaster);
             _shadeStages = new ClusterShadeStages(_backend, _device);
             _history = new ClusterCullingHistory(_backend, _device);
             _created = true;
@@ -130,6 +130,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _history = null;
             _shadeStages?.Dispose();
             _shadeStages = null;
+            _deformStages?.Dispose();
             _deformStages = null;
             _rasterStages = null;
             _pipelines?.Dispose();
@@ -169,6 +170,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (_graphInstalled)
         {
             if (_installedMaterialTopologyVersion != assignments.TopologyVersion ||
+                _installedDeformStages is null ||
+                !_installedDeformStages.HasSameTopology(deformStages) ||
                 _installedShadeStages is null ||
                 !_installedShadeStages.HasSameTopology(shadeStages))
             {
@@ -442,8 +445,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Release(ref _viewQuery, context.World, ref failures);
         Dispose(ref _uploads, ref failures);
         Dispose(ref _shadeStages, ref failures);
+        Dispose(ref _deformStages, ref failures);
         DisposeMaterialSamplers(ref failures);
-        _deformStages = null;
         _rasterStages = null;
         Dispose(ref _pipelines, ref failures);
         Dispose(ref _history, ref failures);

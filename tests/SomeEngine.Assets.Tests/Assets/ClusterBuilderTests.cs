@@ -62,7 +62,12 @@ public class ClusterBuilderTests
         };
 
         // 2. Run Builder
-        var asset = ClusterBuilder.ProcessRaw(positions, rawAttributes, indices, new List<string>(), "TestPlane");
+        var asset = ClusterBuilder.ProcessRaw(
+            positions,
+            rawAttributes,
+            indices,
+            ClusterBuilderTestMaterials.Slots(),
+            "TestPlane");
 
         // 3. Assertions
         Assert.NotNull(asset.Payload);
@@ -95,7 +100,12 @@ public class ClusterBuilderTests
             new("TEXCOORD_0", uvs, 2, ValueType.Float16, 2, false),   // 4 bytes/vertex
         };
 
-        var asset = ClusterBuilder.ProcessRaw(positions, rawAttributes, indices, new List<string>(), "TestSoA");
+        var asset = ClusterBuilder.ProcessRaw(
+            positions,
+            rawAttributes,
+            indices,
+            ClusterBuilderTestMaterials.Slots(),
+            "TestSoA");
 
         Assert.NotNull(asset.Payload);
         var span = asset.Payload.Value.Span;
@@ -158,7 +168,12 @@ public class ClusterBuilderTests
             new("TEXCOORD_0", uvs, 2, ValueType.Float16, 2, false),
         };
 
-        var asset = ClusterBuilder.ProcessRaw(positions, rawAttributes, indices, new List<string>(), "TestSoAWithTangent");
+        var asset = ClusterBuilder.ProcessRaw(
+            positions,
+            rawAttributes,
+            indices,
+            ClusterBuilderTestMaterials.Slots(),
+            "TestSoAWithTangent");
 
         Assert.NotNull(asset.Payload);
         var span = asset.Payload.Value.Span;
@@ -208,7 +223,7 @@ public class ClusterBuilderTests
             positions,
             rawAttributes,
             indices,
-            new List<string>(),
+            ClusterBuilderTestMaterials.Slots(),
             "UvSeam");
 
         Assert.NotNull(asset.Payload);
@@ -235,7 +250,7 @@ public class ClusterBuilderTests
             positions,
             new List<RawAttribute>(),
             indices,
-            new List<string>(),
+            ClusterBuilderTestMaterials.Slots(),
             "QuantizedBounds");
 
         Assert.NotNull(asset.Payload);
@@ -280,7 +295,9 @@ public class ClusterBuilderTests
         };
         var indices = new uint[] { 0, 1, 2 };
         var materialGuid = SomeEngine.Assets.AssetGuid.New();
-        var materialSlot = new MeshMaterialSlot(materialGuid);
+        var materialSlot = new MeshMaterialSlot(
+            materialGuid,
+            ClusterBuilderTestMaterials.Slot(0).DeformCompatibility);
 
         var asset = ClusterBuilder.ProcessRaw(
             positions,
@@ -292,6 +309,77 @@ public class ClusterBuilderTests
         Assert.NotNull(asset.Regions);
         Assert.Single(asset.Regions);
         Assert.Equal("region_0", asset.Regions[0].Name);
+    }
+
+    [Fact]
+    public void ProcessRaw_PartitionsEveryClusterByDeformCompatibility()
+    {
+        Vector3[] positions =
+        [
+            new(0, 0, 0),
+            new(1, 0, 0),
+            new(0, 1, 0),
+            new(10, 0, 0),
+            new(11, 0, 0),
+            new(10, 1, 0),
+        ];
+        uint[] indices = [0, 1, 2, 3, 4, 5];
+        var materialIndices = new RawAttribute(
+            "_MATERIAL_INDEX",
+            [0, 0, 0, 1, 1, 1],
+            1,
+            ValueType.UInt8,
+            1,
+            false);
+        MeshMaterialSlot[] materials =
+        [
+            ClusterBuilderTestMaterials.Slot(0),
+            ClusterBuilderTestMaterials.Slot(1),
+        ];
+
+        var asset = ClusterBuilder.ProcessRaw(
+            positions,
+            [materialIndices],
+            indices,
+            materials,
+            "MixedDeform");
+
+        ReadOnlySpan<byte> payload = asset.Payload!.Value.Span;
+        MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
+        ReadOnlySpan<GPUCluster> clusters = MemoryMarshal.Cast<byte, GPUCluster>(
+            payload.Slice(
+                checked((int)header.ClustersOffset),
+                checked((int)header.ClusterCount * GPUCluster.SizeInBytes)));
+        var explicitDeformMaterials = new HashSet<byte>();
+        foreach (ref readonly GPUCluster cluster in clusters)
+        {
+            byte deformMaterial = checked((byte)(cluster.PackedCounts >> 24));
+            explicitDeformMaterials.Add(deformMaterial);
+            byte material0 = checked((byte)cluster.PackedMaterials);
+            Assert.Equal(
+                materials[deformMaterial].DeformCompatibility,
+                materials[material0].DeformCompatibility);
+
+            uint triangleCount = (cluster.PackedCounts >> 8) & 0xFF;
+            uint range0End = cluster.PackedRanges & 0xFF;
+            uint range1End = (cluster.PackedRanges >> 8) & 0xFF;
+            if (range0End < triangleCount)
+            {
+                byte material1 = checked((byte)(cluster.PackedMaterials >> 8));
+                Assert.Equal(
+                    materials[deformMaterial].DeformCompatibility,
+                    materials[material1].DeformCompatibility);
+            }
+            if (range1End < triangleCount)
+            {
+                byte material2 = checked((byte)(cluster.PackedMaterials >> 16));
+                Assert.Equal(
+                    materials[deformMaterial].DeformCompatibility,
+                    materials[material2].DeformCompatibility);
+            }
+        }
+
+        Assert.Equal(new byte[] { 0, 1 }, explicitDeformMaterials.Order().ToArray());
     }
 
     private static List<Vector2> ReadHalf2Stream(

@@ -17,6 +17,36 @@ public sealed class ClusterShaderAbiTests
     private const string TestTintCanonicalId = "material.test.tint";
 
     [Fact]
+    public void Deform_binning_reads_the_explicit_cluster_material_index()
+    {
+        string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
+        string common = File.ReadAllText(Path.Combine(shaderDirectory, "cluster_bin_common.slang"));
+        string count = File.ReadAllText(Path.Combine(shaderDirectory, "cluster_bin_count.slang"));
+        string scatter = File.ReadAllText(Path.Combine(shaderDirectory, "cluster_bin_scatter.slang"));
+
+        Assert.Contains(
+            "deformMaterialIndex = packedCounts >> 24u",
+            common,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CountDeformCluster(slotOffset, triangleCount, deformMaterialIndex)",
+            count,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "deformMaterialIndex);",
+            scatter,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "LocalMaterial(packedMaterials, packedRanges, 0u)",
+            count,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "LocalMaterial(packedMaterials, packedRanges, 0u)",
+            scatter,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SharedInstanceLayoutsMatchGeneratedContractAndConsumersCompile()
     {
         string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");

@@ -43,6 +43,7 @@ public sealed partial class ClusterPipelineSystem
             RecordRasterPhase(
                 ref graph,
                 frame,
+                deformStages,
                 in declarationView,
                 frame.DrawArgs,
                 frame.ReadOffsetZero,
@@ -53,6 +54,7 @@ public sealed partial class ClusterPipelineSystem
             RecordRasterPhase(
                 ref graph,
                 frame,
+                deformStages,
                 in declarationView,
                 frame.Phase2DrawArgs,
                 frame.DrawArgs,
@@ -303,6 +305,7 @@ public sealed partial class ClusterPipelineSystem
     private void RecordRasterPhase(
         ref RenderGraphEdit graph,
         in FrameResources frame,
+        ClusterDeformStageSet deformStages,
         in RenderView view,
         GraphBufferId drawArgs,
         GraphBufferId readOffsetArgs,
@@ -509,7 +512,7 @@ public sealed partial class ClusterPipelineSystem
 
         RecordHardwareArgumentCopy(ref graph, frame, resetCacheAllocation);
 
-        RecordDeform(ref graph, frame, resetCacheAllocation);
+        RecordDeform(ref graph, frame, deformStages, resetCacheAllocation);
         RecordSoftwareRaster(ref graph, frame, in view, resetCacheAllocation);
         RecordDepthMerge(ref graph, frame, resetCacheAllocation);
         RecordHardwareRaster(ref graph, frame, in view, resetCacheAllocation);
@@ -552,10 +555,13 @@ public sealed partial class ClusterPipelineSystem
     private void RecordDeform(
         ref RenderGraphEdit graph,
         in FrameResources frame,
+        ClusterDeformStageSet deformStages,
         bool phaseOne)
     {
         for (uint bin = 0; bin < frame.DeformBinCount; bin++)
         {
+            ClusterDeformInvocation invocation =
+                deformStages.Invocations[checked((int)bin)];
             GraphBufferId pushConstants = UploadUniform(
                 ref graph,
                 new ClusterDeformUniforms
@@ -623,7 +629,7 @@ public sealed partial class ClusterPipelineSystem
                 phaseOne
                     ? "Cluster phase one deform bin"
                     : "Cluster phase two deform bin",
-                _pipelines!.DeformCachePopulate,
+                invocation.Pipeline,
                 passData,
                 bindingCount,
                 static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>

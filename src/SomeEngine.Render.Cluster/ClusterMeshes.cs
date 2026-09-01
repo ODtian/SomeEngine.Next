@@ -500,7 +500,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             ref readonly GPUCluster cluster = ref clusters[index];
             uint vertexCount = cluster.PackedCounts & 0xFF;
             uint triangleCount = (cluster.PackedCounts >> 8) & 0xFF;
-            if (vertexCount == 0 || triangleCount == 0 || (cluster.PackedCounts & 0xFF000000) != 0)
+            if (vertexCount == 0 || triangleCount == 0)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} has invalid encoded counts in cluster {index}.");
