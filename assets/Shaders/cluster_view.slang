@@ -31,4 +31,6 @@ struct ClusterViewUniforms
     float PrevP00;
     float PrevP11;
     float2 Pad3;
+
+    float4x4 ClipToWorld;
 };

@@ -2,22 +2,21 @@
 
 struct ResolveUniforms
 {
-    float4x4 ViewProj;
-    float4x4 View;
     uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
+    uint Pad0;
 };
 
 ConstantBuffer<ResolveUniforms> Uniforms;
 
-Texture2D<uint> VisBuffer;
-Texture2D<float> DepthBuffer;
+Texture2DArray<uint> VisBuffer;
+Texture2DArray<float> DepthBuffer;
 
 StructuredBuffer<DrawRequest> VisibleClusters;
 ByteAddressBuffer PageHeap;
 
-RWTexture2D<float4> OutputColor;
+RWTexture2DArray<float4> OutputColor;
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
 [ConservativeBounds("finite")]
@@ -25,7 +24,7 @@ RWTexture2D<float4> OutputColor;
 [numthreads(8, 8, 1)]
 void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-    uint2 pixelCoord = dispatchThreadID.xy;
+    uint3 pixelCoord = dispatchThreadID;
 
     if (pixelCoord.x >= Uniforms.ScreenWidth || pixelCoord.y >= Uniforms.ScreenHeight)
         return;
@@ -44,6 +43,8 @@ void CSResolve(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     // Look up the draw request
     DrawRequest req = VisibleClusters[visibleClusterIndex];
+    if (req.ViewIndex != pixelCoord.z)
+        return;
     uint pageOffset = req.PageOffset;
     uint clusterID = req.ClusterID;
     uint realInstanceID = req.InstanceID;

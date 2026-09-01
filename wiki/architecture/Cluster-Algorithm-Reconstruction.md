@@ -17,7 +17,8 @@ semantic operations rather than one field per legacy shader file. Its default op
    output;
 5. software and hardware visibility raster, depth merge, and HiZ construction;
 6. material binning and material shading;
-7. motion vectors, visibility resolve, temporal resolve, tone map, and presentation.
+7. explicit visibility, depth, and material-color capabilities consumed by independent lighting,
+   temporal, post-processing, or presentation features.
 
 Shader source paths and concrete entry-point names are authoring data. Runtime selects an
 operation by `ClusterShaderOperationRole`, resolves the referenced cooked shader through the
@@ -44,6 +45,37 @@ diagnostic evidence. The three evaluated designs and the D3D12/Vulkan measuremen
 The removed standalone `cluster_deform_binning.slang` was not the authority for this path. It was
 an unreferenced copy whose key calculation no longer matched the material-slot contract. The
 working deform-binning algorithm remains in the semantic raster/deform operation quartet.
+
+## Unified multi-view contract
+
+One retained Cluster graph records all views. A frame uploads one fixed-capacity
+`StructuredBuffer<ClusterViewUniforms>` and assigns each collected `RenderView` its packed-array
+index. Traversal dispatches instances on X and views on Y; pixel and HiZ passes dispatch view
+layers on Z. Candidate and visible records are `uint4` values whose fourth component is the view
+index. Raster/deform work is `uint3`, and shade work is `uint2`; both retain the same index through
+execution. The visibility, depth, material-color, software-depth, and HiZ resources are texture
+arrays with the pipeline's fixed `ViewCapacity`.
+
+Cluster never interprets an index as main, stereo, VSM, reflection, or another business role.
+Callers decide which `RenderView` values occupy the packed array and which output layers they
+consume. All active views currently share the retained output extent. Candidate storage is one
+bounded global arena shared across views, so overflow has the same ordinary bounded-work meaning
+as a single-view overflow; it does not select a view-specific fallback.
+
+Raster work generation is separate from raster command execution. Reset/count/reserve/scatter
+produces grouped bins, offsets, counts, and indirect arguments. A `ClusterRasterExecutor` selected
+when the pipeline is constructed supplies the software and hardware command callbacks captured by
+the retained graph. The default executor issues indirect dispatches and draws. Frame recording
+updates work data and view counts only; it performs no dynamic executor lookup. A replacement
+therefore changes real command-recording behavior without duplicating traversal, culling,
+deformation, or work generation.
+
+On 2026-09-01 the standard Runtime was exercised with two active `RenderView` entities against
+the D3D12 backend. The unified graph completed analysis, materialization, recording, and GPU
+submission for both view layers; the desktop automation session then encountered its known
+`IDXGISwapChain::Present` failure after submission. The committed ABI tests additionally require
+view indices on every candidate/visible/raster/deform/shade work shape and reject business-role
+branches in Cluster shader sources.
 
 ## Rejected copy-shaped implementation
 

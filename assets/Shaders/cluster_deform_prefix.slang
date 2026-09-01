@@ -11,7 +11,7 @@ struct DeformPrefixUniforms
 
 ConstantBuffer<DeformPrefixUniforms> Uniforms;
 StructuredBuffer<uint> DeformReserveCounters;
-StructuredBuffer<uint2> DeformBinnedClusterIndexBuffer;
+StructuredBuffer<uint3> DeformBinnedClusterIndexBuffer;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
 RWStructuredBuffer<uint2> DeformCacheRequests;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
@@ -41,7 +41,8 @@ void KeepPrefixBindingsAlive(uint lane)
 {
     if (Uniforms.MaxDeformCacheBytes == 0xFFFFFFFFu && lane == 0u)
     {
-        uint value = DeformReserveCounters[0] + DeformBinnedClusterIndexBuffer[0].x;
+        uint3 work = DeformBinnedClusterIndexBuffer[0];
+        uint value = DeformReserveCounters[0] + work.x + work.z;
         uint2 request = DeformCacheRequests[0];
         DeformCacheRequests[0] = request + uint2(value, 0u);
         DeformCachePrefixOffsets[0] = value;

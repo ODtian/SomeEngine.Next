@@ -27,7 +27,7 @@ cbuffer PushConstants : register(b100, space0)
 
 ByteAddressBuffer PageHeap;
 StructuredBuffer<uint4> VisibleClusters;
-StructuredBuffer<uint2> BinnedClusterIndexBuffer;
+StructuredBuffer<uint3> BinnedClusterIndexBuffer;
 StructuredBuffer<DeformBinEntry> DeformBinMeta;
 
 RWByteAddressBuffer      DeformCache;
@@ -156,7 +156,8 @@ void DeformKernel<TVE : IVertexEvaluate>(
             if (flatIndex >= binMeta.BinCount)
                 return;
             uint binnedIndex = binMeta.ClusterOffset + flatIndex;
-            uint visibleIndex = BinnedClusterIndexBuffer[binnedIndex].x;
+            uint3 work = BinnedClusterIndexBuffer[binnedIndex];
+            uint visibleIndex = work.x;
             uint4 request = VisibleClusters[visibleIndex];
             uint vertexBlobAddress;
             uint vertexBlobSize;
@@ -173,7 +174,7 @@ void DeformKernel<TVE : IVertexEvaluate>(
             uint vertexCount = packedCounts & 0xFFu;
             uint rawBytes = evaluator.getCacheByteSize(vertexCount);
             uint rawAlignment = evaluator.getCacheByteAlignment();
-            bool valid =
+            bool valid = request.w == work.z &&
                 vertexCount != 0u && vertexCount <= Uniforms.MaxClusterVertices &&
                 rawBytes != 0u && (rawBytes & 3u) == 0u &&
                 rawAlignment >= 4u && rawAlignment <= Uniforms.MaxDeformCacheBytes &&
@@ -201,12 +202,15 @@ void DeformKernel<TVE : IVertexEvaluate>(
         if (flatIndex >= binMeta.BinCount)
             continue;
         uint binnedIndex = binMeta.ClusterOffset + flatIndex;
-        uint visibleIndex = BinnedClusterIndexBuffer[binnedIndex].x;
+        uint3 work = BinnedClusterIndexBuffer[binnedIndex];
+        uint visibleIndex = work.x;
         uint cacheBaseByte = CacheOffsetsWrite[visibleIndex];
         if (cacheBaseByte >= CACHE_OFFSET_OVERFLOW)
             continue;
 
         uint4 request = VisibleClusters[visibleIndex];
+        if (request.w != work.z)
+            continue;
         uint vertexBlobAddress;
         uint vertexBlobSize;
         uint triangleStart;

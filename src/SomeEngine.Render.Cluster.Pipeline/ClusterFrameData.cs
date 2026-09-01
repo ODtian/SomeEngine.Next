@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -6,14 +5,13 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 // Managed mirrors of the cooked Cluster frame contracts. Explicit sizes retain HLSL constant-
 // buffer register padding and make accidental ABI drift fail at construction rather than on GPU.
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
 internal struct ClusterDrawUniforms
 {
-    internal Matrix4x4 ViewProj;
-    internal Matrix4x4 View;
     internal uint DebugMode;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
+    internal uint Pad0;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -25,10 +23,9 @@ internal struct ClusterDrawDispatchUniforms
     internal uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 96)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 internal struct ClusterSoftwareRasterUniforms
 {
-    internal Matrix4x4 ViewProj;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint MaxBins;
@@ -83,12 +80,9 @@ internal struct ClusterShadeBinUniforms
     internal uint Pad3;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 240)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
 internal struct ClusterShadeUniforms
 {
-    internal Matrix4x4 ViewProj;
-    internal Matrix4x4 ClipToWorld;
-    internal Matrix4x4 View;
     internal uint DebugMode;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
@@ -97,16 +91,13 @@ internal struct ClusterShadeUniforms
     internal uint Pad1;
     internal uint Pad2;
     internal uint Pad3;
-    internal Vector3 CameraPos;
-    internal uint Pad4;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
 internal struct ClusterResolveUniforms
 {
-    internal Matrix4x4 ViewProj;
-    internal Matrix4x4 View;
     internal uint DebugMode;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
+    internal uint Pad0;
 }

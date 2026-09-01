@@ -9,13 +9,16 @@ public sealed class ClusterPipelineOutputTests
     public void Output_description_requires_positive_dimensions()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new ClusterPipelineOutputDescription(0, 1));
+            new ClusterPipelineOutputDescription(0, 1, 1));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new ClusterPipelineOutputDescription(1, 0));
+            new ClusterPipelineOutputDescription(1, 0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ClusterPipelineOutputDescription(1, 1, 0));
 
-        var description = new ClusterPipelineOutputDescription(64, 32);
+        var description = new ClusterPipelineOutputDescription(64, 32, 4);
         Assert.Equal(64, description.Width);
         Assert.Equal(32, description.Height);
+        Assert.Equal(4u, description.ViewCapacity);
     }
 
     [Fact]
@@ -26,11 +29,13 @@ public sealed class ClusterPipelineOutputTests
             default,
             default,
             64,
-            32);
+            32,
+            4);
 
         Assert.False(outputs.IsValid);
         Assert.Equal(64, outputs.Width);
         Assert.Equal(32, outputs.Height);
+        Assert.Equal(4u, outputs.ViewCapacity);
         Assert.DoesNotContain(
             typeof(ClusterPipelineOutputs).GetProperties(),
             static property => property.Name.Contains(

@@ -15,26 +15,26 @@ interface ISurfaceEvaluate<TVE : IMaterialVertex>
 {
     void evaluateSurface(
         uniform TVE eval,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
         SurfaceEval surface,
         float3 bary,
         TVE.DeformedVertex v0,
         TVE.DeformedVertex v1,
         TVE.DeformedVertex v2,
-        RWTexture2D<float4> outputColor);
+        RWTexture2DArray<float4> outputColor);
 
     void evaluateDebug(
         uniform TVE eval,
         uint debugMode,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
         SurfaceEval surface,
         float3 bary,
         TVE.DeformedVertex v0,
         TVE.DeformedVertex v1,
         TVE.DeformedVertex v2,
-        RWTexture2D<float4> outputColor);
+        RWTexture2DArray<float4> outputColor);
 };
 
 static const uint MATERIAL_SCALAR_HEADER_BYTES = 16;

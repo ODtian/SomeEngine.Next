@@ -4,21 +4,21 @@
 #include "cluster_view.slang"
 #include "resource_effects.slang"
 
-ConstantBuffer<ClusterViewUniforms> Uniforms;
+StructuredBuffer<ClusterViewUniforms> Views;
 
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer PageHeap;
-StructuredBuffer<uint3> CandidateClusters;
+StructuredBuffer<uint4> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
 #if CLUSTER_CULL_PHASE == 1
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer DrawArgs;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> VisibleClusters;
-Texture2D<float> HiZTexture;
+Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint3> NextCandidates;
+RWStructuredBuffer<uint4> NextCandidates;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> NextCandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -27,7 +27,7 @@ RWByteAddressBuffer NextCandidateArgs;
 ByteAddressBuffer DrawArgs;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint4> VisibleClusters;
-Texture2D<float> HiZTexture;
+Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PhaseDrawArgs;
 #else
@@ -73,29 +73,33 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     return c;
 }
 
-bool PassesLODFilter(PackedCluster cluster, RenderInstanceTransform t)
+bool PassesLODFilter(
+    PackedCluster cluster,
+    RenderInstanceTransform t,
+    ClusterViewUniforms view)
 {
-    if (Uniforms.CullingEnabled == 0u)
+    if (view.CullingEnabled == 0u)
         return true;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
-    float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
+    float clusterDist = max(0.0, distance(worldCenter, view.CameraPos) - worldRadius);
     float lodError = DecodeClusterLODError(cluster);
-    return lodError * Uniforms.LodScale <= Uniforms.LodThreshold * clusterDist;
+    return lodError * view.LodScale <= view.LodThreshold * clusterDist;
 }
 
 void BuildWorldAabbScreenBoundsAndNearDepth(
     float3 worldMin,
     float3 worldMax,
     bool usePrev,
+    ClusterViewUniforms view,
     out float2 minUv,
     out float2 maxUv,
     out float nearDepth,
     out uint mipLevel)
 {
-    float4x4 viewProjMat = usePrev ? Uniforms.PrevViewProj : Uniforms.ViewProj;
+    float4x4 viewProjMat = usePrev ? view.PrevViewProj : view.ViewProj;
 
     float3 corners[8];
     corners[0] = float3(worldMin.x, worldMin.y, worldMin.z);
@@ -146,9 +150,9 @@ void BuildWorldAabbScreenBoundsAndNearDepth(
         maxUv = saturate(max(uv1, uv2));
     }
 
-    float2 onePixel = float2(1.0 / Uniforms.ScreenWidth, 1.0 / Uniforms.ScreenHeight);
-    if (Uniforms.HiZMipCount > 0)
-        onePixel = max(Uniforms.HiZInvSize, 1e-6.xx);
+    float2 onePixel = float2(1.0 / view.ScreenWidth, 1.0 / view.ScreenHeight);
+    if (view.HiZMipCount > 0)
+        onePixel = max(view.HiZInvSize, 1e-6.xx);
     maxUv = min(1.0.xx, max(maxUv, minUv + onePixel));
 
     float pixelDiameterX = (maxUv.x - minUv.x) / onePixel.x;
@@ -156,7 +160,7 @@ void BuildWorldAabbScreenBoundsAndNearDepth(
     float pixelDiameter = max(1.0, max(pixelDiameterX, pixelDiameterY));
 
     float mipF = max(0.0, ceil(log2(pixelDiameter)));
-    uint maxMip = Uniforms.HiZMipCount > 0 ? Uniforms.HiZMipCount - 1 : 0;
+    uint maxMip = view.HiZMipCount > 0 ? view.HiZMipCount - 1 : 0;
     mipLevel = (uint)clamp((int)mipF, 0, (int)maxMip);
 
     if (any(isnan(minUv)) || any(isnan(maxUv)) || isnan(nearDepth))
@@ -173,6 +177,7 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
     RenderInstanceTransform transform,
     bool usePrev,
     float boundsExpansion,
+    ClusterViewUniforms view,
     out float2 minUv,
     out float2 maxUv,
     out float nearDepth,
@@ -216,13 +221,18 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
     worldMax += expansion.xxx;
 
     BuildWorldAabbScreenBoundsAndNearDepth(
-        worldMin, worldMax, usePrev,
+        worldMin, worldMax, usePrev, view,
         minUv, maxUv, nearDepth, mipLevel);
 }
 
-float SampleHiZMax(float2 minUv, float2 maxUv, uint mipLevel)
+float SampleHiZMax(
+    float2 minUv,
+    float2 maxUv,
+    uint mipLevel,
+    uint viewIndex,
+    ClusterViewUniforms view)
 {
-    float2 fullSize = 1.0.xx / max(Uniforms.HiZInvSize, 1e-6.xx);
+    float2 fullSize = 1.0.xx / max(view.HiZInvSize, 1e-6.xx);
     
     // Scale UVs to exact pixel coordinates
     float2 pxMin = minUv * fullSize;
@@ -243,10 +253,10 @@ float SampleHiZMax(float2 minUv, float2 maxUv, uint mipLevel)
     int2 p2 = int2(clamp(float2(pxMin.x, pxMax.y) / divisor, 0.0.xx, maxCoord));
     int2 p3 = int2(clamp(pxMax / divisor, 0.0.xx, maxCoord));
 
-    float d0 = HiZTexture.Load(int3(p0, mipLevel));
-    float d1 = HiZTexture.Load(int3(p1, mipLevel));
-    float d2 = HiZTexture.Load(int3(p2, mipLevel));
-    float d3 = HiZTexture.Load(int3(p3, mipLevel));
+    float d0 = HiZTexture.Load(int4(p0, viewIndex, mipLevel));
+    float d1 = HiZTexture.Load(int4(p1, viewIndex, mipLevel));
+    float d2 = HiZTexture.Load(int4(p2, viewIndex, mipLevel));
+    float d3 = HiZTexture.Load(int4(p3, viewIndex, mipLevel));
 
     return max(max(d0, d1), max(d2, d3));
 }
@@ -256,10 +266,12 @@ bool IsOccludedByHiZ(
     RenderInstanceTransform transform,
     float boundsExpansion,
     bool usePrev,
+    uint viewIndex,
+    ClusterViewUniforms view,
     out float2 minUv,
     out float2 maxUv)
 {
-    if (Uniforms.CullingEnabled == 0u)
+    if (view.CullingEnabled == 0u)
     {
         minUv = 0.0.xx;
         maxUv = 1.0.xx;
@@ -269,36 +281,45 @@ bool IsOccludedByHiZ(
     float nearDepth;
     uint mipLevel;
     BuildClusterAabbScreenBoundsAndNearDepth(
-        cluster, transform, usePrev, boundsExpansion,
+        cluster, transform, usePrev, boundsExpansion, view,
         minUv, maxUv, nearDepth, mipLevel);
 
     float hizDepth = 0.0;
-    float epsilon = 5e-5 + 0.5 * max(Uniforms.HiZInvSize.x, Uniforms.HiZInvSize.y);
+    float epsilon = 5e-5 + 0.5 * max(view.HiZInvSize.x, view.HiZInvSize.y);
 
-    if (Uniforms.HiZMipCount == 0)
+    if (view.HiZMipCount == 0)
         return false;
 
-    hizDepth = SampleHiZMax(minUv, maxUv, mipLevel);
+    hizDepth = SampleHiZMax(minUv, maxUv, mipLevel, viewIndex, view);
     return nearDepth > (hizDepth + epsilon);
 }
 
-bool ShouldUseSWRaster(float2 minUv, float2 maxUv)
+bool ShouldUseSWRaster(
+    float2 minUv,
+    float2 maxUv,
+    ClusterViewUniforms view)
 {
-    if (Uniforms.CullingEnabled == 0u || Uniforms.ForceHardwareRaster != 0u)
+    if (view.CullingEnabled == 0u || view.ForceHardwareRaster != 0u)
         return false;
 
-    float width = (maxUv.x - minUv.x) * Uniforms.ScreenWidth;
-    float height = (maxUv.y - minUv.y) * Uniforms.ScreenHeight;
+    float width = (maxUv.x - minUv.x) * view.ScreenWidth;
+    float height = (maxUv.y - minUv.y) * view.ScreenHeight;
     float area = width * height;
-    return area < Uniforms.SoftwareRasterAreaThreshold;
+    return area < view.SoftwareRasterAreaThreshold;
 }
 
 #if CLUSTER_CULL_PHASE == 1
-void AppendVisible(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
+void AppendVisible(
+    uint pageOffset,
+    uint clusterID,
+    uint instanceID,
+    uint viewIndex,
+    bool isSW,
+    uint maxCandidates)
 {
     uint totalIdx;
     DrawArgs.InterlockedAdd(12, 1, totalIdx);
-    if (totalIdx >= Uniforms.MaxCandidates)
+    if (totalIdx >= maxCandidates)
         return;
 
     uint outIdx;
@@ -306,30 +327,35 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
     {
         // SW clusters: write from front (CullDrawArgs.SWCount at byte 4)
         DrawArgs.InterlockedAdd(4, 1, outIdx);
-        if (outIdx < Uniforms.MaxCandidates)
-            VisibleClusters[outIdx] = uint4(pageOffset, clusterID, instanceID, 0);
+        if (outIdx < maxCandidates)
+            VisibleClusters[outIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
     }
     else
     {
         // HW clusters: write from back (CullDrawArgs.HWCount at byte 8)
         DrawArgs.InterlockedAdd(8, 1, outIdx);
-        uint hwIdx = Uniforms.MaxCandidates - 1 - outIdx;
-        if (outIdx < Uniforms.MaxCandidates)
-            VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, 0);
+        uint hwIdx = maxCandidates - 1 - outIdx;
+        if (outIdx < maxCandidates)
+            VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
     }
 }
 
-void AppendCandidate(uint pageOffset, uint clusterID, uint instanceID)
+void AppendCandidate(
+    uint pageOffset,
+    uint clusterID,
+    uint instanceID,
+    uint viewIndex,
+    uint maxCandidates)
 {
     uint outIdx;
     InterlockedAdd(NextCandidateCount[0], 1, outIdx);
-    if (outIdx >= Uniforms.MaxCandidates)
+    if (outIdx >= maxCandidates)
         return;
 
     uint groups = (outIdx + 64) / 64;
     uint unused;
     NextCandidateArgs.InterlockedMax(0, groups, unused);
-    NextCandidates[outIdx] = uint3(pageOffset, clusterID, instanceID);
+    NextCandidates[outIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
 }
 #endif
 
@@ -338,6 +364,8 @@ bool LoadAndFilterCandidate(
     out uint pageOffset,
     out uint clusterID,
     out uint instanceID,
+    out uint viewIndex,
+    out ClusterViewUniforms view,
     out PackedCluster cluster,
     out RenderInstanceTransform t,
     out float boundsExpansion)
@@ -345,18 +373,24 @@ bool LoadAndFilterCandidate(
     pageOffset = 0;
     clusterID = 0;
     instanceID = 0;
+    viewIndex = 0;
+    view = (ClusterViewUniforms)0;
     cluster = (PackedCluster)0;
     t = (RenderInstanceTransform)0;
     boundsExpansion = 0.0;
 
-    uint count = min(CandidateCount[0], Uniforms.MaxCandidates);
+    uint count = CandidateCount[0];
     if (threadId >= count)
         return false;
 
-    uint3 candidate = CandidateClusters[threadId];
+    uint4 candidate = CandidateClusters[threadId];
     pageOffset = candidate.x;
     clusterID = candidate.y;
     instanceID = candidate.z;
+    viewIndex = candidate.w;
+    view = Views[viewIndex];
+    if (threadId >= view.MaxCandidates)
+        return false;
 
     cluster = LoadCluster(pageOffset, clusterID);
     t = LoadRenderTransform(
@@ -370,15 +404,15 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    if (Uniforms.CullingEnabled == 0u)
+    if (view.CullingEnabled == 0u)
         return true;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
-    float clusterDist = max(0.0, distance(worldCenter, Uniforms.CameraPos) - worldRadius);
+    float clusterDist = max(0.0, distance(worldCenter, view.CameraPos) - worldRadius);
     float lodError = DecodeClusterLODError(cluster);
-    return lodError * Uniforms.LodScale <= Uniforms.LodThreshold * clusterDist;
+    return lodError * view.LodScale <= view.LodThreshold * clusterDist;
 }
 
 #if CLUSTER_CULL_PHASE == 1
@@ -389,33 +423,64 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
     uint pageOffset;
     uint clusterID;
     uint instanceID;
+    uint viewIndex;
+    ClusterViewUniforms view;
     PackedCluster cluster;
     RenderInstanceTransform t;
     float boundsExpansion;
-    if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))
+    if (!LoadAndFilterCandidate(
+            dispatchThreadID.x,
+            pageOffset,
+            clusterID,
+            instanceID,
+            viewIndex,
+            view,
+            cluster,
+            t,
+            boundsExpansion))
         return;
 
-    if (Uniforms.HasPrevHistory == 0)
+    if (view.HasPrevHistory == 0)
     {
-        AppendCandidate(pageOffset, clusterID, instanceID);
+        AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates);
         return;
     }
 
     float2 minUv, maxUv;
-    bool occluded = IsOccludedByHiZ(cluster, t, boundsExpansion, true, minUv, maxUv);
+    bool occluded = IsOccludedByHiZ(
+        cluster,
+        t,
+        boundsExpansion,
+        true,
+        viewIndex,
+        view,
+        minUv,
+        maxUv);
     if (occluded)
     {
-        AppendCandidate(pageOffset, clusterID, instanceID);
+        AppendCandidate(pageOffset, clusterID, instanceID, viewIndex, view.MaxCandidates);
     }
     else
     {
-        bool isSW = ShouldUseSWRaster(minUv, maxUv);
-        AppendVisible(pageOffset, clusterID, instanceID, isSW);
+        bool isSW = ShouldUseSWRaster(minUv, maxUv, view);
+        AppendVisible(
+            pageOffset,
+            clusterID,
+            instanceID,
+            viewIndex,
+            isSW,
+            view.MaxCandidates);
     }
 }
 #elif CLUSTER_CULL_PHASE == 2
 
-void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID, bool isSW)
+void AppendVisiblePhase2(
+    uint pageOffset,
+    uint clusterID,
+    uint instanceID,
+    uint viewIndex,
+    bool isSW,
+    uint maxCandidates)
 {
     uint localIdx;
     CullDrawArgs phase1 = LoadCullDrawArgs(DrawArgs, 0u);
@@ -425,7 +490,7 @@ void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID, bool 
 
     uint totalIdx;
     PhaseDrawArgs.InterlockedAdd(12, 1, totalIdx);
-    if (phase1Count + totalIdx >= Uniforms.MaxCandidates)
+    if (phase1Count + totalIdx >= maxCandidates)
         return;
 
     if (isSW)
@@ -433,16 +498,16 @@ void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID, bool 
         // Phase2 SW: write after Phase1 SW (CullDrawArgs.SWCount at byte 4)
         PhaseDrawArgs.InterlockedAdd(4, 1, localIdx);
         uint globalIdx = phase1SWCount + localIdx;
-        if (globalIdx < Uniforms.MaxCandidates)
-            VisibleClusters[globalIdx] = uint4(pageOffset, clusterID, instanceID, 0);
+        if (globalIdx < maxCandidates)
+            VisibleClusters[globalIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
     }
     else
     {
         // Phase2 HW: write before Phase1 HW (CullDrawArgs.HWCount at byte 8)
         PhaseDrawArgs.InterlockedAdd(8, 1, localIdx);
-        uint hwIdx = Uniforms.MaxCandidates - 1 - phase1HWCount - localIdx;
-        if (localIdx < Uniforms.MaxCandidates)
-            VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, 0);
+        uint hwIdx = maxCandidates - 1 - phase1HWCount - localIdx;
+        if (localIdx < maxCandidates)
+            VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
     }
 }
 
@@ -453,18 +518,43 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
     uint pageOffset;
     uint clusterID;
     uint instanceID;
+    uint viewIndex;
+    ClusterViewUniforms view;
     PackedCluster cluster;
     RenderInstanceTransform t;
     float boundsExpansion;
-    if (!LoadAndFilterCandidate(dispatchThreadID.x, pageOffset, clusterID, instanceID, cluster, t, boundsExpansion))
+    if (!LoadAndFilterCandidate(
+            dispatchThreadID.x,
+            pageOffset,
+            clusterID,
+            instanceID,
+            viewIndex,
+            view,
+            cluster,
+            t,
+            boundsExpansion))
         return;
 
     float2 minUv, maxUv;
-    bool occluded = IsOccludedByHiZ(cluster, t, boundsExpansion, false, minUv, maxUv);
+    bool occluded = IsOccludedByHiZ(
+        cluster,
+        t,
+        boundsExpansion,
+        false,
+        viewIndex,
+        view,
+        minUv,
+        maxUv);
     if (!occluded)
     {
-        bool isSW = ShouldUseSWRaster(minUv, maxUv);
-        AppendVisiblePhase2(pageOffset, clusterID, instanceID, isSW);
+        bool isSW = ShouldUseSWRaster(minUv, maxUv, view);
+        AppendVisiblePhase2(
+            pageOffset,
+            clusterID,
+            instanceID,
+            viewIndex,
+            isSW,
+            view.MaxCandidates);
     }
 }
 #endif

@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
-using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -37,8 +36,8 @@ public sealed partial class ClusterPipelineSystem
     private const int RasterBinStride = 32;
     private const int DeformBinStride = 16;
     private const int VisibleClusterStride = 16;
-    private const int CandidateStride = 12;
-    private const int BinnedClusterStride = 8;
+    private const int CandidateStride = 16;
+    private const int BinnedClusterStride = 12;
     private FrameResources CreateFrameResources(
         ref RenderGraphEdit graph,
         in ClusterPipelineOutputDescription output,
@@ -54,6 +53,7 @@ public sealed partial class ClusterPipelineSystem
         ulong binnedCapacity = checked(candidates * MaxBinnedEntriesPerCluster);
         int width = output.Width;
         int height = output.Height;
+        uint viewCapacity = output.ViewCapacity;
         int pageFaultCapacity = _resources.PageFaultCapacity;
         ClusterResidencyBinding residency = _resources.Residency.GetBinding();
         RenderInstanceResources instanceResources = _resources.InstanceResources;
@@ -100,6 +100,7 @@ public sealed partial class ClusterPipelineSystem
         {
             Width = width,
             Height = height,
+            ViewCapacity = viewCapacity,
             RasterBinCount = rasterBinCount,
             DeformBinCount = deformBinCount,
             ShadeBinCount = shadeBinCount,
@@ -300,7 +301,7 @@ public sealed partial class ClusterPipelineSystem
         frame.ShadeReserveCounters = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.CopySource, "Cluster shade reserve counter");
         frame.PixelCoordinates = frame.AddBuffer(
             ref graph,
-            checked((ulong)width * (ulong)height * sizeof(uint)),
+            checked((ulong)width * (ulong)height * viewCapacity * 2u * sizeof(uint)),
             BufferUsages.None,
             "Cluster shade pixel coordinates");
 
@@ -310,7 +311,7 @@ public sealed partial class ClusterPipelineSystem
             checked((uint)height),
             1,
             1,
-            1,
+            viewCapacity,
             1,
             Format.R32UInt,
             TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment |
@@ -322,7 +323,7 @@ public sealed partial class ClusterPipelineSystem
             checked((uint)height),
             1,
             1,
-            1,
+            viewCapacity,
             1,
             Format.D32Float,
             TextureUsages.Sampled | TextureUsages.DepthStencilAttachment | TextureUsages.CopySource,
@@ -333,7 +334,7 @@ public sealed partial class ClusterPipelineSystem
             checked((uint)height),
             1,
             1,
-            1,
+            viewCapacity,
             1,
             Format.R32UInt,
             TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
@@ -344,7 +345,7 @@ public sealed partial class ClusterPipelineSystem
             checked((uint)height),
             1,
             1,
-            1,
+            viewCapacity,
             1,
             Format.R16G16B16A16Float,
             TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
@@ -415,8 +416,7 @@ public sealed partial class ClusterPipelineSystem
         ClusterDeformStageSet deformStages,
         ClusterRasterStageSet rasterStages,
         ClusterShadeStageSet shadeStages,
-        in RenderView view,
-        in ClusterViewUniforms viewUniforms)
+        scoped ReadOnlySpan<ClusterViewUniforms> packedViews)
     {
         ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException(
             "Cluster retained upload storage was not created.");
@@ -434,11 +434,11 @@ public sealed partial class ClusterPipelineSystem
                 "Cluster zero read offset");
             WriteWords(ref graph, uploads, generation, [0u, 1u, 1u, 0u],
                 "Cluster candidate dispatch initialization");
-            WriteUniform(ref graph, uploads, generation, viewUniforms,
-                "Cluster view uniforms");
+            WriteStructs(ref graph, uploads, generation, packedViews,
+                "Cluster packed views");
 
-            WriteRasterPhaseUploads(ref graph, uploads, generation, frame, in view, phaseOne: true);
-            WriteRasterPhaseUploads(ref graph, uploads, generation, frame, in view, phaseOne: false);
+            WriteRasterPhaseUploads(ref graph, uploads, generation, frame, phaseOne: true);
+            WriteRasterPhaseUploads(ref graph, uploads, generation, frame, phaseOne: false);
 
             WriteUniform(
                 ref graph,
@@ -458,8 +458,6 @@ public sealed partial class ClusterPipelineSystem
                 generation,
                 new ClusterResolveUniforms
                 {
-                    ViewProj = view.View * view.Projection,
-                    View = view.View,
                     ScreenWidth = checked((uint)frame.Width),
                     ScreenHeight = checked((uint)frame.Height),
                 },
@@ -478,7 +476,6 @@ public sealed partial class ClusterPipelineSystem
         ClusterFrameUploads uploads,
         int generation,
         in FrameResources frame,
-        in RenderView view,
         bool phaseOne)
     {
         WriteUniform(
@@ -553,7 +550,6 @@ public sealed partial class ClusterPipelineSystem
                 generation,
                 new ClusterSoftwareRasterUniforms
                 {
-                    ViewProj = view.View * view.Projection,
                     ScreenWidth = checked((uint)frame.Width),
                     ScreenHeight = checked((uint)frame.Height),
                     MaxBins = frame.RasterBinCount,
@@ -571,8 +567,6 @@ public sealed partial class ClusterPipelineSystem
             generation,
             new ClusterDrawUniforms
             {
-                ViewProj = view.View * view.Projection,
-                View = view.View,
                 ScreenWidth = checked((uint)frame.Width),
                 ScreenHeight = checked((uint)frame.Height),
             },
@@ -624,6 +618,24 @@ public sealed partial class ClusterPipelineSystem
             generation,
             MemoryMarshal.AsBytes(values),
             label);
+
+    private static void WriteStructs<T>(
+        ref RenderGraphFrame graph,
+        ClusterFrameUploads uploads,
+        int generation,
+        scoped ReadOnlySpan<T> values,
+        string label)
+        where T : unmanaged
+    {
+        if (values.IsEmpty)
+            throw new ArgumentException("A Cluster structured upload cannot be empty.", nameof(values));
+        WriteBytes(
+            ref graph,
+            uploads,
+            generation,
+            MemoryMarshal.AsBytes(values),
+            label);
+    }
 
     private static void WriteBytes(
         ref RenderGraphFrame graph,
@@ -720,18 +732,36 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         in FrameResources frame)
     {
+        TextureSubresourceRange colors = new(
+            0,
+            1,
+            0,
+            frame.ViewCapacity,
+            TextureAspects.Color);
         GraphColorAttachmentViewId vis = graph.CreateColorAttachmentView(
             frame.VisBuffer,
+            colors,
+            dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster visibility clear view");
         GraphColorAttachmentViewId softwareDepth = graph.CreateColorAttachmentView(
             frame.SoftwareDepth,
+            colors,
+            dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster software depth clear view");
         GraphColorAttachmentViewId scene = graph.CreateColorAttachmentView(
             frame.SceneColor,
+            colors,
+            dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster scene clear view");
         GraphDepthStencilViewId depth = graph.CreateDepthStencilView(
             frame.Depth,
-            new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
+            new TextureSubresourceRange(
+                0,
+                1,
+                0,
+                frame.ViewCapacity,
+                TextureAspects.Depth),
+            dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster depth clear view");
         ClusterTargetClearParameters data = new(
             vis,
@@ -759,8 +789,9 @@ public sealed partial class ClusterPipelineSystem
                     checked((uint)mip),
                     1,
                     0,
-                    1,
+                    frame.ViewCapacity,
                     TextureAspects.Color),
+                dimension: TextureViewDimension.Texture2DArray,
                 label: $"Cluster HiZ history initialization mip {mip}");
             ClusterColorAttachmentClearParameters data = new(view, Vector4.Zero);
             _historyInitializationPasses.Add(graph.AddRasterFramePass(
@@ -838,6 +869,7 @@ public sealed partial class ClusterPipelineSystem
 
         internal int Width;
         internal int Height;
+        internal uint ViewCapacity;
         internal uint RasterBinCount;
         internal uint DeformBinCount;
         internal uint ShadeBinCount;
@@ -852,6 +884,7 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId FrameMetricsReadback;
         internal GraphTextureId PreviousHiZ;
         internal GraphTextureId CurrentHiZ;
+        internal GraphBufferId PackedViews;
         internal GraphBufferId RasterSlots;
         internal GraphBufferId DeformSlots;
         internal GraphBufferId ShadeSlots;

@@ -111,6 +111,46 @@ public sealed class ClusterShaderAbiTests
     }
 
     [Fact]
+    public void Unified_multi_view_work_explicitly_carries_the_view_index()
+    {
+        string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
+        string traversal = Read("cluster_bvh_traverse.slang");
+        string cull = Read("cluster_cull.slang");
+        string scatter = Read("cluster_bin_scatter.slang");
+        string software = Read("sw_raster.slang");
+        string hardware = Read("cluster_draw.slang");
+        string shadeScatter = Read("shade_bin_scatter.slang");
+        string shade = Read("cluster_shade_pipeline.slang");
+        string resolve = Read("cluster_resolve.slang");
+
+        Assert.Contains("RWStructuredBuffer<uint4> CandidateClusters", traversal, StringComparison.Ordinal);
+        Assert.Contains("dispatchThreadID.y", traversal, StringComparison.Ordinal);
+        Assert.Contains("StructuredBuffer<ClusterViewUniforms> Views", traversal, StringComparison.Ordinal);
+        Assert.Contains("RWStructuredBuffer<uint4> VisibleClusters", cull, StringComparison.Ordinal);
+        Assert.Contains("RWStructuredBuffer<uint3> BinnedClusterIndexBuffer", scatter, StringComparison.Ordinal);
+        Assert.Contains("viewIndex", scatter, StringComparison.Ordinal);
+        Assert.Contains("StructuredBuffer<uint3> BinnedClusterIndexBuffer", software, StringComparison.Ordinal);
+        Assert.Contains("RWTexture2DArray<uint> VisBuffer", software, StringComparison.Ordinal);
+        Assert.Contains("SV_RenderTargetArrayIndex", hardware, StringComparison.Ordinal);
+        Assert.Contains("RWStructuredBuffer<uint2> PixelCoordinates", shadeScatter, StringComparison.Ordinal);
+        Assert.Contains("StructuredBuffer<uint2> PixelCoordBuffer", shade, StringComparison.Ordinal);
+        Assert.Contains("RWTexture2DArray<float4> OutputColor", shade, StringComparison.Ordinal);
+        Assert.Contains("RWTexture2DArray<float4> OutputColor", resolve, StringComparison.Ordinal);
+
+        string clusterSources = string.Join(
+            '\n',
+            Directory.EnumerateFiles(shaderDirectory, "cluster*.slang")
+                .Append(Path.Combine(shaderDirectory, "sw_raster.slang"))
+                .Append(Path.Combine(shaderDirectory, "shade_bin_count.slang"))
+                .Append(Path.Combine(shaderDirectory, "shade_bin_scatter.slang"))
+                .Select(File.ReadAllText));
+        Assert.DoesNotContain("MainView", clusterSources, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ShadowView", clusterSources, StringComparison.OrdinalIgnoreCase);
+
+        string Read(string name) => File.ReadAllText(Path.Combine(shaderDirectory, name));
+    }
+
+    [Fact]
     public async Task Cooked_default_geometry_entries_retain_vertex_contract_attributes()
     {
         string repositoryRoot = FindRepositoryRoot();

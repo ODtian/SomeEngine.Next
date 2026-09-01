@@ -12,32 +12,41 @@ internal sealed class ClusterCullingHistory : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly uint _viewCapacity;
     private readonly Texture[] _hiZ = new Texture[2];
     private readonly TextureBoundaryState[] _hiZEndpoints = new TextureBoundaryState[2];
     private readonly bool[] _slotContentsAvailable = new bool[2];
     private bool _disposed;
-    private bool _hasPreviousView;
+    private readonly bool[] _hasPreviousView;
+    private readonly Matrix4x4[] _previousViews;
+    private readonly Matrix4x4[] _previousProjections;
+    private readonly Matrix4x4[] _pendingViews;
+    private readonly Matrix4x4[] _pendingProjections;
     private bool _pending;
+    private int _pendingViewCount;
     private int _writeIndex;
     private int _width;
     private int _height;
     private int _hiZMips;
-    private Matrix4x4 _previousView;
-    private Matrix4x4 _previousProjection;
-    private Matrix4x4 _pendingView;
-    private Matrix4x4 _pendingProjection;
 
-    internal ClusterCullingHistory(IGraphicsBackend backend, Device device)
+    internal ClusterCullingHistory(
+        IGraphicsBackend backend,
+        Device device,
+        uint viewCapacity)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        ArgumentOutOfRangeException.ThrowIfZero(viewCapacity);
+        _viewCapacity = viewCapacity;
+        int capacity = checked((int)viewCapacity);
+        _hasPreviousView = new bool[capacity];
+        _previousViews = new Matrix4x4[capacity];
+        _previousProjections = new Matrix4x4[capacity];
+        _pendingViews = new Matrix4x4[capacity];
+        _pendingProjections = new Matrix4x4[capacity];
     }
 
-    /// <summary>True when a prior committed camera exists and content has not been cut/resized away.</summary>
-    internal bool HasPreviousFrame => _hasPreviousView;
     internal int HiZMipCount => _hiZMips;
-    internal Matrix4x4 PreviousView => _previousView;
-    internal Matrix4x4 PreviousProjection => _previousProjection;
     internal Texture PreviousHiZ => _hiZ[PreviousIndex];
     internal Texture CurrentHiZ => _hiZ[_writeIndex];
     internal bool PreviousContentsAvailable => _slotContentsAvailable[PreviousIndex];
@@ -54,26 +63,50 @@ internal sealed class ClusterCullingHistory : IDisposable
     /// Selects the pending write slot for this frame. Does not submit GPU work: resize only allocates
     /// textures, and camera-cut only invalidates published content while preserving slot readiness.
     /// </summary>
-    internal bool Prepare(
+    internal void Prepare(
         int width,
         int height,
-        in RenderView view)
+        ReadOnlySpan<RenderView> views)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_pending)
             throw new InvalidOperationException("The previous Cluster history frame is still pending.");
+        if (views.IsEmpty || views.Length > _hasPreviousView.Length)
+            throw new ArgumentOutOfRangeException(nameof(views));
         EnsureDimensions(width, height);
-        if (view.CameraCut)
+        for (int index = 0; index < views.Length; index++)
         {
-            _hasPreviousView = false;
-            _previousView = default;
-            _previousProjection = default;
-        }
+            ref readonly RenderView view = ref views[index];
+            if (view.CameraCut)
+            {
+                _hasPreviousView[index] = false;
+                _previousViews[index] = default;
+                _previousProjections[index] = default;
+            }
 
-        _pendingView = view.View;
-        _pendingProjection = view.Projection;
+            _pendingViews[index] = view.View;
+            _pendingProjections[index] = view.Projection;
+        }
+        for (int index = views.Length; index < _hasPreviousView.Length; index++)
+            _hasPreviousView[index] = false;
+        _pendingViewCount = views.Length;
         _pending = true;
-        return HasPreviousFrame;
+    }
+
+    internal bool TryGetPrevious(
+        int viewIndex,
+        out Matrix4x4 view,
+        out Matrix4x4 projection)
+    {
+        if ((uint)viewIndex >= (uint)_hasPreviousView.Length || !_hasPreviousView[viewIndex])
+        {
+            view = default;
+            projection = default;
+            return false;
+        }
+        view = _previousViews[viewIndex];
+        projection = _previousProjections[viewIndex];
+        return true;
     }
 
     internal void EnsureDimensions(int width, int height)
@@ -96,7 +129,7 @@ internal sealed class ClusterCullingHistory : IDisposable
                     checked((uint)height),
                     1,
                     checked((uint)hiZMips),
-                    1,
+                    _viewCapacity,
                     1,
                     Format.R32Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
@@ -131,9 +164,9 @@ internal sealed class ClusterCullingHistory : IDisposable
         _height = height;
         _hiZMips = hiZMips;
         _writeIndex = 0;
-        _hasPreviousView = false;
-        _previousView = default;
-        _previousProjection = default;
+        Array.Clear(_hasPreviousView);
+        Array.Clear(_previousViews);
+        Array.Clear(_previousProjections);
     }
 
     /// <summary>
@@ -159,9 +192,14 @@ internal sealed class ClusterCullingHistory : IDisposable
         _hiZEndpoints[previousIndex] = previousHiZ;
         _slotContentsAvailable[writeIndex] = true;
         _slotContentsAvailable[previousIndex] = true;
-        _previousView = _pendingView;
-        _previousProjection = _pendingProjection;
-        _hasPreviousView = true;
+        for (int index = 0; index < _pendingViewCount; index++)
+        {
+            _previousViews[index] = _pendingViews[index];
+            _previousProjections[index] = _pendingProjections[index];
+            _hasPreviousView[index] = true;
+        }
+        for (int index = _pendingViewCount; index < _hasPreviousView.Length; index++)
+            _hasPreviousView[index] = false;
         _writeIndex = 1 - _writeIndex;
         ClearPending();
     }
@@ -176,8 +214,9 @@ internal sealed class ClusterCullingHistory : IDisposable
 
     private void ClearPending()
     {
-        _pendingView = default;
-        _pendingProjection = default;
+        Array.Clear(_pendingViews);
+        Array.Clear(_pendingProjections);
+        _pendingViewCount = 0;
         _pending = false;
     }
 
@@ -250,9 +289,9 @@ internal sealed class ClusterCullingHistory : IDisposable
         _slotContentsAvailable[0] = false;
         _slotContentsAvailable[1] = false;
         ClearPending();
-        _previousView = default;
-        _previousProjection = default;
-        _hasPreviousView = false;
+        Array.Clear(_hasPreviousView);
+        Array.Clear(_previousViews);
+        Array.Clear(_previousProjections);
         _disposed = true;
     }
 }

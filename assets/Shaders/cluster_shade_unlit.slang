@@ -8,14 +8,14 @@ struct UnlitScalars
 
 struct UnlitPixelContext
 {
-    uint2 pixelCoord;
+    uint3 pixelCoord;
     uint instanceID;
     float3 worldNormal;
     float2 uv0;
 };
 
 UnlitPixelContext BuildUnlitPixelContext(
-    uint2 pixelCoord,
+    uint3 pixelCoord,
     uint instanceID,
     SurfaceEval surface,
     float3 bary,
@@ -38,14 +38,14 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
 
     void evaluateSurface(
         uniform StaticVertexEval eval,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
         StaticVertexEval.DeformedVertex v2,
-        RWTexture2D<float4> outputColor)
+        RWTexture2DArray<float4> outputColor)
     {
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
@@ -65,14 +65,14 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
     void evaluateDebug(
         uniform StaticVertexEval eval,
         uint debugMode,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
         StaticVertexEval.DeformedVertex v2,
-        RWTexture2D<float4> outputColor)
+        RWTexture2DArray<float4> outputColor)
     {
         if (debugMode == 8)
         {

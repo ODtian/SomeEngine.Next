@@ -10,6 +10,7 @@
 #define SW_RASTER_SLANG
 
 #include "cluster_structures.slang"
+#include "cluster_view.slang"
 #include "common.slang"
 #include "wave_queue.slang"
 #include "vertex_evaluate.slang"
@@ -17,7 +18,6 @@
 // ─── Uniforms ───
 struct SWRasterUniforms
 {
-    float4x4 ViewProj;
     uint ScreenWidth;
     uint ScreenHeight;
     uint MaxBins;
@@ -35,13 +35,14 @@ cbuffer PushConstants : register(b100, space0)
 
 ByteAddressBuffer PageHeap;
 // Instance-property accessors are declared in cluster_common.slang (via vertex_evaluate.slang).
+StructuredBuffer<ClusterViewUniforms> Views;
 StructuredBuffer<uint4> VisibleClusters;
-StructuredBuffer<uint2> BinnedClusterIndexBuffer; // .x = visibleClusterIndex, .y = rangeStart<<16 | rangeEnd
+StructuredBuffer<uint3> BinnedClusterIndexBuffer; // visible index, triangle range, view index
 StructuredBuffer<RasterBinEntry> RasterBinMeta;
 
-Texture2D<float> DepthTarget;
-RWTexture2D<uint> VisBuffer;    // packed: (depth_high24 << 8) | unused for now; shade uses vis encoding
-RWTexture2D<uint> DepthUAV;
+Texture2DArray<float> DepthTarget;
+RWTexture2DArray<uint> VisBuffer;
+RWTexture2DArray<uint> DepthUAV;
 
 ByteAddressBuffer DeformCache;
 StructuredBuffer<uint> CacheOffsets;
@@ -217,7 +218,8 @@ float4 EvaluateSWRasterClipPosition<TVE : IVertexEvaluate>(
     bool useDeformCache,
     uint visibleClusterIndex,
     uint vertexCount,
-    VertexEvalContext ctx)
+    VertexEvalContext ctx,
+    ClusterViewUniforms view)
 {
     TVE.DeformedVertex vertex;
     if (useDeformCache)
@@ -236,7 +238,7 @@ float4 EvaluateSWRasterClipPosition<TVE : IVertexEvaluate>(
         vertex = evaluator.evaluate(ctx);
     }
 
-    return mul(float4(evaluator.getPosition(vertex), 1.0), Uniforms.ViewProj);
+    return mul(float4(evaluator.getPosition(vertex), 1.0), view.ViewProj);
 }
 
 // ─── Triangle Setup ───
@@ -331,9 +333,9 @@ FRasterTri SetupTriangle(float4 clipVerts[3], int4 scissorRect)
 }
 
 // ─── WritePixel helper ───
-void WritePixel(int2 pixel, float depth, uint visData)
+void WritePixel(int2 pixel, uint viewIndex, float depth, uint visData)
 {
-    float sceneDepth = DepthTarget.Load(int3(pixel, 0));
+    float sceneDepth = DepthTarget.Load(int4(pixel, viewIndex, 0));
     if (depth >= sceneDepth)
         return;
 
@@ -341,10 +343,10 @@ void WritePixel(int2 pixel, float depth, uint visData)
     float depthReversed = 1.0 - depth;
     uint depthBits = asuint(depthReversed);
     uint oldDepth;
-    InterlockedMax(DepthUAV[pixel], depthBits, oldDepth);
+    InterlockedMax(DepthUAV[uint3(pixel, viewIndex)], depthBits, oldDepth);
     if (depthBits > oldDepth)
     {
-        VisBuffer[pixel] = visData;
+        VisBuffer[uint3(pixel, viewIndex)] = visData;
     }
 }
 
@@ -354,6 +356,7 @@ struct PixelRasterTask : IWaveTask
 {
     FRasterTri tri;
     uint visData;
+    uint viewIndex;
     uint pixelCount;
 
     [mutating] uint GetTaskCount()
@@ -379,6 +382,7 @@ struct PixelRasterTask : IWaveTask
             WaveReadLaneAt(tri.DepthPlane.y, srcLane),
             WaveReadLaneAt(tri.DepthPlane.z, srcLane));
         uint srcVisData = WaveReadLaneAt(visData, srcLane);
+        uint srcViewIndex = WaveReadLaneAt(viewIndex, srcLane);
 
         if (!bActive)
             return;
@@ -399,17 +403,17 @@ struct PixelRasterTask : IWaveTask
         float depth = srcTri.DepthPlane.x + srcTri.DepthPlane.y * cx1 + srcTri.DepthPlane.z * cx2;
         depth = saturate(depth);
 
-        float sceneDepth = DepthTarget.Load(int3(px, py, 0));
+        float sceneDepth = DepthTarget.Load(int4(px, py, srcViewIndex, 0));
         if (depth >= sceneDepth)
             return;
 
         float depthReversed = 1.0 - depth;
         uint depthBits = asuint(depthReversed);
         uint oldDepth;
-        InterlockedMax(DepthUAV[int2(px, py)], depthBits, oldDepth);
+        InterlockedMax(DepthUAV[uint3(px, py, srcViewIndex)], depthBits, oldDepth);
         if (depthBits > oldDepth)
         {
-            VisBuffer[int2(px, py)] = srcVisData;
+            VisBuffer[uint3(px, py, srcViewIndex)] = srcVisData;
         }
     }
 };
@@ -440,10 +444,14 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
     uint binCount      = binSWCount;
 
     uint binnedIndex = clusterOffset + flatClusterIdx;
-    uint2 binEntry = BinnedClusterIndexBuffer[binnedIndex];
+    uint3 binEntry = BinnedClusterIndexBuffer[binnedIndex];
     uint originalIndex = binEntry.x;
 
     uint4 req = VisibleClusters[originalIndex];
+    uint viewIndex = binEntry.z;
+    if (req.w != viewIndex)
+        return;
+    ClusterViewUniforms view = Views[viewIndex];
     uint pageOffset    = req.x;
     uint clusterID     = req.y;
     uint realInstanceID = req.z;
@@ -531,7 +539,8 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
                 useDeformCache,
                 originalIndex,
                 vertexCount,
-                ctx);
+                ctx,
+                view);
         }
 
         float4 clipVerts[3];
@@ -559,6 +568,7 @@ void SWRasterKernel<TVE : IVertexEvaluate>(
         // ─── Stage 3: WaveQueue Pixel Distribution ───
         PixelRasterTask pixelTask;
         pixelTask.tri = rasterTri;
+        pixelTask.viewIndex = viewIndex;
         if (bTriValid && rasterTri.bIsValid)
         {
             pixelTask.visData = EncodeVisBuffer(visibleIndexPlusOne - 1u, localTriIdx);

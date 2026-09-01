@@ -14,7 +14,7 @@ public sealed class CookedClusterShaderContractTests
 
         Assert.Equal(
             Sorted(
-                "Uniforms",
+                "Views",
                 "GlobalBVH",
                 "InstanceData",
                 "InstanceProperties",
@@ -33,7 +33,7 @@ public sealed class CookedClusterShaderContractTests
 
         Assert.Equal(
             Sorted(
-                "Uniforms",
+                "Views",
                 "PageHeap",
                 "InstanceData",
                 "InstanceProperties",

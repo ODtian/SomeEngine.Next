@@ -4,7 +4,7 @@
 #include "cluster_view.slang"
 #include "resource_effects.slang"
 
-ConstantBuffer<ClusterViewUniforms> Uniforms;
+StructuredBuffer<ClusterViewUniforms> Views;
 
 StructuredBuffer<ClusterBVHNode> GlobalBVH;
 ByteAddressBuffer InstanceData;
@@ -13,7 +13,7 @@ ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer CandidateArgs;           // IndirectArgs: must stay raw
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint3> CandidateClusters;
+RWStructuredBuffer<uint4> CandidateClusters;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> CandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -23,12 +23,12 @@ RWByteAddressBuffer PageFaultBuffer;
 // rejected asset invariant, never a runtime branch that silently drops a subtree.
 static const uint TraverseStackCapacity = 128;
 
-void PublishCandidateDispatchArgs(uint start, uint count)
+void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
 {
-    if (count == 0 || start >= Uniforms.MaxCandidates)
+    if (count == 0 || start >= maxCandidates)
         return;
 
-    uint clampedCount = min(count, Uniforms.MaxCandidates - start);
+    uint clampedCount = min(count, maxCandidates - start);
     uint clampedEnd = start + clampedCount;
     uint groups = (clampedEnd + 63) / 64;
     uint unused;
@@ -48,7 +48,8 @@ float LocalExpansionForWorldRadius(RenderInstanceTransform t, float worldExpansi
 bool IsNodeOutsideFrustum(
     ClusterBVHNode node,
     RenderInstanceTransform t,
-    float boundsExpansion)
+    float boundsExpansion,
+    ClusterViewUniforms view)
 {
     float3 localMin = node.BoundMin.xyz;
     float3 localMax = node.BoundMax.xyz;
@@ -78,7 +79,7 @@ bool IsNodeOutsideFrustum(
     for (uint i = 0; i < 8; ++i)
     {
         float3 world = TransformInstanceLocalPosition(corners[i], t);
-        float4 clip = mul(float4(world, 1.0), Uniforms.ViewProj);
+        float4 clip = mul(float4(world, 1.0), view.ViewProj);
 
         outsideLeft += (clip.x < -clip.w) ? 1 : 0;
         outsideRight += (clip.x > clip.w) ? 1 : 0;
@@ -95,7 +96,9 @@ bool IsNodeOutsideFrustum(
 void main(uint3 dispatchThreadID: SV_DispatchThreadID)
 {
     uint instanceID = dispatchThreadID.x;
-    if (instanceID >= Uniforms.InstanceCount)
+    uint viewIndex = dispatchThreadID.y;
+    ClusterViewUniforms view = Views[viewIndex];
+    if (instanceID >= view.InstanceCount)
         return;
 
     uint bvhRootIndex = LoadClusterBvhRoot(
@@ -123,7 +126,7 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
         {
             uint faultIndex;
             PageFaultBuffer.InterlockedAdd(0, 1, faultIndex);
-            if (faultIndex < Uniforms.MaxPageFaults)
+            if (faultIndex < view.MaxPageFaults)
             {
                 PageFaultBuffer.Store(4 + faultIndex * 4, nodeIndex);
             }
@@ -141,19 +144,19 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
                 LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
                 instanceID));
 
-        bool culled = Uniforms.CullingEnabled != 0u &&
-            IsNodeOutsideFrustum(node, t, boundsExpansion);
+        bool culled = view.CullingEnabled != 0u &&
+            IsNodeOutsideFrustum(node, t, boundsExpansion, view);
 
         float3 worldCenter = TransformInstanceLocalPosition(node.LODSphere.xyz, t);
         float maxScale = t.Scale * max(max(t.Stretch.x, t.Stretch.y), t.Stretch.z);
         float worldRadius = node.LODSphere.w * maxScale;
 
-        float dist = distance(worldCenter, Uniforms.CameraPos);
+        float dist = distance(worldCenter, view.CameraPos);
         float distToSurface = max(0.0, dist - worldRadius);
 
         // LOD Culling
-        if (Uniforms.CullingEnabled != 0u &&
-            node.LODError * Uniforms.LodScale <= Uniforms.LodThreshold * distToSurface)
+        if (view.CullingEnabled != 0u &&
+            node.LODError * view.LodScale <= view.LodThreshold * distToSurface)
         {
             culled = true;
         }
@@ -164,7 +167,7 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
         if (node.NodeType == 0)
         {
             uint nextDepth = currentDepth + 1;
-            if (nextDepth >= Uniforms.MaxTraversalDepth)
+            if (nextDepth >= view.MaxTraversalDepth)
                 continue;
 
             uint start = node.ChildPointer;
@@ -184,14 +187,18 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
 
             uint outIndex;
             InterlockedAdd(CandidateCount[0], count, outIndex);
-            PublishCandidateDispatchArgs(outIndex, count);
+            PublishCandidateDispatchArgs(outIndex, count, view.MaxCandidates);
 
             for (uint i = 0; i < count; ++i)
             {
-                if (outIndex + i < Uniforms.MaxCandidates)
+                if (outIndex + i < view.MaxCandidates)
                 {
                     uint clusterID = start + i;
-                    CandidateClusters[outIndex + i] = uint3(pageOffset, clusterID, instanceID);
+                    CandidateClusters[outIndex + i] = uint4(
+                        pageOffset,
+                        clusterID,
+                        instanceID,
+                        viewIndex);
                 }
             }
         }

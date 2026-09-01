@@ -13,7 +13,7 @@ struct DrawRequest
     uint PageOffset;
     uint ClusterID;
     uint InstanceID;
-    uint Pad;
+    uint ViewIndex;
 };
 
 // ── Page Heap helpers ──

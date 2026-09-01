@@ -1,26 +1,29 @@
 #include "hiz_common.slang"
 #include "resource_effects.slang"
 
-Texture2D<float> DepthTexture;
+Texture2DArray<float> DepthTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2D<float> Mip0;
+RWTexture2DArray<float> Mip0;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2D<float> Mip1;
+RWTexture2DArray<float> Mip1;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void InitHiZ(uint3 threadId : SV_DispatchThreadID)
 {
     uint2 coordinate = threadId.xy;
+    uint viewIndex = threadId.z;
     uint destinationWidth;
     uint destinationHeight;
-    Mip1.GetDimensions(destinationWidth, destinationHeight);
+    uint destinationLayers;
+    Mip1.GetDimensions(destinationWidth, destinationHeight, destinationLayers);
     if (coordinate.x >= destinationWidth || coordinate.y >= destinationHeight)
         return;
 
     uint sourceWidth;
     uint sourceHeight;
-    Mip0.GetDimensions(sourceWidth, sourceHeight);
+    uint sourceLayers;
+    Mip0.GetDimensions(sourceWidth, sourceHeight, sourceLayers);
     uint2 sourceBase = coordinate * 2u;
     uint sourceEndX = CoveredEnd(coordinate.x, destinationWidth, sourceWidth);
     uint sourceEndY = CoveredEnd(coordinate.y, destinationHeight, sourceHeight);
@@ -30,10 +33,10 @@ void InitHiZ(uint3 threadId : SV_DispatchThreadID)
     {
         for (uint x = sourceBase.x; x <= sourceEndX; x++)
         {
-            float depth = DepthTexture.Load(int3(x, y, 0));
-            Mip0[uint2(x, y)] = depth;
+            float depth = DepthTexture.Load(int4(x, y, viewIndex, 0));
+            Mip0[uint3(x, y, viewIndex)] = depth;
             maximumDepth = max(maximumDepth, depth);
         }
     }
-    Mip1[coordinate] = maximumDepth;
+    Mip1[uint3(coordinate, viewIndex)] = maximumDepth;
 }

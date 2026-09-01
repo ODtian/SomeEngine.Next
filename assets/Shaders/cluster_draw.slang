@@ -1,12 +1,12 @@
 #include "vertex_evaluate.slang"
+#include "cluster_view.slang"
 
 struct DrawUniforms
 {
-    float4x4 ViewProj;
-    float4x4 View;
     uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
+    uint Pad0;
 };
 
 struct DrawDispatchUniforms
@@ -18,10 +18,11 @@ struct DrawDispatchUniforms
 };
 
 ConstantBuffer<DrawUniforms> Uniforms;
+StructuredBuffer<ClusterViewUniforms> Views;
 ConstantBuffer<DrawDispatchUniforms> DispatchUniforms;
 
 ByteAddressBuffer PageHeap;
-StructuredBuffer<uint2> BinnedClusterIndexBuffer;
+StructuredBuffer<uint3> BinnedClusterIndexBuffer;
 StructuredBuffer<uint4> VisibleClusters;
 ByteAddressBuffer VisibleClusterMeta;
 
@@ -37,6 +38,7 @@ struct PSInput
     float2 UV : TEXCOORD0;
     float3 Color : COLOR0;
     nointerpolation uint ClusterID : CLUSTER_ID;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
 
 struct PSVisBufferInput
@@ -44,6 +46,7 @@ struct PSVisBufferInput
     float4 Pos : SV_POSITION;
     nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
     nointerpolation uint TriangleID : TRIANGLE_ID;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
 
 uint GetBinnedClusterIndex(uint instanceID)
@@ -67,6 +70,7 @@ bool DecodeDrawVertex(
     out uint visibleClusterIndex,
     out uint clusterID,
     out uint realInstanceID,
+    out uint viewIndex,
     out uint lodLevel,
     out uint triangleID,
     out uint localVertIdx,
@@ -75,14 +79,17 @@ bool DecodeDrawVertex(
     out uint vertexCount)
 {
     uint binnedIndex = GetBinnedClusterIndex(instanceID);
-    uint2 binEntry = BinnedClusterIndexBuffer[binnedIndex];
+    uint3 binEntry = BinnedClusterIndexBuffer[binnedIndex];
     visibleClusterIndex = binEntry.x;
+    viewIndex = binEntry.z;
     uint packedRange = binEntry.y;
 
     uint4 req = VisibleClusters[visibleClusterIndex];
     uint pageOffset = req.x;
     clusterID = req.y;
     realInstanceID = req.z;
+    if (req.w != viewIndex)
+        return false;
     uint idxOffset = PageHeap.Load(pageOffset + 24u);
 
     uint tStart;
@@ -163,6 +170,7 @@ void WriteInvalidPSInput(out PSInput output)
     output.UV = float2(0.0);
     output.Color = float3(0.0);
     output.ClusterID = 0u;
+    output.RenderTargetIndex = 0u;
 }
 
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
@@ -175,6 +183,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
     uint visibleClusterIndex;
     uint clusterID;
     uint realInstanceID;
+    uint viewIndex;
     uint lodLevel;
     uint triangleID;
     uint localVertIdx;
@@ -188,6 +197,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
             visibleClusterIndex,
             clusterID,
             realInstanceID,
+            viewIndex,
             lodLevel,
             triangleID,
             localVertIdx,
@@ -213,10 +223,11 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
         return output;
     }
 
-    output.Pos = mul(float4(eval.getPosition(vertex), 1.0), Uniforms.ViewProj);
+    output.Pos = mul(float4(eval.getPosition(vertex), 1.0), Views[viewIndex].ViewProj);
     output.ClusterID = clusterID;
     output.Normal = vertex.worldNormal;
     output.UV = vertex.uv0;
+    output.RenderTargetIndex = viewIndex;
 
     if (Uniforms.DebugMode == 2u)
     {
@@ -260,6 +271,7 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
     uint visibleClusterIndex;
     uint clusterID;
     uint realInstanceID;
+    uint viewIndex;
     uint lodLevel;
     uint triangleID;
     uint localVertIdx;
@@ -269,6 +281,7 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
 
     output.VisibleClusterIndex = 0u;
     output.TriangleID = 0u;
+    output.RenderTargetIndex = 0u;
 
     if (!DecodeDrawVertex(
             vertexID,
@@ -276,6 +289,7 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
             visibleClusterIndex,
             clusterID,
             realInstanceID,
+            viewIndex,
             lodLevel,
             triangleID,
             localVertIdx,
@@ -306,9 +320,10 @@ PSVisBufferInput BuildVisBufferVertex<TVE : IVertexEvaluate>(
         return output;
     }
 
-    output.Pos = mul(float4(evaluator.getPosition(vertex), 1.0), Uniforms.ViewProj);
+    output.Pos = mul(float4(evaluator.getPosition(vertex), 1.0), Views[viewIndex].ViewProj);
     output.VisibleClusterIndex = visibleClusterIndex;
     output.TriangleID = triangleID;
+    output.RenderTargetIndex = viewIndex;
     return output;
 }
 

@@ -6,7 +6,7 @@ ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> BinCounts;
 ConstantBuffer<ShadeBinUniforms> Uniforms;
-Texture2D<uint> VisBuffer;
+Texture2DArray<uint> VisBuffer;
 StructuredBuffer<uint4> VisibleClusters;
 StructuredBuffer<uint> ShadeSlots;
 ByteAddressBuffer PageHeap;
@@ -18,11 +18,14 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID)
     if (threadId.x >= Uniforms.ScreenWidth || threadId.y >= Uniforms.ScreenHeight)
         return;
 
-    uint visibility = VisBuffer[threadId.xy];
+    uint viewIndex = threadId.z;
+    uint visibility = VisBuffer[uint3(threadId.xy, viewIndex)];
     if (IsVisBufferEmpty(visibility))
         return;
 
     uint4 cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
+    if (cluster.w != viewIndex)
+        return;
     uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.z);
     uint bin = FindShadeBin(
         ShadeSlots,

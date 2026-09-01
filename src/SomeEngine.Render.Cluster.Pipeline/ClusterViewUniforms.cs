@@ -8,8 +8,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 internal struct ClusterViewUniforms
 {
-    internal const int SizeInBytes = 352;
-    internal const int ConstantBufferSizeInBytes = 512;
+    internal const int SizeInBytes = 416;
 
     internal Matrix4x4 ViewProj;
     internal Vector3 CameraPos;
@@ -41,6 +40,8 @@ internal struct ClusterViewUniforms
     internal float PrevP11;
     internal Vector2 Pad3;
 
+    internal Matrix4x4 ClipToWorld;
+
     internal static ClusterViewUniforms Create(
         in RenderView source,
         ClusterPipelineOptions options,
@@ -59,6 +60,8 @@ internal struct ClusterViewUniforms
             throw new ArgumentException("The render-view matrix must be invertible.", nameof(source));
 
         Matrix4x4 viewProjection = source.View * source.Projection;
+        if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 clipToWorld))
+            throw new ArgumentException("The render-view projection must be invertible.", nameof(source));
         float lodScale = MathF.Abs(source.Projection.M22) * source.ViewportHeight * 0.5f;
         Vector3 cameraPosition = new(worldFromView.M41, worldFromView.M42, worldFromView.M43);
         if (!IsFinite(viewProjection)
@@ -96,6 +99,7 @@ internal struct ClusterViewUniforms
             PrevP00 = source.Projection.M11,
             PrevP11 = source.Projection.M22,
             Pad3 = default,
+            ClipToWorld = clipToWorld,
         };
     }
 

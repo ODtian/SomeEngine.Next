@@ -10,7 +10,7 @@ public sealed class ClusterPipelineTests
     [Fact]
     public void ViewUniformsExactlyMatchTheClusterShaderAbi()
     {
-        Assert.Equal(352, Marshal.SizeOf<ClusterViewUniforms>());
+        Assert.Equal(416, Marshal.SizeOf<ClusterViewUniforms>());
         AssertOffset(nameof(ClusterViewUniforms.ViewProj), 0);
         AssertOffset(nameof(ClusterViewUniforms.CameraPos), 64);
         AssertOffset(nameof(ClusterViewUniforms.LodThreshold), 76);
@@ -35,6 +35,7 @@ public sealed class ClusterPipelineTests
         AssertOffset(nameof(ClusterViewUniforms.PrevP00), 336);
         AssertOffset(nameof(ClusterViewUniforms.PrevP11), 340);
         AssertOffset(nameof(ClusterViewUniforms.Pad3), 344);
+        AssertOffset(nameof(ClusterViewUniforms.ClipToWorld), 352);
 
         Matrix4x4 view = Matrix4x4.CreateTranslation(-1.0f, -2.0f, -3.0f);
         Matrix4x4 projection = Matrix4x4.Identity;
@@ -71,6 +72,8 @@ public sealed class ClusterPipelineTests
         Assert.Equal(0u, uniforms.HiZMipCount);
         Assert.Equal(view, uniforms.View);
         Assert.Equal(view, uniforms.PrevView);
+        Assert.True(Matrix4x4.Invert(view, out Matrix4x4 clipToWorld));
+        Assert.Equal(clipToWorld, uniforms.ClipToWorld);
         Assert.Equal(1.0f, uniforms.P00);
         Assert.Equal(1.0f, uniforms.P11);
         Assert.Equal(800u, uniforms.ScreenWidth);

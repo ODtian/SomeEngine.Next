@@ -17,7 +17,7 @@ struct StandardPBRScalars
 
 struct StandardPBRPixelContext
 {
-    uint2 pixelCoord;
+    uint3 pixelCoord;
     uint instanceID;
     float3 surfacePosition;
     float3 worldNormal;
@@ -26,7 +26,7 @@ struct StandardPBRPixelContext
 };
 
 StandardPBRPixelContext BuildStandardPBRPixelContext(
-    uint2 pixelCoord,
+    uint3 pixelCoord,
     uint instanceID,
     SurfaceEval surface,
     float3 bary,
@@ -55,14 +55,14 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
 
     void evaluateSurface(
         uniform StaticVertexEval eval,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
         StaticVertexEval.DeformedVertex v2,
-        RWTexture2D<float4> outputColor)
+        RWTexture2DArray<float4> outputColor)
     {
         StandardPBRPixelContext ctx = BuildStandardPBRPixelContext(
             pixelCoord,
@@ -99,14 +99,14 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
     void evaluateDebug(
         uniform StaticVertexEval eval,
         uint debugMode,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
         SurfaceEval surface,
         float3 bary,
         StaticVertexEval.DeformedVertex v0,
         StaticVertexEval.DeformedVertex v1,
         StaticVertexEval.DeformedVertex v2,
-        RWTexture2D<float4> outputColor)
+        RWTexture2DArray<float4> outputColor)
     {
         if (debugMode == 8)
         {

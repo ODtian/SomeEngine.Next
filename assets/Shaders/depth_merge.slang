@@ -2,22 +2,26 @@
 // Fullscreen triangle pass: reads SW DepthUAV (R32_UINT reversed-Z)
 // and outputs SV_Depth for HW depth buffer injection.
 
-Texture2D<uint> SWDepthUAV;
+Texture2DArray<uint> SWDepthUAV;
 
 struct VSOutput
 {
     float4 Pos : SV_POSITION;
     float2 UV  : TEXCOORD0;
+    uint ViewIndex : SV_RenderTargetArrayIndex;
 };
 
 [shader("vertex")]
-VSOutput VSFullscreen(uint vertexID : SV_VertexID)
+VSOutput VSFullscreen(
+    uint vertexID : SV_VertexID,
+    uint viewIndex : SV_InstanceID)
 {
     VSOutput output;
     // Fullscreen triangle: 3 vertices covering the entire screen
     float2 uv = float2((vertexID << 1) & 2, vertexID & 2);
     output.Pos = float4(uv * 2.0 - 1.0, 0.0, 1.0);
     output.UV = float2(uv.x, 1.0 - uv.y);
+    output.ViewIndex = viewIndex;
     return output;
 }
 
@@ -30,7 +34,7 @@ struct PSOutput
 void PSDepthMerge(VSOutput input, out float depth : SV_Depth)
 {
     uint2 pixelCoord = uint2(input.Pos.xy);
-    uint swDepthBits = SWDepthUAV[pixelCoord];
+    uint swDepthBits = SWDepthUAV[uint3(pixelCoord, input.ViewIndex)];
 
     // DepthUAV stores 0 for unwritten pixels (clear value).
     // 0 in reversed-Z means "far plane" — skip to avoid overwriting.

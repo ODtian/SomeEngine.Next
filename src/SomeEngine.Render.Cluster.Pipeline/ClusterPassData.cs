@@ -32,7 +32,10 @@ internal readonly record struct ClusterIndirectDispatchParameters(
     }
 }
 
-internal readonly record struct ClusterFullscreenParameters(int Width, int Height)
+internal readonly record struct ClusterFullscreenParameters(
+    int Width,
+    int Height,
+    uint ViewCount)
 {
     internal static void Record(
         ref RasterPassCommandScope commands,
@@ -42,34 +45,14 @@ internal readonly record struct ClusterFullscreenParameters(int Width, int Heigh
             [new Viewport(0, 0, parameters.Width, parameters.Height)]);
         commands.SetScissors(
             [new ScissorRect(0, 0, parameters.Width, parameters.Height)]);
-        commands.Draw(new DrawArguments(3, 1, 0, 0));
+        commands.Draw(new DrawArguments(3, parameters.ViewCount, 0, 0));
     }
 }
 
-internal readonly record struct ClusterIndirectDrawParameters(
-    IndirectCommandLayout Layout,
-    GraphBufferId Arguments,
-    ulong Offset,
-    int Width,
-    int Height)
-{
-    internal static void Record(
-        ref RasterPassCommandScope commands,
-        in ClusterIndirectDrawParameters parameters)
-    {
-        commands.SetViewports(
-            [new Viewport(0, 0, parameters.Width, parameters.Height)]);
-        commands.SetScissors(
-            [new ScissorRect(0, 0, parameters.Width, parameters.Height)]);
-        Buffer arguments = commands.GetBuffer(parameters.Arguments);
-        commands.ExecuteIndirect(
-            parameters.Layout,
-            new BufferRegion(
-                arguments,
-                new BufferRange(parameters.Offset, ClusterIndirectAbi.DrawBytes)),
-            1);
-    }
-}
+internal readonly record struct ClusterLayerDispatch(
+    GraphPassId Pass,
+    uint GroupX,
+    uint GroupY);
 
 internal readonly record struct ClusterBufferClearParameters(GraphBufferId Buffer)
 {

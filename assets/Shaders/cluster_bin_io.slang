@@ -157,9 +157,10 @@ void ReserveDeform(
 
 void ScatterRaster(
     RWStructuredBuffer<RasterBinEntry> bins,
-    RWStructuredBuffer<uint2> indices,
+    RWStructuredBuffer<uint3> indices,
     uint bin,
     uint visible,
+    uint viewIndex,
     uint triStart,
     uint triEnd,
     bool sw)
@@ -171,22 +172,29 @@ void ScatterRaster(
     {
         uint local;
         InterlockedAdd(bins[bin].SWCursor, 1, local);
-        indices[offset + local] = uint2(visible, (triStart << 16) | triEnd);
+        indices[offset + local] = uint3(
+            visible,
+            (triStart << 16) | triEnd,
+            viewIndex);
         return;
     }
 
     uint swCount = bins[bin].BinSWCount;
     uint local;
     InterlockedAdd(bins[bin].HWCursor, 1, local);
-    indices[offset + swCount + local] = uint2(visible, (triStart << 16) | triEnd);
+    indices[offset + swCount + local] = uint3(
+        visible,
+        (triStart << 16) | triEnd,
+        viewIndex);
 }
 
 void ScatterDeform(
     RWStructuredBuffer<DeformBinEntry> bins,
-    RWStructuredBuffer<uint2> indices,
+    RWStructuredBuffer<uint3> indices,
     RWStructuredBuffer<uint> offsets,
     uint bin,
     uint visible,
+    uint viewIndex,
     uint sentinel)
 {
     if (!IsBin(bin)) return;
@@ -195,7 +203,7 @@ void ScatterDeform(
     uint local;
     InterlockedAdd(bins[bin].Cursor, 1, local);
     offsets[visible] = sentinel;
-    indices[offset + local] = uint2(visible, 0u);
+    indices[offset + local] = uint3(visible, 0u, viewIndex);
 }
 
 void ReserveShade(
@@ -216,17 +224,18 @@ void ReserveShade(
 }
 
 void ScatterShade(
-    RWStructuredBuffer<uint> coords,
+    RWStructuredBuffer<uint2> coords,
     RWStructuredBuffer<uint> offsets,
     RWStructuredBuffer<uint> scatter,
     uint bin,
-    uint packedCoord)
+    uint packedCoord,
+    uint viewIndex)
 {
     if (!IsBin(bin)) return;
 
     uint writeIdx;
     InterlockedAdd(scatter[bin], 1, writeIdx);
-    coords[offsets[bin] + writeIdx] = packedCoord;
+    coords[offsets[bin] + writeIdx] = uint2(packedCoord, viewIndex);
 }
 
 #endif

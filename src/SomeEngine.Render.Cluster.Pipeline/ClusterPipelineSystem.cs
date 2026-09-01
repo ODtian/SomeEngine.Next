@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS.Queries;
@@ -31,6 +32,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private readonly ClusterShaders _configuration;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly ClusterPipelineOutputDescription _outputDescription;
+    private readonly ClusterRasterExecutor _rasterExecutor;
     private readonly ClusterPipelineOptions _options;
     private QueryHandle _viewQuery;
     private ClusterPipelineSet? _pipelines;
@@ -45,6 +47,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private ClusterFrameUploads? _uploads;
     private FrameResources _frameResources;
     private readonly List<GraphPassId> _historyInitializationPasses = [];
+    private readonly List<ClusterLayerDispatch> _layerDispatches = [];
+    private readonly List<GraphPassId> _depthMergePasses = [];
+    private readonly ClusterViewUniforms[] _packedViews;
     private GraphPassId _traversalPass;
     private ClusterPipelineOutputs _outputs;
     private ulong _installedMaterialTopologyVersion;
@@ -84,6 +89,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterShaders configuration,
         global::SomeEngine.RenderGraph.RenderGraph graph,
         in ClusterPipelineOutputDescription outputDescription,
+        ClusterRasterExecutor rasterExecutor,
         ClusterPipelineOptions? options = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -100,7 +106,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         if (!ReferenceEquals(graph.Device, device))
             throw new ArgumentException("The Cluster pipeline and RenderGraph must use the same Device.", nameof(graph));
         _outputDescription = outputDescription;
+        _rasterExecutor = rasterExecutor ?? throw new ArgumentNullException(nameof(rasterExecutor));
         _options = options ?? new ClusterPipelineOptions();
+        _packedViews = new ClusterViewUniforms[checked((int)outputDescription.ViewCapacity)];
     }
 
     public ClusterPipelineOutputs Outputs => _outputs.IsValid
@@ -128,7 +136,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _backend,
                 _device,
                 _pipelines.VertexEncoding);
-            _history = new ClusterCullingHistory(_backend, _device);
+            _history = new ClusterCullingHistory(
+                _backend,
+                _device,
+                _outputDescription.ViewCapacity);
             _created = true;
         }
         catch
@@ -204,17 +215,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             RenderGraphEdit edit = _graph.BeginEdit();
             try
             {
-                RenderView declarationView = default;
-                ClusterViewUniforms declarationUniforms = default;
                 InstallGraph(
                     ref edit,
                     in _outputDescription,
                     assignments,
                     deformStages,
                     rasterStages,
-                    shadeStages,
-                    in declarationView,
-                    in declarationUniforms);
+                    shadeStages);
                 edit.Commit();
             }
             finally
@@ -234,6 +241,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _uploads = null;
             uploads.Dispose();
             _historyInitializationPasses.Clear();
+            _layerDispatches.Clear();
+            _depthMergePasses.Clear();
             _traversalPass = default;
             _frameResources = default;
             _outputs = default;
@@ -305,48 +314,71 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 _viewQuery,
                 ref viewCollector,
                 static (QueryCursor cursor, ref ViewCollector state) => state.Collect(cursor));
-            if (viewCollector.Views.Count != 1)
+            if (viewCollector.Views.Count == 0 ||
+                viewCollector.Views.Count > _packedViews.Length)
             {
                 throw new InvalidOperationException(
-                    "Phase-5 Cluster pipeline instances consume exactly one render view; " +
-                    "unified multi-view execution is installed in Phase 10.");
+                    $"The Cluster pipeline requires 1..{_packedViews.Length} render views.");
             }
-            RenderView view = viewCollector.Views[0];
-            if (view.ViewportWidth != _outputDescription.Width ||
-                view.ViewportHeight != _outputDescription.Height)
+            ReadOnlySpan<RenderView> views = CollectionsMarshal.AsSpan(viewCollector.Views);
+            for (int viewIndex = 0; viewIndex < views.Length; viewIndex++)
             {
-                throw new InvalidOperationException(
-                    "The render-view viewport must match the retained Cluster output dimensions.");
+                ref readonly RenderView view = ref views[viewIndex];
+                if (view.ViewportWidth != _outputDescription.Width ||
+                    view.ViewportHeight != _outputDescription.Height)
+                {
+                    throw new InvalidOperationException(
+                        $"Render view {viewIndex} must match the retained Cluster output dimensions.");
+                }
             }
 
-            using ClusterRenderBinding binding = _resources.Use(
-                context.ActiveFrame,
-                batch,
-                _instanceLayout);
-            EnsurePageFaultReadback(binding.PageFaultCapacity);
-            EnsureFrameMetricsReadback();
-            if (_readbackWriteGeneration < 0)
-                _readbackWriteGeneration = AcquireReadbackGeneration();
-            ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
-                "The Cluster culling history was not created.");
-            bool historyPrepared = false;
-            try
+            RecordFrame(ref context, batch, views);
+        }
+        finally
+        {
+            viewCollector.Clear();
+        }
+    }
+
+    private void RecordFrame(
+        ref RenderFrameSystemContext context,
+        RenderInstanceBatch batch,
+        scoped ReadOnlySpan<RenderView> views)
+    {
+        using ClusterRenderBinding binding = _resources.Use(
+            context.ActiveFrame,
+            batch,
+            _instanceLayout);
+        EnsurePageFaultReadback(binding.PageFaultCapacity);
+        EnsureFrameMetricsReadback();
+        if (_readbackWriteGeneration < 0)
+            _readbackWriteGeneration = AcquireReadbackGeneration();
+        ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
+            "The Cluster culling history was not created.");
+        bool historyPrepared = false;
+        try
+        {
+            Span<ClusterViewUniforms> packedViews = _packedViews;
+            packedViews.Clear();
+            history.Prepare(
+                _outputDescription.Width,
+                _outputDescription.Height,
+                views);
+            historyPrepared = true;
+            for (int viewIndex = 0; viewIndex < views.Length; viewIndex++)
             {
-                ClusterViewUniforms uniforms = ClusterViewUniforms.Create(
-                    in view,
+                packedViews[viewIndex] = ClusterViewUniforms.Create(
+                    in views[viewIndex],
                     _options,
                     _cullingEnabled,
                     binding.DispatchExtent,
                     binding.PageFaultCapacity);
-                bool hasHistory = history.Prepare(
-                    _outputDescription.Width,
-                    _outputDescription.Height,
-                    in view);
-                historyPrepared = true;
-                if (hasHistory)
+                if (history.TryGetPrevious(
+                        viewIndex,
+                        out Matrix4x4 previousView,
+                        out Matrix4x4 previousProjection))
                 {
-                    Matrix4x4 previousView = history.PreviousView;
-                    Matrix4x4 previousProjection = history.PreviousProjection;
+                    ref ClusterViewUniforms uniforms = ref packedViews[viewIndex];
                     uniforms.PrevViewProj = previousView * previousProjection;
                     uniforms.HasPrevHistory = 1;
                     uniforms.HiZMipCount = checked((uint)history.HiZMipCount);
@@ -357,48 +389,60 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     uniforms.PrevP00 = previousProjection.M11;
                     uniforms.PrevP11 = previousProjection.M22;
                 }
-
-                _pendingReadbackEpoch = binding.ReadbackEpoch;
-                _hasPendingFrame = true;
-
-                RenderGraphFrame graph = context.Graph;
-                BindFrameResources(
-                    ref graph,
-                    in binding,
-                    history);
-                WriteFrameUploads(
-                    ref graph,
-                    RequireReadbackWriteGeneration(),
-                    _installedDeformStages ?? throw new InvalidOperationException("Deform stages were not installed."),
-                    _installedRasterStages ?? throw new InvalidOperationException("Raster stages were not installed."),
-                    _installedShadeStages ?? throw new InvalidOperationException("Shade stages were not installed."),
-                    in view,
-                    in uniforms);
-                BindShadeStages(
-                    ref graph,
-                    _installedShadeStages,
-                    in view);
-                graph.SetPassData(
-                    _traversalPass,
-                    new ClusterDispatchParameters(new DispatchArguments(
-                        checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
-                        1,
-                        1)));
-                bool initializeHistory = history.RequiresInitialization;
-                foreach (GraphPassId pass in _historyInitializationPasses)
-                    graph.SetPassEnabled(pass, initializeHistory);
             }
-            catch
+
+            _pendingReadbackEpoch = binding.ReadbackEpoch;
+            _hasPendingFrame = true;
+
+            RenderGraphFrame graph = context.Graph;
+            BindFrameResources(
+                ref graph,
+                in binding,
+                history);
+            WriteFrameUploads(
+                ref graph,
+                RequireReadbackWriteGeneration(),
+                _installedDeformStages ?? throw new InvalidOperationException("Deform stages were not installed."),
+                _installedRasterStages ?? throw new InvalidOperationException("Raster stages were not installed."),
+                _installedShadeStages ?? throw new InvalidOperationException("Shade stages were not installed."),
+                packedViews);
+            BindShadeStages(
+                ref graph,
+                _installedShadeStages);
+            graph.SetPassData(
+                _traversalPass,
+                new ClusterDispatchParameters(new DispatchArguments(
+                    checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
+                    checked((uint)views.Length),
+                    1)));
+            foreach (ClusterLayerDispatch dispatch in _layerDispatches)
             {
-                if (historyPrepared)
-                    history.Discard();
-                ClearPendingFrame();
-                throw;
+                graph.SetPassData(
+                    dispatch.Pass,
+                    new ClusterDispatchParameters(new DispatchArguments(
+                        dispatch.GroupX,
+                        dispatch.GroupY,
+                        checked((uint)views.Length))));
             }
+            foreach (GraphPassId pass in _depthMergePasses)
+            {
+                graph.SetPassData(
+                    pass,
+                    new ClusterFullscreenParameters(
+                        _outputDescription.Width,
+                        _outputDescription.Height,
+                        checked((uint)views.Length)));
+            }
+            bool initializeHistory = history.RequiresInitialization;
+            foreach (GraphPassId pass in _historyInitializationPasses)
+                graph.SetPassEnabled(pass, initializeHistory);
         }
-        finally
+        catch
         {
-            viewCollector.Clear();
+            if (historyPrepared)
+                history.Discard();
+            ClearPendingFrame();
+            throw;
         }
     }
 
@@ -494,6 +538,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _preferredReadbackGeneration = 0;
         _latestFrameMetrics = null;
         _historyInitializationPasses.Clear();
+        _layerDispatches.Clear();
+        _depthMergePasses.Clear();
         _traversalPass = default;
         _frameResources = default;
         _outputs = default;

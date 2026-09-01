@@ -84,8 +84,14 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     label: "Runtime presentation target"));
                 GraphTextureSrvId source = edit.CreateTextureSrv(
                     input.MaterialColor,
+                    new TextureSubresourceRange(
+                        0,
+                        1,
+                        0,
+                        1,
+                        TextureAspects.Color),
                     format: Format.R16G16B16A16Float,
-                    dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
+                    dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                     label: "Runtime presentation source");
                 GraphColorAttachmentViewId output = edit.CreateColorAttachmentView(
                     target,

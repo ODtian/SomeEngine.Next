@@ -1,9 +1,7 @@
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
-using SomeEngine.Render.Components;
 using SomeEngine.RenderGraph;
 using EngineTexture = SomeEngine.Assets.Schema.Texture;
 using RhiTexture = SomeEngine.Graphics.Texture;
@@ -16,22 +14,10 @@ public sealed partial class ClusterPipelineSystem
 
     private void BindShadeStages(
         ref RenderGraphFrame graph,
-        ClusterShadeStageSet shadeStages,
-        in RenderView view)
+        ClusterShadeStageSet shadeStages)
     {
         if (_shadePasses.Length != shadeStages.Invocations.Count)
             throw new InvalidOperationException("The retained shade passes do not match the installed invocations.");
-
-        Matrix4x4 viewProjection = view.View * view.Projection;
-        if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 clipToWorld) ||
-            !Matrix4x4.Invert(view.View, out Matrix4x4 worldFromView))
-        {
-            throw new InvalidOperationException("The Cluster shade stage requires invertible view matrices.");
-        }
-        Vector3 cameraPosition = new(
-            worldFromView.M41,
-            worldFromView.M42,
-            worldFromView.M43);
 
         for (int index = 0; index < shadeStages.Invocations.Count; index++)
         {
@@ -42,14 +28,10 @@ public sealed partial class ClusterPipelineSystem
 
             var uniforms = new ClusterShadeUniforms
             {
-                ViewProj = viewProjection,
-                ClipToWorld = clipToWorld,
-                View = view.View,
-                ScreenWidth = view.ViewportWidth,
-                ScreenHeight = view.ViewportHeight,
+                ScreenWidth = checked((uint)_frameResources.Width),
+                ScreenHeight = checked((uint)_frameResources.Height),
                 ShadingBin = checked((uint)index),
                 ShadeBinCount = shadeStages.BinCount,
-                CameraPos = cameraPosition,
             };
             int uniformBytes = checked((Unsafe.SizeOf<ClusterShadeUniforms>() + 255) & ~255);
             var uniformBytesStorage = new byte[uniformBytes];
@@ -124,8 +106,21 @@ public sealed partial class ClusterPipelineSystem
                     graph.CreateBufferCbv(uniformBuffer, label: "Cluster shade uniforms"),
                     PipelineSync.ComputeShading);
                 return true;
+            case "Views":
+                BindReadOnly(
+                    ref graph,
+                    ref pass,
+                    frame.PackedViews,
+                    ClusterViewUniforms.SizeInBytes,
+                    resource.Name);
+                return true;
             case "PixelCoordBuffer":
-                BindReadOnly(ref graph, ref pass, frame.PixelCoordinates, sizeof(uint), resource.Name);
+                BindReadOnly(
+                    ref graph,
+                    ref pass,
+                    frame.PixelCoordinates,
+                    2 * sizeof(uint),
+                    resource.Name);
                 return true;
             case "BinOffsets":
                 BindReadOnly(ref graph, ref pass, frame.ShadeBinOffsets, sizeof(uint), resource.Name);
@@ -139,6 +134,7 @@ public sealed partial class ClusterPipelineSystem
                     graph.CreateTextureSrv(
                         frame.VisBuffer,
                         format: Format.R32UInt,
+                        dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                         label: "Cluster shade visibility"),
                     PipelineSync.ComputeShading);
                 return true;
@@ -147,8 +143,14 @@ public sealed partial class ClusterPipelineSystem
                 _ = pass.Bind(
                     graph.CreateTextureSrv(
                         frame.Depth,
-                        new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
+                        new TextureSubresourceRange(
+                            0,
+                            1,
+                            0,
+                            frame.ViewCapacity,
+                            TextureAspects.Depth),
                         Format.D32Float,
+                        SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                         label: "Cluster shade depth"),
                     PipelineSync.ComputeShading);
                 return true;
@@ -164,6 +166,7 @@ public sealed partial class ClusterPipelineSystem
                     graph.CreateTextureUav(
                         frame.SceneColor,
                         format: Format.R16G16B16A16Float,
+                        dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                         label: "Cluster material shade output"),
                     PipelineSync.ComputeShading,
                     GraphAccessMode.Write,

@@ -322,7 +322,8 @@ internal static class RuntimeApplication
             materialAssignments,
             pipelineConfiguration,
             renderGraph,
-            new ClusterPipelineOutputDescription(boot.Width, boot.Height),
+            new ClusterPipelineOutputDescription(boot.Width, boot.Height, 4),
+            ClusterRasterExecutor.Indirect,
             new ClusterPipelineOptions
             {
                 EnableAsyncCompute = options.AsyncCompute,
