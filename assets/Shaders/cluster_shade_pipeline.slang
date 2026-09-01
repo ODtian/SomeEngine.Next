@@ -14,7 +14,7 @@ struct ShadeUniforms
     uint ScreenWidth;
     uint ScreenHeight;
     uint ShadingBin;
-    uint MaterialCount;
+    uint ShadeBinCount;
     uint Pad1;
     uint Pad2;
     uint Pad3;

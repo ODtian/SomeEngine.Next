@@ -22,11 +22,10 @@ uint SlotBin(
     StructuredBuffer<uint> slots,
     uint slotOffset,
     uint localMaterialIndex,
-    uint field,
     uint capacity,
     uint maxBins)
 {
-    uint key = GetSlotField(slots, slotOffset, localMaterialIndex, field, capacity);
+    uint key = GetStageSlot(slots, slotOffset, localMaterialIndex, capacity);
     return ValidBin(key, maxBins);
 }
 

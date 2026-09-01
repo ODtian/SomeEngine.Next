@@ -10,7 +10,8 @@ ConstantBuffer<RasterDeformBinningUniforms> Uniforms;
 StructuredBuffer<uint4> VisibleClusters;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
-StructuredBuffer<uint> SlotBuffer;
+StructuredBuffer<uint> RasterSlots;
+StructuredBuffer<uint> DeformSlots;
 ByteAddressBuffer PageHeap;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<DeformBinEntry> DeformBinMeta;
@@ -38,7 +39,7 @@ void CountRasterBatches(
         uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
         CountRaster(
             RasterBinMeta,
-            RasterKey(SlotBuffer, Uniforms, slotOffset, material),
+            RasterKey(RasterSlots, Uniforms, slotOffset, material),
             EmitsSw(isSoftware, batch, vrb.batchCount));
         triangleStart = triangleEnd;
     }
@@ -48,7 +49,7 @@ void CountRasterBatches(
         uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
         CountRaster(
             RasterBinMeta,
-            RasterKey(SlotBuffer, Uniforms, slotOffset, material),
+            RasterKey(RasterSlots, Uniforms, slotOffset, material),
             false);
         triangleStart = min(
             triangleStart + 32u,
@@ -67,7 +68,7 @@ void CountDeformCluster(
     uint material = LocalMaterial(packedMaterials, packedRanges, 0u);
     CountDeform(
         DeformBinMeta,
-        DeformKey(SlotBuffer, Uniforms, slotOffset, material));
+        DeformKey(DeformSlots, Uniforms, slotOffset, material));
 }
 
 [shader("compute")]

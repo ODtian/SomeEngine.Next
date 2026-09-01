@@ -24,6 +24,7 @@ internal sealed partial class FrameExecutor
     private readonly List<int> _resourceAccessScratch = [];
     private readonly Stack<int> _livenessStack = new();
     private readonly PriorityQueue<int, int> _cycleReady = new();
+    private readonly PriorityQueue<int, int> _valueReady = new();
     private readonly List<int> _shaderReaderScratch = [];
     private ulong[] _bufferCoordinateScratch = [];
     private uint[] _queryCoordinateScratch = [];
@@ -32,6 +33,8 @@ internal sealed partial class FrameExecutor
     private List<int>[] _readerScratch = [];
     private TextureLayout?[] _layoutScratch = [];
     private int[] _cycleIndegree = [];
+    private int[] _valueIndegree = [];
+    private int[] _valuePosition = [];
     private int[] _criticalRanks = [];
     private int[] _scheduleIndegrees = [];
     private int[] _criticalTopological = [];
@@ -43,6 +46,7 @@ internal sealed partial class FrameExecutor
         new(ReferenceEqualityComparer.Instance);
     private readonly List<Queue> _queueCandidateScratch = [];
     private List<int>[] _valuePredecessors = [];
+    private List<int>[] _valueSuccessors = [];
     private List<int>[] _predecessors = [];
     private List<int>[] _successors = [];
     private List<int>[] _passAccesses = [];
@@ -514,6 +518,7 @@ internal sealed partial class FrameExecutor
         }
 
         PrepareAdjacency(ref _valuePredecessors, _passes.Length);
+        PrepareAdjacency(ref _valueSuccessors, _passes.Length);
         PrepareAdjacency(ref _predecessors, _passes.Length);
         PrepareAdjacency(ref _successors, _passes.Length);
         PrepareArray(ref _live, _passes.Length);

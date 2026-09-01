@@ -987,6 +987,81 @@ public sealed class PersistentRenderGraphTests
     }
 
     [Fact]
+    public void Explicit_order_can_place_a_frame_writer_before_a_retained_texture_reader()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        TextureDesc description = new(
+            TextureDimension.Texture2D,
+            4,
+            4,
+            1,
+            1,
+            1,
+            1,
+            Format.R8G8B8A8UNorm,
+            TextureUsages.Sampled | TextureUsages.CopyDestination,
+            label: "late frame upload texture");
+        using Texture texture = support.Backend.CreateTexture(support.Device, description);
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue]);
+
+        GraphTextureId slot;
+        GraphPassId consumer;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            slot = edit.DeclareExternalTexture(description);
+            consumer = edit.AddGeneralFramePass(
+                "retained texture consumer",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                slot,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition access, ref GraphTextureId state) =>
+                    _ = access.Read(
+                        state,
+                        new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                        PipelineSync.PixelShading,
+                        ResourceAccess.ShaderResource,
+                        TextureLayout.ShaderResource),
+                static (ref GeneralPassCommandScope _, in GraphTextureId _) => { });
+            edit.Commit();
+        }
+
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            frame.BindExternalTexture(
+                slot,
+                texture,
+                [new TextureBoundaryState(
+                    new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                    texture.InitialSync,
+                    texture.InitialAccess,
+                    texture.InitialLayout,
+                    ResourceContentState.Undefined)]);
+            GraphPassId upload = frame.AddGeneralPass(
+                "late frame upload",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                slot,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition access, ref GraphTextureId state) =>
+                    _ = access.Write(
+                        state,
+                        new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        TextureLayout.CopyDestination,
+                        WriteCoverage.Complete,
+                        ResourceContentState.Defined),
+                static (ref GeneralPassCommandScope _, in GraphTextureId _) => { });
+            frame.OrderAfter(consumer, upload);
+            Assert.Equal(1, frame.Execute(completions));
+        }
+        support.Wait(completions.AsSpan(0, 1));
+    }
+
+    [Fact]
     public void FrameGeneralPassRejectsCopyQueueDuringAuthoring()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();

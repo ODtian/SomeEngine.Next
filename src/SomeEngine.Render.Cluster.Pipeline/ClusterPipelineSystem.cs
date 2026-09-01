@@ -23,16 +23,24 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly RenderDevice _renderDevice;
     private readonly ClusterRenderResources _resources;
     private readonly IRenderInstanceBatchSource<RenderInstanceSingleGroup> _instances;
     private readonly RenderInstancePropertyLayout _instanceLayout;
-    private readonly ClusterMaterialTable _materialTable;
+    private readonly ClusterMaterialAssignments _materialAssignments;
     private readonly ClusterShaders _configuration;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly ClusterPipelineOutputDescription _outputDescription;
     private readonly ClusterPipelineOptions _options;
     private QueryHandle _viewQuery;
     private ClusterPipelineSet? _pipelines;
+    private ClusterDeformStages? _deformStages;
+    private ClusterRasterStages? _rasterStages;
+    private ClusterShadeStages? _shadeStages;
+    private ClusterDeformStageSet? _installedDeformStages;
+    private ClusterRasterStageSet? _installedRasterStages;
+    private ClusterShadeStageSet? _installedShadeStages;
+    private GraphPassId[] _shadePasses = [];
     private ClusterCullingHistory? _history;
     private ClusterFrameUploads? _uploads;
     private FrameResources _frameResources;
@@ -67,10 +75,11 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     public ClusterPipelineSystem(
         IGraphicsBackend backend,
         Device device,
+        RenderDevice renderDevice,
         ClusterRenderResources resources,
         IRenderInstanceBatchSource<RenderInstanceSingleGroup> instances,
         RenderInstancePropertyLayout instanceLayout,
-        ClusterMaterialTable materialTable,
+        ClusterMaterialAssignments materialAssignments,
         ClusterShaders configuration,
         global::SomeEngine.RenderGraph.RenderGraph graph,
         in ClusterPipelineOutputDescription outputDescription,
@@ -78,10 +87,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _renderDevice = renderDevice ?? throw new ArgumentNullException(nameof(renderDevice));
+        if (!ReferenceEquals(renderDevice.Device, device))
+            throw new ArgumentException("The Cluster pipeline and RenderDevice must use the same Device.", nameof(renderDevice));
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
         _instanceLayout = instanceLayout ?? throw new ArgumentNullException(nameof(instanceLayout));
-        _materialTable = materialTable ?? throw new ArgumentNullException(nameof(materialTable));
+        _materialAssignments = materialAssignments ?? throw new ArgumentNullException(nameof(materialAssignments));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _graph = graph ?? throw new ArgumentNullException(nameof(graph));
         if (!ReferenceEquals(graph.Device, device))
@@ -106,6 +118,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
             _viewQuery = view;
             EnsurePipelineResources();
+            _deformStages = new ClusterDeformStages(_pipelines!.DeformCachePopulate);
+            _rasterStages = new ClusterRasterStages(_pipelines.HardwareRaster);
+            _shadeStages = new ClusterShadeStages(_backend, _device);
             _history = new ClusterCullingHistory(_backend, _device);
             _created = true;
         }
@@ -113,6 +128,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         {
             _history?.Dispose();
             _history = null;
+            _shadeStages?.Dispose();
+            _shadeStages = null;
+            _deformStages = null;
+            _rasterStages = null;
             _pipelines?.Dispose();
             _pipelines = null;
             _dispatchIndirectLayout?.Dispose();
@@ -132,17 +151,33 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     {
         if (!_created)
             throw new InvalidOperationException("The Cluster pipeline was not created.");
-        ClusterMaterialSnapshot snapshot = _materialTable.Current;
-        if (snapshot.MaterialCount == 0)
+        ClusterMaterialAssignmentSet assignments = _materialAssignments.Current;
+        if (assignments.MaterialCount == 0)
             throw new InvalidOperationException("The Cluster scene has no published materials.");
+        if (_graphInstalled &&
+            _installedMaterialTopologyVersion == assignments.TopologyVersion &&
+            _installedShadeStages is { IsCurrent: true })
+        {
+            return _outputs;
+        }
+        ClusterDeformStageSet deformStages = (_deformStages ?? throw new InvalidOperationException(
+            "The Cluster deform stages were not created.")).Resolve(assignments);
+        ClusterRasterStageSet rasterStages = (_rasterStages ?? throw new InvalidOperationException(
+            "The Cluster raster stages were not created.")).Resolve(assignments);
+        ClusterShadeStageSet shadeStages = (_shadeStages ?? throw new InvalidOperationException(
+            "The Cluster shade stages were not created.")).Resolve(assignments);
         if (_graphInstalled)
         {
-            if (_installedMaterialTopologyVersion != snapshot.TopologyVersion)
+            if (_installedMaterialTopologyVersion != assignments.TopologyVersion ||
+                _installedShadeStages is null ||
+                !_installedShadeStages.HasSameTopology(shadeStages))
             {
                 throw new InvalidOperationException(
-                    "Cluster material topology changed after retained graph installation. " +
-                    "Stage reconciliation is owned by the material-stage execution feature.");
+                    "Cluster material-stage topology changed after retained graph installation.");
             }
+            _installedDeformStages = deformStages;
+            _installedRasterStages = rasterStages;
+            _installedShadeStages = shadeStages;
             return _outputs;
         }
 
@@ -161,7 +196,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 InstallGraph(
                     ref edit,
                     in _outputDescription,
-                    snapshot,
+                    assignments,
+                    deformStages,
+                    rasterStages,
+                    shadeStages,
                     in declarationView,
                     in declarationUniforms);
                 edit.Commit();
@@ -170,7 +208,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             {
                 edit.Dispose();
             }
-            _installedMaterialTopologyVersion = snapshot.TopologyVersion;
+            _installedMaterialTopologyVersion = assignments.TopologyVersion;
+            _installedDeformStages = deformStages;
+            _installedRasterStages = rasterStages;
+            _installedShadeStages = shadeStages;
             _graphInstalled = true;
             return _outputs;
         }
@@ -182,6 +223,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _traversalPass = default;
             _frameResources = default;
             _outputs = default;
+            _shadePasses = [];
             throw;
         }
     }
@@ -237,8 +279,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 "The Cluster pipeline requires one unclassified instance batch.");
         }
         RenderInstanceBatch batch = current.Groups[0].Batch;
-        ClusterMaterialSnapshot materialSnapshot = _materialTable.Current;
-        if (materialSnapshot.TopologyVersion != _installedMaterialTopologyVersion)
+        ClusterMaterialAssignmentSet materialAssignments = _materialAssignments.Current;
+        if (materialAssignments.TopologyVersion != _installedMaterialTopologyVersion)
             throw new InvalidOperationException("Cluster material topology was not reconciled before the frame.");
 
         ViewCollector viewCollector = _viewCollector;
@@ -313,9 +355,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 WriteFrameUploads(
                     ref graph,
                     RequireReadbackWriteGeneration(),
-                    materialSnapshot,
+                    _installedDeformStages ?? throw new InvalidOperationException("Deform stages were not installed."),
+                    _installedRasterStages ?? throw new InvalidOperationException("Raster stages were not installed."),
+                    _installedShadeStages ?? throw new InvalidOperationException("Shade stages were not installed."),
                     in view,
                     in uniforms);
+                BindShadeStages(
+                    ref graph,
+                    _installedShadeStages,
+                    in view);
                 graph.SetPassData(
                     _traversalPass,
                     new ClusterDispatchParameters(new DispatchArguments(
@@ -393,6 +441,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         List<Exception>? failures = null;
         Release(ref _viewQuery, context.World, ref failures);
         Dispose(ref _uploads, ref failures);
+        Dispose(ref _shadeStages, ref failures);
+        DisposeMaterialSamplers(ref failures);
+        _deformStages = null;
+        _rasterStages = null;
         Dispose(ref _pipelines, ref failures);
         Dispose(ref _history, ref failures);
         Dispose(ref _dispatchIndirectLayout, ref failures);
@@ -431,6 +483,10 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _traversalPass = default;
         _frameResources = default;
         _outputs = default;
+        _installedDeformStages = null;
+        _installedRasterStages = null;
+        _installedShadeStages = null;
+        _shadePasses = [];
         _installedMaterialTopologyVersion = 0;
         _graphInstalled = false;
         ClearPendingFrame();

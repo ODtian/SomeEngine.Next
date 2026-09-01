@@ -130,17 +130,12 @@ struct ClusterBVHNode
     uint NodeType; // 0=Internal, 1=Leaf
 };
 
-// ─── SlotBuffer SOA access ───
-// GPU buffer is StructuredBuffer<uint>, SOA layout:
-//   field0: [slot0,slot1,...] | field1: [slot0,slot1,...] | ...
-// CPU slot address: slot offset + local material index.
-// Each pair of ushort slots packs into one uint.
-// slotCapacity is always even.
-uint GetSlotField(
-    StructuredBuffer<uint> slotBuffer,
+// Each stage owns an independent dense material-slot mapping. The Cluster instance ABI stores
+// only the assignment-sequence offset; stage compatibility never enters the instance record.
+uint GetStageSlot(
+    StructuredBuffer<uint> stageSlots,
     uint slotOffset,
     uint localMaterialIndex,
-    uint fieldIndex,
     uint slotCapacity)
 {
     // SLOT_INVALID is the fixed instance-property sentinel while RenderWorld material-slot
@@ -150,12 +145,7 @@ uint GetSlotField(
     if (localMaterialIndex >= slotCapacity - slotOffset)
         return SLOT_INVALID;
 
-    uint slotIndex = slotOffset + localMaterialIndex;
-
-    uint fieldBaseUint = fieldIndex * (slotCapacity / 2);
-    uint wordIdx = fieldBaseUint + (slotIndex / 2);
-    uint packed = slotBuffer[wordIdx];
-    return (slotIndex % 2 == 0) ? (packed & 0xFFFF) : (packed >> 16);
+    return stageSlots[slotOffset + localMaterialIndex];
 }
 
 uint LocalMaterial(uint packedMaterials, uint packedRanges, uint triStart)

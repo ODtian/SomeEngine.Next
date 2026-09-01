@@ -2,15 +2,15 @@
   "asset_guid": "be364c6a-306d-5f51-94ed-4c92e0b3d3db",
   "source_guid": "a8912e3e-df74-4a68-ad62-d12752b14921",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "f6cf0e9a7d7e6a85fc4a2b1e70da76bc5c3ad3a1ef5ee8e6b51a135e3c2c7253",
+  "content_fingerprint": "9dab2951c0d9044399e08572791e0d1fd6b845666398bb7ca0f624192cc37ba0",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_bin_common.slang",
-      "hash": "6a5e437c2436ddb1127b4917c72541368d6c7c228f3774c526ef5a80686e3156"
+      "hash": "aee7e30b00763b8c0a2f225c81ab7c89f9e9452a624b54863004978817c64f1d"
     },
     {
       "path": "assets/Shaders/cluster_bin_io.slang",
-      "hash": "49bfe6e789c501e91c29ba3d10cb7ed14ba24ffc24ba10bf4265c70ff9d8e060"
+      "hash": "701c2872d9174691741f1e507a2b5282a9625aa20de90e38f614210633e94bfb"
     },
     {
       "path": "assets/Shaders/cluster_bin_reserve.slang",
@@ -18,7 +18,7 @@
     },
     {
       "path": "assets/Shaders/cluster_structures.slang",
-      "hash": "bcbef524988da5b55a5d4c1c48f1a4f4f731d366741d45b86d2cfebc55aa801b"
+      "hash": "ffce9e553c8f54a1bb83b02578a4cfa25cd303c39740d0379f0cec55795ef021"
     },
     {
       "path": "assets/Shaders/resource_effects.slang",

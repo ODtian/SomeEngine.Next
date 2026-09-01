@@ -8,7 +8,7 @@ RWStructuredBuffer<uint> BinCounts;
 ConstantBuffer<ShadeBinUniforms> Uniforms;
 Texture2D<uint> VisBuffer;
 StructuredBuffer<uint4> VisibleClusters;
-StructuredBuffer<uint> SlotBuffer;
+StructuredBuffer<uint> ShadeSlots;
 ByteAddressBuffer PageHeap;
 
 [shader("compute")]
@@ -25,7 +25,7 @@ void CountShadeBins(uint3 threadId : SV_DispatchThreadID)
     uint4 cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
     uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.z);
     uint bin = FindShadeBin(
-        SlotBuffer,
+        ShadeSlots,
         PageHeap,
         Uniforms,
         slotOffset,

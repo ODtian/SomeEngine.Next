@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.RenderGraph;
+using SlangShaderSharp;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -13,7 +14,10 @@ public sealed partial class ClusterPipelineSystem
     private void InstallGraph(
         ref RenderGraphEdit graph,
         in ClusterPipelineOutputDescription output,
-        ClusterMaterialSnapshot snapshot,
+        ClusterMaterialAssignmentSet assignments,
+        ClusterDeformStageSet deformStages,
+        ClusterRasterStageSet rasterStages,
+        ClusterShadeStageSet shadeStages,
         in RenderView declarationView,
         in ClusterViewUniforms declarationUniforms)
     {
@@ -23,7 +27,10 @@ public sealed partial class ClusterPipelineSystem
             FrameResources frame = CreateFrameResources(
                 ref graph,
                 in output,
-                snapshot);
+                assignments,
+                deformStages,
+                rasterStages,
+                shadeStages);
             _frameResources = frame;
             AuthorHistoryInitialization(ref graph, frame);
             GraphBufferId viewConstants = UploadUniform(
@@ -52,7 +59,7 @@ public sealed partial class ClusterPipelineSystem
                 resetCacheAllocation: false);
             RecordHiZ(ref graph, frame, phaseOne: false);
 
-            RecordShade(ref graph, frame, in declarationView);
+            RecordShade(ref graph, frame, shadeStages, in declarationView);
             RecordPageFaultReadback(ref graph, frame);
             RecordFrameMetricsReadback(ref graph, frame);
             _outputs = new ClusterPipelineOutputs(
@@ -308,8 +315,6 @@ public sealed partial class ClusterPipelineSystem
                 RasterMaxBins = frame.RasterBinCount,
                 DeformMaxBins = frame.DeformBinCount,
                 SlotCapacity = frame.SlotCapacity,
-                RasterBinFieldIndex = ClusterMaterialTable.RasterBinField,
-                DeformBinFieldIndex = ClusterMaterialTable.DeformBinField,
                 MaxVisibleClusters = _options.MaxCandidates,
                 ResetCacheAllocationState = resetCacheAllocation ? 1u : 0u,
             },
@@ -376,7 +381,10 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, readOffsetArgs), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.SlotBuffer, sizeof(uint)),
+            CreateReadOnlyBufferView(graph, frame.RasterSlots, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.DeformSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
@@ -465,7 +473,10 @@ public sealed partial class ClusterPipelineSystem
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, readOffsetArgs), PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.SlotBuffer, sizeof(uint)),
+            CreateReadOnlyBufferView(graph, frame.RasterSlots, sizeof(uint)),
+            PipelineSync.ComputeShading));
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
+            CreateReadOnlyBufferView(graph, frame.DeformSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
@@ -1056,6 +1067,7 @@ public sealed partial class ClusterPipelineSystem
     private void RecordShade(
         ref RenderGraphEdit graph,
         in FrameResources frame,
+        ClusterShadeStageSet shadeStages,
         in RenderView view)
     {
         GraphBufferId binUniforms = UploadUniform(
@@ -1064,9 +1076,8 @@ public sealed partial class ClusterPipelineSystem
             {
                 ScreenWidth = checked((uint)frame.Width),
                 ScreenHeight = checked((uint)frame.Height),
-                MaterialCount = frame.ShadeBinCount,
+                ShadeBinCount = frame.ShadeBinCount,
                 SlotCapacity = frame.SlotCapacity,
-                BinFieldIndex = ClusterMaterialTable.ShadeBinField,
             },
             "Cluster shade bin uniforms");
         int bindingCount = 0;
@@ -1106,7 +1117,7 @@ public sealed partial class ClusterPipelineSystem
             CreateReadOnlyBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.SlotBuffer, sizeof(uint)),
+            CreateReadOnlyBufferView(graph, frame.ShadeSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
             CreateReadOnlyBufferView(graph, frame.PageHeap), PipelineSync.ComputeShading));
@@ -1159,7 +1170,7 @@ public sealed partial class ClusterPipelineSystem
             CreateReadOnlyBufferView(graph, frame.VisibleClusters, VisibleClusterStride),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ReadOnlyBuffer(
-            CreateReadOnlyBufferView(graph, frame.SlotBuffer, sizeof(uint)),
+            CreateReadOnlyBufferView(graph, frame.ShadeSlots, sizeof(uint)),
             PipelineSync.ComputeShading));
         AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
             CreateStorageBufferView(graph, frame.ShadeScatterCounts, sizeof(uint)),
@@ -1216,9 +1227,39 @@ public sealed partial class ClusterPipelineSystem
             PipelineSync.ComputeShading));
         ClusterDispatchParameters resolve = new(new DispatchArguments(
             Groups(frame.Width, 8), Groups(frame.Height, 8), 1));
-        _ = AddComputePass(ref graph, "Resolve Cluster visibility background",
+        GraphPassId resolvePass = AddComputePass(ref graph, "Resolve Cluster visibility background",
             _pipelines.Resolve, resolve, bindingCount,
             ClusterDispatchParameters.Record, asyncCompute: true);
+
+        _shadePasses = new GraphPassId[shadeStages.Invocations.Count];
+        GraphPassId predecessor = resolvePass;
+        for (int index = 0; index < shadeStages.Invocations.Count; index++)
+        {
+            ClusterShadeInvocation invocation = shadeStages.Invocations[index];
+            var dispatch = new ClusterIndirectDispatchParameters(
+                RequireDispatchIndirectLayout(),
+                frame.ShadeIndirectArgs,
+                checked((ulong)index * ClusterIndirectAbi.DispatchBytes));
+            GraphPassId pass = graph.AddComputeFramePass(
+                $"Shade Cluster material invocation {index}",
+                PassQueueSelection.AnyOfType(
+                    _options.EnableAsyncCompute ? QueueType.Compute : QueueType.Graphics),
+                dispatch,
+                default,
+                invocation.Pipeline.Pipeline,
+                ShaderVariableLayout.Null,
+                default,
+                static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
+                    _ = access.Read(
+                        data.Arguments,
+                        new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
+                        PipelineSync.ExecuteIndirect,
+                        ResourceAccess.IndirectArgument),
+                ClusterIndirectDispatchParameters.Record);
+            graph.OrderAfter(pass, predecessor);
+            _shadePasses[index] = pass;
+            predecessor = pass;
+        }
     }
 
     private GraphPassId AddRasterPass<TState>(

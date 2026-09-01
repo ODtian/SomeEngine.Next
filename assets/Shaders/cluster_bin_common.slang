@@ -9,11 +9,11 @@ struct RasterDeformBinningUniforms
     uint RasterMaxBins;
     uint DeformMaxBins;
     uint SlotCapacity;
-    uint RasterBinFieldIndex;
-    uint DeformBinFieldIndex;
     uint MaxVisibleClusters;
     uint ResetCacheAllocationState;
     uint Pad0;
+    uint Pad1;
+    uint Pad2;
 };
 
 struct VRBDecoded
@@ -67,7 +67,6 @@ uint RasterKey(
         slots,
         slotOffset,
         localMaterialIndex,
-        uniforms.RasterBinFieldIndex,
         uniforms.SlotCapacity,
         uniforms.RasterMaxBins);
 }
@@ -82,7 +81,6 @@ uint DeformKey(
         slots,
         slotOffset,
         localMaterialIndex,
-        uniforms.DeformBinFieldIndex,
         uniforms.SlotCapacity,
         uniforms.DeformMaxBins);
 }

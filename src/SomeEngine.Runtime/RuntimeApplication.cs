@@ -279,13 +279,13 @@ internal static class RuntimeApplication
             coordinator,
             renderWorld,
             instances);
-        var materialTable = new ClusterMaterialTable(new ClusterMaterialTypeExecutionResolver());
-        var materialSystem = new ClusterMaterialSystem(materialTable);
-        var instanceSystem = new ClusterInstanceSystem<ClusterMaterialProducer>(
+        var materialAssignments = new ClusterMaterialAssignments();
+        var materialSystem = new ClusterMaterialAssignmentSystem(materialAssignments);
+        var instanceSystem = new ClusterInstanceSystem<ClusterMaterialOffsetProducer>(
             cluster,
-            ClusterMaterialSystem.EntityQuery(),
+            ClusterMaterialAssignmentSystem.EntityQuery(),
             ClusterRenderFeature.InstanceLayout,
-            materialTable.CreateProducer());
+            materialAssignments.CreateProducer());
         var prepareSystems = new RenderPrepareSystems(renderWorld, instances);
         _ = prepareSystems.Add(new ClusterResidencySystem(cluster));
         _ = prepareSystems.Add(materialSystem);
@@ -315,10 +315,11 @@ internal static class RuntimeApplication
         ClusterPipelineSystem CreatePipeline() => new(
             backend,
             device,
+            renderDevice,
             cluster,
             instanceSystem,
             ClusterRenderFeature.InstanceLayout,
-            materialTable,
+            materialAssignments,
             pipelineConfiguration,
             renderGraph,
             new ClusterPipelineOutputDescription(boot.Width, boot.Height),
@@ -608,7 +609,7 @@ internal static class RuntimeApplication
                     ClusterFrameMetrics frameMetrics = pipeline.CaptureFrameMetrics();
                     Console.WriteLine(
                         $"Cluster frame {frameMetrics.FrameIndex}: " +
-                        $"materials={materialTable.Current.MaterialCount}, " +
+                        $"materials={materialAssignments.Current.MaterialCount}, " +
                         $"candidates={frameMetrics.CandidateCount}/" +
                         $"{frameMetrics.CandidateDispatchGroups} groups, " +
                         $"phase1={frameMetrics.PhaseOneSoftwareClusters} SW+" +

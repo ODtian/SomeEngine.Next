@@ -4,6 +4,7 @@ internal sealed partial class FrameExecutor
 {
     private void ResolveValues()
     {
+        ResolveValueOrder();
         for (int pass = 0; pass < _passes.Length; pass++)
         {
             if (_passes[pass].Enabled && _passes[pass].Options.Culling == PassCullingMode.NeverCull)
@@ -37,7 +38,7 @@ internal sealed partial class FrameExecutor
             _bufferCoordinateScratch.AsSpan(0, coordinateCount),
             _contentsScratch.AsSpan(0, segmentCount));
 
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
@@ -99,7 +100,7 @@ internal sealed partial class FrameExecutor
         Array.Clear(_contentsScratch, 0, cellCount);
         InitializeTextureContents(texture, _contentsScratch.AsSpan(0, cellCount));
 
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
@@ -159,7 +160,7 @@ internal sealed partial class FrameExecutor
             _queryCoordinateScratch.AsSpan(0, coordinateCount),
             _contentsScratch.AsSpan(0, segmentCount));
 
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
         foreach (int accessIndex in accesses)
         {
             FrameResourceAccess access = _accesses[accessIndex];
@@ -207,7 +208,7 @@ internal sealed partial class FrameExecutor
             enabledOnly: true);
         if (accesses.Count == 0) return;
 
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
         int writer = -1;
         ResourceContentState contents = ResolveShaderTableContents(_shaderTables[tableIndex].EntryBoundaryStates);
         foreach (int accessIndex in accesses)
@@ -316,7 +317,7 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _writerScratch, segmentCount);
         Array.Fill(_writerScratch, -1, 0, segmentCount);
         PrepareReaderScratch(segmentCount);
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
 
         foreach (int accessIndex in accesses)
         {
@@ -357,7 +358,7 @@ internal sealed partial class FrameExecutor
         PrepareReaderScratch(cellCount);
         EnsureCapacity(ref _layoutScratch, cellCount);
         Array.Clear(_layoutScratch, 0, cellCount);
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
 
         foreach (int accessIndex in accesses)
         {
@@ -398,7 +399,7 @@ internal sealed partial class FrameExecutor
         EnsureCapacity(ref _writerScratch, segmentCount);
         Array.Fill(_writerScratch, -1, 0, segmentCount);
         PrepareReaderScratch(segmentCount);
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
 
         foreach (int accessIndex in accesses)
         {
@@ -435,7 +436,7 @@ internal sealed partial class FrameExecutor
             tableIndex,
             enabledOnly: false);
         FilterLiveAccesses(accesses);
-        SortAccessesByDeclaration(accesses);
+        SortAccessesByValueOrder(accesses);
 
         int writer = -1;
         _shaderReaderScratch.Clear();
@@ -508,15 +509,95 @@ internal sealed partial class FrameExecutor
         return _resourceAccessScratch;
     }
 
-    private void SortAccessesByDeclaration(List<int> accesses)
+    private void ResolveValueOrder()
+    {
+        PrepareArray(ref _valueIndegree, _passes.Length);
+        PrepareArray(ref _valuePosition, _passes.Length);
+        Array.Clear(_valueIndegree);
+        Array.Fill(_valuePosition, -1);
+        for (int pass = 0; pass < _valueSuccessors.Length; pass++)
+            _valueSuccessors[pass].Clear();
+
+        GraphStructureIndex structureIndex = _frame.StructureIndex;
+        for (int staticConsumer = 0;
+             staticConsumer < structureIndex.ExplicitPredecessors.Length;
+             staticConsumer++)
+        {
+            int consumer = ResolvePass(structureIndex.PassIds[staticConsumer]);
+            foreach (int staticPredecessor in structureIndex.ExplicitPredecessors[staticConsumer])
+            {
+                int predecessor = ResolvePass(structureIndex.PassIds[staticPredecessor]);
+                AddValueOrderEdge(predecessor, consumer);
+            }
+        }
+        foreach (ExplicitPassOrder order in _frame.DynamicOrders)
+            AddValueOrderEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
+
+        for (int fixedPass = 0; fixedPass < _passes.Length; fixedPass++)
+        {
+            if (!_passes[fixedPass].Enabled ||
+                _passes[fixedPass].Options.Scheduling != PassSchedulingMode.PreserveDeclarationPosition)
+            {
+                continue;
+            }
+            for (int pass = 0; pass < fixedPass; pass++)
+                AddValueOrderEdge(pass, fixedPass);
+            for (int pass = fixedPass + 1; pass < _passes.Length; pass++)
+                AddValueOrderEdge(fixedPass, pass);
+        }
+
+        _valueReady.Clear();
+        int enabledCount = 0;
+        for (int pass = 0; pass < _passes.Length; pass++)
+        {
+            if (!_passes[pass].Enabled)
+                continue;
+            enabledCount++;
+            if (_valueIndegree[pass] == 0)
+                _valueReady.Enqueue(pass, _passes[pass].DeclarationOrdinal);
+        }
+
+        int position = 0;
+        while (_valueReady.TryDequeue(out int pass, out _))
+        {
+            _valuePosition[pass] = position++;
+            foreach (int successor in _valueSuccessors[pass])
+                if (--_valueIndegree[successor] == 0)
+                    _valueReady.Enqueue(successor, _passes[successor].DeclarationOrdinal);
+        }
+
+        // Live-cycle validation reports the architectural error after value/liveness discovery.
+        // Give disabled or explicitly cyclic rows deterministic trailing positions here.
+        if (position != enabledCount || enabledCount != _passes.Length)
+        {
+            for (int pass = 0; pass < _passes.Length; pass++)
+                if (_valuePosition[pass] < 0)
+                    _valuePosition[pass] = position++;
+        }
+    }
+
+    private void AddValueOrderEdge(int predecessor, int consumer)
+    {
+        if (predecessor == consumer ||
+            !_passes[predecessor].Enabled ||
+            !_passes[consumer].Enabled ||
+            _valueSuccessors[predecessor].Contains(consumer))
+        {
+            return;
+        }
+        _valueSuccessors[predecessor].Add(consumer);
+        _valueIndegree[consumer]++;
+    }
+
+    private void SortAccessesByValueOrder(List<int> accesses)
     {
         for (int index = 1; index < accesses.Count; index++)
         {
             int value = accesses[index];
-            int ordinal = _passes[_accesses[value].PassIndex].DeclarationOrdinal;
+            int ordinal = _valuePosition[_accesses[value].PassIndex];
             int insertion = index;
             while (insertion > 0 &&
-                   _passes[_accesses[accesses[insertion - 1]].PassIndex].DeclarationOrdinal > ordinal)
+                   _valuePosition[_accesses[accesses[insertion - 1]].PassIndex] > ordinal)
             {
                 accesses[insertion] = accesses[insertion - 1];
                 insertion--;

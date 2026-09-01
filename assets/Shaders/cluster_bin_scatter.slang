@@ -12,7 +12,8 @@ StructuredBuffer<uint4> VisibleClusters;
 RWStructuredBuffer<uint2> BinnedClusterIndexBuffer;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
-StructuredBuffer<uint> SlotBuffer;
+StructuredBuffer<uint> RasterSlots;
+StructuredBuffer<uint> DeformSlots;
 ByteAddressBuffer PageHeap;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<DeformBinEntry> DeformBinMeta;
@@ -44,7 +45,7 @@ void ScatterRasterBatches(
         ScatterRaster(
             RasterBinMeta,
             BinnedClusterIndexBuffer,
-            RasterKey(SlotBuffer, Uniforms, slotOffset, material),
+            RasterKey(RasterSlots, Uniforms, slotOffset, material),
             visibleIndex,
             triangleStart,
             triangleEnd,
@@ -61,7 +62,7 @@ void ScatterRasterBatches(
         ScatterRaster(
             RasterBinMeta,
             BinnedClusterIndexBuffer,
-            RasterKey(SlotBuffer, Uniforms, slotOffset, material),
+            RasterKey(RasterSlots, Uniforms, slotOffset, material),
             visibleIndex,
             triangleStart,
             triangleEnd,
@@ -85,7 +86,7 @@ void ScatterDeformCluster(
         DeformBinMeta,
         DeformBinnedClusterIndexBuffer,
         CacheOffsetsWrite,
-        DeformKey(SlotBuffer, Uniforms, slotOffset, material),
+        DeformKey(DeformSlots, Uniforms, slotOffset, material),
         visibleIndex,
         CACHE_OFFSET_UNINITIALIZED);
 }

@@ -22,7 +22,7 @@ groupshared uint BlockBase;
 void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     uint bin = threadId.x;
-    uint count = bin < Uniforms.MaterialCount ? BinCounts[bin] : 0u;
+    uint count = bin < Uniforms.ShadeBinCount ? BinCounts[bin] : 0u;
     Prefix[groupIndex] = count;
     GroupMemoryBarrierWithGroupSync();
 
@@ -43,7 +43,7 @@ void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV
         ScatterCounts,
         IndirectArgs,
         bin,
-        Uniforms.MaterialCount,
+        Uniforms.ShadeBinCount,
         BlockBase,
         Prefix[groupIndex],
         count);

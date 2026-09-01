@@ -41,12 +41,14 @@ public sealed partial class ClusterPipelineSystem
     private FrameResources CreateFrameResources(
         ref RenderGraphEdit graph,
         in ClusterPipelineOutputDescription output,
-        ClusterMaterialSnapshot snapshot)
+        ClusterMaterialAssignmentSet assignments,
+        ClusterDeformStageSet deformStages,
+        ClusterRasterStageSet rasterStages,
+        ClusterShadeStageSet shadeStages)
     {
-        uint materialCount = snapshot.MaterialCount;
-        uint rasterBinCount = snapshot.RasterBinCount;
-        uint deformBinCount = snapshot.DeformBinCount;
-        uint shadeBinCount = snapshot.ShadeBinCount;
+        uint rasterBinCount = rasterStages.BinCount;
+        uint deformBinCount = deformStages.BinCount;
+        uint shadeBinCount = shadeStages.BinCount;
         ulong candidates = _options.MaxCandidates;
         ulong binnedCapacity = checked(candidates * MaxBinnedEntriesPerCluster);
         int width = output.Width;
@@ -97,11 +99,10 @@ public sealed partial class ClusterPipelineSystem
         {
             Width = width,
             Height = height,
-            MaterialCount = materialCount,
             RasterBinCount = rasterBinCount,
             DeformBinCount = deformBinCount,
             ShadeBinCount = shadeBinCount,
-            SlotCapacity = snapshot.SlotCapacity,
+            SlotCapacity = assignments.SlotCapacity,
             PageFaultCapacity = pageFaultCapacity,
             PageHeap = DeclareExternalBuffer(ref graph, residency.PageHeap.Info.Size, BufferUsages.ShaderRead,
                 "Cluster page heap"),
@@ -119,11 +120,21 @@ public sealed partial class ClusterPipelineSystem
                 "Cluster page-fault readback"),
             PreviousHiZ = graph.DeclareExternalTexture(previousHistoryDescription),
             CurrentHiZ = graph.DeclareExternalTexture(currentHistoryDescription),
-            SlotBuffer = UploadWords(
+            RasterSlots = UploadWords(
                 ref graph,
-                snapshot.SlotWords.Span,
+                rasterStages.Slots.Span,
                 BufferUsages.ShaderRead,
-                "Cluster material slot table"),
+                "Cluster raster stage slots"),
+            DeformSlots = UploadWords(
+                ref graph,
+                deformStages.Slots.Span,
+                BufferUsages.ShaderRead,
+                "Cluster deform stage slots"),
+            ShadeSlots = UploadWords(
+                ref graph,
+                shadeStages.Slots.Span,
+                BufferUsages.ShaderRead,
+                "Cluster shade stage slots"),
             ReadOffsetZero = UploadBytes(
                 ref graph,
                 stackalloc byte[16],
@@ -382,7 +393,9 @@ public sealed partial class ClusterPipelineSystem
     private void WriteFrameUploads(
         ref RenderGraphFrame graph,
         int generation,
-        ClusterMaterialSnapshot snapshot,
+        ClusterDeformStageSet deformStages,
+        ClusterRasterStageSet rasterStages,
+        ClusterShadeStageSet shadeStages,
         in RenderView view,
         in ClusterViewUniforms viewUniforms)
     {
@@ -392,8 +405,12 @@ public sealed partial class ClusterPipelineSystem
         uploads.BeginFrame();
         try
         {
-            WriteWords(ref graph, uploads, generation, snapshot.SlotWords.Span,
-                "Cluster material slot table");
+            WriteWords(ref graph, uploads, generation, rasterStages.Slots.Span,
+                "Cluster raster stage slots");
+            WriteWords(ref graph, uploads, generation, deformStages.Slots.Span,
+                "Cluster deform stage slots");
+            WriteWords(ref graph, uploads, generation, shadeStages.Slots.Span,
+                "Cluster shade stage slots");
             WriteBytes(ref graph, uploads, generation, stackalloc byte[16],
                 "Cluster zero read offset");
             WriteWords(ref graph, uploads, generation, [0u, 1u, 1u, 0u],
@@ -412,9 +429,8 @@ public sealed partial class ClusterPipelineSystem
                 {
                     ScreenWidth = checked((uint)frame.Width),
                     ScreenHeight = checked((uint)frame.Height),
-                    MaterialCount = frame.ShadeBinCount,
+                    ShadeBinCount = frame.ShadeBinCount,
                     SlotCapacity = frame.SlotCapacity,
-                    BinFieldIndex = ClusterMaterialTable.ShadeBinField,
                 },
                 "Cluster shade bin uniforms");
             WriteUniform(
@@ -455,8 +471,6 @@ public sealed partial class ClusterPipelineSystem
                 RasterMaxBins = frame.RasterBinCount,
                 DeformMaxBins = frame.DeformBinCount,
                 SlotCapacity = frame.SlotCapacity,
-                RasterBinFieldIndex = ClusterMaterialTable.RasterBinField,
-                DeformBinFieldIndex = ClusterMaterialTable.DeformBinField,
                 MaxVisibleClusters = _options.MaxCandidates,
                 ResetCacheAllocationState = phaseOne ? 1u : 0u,
             },
@@ -774,7 +788,6 @@ public sealed partial class ClusterPipelineSystem
 
         internal int Width;
         internal int Height;
-        internal uint MaterialCount;
         internal uint RasterBinCount;
         internal uint DeformBinCount;
         internal uint ShadeBinCount;
@@ -789,7 +802,9 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId FrameMetricsReadback;
         internal GraphTextureId PreviousHiZ;
         internal GraphTextureId CurrentHiZ;
-        internal GraphBufferId SlotBuffer;
+        internal GraphBufferId RasterSlots;
+        internal GraphBufferId DeformSlots;
+        internal GraphBufferId ShadeSlots;
         internal GraphBufferId ReadOffsetZero;
         internal GraphBufferId CandidateArgs;
         internal GraphBufferId CandidateArgsInitialization;

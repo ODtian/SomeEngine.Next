@@ -88,13 +88,9 @@ public sealed class ClusterPipelineTests
         AssertOffset<ClusterRasterDeformBinningUniforms>(
             nameof(ClusterRasterDeformBinningUniforms.SlotCapacity), 8);
         AssertOffset<ClusterRasterDeformBinningUniforms>(
-            nameof(ClusterRasterDeformBinningUniforms.RasterBinFieldIndex), 12);
+            nameof(ClusterRasterDeformBinningUniforms.MaxVisibleClusters), 12);
         AssertOffset<ClusterRasterDeformBinningUniforms>(
-            nameof(ClusterRasterDeformBinningUniforms.DeformBinFieldIndex), 16);
-        AssertOffset<ClusterRasterDeformBinningUniforms>(
-            nameof(ClusterRasterDeformBinningUniforms.MaxVisibleClusters), 20);
-        AssertOffset<ClusterRasterDeformBinningUniforms>(
-            nameof(ClusterRasterDeformBinningUniforms.ResetCacheAllocationState), 24);
+            nameof(ClusterRasterDeformBinningUniforms.ResetCacheAllocationState), 16);
     }
 
     [Fact]

@@ -151,6 +151,18 @@ public sealed class ScalarLayout
             WriteIntegerField(fieldBytes, field, unchecked((uint)value));
     }
 
+    internal void Write(string name, bool value, Span<byte> payload)
+    {
+        if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
+            WriteIntegerField(fieldBytes, field, value ? 1u : 0u);
+    }
+
+    internal void Write(string name, Vector2 value, Span<byte> payload)
+    {
+        if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
+            WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(value, 0, 0));
+    }
+
     internal void Write(string name, Vector3 value, Span<byte> payload)
     {
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
@@ -161,6 +173,44 @@ public sealed class ScalarLayout
     {
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
             WriteFloatField(fieldBytes, field.ComponentCount, value);
+    }
+
+    internal byte[] Encode(Material material)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        var result = new byte[ByteSize];
+        WriteHeader(result);
+        Span<byte> payload = result.AsSpan(HeaderByteSize, checked((int)PayloadByteSize));
+        IReadOnlyList<MaterialSlotDefinition> definitions = material.Slots;
+        for (uint slot = 0; slot < definitions.Count; slot++)
+        {
+            MaterialSlotDefinition definition = definitions[checked((int)slot)];
+            object? value = material.GetSlotValue(slot);
+            switch (value)
+            {
+                case null:
+                    break;
+                case float scalar:
+                    Write(definition.Name, scalar, payload);
+                    break;
+                case int scalar:
+                    Write(definition.Name, scalar, payload);
+                    break;
+                case bool scalar:
+                    Write(definition.Name, scalar, payload);
+                    break;
+                case Vector2 vector:
+                    Write(definition.Name, vector, payload);
+                    break;
+                case Vector3 vector:
+                    Write(definition.Name, vector, payload);
+                    break;
+                case Vector4 vector:
+                    Write(definition.Name, vector, payload);
+                    break;
+            }
+        }
+        return result;
     }
 
     private bool TryField(

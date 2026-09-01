@@ -45,11 +45,11 @@ internal struct ClusterRasterDeformBinningUniforms
     internal uint RasterMaxBins;
     internal uint DeformMaxBins;
     internal uint SlotCapacity;
-    internal uint RasterBinFieldIndex;
-    internal uint DeformBinFieldIndex;
     internal uint MaxVisibleClusters;
     internal uint ResetCacheAllocationState;
     internal uint Pad0;
+    internal uint Pad1;
+    internal uint Pad2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -66,12 +66,30 @@ internal struct ClusterShadeBinUniforms
 {
     internal uint ScreenWidth;
     internal uint ScreenHeight;
-    internal uint MaterialCount;
+    internal uint ShadeBinCount;
     internal uint SlotCapacity;
-    internal uint BinFieldIndex;
     internal uint Pad0;
     internal uint Pad1;
     internal uint Pad2;
+    internal uint Pad3;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 240)]
+internal struct ClusterShadeUniforms
+{
+    internal Matrix4x4 ViewProj;
+    internal Matrix4x4 ClipToWorld;
+    internal Matrix4x4 View;
+    internal uint DebugMode;
+    internal uint ScreenWidth;
+    internal uint ScreenHeight;
+    internal uint ShadingBin;
+    internal uint ShadeBinCount;
+    internal uint Pad1;
+    internal uint Pad2;
+    internal uint Pad3;
+    internal Vector3 CameraPos;
+    internal uint Pad4;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]

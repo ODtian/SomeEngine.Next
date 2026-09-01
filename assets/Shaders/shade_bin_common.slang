@@ -10,12 +10,12 @@ struct ShadeBinUniforms
 {
     uint ScreenWidth;
     uint ScreenHeight;
-    uint MaterialCount;
+    uint ShadeBinCount;
     uint SlotCapacity;
-    uint BinFieldIndex;
     uint Pad0;
     uint Pad1;
     uint Pad2;
+    uint Pad3;
 };
 
 uint FindShadeBin(
@@ -36,9 +36,8 @@ uint FindShadeBin(
         slots,
         slotOffset,
         material,
-        uniforms.BinFieldIndex,
         uniforms.SlotCapacity,
-        uniforms.MaterialCount);
+        uniforms.ShadeBinCount);
 }
 
 uint MaterialSlotOffset(

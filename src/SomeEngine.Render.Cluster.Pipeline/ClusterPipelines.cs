@@ -98,6 +98,33 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
             throw;
         }
     }
+
+    internal static ClusterComputePipeline Create(
+        IGraphicsBackend backend,
+        Device device,
+        in CookedShaderEntry cooked,
+        string name)
+    {
+        GraphicsPipeline? pipeline = null;
+        try
+        {
+            pipeline = backend.CreateComputePipeline(
+                device,
+                new ComputePipelineDesc(
+                    cooked.Program,
+                    cooked.EntryPoint,
+                    name));
+            return new ClusterComputePipeline(cooked.Program, pipeline);
+        }
+        catch (Exception primary)
+        {
+            CleanupConstructionFailure(
+                primary,
+                pipeline,
+                $"Cluster compute pipeline '{name}' construction failed and cleanup also reported failures.");
+            throw;
+        }
+    }
 }
 
 /// <summary>Owns one cooked vertex/pixel program and its RHI pipeline.</summary>

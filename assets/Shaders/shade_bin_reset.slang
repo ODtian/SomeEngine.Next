@@ -13,7 +13,7 @@ RWStructuredBuffer<uint> ReserveCounters;
 [numthreads(128, 1, 1)]
 void ResetShadeBins(uint3 threadId : SV_DispatchThreadID)
 {
-    if (threadId.x < Uniforms.MaterialCount)
+    if (threadId.x < Uniforms.ShadeBinCount)
     {
         BinCounts[threadId.x] = 0u;
         ScatterCounts[threadId.x] = 0u;

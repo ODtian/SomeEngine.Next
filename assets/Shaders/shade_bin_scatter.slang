@@ -8,7 +8,7 @@ Texture2D<uint> VisBuffer;
 [ResourceEffect(ResourceEffects.Read, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinOffsets;
 StructuredBuffer<uint4> VisibleClusters;
-StructuredBuffer<uint> SlotBuffer;
+StructuredBuffer<uint> ShadeSlots;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ScatterCounts;
 ByteAddressBuffer PageHeap;
@@ -29,7 +29,7 @@ void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID)
     uint4 cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
     uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.z);
     uint bin = FindShadeBin(
-        SlotBuffer,
+        ShadeSlots,
         PageHeap,
         Uniforms,
         slotOffset,
