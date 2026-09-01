@@ -1,0 +1,40 @@
+using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.RenderGraph;
+
+namespace SomeEngine.Render.Cluster.Tests;
+
+public sealed class ClusterPipelineOutputTests
+{
+    [Fact]
+    public void Output_description_requires_positive_dimensions()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ClusterPipelineOutputDescription(0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ClusterPipelineOutputDescription(1, 0));
+
+        var description = new ClusterPipelineOutputDescription(64, 32);
+        Assert.Equal(64, description.Width);
+        Assert.Equal(32, description.Height);
+    }
+
+    [Fact]
+    public void Geometry_outputs_are_explicit_and_have_no_presentation_target()
+    {
+        var outputs = new ClusterPipelineOutputs(
+            default,
+            default,
+            default,
+            64,
+            32);
+
+        Assert.False(outputs.IsValid);
+        Assert.Equal(64, outputs.Width);
+        Assert.Equal(32, outputs.Height);
+        Assert.DoesNotContain(
+            typeof(ClusterPipelineOutputs).GetProperties(),
+            static property => property.Name.Contains(
+                "Present",
+                StringComparison.OrdinalIgnoreCase));
+    }
+}

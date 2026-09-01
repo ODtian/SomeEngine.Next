@@ -27,6 +27,11 @@ WriteGeneratedFile(
     BuildRenderInstanceLayoutSource(instanceProperties));
 
 AssetProject project = AssetAuthoring.CreateProject(projectRoot);
+RemoveObsoleteAsset(
+    project,
+    "assets/Shaders/cluster_motion_vectors.slang",
+    "assets/Shaders/cluster_motion_vectors.shader.asset");
+RemoveGeneratedTestPublications(project);
 
 if (args.Contains("--stamp-vertex-layout-abi", StringComparer.Ordinal))
 {
@@ -61,7 +66,6 @@ string[] shaderSources =
     "cluster_cull_reset.slang",
     "cluster_deform.slang",
     "cluster_draw.slang",
-    "cluster_motion_vectors.slang",
     "cluster_resolve.slang",
     "shade_bin_reset.slang",
     "shade_bin_count.slang",
@@ -93,7 +97,7 @@ foreach (string shaderName in shaderSources)
     }
 }
 
-AssetGuid clusterRendererGuid = GenerateClusterPipeline(project);
+AssetGuid clusterPipelineGuid = GenerateClusterPipeline(project);
 AssetGuid defaultPbrMaterialGuid = GenerateMaterialTemplate(
     project,
     "DefaultPBR",
@@ -123,7 +127,7 @@ if (File.Exists(icoSpherePath))
         project.Manifest.TryGetAsset(guid, out AssetManifestRecord record)
         && string.Equals(record.AssetType, AssetType<Mesh>.Name, StringComparison.Ordinal));
     AssetGuid sceneGuid = GenerateDefaultScene(project, meshGuid, defaultPbrMaterialGuid);
-    GenerateRuntimeConfiguration(project, sceneGuid, clusterRendererGuid);
+    GenerateRuntimeConfiguration(project, sceneGuid, clusterPipelineGuid);
 }
 else
 {
@@ -177,6 +181,29 @@ static string ResolveProjectRoot(string startPath)
     }
 
     throw new DirectoryNotFoundException($"Could not locate project root from '{startPath}'.");
+}
+
+static void RemoveObsoleteAsset(
+    AssetProject project,
+    string sourcePath,
+    string assetPath)
+{
+    if (project.Manifest.TryAssetPath(assetPath, out AssetManifestRecord asset))
+        project.Manifest.RemoveAsset(asset.Guid);
+    if (project.Manifest.TrySourceGuid(sourcePath, out SourceGuid source))
+        project.Manifest.RemoveSource(source);
+}
+
+static void RemoveGeneratedTestPublications(AssetProject project)
+{
+    AssetGuid[] generated = project.Manifest.Assets.Values
+        .Where(static asset => asset.Path.StartsWith(
+            "Library/GeneratedTestAssets/",
+            StringComparison.Ordinal))
+        .Select(static asset => asset.Guid)
+        .ToArray();
+    foreach (AssetGuid guid in generated)
+        project.Manifest.RemoveAsset(guid);
 }
 
 static void WriteGeneratedFile(string path, string content)
@@ -424,23 +451,9 @@ static AssetGuid GenerateClusterPipeline(AssetProject project)
                 ResolveRequired(project, "assets/Shaders/shade_bin_scatter.slang"),
                 "ScatterShadeBins"),
             ComputeOperation(
-                ClusterShaderOperationRole.MotionVectors,
-                ResolveRequired(project, "assets/Shaders/cluster_motion_vectors.slang"),
-                "CSMotionVectors"),
-            ComputeOperation(
                 ClusterShaderOperationRole.VisibilityResolve,
                 ResolveRequired(project, "assets/Shaders/cluster_resolve.slang"),
                 "CSResolve"),
-            RasterOperation(
-                ClusterShaderOperationRole.TemporalResolve,
-                ResolveRequired(project, "assets/Shaders/temporal_resolve.slang"),
-                "VSMain",
-                "PSMain"),
-            RasterOperation(
-                ClusterShaderOperationRole.ToneMapAndPresent,
-                ResolveRequired(project, "assets/Shaders/post_tonemap.slang"),
-                "VSMain",
-                "PSMain"),
         ],
     };
 
@@ -542,7 +555,7 @@ static AssetGuid GenerateDefaultScene(
 static void GenerateRuntimeConfiguration(
     AssetProject project,
     AssetGuid sceneGuid,
-    AssetGuid clusterRendererGuid)
+    AssetGuid clusterPipelineGuid)
 {
     const string outputPath = "assets/Runtime/default.runtime.asset";
     project.CreateAsset(
@@ -551,7 +564,7 @@ static void GenerateRuntimeConfiguration(
         {
             Name = "Default Runtime",
             SceneGuid = sceneGuid.ToFlatString(),
-            ClusterRendererGuid = clusterRendererGuid.ToFlatString(),
+            ClusterPipelineGuid = clusterPipelineGuid.ToFlatString(),
             UiShaders =
             [
                 Shader(
@@ -560,6 +573,17 @@ static void GenerateRuntimeConfiguration(
                     ShaderStage.Vertex),
                 Shader(
                     ResolveRequired(project, "assets/Shaders/imgui.slang"),
+                    "PSMain",
+                    ShaderStage.Pixel),
+            ],
+            PresentationShaders =
+            [
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/post_tonemap.slang"),
+                    "VSMain",
+                    ShaderStage.Vertex),
+                Shader(
+                    ResolveRequired(project, "assets/Shaders/post_tonemap.slang"),
                     "PSMain",
                     ShaderStage.Pixel),
             ],

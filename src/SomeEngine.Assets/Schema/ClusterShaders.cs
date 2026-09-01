@@ -91,6 +91,5 @@ public partial class ClusterShaders
         ClusterShaderOperationRole.DeformCachePopulate or
         ClusterShaderOperationRole.SoftwareVisibilityRaster or
         ClusterShaderOperationRole.HardwareVisibilityRaster or
-        ClusterShaderOperationRole.MotionVectors or
         ClusterShaderOperationRole.VisibilityResolve;
 }

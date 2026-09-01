@@ -129,9 +129,7 @@ public sealed class ClusterAssetLoaderTests
                 : ClusterBoundsSupport.NotApplicable,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.SoftwareDepthMerge
-            or ClusterShaderOperationRole.TemporalResolve
-            or ClusterShaderOperationRole.ToneMapAndPresent)
+            or ClusterShaderOperationRole.SoftwareDepthMerge)
         {
             result.Shaders =
             [
@@ -168,7 +166,6 @@ public sealed class ClusterAssetLoaderTests
         => role is ClusterShaderOperationRole.DeformCachePopulate
             or ClusterShaderOperationRole.SoftwareVisibilityRaster
             or ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.MotionVectors
             or ClusterShaderOperationRole.VisibilityResolve;
 
     private sealed class DependencyCountingStorage : IAssetStorage

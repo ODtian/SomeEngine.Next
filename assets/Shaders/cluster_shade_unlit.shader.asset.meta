@@ -2,7 +2,7 @@
   "asset_guid": "77261b58-8f75-5ad6-8fee-d7490a8cf873",
   "source_guid": "7842851d-de0f-4d7d-8386-12b37a99d845",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "bba1e903bc45b05d3ac6093acc5e3572f31c53d26b3f206a24eaf18ed234753f",
+  "content_fingerprint": "a7e7a378eddc9cee66dba31ff775149821cf735547926323f11340e44a9f3f4b",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_common.slang",
@@ -14,7 +14,7 @@
     },
     {
       "path": "assets/Shaders/cluster_shade_pipeline.slang",
-      "hash": "70ff562b9a1d80d08e839df649cbfc6150e140e1a2728ac4c9583e50aeb5e7cf"
+      "hash": "811386580de68460bb4b1e1c506fde2b35ce9cc9675d392a9e9b2f2cca399b9e"
     },
     {
       "path": "assets/Shaders/cluster_shade_unlit.slang",
@@ -30,7 +30,7 @@
     },
     {
       "path": "assets/Shaders/generated/render_instance_layout.slang",
-      "hash": "ce99ff32845ec3831e1910fea5784d0aface5fe0e18bf3f1f01f1ae96000fb80"
+      "hash": "cf8fa08c7f1b56d2cfe5e5419fcbf8664c8906c14123109c48d0064d6d65d738"
     },
     {
       "path": "assets/Shaders/material_interfaces.slang",

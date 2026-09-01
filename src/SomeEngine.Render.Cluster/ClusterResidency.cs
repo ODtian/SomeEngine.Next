@@ -187,6 +187,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
     internal bool IsRegistrationOwner => _meshes.IsRegistrationOwner;
 
+    internal int PageFaultCapacity => _pageFaultCapacity;
+
     internal ClusterResidencyBinding GetBinding()
     {
         ThrowIfNotActive();

@@ -54,6 +54,15 @@ public sealed partial class AssetManifest
         _assetsBySource = null;
     }
 
+    public bool RemoveSource(SourceGuid guid)
+    {
+        if (!_sources.Remove(guid, out string? path))
+            return false;
+        _sourceGuidsByPath.Remove(path);
+        _assetsBySource = null;
+        return true;
+    }
+
     public void AddAsset(
         AssetGuid guid,
         string name,
@@ -100,6 +109,17 @@ public sealed partial class AssetManifest
         _dependencies[guid] = NormalizeDependencies(guid, dependencies);
         _assetsBySource = null;
         _referencers = null;
+    }
+
+    public bool RemoveAsset(AssetGuid guid)
+    {
+        if (!_assets.Remove(guid, out AssetManifestRecord record))
+            return false;
+        _assetGuidsByPath.Remove(record.Path);
+        _dependencies.Remove(guid);
+        _assetsBySource = null;
+        _referencers = null;
+        return true;
     }
 
     public bool TrySourcePath(SourceGuid guid, out string path) => _sources.TryGetValue(guid, out path!);

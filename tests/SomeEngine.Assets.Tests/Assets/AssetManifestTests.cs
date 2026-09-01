@@ -58,6 +58,32 @@ public class AssetManifestTests
                 schemaFingerprint: 0));
     }
 
+    [Fact]
+    public void RemoveSourceAndAssetInvalidateEveryDirectIndex()
+    {
+        SourceGuid sourceGuid = SourceGuid.New();
+        AssetGuid assetGuid = AssetGuid.New();
+        var manifest = new AssetManifest();
+        manifest.AddSource(sourceGuid, "assets/Shaders/obsolete.slang");
+        manifest.AddAsset(
+            assetGuid,
+            "Obsolete",
+            "assets/Shaders/obsolete.shader.asset",
+            AssetType<Shader>.Name,
+            Shader.SchemaFingerprint,
+            sourceGuid,
+            "shader:main");
+
+        Assert.True(manifest.RemoveAsset(assetGuid));
+        Assert.True(manifest.RemoveSource(sourceGuid));
+        Assert.False(manifest.RemoveAsset(assetGuid));
+        Assert.False(manifest.RemoveSource(sourceGuid));
+        Assert.False(manifest.TryGetAsset(assetGuid, out _));
+        Assert.False(manifest.TryAssetPath("assets/Shaders/obsolete.shader.asset", out _));
+        Assert.False(manifest.TrySourceGuid("assets/Shaders/obsolete.slang", out _));
+        Assert.Empty(manifest.AssetsBySource(sourceGuid));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

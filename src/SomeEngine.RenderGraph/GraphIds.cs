@@ -1,24 +1,47 @@
 namespace SomeEngine.RenderGraph;
 
+internal enum GraphIdentityDomain : byte
+{
+    Unscoped = 0,
+    Buffer = 1,
+    Texture = 2,
+    PersistentBindings = 3,
+    QueryPool = 4,
+    ShaderTable = 5,
+    View = 6,
+    Pass = 7,
+    Access = 8,
+    ExtensionPoint = 9,
+}
+
 internal readonly struct GraphIdentity : IEquatable<GraphIdentity>
 {
-    internal GraphIdentity(ulong owner, int slot, uint generation)
+    internal GraphIdentity(
+        ulong owner,
+        int slot,
+        uint generation,
+        GraphIdentityDomain domain = GraphIdentityDomain.Unscoped)
     {
         Owner = owner;
         Slot = slot;
         Generation = generation;
+        Domain = domain;
     }
 
     internal ulong Owner { get; }
     internal int Slot { get; }
     internal uint Generation { get; }
+    internal GraphIdentityDomain Domain { get; }
     internal bool IsValid => Owner != 0 && Slot >= 0 && Generation != 0;
 
     public bool Equals(GraphIdentity other) =>
-        Owner == other.Owner && Slot == other.Slot && Generation == other.Generation;
+        Owner == other.Owner &&
+        Slot == other.Slot &&
+        Generation == other.Generation &&
+        Domain == other.Domain;
 
     public override bool Equals(object? value) => value is GraphIdentity other && Equals(other);
-    public override int GetHashCode() => HashCode.Combine(Owner, Slot, Generation);
+    public override int GetHashCode() => HashCode.Combine(Owner, Slot, Generation, Domain);
     public static bool operator ==(GraphIdentity left, GraphIdentity right) => left.Equals(right);
     public static bool operator !=(GraphIdentity left, GraphIdentity right) => !left.Equals(right);
 }

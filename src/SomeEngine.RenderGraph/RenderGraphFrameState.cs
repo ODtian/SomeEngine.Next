@@ -13,6 +13,8 @@ internal sealed class RenderGraphFrameState
     private readonly List<PassCallbackStorage> _populatedPersistentCallbacks = [];
     private readonly Dictionary<GraphIdentity, bool> _enabled = [];
     private readonly Dictionary<GraphIdentity, BufferRange> _bufferRangeOverrides = [];
+    private readonly Dictionary<GraphIdentity, BufferRange> _bufferViewRangeOverrides = [];
+    private readonly Dictionary<GraphIdentity, BufferRange> _bufferResourceViewRangeOverrides = [];
     private readonly Dictionary<GraphIdentity, TextureSubresourceRange> _textureRangeOverrides = [];
     private readonly Dictionary<GraphIdentity, FramePassOverlay> _passOverlays = [];
     private readonly Dictionary<GraphIdentity, (Buffer Resource, BufferBoundaryState[] BoundaryStates)> _bufferBindings = [];
@@ -73,6 +75,10 @@ internal sealed class RenderGraphFrameState
     internal IReadOnlyList<ExplicitPassOrder> DynamicOrders => _dynamicOrders;
     internal IReadOnlyDictionary<GraphIdentity, bool> EnabledOverrides => _enabled;
     internal IReadOnlyDictionary<GraphIdentity, BufferRange> BufferRangeOverrides => _bufferRangeOverrides;
+    internal IReadOnlyDictionary<GraphIdentity, BufferRange> BufferViewRangeOverrides =>
+        _bufferViewRangeOverrides;
+    internal IReadOnlyDictionary<GraphIdentity, BufferRange> BufferResourceViewRangeOverrides =>
+        _bufferResourceViewRangeOverrides;
     internal IReadOnlyDictionary<GraphIdentity, TextureSubresourceRange> TextureRangeOverrides => _textureRangeOverrides;
     internal IReadOnlyDictionary<GraphIdentity, FramePassOverlay> PassOverlays => _passOverlays;
     internal IReadOnlyDictionary<GraphIdentity, (Buffer Resource, BufferBoundaryState[] BoundaryStates)> BufferBindings => _bufferBindings;
@@ -167,6 +173,30 @@ internal sealed class RenderGraphFrameState
         _bufferRangeOverrides[access.Value] = range;
     }
 
+    internal void SetBufferRange(
+        in GraphIdentity identity,
+        GraphViewKind expectedKind,
+        in BufferRange range)
+    {
+        EnsureAuthoring();
+        ValidateStatic(identity, StructureIndex.Structure.Views);
+        GraphView view = StructureIndex.Structure.Views.Get(identity);
+        if (view.Kind != expectedKind)
+            throw new ArgumentException("The Buffer view identity has the wrong kind.", nameof(identity));
+        GraphBuffer buffer = StructureIndex.Structure.Buffers.Get(view.Buffer);
+        _ = GraphStructureIndex.ResolveRange(range, buffer.Description.Size);
+        _bufferViewRangeOverrides[identity] = range;
+    }
+
+    internal void SetBufferViewRanges(GraphBufferId buffer, in BufferRange range)
+    {
+        EnsureAuthoring();
+        ValidateStatic(buffer.Value, StructureIndex.Structure.Buffers);
+        GraphBuffer definition = StructureIndex.Structure.Buffers.Get(buffer.Value);
+        _ = GraphStructureIndex.ResolveRange(range, definition.Description.Size);
+        _bufferResourceViewRangeOverrides[buffer.Value] = range;
+    }
+
     internal void SetTextureRange(GraphTextureAccessId access, in TextureSubresourceRange range)
     {
         EnsureAuthoring();
@@ -256,7 +286,9 @@ internal sealed class RenderGraphFrameState
         RenderGraphResourceLifetime lifetime)
     {
         EnsureAuthoring();
-        GraphIdentity identity = NewIdentity(_dynamicBuffers.Count);
+        GraphIdentity identity = NewIdentity(
+            _dynamicBuffers.Count,
+            GraphIdentityDomain.Buffer);
         var buffer = new FrameBuffer
         {
             Identity = identity,
@@ -306,7 +338,9 @@ internal sealed class RenderGraphFrameState
         RenderGraphResourceLifetime lifetime)
     {
         EnsureAuthoring();
-        GraphIdentity identity = NewIdentity(_dynamicTextures.Count);
+        GraphIdentity identity = NewIdentity(
+            _dynamicTextures.Count,
+            GraphIdentityDomain.Texture);
         var texture = new FrameTexture
         {
             Identity = identity,
@@ -507,7 +541,9 @@ internal sealed class RenderGraphFrameState
         EnsureAuthoring();
         ValidateResourceIdentity(buffer.Value, true);
         if (additionalBuffer.IsValid) ValidateResourceIdentity(additionalBuffer, true);
-        GraphIdentity identity = NewIdentity(0x10000000 + _dynamicViews.Count);
+        GraphIdentity identity = NewIdentity(
+            0x10000000 + _dynamicViews.Count,
+            GraphIdentityDomain.View);
         _dynamicViewIndices.Add(identity, _dynamicViews.Count);
         _dynamicViews.Add(new FrameView
         {
@@ -536,7 +572,9 @@ internal sealed class RenderGraphFrameState
     {
         EnsureAuthoring();
         ValidateResourceIdentity(texture.Value, false);
-        GraphIdentity identity = NewIdentity(0x10000000 + _dynamicViews.Count);
+        GraphIdentity identity = NewIdentity(
+            0x10000000 + _dynamicViews.Count,
+            GraphIdentityDomain.View);
         _dynamicViewIndices.Add(identity, _dynamicViews.Count);
         _dynamicViews.Add(new FrameView
         {
@@ -746,7 +784,9 @@ internal sealed class RenderGraphFrameState
         EnsureAuthoring();
         ValidatePassIdentity(pass);
         ValidateResourceIdentity(buffer.Value, true);
-        GraphIdentity identity = NewIdentity(0x20000000 + _dynamicAccesses.Count);
+        GraphIdentity identity = NewIdentity(
+            0x20000000 + _dynamicAccesses.Count,
+            GraphIdentityDomain.Access);
         _dynamicAccessIndices.Add(identity, _dynamicAccesses.Count);
         _dynamicAccesses.Add(new FrameResourceAccess
         {
@@ -778,7 +818,9 @@ internal sealed class RenderGraphFrameState
         EnsureAuthoring();
         ValidatePassIdentity(pass);
         ValidateResourceIdentity(texture.Value, false);
-        GraphIdentity identity = NewIdentity(0x20000000 + _dynamicAccesses.Count);
+        GraphIdentity identity = NewIdentity(
+            0x20000000 + _dynamicAccesses.Count,
+            GraphIdentityDomain.Access);
         _dynamicAccessIndices.Add(identity, _dynamicAccesses.Count);
         _dynamicAccesses.Add(new FrameResourceAccess
         {
@@ -812,7 +854,9 @@ internal sealed class RenderGraphFrameState
         if (range.QueryCount == 0 || range.FirstQuery >= resource.Description.Count ||
             range.QueryCount > resource.Description.Count - range.FirstQuery)
             throw new ArgumentOutOfRangeException(nameof(range));
-        GraphIdentity identity = NewIdentity(0x20000000 + _dynamicAccesses.Count);
+        GraphIdentity identity = NewIdentity(
+            0x20000000 + _dynamicAccesses.Count,
+            GraphIdentityDomain.Access);
         _dynamicAccessIndices.Add(identity, _dynamicAccesses.Count);
         _dynamicAccesses.Add(new FrameResourceAccess
         {
@@ -837,7 +881,9 @@ internal sealed class RenderGraphFrameState
         EnsureAuthoring();
         ValidatePassIdentity(pass);
         ValidateStatic(table.Value, StructureIndex.Structure.ShaderTables);
-        GraphIdentity identity = NewIdentity(0x20000000 + _dynamicAccesses.Count);
+        GraphIdentity identity = NewIdentity(
+            0x20000000 + _dynamicAccesses.Count,
+            GraphIdentityDomain.Access);
         _dynamicAccessIndices.Add(identity, _dynamicAccesses.Count);
         _dynamicAccesses.Add(new FrameResourceAccess
         {
@@ -1006,7 +1052,9 @@ internal sealed class RenderGraphFrameState
             throw new ArgumentException("The Pipeline belongs to another Device.", nameof(pipeline));
         if (pipeline is null && parameterLayout != ShaderVariableLayout.Null)
             throw new ArgumentException("A parameter layout requires a Pipeline.", nameof(parameterLayout));
-        GraphIdentity identity = NewIdentity(0x30000000 + _dynamicPasses.Count);
+        GraphIdentity identity = NewIdentity(
+            0x30000000 + _dynamicPasses.Count,
+            GraphIdentityDomain.Pass);
         int passIndex = _dynamicPasses.Count;
         int firstAccess = _dynamicAccesses.Count;
         _dynamicPassIndices.Add(identity, passIndex);
@@ -1080,7 +1128,8 @@ internal sealed class RenderGraphFrameState
         return value;
     }
 
-    private GraphIdentity NewIdentity(int slot) => new(Identity, slot, 1);
+    private GraphIdentity NewIdentity(int slot, GraphIdentityDomain domain) =>
+        new(Identity, slot, 1, domain);
 
     private int ResolveDynamicPass(in GraphIdentity pass)
     {
@@ -1268,6 +1317,8 @@ internal sealed class RenderGraphFrameState
         _bufferBindings.Clear();
         _textureBindings.Clear();
         _bufferRangeOverrides.Clear();
+        _bufferViewRangeOverrides.Clear();
+        _bufferResourceViewRangeOverrides.Clear();
         _textureRangeOverrides.Clear();
         _passOverlays.Clear();
         _enabled.Clear();

@@ -74,53 +74,6 @@ internal struct ClusterShadeBinUniforms
     internal uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 448)]
-internal struct ClusterShadeUniforms
-{
-    internal Matrix4x4 ViewProj;
-    internal Matrix4x4 ClipToWorld;
-    internal Matrix4x4 View;
-    internal Matrix4x4 PrevViewProj;
-    internal Matrix4x4 MotionViewProj;
-    internal Matrix4x4 PrevMotionViewProj;
-    internal uint DebugMode;
-    internal uint ScreenWidth;
-    internal uint ScreenHeight;
-    internal uint ShadingBin;
-    internal uint MaterialCount;
-    internal uint LightLayerMask;
-    internal uint Pad1;
-    internal Vector3 CameraPos;
-    internal float Pad2;
-    internal uint HasPreviousFrame;
-    internal uint WriteMotionVectors;
-    internal uint Pad3;
-    internal uint Pad4;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
-internal struct ClusterLightCounts
-{
-    internal uint DirectionalCount;
-    internal uint PointCount;
-    internal uint SpotCount;
-    internal uint Pad0;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 48)]
-internal struct ClusterLightGridUniforms
-{
-    internal uint TileSizeX;
-    internal uint TileSizeY;
-    internal uint TileCountX;
-    internal uint TileCountY;
-    internal Vector4 ZParams;
-    internal uint DepthSliceCount;
-    internal uint Pad0;
-    internal uint Pad1;
-    internal uint Pad2;
-}
-
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
 internal struct ClusterResolveUniforms
 {
@@ -129,24 +82,4 @@ internal struct ClusterResolveUniforms
     internal uint DebugMode;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 144)]
-internal struct ClusterMotionUniforms
-{
-    internal Matrix4x4 ViewProj;
-    internal Matrix4x4 PrevViewProj;
-    internal uint ScreenWidth;
-    internal uint ScreenHeight;
-    internal uint HasPreviousFrame;
-    internal uint Pad0;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
-internal struct ClusterTemporalUniforms
-{
-    internal float HistoryWeight;
-    internal float NeighborhoodClampScale;
-    internal float NeighborhoodClampMin;
-    internal float MotionRejectionScale;
 }

@@ -66,7 +66,7 @@ public sealed partial class RenderGraph : IDisposable
 
     internal ulong Identity { get; }
     internal IGraphicsBackend Backend => _backend;
-    internal Device Device => _device;
+    public Device Device => _device;
     internal GraphStructureIndex StructureIndex => _structureIndex;
     internal ReadOnlySpan<Queue> Queues => _queues;
     internal CommandContextPool CommandContexts => _commandContexts;

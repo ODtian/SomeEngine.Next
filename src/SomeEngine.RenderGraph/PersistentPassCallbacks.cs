@@ -6,6 +6,7 @@ internal sealed class RasterFrameOnlyPassCallbackStorage<TState> : PassCallbackS
 {
     private TState _declarationState;
     private readonly TState[] _frameData;
+    private readonly bool[] _hasFrameData;
     private readonly RasterFrameCallback<TState> _callback;
 
     internal RasterFrameOnlyPassCallbackStorage(
@@ -16,12 +17,21 @@ internal sealed class RasterFrameOnlyPassCallbackStorage<TState> : PassCallbackS
         _declarationState = declarationState;
         _callback = callback ?? throw new ArgumentNullException(nameof(callback));
         _frameData = new TState[frameCount];
+        _hasFrameData = new bool[frameCount];
     }
 
     internal override Type FrameDataType => typeof(TState);
     public void SetStaticData(in TState value) => _declarationState = value;
-    public void SetFrameData(int frameSlot, in TState value) => _frameData[frameSlot] = value;
-    internal override void ClearFrameData(int frameSlot) => _frameData[frameSlot] = default!;
+    public void SetFrameData(int frameSlot, in TState value)
+    {
+        _frameData[frameSlot] = value;
+        _hasFrameData[frameSlot] = true;
+    }
+    internal override void ClearFrameData(int frameSlot)
+    {
+        _frameData[frameSlot] = default!;
+        _hasFrameData[frameSlot] = false;
+    }
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -29,7 +39,10 @@ internal sealed class RasterFrameOnlyPassCallbackStorage<TState> : PassCallbackS
         CommandContext context)
     {
         var scope = new RasterPassCommandScope(frame, passIndex, context);
-        _callback(ref scope, in _frameData[frame.FrameSlot]);
+        ref readonly TState state = ref _hasFrameData[frame.FrameSlot]
+            ? ref _frameData[frame.FrameSlot]
+            : ref _declarationState;
+        _callback(ref scope, in state);
         scope.Finish();
     }
 }
@@ -40,6 +53,7 @@ internal sealed class ComputeFrameOnlyPassCallbackStorage<TState> : PassCallback
 {
     private TState _declarationState;
     private readonly TState[] _frameData;
+    private readonly bool[] _hasFrameData;
     private readonly ComputeFrameCallback<TState> _callback;
 
     internal ComputeFrameOnlyPassCallbackStorage(
@@ -50,12 +64,21 @@ internal sealed class ComputeFrameOnlyPassCallbackStorage<TState> : PassCallback
         _declarationState = declarationState;
         _callback = callback ?? throw new ArgumentNullException(nameof(callback));
         _frameData = new TState[frameCount];
+        _hasFrameData = new bool[frameCount];
     }
 
     internal override Type FrameDataType => typeof(TState);
     public void SetStaticData(in TState value) => _declarationState = value;
-    public void SetFrameData(int frameSlot, in TState value) => _frameData[frameSlot] = value;
-    internal override void ClearFrameData(int frameSlot) => _frameData[frameSlot] = default!;
+    public void SetFrameData(int frameSlot, in TState value)
+    {
+        _frameData[frameSlot] = value;
+        _hasFrameData[frameSlot] = true;
+    }
+    internal override void ClearFrameData(int frameSlot)
+    {
+        _frameData[frameSlot] = default!;
+        _hasFrameData[frameSlot] = false;
+    }
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -63,7 +86,10 @@ internal sealed class ComputeFrameOnlyPassCallbackStorage<TState> : PassCallback
         CommandContext context)
     {
         var scope = new ComputePassCommandScope(frame, passIndex, context);
-        _callback(ref scope, in _frameData[frame.FrameSlot]);
+        ref readonly TState state = ref _hasFrameData[frame.FrameSlot]
+            ? ref _frameData[frame.FrameSlot]
+            : ref _declarationState;
+        _callback(ref scope, in state);
         scope.Finish();
     }
 }
@@ -74,6 +100,7 @@ internal sealed class CopyFrameOnlyPassCallbackStorage<TState> : PassCallbackSto
 {
     private TState _declarationState;
     private readonly TState[] _frameData;
+    private readonly bool[] _hasFrameData;
     private readonly CopyFrameCallback<TState> _callback;
 
     internal CopyFrameOnlyPassCallbackStorage(
@@ -84,12 +111,21 @@ internal sealed class CopyFrameOnlyPassCallbackStorage<TState> : PassCallbackSto
         _declarationState = declarationState;
         _callback = callback ?? throw new ArgumentNullException(nameof(callback));
         _frameData = new TState[frameCount];
+        _hasFrameData = new bool[frameCount];
     }
 
     internal override Type FrameDataType => typeof(TState);
     public void SetStaticData(in TState value) => _declarationState = value;
-    public void SetFrameData(int frameSlot, in TState value) => _frameData[frameSlot] = value;
-    internal override void ClearFrameData(int frameSlot) => _frameData[frameSlot] = default!;
+    public void SetFrameData(int frameSlot, in TState value)
+    {
+        _frameData[frameSlot] = value;
+        _hasFrameData[frameSlot] = true;
+    }
+    internal override void ClearFrameData(int frameSlot)
+    {
+        _frameData[frameSlot] = default!;
+        _hasFrameData[frameSlot] = false;
+    }
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -97,7 +133,10 @@ internal sealed class CopyFrameOnlyPassCallbackStorage<TState> : PassCallbackSto
         CommandContext context)
     {
         var scope = new CopyPassCommandScope(frame, passIndex, context);
-        _callback(ref scope, in _frameData[frame.FrameSlot]);
+        ref readonly TState state = ref _hasFrameData[frame.FrameSlot]
+            ? ref _frameData[frame.FrameSlot]
+            : ref _declarationState;
+        _callback(ref scope, in state);
         scope.Finish();
     }
 }
@@ -108,6 +147,7 @@ internal sealed class GeneralFrameOnlyPassCallbackStorage<TState> : PassCallback
 {
     private TState _declarationState;
     private readonly TState[] _frameData;
+    private readonly bool[] _hasFrameData;
     private readonly GeneralFrameCallback<TState> _callback;
 
     internal GeneralFrameOnlyPassCallbackStorage(
@@ -118,12 +158,21 @@ internal sealed class GeneralFrameOnlyPassCallbackStorage<TState> : PassCallback
         _declarationState = declarationState;
         _callback = callback ?? throw new ArgumentNullException(nameof(callback));
         _frameData = new TState[frameCount];
+        _hasFrameData = new bool[frameCount];
     }
 
     internal override Type FrameDataType => typeof(TState);
     public void SetStaticData(in TState value) => _declarationState = value;
-    public void SetFrameData(int frameSlot, in TState value) => _frameData[frameSlot] = value;
-    internal override void ClearFrameData(int frameSlot) => _frameData[frameSlot] = default!;
+    public void SetFrameData(int frameSlot, in TState value)
+    {
+        _frameData[frameSlot] = value;
+        _hasFrameData[frameSlot] = true;
+    }
+    internal override void ClearFrameData(int frameSlot)
+    {
+        _frameData[frameSlot] = default!;
+        _hasFrameData[frameSlot] = false;
+    }
 
     internal override void Record(
         RenderGraphFrameState frame,
@@ -131,7 +180,10 @@ internal sealed class GeneralFrameOnlyPassCallbackStorage<TState> : PassCallback
         CommandContext context)
     {
         var scope = new GeneralPassCommandScope(frame, passIndex, context);
-        _callback(ref scope, in _frameData[frame.FrameSlot]);
+        ref readonly TState state = ref _hasFrameData[frame.FrameSlot]
+            ? ref _frameData[frame.FrameSlot]
+            : ref _declarationState;
+        _callback(ref scope, in state);
         scope.Finish();
     }
 }

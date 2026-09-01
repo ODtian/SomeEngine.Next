@@ -2,15 +2,15 @@
   "asset_guid": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
   "sub_asset_key": "material:0:Default",
-  "content_fingerprint": "866df159f57d85a30e6960209ecd360f254e54eb2b2ed4421893f4a7c7f14689",
+  "content_fingerprint": "cc1c47a2c9bc6402746d2726177d6308d035b33b22c75fd928897bd07d1008af",
   "dependencies": [
     {
       "path": "assets/Materials/DefaultPBR.material.asset",
-      "hash": "4553ff3b664aeb2a5b4ad325335c5126e4cb08db6f5d425d1d25569ad4e80474"
+      "hash": "b503445d3be6ecd60bdadc9fe3489064eaa0ef9d63414937e0af03c9a6bf2e6c"
     },
     {
       "path": "assets/Materials/TestUnlit_1.material.asset",
-      "hash": "7d29e8660141ffaaf59851e5968cd7caf06d2190f1a77dbbb34540eea7769cb4"
+      "hash": "059c3c58ec7b60ea8e06107b0ca2736b30475d9b9e811f33802758a272f57d97"
     },
     {
       "path": "samples/IcoSphere.glb",

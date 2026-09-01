@@ -21,8 +21,7 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterPipelineSet(
         IGraphicsBackend backend,
         Device device,
-        ClusterShaders configuration,
-        Format outputFormat)
+        ClusterShaders configuration)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -126,19 +125,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                 ShadeBinScatter = Compute(
                     ClusterShaderOperationRole.MaterialBinningScatter,
                     "Cluster material bin scatter");
-                MotionVectors = Compute(ClusterShaderOperationRole.MotionVectors, "Cluster motion vectors");
                 Resolve = Compute(ClusterShaderOperationRole.VisibilityResolve, "Cluster visibility resolve");
-
-                TemporalResolve = Raster(
-                    ClusterShaderOperationRole.TemporalResolve,
-                    [Format.R16G16B16A16Float],
-                    rasterizerState: new RasterizerState(Cull: CullType.None),
-                    name: "Cluster temporal resolve");
-            Tonemap = Raster(
-                    ClusterShaderOperationRole.ToneMapAndPresent,
-                    [outputFormat],
-                    rasterizerState: new RasterizerState(Cull: CullType.None),
-                    name: "Cluster tone map and present");
         }
         catch (Exception primary)
         {
@@ -175,10 +162,7 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline ShadeBinCount { get; }
     internal ClusterComputePipeline ShadeBinReserve { get; }
     internal ClusterComputePipeline ShadeBinScatter { get; }
-    internal ClusterComputePipeline MotionVectors { get; }
     internal ClusterComputePipeline Resolve { get; }
-    internal ClusterRasterPipeline TemporalResolve { get; }
-    internal ClusterRasterPipeline Tonemap { get; }
 
     private static ClusterComputePipeline CreateCompute(
         IGraphicsBackend backend,
@@ -405,9 +389,7 @@ internal sealed class ClusterPipelineSet : IDisposable
 
     private static bool IsRasterOperation(ClusterShaderOperationRole role) => role is
         ClusterShaderOperationRole.HardwareVisibilityRaster or
-        ClusterShaderOperationRole.SoftwareDepthMerge or
-        ClusterShaderOperationRole.TemporalResolve or
-        ClusterShaderOperationRole.ToneMapAndPresent;
+        ClusterShaderOperationRole.SoftwareDepthMerge;
 
     public void Dispose()
     {

@@ -124,6 +124,8 @@ internal sealed partial class FrameExecutor
             _frame.DynamicOrders.Count != 0 ||
             _frame.EnabledOverrides.Count != 0 ||
             _frame.BufferRangeOverrides.Count != 0 ||
+            _frame.BufferViewRangeOverrides.Count != 0 ||
+            _frame.BufferResourceViewRangeOverrides.Count != 0 ||
             _frame.TextureRangeOverrides.Count != 0 ||
             _frame.PassOverlays.Count != 0 ||
             _frame.BufferBindings.Count != 0 ||
@@ -332,6 +334,24 @@ internal sealed partial class FrameExecutor
         {
             GraphView source = structureIndex.Structure.Views.Rows[i];
             GraphIdentity identity = structureIndex.ViewIds[i];
+            BufferRange bufferRange = source.BufferRange;
+            bool bufferRangeOverridden = false;
+            if (source.Kind is GraphViewKind.BufferCbv or
+                GraphViewKind.BufferSrv or
+                GraphViewKind.BufferUav)
+            {
+                bufferRangeOverridden = _frame.BufferViewRangeOverrides.TryGetValue(
+                    identity,
+                    out bufferRange);
+                if (!bufferRangeOverridden)
+                {
+                    bufferRangeOverridden = _frame.BufferResourceViewRangeOverrides.TryGetValue(
+                        source.Buffer,
+                        out bufferRange);
+                }
+                if (!bufferRangeOverridden)
+                    bufferRange = source.BufferRange;
+            }
             _views[i] = new FrameView
             {
                 Identity = identity,
@@ -340,7 +360,7 @@ internal sealed partial class FrameExecutor
                 Buffer = source.Buffer,
                 Texture = source.Texture,
                 AdditionalBuffer = source.AdditionalBuffer,
-                BufferRange = source.BufferRange,
+                BufferRange = bufferRange,
                 TextureRange = source.TextureRange,
                 BufferFormat = source.BufferFormat,
                 TextureFormat = source.TextureFormat,
@@ -350,7 +370,7 @@ internal sealed partial class FrameExecutor
                 ReadOnlyDepth = source.ReadOnlyDepth,
                 ReadOnlyStencil = source.ReadOnlyStencil,
                 Label = source.Label,
-                View = source.PersistentView,
+                View = bufferRangeOverridden ? null : source.PersistentView,
             };
             _viewIndices.Add(identity, i);
         }

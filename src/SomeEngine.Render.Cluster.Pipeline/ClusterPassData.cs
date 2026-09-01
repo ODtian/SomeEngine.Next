@@ -116,7 +116,6 @@ internal readonly record struct ClusterTargetClearParameters(
     GraphColorAttachmentViewId Visibility,
     GraphColorAttachmentViewId SoftwareDepth,
     GraphColorAttachmentViewId SceneColor,
-    GraphColorAttachmentViewId MotionVectors,
     GraphDepthStencilViewId Depth)
 {
     internal static void Declare(
@@ -144,13 +143,6 @@ internal readonly record struct ClusterTargetClearParameters(
             StoreType.Store,
             WriteCoverage.Complete,
             new Vector4(0, 0, 0, 1));
-        access.ColorAttachment(
-            3,
-            data.MotionVectors,
-            LoadType.Clear,
-            StoreType.Store,
-            WriteCoverage.Complete,
-            Vector4.Zero);
         access.DepthStencilAttachment(
             data.Depth,
             LoadType.Clear,
@@ -216,74 +208,6 @@ internal readonly record struct ClusterDepthAttachmentClearParameters(
     }
 }
 
-internal readonly record struct ClusterHistoryCopyParameters(
-    GraphTextureId SceneSource,
-    GraphTextureId SceneDestination,
-    GraphTextureId MotionSource,
-    GraphTextureId MotionDestination,
-    GraphTextureId DepthSource,
-    GraphTextureId DepthDestination,
-    int Width,
-    int Height)
-{
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in ClusterHistoryCopyParameters parameters)
-    {
-        Copy(
-            ref commands,
-            parameters.SceneSource,
-            parameters.SceneDestination,
-            parameters.Width,
-            parameters.Height,
-            TextureAspects.Color);
-        Copy(
-            ref commands,
-            parameters.MotionSource,
-            parameters.MotionDestination,
-            parameters.Width,
-            parameters.Height,
-            TextureAspects.Color);
-        Copy(
-            ref commands,
-            parameters.DepthSource,
-            parameters.DepthDestination,
-            parameters.Width,
-            parameters.Height,
-            TextureAspects.Depth);
-    }
-
-    private static void Copy(
-        ref CopyPassCommandScope commands,
-        GraphTextureId sourceId,
-        GraphTextureId destinationId,
-        int width,
-        int height,
-        TextureAspects aspect)
-    {
-        Texture source = commands.GetTexture(sourceId);
-        Texture destination = commands.GetTexture(destinationId);
-        commands.CopyTexture(new TextureCopy(
-            source,
-            0,
-            0,
-            aspect,
-            0,
-            0,
-            0,
-            destination,
-            0,
-            0,
-            aspect,
-            0,
-            0,
-            0,
-            checked((uint)width),
-            checked((uint)height),
-            1));
-    }
-}
-
 internal readonly record struct ClusterBufferCopyParameters(
     GraphBufferId Source,
     GraphBufferId Destination,
@@ -328,43 +252,43 @@ internal struct ClusterFrameMetricsReadbackParameters
         in ClusterFrameMetricsReadbackParameters parameters)
     {
         Copy(ref commands, parameters.CandidateCount, 0,
-            parameters.Destination, ClusterRendererSystem.CandidateCountReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.CandidateCountReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.CandidateArgs, 0,
-            parameters.Destination, ClusterRendererSystem.CandidateArgsReadbackOffset, 12);
+            parameters.Destination, ClusterPipelineSystem.CandidateArgsReadbackOffset, 12);
         Copy(ref commands, parameters.DrawArgs, 0,
-            parameters.Destination, ClusterRendererSystem.DrawArgsReadbackOffset, 16);
+            parameters.Destination, ClusterPipelineSystem.DrawArgsReadbackOffset, 16);
         Copy(ref commands, parameters.Phase2CandidateCount, 0,
-            parameters.Destination, ClusterRendererSystem.Phase2CandidateCountReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.Phase2CandidateCountReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.Phase2CandidateArgs, 0,
-            parameters.Destination, ClusterRendererSystem.Phase2CandidateArgsReadbackOffset, 12);
+            parameters.Destination, ClusterPipelineSystem.Phase2CandidateArgsReadbackOffset, 12);
         Copy(ref commands, parameters.Phase2DrawArgs, 0,
-            parameters.Destination, ClusterRendererSystem.Phase2DrawArgsReadbackOffset, 16);
+            parameters.Destination, ClusterPipelineSystem.Phase2DrawArgsReadbackOffset, 16);
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
-            parameters.Destination, ClusterRendererSystem.RasterReserveReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
             2 * sizeof(uint));
         Copy(ref commands, parameters.ShadeCount, 0,
-            parameters.Destination, ClusterRendererSystem.ShadeBinCountReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.ShadeReserve, 0,
-            parameters.Destination, ClusterRendererSystem.ShadeReserveReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.ShadeReserveReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.DeformReserve, sizeof(uint),
-            parameters.Destination, ClusterRendererSystem.DeformReserveReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.DeformReserveReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.CacheAllocation, 0,
-            parameters.Destination, ClusterRendererSystem.CacheAllocationReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.CacheAllocationReadbackOffset,
             2 * sizeof(uint));
         Copy(ref commands, parameters.SoftwareDebug, 0,
-            parameters.Destination, ClusterRendererSystem.SoftwareDebugReadbackOffset,
+            parameters.Destination, ClusterPipelineSystem.SoftwareDebugReadbackOffset,
             sizeof(uint));
         Buffer destination = commands.GetBuffer(parameters.Destination);
         Texture visibility = commands.GetTexture(parameters.Visibility);
         commands.CopyTextureToBuffer(new BufferTextureCopy(
             destination,
-            ClusterRendererSystem.VisibilityProbeReadbackOffset,
-            ClusterRendererSystem.VisibilityProbeRowPitch,
+            ClusterPipelineSystem.VisibilityProbeReadbackOffset,
+            ClusterPipelineSystem.VisibilityProbeRowPitch,
             1,
             visibility,
             0,
@@ -373,7 +297,7 @@ internal struct ClusterFrameMetricsReadbackParameters
             parameters.VisibilityProbeX,
             parameters.VisibilityProbeY,
             0,
-            ClusterRendererSystem.VisibilityProbePixelCount,
+            ClusterPipelineSystem.VisibilityProbePixelCount,
             1,
             1));
     }

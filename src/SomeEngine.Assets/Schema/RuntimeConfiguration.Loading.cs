@@ -11,16 +11,21 @@ public sealed partial class RuntimeConfiguration
             await context.OpenAsync<RuntimeConfiguration>().ConfigureAwait(false);
         RuntimeConfiguration asset = document.Root;
         AssetGuid scene = Require(asset.SceneGuid, nameof(SceneGuid));
-        AssetGuid renderer = Require(asset.ClusterRendererGuid, nameof(ClusterRendererGuid));
-        AssetGuid uiShader = RequireUiShaders(asset.UiShaders);
+        AssetGuid pipeline = Require(asset.ClusterPipelineGuid, nameof(ClusterPipelineGuid));
+        AssetGuid uiShader = RequireRasterShaderPair(asset.UiShaders, nameof(UiShaders));
+        AssetGuid presentationShader = RequireRasterShaderPair(
+            asset.PresentationShaders,
+            nameof(PresentationShaders));
         if (asset.WindowWidth == 0 || asset.WindowHeight == 0)
             throw new InvalidDataException("Runtime configuration requires a non-empty window.");
 
         _ = await context.LoadDependencyAsync(new AssetId<RenderScene>(scene)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<ClusterShaders>(renderer)).ConfigureAwait(false);
+        _ = await context.LoadDependencyAsync(new AssetId<ClusterShaders>(pipeline)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(uiShader)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<Shader>(presentationShader)).ConfigureAwait(false);
         return asset;
     }
 
@@ -31,17 +36,20 @@ public sealed partial class RuntimeConfiguration
         return
         [
             Require(SceneGuid, nameof(SceneGuid)),
-            Require(ClusterRendererGuid, nameof(ClusterRendererGuid)),
-            RequireUiShaders(UiShaders),
+            Require(ClusterPipelineGuid, nameof(ClusterPipelineGuid)),
+            RequireRasterShaderPair(UiShaders, nameof(UiShaders)),
+            RequireRasterShaderPair(PresentationShaders, nameof(PresentationShaders)),
         ];
     }
 
-    private static AssetGuid RequireUiShaders(IList<ShaderRef>? shaders)
+    private static AssetGuid RequireRasterShaderPair(
+        IList<ShaderRef>? shaders,
+        string field)
     {
         if (shaders is not { Count: 2 })
         {
             throw new InvalidDataException(
-                "Runtime configuration field 'UiShaders' must contain one vertex and one pixel entry.");
+                $"Runtime configuration field '{field}' must contain one vertex and one pixel entry.");
         }
 
         ShaderRef? vertex = null;
@@ -49,7 +57,7 @@ public sealed partial class RuntimeConfiguration
         for (int index = 0; index < shaders.Count; index++)
         {
             ShaderRef shader = shaders[index]
-                ?? throw new InvalidDataException($"Runtime configuration field 'UiShaders[{index}]' is null.");
+                ?? throw new InvalidDataException($"Runtime configuration field '{field}[{index}]' is null.");
             if (shader.Stage == ShaderStage.Vertex && vertex is null)
                 vertex = shader;
             else if (shader.Stage == ShaderStage.Pixel && pixel is null)
@@ -57,24 +65,24 @@ public sealed partial class RuntimeConfiguration
             else
             {
                 throw new InvalidDataException(
-                    "Runtime configuration field 'UiShaders' must contain one vertex and one pixel entry.");
+                    $"Runtime configuration field '{field}' must contain one vertex and one pixel entry.");
             }
         }
 
         AssetGuid vertexGuid = ShaderRef.Require(
             vertex,
             "Runtime configuration",
-            "UiShaders.Vertex",
+            $"{field}.Vertex",
             ShaderStage.Vertex);
         AssetGuid pixelGuid = ShaderRef.Require(
             pixel,
             "Runtime configuration",
-            "UiShaders.Pixel",
+            $"{field}.Pixel",
             ShaderStage.Pixel);
         if (vertexGuid != pixelGuid)
         {
             throw new InvalidDataException(
-                "Runtime configuration UI entries must come from one shader asset.");
+                $"Runtime configuration field '{field}' entries must come from one shader asset.");
         }
         return vertexGuid;
     }

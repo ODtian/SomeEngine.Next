@@ -13,10 +13,8 @@ using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
-using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
-using Texture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Runtime;
 
@@ -45,21 +43,30 @@ internal static class RuntimeApplication
             .LoadAsync(new AssetId<RuntimeConfiguration>(runtimeRecords[0].Guid))
             .ConfigureAwait(false);
         (AssetGuid uiShader, string uiVertexEntry, string uiPixelEntry) =
-            ParseUiShaders(value.UiShaders);
+            ParseRasterShaders(value.UiShaders, nameof(value.UiShaders));
+        (AssetGuid presentationShader, string presentationVertexEntry, string presentationPixelEntry) =
+            ParseRasterShaders(value.PresentationShaders, nameof(value.PresentationShaders));
         var boot = new BootConfiguration(
             ParseGuid(value.SceneGuid, nameof(value.SceneGuid)),
-            ParseGuid(value.ClusterRendererGuid, nameof(value.ClusterRendererGuid)),
+            ParseGuid(value.ClusterPipelineGuid, nameof(value.ClusterPipelineGuid)),
             uiShader,
             uiVertexEntry,
             uiPixelEntry,
+            presentationShader,
+            presentationVertexEntry,
+            presentationPixelEntry,
             checked((int)value.WindowWidth),
             checked((int)value.WindowHeight),
             string.IsNullOrWhiteSpace(value.Name) ? "SomeEngine" : value.Name);
 
         Task<RenderScene> sceneTask = assets.LoadAsync(new AssetId<RenderScene>(boot.Scene)).AsTask();
-        Task<ClusterShaders> rendererTask = assets.LoadAsync(new AssetId<ClusterShaders>(boot.Renderer)).AsTask();
+        Task<ClusterShaders> pipelineTask = assets.LoadAsync(new AssetId<ClusterShaders>(boot.Pipeline)).AsTask();
         Task<Shader> uiShaderTask = assets.LoadAsync(new AssetId<Shader>(boot.UiShader)).AsTask();
-        await Task.WhenAll(sceneTask, rendererTask, uiShaderTask).ConfigureAwait(false);
+        Task<Shader> presentationShaderTask = assets
+            .LoadAsync(new AssetId<Shader>(boot.PresentationShader))
+            .AsTask();
+        await Task.WhenAll(sceneTask, pipelineTask, uiShaderTask, presentationShaderTask)
+            .ConfigureAwait(false);
 
         using var window = new NativeWindow(boot.Title, boot.Width, boot.Height);
         if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
@@ -105,8 +112,9 @@ internal static class RuntimeApplication
             window,
             assets,
             sceneTask.Result,
-            rendererTask.Result,
+            pipelineTask.Result,
             uiShaderTask.Result,
+            presentationShaderTask.Result,
             boot,
             forceHardwareRaster: useWarp);
     }
@@ -228,8 +236,9 @@ internal static class RuntimeApplication
         NativeWindow window,
         AssetLoader assets,
         RenderScene sceneAsset,
-        ClusterShaders rendererConfiguration,
+        ClusterShaders pipelineConfiguration,
         Shader uiShader,
+        Shader presentationShader,
         BootConfiguration boot,
         bool forceHardwareRaster)
     {
@@ -282,11 +291,6 @@ internal static class RuntimeApplication
         _ = prepareSystems.Add(materialSystem);
         _ = prepareSystems.Add(instanceSystem);
 
-        var targetMailbox = new ClusterRenderTargetMailbox();
-        var lightMailbox = new RenderLightSetMailbox();
-        var lightSystem = new RenderLightSetSystem(lightMailbox);
-        ClusterRendererSystem renderer = CreateRenderer();
-        RenderFrameSystems frameSystems = CreateFrameSystems(renderer);
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
         Queue computeQueue = backend.GetQueue(device, QueueType.Compute);
         Queue copyQueue = backend.GetQueue(device, QueueType.Copy);
@@ -297,24 +301,27 @@ internal static class RuntimeApplication
             new RenderGraphDesc(
                 MaximumFramesInFlight: 3,
                 Label: "SomeEngine Runtime Render Graph"));
+        ClusterPipelineSystem pipeline = CreatePipeline();
+        RenderFrameSystems frameSystems = CreateFrameSystems(pipeline);
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
         RuntimeUiRenderer? ui = null;
+        RuntimePresentationPipeline? presentation = null;
         var input = new RuntimeInput();
         int width = boot.Width;
         int height = boot.Height;
 
-        ClusterRendererSystem CreateRenderer() => new(
+        ClusterPipelineSystem CreatePipeline() => new(
             backend,
             device,
             cluster,
             instanceSystem,
             ClusterRenderFeature.InstanceLayout,
             materialTable,
-            rendererConfiguration,
-            targetMailbox,
-            lightMailbox,
+            pipelineConfiguration,
+            renderGraph,
+            new ClusterPipelineOutputDescription(boot.Width, boot.Height),
             new ClusterPipelineOptions
             {
                 EnableAsyncCompute = options.AsyncCompute,
@@ -322,16 +329,16 @@ internal static class RuntimeApplication
                 EnableFrameMetricsReadback = options.VerifyFrameOutput,
             });
 
-        RenderFrameSystems CreateFrameSystems(ClusterRendererSystem system)
+        RenderFrameSystems CreateFrameSystems(ClusterPipelineSystem system)
         {
             var systems = new RenderFrameSystems(renderWorld, instances);
-            _ = systems.Add(lightSystem);
             _ = systems.Add(system);
             return systems;
         }
 
         try
         {
+            frameSystems.Initialize();
             outputVerifier = options.VerifyFrameOutput
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                 : null;
@@ -347,7 +354,7 @@ internal static class RuntimeApplication
                 $"Runtime configuration '{boot.Title}' loaded from {contentRootLabel(FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
-                $"renderer={rendererConfiguration.AssetGuid}.");
+                $"clusterPipeline={pipelineConfiguration.AssetGuid}.");
             long runtimeStarted = Stopwatch.GetTimestamp();
             long previousFrameTimestamp = Stopwatch.GetTimestamp();
             int frameIndex = 0;
@@ -359,7 +366,7 @@ internal static class RuntimeApplication
                 bool instanceAdmitted = instances.TryAdmitFrameResources(
                     out _,
                     out QueueCompletion[] instanceRetirementFences);
-                bool readbackAdmitted = renderer.TryAdmitFrameResources(
+                bool readbackAdmitted = pipeline.TryAdmitFrameResources(
                     out _,
                     out QueueCompletion[] readbackRetirementFences);
                 bool uiAdmitted = ui.TryAdmitFrameResources(
@@ -398,7 +405,7 @@ internal static class RuntimeApplication
                     }
                     if (!readbackAdmitted)
                     {
-                        readbackAdmitted = renderer.TryAdmitFrameResources(
+                        readbackAdmitted = pipeline.TryAdmitFrameResources(
                             out _,
                             out readbackRetirementFences);
                     }
@@ -519,11 +526,19 @@ internal static class RuntimeApplication
                 if (reportMilestones)
                     Console.WriteLine("First frame: publishing prepare systems.");
                 Prepare(prepareSystems, coordinator);
+                ClusterPipelineOutputs clusterOutputs = pipeline.ReconcileGraph();
+                presentation ??= new RuntimePresentationPipeline(
+                    backend,
+                    device,
+                    renderGraph,
+                    clusterOutputs,
+                    presentationShader,
+                    boot.PresentationVertexEntry,
+                    boot.PresentationPixelEntry,
+                    PresentationFormat);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage image = AcquireImage(backend, swapchain, window);
-                Texture imageTexture = image.Texture;
-                targetMailbox.Publish(new ClusterRenderTarget(imageTexture));
                 FrameOutputMetrics? frameOutput = ExecuteFrame(
                     backend,
                     renderGraph,
@@ -532,7 +547,8 @@ internal static class RuntimeApplication
                     graphCompletions,
                     coordinator,
                     frameSystems,
-                    renderer,
+                    pipeline,
+                    presentation,
                     ui,
                     image,
                     width,
@@ -589,7 +605,7 @@ internal static class RuntimeApplication
                         $"({output.MaxDifferentX},{output.MaxDifferentY}) " +
                         $"[{output.DifferentWidth}x{output.DifferentHeight}], " +
                         $"hash={output.Hash:X16}.");
-                    ClusterFrameMetrics frameMetrics = renderer.CaptureFrameMetrics();
+                    ClusterFrameMetrics frameMetrics = pipeline.CaptureFrameMetrics();
                     Console.WriteLine(
                         $"Cluster frame {frameMetrics.FrameIndex}: " +
                         $"materials={materialTable.Current.MaterialCount}, " +
@@ -639,6 +655,7 @@ internal static class RuntimeApplication
             outputVerifier?.Dispose();
             coordinator.WaitForTrackedSubmissions();
             ui?.Dispose();
+            presentation?.Dispose();
             frameSystems.Dispose();
             Shutdown(prepareSystems, cluster, instances, coordinator);
             scene.Dispose();
@@ -667,7 +684,8 @@ internal static class RuntimeApplication
         QueueCompletion[] completions,
         RenderFrameCoordinator coordinator,
         RenderFrameSystems systems,
-        ClusterRendererSystem renderer,
+        ClusterPipelineSystem pipeline,
+        RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
         SwapchainImage image,
         int width,
@@ -690,7 +708,7 @@ internal static class RuntimeApplication
         using (frame)
         {
             FrameOutputMetrics? frameOutput = null;
-            bool rendererCommitted = false;
+            bool pipelineCommitted = false;
             bool uiCommitted = false;
             completionSlots.AsSpan().Clear();
             try
@@ -700,10 +718,10 @@ internal static class RuntimeApplication
                 {
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
-                    GraphTextureId presentation = graphFrame.Import(image, graphicsQueue);
+                    presentation.Bind(ref graphFrame, image, graphicsQueue);
                     systems.Update(frame, graphFrame);
-                    ui.Record(ref graphFrame, presentation, width, height);
-                    outputVerifier?.Record(ref graphFrame, presentation, graphicsQueue);
+                    ui.Record(ref graphFrame, presentation.Target, width, height);
+                    outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");
 
@@ -713,8 +731,8 @@ internal static class RuntimeApplication
                         completions,
                         submittedQueueCount);
                     ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
-                    renderer.Commit(execution);
-                    rendererCommitted = true;
+                    pipeline.Commit(execution);
+                    pipelineCommitted = true;
                     ui.Commit(execution);
                     uiCommitted = true;
                     frame.Complete(execution);
@@ -739,10 +757,10 @@ internal static class RuntimeApplication
                 if (completionCount != 0)
                 {
                     ReadOnlySpan<QueueCompletion> accepted = completions.AsSpan(0, completionCount);
-                    if (!rendererCommitted)
+                    if (!pipelineCommitted)
                     {
-                        renderer.Commit(accepted);
-                        rendererCommitted = true;
+                        pipeline.Commit(accepted);
+                        pipelineCommitted = true;
                     }
                     if (!uiCommitted)
                     {
@@ -755,7 +773,7 @@ internal static class RuntimeApplication
             }
             finally
             {
-                if (!rendererCommitted) renderer.Discard();
+                if (!pipelineCommitted) pipeline.Discard();
                 if (!uiCommitted) ui.Discard();
             }
         }
@@ -867,32 +885,33 @@ internal static class RuntimeApplication
         return guid;
     }
 
-    private static (AssetGuid Shader, string VertexEntry, string PixelEntry) ParseUiShaders(
-        IList<ShaderRef>? shaders)
+    private static (AssetGuid Shader, string VertexEntry, string PixelEntry) ParseRasterShaders(
+        IList<ShaderRef>? shaders,
+        string field)
     {
         if (shaders is not { Count: 2 })
-            throw new InvalidDataException("Runtime UI requires one vertex and one pixel shader entry.");
+            throw new InvalidDataException($"Runtime field '{field}' requires one vertex and one pixel shader entry.");
 
         ShaderRef? vertex = null;
         ShaderRef? pixel = null;
         foreach (ShaderRef shader in shaders)
         {
             if (shader is null)
-                throw new InvalidDataException("Runtime UI contains a null shader entry.");
+                throw new InvalidDataException($"Runtime field '{field}' contains a null shader entry.");
             if (shader.Stage == ShaderStage.Vertex && vertex is null)
                 vertex = shader;
             else if (shader.Stage == ShaderStage.Pixel && pixel is null)
                 pixel = shader;
             else
-                throw new InvalidDataException("Runtime UI requires one vertex and one pixel shader entry.");
+                throw new InvalidDataException($"Runtime field '{field}' requires one vertex and one pixel shader entry.");
         }
 
-        AssetGuid vertexGuid = ParseGuid(vertex!.AssetGuid, "UiShaders.Vertex.AssetGuid");
-        AssetGuid pixelGuid = ParseGuid(pixel!.AssetGuid, "UiShaders.Pixel.AssetGuid");
+        AssetGuid vertexGuid = ParseGuid(vertex!.AssetGuid, $"{field}.Vertex.AssetGuid");
+        AssetGuid pixelGuid = ParseGuid(pixel!.AssetGuid, $"{field}.Pixel.AssetGuid");
         if (vertexGuid != pixelGuid)
-            throw new InvalidDataException("Runtime UI shader entries must use one shader asset.");
+            throw new InvalidDataException($"Runtime field '{field}' entries must use one shader asset.");
         if (string.IsNullOrWhiteSpace(vertex.EntryPoint) || string.IsNullOrWhiteSpace(pixel.EntryPoint))
-            throw new InvalidDataException("Runtime UI shader entry points are missing.");
+            throw new InvalidDataException($"Runtime field '{field}' shader entry points are missing.");
         return (vertexGuid, vertex.EntryPoint, pixel.EntryPoint);
     }
 
@@ -900,10 +919,13 @@ internal static class RuntimeApplication
 
     private readonly record struct BootConfiguration(
         AssetGuid Scene,
-        AssetGuid Renderer,
+        AssetGuid Pipeline,
         AssetGuid UiShader,
         string UiVertexEntry,
         string UiPixelEntry,
+        AssetGuid PresentationShader,
+        string PresentationVertexEntry,
+        string PresentationPixelEntry,
         int Width,
         int Height,
         string Title);

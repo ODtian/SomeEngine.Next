@@ -2,7 +2,6 @@
 #define STANDARD_PBR_SLANG
 
 #include "material_interfaces.slang"
-#include "brdf.slang"
 #include "cluster_shade_pipeline.slang"
 
 // C# imports this marked struct through Slang reflection and writes the material
@@ -25,27 +24,6 @@ struct StandardPBRPixelContext
     float4 worldTangent;
     float2 uv0;
 };
-
-static const uint DEFAULT_LIGHT_LAYER_MASK = 0xFFFFFFFFu;
-static const int NO_COOKIE = -1;
-
-float SampleLightCookie(GPULight light, float3 surfacePosition)
-{
-    if (light.CookieIndex == NO_COOKIE)
-        return 1.0;
-
-    float4 cookiePosition = mul(float4(surfacePosition, 1.0), light.WorldToLightCookie);
-    if (cookiePosition.w == 0.0)
-        return 0.0;
-
-    float2 cookieUv = cookiePosition.xy / cookiePosition.w;
-    float2 atlasUv = cookieUv * light.CookieScaleOffset.xy + light.CookieScaleOffset.zw;
-    float cookie = LightCookieAtlas.SampleLevel(
-        LightCookieSampler,
-        float3(atlasUv, (float)light.CookieIndex),
-        0.0).r;
-    return saturate(cookie * light.CookieStrength);
-}
 
 StandardPBRPixelContext BuildStandardPBRPixelContext(
     uint2 pixelCoord,
@@ -97,7 +75,7 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
 
         // Sample material textures
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
-        float2 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).gb;
+        float3 armSample    = ARMMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
         float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;
         StandardPBRScalars scalars = LoadMaterialScalars<StandardPBRScalars>();
 
@@ -108,97 +86,12 @@ struct StandardPBRMaterial : ISurfaceEvaluate<StaticVertexEval>
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
 
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
-        float  roughness = clamp(armSample.x * scalars.Roughness, 0.0, 1.0);
-        float  metallic  = clamp(armSample.y * scalars.MetallicFactor, 0.0, 1.0);
-
-        float3 N = mappedNormal;
-        float3 V = normalize(Uniforms.CameraPos - ctx.surfacePosition);
-
-        // Clamp roughness to avoid division issues
-        float r = clamp(roughness, 0.04, 1.0);
-
-        float3 directColor = float3(0.0);
-        uint directionalEnd = LightCounts.DirectionalCount;
-        uint pointEnd = directionalEnd + LightCounts.PointCount;
-        uint spotEnd = pointEnd + LightCounts.SpotCount;
-        uint surfaceLightLayerMask = Uniforms.LightLayerMask != 0u ? Uniforms.LightLayerMask : DEFAULT_LIGHT_LAYER_MASK;
-
-        for (uint lightIndex = 0u; lightIndex < directionalEnd; lightIndex++)
-        {
-            GPULight light = LightBuffer[lightIndex];
-            if ((light.LayerMask & surfaceLightLayerMask) == 0u)
-                continue;
-
-            float cookieAttenuation = SampleLightCookie(light, ctx.surfacePosition);
-            float3 lightColor = light.Color * light.Intensity * cookieAttenuation;
-            if (dot(light.Direction, light.Direction) > 0.0)
-            {
-                directColor += EvaluateDirectionalLight(
-                    baseColor,
-                    metallic,
-                    r,
-                    N,
-                    V,
-                    -normalize(light.Direction),
-                    lightColor,
-                    1.0);
-            }
-        }
-
-        uint clusterIndex = GetClusterIndex(ctx.pixelCoord, ctx.surfacePosition);
-        if (clusterIndex != LIGHT_GRID_INVALID_CLUSTER)
-        {
-            uint2 clusterLightSpan = ClusterLightGrid[clusterIndex];
-            for (uint clusterLightIndex = 0u; clusterLightIndex < clusterLightSpan.y; clusterLightIndex++)
-            {
-                uint lightIndex = LightIndexList[clusterLightSpan.x + clusterLightIndex];
-                if (lightIndex < directionalEnd || lightIndex >= spotEnd)
-                    continue;
-
-                GPULight light = LightBuffer[lightIndex];
-                if ((light.LayerMask & surfaceLightLayerMask) == 0u)
-                    continue;
-
-                float cookieAttenuation = SampleLightCookie(light, ctx.surfacePosition);
-                if (lightIndex < pointEnd)
-                {
-                    directColor += EvaluatePointLight(
-                        baseColor,
-                        metallic,
-                        r,
-                        N,
-                        V,
-                        ctx.surfacePosition,
-                        light.Position,
-                        light.Range,
-                        light.Color * light.Intensity * cookieAttenuation,
-                        1.0);
-                }
-                else
-                {
-                    if (dot(light.Direction, light.Direction) > 0.0)
-                    {
-                        directColor += EvaluateSpotLight(
-                            baseColor,
-                            metallic,
-                            r,
-                            N,
-                            V,
-                            ctx.surfacePosition,
-                            light.Position,
-                            light.Range,
-                            light.Direction,
-                            light.InnerConeCos,
-                            light.OuterConeCos,
-                            light.Color * light.Intensity * cookieAttenuation,
-                            1.0);
-                    }
-                }
-            }
-        }
-
-        float3 emissive = scalars.EmissiveFactor;
-        float3 finalColor = directColor + emissive;
+        float roughness = saturate(armSample.g * scalars.Roughness);
+        float metallic = saturate(armSample.b * scalars.MetallicFactor);
+        float facing = 0.5 + 0.5 * saturate(mappedNormal.y);
+        float materialResponse = lerp(1.0, 0.85, metallic) * lerp(1.0, 0.9, roughness);
+        float3 finalColor = baseColor * armSample.r * facing * materialResponse +
+            scalars.EmissiveFactor;
 
         outputColor[ctx.pixelCoord] = float4(finalColor, 1.0);
     }

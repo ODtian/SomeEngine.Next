@@ -19,18 +19,21 @@ internal sealed class SlotMap<T>
     }
 
     private readonly Func<T, T>? _clone;
+    private readonly GraphIdentityDomain _domain;
     private Storage _storage;
     private bool _writable;
 
-    internal SlotMap(Func<T, T>? clone = null)
+    internal SlotMap(GraphIdentityDomain domain, Func<T, T>? clone = null)
     {
+        _domain = domain;
         _clone = clone;
         _storage = new Storage();
         _writable = true;
     }
 
-    private SlotMap(Func<T, T>? clone, Storage storage)
+    private SlotMap(GraphIdentityDomain domain, Func<T, T>? clone, Storage storage)
     {
+        _domain = domain;
         _clone = clone;
         _storage = storage;
     }
@@ -42,7 +45,7 @@ internal sealed class SlotMap<T>
     internal SlotMap<T> Fork()
     {
         _writable = false;
-        return new SlotMap<T>(_clone, _storage);
+        return new SlotMap<T>(_domain, _clone, _storage);
     }
 
     internal GraphIdentity Add(ulong owner, T value)
@@ -77,7 +80,7 @@ internal sealed class SlotMap<T>
 
         rows.Add(value);
         rowSlots.Add(slot);
-        return new GraphIdentity(owner, slot, generation);
+        return new GraphIdentity(owner, slot, generation, _domain);
     }
 
     internal bool Contains(in GraphIdentity id)
@@ -152,7 +155,7 @@ internal sealed class SlotMap<T>
     {
         int slotIndex = _storage.RowSlots[denseIndex];
         Slot slot = _storage.Slots[slotIndex];
-        return new GraphIdentity(owner, slotIndex, slot.Generation);
+        return new GraphIdentity(owner, slotIndex, slot.Generation, _domain);
     }
 
     private void EnsureWritable()
@@ -234,18 +237,24 @@ internal sealed class SharedList<T> : IEnumerable<T>
 
 internal sealed class GraphStructure
 {
-    internal SlotMap<GraphBuffer> Buffers { get; private init; } = new(static value => value.Clone());
-    internal SlotMap<GraphTexture> Textures { get; private init; } = new(static value => value.Clone());
+    internal SlotMap<GraphBuffer> Buffers { get; private init; } =
+        new(GraphIdentityDomain.Buffer, static value => value.Clone());
+    internal SlotMap<GraphTexture> Textures { get; private init; } =
+        new(GraphIdentityDomain.Texture, static value => value.Clone());
     internal SlotMap<GraphPersistentParameterBindings> PersistentBindings { get; private init; } =
-        new(static value => value.Clone());
-    internal SlotMap<GraphQueryPool> QueryPools { get; private init; } = new(static value => value.Clone());
+        new(GraphIdentityDomain.PersistentBindings, static value => value.Clone());
+    internal SlotMap<GraphQueryPool> QueryPools { get; private init; } =
+        new(GraphIdentityDomain.QueryPool, static value => value.Clone());
     internal SlotMap<GraphRayTracingShaderTable> ShaderTables { get; private init; } =
-        new(static value => value.Clone());
-    internal SlotMap<GraphView> Views { get; private init; } = new(static value => value.Clone());
-    internal SlotMap<GraphPass> Passes { get; private init; } = new(static value => value.Clone());
+        new(GraphIdentityDomain.ShaderTable, static value => value.Clone());
+    internal SlotMap<GraphView> Views { get; private init; } =
+        new(GraphIdentityDomain.View, static value => value.Clone());
+    internal SlotMap<GraphPass> Passes { get; private init; } =
+        new(GraphIdentityDomain.Pass, static value => value.Clone());
     internal SlotMap<PassResourceAccess> Accesses { get; private init; } =
-        new(static value => value.Clone());
-    internal SlotMap<GraphExtensionPoint> ExtensionPoints { get; private init; } = new();
+        new(GraphIdentityDomain.Access, static value => value.Clone());
+    internal SlotMap<GraphExtensionPoint> ExtensionPoints { get; private init; } =
+        new(GraphIdentityDomain.ExtensionPoint);
     internal SharedList<ExplicitPassOrder> Orders { get; private init; } = new();
     internal int NextDeclarationOrdinal { get; set; }
 

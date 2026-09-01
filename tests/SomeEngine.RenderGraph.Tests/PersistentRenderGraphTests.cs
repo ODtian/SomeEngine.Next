@@ -57,6 +57,97 @@ public sealed class PersistentRenderGraphTests
     }
 
     [Fact]
+    public void ResourceKindsUseDistinctIdentityDomains()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue]);
+
+        GraphBufferId buffer;
+        GraphTextureId texture;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            buffer = edit.CreateTransientBuffer(new BufferDesc(
+                64,
+                BufferUsages.CopyDestination));
+            texture = edit.CreateTransientTexture(new TextureDesc(
+                TextureDimension.Texture2D,
+                width: 1,
+                height: 1,
+                depth: 1,
+                mipLevelCount: 1,
+                arrayLayerCount: 1,
+                sampleCount: 1,
+                format: Format.R8G8B8A8UNorm,
+                usages: TextureUsages.CopyDestination));
+            edit.Commit();
+        }
+
+        Assert.Equal(buffer.Value.Owner, texture.Value.Owner);
+        Assert.Equal(buffer.Value.Slot, texture.Value.Slot);
+        Assert.Equal(buffer.Value.Generation, texture.Value.Generation);
+        Assert.Equal(GraphIdentityDomain.Buffer, buffer.Value.Domain);
+        Assert.Equal(GraphIdentityDomain.Texture, texture.Value.Domain);
+        Assert.NotEqual(buffer.Value, texture.Value);
+
+        using RenderGraphFrame frame = graph.BeginFrame();
+        GraphBufferId frameBuffer = frame.CreateBuffer(new BufferDesc(
+            64,
+            BufferUsages.CopyDestination));
+        GraphTextureId frameTexture = frame.CreateTexture(new TextureDesc(
+            TextureDimension.Texture2D,
+            width: 1,
+            height: 1,
+            depth: 1,
+            mipLevelCount: 1,
+            arrayLayerCount: 1,
+            sampleCount: 1,
+            format: Format.R8G8B8A8UNorm,
+            usages: TextureUsages.CopyDestination));
+        Assert.Equal(frameBuffer.Value.Owner, frameTexture.Value.Owner);
+        Assert.Equal(frameBuffer.Value.Slot, frameTexture.Value.Slot);
+        Assert.Equal(frameBuffer.Value.Generation, frameTexture.Value.Generation);
+        Assert.Equal(GraphIdentityDomain.Buffer, frameBuffer.Value.Domain);
+        Assert.Equal(GraphIdentityDomain.Texture, frameTexture.Value.Domain);
+        Assert.NotEqual(frameBuffer.Value, frameTexture.Value);
+    }
+
+    [Fact]
+    public void RetainedBufferViewRangesCanBeUpdatedPerFrame()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue]);
+
+        GraphBufferId buffer;
+        GraphBufferCbvId view;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            buffer = edit.DeclareExternalBuffer(new BufferDesc(
+                256,
+                BufferUsages.Constant));
+            view = edit.CreateBufferCbv(buffer, new BufferRange(0, 64));
+            edit.Commit();
+        }
+
+        using RenderGraphFrame frame = graph.BeginFrame();
+        frame.SetBufferRange(buffer, new BufferRange(64, 64));
+        frame.SetBufferRange(view, new BufferRange(128, 64));
+        bool bufferRejected = false;
+        try { frame.SetBufferRange(buffer, new BufferRange(240, 32)); }
+        catch (ArgumentOutOfRangeException) { bufferRejected = true; }
+        bool viewRejected = false;
+        try { frame.SetBufferRange(view, new BufferRange(240, 32)); }
+        catch (ArgumentOutOfRangeException) { viewRejected = true; }
+        Assert.True(bufferRejected);
+        Assert.True(viewRejected);
+    }
+
+    [Fact]
     public void PersistentGraphExecutesTwoCrossQueueFrames()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -814,6 +905,57 @@ public sealed class PersistentRenderGraphTests
             Assert.Equal(1, frame.Execute(completions));
         support.Wait(completions.AsSpan(0, 1));
         Assert.Equal(0, observed[0]);
+    }
+
+    [Fact]
+    public void FrameOnlyPassUsesDeclarationStateUnlessOverriddenForTheFrame()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        int[] observed = [0];
+        GraphPassId pass;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            pass = edit.AddCopyFramePass(
+                "frame-only declaration fallback",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                new ObservationState(observed),
+                new PassOptions(
+                    Culling: PassCullingMode.NeverCull,
+                    Recording: PassRecordingMode.CallingThread),
+                static (ref PassDefinition _, ref ObservationState _) => { },
+                static (ref CopyPassCommandScope _, in ObservationState state) =>
+                    state.Destination[0]++);
+            edit.Commit();
+        }
+
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+            Assert.Equal(1, frame.Execute(completions));
+        support.Wait(completions.AsSpan(0, 1));
+        Assert.Equal(1, observed[0]);
+
+        int[] overrideObserved = [10];
+        completions.AsSpan().Clear();
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            frame.SetPassData(pass, new ObservationState(overrideObserved));
+            Assert.Equal(1, frame.Execute(completions));
+        }
+        support.Wait(completions.AsSpan(0, 1));
+        Assert.Equal(1, observed[0]);
+        Assert.Equal(11, overrideObserved[0]);
+
+        completions.AsSpan().Clear();
+        using (RenderGraphFrame frame = graph.BeginFrame())
+            Assert.Equal(1, frame.Execute(completions));
+        support.Wait(completions.AsSpan(0, 1));
+        Assert.Equal(2, observed[0]);
+        Assert.Equal(11, overrideObserved[0]);
     }
 
     [Fact]

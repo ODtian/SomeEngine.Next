@@ -214,6 +214,8 @@ public sealed class ClusterRenderResources : IDisposable
 
     internal int PublishedMeshCount => _meshes.PublishedMeshCount;
 
+    internal int PageFaultCapacity => _residency.PageFaultCapacity;
+
     internal void EnterInstanceComposition() => EnterActiveOperation();
 
     internal void ExitInstanceComposition() => ExitActiveOperation();

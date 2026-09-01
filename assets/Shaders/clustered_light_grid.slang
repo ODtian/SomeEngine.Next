@@ -1,7 +1,6 @@
 #include "common.slang"
 #include "render_lighting.slang"
 #include "resource_effects.slang"
-#include "cluster_overflow.slang"
 
 ConstantBuffer<ClusteredLightGridParameters> LightGridUniforms;
 StructuredBuffer<GPULight> LightBuffer;
@@ -9,8 +8,6 @@ StructuredBuffer<GPULight> LightBuffer;
 RWStructuredBuffer<uint2> ClusteredLightGrid;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> LightIndexList;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> ClusterOverflowCounters;
 
 void GetClusteredLightBoundingSphere(
     GPULight light,
@@ -169,14 +166,6 @@ void BuildClusteredLightGrid(uint3 dispatchThreadId : SV_DispatchThreadID)
                     uint outputOffset =
                         cell * LightGridUniforms.MaxLightsPerCluster;
                     LightIndexList[outputOffset + slot] = lightIndex;
-                }
-                else
-                {
-                    uint ignored;
-                    InterlockedAdd(
-                        ClusterOverflowCounters[CLUSTER_OVERFLOW_LIGHT_GRID],
-                        1u,
-                        ignored);
                 }
             }
         }

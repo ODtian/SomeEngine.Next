@@ -56,6 +56,18 @@ public ref struct RenderGraphFrame
     public void SetBufferRange(GraphBufferAccessId access, in BufferRange range) =>
         State.SetBufferRange(access, range);
 
+    public void SetBufferRange(GraphBufferId buffer, in BufferRange range) =>
+        State.SetBufferViewRanges(buffer, range);
+
+    public void SetBufferRange(GraphBufferCbvId view, in BufferRange range) =>
+        State.SetBufferRange(view.Value, GraphViewKind.BufferCbv, range);
+
+    public void SetBufferRange(GraphBufferSrvId view, in BufferRange range) =>
+        State.SetBufferRange(view.Value, GraphViewKind.BufferSrv, range);
+
+    public void SetBufferRange(GraphBufferUavId view, in BufferRange range) =>
+        State.SetBufferRange(view.Value, GraphViewKind.BufferUav, range);
+
     public void SetTextureRange(GraphTextureAccessId access, in TextureSubresourceRange range) =>
         State.SetTextureRange(access, range);
 

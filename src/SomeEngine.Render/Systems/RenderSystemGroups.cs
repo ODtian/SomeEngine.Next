@@ -343,6 +343,9 @@ public sealed class RenderFrameSystems : IDisposable
 
     public void Disable(int index) => _systems.Disable(index);
 
+    /// <summary>Creates enabled frame systems before retained graph installation.</summary>
+    public void Initialize() => _systems.Initialize();
+
     public void Update(RenderFrame frame, RenderGraphFrame graph)
     {
         ArgumentNullException.ThrowIfNull(frame);

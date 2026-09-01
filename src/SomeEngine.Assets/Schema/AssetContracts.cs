@@ -513,10 +513,7 @@ public enum ClusterShaderOperationRole : byte
     MaterialBinningCount = 18,
     MaterialBinningReserve = 19,
     MaterialBinningScatter = 20,
-    MotionVectors = 21,
-    VisibilityResolve = 22,
-    TemporalResolve = 23,
-    ToneMapAndPresent = 24,
+    VisibilityResolve = 21,
 }
 
 public enum ClusterBoundsSupport : byte

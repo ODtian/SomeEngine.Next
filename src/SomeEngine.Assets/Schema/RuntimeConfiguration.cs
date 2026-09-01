@@ -16,9 +16,11 @@ public sealed partial class RuntimeConfiguration
 
     public string? SceneGuid { get; set; }
 
-    public string? ClusterRendererGuid { get; set; }
+    public string? ClusterPipelineGuid { get; set; }
 
     public IList<ShaderRef>? UiShaders { get; set; }
+
+    public IList<ShaderRef>? PresentationShaders { get; set; }
 
     public uint WindowWidth { get; set; } = 1280;
 

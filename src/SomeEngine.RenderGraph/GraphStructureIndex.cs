@@ -1004,12 +1004,12 @@ internal sealed class GraphStructureIndex
             case GraphAccessTargetKind.Buffer:
                 GraphBuffer buffer = structure.Buffers.Get(access.Target);
                 _ = ResolveRange(access.BufferRange, buffer.Description.Size);
-                ValidateMode(access);
+                ValidateMode(structure, access);
                 break;
             case GraphAccessTargetKind.Texture:
                 GraphTexture texture = structure.Textures.Get(access.Target);
                 ValidateTextureRange(texture, access.TextureRange);
-                ValidateMode(access);
+                ValidateMode(structure, access);
                 break;
             case GraphAccessTargetKind.QueryPool:
                 GraphQueryPool pool = structure.QueryPools.Get(access.Target);
@@ -1027,13 +1027,23 @@ internal sealed class GraphStructureIndex
         }
     }
 
-    private static void ValidateMode(PassResourceAccess access)
+    private static void ValidateMode(GraphStructure structure, PassResourceAccess access)
     {
         bool writes = ResourceAccessRules.Writes(access.Access);
-        if (access.Mode == GraphAccessMode.Read && writes)
-            throw new ArgumentException("A Read declaration contains a write access bit.");
+        string label = structure.Passes.Get(access.Pass).Label;
+        bool readOnlyUnorderedAccess =
+            access.Mode == GraphAccessMode.Read &&
+            access.Access == ResourceAccess.UnorderedAccess;
+        if (access.Mode == GraphAccessMode.Read && writes && !readOnlyUnorderedAccess)
+        {
+            throw new ArgumentException(
+                $"Pass '{label}' declares Read with write access '{access.Access}'.");
+        }
         if (access.Mode != GraphAccessMode.Read && !writes)
-            throw new ArgumentException("A Write declaration does not contain a write access bit.");
+        {
+            throw new ArgumentException(
+                $"Pass '{label}' declares {access.Mode} without a write access bit in '{access.Access}'.");
+        }
     }
 
     internal static BufferRange ResolveRange(in BufferRange range, ulong size)

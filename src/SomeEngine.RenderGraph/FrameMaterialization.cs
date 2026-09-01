@@ -154,7 +154,12 @@ internal sealed partial class FrameExecutor
             FrameView view = _views[viewIndex];
             if (view.View is not null) continue;
             bool resolved = TryResolveViewResources(view, out Resource? primary, out Resource? secondary);
-            bool cacheable = view.Definition is not null && resolved &&
+            if (!resolved)
+                continue;
+            bool cacheable = view.Definition is not null &&
+                !_frame.BufferViewRangeOverrides.ContainsKey(view.Identity) &&
+                !_frame.BufferResourceViewRangeOverrides.ContainsKey(view.Buffer) &&
+                resolved &&
                 memory.IsCached(primary!) &&
                 (secondary is null || memory.IsCached(secondary));
             DeviceResource? materialized = cacheable
