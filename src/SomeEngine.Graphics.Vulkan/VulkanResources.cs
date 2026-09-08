@@ -1225,8 +1225,6 @@ internal sealed unsafe partial class VulkanBackend
         {
             if (_memory.Mapped == 0)
                 throw new NotSupportedException("The Vulkan Buffer memory is not host visible.");
-            if (type == MapType.Read && Buffer.Info.MemoryType == MemoryType.Upload)
-                throw new ArgumentException("Upload Buffers do not support read mappings.", nameof(type));
             if (type == MapType.Write && Buffer.Info.MemoryType == MemoryType.Readback)
                 throw new ArgumentException("Readback Buffers do not support write mappings.", nameof(type));
             ulong sequence = PrepareNextSequence();
