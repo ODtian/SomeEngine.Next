@@ -269,36 +269,18 @@ public sealed partial class RenderGraph : IDisposable
                         "Transient compaction requires every submitted frame to complete.");
 
             var changes = new GraphEditChanges { CompactTransientPlacements = true };
-            GraphStructureIndex index = GraphStructureIndex.Update(
-                this,
-                _structureIndex,
-                _structure,
-                changes,
-                out GraphIndexUpdateStatistics updateStatistics);
-            foreach (GraphIdentity resource in index.TransientPlacements.Keys)
+            foreach (GraphIdentity resource in _structureIndex.TransientResources)
             {
                 if (resource.Domain == GraphIdentityDomain.Buffer) changes.Buffers.Add(resource);
                 else if (resource.Domain == GraphIdentityDomain.Texture) changes.Textures.Add(resource);
-                changes.Views.UnionWith(index.ResourceViews.GetValueOrDefault(resource, []));
+                changes.Views.UnionWith(_structureIndex.ResourceViews.GetValueOrDefault(resource, []));
             }
             foreach (FrameSlot slot in _frameSlots)
             {
                 slot.TransientResources?.Compact();
                 slot.ApplyEdit(changes);
             }
-            _structureIndex = index;
-            StructureVersion++;
-#if DEBUG
-            LastEditStatistics = new RenderGraphEditStatistics(
-                0,
-                0,
-                0,
-                10,
-                updateStatistics.ResourcesReanalyzed,
-                updateStatistics.HazardEdgesRebuilt,
-                updateStatistics.ScheduleNodesRevisited,
-                updateStatistics.TransientAllocationsMoved);
-#endif
+
         }
     }
 

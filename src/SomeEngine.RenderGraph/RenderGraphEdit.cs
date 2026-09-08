@@ -20,9 +20,26 @@ public ref partial struct RenderGraphEdit
         _changes = changes;
     }
 
-    private RenderGraph Graph => _graph ?? throw new InvalidOperationException("The edit is no longer active.");
-    private GraphStructure Staging => _staging ?? throw new InvalidOperationException("The edit is no longer active.");
-    private GraphEditChanges Changes => _changes ?? throw new InvalidOperationException("The edit is no longer active.");
+    private RenderGraph Graph
+    {
+        get
+        {
+            RenderGraph graph = _graph ?? throw new InvalidOperationException("The edit is no longer active.");
+            graph.EnsureEdit(_token);
+            return graph;
+        }
+    }
+
+    private GraphStructure Staging
+    {
+        get
+        {
+            _ = Graph;
+            return _staging!;
+        }
+    }
+
+    private GraphEditChanges Changes => _changes!;
 
     public GraphBufferId CreatePersistentBuffer(in BufferDesc description, MemoryType memoryType = MemoryType.DeviceLocal) =>
         AddBuffer(description, memoryType, RenderGraphResourceOwnership.GraphOwned,

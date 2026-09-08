@@ -30,8 +30,9 @@ public sealed class PersistentRenderGraphTests
         }
         ulong version = graph.StructureVersion;
 
+        GraphBufferId discarded;
         using (RenderGraphEdit abandoned = graph.BeginEdit())
-            _ = abandoned.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopySource));
+            discarded = abandoned.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopySource));
         Assert.Equal(version, graph.StructureVersion);
 
         GraphBufferId replacement;
@@ -44,6 +45,7 @@ public sealed class PersistentRenderGraphTests
             edit.Commit();
         }
         Assert.NotEqual(first, replacement);
+        Assert.NotEqual(discarded, replacement);
         Assert.Equal(version + 1, graph.StructureVersion);
 
         using RenderGraphEdit stale = graph.BeginEdit();
@@ -57,6 +59,84 @@ public sealed class PersistentRenderGraphTests
             rejected = true;
         }
         Assert.True(rejected, "The removed GraphBufferId generation must be rejected.");
+    }
+
+    [Fact]
+    public void DiscardedIdsStayInvalidAndCommittedEditCopiesCannotWrite()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        GraphBufferId discarded;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+            discarded = edit.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopyDestination));
+
+        RenderGraphEdit current = graph.BeginEdit();
+        RenderGraphEdit copy = current;
+        GraphBufferId buffer = current.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopyDestination));
+        current.Commit();
+        Assert.NotEqual(discarded, buffer);
+        bool rejected = false;
+        try
+        {
+            copy.SetBufferDescription(buffer, new BufferDesc(128, BufferUsages.CopyDestination));
+        }
+        catch (InvalidOperationException) { rejected = true; }
+        finally { copy.Dispose(); }
+        Assert.True(rejected);
+
+        using RenderGraphEdit next = graph.BeginEdit();
+        rejected = false;
+        try { next.SetBufferDescription(discarded, new BufferDesc(128, BufferUsages.CopyDestination)); }
+        catch (ArgumentException) { rejected = true; }
+        Assert.True(rejected);
+        next.SetBufferDescription(buffer, new BufferDesc(256, BufferUsages.CopyDestination));
+        next.Commit();
+    }
+
+    [Fact]
+    public void InvalidCompletionDestinationLeavesFrameAvailableForRetry()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        using (RenderGraphFrame frame = graph.BeginFrame())
+        {
+            bool rejected = false;
+            try { frame.Execute([]); }
+            catch (ArgumentException) { rejected = true; }
+            Assert.True(rejected);
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            Assert.Equal(0, frame.Execute(completions));
+        }
+        using RenderGraphFrame next = graph.BeginFrame();
+    }
+
+    [Fact]
+    public void PassDefinitionCannotModifyAnotherFrameAfterReuse()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        GraphBufferId buffer;
+        GraphPassId pass;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            buffer = edit.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopyDestination));
+            pass = edit.AddCopyPass<int, byte>("write", PassQueueSelection.Exact(support.GraphicsQueue),
+                0, default, static (ref PassDefinition _, ref int _) => { },
+                static (ref CopyPassCommandScope _, in int _, in byte _) => { });
+            edit.Commit();
+        }
+        RenderGraphFrame first = graph.BeginFrame();
+        PassDefinition definition = first.GetPass(pass);
+        first.Dispose();
+        using RenderGraphFrame next = graph.BeginFrame();
+        bool rejected = false;
+        try
+        {
+            definition.Write(buffer, new BufferRange(0, 64), PipelineSync.Copy,
+                ResourceAccess.CopyDestination, WriteCoverage.Complete);
+        }
+        catch (InvalidOperationException) { rejected = true; }
+        Assert.True(rejected);
     }
 
     [Fact]

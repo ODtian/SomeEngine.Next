@@ -4,6 +4,7 @@ public ref partial struct PassDefinition
 {
     private RenderGraphEdit _edit;
     private RenderGraphFrameState? _frame;
+    private readonly ulong _frameIdentity;
     private readonly GraphIdentity _pass;
     private readonly GraphPassKind _kind;
 
@@ -19,8 +20,18 @@ public ref partial struct PassDefinition
     {
         _edit = default;
         _frame = frame;
+        _frameIdentity = frame.Identity;
         _pass = pass;
         _kind = kind;
+    }
+
+    private RenderGraphFrameState Frame
+    {
+        get
+        {
+            _frame!.EnsureLease(_frameIdentity);
+            return _frame;
+        }
     }
 
     /// <summary>Returns the stable graph identity of this pass.</summary>
@@ -30,7 +41,7 @@ public ref partial struct PassDefinition
     {
         DevelopmentCheck.Require(pipeline is not null, "The pipeline cannot be null.");
         if (_frame is null) _edit.SetPassPipeline(_pass, pipeline);
-        else _frame.SetPassPipeline(_pass, pipeline);
+        else Frame.SetPassPipeline(_pass, pipeline);
     }
 
     public void SetParameterBlock(
@@ -39,7 +50,7 @@ public ref partial struct PassDefinition
     {
         DevelopmentCheck.Require(layout != ShaderVariableLayout.Null, "The parameter layout cannot be null.");
         if (_frame is null) _edit.SetPassParameterBlock(_pass, layout, ordinaryData);
-        else _frame.SetPassParameterBlock(_pass, layout, ordinaryData);
+        else Frame.SetPassParameterBlock(_pass, layout, ordinaryData);
     }
 
     public GraphBufferAccessId Bind(GraphBufferInput buffer, PipelineSync sync)
@@ -53,7 +64,7 @@ public ref partial struct PassDefinition
         PipelineSync sync, ResourceAccess access, BufferContentScope contentScope = BufferContentScope.FullRange)
     {
         if (_frame is null) return _edit.AddBufferInputAccess(_pass, buffer, sync, access, range, contentScope);
-        GraphBufferSlice value = _frame.ResolveBufferInput(buffer);
+        GraphBufferSlice value = Frame.ResolveBufferInput(buffer);
         return Read(value.Buffer, value.ResolveRange(range), sync, access, contentScope: contentScope);
     }
 
@@ -79,7 +90,7 @@ public ref partial struct PassDefinition
         if (_frame is null)
             return _edit.AddBufferInputAccess(_pass, buffer, sync, access, range, contentScope,
                 mode, coverage, resultContents, unorderedAccessHazards);
-        GraphBufferSlice value = _frame.ResolveBufferInput(buffer);
+        GraphBufferSlice value = Frame.ResolveBufferInput(buffer);
         return AddBufferAccess(value.Buffer, mode, coverage, sync, access, value.ResolveRange(range),
             false, resultContents, contentScope, unorderedAccessHazards);
     }
@@ -176,7 +187,7 @@ public ref partial struct PassDefinition
     {
         ReadOnlySpan<GraphParameterResourceBinding> inventory = _frame is null
             ? _edit.UsePersistentParameterBindings(_pass, bindings)
-            : _frame.UsePersistentParameterBindings(_pass, bindings);
+            : Frame.UsePersistentParameterBindings(_pass, bindings);
         foreach (ref readonly GraphParameterResourceBinding binding in inventory)
             DeclareParameterBinding(binding);
     }
@@ -315,7 +326,7 @@ public ref partial struct PassDefinition
     {
         ArgumentNullException.ThrowIfNull(ranges);
         if (_frame is not null)
-            _frame.AddBufferRangeRead(_pass, buffer, ranges, sync, access);
+            Frame.AddBufferRangeRead(_pass, buffer, ranges, sync, access);
         else
             foreach (ref readonly BufferRange range in ranges.Ranges)
                 _ = Read(buffer, range, sync, access);
@@ -626,9 +637,9 @@ public ref partial struct PassDefinition
         if (_frame is null)
             return _edit.AddTextureInputAccess(_pass, input, mode, coverage, sync, access, layout,
                 range, resultContents, unorderedAccessHazards);
-        GraphTextureId texture = _frame.ResolveTextureInput(input);
+        GraphTextureId texture = Frame.ResolveTextureInput(input);
         return AddTextureAccess(texture, mode, coverage, sync, access, layout,
-            _frame.ResolveTextureRange(texture, range.MipLevelCount == 0 ? null : range), false, resultContents, unorderedAccessHazards);
+            Frame.ResolveTextureRange(texture, range.MipLevelCount == 0 ? null : range), false, resultContents, unorderedAccessHazards);
     }
 
     private GraphTextureAccessId ReadTextureView(
@@ -841,7 +852,7 @@ public ref partial struct PassDefinition
         return _frame is null
             ? _edit.AddBufferAccess(_pass, buffer, mode, coverage, sync, access, range,
                 dynamicRange, resultContents, contentScope, unorderedAccessHazards)
-            : _frame.AddBufferAccess(_pass, buffer, mode, coverage, sync, access, range,
+            : Frame.AddBufferAccess(_pass, buffer, mode, coverage, sync, access, range,
                 resultContents, contentScope, unorderedAccessHazards);
     }
 
@@ -867,18 +878,18 @@ public ref partial struct PassDefinition
         return _frame is null
             ? _edit.AddTextureAccess(_pass, texture, mode, coverage, sync, access, layout,
                 range, dynamicRange, resultContents, unorderedAccessHazards)
-            : _frame.AddTextureAccess(_pass, texture, mode, coverage, sync, access, layout,
+            : Frame.AddTextureAccess(_pass, texture, mode, coverage, sync, access, layout,
                 range, resultContents, unorderedAccessHazards);
     }
 
     private FrameView ResolveView(in GraphIdentity identity) =>
-        _frame is null ? new FrameView(_edit.UseView(_pass, identity)) : _frame.ResolveView(identity);
+        _frame is null ? new FrameView(_edit.UseView(_pass, identity)) : Frame.ResolveView(identity);
 
     private void DeclareShaderTableInventory(GraphRayTracingShaderTableId table)
     {
         GraphRayTracingShaderTable row = _frame is null
             ? _edit.ResolveShaderTable(table)
-            : _frame.ResolveShaderTable(table);
+            : Frame.ResolveShaderTable(table);
         foreach (ref readonly GraphParameterResourceBinding binding in row.Inventory.AsSpan())
             DeclareParameterBinding(binding);
     }
@@ -893,7 +904,7 @@ public ref partial struct PassDefinition
         if (_frame is null)
             _edit.AddQueryAccess(_pass, pool, mode, coverage, range, resultContents);
         else
-            _frame.AddQueryAccess(_pass, pool, mode, coverage, range, resultContents);
+            Frame.AddQueryAccess(_pass, pool, mode, coverage, range, resultContents);
     }
 
     private void AddShaderTableAccess(
@@ -905,7 +916,7 @@ public ref partial struct PassDefinition
         if (_frame is null)
             _edit.AddShaderTableAccess(_pass, table, mode, coverage, resultContents);
         else
-            _frame.AddShaderTableAccess(_pass, table, mode, coverage, resultContents);
+            Frame.AddShaderTableAccess(_pass, table, mode, coverage, resultContents);
     }
 
     private PassRenderingRegionId AddRenderingRegion(
@@ -922,10 +933,10 @@ public ref partial struct PassDefinition
                 _pass, x, y, width, height, firstArrayLayer, arrayLayerCount);
         }
 
-        int region = _frame.AddRenderingRegion(
+        int region = Frame.AddRenderingRegion(
             _pass, x, y, width, height, firstArrayLayer, arrayLayerCount);
         return new PassRenderingRegionId(new GraphIdentity(
-            _frame.Identity,
+            Frame.Identity,
             region,
             checked((uint)_pass.Slot + 1)));
     }
@@ -933,19 +944,19 @@ public ref partial struct PassDefinition
     private void PublishColorAttachment(in GraphColorAttachment attachment)
     {
         if (_frame is null) _edit.AddColorAttachment(_pass, attachment);
-        else _frame.AddColorAttachment(_pass, attachment);
+        else Frame.AddColorAttachment(_pass, attachment);
     }
 
     private void PublishDepthStencilAttachment(in GraphDepthStencilAttachment attachment)
     {
         if (_frame is null) _edit.SetDepthStencilAttachment(_pass, attachment);
-        else _frame.SetDepthStencilAttachment(_pass, attachment);
+        else Frame.SetDepthStencilAttachment(_pass, attachment);
     }
 
     private void AddParameterBinding(in GraphParameterResourceBinding binding)
     {
         if (_frame is null) _edit.AddPassParameterBinding(_pass, binding);
-        else _frame.AddPassParameterBinding(_pass, binding);
+        else Frame.AddPassParameterBinding(_pass, binding);
     }
 
     private void EnsureKind(GraphPassKind kind)

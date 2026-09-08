@@ -299,17 +299,9 @@ public ref partial struct RenderGraphFrame
     public int Execute(Span<QueueCompletion> destination)
     {
         RenderGraphFrameState state = State;
-        try
-        {
-            int result = state.Execute(_identity, destination);
-            _state = null;
-            return result;
-        }
-        catch
-        {
-            _state = null;
-            throw;
-        }
+        int result = state.Execute(_identity, destination);
+        _state = null;
+        return result;
     }
 
     public void Dispose()

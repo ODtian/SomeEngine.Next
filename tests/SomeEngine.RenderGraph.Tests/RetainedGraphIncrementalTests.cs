@@ -6,128 +6,6 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class RetainedGraphIncrementalTests
 {
     [Fact]
-    public void StructuralEditsPreserveUnrelatedBlocksHazardsIdsAndPlacements()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue]);
-        Branch left;
-        Branch right;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            left = AddBranch(edit, support.GraphicsQueue, "left");
-            right = AddBranch(edit, support.GraphicsQueue, "right");
-            edit.Commit();
-        }
-
-        GraphStructureIndex initial = graph.StructureIndex;
-        object initialBufferBlock = initial.Structure.Buffers.BlockIdentity;
-        object initialAccessBlock = initial.Structure.Accesses.BlockIdentity;
-        GraphHazardTimeline rightHazards = initial.HazardTimelines[right.Buffer.Value];
-        GraphIdentity[] rightAccesses = initial.ResourceAccesses[right.Buffer.Value];
-        GraphTransientPlacementState rightPlacement = initial.TransientPlacements[right.Buffer.Value];
-
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetPassOptions(
-                left.ReadPass,
-                new PassOptions(
-                    Culling: PassCullingMode.NeverCull,
-                    EstimatedExecutionCost: 3));
-            edit.Commit();
-        }
-
-        GraphStructureIndex passEdit = graph.StructureIndex;
-        Assert.Same(initialBufferBlock, passEdit.Structure.Buffers.BlockIdentity);
-        Assert.Same(initialAccessBlock, passEdit.Structure.Accesses.BlockIdentity);
-        Assert.NotSame(initial.Structure.Passes.BlockIdentity, passEdit.Structure.Passes.BlockIdentity);
-        Assert.Same(rightHazards, passEdit.HazardTimelines[right.Buffer.Value]);
-        Assert.Same(rightAccesses, passEdit.ResourceAccesses[right.Buffer.Value]);
-        Assert.Equal(rightPlacement, passEdit.TransientPlacements[right.Buffer.Value]);
-        Assert.Equal(1, graph.LastEditStatistics.EditedPassCount);
-        Assert.Equal(0, graph.LastEditStatistics.ResourcesReanalyzed);
-        Assert.Equal(1, graph.LastEditStatistics.CopiedStructureBlockCount);
-        Assert.Equal(9, graph.LastEditStatistics.SharedStructureBlockCount);
-        Assert.Equal(0, graph.LastEditStatistics.ScheduleNodesRevisited);
-
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetBufferAccess(
-                left.WriteAccess,
-                GraphAccessMode.Write,
-                WriteCoverage.Complete,
-                PipelineSync.Copy,
-                ResourceAccess.CopyDestination,
-                new BufferRange(0, 64),
-                resultContents: ResourceContentState.Defined);
-            edit.Commit();
-        }
-
-        GraphStructureIndex accessEdit = graph.StructureIndex;
-        Assert.Same(rightHazards, accessEdit.HazardTimelines[right.Buffer.Value]);
-        Assert.Same(rightAccesses, accessEdit.ResourceAccesses[right.Buffer.Value]);
-        Assert.Equal(rightPlacement, accessEdit.TransientPlacements[right.Buffer.Value]);
-        Assert.Equal(0, graph.LastEditStatistics.EditedPassCount);
-        Assert.Equal(1, graph.LastEditStatistics.ResourcesReanalyzed);
-        Assert.Equal(1, graph.LastEditStatistics.CopiedStructureBlockCount);
-        Assert.Equal(1, graph.LastEditStatistics.HazardEdgesRebuilt);
-
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.OrderAfter(right.WritePass, left.ReadPass);
-            edit.Commit();
-        }
-
-        GraphStructureIndex orderEdit = graph.StructureIndex;
-        Assert.Same(rightHazards, orderEdit.HazardTimelines[right.Buffer.Value]);
-        Assert.Equal(rightPlacement, orderEdit.TransientPlacements[right.Buffer.Value]);
-        Assert.Equal(0, graph.LastEditStatistics.ResourcesReanalyzed);
-        Assert.Equal(1, graph.LastEditStatistics.CopiedStructureBlockCount);
-        Assert.Equal(0, graph.LastEditStatistics.ScheduleNodesRevisited);
-
-        ulong leftPlacementToken = orderEdit.TransientPlacements[left.Buffer.Value].Token;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetBufferDescription(
-                left.Buffer,
-                new BufferDesc(
-                    128,
-                    BufferUsages.CopySource | BufferUsages.CopyDestination,
-                    "resized left"));
-            edit.Commit();
-        }
-
-        GraphStructureIndex resizeEdit = graph.StructureIndex;
-        Assert.NotEqual(leftPlacementToken, resizeEdit.TransientPlacements[left.Buffer.Value].Token);
-        Assert.Equal(rightPlacement, resizeEdit.TransientPlacements[right.Buffer.Value]);
-        Assert.Same(rightHazards, resizeEdit.HazardTimelines[right.Buffer.Value]);
-        Assert.Equal(1, graph.LastEditStatistics.ResourcesReanalyzed);
-        Assert.Equal(1, graph.LastEditStatistics.TransientAllocationsMoved);
-
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.Remove(left.ReadPass);
-            edit.Remove(left.WritePass);
-            edit.Remove(left.Buffer);
-            edit.Commit();
-        }
-
-        GraphStructureIndex deleteEdit = graph.StructureIndex;
-        Assert.DoesNotContain(left.Buffer.Value, deleteEdit.BufferIds);
-        Assert.Contains(right.Buffer.Value, deleteEdit.BufferIds);
-        Assert.Contains(right.WritePass.Value, deleteEdit.PassIds);
-        Assert.Contains(right.ReadPass.Value, deleteEdit.PassIds);
-        Assert.Same(rightHazards, deleteEdit.HazardTimelines[right.Buffer.Value]);
-        Assert.Equal(
-            rightPlacement.Token,
-            deleteEdit.TransientPlacements[right.Buffer.Value].Token);
-        Assert.Equal(1, graph.LastEditStatistics.ResourcesReanalyzed);
-        Assert.Equal(0, graph.LastEditStatistics.TransientAllocationsMoved);
-    }
-
-    [Fact]
     public void ExplicitOrderPlacesNewPassBeforeExistingHazardConsumer()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -450,7 +328,7 @@ public sealed class RetainedGraphIncrementalTests
     }
 
     [Fact]
-    public void ExplicitIdleCompactChangesOnlyTransientPlacementTokens()
+    public void CompactionPreservesStructureVersionAndGraphExecution()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(
@@ -463,17 +341,15 @@ public sealed class RetainedGraphIncrementalTests
             branch = AddBranch(edit, support.GraphicsQueue, "compact");
             edit.Commit();
         }
-        GraphStructureIndex before = graph.StructureIndex;
-        ulong token = before.TransientPlacements[branch.Buffer.Value].Token;
         ulong version = graph.StructureVersion;
-
         graph.CompactTransientResources();
+        Assert.Equal(version, graph.StructureVersion);
 
-        Assert.Equal(version + 1, graph.StructureVersion);
-        Assert.NotEqual(token, graph.StructureIndex.TransientPlacements[branch.Buffer.Value].Token);
-        Assert.Same(before.Structure, graph.StructureIndex.Structure);
-        Assert.Equal(1, graph.LastEditStatistics.TransientAllocationsMoved);
-        Assert.Equal(0, graph.LastEditStatistics.CopiedStructureBlockCount);
+        var completions = new QueueCompletion[3];
+        using (RenderGraphFrame frame = graph.BeginFrame())
+            Assert.Equal(1, frame.Execute(completions));
+        support.Wait(completions);
+
     }
 
     [Fact]

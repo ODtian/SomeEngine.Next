@@ -1316,7 +1316,7 @@ internal sealed partial class RenderGraphFrameState
         (uint)identity.Slot < (uint)count;
 
     [System.Diagnostics.Conditional("DEBUG")]
-    private static void ValidateStatic<T>(in GraphIdentity identity, SlotMap<T> values)
+    private static void ValidateStatic<T>(in GraphIdentity identity, GraphRows<T> values)
     {
         if (!values.Contains(identity))
             throw new ArgumentException("The graph identity is invalid or stale.");

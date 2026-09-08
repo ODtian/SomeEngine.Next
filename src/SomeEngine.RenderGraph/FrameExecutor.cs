@@ -571,7 +571,7 @@ internal sealed partial class FrameExecutor
     internal void ChangePass(GraphIdentity identity) => _rowChanges.Passes.Add(identity);
     internal void ChangeAccess(GraphIdentity identity) => _rowChanges.Accesses.Add(identity);
 
-    private List<int> ChangedRows<T>(SlotMap<T> source, Dictionary<GraphIdentity, int> indices, HashSet<GraphIdentity> changes)
+    private List<int> ChangedRows<T>(GraphRows<T> source, Dictionary<GraphIdentity, int> indices, HashSet<GraphIdentity> changes)
     {
         _rowIndexSet.Clear();
         _rowIndexScratch.Clear();
