@@ -689,6 +689,20 @@ internal sealed unsafe partial class D3D12Backend
                     RecordReleaseFailure(ChildDetachFailure);
             }
 
+            // Child disposal can enqueue presentation and capability retirements.
+            // Their completion must be collected before destroying native queues.
+            foreach (D3D12Queue queue in _queues.Values)
+            {
+                try
+                {
+                    queue.QuiescePayloads();
+                }
+                catch (Exception exception)
+                {
+                    RecordReleaseFailure(exception);
+                }
+            }
+
             if (_retainedCommandPayloadHead is not null ||
                 _children.HasRetainedFailures ||
                 TeardownFailure is not null)

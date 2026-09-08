@@ -540,6 +540,17 @@ internal sealed unsafe partial class VulkanBackend
                 Result result = AllocateFrom(_active, layout, out VkDescriptorSet set);
                 if (result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
                 {
+                    foreach (VkDescriptorPool pool in _pools)
+                    {
+                        if (pool.Handle == _active.Handle)
+                            continue;
+                        result = AllocateFrom(pool, layout, out set);
+                        if (result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
+                            continue;
+                        _device.ThrowIfDeviceCallFailed(result, "vkAllocateDescriptorSets");
+                        _active = pool;
+                        return new VulkanDescriptorSetAllocation(pool, set);
+                    }
                     _active = CreatePool();
                     result = AllocateFrom(_active, layout, out set);
                 }

@@ -414,8 +414,7 @@ internal sealed unsafe partial class VulkanBackend
             }
 
             Result idleResult = _backend.Api.DeviceWaitIdle(native);
-            bool deviceLost = Status == DeviceStatus.Lost ||
-                idleResult == Result.ErrorDeviceLost;
+            bool deviceLost = idleResult == Result.ErrorDeviceLost;
             if (idleResult == Result.ErrorDeviceLost && Status == DeviceStatus.Active)
                 _ = PublishDeviceLoss(idleResult, "vkDeviceWaitIdle");
             else if (!deviceLost && idleResult != Result.Success)
@@ -428,6 +427,7 @@ internal sealed unsafe partial class VulkanBackend
                 {
                     RecordReleaseFailure(exception);
                 }
+                return;
             }
 
             if (!deviceLost && idleResult == Result.Success)
