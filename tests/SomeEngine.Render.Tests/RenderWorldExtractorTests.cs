@@ -52,6 +52,9 @@ public sealed class RenderWorldExtractorTests
         Entity changed = Mirror(renderWorld, sources[3]);
         Assert.Equal(new Vector3(3, 1, 0), renderWorld.Read<RenderTransform>(changed).Position);
         Assert.Equal(new Vector3(3, 0, 0), renderWorld.Read<RenderPreviousTransform>(changed).Value.Position);
+        ExtractAndApply(extraction, mainWorld);
+        Assert.Equal(renderWorld.Read<RenderTransform>(changed),
+            renderWorld.Read<RenderPreviousTransform>(changed).Value);
         renderWorld.ReleaseQuery(query);
     }
 
@@ -1028,6 +1031,12 @@ public sealed class RenderWorldExtractorTests
 
         Entity mirror = Mirror(renderWorld, source);
         Assert.Equal(37, renderWorld.Read<CustomRenderValue>(mirror).Value);
+        mainWorld.Replace(source, new CustomExtractValue(53));
+        ExtractAndApply(extraction, mainWorld);
+        Assert.Equal(mirror, Mirror(renderWorld, source));
+        Assert.Equal(53, renderWorld.Read<CustomRenderValue>(mirror).Value);
+        ExtractAndApply(extraction, mainWorld);
+        Assert.Equal(53, renderWorld.Read<CustomRenderValue>(mirror).Value);
         Assert.Throws<InvalidOperationException>(() =>
             extraction.Add(new CustomExtractionSystem()));
     }
@@ -1245,6 +1254,20 @@ public sealed class RenderWorldExtractorTests
             ReadOnlySpan<Entity> entities = chunk.Entities;
             for (int row = 0; row < entities.Length; row++)
                 _values.Add((entities[row], values[row].Value));
+        }
+
+        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+        {
+            if (!chunk.Has<CustomExtractValue>() || !chunk.HasChangedSinceLastSystemVersion<CustomExtractValue>())
+                return false;
+            Collect(chunk);
+            return true;
+        }
+
+        public void ApplyChanges(RenderExtractionContext context)
+        {
+            foreach (var value in _values)
+                context.UpdateExisting(context.RequireMirror(value.Source), new CustomRenderValue(value.Value));
         }
 
         public void Apply(RenderExtractionContext context)

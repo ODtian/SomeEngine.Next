@@ -19,8 +19,12 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _meshSources = [];
     private readonly HashSet<Entity> _instancedSources = [];
 
+    public bool CanApplyChangesDirect => true;
+
     public void DeclareReads(RenderExtractionQuery query)
     {
+        query.Write<RenderMesh>();
+        query.Write<RenderInstancedMesh>();
         query.ReadOptional<WorldTransform>();
         query.ReadOptional<MeshInstance>();
         query.ReadOptional<InstancedMesh>();
@@ -90,7 +94,7 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal bool CollectChanges(QueryChunkView chunk)
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
         if (!chunk.Has<WorldTransform>())
             return false;
@@ -100,6 +104,9 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
             chunk.TryRead<InstancedMesh>(out ReadOnlySpan<InstancedMesh> instancedMeshes);
         if (!hasMeshes && !hasInstancedMeshes)
             return false;
+
+        if (chunk.HasChangedSinceLastSystemVersion<WorldTransform>())
+            context.CollectTransformChanges(chunk);
 
         bool meshChunkChanged = hasMeshes &&
             chunk.HasChangedSinceLastSystemVersion<MeshInstance>();
@@ -210,7 +217,7 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal void ApplyChanges(RenderExtractionContext context)
+    public void ApplyChanges(RenderExtractionContext context)
     {
         for (int index = 0; index < _snapshots.Count; index++)
         {
@@ -243,7 +250,7 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal void ValidateChanges(RenderExtractionContext context)
+    public void ValidateChanges(RenderExtractionContext context)
     {
         for (int index = 0; index < _snapshots.Count; index++)
         {

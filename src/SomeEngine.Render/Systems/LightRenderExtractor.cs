@@ -16,8 +16,14 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
     private readonly HashSet<Entity> _spotSources = [];
     private readonly HashSet<Entity> _cookieSources = [];
 
+    public bool CanApplyChangesDirect => true;
+
     public void DeclareReads(RenderExtractionQuery query)
     {
+        query.Write<RenderDirectionalLight>();
+        query.Write<RenderPointLight>();
+        query.Write<RenderSpotLight>();
+        query.Write<RenderLightCookie>();
         query.ReadOptional<DirectionalLight>();
         query.ReadOptional<PointLight>();
         query.ReadOptional<SpotLight>();
@@ -86,7 +92,7 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal bool CollectChanges(QueryChunkView chunk)
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
         bool hasDirectional = chunk.TryRead<DirectionalLight>(
             out ReadOnlySpan<DirectionalLight> directional);
@@ -242,7 +248,7 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal void ApplyChanges(RenderExtractionContext context)
+    public void ApplyChanges(RenderExtractionContext context)
     {
         for (int index = 0; index < _directional.Count; index++)
         {
@@ -273,7 +279,7 @@ internal sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    internal void ValidateChanges(RenderExtractionContext context)
+    public void ValidateChanges(RenderExtractionContext context)
     {
         for (int index = 0; index < _directional.Count; index++)
         {
