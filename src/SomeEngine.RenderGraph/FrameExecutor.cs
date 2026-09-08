@@ -88,7 +88,11 @@ internal sealed partial class FrameExecutor
         {
             _analysisChanged = true;
             _recordingChanged = true;
-            for (int pass = 0; pass < _passes.Count; pass++) _changedAnalysisPasses.Add(pass);
+            for (int pass = 0; pass < _passes.Count; pass++)
+            {
+                _changedAnalysisPasses.Add(pass);
+                ChangeRecording(pass);
+            }
             foreach (FrameBuffer buffer in _buffers)
                 if (buffer.Definition is not null && buffer.Lifetime == RenderGraphResourceLifetime.PerFrame)
                     ChangeBuffer(buffer.Identity);

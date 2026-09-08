@@ -117,7 +117,8 @@ internal sealed partial class FrameExecutor
                 _sameQueuePredecessor[pass] = predecessor;
                 _sameQueueSuccessor[pass] = Neighbor(queuePasses, current.Position, pass, before: false);
             }
-            _recordingChanged = true;
+            foreach (int pass in _executionOrder.Changed) ChangeRecording(pass);
+            foreach (int pass in _queueNeighborChanges) ChangeRecording(pass);
         }
         _scheduleSeeds.Clear();
     }
@@ -215,7 +216,7 @@ internal sealed partial class FrameExecutor
                 _executionOrder.Changed.Add(chosenPass);
                 _frontierSeeds.Add(chosenPass);
                 MarkPassResources(chosenPass, _changedSynchronizationResources);
-                _recordingChanged = true;
+                ChangeRecording(chosenPass);
             }
             row.Queue = chosenQueue;
             _passes[chosenPass] = row;

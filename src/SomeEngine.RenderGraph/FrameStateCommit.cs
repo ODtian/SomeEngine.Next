@@ -18,7 +18,6 @@ internal sealed partial class FrameExecutor
     private readonly List<TextureStateUpdate> _lateTextureStateUpdates = [];
     private int _lateBufferStateCount;
     private int _lateTextureStateCount;
-    private bool _stateUpdatesChanged = true;
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _stateConnectionChanges = [];
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _stateUpdateResourcesChanged = [];
     private List<BufferStateUpdate>?[] _bufferUpdatesByResource = [];
@@ -88,30 +87,19 @@ internal sealed partial class FrameExecutor
     // resource result per successful submission, without visiting the intermediate passes.
     private void PrepareStateUpdates()
     {
-        if (!_stateUpdatesChanged && _reuseRecording)
-        {
-            RefreshStateUpdates();
-            return;
-        }
         ResizeStateResourceLists();
-        foreach (var values in _bufferUpdatesByResource) values?.Clear();
-        foreach (var values in _textureUpdatesByResource) values?.Clear();
-        foreach (var values in _queryUpdatesByResource) values?.Clear();
-        foreach (var values in _shaderTableUpdatesByResource) values?.Clear();
-        ResetStateLists(ref _submissionBufferUpdates, _submissionCount);
-        ResetStateLists(ref _submissionTextureUpdates, _submissionCount);
-        ResetStateLists(ref _submissionQueryUpdates, _submissionCount);
-        ResetStateLists(ref _submissionShaderTableUpdates, _submissionCount);
-        foreach (var key in _resourceAccessLists.Keys) BuildResourceStateUpdates(key);
-        _stateConnectionChanges.Clear();
-        _stateUpdateResourcesChanged.Clear();
-        _stateUpdatesChanged = false;
+        GrowStateLists(ref _submissionBufferUpdates, _submissionCount);
+        GrowStateLists(ref _submissionTextureUpdates, _submissionCount);
+        GrowStateLists(ref _submissionQueryUpdates, _submissionCount);
+        GrowStateLists(ref _submissionShaderTableUpdates, _submissionCount);
+        RefreshStateUpdates();
     }
 
-    private static void ResetStateLists<T>(ref List<T>[] values, int count)
+    private static void GrowStateLists<T>(ref List<T>[] values, int count)
     {
-        if (values.Length != count) values = new List<T>[count];
-        for (int index = 0; index < count; index++) (values[index] ??= []).Clear();
+        int previous = values.Length;
+        EnsureCapacity(ref values, count);
+        for (int index = previous; index < values.Length; index++) values[index] = [];
     }
 
     private void ResizeStateResourceLists()

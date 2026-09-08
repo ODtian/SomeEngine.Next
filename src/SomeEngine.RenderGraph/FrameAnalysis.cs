@@ -984,11 +984,11 @@ internal sealed partial class FrameExecutor
         if (previous.Identity.IsValid && previous.Kind == pass.Kind && previous.Enabled == pass.Enabled &&
             previous.QueuePolicy == pass.QueuePolicy && previous.Options == pass.Options &&
             previous.DeclarationOrdinal == pass.DeclarationOrdinal) return;
-        _stateUpdatesChanged = true;
+        MarkPassResources(index, _stateConnectionChanges);
         _analysisChanged = true;
         _changedAnalysisPasses.Add(index);
         _scheduleSeeds.Add(index);
-        _recordingChanged = true;
+        ChangeRecording(index);
     }
 
     private void ObserveAccess(int index, in FrameResourceAccess current)
@@ -1237,7 +1237,7 @@ internal sealed partial class FrameExecutor
             if (_live[pass] == live) continue;
             _live[pass] = live;
             _scheduleSeeds.Add(pass);
-            _recordingChanged = true;
+            ChangeRecording(pass);
             MarkPassResources(pass, _changedLifetimeResources);
             MarkPassResources(pass, _changedHazardResources);
             foreach (int predecessor in _valuePredecessors[pass]) _changedExecutionEdges.Add(new(predecessor, pass));
@@ -1260,7 +1260,7 @@ internal sealed partial class FrameExecutor
             _scheduleSeeds.Add(edge.Predecessor);
             _scheduleSeeds.Add(edge.Consumer);
             _frontierSeeds.Add(edge.Consumer);
-            _recordingChanged = true;
+            ChangeRecording(edge.Consumer);
         }
         if (count == 0)
         {

@@ -16,7 +16,7 @@ internal sealed partial class FrameExecutor
     private List<int>[][] _recordingPasses = [];
     private RecordingBatch[][] _recordingUnits = [];
     private bool[] _recordingParallel = [];
-    private readonly List<CommandContext> _recordingContexts = [];
+    private readonly HashSet<CommandContext> _recordingContexts = [];
     private RecordingBatch[] _parallelBatches = [];
     private readonly List<QueueCompletion> _submitWaits = [];
     private RecordedCommands[] _submitCommands = [];
@@ -73,7 +73,7 @@ internal sealed partial class FrameExecutor
             {
                 waveCount = BuildWaves();
                 _waveCount = waveCount;
-                BuildRecordingGroups(waveCount);
+                BuildRecordingGroups(waveCount, _recordingWorkerCount != workerCount);
                 _recordingWorkerCount = workerCount;
             }
             PrepareStateUpdates();
@@ -117,68 +117,113 @@ internal sealed partial class FrameExecutor
     private int _submissionCount;
     private List<int>[] _submissionPasses = [];
     private List<int>[] _submissionDependencies = [];
+    private List<int>[] _submissionConsumers = [];
     private int[] _submissionByPass = [];
     private int[] _submissionWaves = [];
-    private readonly Dictionary<Queue, int> _lastSubmission = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<int> _changedRecordingPasses = [];
+    private readonly HashSet<int> _changedSubmissions = [];
+    private readonly HashSet<int> _changedRecordingWaves = [];
+    private readonly SortedDictionary<int, HashSet<int>> _submissionsByWave = [];
+    private readonly Stack<int> _freeSubmissions = [];
+    private readonly Stack<int> _submissionSearch = [];
+    private readonly SortedSet<(long Position, int Pass)> _submissionPassChanges = [];
     private readonly List<int> _incomingSubmissions = [];
     private readonly List<int> _dependencySearch = [];
     private bool[] _dependencyVisited = [];
 
+    private void ChangeRecording(int pass)
+    {
+        _changedRecordingPasses.Add(pass);
+        _recordingChanged = true;
+    }
+
     private int BuildWaves()
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
-        _submissionCount = 0;
-        if (_executionOrder.Count == 0) return 0;
-        PrepareArray(ref _submissionByPass, _passes.Count);
-        PrepareArray(ref _submissionWaves, _passes.Count);
-        PrepareArray(ref _dependencyVisited, _passes.Count);
-        PrepareLists(ref _submissionPasses, _passes.Count);
-        PrepareLists(ref _submissionDependencies, _passes.Count);
-        Array.Fill(_submissionByPass, -1);
-        Array.Fill(_submissionWaves, -1);
-        _lastSubmission.Clear();
-        int count = 0;
-        foreach (int pass in _executionOrder.Nodes)
+        int previousPassCapacity = _submissionByPass.Length;
+        EnsureCapacity(ref _submissionByPass, _passes.Count);
+        Array.Fill(_submissionByPass, -1, previousPassCapacity, _submissionByPass.Length - previousPassCapacity);
+        _changedSubmissions.Clear();
+        _submissionPassChanges.Clear();
+        foreach (int pass in _changedRecordingPasses)
         {
-            Queue queue = _passes[pass].Queue!;
+            if ((uint)pass < (uint)_submissionByPass.Length) AddSubmission(_submissionByPass[pass]);
+            if (!IsLive(pass)) continue;
+            _submissionPassChanges.Add((_executionOrder.Position(pass), pass));
+            int predecessor = _sameQueuePredecessor[pass];
+            if (predecessor >= 0) AddSubmission(_submissionByPass[predecessor]);
+        }
+        while (_submissionSearch.TryPop(out int submission))
+            foreach (int consumer in _submissionConsumers[submission]) AddSubmission(consumer);
+
+        foreach (int submission in _changedSubmissions)
+        {
+            int wave = _submissionWaves[submission];
+            _changedRecordingWaves.Add(wave);
+            HashSet<int> members = _submissionsByWave[wave];
+            members.Remove(submission);
+            if (members.Count == 0) _submissionsByWave.Remove(wave);
+            foreach (int pass in _submissionPasses[submission])
+            {
+                MarkPassResources(pass, _stateConnectionChanges);
+                _submissionByPass[pass] = -1;
+                if (IsLive(pass)) _submissionPassChanges.Add((_executionOrder.Position(pass), pass));
+            }
+            foreach (int dependency in _submissionDependencies[submission])
+                _submissionConsumers[dependency].Remove(submission);
+        }
+        foreach (int submission in _changedSubmissions)
+        {
+            _submissionPasses[submission].Clear();
+            _submissionDependencies[submission].Clear();
+            _submissionConsumers[submission].Clear();
+            _submissionWaves[submission] = -1;
+            _freeSubmissions.Push(submission);
+        }
+        _changedSubmissions.Clear();
+        foreach (var item in _submissionPassChanges)
+        {
+            int pass = item.Pass;
             _incomingSubmissions.Clear();
             AddSubmissionDependencies(_predecessors[pass]);
             AddSubmissionDependencies(_physicalPredecessors[pass]);
-            int previous = _lastSubmission.TryGetValue(queue, out int found) ? found : -1;
+            int predecessor = _sameQueuePredecessor[pass];
+            int previous = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
             int current = previous;
-            bool split = current < 0;
+            bool split = current < 0 || !_changedSubmissions.Contains(current);
             if (!split)
             {
                 foreach (int dependency in _incomingSubmissions)
-                {
-                    if (dependency != current && SubmissionDependsOn(dependency, current, count))
+                    if (dependency != current && SubmissionDependsOn(dependency, current, _submissionCount))
                     {
                         split = true;
                         break;
                     }
-                }
             }
             if (split)
             {
-                current = count++;
-                if (previous >= 0)
-                    _submissionDependencies[current].Add(previous);
-                _lastSubmission[queue] = current;
+                current = CreateSubmission();
+                if (previous >= 0) _submissionDependencies[current].Add(previous);
             }
+            // A surviving predecessor is also an affected merge boundary. Include its
+            // consumers before reconstruction, so no surviving batch is mutated here.
+            DevelopmentCheck.Require(_changedSubmissions.Contains(current), "A changed pass must belong to an affected submission.");
+            MarkPassResources(pass, _stateConnectionChanges);
             _submissionPasses[current].Add(pass);
             _submissionByPass[pass] = current;
             foreach (int dependency in _incomingSubmissions)
                 if (dependency != current && !_submissionDependencies[current].Contains(dependency))
                     _submissionDependencies[current].Add(dependency);
         }
+        foreach (int submission in _changedSubmissions)
+            foreach (int dependency in _submissionDependencies[submission])
+                _submissionConsumers[dependency].Add(submission);
 
-        _submissionCount = count;
-        int remaining = count;
-        int maximum = 0;
+        int remaining = _changedSubmissions.Count;
         while (remaining != 0)
         {
             bool progress = false;
-            for (int submission = 0; submission < count; submission++)
+            foreach (int submission in _changedSubmissions)
             {
                 if (_submissionWaves[submission] >= 0) continue;
                 int wave = 0;
@@ -186,31 +231,54 @@ internal sealed partial class FrameExecutor
                 foreach (int dependency in _submissionDependencies[submission])
                 {
                     int dependencyWave = _submissionWaves[dependency];
-                    if (dependencyWave < 0)
-                    {
-                        ready = false;
-                        break;
-                    }
+                    if (dependencyWave < 0) { ready = false; break; }
                     wave = Math.Max(wave, dependencyWave + 1);
                 }
                 if (!ready) continue;
                 _submissionWaves[submission] = wave;
-                maximum = Math.Max(maximum, wave);
+                if (!_submissionsByWave.TryGetValue(wave, out var members))
+                    _submissionsByWave.Add(wave, members = []);
+                members.Add(submission);
+                _changedRecordingWaves.Add(wave);
                 remaining--;
                 progress = true;
             }
-            if (!progress)
-                throw new InvalidOperationException("Queue submission dependencies contain a cycle.");
+            if (!progress) throw new InvalidOperationException("Queue submission dependencies contain a cycle.");
         }
-
-        int waveCount = maximum + 1;
-        PrepareLists(ref _waves, waveCount);
-        foreach (int pass in _executionOrder.Nodes)
+        int waveCount = _submissionsByWave.Count == 0 ? 0 : _submissionsByWave.Last().Key + 1;
+        EnsureCapacity(ref _waves, waveCount);
+        foreach (int wave in _changedRecordingWaves)
         {
-            int wave = _submissionWaves[_submissionByPass[pass]];
-            _waves[wave].Add(pass);
+            if (wave >= _waves.Length) continue;
+            List<int> passes = _waves[wave] ??= [];
+            passes.Clear();
+            if (_submissionsByWave.TryGetValue(wave, out var members))
+                foreach (int submission in members) passes.AddRange(_submissionPasses[submission]);
+            passes.Sort((left, right) => _executionOrder.Position(left).CompareTo(_executionOrder.Position(right)));
         }
+        _changedRecordingPasses.Clear();
         return waveCount;
+
+        void AddSubmission(int submission)
+        {
+            if (submission >= 0 && _changedSubmissions.Add(submission)) _submissionSearch.Push(submission);
+        }
+    }
+
+    private int CreateSubmission()
+    {
+        int submission = _freeSubmissions.TryPop(out int available) ? available : _submissionCount++;
+        EnsureCapacity(ref _submissionPasses, _submissionCount);
+        EnsureCapacity(ref _submissionDependencies, _submissionCount);
+        EnsureCapacity(ref _submissionConsumers, _submissionCount);
+        EnsureCapacity(ref _submissionWaves, _submissionCount);
+        EnsureCapacity(ref _dependencyVisited, _submissionCount);
+        _submissionPasses[submission] ??= [];
+        _submissionDependencies[submission] ??= [];
+        _submissionConsumers[submission] ??= [];
+        _submissionWaves[submission] = -1;
+        _changedSubmissions.Add(submission);
+        return submission;
     }
 
     private void AddSubmissionDependencies(List<int> predecessors)
@@ -251,28 +319,37 @@ internal sealed partial class FrameExecutor
         _recordingContexts.Clear();
     }
 
-    private void BuildRecordingGroups(int waveCount)
+    private void BuildRecordingGroups(int waveCount, bool repartition)
     {
-        ReleaseRecordingContexts();
-        PrepareArray(ref _recordingParallel, waveCount);
-        PrepareArray(ref _recordingQueues, waveCount);
-        PrepareArray(ref _recordingPasses, waveCount);
-        PrepareArray(ref _recordingUnits, waveCount);
+        if (repartition)
+            for (int wave = 0; wave < waveCount; wave++) _changedRecordingWaves.Add(wave);
+        EnsureCapacity(ref _recordingParallel, waveCount);
+        EnsureCapacity(ref _recordingQueues, waveCount);
+        EnsureCapacity(ref _recordingPasses, waveCount);
+        EnsureCapacity(ref _recordingUnits, waveCount);
         int maximumUnitCount = checked(JobSystem.WorkerCount + 1);
-        for (int wave = 0; wave < waveCount; wave++)
+        foreach (int wave in _changedRecordingWaves)
         {
-            int groupCount = 0;
-            for (int submission = 0; submission < _submissionCount; submission++)
-                if (_submissionWaves[submission] == wave) groupCount++;
-            var queues = new Queue[groupCount];
-            var groups = new List<int>[groupCount];
-            int group = 0;
-            for (int submission = 0; submission < _submissionCount; submission++)
+            if (wave < _recordingUnits.Length && _recordingUnits[wave] is { } previous)
+                foreach (RecordingBatch batch in previous)
+                {
+                    if (_recordingContexts.Remove(batch.Context)) batch.Context.Dispose();
+                }
+            if (wave >= waveCount)
             {
-                if (_submissionWaves[submission] != wave) continue;
-                List<int> passes = _submissionPasses[submission];
+                if (wave < _recordingUnits.Length) _recordingUnits[wave] = [];
+                continue;
+            }
+            int[] submissions = _submissionsByWave.TryGetValue(wave, out var members) ? members.ToArray() : [];
+            Array.Sort(submissions, (left, right) => _executionOrder.Position(_submissionPasses[left][0])
+                .CompareTo(_executionOrder.Position(_submissionPasses[right][0])));
+            var queues = new Queue[submissions.Length];
+            var groups = new List<int>[submissions.Length];
+            for (int group = 0; group < submissions.Length; group++)
+            {
+                List<int> passes = _submissionPasses[submissions[group]];
                 queues[group] = _passes[passes[0]].Queue!;
-                groups[group++] = passes;
+                groups[group] = passes;
             }
             _recordingQueues[wave] = queues;
             _recordingPasses[wave] = groups;
@@ -295,6 +372,7 @@ internal sealed partial class FrameExecutor
                 _recordingUnits[wave] = units;
             }
         }
+        _changedRecordingWaves.Clear();
     }
 
     private void RecordWave(int wave)

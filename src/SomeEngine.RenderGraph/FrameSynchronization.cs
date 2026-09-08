@@ -1210,7 +1210,7 @@ internal sealed partial class FrameExecutor
             }
             if (_previousPhysicalPredecessors.Count != _physicalPredecessors[pass].Count ||
                 _previousPhysicalPredecessors.Any(predecessor => !_physicalPredecessors[pass].Contains(predecessor)))
-                _recordingChanged = true;
+                ChangeRecording(pass);
         }
         _changedSynchronizationResources.Clear();
         _changedSynchronizationPasses.Clear();
