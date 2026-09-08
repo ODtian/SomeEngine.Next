@@ -923,6 +923,8 @@ internal sealed unsafe partial class D3D12Backend
         private DescriptorLease? _source;
         private NativeLease? _resource;
         private NativeLease? _secondaryResource;
+        private ResourceReferences _primaryReferences;
+        private ResourceReferences _secondaryReferences;
         private GraphicsObject? _owner;
         private int _references = 1;
 
@@ -971,9 +973,10 @@ internal sealed unsafe partial class D3D12Backend
                 throw new ArgumentException("Descriptor slot type does not match the descriptor value.", nameof(slot));
             DescriptorRecord result = new(
                 slot,
-                visibleNodeMask: GetVisibleNodeMask(owner));
-            (NativeLease? resource, NativeLease? secondaryResource) =
-                GetResourceLifetimes(owner);
+                visibleNodeMask: GetVisibility(owner));
+            var (primary, secondary) = GetResourceReferences(owner);
+            NativeLease? resource = primary.Lifetime;
+            NativeLease? secondaryResource = secondary.Lifetime;
             source.Retain();
             try
             {
@@ -993,6 +996,8 @@ internal sealed unsafe partial class D3D12Backend
                 source.Release();
                 throw;
             }
+            result._primaryReferences = primary;
+            result._secondaryReferences = secondary;
             result._source = source;
             result._owner = owner;
             result._resource = resource;
@@ -1023,49 +1028,25 @@ internal sealed unsafe partial class D3D12Backend
             Interlocked.Exchange(ref _secondaryResource, null)?.Release();
             Interlocked.Exchange(ref _resource, null)?.Release();
             Interlocked.Exchange(ref _source, null)?.Release();
+            _primaryReferences = default;
+            _secondaryReferences = default;
             _owner = null;
         }
 
-        private static (NativeLease? Primary, NativeLease? Secondary)
-            GetResourceLifetimes(GraphicsObject owner) => owner switch
-            {
-                Buffer buffer => (RequireD3D12.Buffer(buffer).NativeLifetime, null),
-                BufferCbv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
-                BufferSrv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
-                BufferUav view => (
-                    RequireD3D12.Buffer(view.Resource).NativeLifetime,
-                    view.Description.CounterBuffer is Buffer counter
-                        ? RequireD3D12.Buffer(counter).NativeLifetime
-                        : null),
-                D3D12SamplerFeedbackUav view => (
-                    view.FeedbackResource.NativeLifetime,
-                    view.SampledResource.NativeLifetime),
-                TextureSrv view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
-                TextureUav view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
-                AccelerationStructureSrv view => (
-                    RequireD3D12.AccelerationStructure(view.Resource).NativeLifetime,
-                    null),
-                _ => (null, null),
-            };
-
-        private static uint GetVisibleNodeMask(GraphicsObject owner) => owner switch
+        internal void CaptureResources(D3D12CommandSlot commands)
         {
-            Buffer buffer => RequireD3D12.Buffer(buffer).Info.VisibleNodeMask,
-            BufferCbv view => RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
-            BufferSrv view => RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
-            BufferUav view => view.Description.CounterBuffer is Buffer counter
-                ? RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask &
-                  RequireD3D12.Buffer(counter).Info.VisibleNodeMask
-                : RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
-            D3D12SamplerFeedbackUav view =>
-                view.FeedbackResource.Info.VisibleNodeMask &
-                view.SampledResource.Info.VisibleNodeMask,
-            TextureSrv view => RequireD3D12.Texture(view.Resource).Info.VisibleNodeMask,
-            TextureUav view => RequireD3D12.Texture(view.Resource).Info.VisibleNodeMask,
-            AccelerationStructureSrv view =>
-                RequireD3D12.AccelerationStructure(view.Resource).Storage.Info.VisibleNodeMask,
-            _ => uint.MaxValue,
-        };
+            if (_primaryReferences.SparseState is not null)
+                commands.Capture(_primaryReferences.Lifetime!, _primaryReferences.SparseState);
+            if (_secondaryReferences.SparseState is not null)
+                commands.Capture(_secondaryReferences.Lifetime!, _secondaryReferences.SparseState);
+        }
+
+        private static uint GetVisibility(GraphicsObject value)
+        {
+            var (primary, secondary) = GetResourceReferences(value);
+            return (primary.Lifetime is null ? uint.MaxValue : primary.VisibleNodeMask) &
+                (secondary.Lifetime is null ? uint.MaxValue : secondary.VisibleNodeMask);
+        }
     }
 
     private sealed class DescriptorGeneration
@@ -1211,6 +1192,12 @@ internal sealed unsafe partial class D3D12Backend
             _resources = null;
             ReleaseHeap(resources);
             _publisher.OnGenerationReleased(Identity);
+        }
+
+        internal void CaptureResources(D3D12CommandSlot commands)
+        {
+            foreach (DescriptorRecord record in _records)
+                record.CaptureResources(commands);
         }
 
         internal void CopyTo(

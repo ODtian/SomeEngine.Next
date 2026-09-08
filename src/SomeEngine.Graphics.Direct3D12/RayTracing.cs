@@ -2656,10 +2656,8 @@ nativeDevice.Native, &native,
         internal void Capture(AccelerationStructureSrv value)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12AccelerationStructure structure =
-                RequireD3D12.AccelerationStructure(value.Resource);
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, structure.NativeLifetime);
+            RequireSameDevice(value, nameof(value));
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
     }
 

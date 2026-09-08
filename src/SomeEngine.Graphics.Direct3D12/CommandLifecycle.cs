@@ -538,53 +538,51 @@ internal sealed unsafe partial class D3D12Backend
             Recording.Capture(resource);
         }
 
+        private void CaptureDescriptor(GraphicsObject value, DescriptorLease descriptor)
+        {
+            var (primary, secondary) = GetResourceReferences(value);
+            if (primary.Lifetime is not null)
+                RequireResourceVisible(primary.VisibleNodeMask, nameof(value));
+            if (secondary.Lifetime is not null)
+                RequireResourceVisible(secondary.VisibleNodeMask, nameof(value));
+            Recording.Capture(primary);
+            Recording.Capture(secondary);
+            Recording.Capture(descriptor);
+        }
+
         internal void Capture(BufferCbv value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12Buffer resource = RequireD3D12.Buffer(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(BufferSrv value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12Buffer resource = RequireD3D12.Buffer(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(BufferUav value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12Buffer resource = RequireD3D12.Buffer(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(TextureSrv value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12TextureResource resource = RequireD3D12.Texture(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(TextureUav value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12TextureResource resource = RequireD3D12.Texture(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal CpuDescriptorHandle Capture(ColorAttachmentView value)
@@ -611,9 +609,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12TextureResource resource)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
             return descriptor.NativeDescriptor.Cpu;
         }
 
@@ -641,9 +637,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12TextureResource resource)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
             return descriptor.NativeDescriptor.Cpu;
         }
 
@@ -965,6 +959,15 @@ internal sealed unsafe partial class D3D12Backend
                 DescriptorPublisher publisher = _context.NativeDevice
                     .GetDescriptorPublisher(_context.NativeQueue.NodeIndex);
                 current = publisher.CaptureCurrent();
+                try
+                {
+                    current.CaptureResources(this);
+                }
+                catch
+                {
+                    current.Release();
+                    throw;
+                }
                 _descriptorGeneration = current;
                 return current;
             }
@@ -1037,6 +1040,15 @@ internal sealed unsafe partial class D3D12Backend
             NativeLease resource,
             D3D12SparseState? sparseState = null) =>
             _captures.Capture(resource, sparseState);
+
+        internal void Capture(in ResourceReferences references)
+        {
+            if (references.Lifetime is null)
+                return;
+            Capture(references.Lifetime, references.SparseState);
+            if (references.Texture is not null)
+                CaptureSwapchainUse(references.Texture);
+        }
 
         internal void CaptureTexture(D3D12TextureResource texture)
         {
