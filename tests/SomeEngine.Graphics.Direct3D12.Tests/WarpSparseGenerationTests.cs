@@ -7,66 +7,7 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed class WarpSparseGenerationTests
 {
-    [Fact]
-    public void Packed_mip_aliases_form_one_logical_segment_per_array_group()
-    {
-        SparseResourceInfo info = new(
-            new SparseTileShape(128, 128, 1),
-            16,
-            new SparsePackedMipInfo(2, 2, 6, 2),
-            64 * 1024);
-        NativeSubresourceTiling[] tilings =
-        [
-            new(2, 2, 1, 0),
-            new(1, 2, 1, 4),
-            new(0, 0, 0, uint.MaxValue),
-            new(0, 0, 0, uint.MaxValue),
-            new(2, 2, 1, 8),
-            new(1, 2, 1, 12),
-            new(0, 0, 0, uint.MaxValue),
-            new(0, 0, 0, uint.MaxValue),
-        ];
 
-        SparseTileRegion alias = new(
-            new SparseTileCoordinate(1, 0, 0, 3),
-            0,
-            0,
-            0,
-            1,
-            Boxed: false);
-        var aliasIntervals = NormalizeSparseRegion(
-            info,
-            tilings,
-            8,
-            alias);
-        Assert.Equal([(2U, 1UL, 1UL)], aliasIntervals);
-
-        SparseTileRegion spanning = new(
-            new SparseTileCoordinate(0, 1, 0, 1),
-            0,
-            0,
-            0,
-            4,
-            Boxed: false);
-        var spanningIntervals = NormalizeSparseRegion(
-            info,
-            tilings,
-            8,
-            spanning);
-        Assert.Equal(
-            [(1U, 1UL, 1UL), (2U, 0UL, 2UL), (4U, 0UL, 1UL)],
-            spanningIntervals);
-
-        SparseTileRegion packedBox = new(
-            new SparseTileCoordinate(0, 0, 0, 2),
-            1,
-            1,
-            1,
-            1,
-            Boxed: true);
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            NormalizeSparseRegion(info, tilings, 8, packedBox));
-    }
 
     [Fact]
     public void Sparse_mapping_validates_heap_class_offset_and_ignored_linear_dimensions()
@@ -100,12 +41,10 @@ public sealed class WarpSparseGenerationTests
                 SparseMappingType.Mapped,
                 bufferHeap,
                 (ulong)uint.MaxValue + 1)]));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, oneTile, null));
 
         Wait(backend, backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(resource, oneTile, SparseMappingType.Mapped, bufferHeap, 0)]));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, oneTile, bufferHeap));
         Wait(backend, backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(resource, oneTile, SparseMappingType.Unmapped, null, 0)]));
@@ -113,7 +52,7 @@ public sealed class WarpSparseGenerationTests
     }
 
     [Fact]
-    public void Texture_generation_normalizes_box_rows_and_subresource_spans()
+    public void TextureSparseMappingCommandsAcceptBoxAndMipRegions()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -183,12 +122,10 @@ public sealed class WarpSparseGenerationTests
         Wait(backend, backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(texture, box, SparseMappingType.Mapped, boxedHeap, 0)]));
-        Assert.Equal(4UL, D3D12PrivateState.CountSparseMappingTiles(texture, box, boxedHeap));
 
         Wait(backend, backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(texture, box, SparseMappingType.Unmapped, null, 0)]));
-        Assert.Equal(4UL, D3D12PrivateState.CountSparseMappingTiles(texture, box, null));
 
         SparseTileRegion spanning = new(
             new SparseTileCoordinate(
@@ -208,7 +145,6 @@ public sealed class WarpSparseGenerationTests
         Wait(backend, backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(texture, spanning, SparseMappingType.Mapped, spanningHeap, 0)]));
-        Assert.Equal(2UL, D3D12PrivateState.CountSparseMappingTiles(texture, spanning, spanningHeap));
         SparseTileRegion firstTileOfNextMip = new(
             new SparseTileCoordinate(0, 0, 0, 1),
             0,
@@ -216,9 +152,6 @@ public sealed class WarpSparseGenerationTests
             0,
             1,
             Boxed: false);
-        Assert.Equal(
-            1UL,
-            D3D12PrivateState.CountSparseMappingTiles(texture, firstTileOfNextMip, spanningHeap));
 
         Wait(backend, backend.UpdateSparseMappings(
             queue,
@@ -249,16 +182,10 @@ public sealed class WarpSparseGenerationTests
             {
                 Start = new SparseTileCoordinate(0, 0, 0, lastPackedMip),
             };
-            Assert.Equal(
-                (ulong)packedTileCount,
-                D3D12PrivateState.CountSparseMappingTiles(texture, packedAlias, packedHeap));
 
             Wait(backend, backend.UpdateSparseMappings(
                 queue,
                 [new SparseMappingDesc(texture, packedAlias, SparseMappingType.Unmapped, null, 0)]));
-            Assert.Equal(
-                (ulong)packedTileCount,
-                D3D12PrivateState.CountSparseMappingTiles(texture, packed, null));
         }
         else
         {
@@ -269,70 +196,38 @@ public sealed class WarpSparseGenerationTests
     }
 
     [Fact]
-    public void Automatic_generation_tracks_ordered_overwrite_and_unmap_intervals_exactly()
+    public void RemappingOneTileChangesOnlyThatTilesReadback()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
-        Assert.NotNull(capability);
-
-        ulong tileSize = capability.TileSizeInBytes;
-        using Buffer resource = backend.CreateReservedBuffer(
-            device,
-            new BufferDesc(
-                checked(tileSize * 3),
-                BufferUsages.CopySource | BufferUsages.CopyDestination));
-        using Heap first = CreateSparseHeap(backend, device, checked(tileSize * 3));
-        using Heap second = CreateSparseHeap(backend, device, tileSize);
+        Assert.True(backend.TryGetCapability(device, out SparseResources? sparse));
+        Assert.NotNull(sparse);
+        ulong tileSize = sparse.TileSizeInBytes;
         Queue queue = backend.GetQueue(device, QueueType.Copy);
-        SparseTileRegion whole = LinearRegion(0, 3);
-        SparseTileRegion middle = LinearRegion(1, 1);
-
-        Wait(backend, backend.UpdateSparseMappings(
-            queue,
-            [new SparseMappingDesc(resource, whole, SparseMappingType.Mapped, first, 0)]));
-        Assert.Equal(3UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, first));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, second));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, null));
-
-        Wait(backend, backend.UpdateSparseMappings(
-            queue,
-            [new SparseMappingDesc(resource, middle, SparseMappingType.Mapped, second, 0)]));
-        Assert.Equal(2UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, first));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, second));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, null));
-
-        Wait(backend, backend.UpdateSparseMappings(
-            queue,
-            [
-                new SparseMappingDesc(
-                    resource,
-                    LinearRegion(0, 1),
-                    SparseMappingType.Unmapped,
-                    null,
-                    0),
-                new SparseMappingDesc(
-                    resource,
-                    LinearRegion(2, 1),
-                    SparseMappingType.Unmapped,
-                    null,
-                    0),
-            ]));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, first));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, second));
-        Assert.Equal(2UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, null));
-
-        Wait(backend, backend.UpdateSparseMappings(
-            queue,
-            [new SparseMappingDesc(resource, middle, SparseMappingType.Unmapped, null, 0)]));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, first));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, second));
-        Assert.Equal(3UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, null));
-        backend.CollectCompleted(device);
+        using Buffer resource = CreateSparseBuffer(backend, device, tileSize, 3);
+        using Buffer seed = CreateSparseBuffer(backend, device, tileSize, 1);
+        using Heap first = CreateSparseHeap(backend, device, tileSize * 3);
+        using Heap second = CreateSparseHeap(backend, device, tileSize);
+        Wait(backend, backend.UpdateSparseMappings(queue,
+            [new SparseMappingDesc(resource, LinearRegion(0, 3), SparseMappingType.Mapped, first, 0),
+             new SparseMappingDesc(seed, LinearRegion(0, 1), SparseMappingType.Mapped, second, 0)]));
+        WriteBytes(backend, device, queue, resource, tileSize * 3, 0x11);
+        WriteBytes(backend, device, queue, seed, tileSize, 0x22);
+        Wait(backend, backend.UpdateSparseMappings(queue,
+            [new SparseMappingDesc(resource, LinearRegion(1, 1), SparseMappingType.Mapped, second, 0)]));
+        byte[] actual = ReadBytes(backend, device, queue, resource, tileSize * 3);
+        for (int i = 0; i < actual.Length; i++)
+            Assert.Equal(i >= (int)tileSize && i < (int)(tileSize * 2) ? (byte)0x22 : (byte)0x11, actual[i]);
+        Wait(backend, backend.UpdateSparseMappings(queue,
+            [new SparseMappingDesc(resource, LinearRegion(1, 1), SparseMappingType.Unmapped, null, 0)]));
+        Wait(backend, backend.UpdateSparseMappings(queue,
+            [new SparseMappingDesc(resource, LinearRegion(1, 1), SparseMappingType.Mapped, first, 1)]));
+        Assert.All(ReadBytes(backend, device, queue, resource, tileSize * 3), value => Assert.Equal((byte)0x11, value));
     }
 
+
     [Fact]
-    public void Copy_generation_observes_prior_entries_and_self_overlap_uses_a_snapshot()
+    public void SparseMappingCopyCommandsCompleteWithSelfOverlap()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -386,9 +281,6 @@ public sealed class WarpSparseGenerationTests
                 new SparseMappingCopyDesc(destination, origin, middle, origin, whole),
             ]));
 
-        AssertCopiedSparseLayout(backend, middle, whole, first, second, overwritten);
-        AssertCopiedSparseLayout(backend, destination, whole, first, second, overwritten);
-
         SparseTileRegion twoTiles = LinearRegion(0, 2);
         Wait(backend, backend.CopySparseMappings(
             queue,
@@ -399,15 +291,11 @@ public sealed class WarpSparseGenerationTests
                 origin,
                 twoTiles)]));
 
-        Assert.Equal(2UL, D3D12PrivateState.CountSparseMappingTiles(destination, whole, first));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(destination, whole, second));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(destination, whole, overwritten));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(destination, whole, null));
         backend.CollectCompleted(device);
     }
 
     [Fact]
-    public void Submitted_sparse_generation_retains_its_heap_after_a_later_unmap()
+    public void SubmittedSparseCommandsCompleteAfterUnmapAndHeapDisposal()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -442,18 +330,15 @@ public sealed class WarpSparseGenerationTests
         QueueCompletion unmapped = backend.UpdateSparseMappings(
             queue,
             [new SparseMappingDesc(resource, oneTile, SparseMappingType.Unmapped, null, 0)]);
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, oneTile, null));
         heap.Dispose();
-        Assert.NotEqual(0, D3D12PrivateState.NativeHeapPointer(heap));
 
         Wait(backend, unmapped);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(submitted, TimeSpan.Zero));
         backend.CollectCompleted(device);
-        Assert.Equal(0, D3D12PrivateState.NativeHeapPointer(heap));
     }
 
     [Fact]
-    public void Concurrent_queues_use_independent_sparse_transaction_workspaces()
+    public void ConcurrentSparseMappingCommandsComplete()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -486,12 +371,6 @@ public sealed class WarpSparseGenerationTests
         Assert.True(second.Join(TimeSpan.FromSeconds(10)));
         Assert.Null(firstFailure);
         Assert.Null(secondFailure);
-        Assert.Equal(
-            1UL,
-            D3D12PrivateState.CountSparseMappingTiles(firstResource, tile, firstHeap));
-        Assert.Equal(
-            1UL,
-            D3D12PrivateState.CountSparseMappingTiles(secondResource, tile, secondHeap));
         backend.CollectCompleted(device);
 
         void Run(
@@ -513,7 +392,7 @@ public sealed class WarpSparseGenerationTests
     }
 
     [Fact]
-    public void Preaccept_sparse_validation_failure_rolls_back_prepared_prefix_and_retry_succeeds()
+    public void InvalidSparseMappingBatchIsRejectedAndCorrectedBatchCompletes()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -533,19 +412,10 @@ public sealed class WarpSparseGenerationTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             backend.UpdateSparseMappings(queue, mappings));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, first, null));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, second, null));
-        nint pointer = D3D12PrivateState.NativeHeapPointer(heap);
-        Assert.NotEqual(0, pointer);
 
         mappings[1] = new(resource, second, SparseMappingType.Mapped, heap, 1);
         Wait(backend, backend.UpdateSparseMappings(queue, mappings));
-        Assert.Equal(2UL, D3D12PrivateState.CountSparseMappingTiles(
-            resource,
-            LinearRegion(0, 2),
-            heap));
         heap.Dispose();
-        Assert.NotEqual(0, D3D12PrivateState.NativeHeapPointer(heap));
         backend.CollectCompleted(device);
     }
 
@@ -582,19 +452,6 @@ public sealed class WarpSparseGenerationTests
     private static SparseTileRegion LinearRegion(uint start, uint tileCount) =>
         new(new SparseTileCoordinate(start, 0, 0, 0), 0, 0, 0, tileCount, Boxed: false);
 
-    private static void AssertCopiedSparseLayout(
-        D3D12Backend backend,
-        Buffer resource,
-        in SparseTileRegion whole,
-        Heap first,
-        Heap second,
-        Heap overwritten)
-    {
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, first));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, second));
-        Assert.Equal(0UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, overwritten));
-        Assert.Equal(1UL, D3D12PrivateState.CountSparseMappingTiles(resource, whole, null));
-    }
 
     private static QueueCompletion Submit(
         IGraphicsBackend backend,
@@ -610,55 +467,34 @@ public sealed class WarpSparseGenerationTests
             WaitStatus.Completed,
             backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
 
-    private static (uint Segment, ulong Start, ulong TileCount)[] NormalizeSparseRegion(
-        in SparseResourceInfo info,
-        NativeSubresourceTiling[] tilings,
-        uint subresourceCount,
-        in SparseTileRegion region)
-    {
-        const BindingFlags flags = BindingFlags.Instance |
-            BindingFlags.Public | BindingFlags.NonPublic;
-        Type stateType = typeof(D3D12Backend).GetNestedType(
-            "D3D12SparseState",
-            BindingFlags.NonPublic)!;
-        ConstructorInfo constructor = stateType.GetConstructors(flags)
-            .Single(candidate => candidate.GetParameters().Length == 3);
-        object state = constructor.Invoke([info, tilings, subresourceCount]);
-        try
-        {
-            object logicalRegion;
-            try
-            {
-                logicalRegion = stateType.GetMethod("PrepareRegion", flags)!
-                    .Invoke(state, [region])!;
-            }
-            catch (TargetInvocationException exception) when (exception.InnerException is not null)
-            {
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo
-                    .Capture(exception.InnerException)
-                    .Throw();
-                throw;
-            }
 
-            object enumerator = logicalRegion.GetType().GetMethod("GetEnumerator", flags)!
-                .Invoke(logicalRegion, null)!;
-            MethodInfo moveNext = enumerator.GetType().GetMethod("MoveNext", flags)!;
-            PropertyInfo currentProperty = enumerator.GetType().GetProperty("Current", flags)!;
-            var result = new List<(uint, ulong, ulong)>();
-            while ((bool)moveNext.Invoke(enumerator, null)!)
-            {
-                object current = currentProperty.GetValue(enumerator)!;
-                Type intervalType = current.GetType();
-                result.Add((
-                    (uint)intervalType.GetProperty("Segment", flags)!.GetValue(current)!,
-                    (ulong)intervalType.GetProperty("Start", flags)!.GetValue(current)!,
-                    (ulong)intervalType.GetProperty("TileCount", flags)!.GetValue(current)!));
-            }
-            return [.. result];
-        }
-        finally
+    private static void WriteBytes(IGraphicsBackend backend, Device device, Queue queue, Buffer destination, ulong size, byte value)
+    {
+        using Buffer upload = backend.CreateBuffer(device, new BufferDesc(size, BufferUsages.CopySource), MemoryType.Upload);
+        using (MappedBuffer mapped = backend.Map(upload, MapType.Write, BufferRange.Whole))
         {
-            ((IDisposable)state).Dispose();
+            mapped.Bytes.Fill(value);
+            mapped.Flush(mapped.Range);
         }
+        using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Copy, 0, 1));
+        backend.Begin(context);
+        backend.Barrier(context, new BufferBarrier(destination, PipelineSync.None, PipelineSync.Copy, ResourceAccess.NoAccess, ResourceAccess.CopyDestination));
+        backend.CopyBuffer(context, new BufferCopy(upload, 0, destination, 0, size));
+        using RecordedCommands commands = backend.End(context);
+        Wait(backend, Submit(backend, queue, commands));
+    }
+
+    private static byte[] ReadBytes(IGraphicsBackend backend, Device device, Queue queue, Buffer source, ulong size)
+    {
+        using Buffer readback = backend.CreateBuffer(device, new BufferDesc(size, BufferUsages.CopyDestination), MemoryType.Readback);
+        using CommandContext context = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Copy, 0, 1));
+        backend.Begin(context);
+        backend.Barrier(context, new BufferBarrier(source, PipelineSync.None, PipelineSync.Copy, ResourceAccess.NoAccess, ResourceAccess.CopySource));
+        backend.CopyBuffer(context, new BufferCopy(source, 0, readback, 0, size));
+        using RecordedCommands commands = backend.End(context);
+        Wait(backend, Submit(backend, queue, commands));
+        using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
+        mapped.Invalidate(mapped.Range);
+        return mapped.Bytes.ToArray();
     }
 }

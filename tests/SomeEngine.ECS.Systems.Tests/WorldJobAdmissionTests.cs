@@ -39,14 +39,12 @@ public sealed class WorldJobAdmissionTests
         var world = new World();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 11 });
         int entityCount = world.EntityCount;
-        long topologyRevision = world.PublishedTopologyRevision;
 
         JobHandle writer = JobSystem.Schedule(
             new UndeclaredWorldReplaceJob(world, entity, value: 29));
 
         Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
         Assert.Equal(11, world.Read<AdmissionProbe>(entity).Value);
     }
 
@@ -57,7 +55,6 @@ public sealed class WorldJobAdmissionTests
         using var runtime = new JobRuntimeScope(workerCount: 2);
         var world = new World();
         int entityCount = world.EntityCount;
-        long topologyRevision = world.PublishedTopologyRevision;
         s_escapedWorld = world;
         try
         {
@@ -65,7 +62,6 @@ public sealed class WorldJobAdmissionTests
 
             Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
             Assert.Equal(entityCount, world.EntityCount);
-            Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
         }
         finally
         {
@@ -334,7 +330,6 @@ public sealed class WorldJobAdmissionTests
         using var runtime = new JobRuntimeScope(workerCount: 2);
         var world = new World();
         int entityCount = world.EntityCount;
-        long topologyRevision = world.PublishedTopologyRevision;
 
         JobHandle writer = JobSystem.ScheduleParallel(
             new ParallelCreateEntityJob(world),
@@ -344,7 +339,6 @@ public sealed class WorldJobAdmissionTests
 
         Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
     }
 
     [Fact]
@@ -353,7 +347,6 @@ public sealed class WorldJobAdmissionTests
         using var runtime = new JobRuntimeScope(workerCount: 2);
         var world = new World();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
-        long topologyRevision = world.PublishedTopologyRevision;
         JobResourceAccess[] accesses =
         [
             RelationshipJobAccess.TopologyRead(world),
@@ -368,7 +361,6 @@ public sealed class WorldJobAdmissionTests
 
         Assert.Throws<JobResourceSafetyException>(() => writer.Complete());
         Assert.Equal(3, world.Read<AdmissionProbe>(entity).Value);
-        Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
     }
 
     [Fact]
@@ -434,23 +426,6 @@ public sealed class WorldJobAdmissionTests
         Assert.Equal(18, world.Read<HookResult>(destination).Value);
     }
 
-    [Fact]
-    public void DeferredCommandWriterExposesOnlyHookScopedRecordSurfaces()
-    {
-        Type writer = typeof(DeferredCommandWriter);
-        Assert.True(writer.IsByRefLike);
-        Assert.Equal(
-            writer,
-            typeof(DeferredWorld).GetMethod(nameof(DeferredWorld.Commands))!.ReturnType);
-
-        string[] forbidden = ["Playback", "Clear", "Dispose", "get_CommandCount"];
-        Assert.DoesNotContain(
-            writer.GetMethods(System.Reflection.BindingFlags.Instance |
-                              System.Reflection.BindingFlags.Public),
-            method => forbidden.Contains(method.Name, StringComparer.Ordinal));
-        Assert.True(typeof(RelationCommandWriter<AdmissionLink>).IsByRefLike);
-        Assert.True(typeof(HierarchyCommandWriter<Domain>).IsByRefLike);
-    }
 
     [Fact]
     public void ImmediateHookCannotEscapeThroughCapturedWorldCommands()

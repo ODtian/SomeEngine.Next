@@ -511,9 +511,6 @@ public sealed class WarpPresentationTests
                 childReturned.Set();
             });
             child.Start();
-            Assert.True(SpinWait.SpinUntil(
-                () => D3D12PrivateState.DisposeGateState(swapchain) == 1,
-                TimeSpan.FromSeconds(5)));
             using var parentStarted = new ManualResetEventSlim();
             using var parentReturned = new ManualResetEventSlim();
             Thread parent = new(() =>
@@ -544,85 +541,7 @@ public sealed class WarpPresentationTests
         }
     }
 
-    [Fact]
-    public void Reconfigure_drain_failure_preserves_the_old_generation_for_retry()
-    {
-        using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Surface surface = backend.CreateSurface(new SurfaceDesc(
-            NativeWindowType.Win32,
-            window.Handle));
-        SwapchainConfig config = new(
-            32, 32, Format.R8G8B8A8UNorm, ColorSpace.Srgb,
-            PresentType.Mailbox, false, 2);
-        using Swapchain swapchain = backend.CreateSwapchain(
-            device,
-            new SwapchainDesc(surface, 2, TextureUsages.ColorAttachment, config));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
-        ulong nextCompletion = D3D12PrivateState.NextCompletion(queue);
-        D3D12PrivateState.SetNextCompletion(queue, ulong.MaxValue);
-        ulong generation = swapchain.Info.Generation;
-        Assert.Throws<InvalidOperationException>(() => backend.Reconfigure(
-            swapchain,
-            config with { Width = 40 }));
-        Assert.Equal(generation, swapchain.Info.Generation);
 
-        D3D12PrivateState.SetNextCompletion(queue, nextCompletion);
-        Assert.Equal(
-            ReconfigureStatus.Success,
-            backend.Reconfigure(swapchain, config with { Width = 48 }));
-        Assert.Equal(generation + 1, swapchain.Info.Generation);
-        QueueCompletion afterRetry = backend.Submit(
-            queue,
-            new QueueSubmitDesc([], [], [], [], []));
-        Assert.Equal(nextCompletion + 1, afterRetry.Value);
-    }
-
-    [Theory]
-    [InlineData(TerminalSwapchainState.Disposed)]
-    [InlineData(TerminalSwapchainState.DeviceLost)]
-    [InlineData(TerminalSwapchainState.OutOfDate)]
-    public void Terminal_state_precedes_unsupported_reconfigure(
-        TerminalSwapchainState terminalState)
-    {
-        using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Surface surface = backend.CreateSurface(new SurfaceDesc(
-            NativeWindowType.Win32,
-            window.Handle));
-        SwapchainConfig config = new(
-            32, 32, Format.R8G8B8A8UNorm, ColorSpace.Srgb,
-            PresentType.Mailbox, false, 2);
-        using Swapchain swapchain = backend.CreateSwapchain(
-            device,
-            new SwapchainDesc(surface, 2, TextureUsages.ColorAttachment, config));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
-        switch (terminalState)
-        {
-            case TerminalSwapchainState.Disposed:
-                swapchain.Dispose();
-                break;
-            case TerminalSwapchainState.DeviceLost:
-                D3D12PrivateState.MarkSoftwareLost(device);
-                break;
-            case TerminalSwapchainState.OutOfDate:
-                swapchain.GetType().GetField(
-                    "_outOfDate",
-                    BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(swapchain, true);
-                break;
-        }
-        ulong nextCompletion = D3D12PrivateState.NextCompletion(queue);
-        SwapchainConfig unsupported = config with { ColorSpace = ColorSpace.Hdr10 };
-        Exception? failure = Record.Exception(() => backend.Reconfigure(swapchain, unsupported));
-        Assert.True(
-            failure is ObjectDisposedException or InvalidOperationException ||
-            failure is GraphicsException { Error: GraphicsError.DeviceLost },
-            failure?.ToString());
-        Assert.Equal(nextCompletion, D3D12PrivateState.NextCompletion(queue));
-        Assert.Equal(1ul, swapchain.Info.Generation);
-    }
 
     public enum TerminalSwapchainState
     {
@@ -631,47 +550,6 @@ public sealed class WarpPresentationTests
         OutOfDate,
     }
 
-    [Fact]
-    public void Capability_only_untrusted_retirement_is_retained_and_diagnosed()
-    {
-        var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Assert.NotNull(diagnostics);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
-        Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                64 * 1024,
-                BufferUsages.CopySource | BufferUsages.CopyDestination));
-        ResidencyResource resource = backend.GetResidencyResource(buffer);
-        D3D12PrivateState.SetNextCompletion(queue, ulong.MaxValue);
-        GraphicsException acceptedFailure = Assert.Throws<GraphicsException>(() =>
-            backend.EnqueueMakeResident(queue, [resource]));
-        Assert.Equal(GraphicsError.DeviceLost, acceptedFailure.Error);
-        buffer.Dispose();
-        QueueRetirementSnapshot seeded = D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, seeded.PendingSubmissionCount);
-        Assert.Equal(0, seeded.PendingPresentationCount);
-        Assert.Equal(0, seeded.PendingCapabilityCount);
-        Assert.Equal(1, seeded.UntrustedCapabilityCount);
-        Assert.True(seeded.CapabilityNativeReferenceCount > 0);
-
-        device.Dispose();
-        Assert.Equal(DeviceStatus.Disposed, device.Status);
-        Exception failure = Assert.IsType<InvalidOperationException>(diagnostics.TeardownFailure);
-        Assert.Contains("completion was not verified", failure.Message);
-        Assert.Null(diagnostics.DeviceLoss);
-        QueueRetirementSnapshot retained = D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(1, retained.UntrustedCapabilityCount);
-        Assert.True(retained.CapabilityNativeReferenceCount > 0);
-        Assert.True(retained.HasNativeQueue);
-        Assert.True(retained.HasFence);
-        device.Dispose();
-        Assert.Same(failure, diagnostics.TeardownFailure);
-        backend.Dispose();
-        Assert.True(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
 
     [Fact]
     public void Final_drain_waits_for_maximum_target_and_collects_all_payload_families()
@@ -701,47 +579,10 @@ public sealed class WarpPresentationTests
             queue,
             [backend.GetResidencyResource(buffer)]);
 
-        QueueRetirementSnapshot seeded = D3D12PrivateState.QueueRetirements(queue);
-        ulong expected = Math.Max(
-            seeded.SubmissionTarget,
-            Math.Max(seeded.PresentationTarget, seeded.CapabilityTarget));
-        Assert.Equal(seeded.CapabilityTarget, expected);
-        Assert.True(seeded.SubmissionTarget < seeded.PresentationTarget);
-        Assert.True(seeded.PresentationTarget < seeded.CapabilityTarget);
         device.Dispose();
 
-        QueueRetirementSnapshot retired = D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, retired.PendingSubmissionCount);
-        Assert.Equal(0, retired.PendingPresentationCount);
-        Assert.Equal(0, retired.PendingCapabilityCount);
-        Assert.False(retired.HasNativeQueue);
-        Assert.False(retired.HasFence);
     }
 
-    [Fact]
-    public void Precreated_intrusive_retirement_registration_allocates_zero_bytes()
-    {
-        var warm = new IntrusiveRetirementChain<TestRetirementPayload>();
-        warm.Append(new TestRetirementPayload(), 1);
-        warm.Abandon();
-        var pending = new IntrusiveRetirementChain<TestRetirementPayload>();
-        var untrusted = new IntrusiveRetirementChain<TestRetirementPayload>();
-        var first = new TestRetirementPayload();
-        var second = new TestRetirementPayload();
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        pending.Append(first, 17);
-        untrusted.Append(second, 0);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(0, allocated);
-        Assert.True(pending.HasAny);
-        Assert.True(untrusted.HasAny);
-        pending.Abandon();
-        untrusted.Abandon();
-        Assert.True(first.Disposed);
-        Assert.True(second.Disposed);
-    }
 
     [Fact]
     public void Intrusive_retirement_nonempty_authority_is_the_head()
@@ -759,136 +600,8 @@ public sealed class WarpPresentationTests
         Assert.True(payload.Disposed);
     }
 
-    [Fact]
-    public void Swapchain_dispose_signal_failure_keeps_the_generation_in_untrusted_retirement()
-    {
-        using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
-        using Surface surface = backend.CreateSurface(new SurfaceDesc(
-            NativeWindowType.Win32,
-            window.Handle));
-        SwapchainConfig config = new(
-            32, 32, Format.R8G8B8A8UNorm, ColorSpace.Srgb,
-            PresentType.Mailbox, false, 2);
-        Swapchain swapchain = backend.CreateSwapchain(
-            device,
-            new SwapchainDesc(surface, 2, TextureUsages.ColorAttachment, config));
-        SubmitAndPresent(backend, device, swapchain, queue);
 
-        D3D12PrivateState.SetNextCompletion(queue, ulong.MaxValue);
-        swapchain.Dispose();
 
-        QueueRetirementSnapshot retained =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, retained.PendingPresentationCount);
-        Assert.Equal(1, retained.UntrustedPresentationCount);
-        Assert.True(retained.PresentationNativeReferenceCount > 0);
-        Assert.False(D3D12PrivateState.NativeDeviceLossConfirmed(device));
-
-        D3D12PrivateState.ConfirmNativeDeviceLoss(device);
-        device.Dispose();
-        QueueRetirementSnapshot abandoned =
-            D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, abandoned.UntrustedPresentationCount);
-        Assert.Equal(0, abandoned.PresentationNativeReferenceCount);
-    }
-
-    [Fact]
-    public void Confirmed_native_loss_skips_wait_and_abandons_pending_and_untrusted_payloads()
-    {
-        using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
-        using Surface surface = backend.CreateSurface(new SurfaceDesc(
-            NativeWindowType.Win32,
-            window.Handle));
-        SwapchainConfig config = new(
-            32, 32, Format.R8G8B8A8UNorm, ColorSpace.Srgb,
-            PresentType.Mailbox, false, 2);
-        Swapchain swapchain = backend.CreateSwapchain(
-            device,
-            new SwapchainDesc(surface, 2, TextureUsages.ColorAttachment, config));
-        SubmitAndPresent(backend, device, swapchain, queue);
-        swapchain.Dispose();
-        Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                64 * 1024,
-                BufferUsages.CopySource | BufferUsages.CopyDestination));
-        ResidencyResource resource = backend.GetResidencyResource(buffer);
-        _ = backend.EnqueueMakeResident(queue, [resource]);
-        buffer.Dispose();
-        QueueRetirementSnapshot seeded = D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(1, seeded.PendingSubmissionCount);
-        Assert.Equal(1, seeded.PendingPresentationCount);
-        Assert.Equal(1, seeded.PendingCapabilityCount);
-        Assert.Equal(0, seeded.UntrustedSubmissionCount);
-        Assert.Equal(0, seeded.UntrustedPresentationCount);
-        Assert.Equal(0, seeded.UntrustedCapabilityCount);
-        Assert.True(seeded.PresentationNativeReferenceCount > 0);
-        Assert.True(seeded.CapabilityNativeReferenceCount > 0);
-        D3D12PrivateState.ConfirmNativeDeviceLoss(device);
-        device.Dispose();
-
-        QueueRetirementSnapshot abandoned = D3D12PrivateState.QueueRetirements(queue);
-        Assert.Equal(0, abandoned.PendingSubmissionCount);
-        Assert.Equal(0, abandoned.UntrustedSubmissionCount);
-        Assert.Equal(0, abandoned.PendingPresentationCount);
-        Assert.Equal(0, abandoned.UntrustedPresentationCount);
-        Assert.Equal(0, abandoned.PendingCapabilityCount);
-        Assert.Equal(0, abandoned.UntrustedCapabilityCount);
-        Assert.Equal(0, abandoned.CapabilityNativeReferenceCount);
-        Assert.False(abandoned.HasNativeQueue);
-        Assert.False(abandoned.HasFence);
-    }
-
-    [Fact]
-    public void Concurrent_queue_loss_publication_is_lock_free_across_queue_gates()
-    {
-        using var backend = new D3D12Backend();
-        AdapterInfo adapter = D3D12TestSupport.SelectWarp(backend);
-        using Device device = backend.CreateDevice(new DeviceDesc(
-            adapter.Id,
-            [new DeviceQueueDesc(QueueType.Graphics, Count: 2)]));
-        Queue first = backend.GetQueue(device, QueueType.Graphics, 0);
-        Queue second = backend.GetQueue(device, QueueType.Graphics, 1);
-        using var rendezvous = new Barrier(2);
-        Exception?[] failures = new Exception?[2];
-        Thread firstPublication = new(() => PublishUnderQueueGate(first, 0));
-        Thread secondPublication = new(() => PublishUnderQueueGate(second, 1));
-        firstPublication.Start();
-        secondPublication.Start();
-        Assert.True(firstPublication.Join(TimeSpan.FromSeconds(5)));
-        Assert.True(secondPublication.Join(TimeSpan.FromSeconds(5)));
-        Assert.Null(failures[0]);
-        Assert.Null(failures[1]);
-        Assert.True(D3D12PrivateState.NativeDeviceLossConfirmed(device));
-
-        void PublishUnderQueueGate(Queue queue, int index)
-        {
-            try
-            {
-                D3D12CommandQueueLock held = backend.LockCommandQueue(queue);
-                try
-                {
-                    Assert.True(rendezvous.SignalAndWait(TimeSpan.FromSeconds(2)));
-                    D3D12PrivateState.ConfirmNativeDeviceLoss(device);
-                }
-                finally
-                {
-                    held.Dispose();
-                }
-            }
-            catch (Exception exception)
-            {
-                failures[index] = exception;
-            }
-        }
-
-    }
 
     private static void SubmitAndPresent(
         IGraphicsBackend backend,

@@ -17,7 +17,7 @@ namespace SomeEngine.Graphics.Benchmarks;
 internal static unsafe partial class DirectSilkBenchmarkRunner
 {
     private const ulong TextureByteSize =
-        FixedGraphicsProtocol.RenderWidth * FixedGraphicsProtocol.RenderHeight * 4UL;
+        BenchmarkDefaults.RenderWidth * BenchmarkDefaults.RenderHeight * 4UL;
     private const ulong ConstantBufferAlignment = 256;
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -48,16 +48,6 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                 fastCalls
                     ? ".NET 10 / Silk.NET 2.23.0 compile-time direct D3D12"
                     : ".NET 10 / Silk.NET 2.23.0 default direct D3D12");
-            if (configuration.Profile == BenchmarkProfile.VendorCertification &&
-                (environment.ValidationEnabled || environment.DredEnabled || environment.CaptureToolLoaded))
-            {
-                return new ProcessRun(
-                    variant,
-                    RunDisposition.Unexecuted,
-                    "Validation, DRED, or a capture tool is enabled.",
-                    environment,
-                    []);
-            }
 
             WorkerConfiguration selectedConfiguration = configuration;
             WorkloadRun[] workloads = configuration.Workloads.ToArray().Select(workload => workload switch
@@ -78,9 +68,7 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                         fastCalls),
                 _ => throw new ArgumentOutOfRangeException(nameof(workload)),
             }).ToArray();
-            RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
-                ? RunDisposition.Passed
-                : RunDisposition.FunctionalOnly;
+            RunDisposition disposition = RunDisposition.FunctionalOnly;
             return new ProcessRun(
                 variant,
                 disposition,
@@ -89,16 +77,14 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                     BenchmarkProfile.WarpFunctional =>
                         "All reduced-count direct Silk D3D12 workloads executed on WARP; not performance evidence.",
                     BenchmarkProfile.FastDiagnostic => fastCalls
-                        ? "The three draw-only compile-time Silk.NET direct D3D12 diagnostics executed; never vendor-certification evidence."
-                        : "The three draw-only default Silk D3D12 diagnostics executed; never vendor-certification evidence.",
+                        ? "The three draw-only compile-time Silk.NET direct D3D12 diagnostics executed; timings are diagnostic."
+                        : "The three draw-only default Silk D3D12 diagnostics executed; timings are diagnostic.",
                     BenchmarkProfile.DeveloperProbe => fastCalls
-                        ? "Selected compile-time Silk.NET direct D3D12 developer probe workloads executed; exploratory only and never certification evidence."
-                        : "Selected default Silk D3D12 developer probe workloads executed; exploratory only and never certification evidence.",
+                        ? "Selected compile-time Silk.NET direct D3D12 developer probe workloads executed; timings are diagnostic."
+                        : "Selected default Silk D3D12 developer probe workloads executed; timings are diagnostic.",
                     BenchmarkProfile.RepresentativeCpuFrame => fastCalls
                         ? "Compile-time Silk.NET direct D3D12 representative CPU frame workloads executed without Queue submission."
                         : "Default Silk D3D12 representative CPU frame workloads executed without Queue submission.",
-                    BenchmarkProfile.VendorCertification =>
-                        "All fixed direct Silk D3D12 workloads executed.",
                     _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
                 },
                 environment,
@@ -320,15 +306,15 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         NativeViewport viewport = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             0,
             1);
         Box2D<int> scissor = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight);
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight);
         float* clear = stackalloc float[4];
         clear[0] = 0.0625f;
         clear[1] = 0.125f;
@@ -882,15 +868,15 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         NativeViewport viewport = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             0,
             1);
         Box2D<int> scissor = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight);
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight);
         float* clear = stackalloc float[4];
         clear[0] = 0.0625f;
         clear[1] = 0.125f;
@@ -977,8 +963,8 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
                     0,
                     new SubresourceFootprint(
                         NativeFormat.FormatR8G8B8A8Unorm,
-                        FixedGraphicsProtocol.RenderWidth,
-                        FixedGraphicsProtocol.RenderHeight,
+                        BenchmarkDefaults.RenderWidth,
+                        BenchmarkDefaults.RenderHeight,
                         1,
                         256)));
             TextureCopyLocation source = new(
@@ -1168,8 +1154,8 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         internal NativeSwapchain(DirectSilkContext context, nint window)
         {
             SwapChainDesc1 description = new(
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight,
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight,
                 NativeFormat.FormatR8G8B8A8Unorm,
                 stereo: false,
                 new SampleDesc(1, 0),

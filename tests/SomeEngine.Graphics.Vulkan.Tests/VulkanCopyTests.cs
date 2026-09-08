@@ -7,7 +7,7 @@ public sealed class VulkanCopyTests
     [Fact]
     public void Synchronization2_and_copy_commands_round_trip_buffer_bytes()
     {
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);

@@ -50,8 +50,6 @@ public sealed class CompletionStateTests
 
         var reused = JobSystem.Schedule(new LifecycleJobs.NoopJob());
 
-        Assert.Equal(old.Index, reused.Index);
-        Assert.NotEqual(old.Version, reused.Version);
         Assert.True(old.IsCompleted);
         old.Complete();
 

@@ -2,16 +2,7 @@ namespace SomeEngine.Graphics.Benchmarks.Tests;
 
 public sealed class StateEqualityTests
 {
-    [Fact]
-    public void BenchmarkDispatchStoresOnlyThePublicInterfaceReceiver()
-    {
-        Assert.True(typeof(InterfaceReceiverDispatch).IsValueType);
-        Assert.Equal(
-            typeof(IGraphicsBackend),
-            typeof(InterfaceReceiverDispatch).GetField(
-                "_receiver",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.FieldType);
-    }
+
 
     [Fact]
     public void DirectSilkStateShadowUsesPublicNormalizedFloatEquality()

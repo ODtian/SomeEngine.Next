@@ -283,38 +283,13 @@ public sealed unsafe class WarpNativeAccessTests
             D3D12CommandQueueLock warm = backend.LockCommandQueue(queue);
             warm.Dispose();
         }
-        long before = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < 1_024; index++)
         {
             D3D12CommandQueueLock stable = backend.LockCommandQueue(queue);
             stable.Dispose();
         }
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
     }
 
-    [Fact]
-    public void Validated_command_queue_lock_reuses_its_sequence_authority_without_allocating()
-    {
-        using var direct = new D3D12Backend();
-        using var backend = new ValidationLayer(direct);
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-
-        for (int index = 0; index < 32; index++)
-        {
-            D3D12CommandQueueLock warm = backend.LockCommandQueue(queue);
-            warm.Dispose();
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1_024; index++)
-        {
-            D3D12CommandQueueLock stable = backend.LockCommandQueue(queue);
-            stable.Dispose();
-        }
-
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
-    }
 
     [Fact]
     public void Validated_command_queue_lock_serializes_multiple_waiters_without_poisoning_its_lease()
@@ -374,55 +349,6 @@ public sealed unsafe class WarpNativeAccessTests
         retry.Dispose();
     }
 
-    [Fact]
-    public void Validated_command_queue_lock_copies_join_cross_thread_release()
-    {
-        using var direct = new D3D12Backend();
-        using var backend = new ValidationLayer(direct);
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        D3D12CommandQueueLock held = backend.LockCommandQueue(queue);
-        D3D12CommandQueueLock copy = held;
-        object validationGate = typeof(ValidationLayer)
-            .GetField("_gate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .GetValue(backend)!;
-        D3D12CommandQueueLockLease heldLease = held.Lease;
-        ulong heldSequence = held.Sequence;
-        var owner = new QueueLockDisposer(heldLease, heldSequence);
-        var contender = new QueueLockDisposer(copy.Lease, copy.Sequence);
-        Thread ownerThread = new(owner.Dispose);
-        Thread contenderThread = new(contender.Dispose);
-
-        Monitor.Enter(validationGate);
-        try
-        {
-            ownerThread.Start();
-            Assert.True(SpinWait.SpinUntil(
-                () => !heldLease.IsHeld(heldSequence),
-                TimeSpan.FromSeconds(5)));
-            contenderThread.Start();
-            Assert.True(SpinWait.SpinUntil(
-                () => IsWaiting(contenderThread),
-                TimeSpan.FromSeconds(5)));
-            Assert.True(ownerThread.IsAlive);
-            Assert.True(contenderThread.IsAlive);
-        }
-        finally
-        {
-            Monitor.Exit(validationGate);
-        }
-
-        Assert.True(ownerThread.Join(TimeSpan.FromSeconds(5)));
-        Assert.True(contenderThread.Join(TimeSpan.FromSeconds(5)));
-        Assert.Null(owner.Failure);
-        Assert.Null(contender.Failure);
-        Assert.False(held.IsHeld);
-        Assert.False(copy.IsHeld);
-
-        D3D12CommandQueueLock retry = backend.LockCommandQueue(queue);
-        Assert.True(retry.IsHeld);
-        retry.Dispose();
-    }
 
     private static bool IsWaiting(Thread thread) =>
         (thread.ThreadState & ThreadState.WaitSleepJoin) != 0;

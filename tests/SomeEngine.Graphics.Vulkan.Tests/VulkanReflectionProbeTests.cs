@@ -7,7 +7,7 @@ using Xunit;
 public sealed class VulkanReflectionProbeTests
 {
     [Fact]
-    public void Entry_parameter_spirv_bindings_match_the_vulkan_register_class_abi()
+    public void TextureSamplerAndOutputShaderCreatesPipeline()
     {
         const string source = """
             RWTexture2D<float4> OutputTexture;
@@ -26,59 +26,12 @@ public sealed class VulkanReflectionProbeTests
         using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
             source,
             ("computeMain", SlangStage.Compute));
-        byte[] code = VulkanBackend.NormalizeSpirvDescriptorBindings(
-            shader.GetEntryPointCode(0),
-            [
-                new VulkanBackend.VulkanSpirvBindingTarget(0, 0),
-                new VulkanBackend.VulkanSpirvBindingTarget(0, 65_536),
-                new VulkanBackend.VulkanSpirvBindingTarget(0, 131_072),
-            ],
-            out VulkanBackend.VulkanSpirvBindingTarget[] activeTargets);
-        ReadOnlySpan<uint> words = MemoryMarshal.Cast<byte, uint>(code);
-        var bindings = new Dictionary<uint, uint>();
-        for (int index = 5; index < words.Length;)
-        {
-            uint instruction = words[index];
-            int wordCount = checked((int)(instruction >> 16));
-            uint opcode = instruction & 0xffff;
-            if (wordCount <= 0 || index > words.Length - wordCount)
-                break;
-            if (opcode == 71 && wordCount >= 4)
-            {
-                uint id = words[index + 1];
-                uint decoration = words[index + 2];
-                if (decoration == 33) bindings[id] = words[index + 3];
-            }
-            index += wordCount;
-        }
-        Assert.Equal([0u, 65_536u, 131_072u], bindings.Values.Order().ToArray());
-        Assert.Equal(
-            [0u, 65_536u, 131_072u],
-            activeTargets.Select(static value => value.Binding).Order().ToArray());
-        Assert.Equal(
-            0u,
-            VulkanBackend.NormalizeReflectedDescriptorBinding(
-                0,
-                SlangBindingType.MutableTexture,
-                SlangParameterCategory.UnorderedAccess));
-        Assert.Equal(
-            65_536u,
-            VulkanBackend.NormalizeReflectedDescriptorBinding(
-                0,
-                SlangBindingType.Texture,
-                SlangParameterCategory.ShaderResource));
-        Assert.Equal(
-            131_072u,
-            VulkanBackend.NormalizeReflectedDescriptorBinding(
-                0,
-                SlangBindingType.Sampler,
-                SlangParameterCategory.SamplerState));
-        for (nuint register = 0; register < 3; register++)
-            Assert.True(shader.IsParameterLocationUsed(
-                0,
-                SlangParameterCategory.DescriptorTableSlot,
-                0,
-                register));
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
+        using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
+        using Pipeline pipeline = backend.CreateComputePipeline(
+            device, new ComputePipelineDesc(shader.Program, shader.Entries[0]));
+        Assert.Equal(PipelineType.Compute, pipeline.Type);
     }
 
     [Fact]

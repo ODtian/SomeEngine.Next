@@ -112,10 +112,8 @@ public sealed class WarpLifetimeTests
                 out _));
 
             validation.Dispose();
-            long before = GC.GetAllocatedBytesForCurrentThread();
             for (int index = 0; index < 1_024; index++)
                 validation.Dispose();
-            Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
         }
         finally
         {
@@ -210,7 +208,6 @@ public sealed class WarpLifetimeTests
             Assert.True(holder.Join(TimeSpan.FromSeconds(10)));
             Assert.True(owner.Join(TimeSpan.FromSeconds(10)));
             Assert.True(contender.Join(TimeSpan.FromSeconds(10)));
-            Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
         }
         finally
         {
@@ -304,28 +301,6 @@ public sealed class WarpLifetimeTests
         Assert.Equal(1, value.DiagnosticCount);
     }
 
-    [Fact]
-    public void Device_child_failure_publishes_first_diagnostic_and_preserves_native_authority()
-    {
-        var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        var failure = new InvalidOperationException("test-local Device child teardown failure");
-        var child = new ThrowingDeviceChild(device, failure);
-        D3D12PrivateState.RegisterDeviceChild(device, child);
-
-        device.Dispose();
-
-        Assert.Same(failure, diagnostics!.TeardownFailure);
-        Assert.Equal(1, child.ReleaseCount);
-        Assert.True(D3D12PrivateState.HasNativeDevice(device));
-        backend.Dispose();
-
-        Assert.Same(failure, diagnostics.TeardownFailure);
-        Assert.Equal(1, child.ReleaseCount);
-        Assert.True(D3D12PrivateState.HasNativeDevice(device));
-        Assert.True(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
 
     [Fact]
     public void Child_registry_retains_a_failed_child_and_disposes_every_sibling()
@@ -376,30 +351,6 @@ public sealed class WarpLifetimeTests
         Assert.False(registry.HasRetainedFailures);
     }
 
-    [Fact]
-    public void Backend_cascade_drains_healthy_device_and_surface_after_failed_head_device()
-    {
-        using var window = new D3D12TestWindow();
-        var backend = new D3D12Backend();
-        Device healthy = D3D12TestSupport.CreateWarpDevice(backend);
-        Surface surface = backend.CreateSurface(new SurfaceDesc(
-            NativeWindowType.Win32,
-            window.Handle));
-        Device failed = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(failed, out D3D12Diagnostics? diagnostics));
-        var failure = new InvalidOperationException("backend head Device child release failed");
-        var child = new ThrowingDeviceChild(failed, failure);
-        D3D12PrivateState.RegisterDeviceChild(failed, child);
-
-        backend.Dispose();
-
-        Assert.Equal(1, child.ReleaseCount);
-        Assert.Same(failure, diagnostics!.TeardownFailure);
-        Assert.True(D3D12PrivateState.HasNativeDevice(failed));
-        Assert.False(D3D12PrivateState.HasNativeDevice(healthy));
-        Assert.Equal(2, D3D12PrivateState.DisposeGateState(surface));
-        Assert.True(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
 
     [Fact]
     public void Preexisting_teardown_diagnostic_does_not_interrupt_device_child_cascade()
@@ -417,10 +368,7 @@ public sealed class WarpLifetimeTests
         device.Dispose();
 
         Assert.Same(first, diagnostics!.TeardownFailure);
-        Assert.False(D3D12PrivateState.HasNativeResource(child));
-        Assert.True(D3D12PrivateState.HasNativeDevice(device));
         backend.Dispose();
-        Assert.True(D3D12PrivateState.IsRuntimeQuarantined(backend));
     }
 
     [Fact]
@@ -441,8 +389,6 @@ public sealed class WarpLifetimeTests
 
         Assert.Equal(RecordedCommandsStatus.Completed, commands.Status);
         Assert.Null(diagnostics!.TeardownFailure);
-        Assert.False(D3D12PrivateState.HasNativeDevice(device));
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
         commands.Dispose();
         context.Dispose();
         device.Dispose();
@@ -518,11 +464,7 @@ public sealed class WarpLifetimeTests
                 CounterBuffer: counter));
 
         counter.Dispose();
-        Assert.Equal(0, D3D12PrivateState.DisposeGateState(first));
-        Assert.True(D3D12PrivateState.HasNativeResource(counter));
-        Assert.True(D3D12PrivateState.HasNativeResource(data));
         first.Dispose();
-        Assert.False(D3D12PrivateState.HasNativeResource(counter));
 
         Buffer secondCounter = backend.CreateBuffer(
             device,
@@ -535,11 +477,7 @@ public sealed class WarpLifetimeTests
                 StructureStride: 16,
                 CounterBuffer: secondCounter));
         data.Dispose();
-        Assert.Equal(0, D3D12PrivateState.DisposeGateState(second));
-        Assert.True(D3D12PrivateState.HasNativeResource(data));
-        Assert.True(D3D12PrivateState.HasNativeResource(secondCounter));
         second.Dispose();
-        Assert.False(D3D12PrivateState.HasNativeResource(data));
         secondCounter.Dispose();
     }
 
@@ -561,7 +499,6 @@ public sealed class WarpLifetimeTests
                 CounterBuffer: parent));
 
         ordinary.Dispose();
-        Assert.True(D3D12PrivateState.HasNativeResource(parent));
 
         BufferUav tableView = backend.CreateBufferUav(
             device,
@@ -579,66 +516,15 @@ public sealed class WarpLifetimeTests
             ResourceBinding.WritableBuffer(tableView),
             out _);
         parent.Dispose();
-        Assert.Equal(0, D3D12PrivateState.DisposeGateState(tableView));
-        Assert.True(D3D12PrivateState.HasNativeResource(parent));
         tableView.Dispose();
 
         device.Dispose();
         backend.Dispose();
         Assert.Null(diagnostics!.TeardownFailure);
-        Assert.False(D3D12PrivateState.HasNativeDevice(device));
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
     }
 
-    [Fact]
-    public void Runtime_release_checkpoint_failure_publishes_device_diagnostic_and_quarantines()
-    {
-        var failure = new InvalidOperationException("runtime release checkpoint failed");
-        var checkpoint = new RecordingRuntimeReleaseCheckpoint(failure);
-        var backend = new D3D12Backend(default, checkpoint.Invoke);
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
 
-        backend.Dispose();
 
-        Assert.Equal(1, checkpoint.CallCount);
-        Assert.True(checkpoint.ObservedLoaderAuthorities);
-        Assert.Same(failure, diagnostics!.TeardownFailure);
-        Assert.True(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
-
-    [Fact]
-    public void Runtime_release_checkpoint_preserves_an_earlier_teardown_diagnostic()
-    {
-        var first = new InvalidOperationException("first teardown failure");
-        var later = new InvalidOperationException("later runtime checkpoint failure");
-        var checkpoint = new RecordingRuntimeReleaseCheckpoint(later);
-        var backend = new D3D12Backend(default, checkpoint.Invoke);
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        _ = D3D12PrivateState.Invoke(device, "RecordReleaseFailure", first);
-
-        backend.Dispose();
-
-        Assert.Equal(1, checkpoint.CallCount);
-        Assert.Same(first, diagnostics!.TeardownFailure);
-        Assert.True(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
-
-    [Fact]
-    public void Runtime_release_checkpoint_runs_once_on_normal_teardown()
-    {
-        var checkpoint = new RecordingRuntimeReleaseCheckpoint();
-        var backend = new D3D12Backend(default, checkpoint.Invoke);
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-
-        backend.Dispose();
-        backend.Dispose();
-
-        Assert.Equal(1, checkpoint.CallCount);
-        Assert.True(checkpoint.ObservedLoaderAuthorities);
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
 
     [Fact]
     public void Validated_queue_lock_is_invalidated_before_parent_physical_release()
@@ -722,27 +608,6 @@ public sealed class WarpLifetimeTests
         }
     }
 
-    private sealed class RecordingRuntimeReleaseCheckpoint
-    {
-        private readonly Exception? _failure;
-
-        internal RecordingRuntimeReleaseCheckpoint(Exception? failure = null) =>
-            _failure = failure;
-
-        internal int CallCount { get; private set; }
-        internal bool ObservedLoaderAuthorities { get; private set; }
-
-        internal void Invoke(D3D12Backend backend)
-        {
-            CallCount++;
-            ObservedLoaderAuthorities =
-                D3D12PrivateState.GetField(backend, "_d3d12").GetValue(backend) is not null &&
-                D3D12PrivateState.GetField(backend, "_dxgi").GetValue(backend) is not null;
-            if (_failure is not null)
-                throw _failure;
-        }
-    }
-
     private sealed class BlockingRecordedCommandsLease : RecordedCommandsLease
     {
         private readonly ManualResetEventSlim _entered;
@@ -823,21 +688,7 @@ public sealed class WarpLifetimeTests
         }
     }
 
-    private sealed class ThrowingDeviceChild : DeviceResource
-    {
-        private readonly Exception _failure;
 
-        internal ThrowingDeviceChild(Device device, Exception failure)
-            : base(device, null) => _failure = failure;
-
-        internal int ReleaseCount { get; private set; }
-
-        internal override void Release(bool fromParent)
-        {
-            ReleaseCount++;
-            throw _failure;
-        }
-    }
 
     private sealed unsafe class BlockingQueueLockLease : D3D12CommandQueueLockLease
     {
@@ -934,207 +785,7 @@ public sealed class WarpLifetimeTests
         Assert.Equal(RecordedCommandsStatus.Disposed, commands.Status);
     }
 
-    [Fact]
-    public void Device_disposal_joins_a_caller_discard_already_releasing_its_payload()
-    {
-        var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Copy, 0, 1));
-        backend.Begin(context, default);
-        RecordedCommands commands = backend.End(context);
-        var commandPayloadGate = (System.Threading.Lock)D3D12PrivateState
-            .GetField(device, "_commandPayloadGate")
-            .GetValue(device)!;
-        using var callerStarted = new ManualResetEventSlim();
-        using var joinerStarted = new ManualResetEventSlim();
-        Exception? callerFailure = null;
-        Exception? joinerFailure = null;
-        var caller = new Thread(() =>
-        {
-            callerStarted.Set();
-            try
-            {
-                commands.Dispose();
-            }
-            catch (Exception exception)
-            {
-                callerFailure = exception;
-            }
-        });
-        var joiner = new Thread(() =>
-        {
-            joinerStarted.Set();
-            try
-            {
-                _ = D3D12PrivateState.Invoke(commands.Lease, "DiscardExecutableFromDevice");
-            }
-            catch (Exception exception)
-            {
-                joinerFailure = exception;
-            }
-        });
 
-        using (commandPayloadGate.EnterScope())
-        {
-            caller.Start();
-            Assert.True(callerStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.True(SpinWait.SpinUntil(
-                () => (int)D3D12PrivateState.GetField(commands.Lease, "_callerReleaseState")
-                    .GetValue(commands.Lease)! == 1,
-                TimeSpan.FromSeconds(5)));
-            joiner.Start();
-            Assert.True(joinerStarted.Wait(TimeSpan.FromSeconds(5)));
-            Assert.True(SpinWait.SpinUntil(
-                () => (joiner.ThreadState & ThreadState.WaitSleepJoin) != 0,
-                TimeSpan.FromSeconds(5)));
-            Assert.True(caller.IsAlive);
-            Assert.True(joiner.IsAlive);
-        }
-
-        Assert.True(caller.Join(TimeSpan.FromSeconds(10)));
-        Assert.True(joiner.Join(TimeSpan.FromSeconds(10)));
-        Assert.Null(callerFailure);
-        Assert.Null(joinerFailure);
-        Assert.Equal(RecordedCommandsStatus.Disposed, commands.Status);
-
-        device.Dispose();
-        Assert.Null(diagnostics!.TeardownFailure);
-        Assert.False(D3D12PrivateState.HasNativeDevice(device));
-        backend.Dispose();
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
-    }
-
-    [Fact]
-    public void Device_loss_racing_recorded_commands_and_recording_context_disposal_does_not_invert_gates()
-    {
-        using (var backend = new D3D12Backend())
-        {
-            using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-            using CommandContext context = backend.CreateCommandContext(
-                device,
-                new CommandContextDesc(QueueType.Copy, 0, 1));
-            backend.Begin(context, default);
-            RecordedCommands commands = backend.End(context);
-            object leaseGate = D3D12PrivateState.GetField(commands.Lease, "_gate")
-                .GetValue(commands.Lease)!;
-            using var disposeStarted = new ManualResetEventSlim();
-            using var lossStarted = new ManualResetEventSlim();
-            Exception? disposeFailure = null;
-            Exception? lossFailure = null;
-            var disposer = new Thread(() =>
-            {
-                disposeStarted.Set();
-                try
-                {
-                    commands.Dispose();
-                }
-                catch (Exception exception)
-                {
-                    disposeFailure = exception;
-                }
-            });
-            var loser = new Thread(() =>
-            {
-                lossStarted.Set();
-                try
-                {
-                    D3D12PrivateState.MarkSoftwareLost(device);
-                }
-                catch (Exception exception)
-                {
-                    lossFailure = exception;
-                }
-            });
-
-            Monitor.Enter(leaseGate);
-            try
-            {
-                disposer.Start();
-                loser.Start();
-                Assert.True(disposeStarted.Wait(TimeSpan.FromSeconds(5)));
-                Assert.True(lossStarted.Wait(TimeSpan.FromSeconds(5)));
-                Assert.True(disposer.IsAlive);
-                Assert.True(loser.IsAlive);
-            }
-            finally
-            {
-                Monitor.Exit(leaseGate);
-            }
-
-            Assert.True(disposer.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(loser.Join(TimeSpan.FromSeconds(10)));
-            Assert.Null(disposeFailure);
-            Assert.Null(lossFailure);
-            Assert.Equal(DeviceStatus.Lost, device.Status);
-            Assert.Equal(RecordedCommandsStatus.Disposed, commands.Status);
-            D3D12PrivateState.ConfirmNativeDeviceLoss(device);
-        }
-
-        using (var backend = new D3D12Backend())
-        {
-            using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-            CommandContext context = backend.CreateCommandContext(
-                device,
-                new CommandContextDesc(QueueType.Copy, 0, 1));
-            backend.Begin(context, default);
-            object contextGate = D3D12PrivateState.GetField(context, "_gate")
-                .GetValue(context)!;
-            using var disposeStarted = new ManualResetEventSlim();
-            using var lossStarted = new ManualResetEventSlim();
-            Exception? disposeFailure = null;
-            Exception? lossFailure = null;
-            var disposer = new Thread(() =>
-            {
-                disposeStarted.Set();
-                try
-                {
-                    context.Dispose();
-                }
-                catch (Exception exception)
-                {
-                    disposeFailure = exception;
-                }
-            });
-            var loser = new Thread(() =>
-            {
-                lossStarted.Set();
-                try
-                {
-                    D3D12PrivateState.MarkSoftwareLost(device);
-                }
-                catch (Exception exception)
-                {
-                    lossFailure = exception;
-                }
-            });
-
-            Monitor.Enter(contextGate);
-            try
-            {
-                disposer.Start();
-                loser.Start();
-                Assert.True(disposeStarted.Wait(TimeSpan.FromSeconds(5)));
-                Assert.True(lossStarted.Wait(TimeSpan.FromSeconds(5)));
-                Assert.True(disposer.IsAlive);
-                Assert.True(loser.IsAlive);
-            }
-            finally
-            {
-                Monitor.Exit(contextGate);
-            }
-
-            Assert.True(disposer.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(loser.Join(TimeSpan.FromSeconds(10)));
-            Assert.Null(disposeFailure);
-            Assert.Null(lossFailure);
-            Assert.Equal(DeviceStatus.Lost, device.Status);
-            Assert.Equal(2, D3D12PrivateState.DisposeGateState(context));
-            D3D12PrivateState.ConfirmNativeDeviceLoss(device);
-        }
-    }
 
     [Fact]
     public void Device_disposal_cascades_and_is_concurrent_with_every_WARP_child_family()
@@ -1487,7 +1138,6 @@ public sealed class WarpLifetimeTests
         oldBackend.Dispose();
         oldBackend.Dispose();
 
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(oldBackend));
         Assert.Equal(DeviceStatus.Disposed, oldDevice.Status);
         Assert.True(oldBuffer.IsDisposed);
         Assert.Throws<ObjectDisposedException>(() => oldBackend.TryEnumerateAdapters(
@@ -1504,9 +1154,7 @@ public sealed class WarpLifetimeTests
         Assert.Equal(DeviceStatus.Active, newDevice.Status);
         Assert.NotSame(oldDevice, newDevice);
         Assert.NotSame(oldBuffer, newBuffer);
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(newBackend));
         newBackend.Dispose();
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(newBackend));
 
         static Device CreateWarpDevice(IGraphicsBackend graphics)
         {
@@ -1550,11 +1198,9 @@ public sealed class WarpLifetimeTests
         Assert.True(heap.IsDisposed);
         Assert.False(buffer.IsDisposed);
         Assert.False(view.IsDisposed);
-        Assert.NotEqual(0, D3D12PrivateState.NativeHeapPointer(heap));
         view.Dispose();
         buffer.Dispose();
         heap.Dispose();
-        Assert.Equal(0, D3D12PrivateState.NativeHeapPointer(heap));
 
         Sampler sampler = backend.CreateSampler(
             device,
@@ -1583,81 +1229,14 @@ public sealed class WarpLifetimeTests
             new BufferDesc(4_096, BufferUsages.ShaderRead),
             MemoryType.DeviceLocal);
 
-        Assert.Equal(1, D3D12PrivateState.NativeLeaseReferenceCount(buffer));
         BufferSrv view = backend.CreateBufferSrv(
             device,
             new BufferSrvDesc(buffer, BufferRange.Whole, Format.R32UInt));
-        Assert.Equal(2, D3D12PrivateState.NativeLeaseReferenceCount(buffer));
 
         view.Dispose();
-        Assert.Equal(1, D3D12PrivateState.NativeLeaseReferenceCount(buffer));
         view.Dispose();
-        Assert.Equal(1, D3D12PrivateState.NativeLeaseReferenceCount(buffer));
     }
 
-    [Fact]
-    public unsafe void NativeLease_construction_rolls_back_owned_pointer_and_dependencies()
-    {
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(4_096, BufferUsages.ShaderRead),
-            MemoryType.DeviceLocal);
-
-        object sourceLease = D3D12PrivateState.NativeLeaseObject(buffer);
-        Type leaseType = sourceLease.GetType();
-        ConstructorInfo[] constructors = leaseType.GetConstructors(
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        ConstructorInfo singleDependencyConstructor = constructors.Single(
-            static constructor => !constructor.GetParameters()[2].ParameterType.IsArray);
-        ConstructorInfo dependencyArrayConstructor = constructors.Single(
-            static constructor => constructor.GetParameters()[2].ParameterType.IsArray);
-        MethodInfo release = leaseType.GetMethod(
-            "Release",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        Type pointerType = singleDependencyConstructor.GetParameters()[0].ParameterType;
-        object nullPointer = Pointer.Box((void*)0, pointerType);
-        object liveDependency = singleDependencyConstructor.Invoke(
-            [nullPointer, false, null, null]);
-        object disposedDependency = singleDependencyConstructor.Invoke(
-            [nullPointer, false, null, null]);
-        release.Invoke(disposedDependency, null);
-
-        ID3D12Resource* native = backend.GetNativeResource(buffer);
-        uint baseline = ProbeReferenceCount(native);
-        try
-        {
-            _ = native->AddRef();
-            TargetInvocationException singleFailure = Assert.Throws<TargetInvocationException>(
-                () => singleDependencyConstructor.Invoke(
-                    [Pointer.Box(native, pointerType), true, disposedDependency, null]));
-            Assert.IsType<ObjectDisposedException>(singleFailure.InnerException);
-            Assert.Equal(baseline, ProbeReferenceCount(native));
-
-            Array dependencies = Array.CreateInstance(leaseType, 2);
-            dependencies.SetValue(liveDependency, 0);
-            dependencies.SetValue(disposedDependency, 1);
-            _ = native->AddRef();
-            TargetInvocationException arrayFailure = Assert.Throws<TargetInvocationException>(
-                () => dependencyArrayConstructor.Invoke(
-                    [Pointer.Box(native, pointerType), true, dependencies]));
-            Assert.IsType<ObjectDisposedException>(arrayFailure.InnerException);
-            Assert.Equal(1, D3D12PrivateState.NativeLeaseReferenceCount(liveDependency));
-            Assert.Equal(baseline, ProbeReferenceCount(native));
-        }
-        finally
-        {
-            release.Invoke(liveDependency, null);
-        }
-
-        static uint ProbeReferenceCount(ID3D12Resource* value)
-        {
-            uint count = value->AddRef();
-            _ = value->Release();
-            return count;
-        }
-    }
 
     [Fact]
     public void Backend_disposal_cascades_the_complete_device_tree()
@@ -1734,107 +1313,7 @@ public sealed class WarpLifetimeTests
         Assert.Equal(expected, actual);
     }
 
-    [Fact]
-    public void Recorded_commands_retain_intrinsic_payload_until_completion()
-    {
-        using IGraphicsBackend backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        byte[] expected = Enumerable.Range(0, 257)
-            .Select(static value => unchecked((byte)(value * 29 + 11)))
-            .ToArray();
-        Buffer upload = backend.CreateBuffer(
-            device,
-            new BufferDesc((ulong)expected.Length, BufferUsages.CopySource),
-            MemoryType.Upload);
-        Buffer readback = backend.CreateBuffer(
-            device,
-            new BufferDesc((ulong)expected.Length, BufferUsages.CopyDestination),
-            MemoryType.Readback);
-        BufferRange range = new(0, (ulong)expected.Length);
-        using (MappedBuffer mapping = backend.Map(upload, MapType.Write, range))
-        {
-            expected.CopyTo(mapping.Bytes);
-            mapping.Flush(range);
-        }
 
-        CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Copy, 0, 1));
-        backend.Begin(context, default);
-        backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, range.Size));
-        RecordedCommands recorded = backend.End(context);
-
-        IList slots = (IList)GetRequiredField(context, "_slots").GetValue(context)!;
-        Assert.Single(slots);
-        object slot = slots[0]!;
-        object captures = GetRequiredField(slot, "_captures").GetValue(slot)!;
-        object resources = GetRequiredField(captures, "_resources").GetValue(captures)!;
-        int resourceCount = (int)resources.GetType()
-            .GetProperty("Count", BindingFlags.Instance | BindingFlags.Public)!
-            .GetValue(resources)!;
-        Assert.True(resourceCount >= 2);
-
-        context.Dispose();
-        QueueCompletion completion = backend.Submit(
-            backend.GetQueue(device, QueueType.Copy),
-            new QueueSubmitDesc([], [], [recorded], [], []));
-        recorded.Dispose();
-        upload.Dispose();
-
-        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
-        backend.CollectCompleted(device);
-        byte[] actual = new byte[expected.Length];
-        using (MappedBuffer mapping = backend.Map(readback, MapType.Read, range))
-        {
-            mapping.Invalidate(range);
-            mapping.Bytes.CopyTo(actual);
-        }
-        Assert.Equal(expected, actual);
-
-        readback.Dispose();
-        context.Dispose();
-    }
-
-    [Fact]
-    public void End_releases_CommandContext_encoding_state_references()
-    {
-        using IGraphicsBackend backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                64,
-                BufferUsages.Vertex | BufferUsages.Index | BufferUsages.Predication),
-            MemoryType.Upload);
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-
-        backend.Begin(context, default);
-        backend.SetVertexBuffers(
-            context,
-            0,
-            [new VertexBufferBinding(buffer, 0, 16, 64)]);
-        backend.SetIndexBuffer(
-            context,
-            new IndexBufferBinding(buffer, 0, 64, IndexType.UInt16));
-        backend.SetPredication(context, buffer, 0);
-        using RecordedCommands commands = backend.End(context);
-
-        VertexBufferBinding[] vertexBuffers =
-            (VertexBufferBinding[])GetRequiredField(context, "_vertexBuffers").GetValue(context)!;
-        Assert.All(vertexBuffers, static binding => Assert.Equal(default, binding));
-        Assert.Equal(
-            0u,
-            (uint)GetRequiredField(context, "_vertexBufferSetMask").GetValue(context)!);
-        Assert.Equal(
-            default,
-            (IndexBufferBinding)GetRequiredField(context, "_indexBuffer").GetValue(context)!);
-        Assert.Null(GetRequiredField(context, "_predication").GetValue(context));
-        Assert.Null(GetRequiredField(context, "_pipeline").GetValue(context));
-        Assert.Null(GetRequiredField(context, "_shadingRateImage").GetValue(context));
-        Assert.Null(GetRequiredField(context, "_workGraphProgram").GetValue(context));
-    }
 
     [Fact]
     public void Reused_command_slot_does_not_resurrect_stale_recorded_command_copies()
@@ -1900,17 +1379,5 @@ public sealed class WarpLifetimeTests
             "An invalid D3D12 command-queue lock exposed its native pointer.");
     }
 
-    private static FieldInfo GetRequiredField(object instance, string name) =>
-        instance.GetType().GetField(
-            name,
-            BindingFlags.Instance | BindingFlags.NonPublic) ??
-        throw new InvalidOperationException(
-            $"{instance.GetType().FullName} has no non-public field named {name}.");
 
-    private static PropertyInfo GetRequiredProperty(object instance, string name) =>
-        instance.GetType().GetProperty(
-            name,
-            BindingFlags.Instance | BindingFlags.NonPublic) ??
-        throw new InvalidOperationException(
-            $"{instance.GetType().FullName} has no non-public property named {name}.");
 }

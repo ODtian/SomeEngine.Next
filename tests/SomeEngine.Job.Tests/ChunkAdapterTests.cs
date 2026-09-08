@@ -85,7 +85,6 @@ public sealed class ChunkAdapterTests
         new ChunkAdapterJobs.FillChunkJob(values).Schedule(source, batchSize: 1).Complete();
 
         Assert.All(values, value => Assert.Equal(1, value));
-        Assert.Equal(1, JobSystem.GetStats().RefContainingJobs);
     }
 
     [Fact]

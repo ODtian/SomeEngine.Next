@@ -71,8 +71,8 @@ internal static partial class RhiBenchmarkRunner
             device,
             new TextureDesc(
                 TextureDimension.Texture2D,
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight,
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight,
                 1,
                 1,
                 1,
@@ -97,11 +97,11 @@ internal static partial class RhiBenchmarkRunner
         ];
         Viewport[] viewports =
         [
-            new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight),
+            new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight),
         ];
         ScissorRect[] scissors =
         [
-            new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight),
+            new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight),
         ];
         using Buffer objectData = backend.CreateBuffer(
             device,
@@ -529,8 +529,8 @@ internal static partial class RhiBenchmarkRunner
                 RenderingDesc renderingDesc = new(
                     attachments,
                     null,
-                    FixedGraphicsProtocol.RenderWidth,
-                    FixedGraphicsProtocol.RenderHeight);
+                    BenchmarkDefaults.RenderWidth,
+                    BenchmarkDefaults.RenderHeight);
                 TDispatch.BeginRendering(receiver, context, renderingDesc);
                 rendering = true;
                 TDispatch.EndRendering(receiver, context);
@@ -588,8 +588,8 @@ internal static partial class RhiBenchmarkRunner
             RenderingDesc renderingDesc = new(
                 attachments,
                 null,
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight);
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight);
             phaseStarted = timing is null ? 0 : Stopwatch.GetTimestamp();
             TDispatch.BeginRendering(receiver, context, renderingDesc);
             if (timing is not null)

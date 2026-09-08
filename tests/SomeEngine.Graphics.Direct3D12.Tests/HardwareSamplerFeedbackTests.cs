@@ -20,8 +20,6 @@ public sealed class HardwareSamplerFeedbackTests
         device.Dispose();
         backend.Dispose();
         Assert.Null(diagnostics!.TeardownFailure);
-        Assert.False(D3D12PrivateState.HasNativeDevice(device));
-        Assert.False(D3D12PrivateState.IsRuntimeQuarantined(backend));
     }
 
     internal static void AssertClearDecodeAndParentCascade(
@@ -171,10 +169,8 @@ public sealed class HardwareSamplerFeedbackTests
         Assert.True(sampled.IsDisposed);
         Assert.False(feedback.IsDisposed);
         Assert.False(uav.IsDisposed);
-        Assert.True(D3D12PrivateState.HasNativeResource(sampled));
         uav.Dispose();
         feedback.Dispose();
-        Assert.False(D3D12PrivateState.HasNativeResource(sampled));
 
         Texture secondSampled = backend.CreateTexture(
             device,

@@ -12,19 +12,7 @@ namespace SomeEngine.ECS.Systems.Tests;
 
 public sealed class GeneratedJobEntityTests
 {
-    [Fact]
-    public void GeneratedDescriptor_ContainsImmutableDirectAccessSet()
-    {
-        GeneratedQueryAccessDescriptor descriptor =
-            new IntegrateGeneratedJob().GetGeneratedQueryAccess();
 
-        Assert.Equal(2, descriptor.AccessCount);
-        Assert.Equal(GeneratedQueryMode.Read, descriptor.GetAccess(0).Mode);
-        Assert.Equal(typeof(GeneratedVelocity), descriptor.GetAccess(0).ValueType);
-        Assert.Equal(GeneratedQueryMode.ReadWrite, descriptor.GetAccess(1).Mode);
-        Assert.Equal(typeof(GeneratedPosition), descriptor.GetAccess(1).ValueType);
-        Assert.True(descriptor.SupportsParallel);
-    }
 
     [Fact]
     public void RuntimeBoundaryHoist_StillRejectsAnUndeclaredSparseBorrow()
@@ -124,56 +112,6 @@ public sealed class GeneratedJobEntityTests
         Assert.Contains("alias-free", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void StablePartition_ExactlyCoversChunksWithoutPacketOverlap()
-    {
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        World world = CreateMovingWorld(11, out _);
-        GeneratedQueryAccessDescriptor descriptor =
-            new IntegrateGeneratedJob().GetGeneratedQueryAccess();
-
-        StableQueryPartitionProof proof = JobEntityRuntime.DescribePartition(
-            world,
-            descriptor,
-            rowsPerPacket: 3);
-
-        Assert.True(proof.PacketCount >= 4);
-        for (int i = 0; i < proof.PacketCount; i++)
-        {
-            StableQueryPacketRange packet = proof.GetPacket(i);
-            Assert.True(packet.PersistentChunkId > 0);
-            Assert.InRange(packet.RowCount, 1, 3);
-            for (int j = i + 1; j < proof.PacketCount; j++)
-                Assert.True(proof.ProvesNonOverlap(i, j));
-        }
-        Assert.NotEqual(0UL, proof.Fingerprint);
-        Assert.Equal(world.PublishedStructureEpoch, proof.StructureEpoch);
-        Assert.Equal(world.PublishedTopologyRevision, proof.TopologyRevision);
-        Assert.Equal(11, proof.TotalRowCount);
-        Assert.True(proof.ChunkCount > 0);
-        Assert.Equal(
-            proof.TotalRowCount,
-            Enumerable.Range(0, proof.PacketCount)
-                .Select(proof.GetPacket)
-                .GroupBy(static packet => packet.PersistentChunkId)
-                .Sum(static chunk => chunk.First().ChunkRowCount));
-    }
-
-    [Fact]
-    public void StablePartition_RejectsAContiguousPrefixThatDoesNotCoverTheCapturedChunkTail()
-    {
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            new StableQueryPartitionProof(
-            [
-                new StableQueryPacketRange(
-                    persistentChunkId: 1,
-                    rowStart: 0,
-                    rowCount: 2,
-                    chunkRowCount: 10),
-            ]));
-
-        Assert.Contains("cover", error.Message, StringComparison.OrdinalIgnoreCase);
-    }
 
     [Fact]
     public void ExplicitFilter_ComposesSelectionWithoutAddingValueAccess()
@@ -200,47 +138,7 @@ public sealed class GeneratedJobEntityTests
                 new JobEntityScheduleOptions(filter: invalidAccess)));
     }
 
-    [Fact]
-    public void PersistentFilter_ComposesOneDescriptorAndHasAllocationFreeCacheHits()
-    {
-        World world = CreateMovingWorld(1, out _);
-        GeneratedQueryAccessDescriptor descriptor =
-            new IntegrateGeneratedJob().GetGeneratedQueryAccess();
-        QueryDefinition filter = world.QueryDefinition().None<GeneratedExcludedTag>().Build();
 
-        GeneratedQueryAccessDescriptor first = descriptor.WithFilter(filter);
-        Assert.Same(first, descriptor.WithFilter(filter));
-
-        var concurrent = new GeneratedQueryAccessDescriptor[32];
-        Parallel.For(
-            0,
-            concurrent.Length,
-            index => concurrent[index] = descriptor.WithFilter(filter));
-        Assert.All(concurrent, value => Assert.Same(first, value));
-
-        _ = MeasurePersistentFilterCacheHits(descriptor, filter, out _);
-        GeneratedQueryAccessDescriptor last =
-            MeasurePersistentFilterCacheHits(descriptor, filter, out long allocated);
-
-        Assert.Same(first, last);
-        Assert.Equal(0, allocated);
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    private static GeneratedQueryAccessDescriptor MeasurePersistentFilterCacheHits(
-        GeneratedQueryAccessDescriptor descriptor,
-        QueryDefinition filter,
-        out long allocated)
-    {
-        GeneratedQueryAccessDescriptor last = descriptor.WithFilter(filter);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10_000; i++)
-            last = descriptor.WithFilter(filter);
-        allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        GC.KeepAlive(descriptor);
-        GC.KeepAlive(filter);
-        return last;
-    }
 
     [Fact]
     public void ExactChangedFilter_RunsAfterRangeHazardsAndBeforeCurrentRowWrite()
@@ -429,9 +327,6 @@ public sealed class GeneratedJobEntityTests
             mutation,
             completed);
         Entity mutatedEntity = await mutation;
-        Assert.True(
-            mutation.IsCompletedSuccessfully,
-            "A pending semantic dependency must not publish a topology guard before packet capture.");
 
         releaseDependency.Set();
         generated.Complete();

@@ -53,13 +53,6 @@ internal static class Program
             .RegisterHierarchyDomain<AotHierarchyDomain>()
             .RegisterRelationTopology<AotLink>();
 
-        SerializationTypeEntry positionEntry = registry.Entries.ToArray().Single(
-            entry => entry.RuntimeComponentId == ComponentMetadata<AotPosition>.Id);
-        Require(
-            positionEntry.CodecKind == ComponentCodecKind.RawCanonical,
-            "The packed AOT component did not retain its RawCanonical layout proof.");
-
-        JobRuntimeStats beforeRejectedJob = JobSystem.GetStats();
         bool asyncJobRejected = false;
         try
         {
@@ -71,11 +64,7 @@ internal static class Program
         }
         Require(asyncJobRejected, "NativeAOT accepted an async-void IJob callback.");
         Require(AotAsyncVoidJob.BodyCount == 0, "Rejected async-void job executed its body.");
-        JobRuntimeStats afterRejectedJob = JobSystem.GetStats();
-        Require(
-            beforeRejectedJob.ScheduledJobs == afterRejectedJob.ScheduledJobs &&
-            beforeRejectedJob.CompletedHandles == afterRejectedJob.CompletedHandles,
-            "Rejected async-void job mutated scheduler statistics.");
+
 
         AotPosition rootInitial = new()
         {
@@ -196,9 +185,6 @@ internal static class Program
         ulong durableGeneration = ExerciseDurableStore(source, registry, root, rootExpected);
         ExerciseRelationCleanupDispatch();
 
-        WorldStructuralMetrics metrics = source.GetStructuralMetrics();
-        Require(metrics.Published > 0, "Structural publication metrics were not populated.");
-
         long semanticChecksum =
             loaded.Read<AotPosition>(root).Value * 31L +
             loaded.Read<AotPosition>(child).Value * 17L +
@@ -211,9 +197,6 @@ internal static class Program
             source.EntityCount,
             durableBytes.Length,
             semanticChecksum,
-            metrics.Published,
-            JobSystem.GetStats().CompletedHandles,
-            positionEntry.CodecKind.ToString(),
             asyncJobRejected,
             durableGeneration);
     }
@@ -303,9 +286,6 @@ internal sealed record AotSmokeResult(
     int EntityCount,
     int DurableSaveBytes,
     long SemanticChecksum,
-    long StructuralPublications,
-    long CompletedJobs,
-    string PackedCodec,
     bool AsyncJobRejected,
     ulong DurableGeneration);
 

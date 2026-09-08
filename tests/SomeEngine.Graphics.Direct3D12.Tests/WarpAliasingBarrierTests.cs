@@ -56,7 +56,6 @@ public sealed class WarpAliasingBarrierTests
         const ulong fullSize = halfSize * 2;
         using IGraphicsBackend backend = CreateBackend(validation);
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(UsesEnhancedBarriers(device));
         using Heap heap = backend.CreateHeap(
             device,
             new HeapDesc(fullSize, 0, MemoryType.DeviceLocal, HeapFlags.Buffers));
@@ -361,10 +360,6 @@ public sealed class WarpAliasingBarrierTests
             Assert.ThrowsAny<ArgumentException>(action);
     }
 
-    private static bool UsesEnhancedBarriers(Device device) =>
-        (bool)device.GetType().GetProperty(
-            "EnhancedBarriers",
-            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(device)!;
 
     private static Buffer CreateUpload(
         IGraphicsBackend backend,

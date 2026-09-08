@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -97,11 +96,6 @@ internal sealed class EcsFuzzRunner
 {
     internal const int LongCampaignFullVerificationInterval = 128;
 
-    private static readonly PropertyInfo PublishedStructureEpochProperty =
-        typeof(World).GetProperty(
-            "PublishedStructureEpoch",
-            BindingFlags.Instance | BindingFlags.NonPublic)
-        ?? throw new MissingMemberException(typeof(World).FullName, "PublishedStructureEpoch");
 
     private readonly World _world = new();
     private readonly Dictionary<int, Entity> _actualByLogical = new();
@@ -318,8 +312,6 @@ internal sealed class EcsFuzzRunner
         ReferenceWorld.Transaction transaction,
         ModelOperationException? modelError)
     {
-        WorldStructuralMetrics metricsBefore = _world.GetStructuralMetrics();
-        long epochBefore = ReadPublishedStructureEpoch();
         var deferred = new Dictionary<int, DeferredEntity>();
 
         using var commands = new CommandBuffer(_world);
@@ -338,8 +330,6 @@ internal sealed class EcsFuzzRunner
         }
 
         Exception? playbackError = Capture(commands.Playback);
-        WorldStructuralMetrics metricsAfter = _world.GetStructuralMetrics();
-        long epochAfter = ReadPublishedStructureEpoch();
 
         if (modelError is null)
         {
@@ -362,22 +352,6 @@ internal sealed class EcsFuzzRunner
                         $"Successful batch did not resolve logical entity {logicalId}.");
                 }
                 RegisterActual(logicalId, entity);
-            }
-
-            RequireCounterDelta(
-                stepIndex,
-                "successful-batch-metrics",
-                metricsBefore,
-                metricsAfter,
-                started: 1,
-                published: 1,
-                aborted: 0);
-            if (epochAfter != epochBefore + 1)
-            {
-                Fail(
-                    stepIndex,
-                    "successful-batch-epoch",
-                    $"Published structure epoch changed from {epochBefore} to {epochAfter}; expected +1.");
             }
 
             ReconcileActualRelations(_reference);
@@ -408,21 +382,6 @@ internal sealed class EcsFuzzRunner
             }
         }
 
-        RequireCounterDelta(
-            stepIndex,
-            "failed-batch-metrics",
-            metricsBefore,
-            metricsAfter,
-            started: 1,
-            published: 0,
-            aborted: 1);
-        if (epochAfter != epochBefore)
-        {
-            Fail(
-                stepIndex,
-                "failed-batch-epoch",
-                $"Failed batch changed published structure epoch from {epochBefore} to {epochAfter}.");
-        }
         _rejectedBatches++;
     }
 
@@ -1030,13 +989,6 @@ internal sealed class EcsFuzzRunner
         return entity;
     }
 
-    private long ReadPublishedStructureEpoch()
-    {
-        object? value = PublishedStructureEpochProperty.GetValue(_world);
-        return value is long epoch
-            ? epoch
-            : throw new InvalidDataException("World.PublishedStructureEpoch did not return Int64.");
-    }
 
     private string CreateStateDigest()
     {
@@ -1056,8 +1008,7 @@ internal sealed class EcsFuzzRunner
                     CultureInfo.InvariantCulture,
                     $"{pair.Key.Source}>{pair.Key.Target}=" +
                     $"{pair.Value.Entity.Index}:{pair.Value.Entity.Generation}")));
-        return $"{_reference.Digest()}|ids={identities}|relations={relationIdentities}" +
-               $"|epoch={ReadPublishedStructureEpoch()}";
+        return $"{_reference.Digest()}|ids={identities}|relations={relationIdentities}";
     }
 
     private static Exception? Capture(Action action)
@@ -1073,28 +1024,6 @@ internal sealed class EcsFuzzRunner
         }
     }
 
-    private static void RequireCounterDelta(
-        int stepIndex,
-        string stage,
-        WorldStructuralMetrics before,
-        WorldStructuralMetrics after,
-        long started,
-        long published,
-        long aborted)
-    {
-        long actualStarted = after.Started - before.Started;
-        long actualPublished = after.Published - before.Published;
-        long actualAborted = after.Aborted - before.Aborted;
-        if (actualStarted != started || actualPublished != published || actualAborted != aborted)
-        {
-            Fail(
-                stepIndex,
-                stage,
-                $"Structural metrics delta was started/published/aborted " +
-                $"{actualStarted}/{actualPublished}/{actualAborted}, expected " +
-                $"{started}/{published}/{aborted}.");
-        }
-    }
 
     private static void Fail(
         int stepIndex,

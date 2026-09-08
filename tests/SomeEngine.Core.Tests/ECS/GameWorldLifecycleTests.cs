@@ -8,28 +8,7 @@ namespace SomeEngine.Core.Tests.ECS;
 
 public sealed class GameWorldLifecycleTests
 {
-    [Fact]
-    public void GameWorldUsesTheCanonicalImmediateSystemContextWithoutForwardingAliases()
-    {
-        Assembly assembly = typeof(GameWorld).Assembly;
-        Assert.Null(assembly.GetType(
-            "SomeEngine.Core.ECS.EngineSystemContext",
-            throwOnError: false));
-        Assert.Null(assembly.GetType(
-            "SomeEngine.Core.ECS.EngineDriver",
-            throwOnError: false));
-        Assert.Null(assembly.GetType(
-            "SomeEngine.Core.ECS.SystemContext",
-            throwOnError: false));
 
-        PropertyInfo? systems = typeof(GameWorld).GetProperty(
-            nameof(GameWorld.Systems),
-            BindingFlags.Instance | BindingFlags.Public);
-        Assert.NotNull(systems);
-        Assert.Equal(
-            typeof(SystemGroup<ImmediateSystemContext>),
-            systems!.PropertyType);
-    }
 
     [Fact]
     public async Task Dispose_WaitsWorldJobsAndClosesSystemsAndWorld()

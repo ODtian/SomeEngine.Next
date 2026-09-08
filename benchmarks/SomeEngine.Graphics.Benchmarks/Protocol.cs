@@ -6,7 +6,6 @@ internal enum BenchmarkCommand : byte
 {
     Warp,
     Diagnose,
-    Certify,
     Worker,
     Evaluate,
     Probe,
@@ -17,7 +16,6 @@ internal enum BenchmarkProfile : byte
 {
     WarpFunctional,
     FastDiagnostic,
-    VendorCertification,
     DeveloperProbe,
     RepresentativeCpuFrame,
     GraphicsCpuDevelopment,
@@ -45,27 +43,20 @@ internal enum GraphicsWorkload : byte
 
 internal enum RunDisposition : byte
 {
-    Passed,
     Failed,
     FunctionalOnly,
     Unexecuted,
 }
 
-internal static class FixedGraphicsProtocol
+internal static class BenchmarkDefaults
 {
-    internal const string Schema = "someengine.graphics.performance/v3";
-    internal const int WarmupFrames = 8_192;
-    internal const int MeasuredFrames = 16_384;
-    internal const int ProcessCount = 5;
-    internal const int DrawCount = 10_000;
-    internal const int BarrierCount = 4_096;
+    internal const string Schema = "someengine.graphics.measurements/v1";
     internal const int WarpWarmupFrames = 2;
     internal const int WarpMeasuredFrames = 4;
     internal const int WarpDrawCount = 64;
     internal const int WarpBarrierCount = 32;
     internal const int DiagnosticWarmupFrames = 512;
     internal const int DiagnosticMeasuredFrames = 1_024;
-    internal const int DiagnosticProcessCount = 4;
     internal const int DiagnosticDrawCount = 10_000;
     internal const int DiagnosticBarrierCount = 0;
     internal const int ProbeWarmupFrames = 64;
@@ -74,7 +65,6 @@ internal static class FixedGraphicsProtocol
     internal const int ProbeBarrierCount = 1_000;
     internal const int RepresentativeWarmupFrames = 4_096;
     internal const int RepresentativeMeasuredFrames = 4_096;
-    internal const int RepresentativeProcessCount = 5;
     internal const int GraphicsCpuMinimumWarmupFrames = 1_024;
     internal const int GraphicsCpuMeasuredFrames = 1_024;
     internal const int RenderWidth = 64;
@@ -91,18 +81,6 @@ internal static class FixedGraphicsProtocol
         ReceiverVariant.InterfaceReceiver,
         ReceiverVariant.DirectSilk,
         ReceiverVariant.NativeCpp,
-    ];
-
-    // The first three rounds form a Latin square, so every receiver occupies
-    // every process position exactly once. The required fourth and fifth rounds
-    // continue the same deterministic rotation.
-    internal static readonly ReceiverVariant[][] InterleavedRounds =
-    [
-        [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
-        [ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp, ReceiverVariant.InterfaceReceiver],
-        [ReceiverVariant.NativeCpp, ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk],
-        [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
-        [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk, ReceiverVariant.NativeCpp],
     ];
 
     internal static readonly GraphicsWorkload[] Workloads =
@@ -147,36 +125,9 @@ internal static class FixedGraphicsProtocol
             _ => Workloads,
         };
 
-    internal static int GetProcessCount(BenchmarkProfile profile) => profile switch
-    {
-        BenchmarkProfile.WarpFunctional => 1,
-        BenchmarkProfile.FastDiagnostic => DiagnosticProcessCount,
-        BenchmarkProfile.VendorCertification => ProcessCount,
-        BenchmarkProfile.DeveloperProbe => 1,
-        BenchmarkProfile.RepresentativeCpuFrame => RepresentativeProcessCount,
-        _ => throw new ArgumentOutOfRangeException(nameof(profile)),
-    };
 
-    internal static ReadOnlySpan<ReceiverVariant> GetInterleavedRound(int processIndex)
-    {
-        if ((uint)processIndex >= (uint)InterleavedRounds.Length)
-            throw new ArgumentOutOfRangeException(nameof(processIndex));
-        return InterleavedRounds[processIndex];
-    }
 
-    internal static bool IsCertificationShape(in WorkerConfiguration value) =>
-        value.Profile == BenchmarkProfile.VendorCertification &&
-        value.WarmupFrames == WarmupFrames &&
-        value.MeasuredFrames == MeasuredFrames &&
-        value.DrawCount == DrawCount &&
-        value.BarrierCount == BarrierCount;
 
-    internal static bool IsDiagnosticShape(in WorkerConfiguration value) =>
-        value.Profile == BenchmarkProfile.FastDiagnostic &&
-        value.WarmupFrames == DiagnosticWarmupFrames &&
-        value.MeasuredFrames == DiagnosticMeasuredFrames &&
-        value.DrawCount == DiagnosticDrawCount &&
-        value.BarrierCount == DiagnosticBarrierCount;
 }
 
 internal readonly record struct WorkerConfiguration(
@@ -193,12 +144,10 @@ internal readonly record struct WorkerConfiguration(
     GraphicsWorkload[]? SelectedWorkloads = null,
     bool DefaultDirectCalls = false)
 {
-    internal bool IsCertificationShape => FixedGraphicsProtocol.IsCertificationShape(this);
 
-    internal bool IsDiagnosticShape => FixedGraphicsProtocol.IsDiagnosticShape(this);
 
     internal ReadOnlySpan<GraphicsWorkload> Workloads =>
-        SelectedWorkloads ?? FixedGraphicsProtocol.GetWorkloads(Profile).ToArray();
+        SelectedWorkloads ?? BenchmarkDefaults.GetWorkloads(Profile).ToArray();
 }
 
 internal readonly record struct MetricDistribution(
@@ -245,7 +194,7 @@ internal readonly record struct ProtocolSnapshot(
     string PercentileMethod,
     string CpuInterval,
     string GpuInterval,
-    string[][] InterleavedRounds,
+    string[][] VariantOrder,
     string[] Workloads)
 {
     internal static ProtocolSnapshot Create(
@@ -262,16 +211,15 @@ internal readonly record struct ProtocolSnapshot(
             processCount,
             drawCount,
             barrierCount,
-            FixedGraphicsProtocol.PercentileMethod,
-            FixedGraphicsProtocol.CpuInterval,
-            FixedGraphicsProtocol.GpuInterval,
+            BenchmarkDefaults.PercentileMethod,
+            BenchmarkDefaults.CpuInterval,
+            BenchmarkDefaults.GpuInterval,
             Enumerable.Range(0, processCount)
-                .Select(processIndex => (selectedVariants ?? FixedGraphicsProtocol
-                    .GetInterleavedRound(processIndex).ToArray())
+                .Select(processIndex => (selectedVariants ?? BenchmarkDefaults.Variants)
                     .Select(static value => value.ToString())
                     .ToArray())
                 .ToArray(),
-            (selectedWorkloads ?? FixedGraphicsProtocol.GetWorkloads(profile).ToArray())
+            (selectedWorkloads ?? BenchmarkDefaults.GetWorkloads(profile).ToArray())
                 .Select(static value => value.ToString())
                 .ToArray());
 }

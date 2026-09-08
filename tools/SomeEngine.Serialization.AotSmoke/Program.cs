@@ -195,6 +195,17 @@ internal static class Program
                 "Indexed document chunk count changed.");
             Require(rootViewDocument.TotalLength == documentLength,
                 "Indexed document length metadata changed.");
+            await using BinaryDocument<SmokeContract> chunkDocument = await BinaryDocument<SmokeContract>.OpenAsync(
+                FileRangeSource.Open(documentPath), ownsSource: true);
+            using ChunkLease plain = await chunkDocument.AcquireChunkAsync(PlainChunkKey);
+            Require(plain.Memory.Span.SequenceEqual(new byte[] { 4, 8, 15, 16, 23, 42 }),
+                "Uncompressed chunk contents did not round-trip under NativeAOT.");
+            using ChunkLease compressed = await chunkDocument.AcquireChunkAsync(CompressedChunkKey);
+            Require(compressed.Memory.Length == CompressedChunkLength,
+                "Decompressed chunk length did not round-trip under NativeAOT.");
+            for (int index = 0; index < compressed.Memory.Length; index++)
+                Require(compressed.Memory.Span[index] == (byte)(index % 251),
+                    "Decompressed chunk contents did not round-trip under NativeAOT.");
             generation = rootViewDocument.Generation;
         }
 

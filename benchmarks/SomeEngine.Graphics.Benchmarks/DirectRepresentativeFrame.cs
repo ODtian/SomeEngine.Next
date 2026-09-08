@@ -405,16 +405,16 @@ internal static unsafe partial class DirectSilkBenchmarkRunner
         {
             TopLeftX = 0,
             TopLeftY = 0,
-            Width = FixedGraphicsProtocol.RenderWidth,
-            Height = FixedGraphicsProtocol.RenderHeight,
+            Width = BenchmarkDefaults.RenderWidth,
+            Height = BenchmarkDefaults.RenderHeight,
             MinDepth = 0,
             MaxDepth = 1,
         };
         Box2D<int> scissor = new(
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight);
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight);
         int end =
 #if REPRESENTATIVE_FIXED_ONLY || REPRESENTATIVE_LIFECYCLE_ONLY || REPRESENTATIVE_STATE_ONLY
             start;

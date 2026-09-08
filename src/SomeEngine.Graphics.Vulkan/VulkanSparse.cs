@@ -384,18 +384,7 @@ internal sealed unsafe partial class VulkanBackend
 
     private Result QueueBindSparseNative(VulkanQueue queue, BindSparseInfo* bind)
     {
-#if SOMEENGINE_TESTING
-        FaultHooks.Before(VulkanCallPoint.QueueBindSparse);
-        if (FaultHooks.TryOverride(VulkanCallPoint.QueueBindSparse, out Result injectedResult))
-        {
-            FaultHooks.After(VulkanCallPoint.QueueBindSparse);
-            return injectedResult;
-        }
-#endif
         Result result = Api.QueueBindSparse(queue.Native, 1, bind, default);
-#if SOMEENGINE_TESTING
-        FaultHooks.After(VulkanCallPoint.QueueBindSparse);
-#endif
         return result;
     }
 

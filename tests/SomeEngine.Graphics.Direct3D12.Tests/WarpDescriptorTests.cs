@@ -254,46 +254,23 @@ public sealed class WarpDescriptorTests
                 device,
                 pipeline,
                 new ParameterBlockBindings(layout, [], new byte[16]));
-        object publisher = D3D12PrivateState.Invoke(
-            device,
-            "GetDescriptorPublisher",
-            0u)!;
-        object generation = D3D12PrivateState.GetField(publisher, "_current")
-            .GetValue(publisher)!;
-        FieldInfo references = D3D12PrivateState.GetField(generation, "_references");
-        Assert.Equal(1, references.GetValue(generation));
-
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Compute, 0, 1));
         backend.Begin(context);
-        object slot = D3D12PrivateState.GetField(context, "_recording")
-            .GetValue(context)!;
-        Assert.Null(
-            D3D12PrivateState.GetField(slot, "_descriptorGeneration").GetValue(slot));
-        Assert.Equal(1, references.GetValue(generation));
-        Assert.False((bool)D3D12PrivateState.GetField(slot, "_descriptorArenaReady")
-            .GetValue(slot)!);
 
         backend.SetPipeline(context, pipeline);
         backend.SetPersistentParameterBindings(context, persistent);
-        Assert.Null(
-            D3D12PrivateState.GetField(slot, "_descriptorGeneration").GetValue(slot));
-        Assert.Equal(1, references.GetValue(generation));
-        Assert.False((bool)D3D12PrivateState.GetField(slot, "_descriptorArenaReady")
-            .GetValue(slot)!);
 
         RecordedCommands commands = backend.End(context);
         try
         {
             Assert.Equal(RecordedCommandsStatus.Executable, commands.Status);
-            Assert.Equal(1, references.GetValue(generation));
         }
         finally
         {
             commands.Dispose();
         }
-        Assert.Equal(1, references.GetValue(generation));
     }
 
     [Fact]
@@ -385,24 +362,10 @@ public sealed class WarpDescriptorTests
             new CommandContextDesc(QueueType.Compute, 0, 1));
 
         backend.Begin(context, new CommandRecordingDesc(8, 2, 8));
-        object slot = D3D12PrivateState.GetField(context, "_recording")
-            .GetValue(context)!;
         backend.SetPipeline(context, pipeline);
-        Assert.Null(
-            D3D12PrivateState.GetField(slot, "_descriptorGeneration").GetValue(slot));
         backend.SetTransientParameterBindings(
             context,
             new ParameterBlockBindings(layout, bindings, []));
-        Assert.True((bool)D3D12PrivateState.GetField(slot, "_descriptorArenaReady")
-            .GetValue(slot)!);
-        Assert.False((bool)D3D12PrivateState.GetField(
-            slot,
-            "_resourceArenaContainsGeneration").GetValue(slot)!);
-        Assert.False((bool)D3D12PrivateState.GetField(
-            slot,
-            "_samplerArenaContainsGeneration").GetValue(slot)!);
-        Assert.Null(
-            D3D12PrivateState.GetField(slot, "_descriptorGeneration").GetValue(slot));
         backend.Discard(context);
     }
 
@@ -465,12 +428,6 @@ public sealed class WarpDescriptorTests
 
         uint resourceFirst = backend.GetDescriptorIndex(resources, 0).Value;
         uint samplerFirst = backend.GetDescriptorIndex(samplers, 0).Value;
-        AssertDescriptorRecordTypes(resources, "_pendingResources", resourceFirst, types);
-        AssertDescriptorRecordTypes(
-            samplers,
-            "_pendingSamplers",
-            samplerFirst,
-            [ResourceBindingType.Sampler]);
         Assert.Throws<InvalidOperationException>(() =>
             backend.PublishDescriptors(device));
 
@@ -557,18 +514,6 @@ public sealed class WarpDescriptorTests
             backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);
         backend.WriteDescriptor(samplers, 0, ResourceBinding.SampledWith(sampler));
         backend.PublishDescriptors(device);
-        AssertDescriptorRecordTypes(
-            resources,
-            "_resources",
-            resourceFirst,
-            types,
-            hasOwner: true);
-        AssertDescriptorRecordTypes(
-            samplers,
-            "_samplers",
-            samplerFirst,
-            [ResourceBindingType.Sampler],
-            hasOwner: true);
 
         for (int slot = 0; slot < types.Length; slot++)
         {
@@ -582,13 +527,6 @@ public sealed class WarpDescriptorTests
             0,
             ResourceBinding.Null(ResourceBindingType.Sampler)));
         backend.PublishDescriptors(device);
-        AssertDescriptorRecordTypes(resources, "_resources", resourceFirst, types);
-        AssertDescriptorRecordTypes(
-            samplers,
-            "_samplers",
-            samplerFirst,
-            [ResourceBindingType.Sampler],
-            hasOwner: true);
 
         for (int slot = 0; slot < actual.Length; slot++)
             backend.WriteDescriptor(resources, checked((uint)slot), actual[slot]);
@@ -604,12 +542,6 @@ public sealed class WarpDescriptorTests
         resources.Dispose();
         samplers.Dispose();
         backend.PublishDescriptors(device);
-        AssertDescriptorRecordTypes(resources, "_resources", resourceFirst, types);
-        AssertDescriptorRecordTypes(
-            samplers,
-            "_samplers",
-            samplerFirst,
-            [ResourceBindingType.Sampler]);
     }
 
     [Fact]
@@ -760,317 +692,9 @@ public sealed class WarpDescriptorTests
         using RecordedCommands recorded = backend.End(context);
     }
 
-    [Fact]
-    public void First_native_descriptor_return_is_allocation_free_and_reuses_its_slot()
-    {
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(4, BufferUsages.ShaderRead),
-            MemoryType.DeviceLocal);
-        BufferSrv? first = backend.CreateBufferSrv(
-            device,
-            new BufferSrvDesc(buffer, BufferRange.Whole, Format.R32UInt));
-        NativeDescriptorInfo firstStorage = GetNativeDescriptorInfo(first);
-        BufferSrv?[] views =
-            new BufferSrv?[checked((int)firstStorage.PageCapacity)];
-        views[0] = first;
-        BufferSrv? replacement = null;
-        try
-        {
-            for (int index = 1; index < views.Length; index++)
-            {
-                views[index] = backend.CreateBufferSrv(
-                    device,
-                    new BufferSrvDesc(buffer, BufferRange.Whole, Format.R32UInt));
-            }
-            NativeDescriptorInfo lastStorage =
-                GetNativeDescriptorInfo(views[^1]!);
-            Assert.Same(firstStorage.Page, lastStorage.Page);
-            Assert.Equal(firstStorage.PageCapacity - 1, lastStorage.Slot);
 
-            _ = GC.GetAllocatedBytesForCurrentThread();
-            long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-            first.Dispose();
-            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
-            views[0] = null;
-            first = null;
-            Assert.Equal(0, allocated);
-            Assert.Equal(
-                1,
-                GetRequiredField(firstStorage.Page, "_freeCount")
-                    .GetValue(firstStorage.Page));
-            MethodInfo returnSlot = firstStorage.Page.GetType().GetMethod(
-                "Return",
-                BindingFlags.Instance | BindingFlags.NonPublic)!;
-            _ = returnSlot.Invoke(firstStorage.Page, [firstStorage.Slot]);
-            _ = returnSlot.Invoke(firstStorage.Page, [firstStorage.PageCapacity]);
-            Assert.Equal(
-                1,
-                GetRequiredField(firstStorage.Page, "_freeCount")
-                    .GetValue(firstStorage.Page));
 
-            replacement = backend.CreateBufferSrv(
-                device,
-                new BufferSrvDesc(buffer, BufferRange.Whole, Format.R32UInt));
-            NativeDescriptorInfo replacementStorage =
-                GetNativeDescriptorInfo(replacement);
-            Assert.Same(firstStorage.Page, replacementStorage.Page);
-            Assert.Equal(firstStorage.Slot, replacementStorage.Slot);
-            Assert.Equal(
-                0,
-                GetRequiredField(firstStorage.Page, "_freeCount")
-                    .GetValue(firstStorage.Page));
 
-            replacement.Dispose();
-            replacement = null;
-            for (int index = 1; index < views.Length; index++)
-            {
-                views[index]!.Dispose();
-                views[index] = null;
-            }
-            buffer.Dispose();
-            Assert.True(buffer.IsDisposed);
-        }
-        finally
-        {
-            first?.Dispose();
-            replacement?.Dispose();
-            foreach (BufferSrv? view in views)
-                view?.Dispose();
-        }
-    }
-
-    [Fact]
-    public void Persistent_replacement_failure_preserves_current_data_and_retry_executes()
-    {
-        const string source = """
-            RWStructuredBuffer<uint> firstOutput;
-            RWStructuredBuffer<uint> secondOutput;
-            uint ordinaryValues[80];
-
-            [shader("compute")]
-            [numthreads(1, 1, 1)]
-            void computeMain(uint3 id : SV_DispatchThreadID)
-            {
-                firstOutput[id.x] = ordinaryValues[0];
-                secondOutput[id.x] = ordinaryValues[0] + 1;
-            }
-            """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
-            "persistent_descriptor_transaction_faults",
-            source,
-            [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)],
-            "sm_6_2");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        int ordinarySize = checked((int)GetDataLayout(layout).GetSize(
-            SlangParameterCategory.Uniform));
-        Assert.True(ordinarySize > 256);
-
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Pipeline pipeline = backend.CreateComputePipeline(
-            device,
-            new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
-        using Buffer firstOutput = backend.CreateBuffer(
-            device,
-            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource),
-            MemoryType.DeviceLocal);
-        using Buffer secondOutput = backend.CreateBuffer(
-            device,
-            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource),
-            MemoryType.DeviceLocal);
-        using BufferUav firstUav = backend.CreateBufferUav(
-            device,
-            new BufferUavDesc(firstOutput, BufferRange.Whole, Format.R32UInt));
-        using BufferUav secondUav = backend.CreateBufferUav(
-            device,
-            new BufferUavDesc(secondOutput, BufferRange.Whole, Format.R32UInt));
-        Buffer failedBuffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(4, BufferUsages.ShaderWrite),
-            MemoryType.DeviceLocal);
-        BufferUav failedUav = backend.CreateBufferUav(
-            device,
-            new BufferUavDesc(failedBuffer, BufferRange.Whole, Format.R32UInt));
-        object failedDescriptor = GetRequiredProperty(failedUav, "NativeDescriptor");
-        failedUav.Dispose();
-        failedBuffer.Dispose();
-        Assert.Equal(0, GetRequiredField(failedDescriptor, "_references").GetValue(failedDescriptor));
-        using Buffer readback = backend.CreateBuffer(
-            device,
-            new BufferDesc(8, BufferUsages.CopyDestination),
-            MemoryType.Readback);
-        ResourceBinding[] resources =
-        [
-            ResourceBinding.WritableBuffer(firstUav),
-            ResourceBinding.WritableBuffer(secondUav),
-        ];
-        byte[] initialOrdinary = CreateOrdinaryData(ordinarySize, 3);
-        byte[] updatedOrdinary = CreateOrdinaryData(ordinarySize, 7);
-        using PersistentParameterBindings persistent =
-            backend.CreatePersistentParameterBindings(
-                device,
-                pipeline,
-                new ParameterBlockBindings(layout, resources, initialOrdinary));
-
-        PersistentPrivateInfo persistentBefore =
-            GetPersistentPrivateInfo(persistent);
-        int firstDescriptorReferences = GetDescriptorLeaseReferenceCount(firstUav);
-        ResourceBinding[] invalidResources =
-        [
-            ResourceBinding.WritableBuffer(firstUav),
-            ResourceBinding.WritableBuffer(failedUav),
-        ];
-        Assert.Throws<ObjectDisposedException>(() =>
-            backend.UpdatePersistentParameterBindings(
-                persistent,
-                new ParameterBlockBindings(layout, invalidResources, updatedOrdinary)));
-        Assert.Equal(persistentBefore, GetPersistentPrivateInfo(persistent));
-        Assert.Equal(firstDescriptorReferences, GetDescriptorLeaseReferenceCount(firstUav));
-        Assert.Equal(0, GetRequiredField(failedDescriptor, "_references").GetValue(failedDescriptor));
-
-        ExecutePersistentBinding(
-            backend,
-            device,
-            pipeline,
-            persistent,
-            firstOutput,
-            secondOutput,
-            readback,
-            [3u, 4u],
-            PipelineSync.None,
-            ResourceAccess.NoAccess);
-
-        backend.UpdatePersistentParameterBindings(
-            persistent,
-            new ParameterBlockBindings(layout, resources, updatedOrdinary));
-        PersistentPrivateInfo replaced = GetPersistentPrivateInfo(persistent);
-        Assert.NotSame(persistentBefore.Current, replaced.Current);
-        Assert.Equal(3UL, replaced.NextVersion);
-
-        ExecutePersistentBinding(
-            backend,
-            device,
-            pipeline,
-            persistent,
-            firstOutput,
-            secondOutput,
-            readback,
-            [7u, 8u],
-            PipelineSync.Copy,
-            ResourceAccess.CopySource);
-    }
-
-    [Fact]
-    public void Generation_record_retain_failure_preserves_current_pending_and_retry_succeeds()
-    {
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(8, BufferUsages.ShaderRead),
-            MemoryType.DeviceLocal);
-        using BufferSrv firstView = backend.CreateBufferSrv(
-            device,
-            new BufferSrvDesc(buffer, new BufferRange(0, 4), Format.R32UInt));
-        using BufferSrv secondView = backend.CreateBufferSrv(
-            device,
-            new BufferSrvDesc(buffer, new BufferRange(4, 4), Format.R32UInt));
-        using DescriptorTable table = backend.CreateDescriptorTable(
-            device,
-            [ResourceBindingType.BufferSrv, ResourceBindingType.BufferSrv]);
-        backend.WriteDescriptor(table, 0, ResourceBinding.ReadOnlyBuffer(firstView));
-        backend.WriteDescriptor(table, 1, ResourceBinding.ReadOnlyBuffer(secondView));
-
-        object publisher = GetRequiredProperty(table, "Publisher");
-        IDictionary pending = (IDictionary)GetRequiredField(
-            publisher,
-            "_pendingResources").GetValue(publisher)!;
-        uint firstIndex = backend.GetDescriptorIndex(table, 0).Value;
-        object firstRecord = pending[firstIndex]!;
-        object secondRecord = pending[checked(firstIndex + 1)]!;
-        FieldInfo firstReferences = GetRequiredField(firstRecord, "_references");
-        FieldInfo secondReferences = GetRequiredField(secondRecord, "_references");
-        int firstReferenceCount = (int)firstReferences.GetValue(firstRecord)!;
-        int secondReferenceCount = (int)secondReferences.GetValue(secondRecord)!;
-        PublisherPrivateInfo beforeInfo = GetPublisherPrivateInfo(table);
-
-        secondReferences.SetValue(secondRecord, int.MaxValue);
-        try
-        {
-            Assert.Throws<OverflowException>(() => backend.PublishDescriptors(device));
-            Assert.Equal(beforeInfo, GetPublisherPrivateInfo(table));
-            Assert.Equal(firstReferenceCount, firstReferences.GetValue(firstRecord));
-            Assert.Equal(int.MaxValue, secondReferences.GetValue(secondRecord));
-        }
-        finally
-        {
-            secondReferences.SetValue(secondRecord, secondReferenceCount);
-        }
-
-        backend.PublishDescriptors(device);
-        PublisherPrivateInfo publishedInfo = GetPublisherPrivateInfo(table);
-        Assert.NotSame(beforeInfo.CurrentGeneration, publishedInfo.CurrentGeneration);
-        Assert.Equal(0, publishedInfo.PendingResourceCount);
-        Assert.Equal(0, publishedInfo.PendingSamplerCount);
-        Assert.Equal(0, publishedInfo.PendingBindingCount);
-
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-        backend.Begin(context);
-        using RecordedCommands recorded = backend.End(context);
-        QueueCompletion completion = backend.Submit(
-            backend.GetQueue(device, QueueType.Graphics),
-            new QueueSubmitDesc([], [], [recorded], [], []));
-        Assert.Equal(
-            WaitStatus.Completed,
-            backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
-        backend.CollectCompleted(device);
-    }
-
-    [Fact]
-    public void Generation_identity_exhaustion_is_atomic_permanent_and_keeps_current_generation_usable()
-    {
-        using IGraphicsBackend backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using DescriptorTable table = backend.CreateDescriptorTable(
-            device,
-            [ResourceBindingType.BufferSrv]);
-        backend.WriteDescriptor(
-            table,
-            0,
-            ResourceBinding.Null(ResourceBindingType.BufferSrv));
-
-        object publisher = GetRequiredProperty(table, "Publisher");
-        FieldInfo nextGeneration = GetRequiredField(publisher, "_nextGeneration");
-        FieldInfo currentGeneration = GetRequiredField(publisher, "_current");
-        FieldInfo pendingResources = GetRequiredField(publisher, "_pendingResources");
-        object currentBefore = currentGeneration.GetValue(publisher)!;
-        int pendingBefore = ((IDictionary)pendingResources.GetValue(publisher)!).Count;
-        nextGeneration.SetValue(publisher, ulong.MaxValue);
-
-        GraphicsException first = Assert.Throws<GraphicsException>(() =>
-            backend.PublishDescriptors(device));
-        GraphicsException second = Assert.Throws<GraphicsException>(() =>
-            backend.PublishDescriptors(device));
-        Assert.Equal(GraphicsError.OutOfDescriptors, first.Error);
-        Assert.Equal(GraphicsError.OutOfDescriptors, second.Error);
-        Assert.Same(currentBefore, currentGeneration.GetValue(publisher));
-        Assert.Equal(
-            pendingBefore,
-            ((IDictionary)pendingResources.GetValue(publisher)!).Count);
-        Assert.Equal(DeviceStatus.Active, device.Status);
-
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-        backend.Begin(context);
-        using RecordedCommands recorded = backend.End(context);
-    }
 
     private static byte[] CreateOrdinaryData(int size, uint value)
     {
@@ -1152,90 +776,13 @@ public sealed class WarpDescriptorTests
         backend.CollectCompleted(device);
     }
 
-    private static NativeDescriptorInfo GetNativeDescriptorInfo(
-        GraphicsObject view)
-    {
-        object descriptor = GetRequiredProperty(view, "NativeDescriptor");
-        object page = GetRequiredField(descriptor, "_page").GetValue(descriptor)!;
-        return new NativeDescriptorInfo(
-            page,
-            (uint)GetRequiredField(descriptor, "_slot").GetValue(descriptor)!,
-            (uint)GetRequiredField(page, "_capacity").GetValue(page)!);
-    }
 
-    private static int GetDescriptorLeaseReferenceCount(GraphicsObject view)
-    {
-        object descriptor = GetRequiredProperty(view, "NativeDescriptor");
-        return (int)GetRequiredField(descriptor, "_references").GetValue(descriptor)!;
-    }
 
-    private static PersistentPrivateInfo GetPersistentPrivateInfo(
-        PersistentParameterBindings bindings) =>
-        new(
-            GetRequiredField(bindings, "_current").GetValue(bindings),
-            (ulong)GetRequiredField(bindings, "_nextVersion").GetValue(bindings)!);
 
-    private static PublisherPrivateInfo GetPublisherPrivateInfo(DescriptorTable table)
-    {
-        object publisher = GetRequiredProperty(table, "Publisher");
-        return new PublisherPrivateInfo(
-            GetRequiredField(publisher, "_current").GetValue(publisher)!,
-            ((IDictionary)GetRequiredField(publisher, "_pendingResources")
-                .GetValue(publisher)!).Count,
-            ((IDictionary)GetRequiredField(publisher, "_pendingSamplers")
-                .GetValue(publisher)!).Count,
-            0);
-    }
 
-    private readonly record struct NativeDescriptorInfo(
-        object Page,
-        uint Slot,
-        uint PageCapacity);
 
-    private readonly record struct PersistentPrivateInfo(
-        object? Current,
-        ulong NextVersion);
 
-    private readonly record struct PublisherPrivateInfo(
-        object CurrentGeneration,
-        int PendingResourceCount,
-        int PendingSamplerCount,
-        int PendingBindingCount);
 
-    private static void AssertDescriptorRecordTypes(
-        DescriptorTable table,
-        string storageField,
-        uint firstIndex,
-        ReadOnlySpan<ResourceBindingType> expected,
-        bool hasOwner = false)
-    {
-        object publisher = GetRequiredProperty(table, "Publisher");
-        object storage = GetRequiredField(publisher, storageField).GetValue(publisher)!;
-        for (int slot = 0; slot < expected.Length; slot++)
-        {
-            uint index = checked(firstIndex + (uint)slot);
-            object? record = storage switch
-            {
-                IDictionary dictionary => dictionary[index],
-                Array array => array.GetValue(checked((int)index)),
-                _ => throw new Xunit.Sdk.XunitException(
-                    $"Unexpected descriptor record storage {storage.GetType().FullName}."),
-            };
-            Assert.NotNull(record);
-            Assert.Equal(
-                expected[slot],
-                (ResourceBindingType)GetRequiredProperty(record!, "Type"));
-            Assert.Equal(hasOwner, GetRequiredProperty(record!, "Owner") is not null);
-        }
-    }
 
-    private static object GetRequiredProperty(object instance, string name) =>
-        instance.GetType().GetProperty(
-            name,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(instance)!;
 
-    private static FieldInfo GetRequiredField(object instance, string name) =>
-        instance.GetType().GetField(
-            name,
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
 }

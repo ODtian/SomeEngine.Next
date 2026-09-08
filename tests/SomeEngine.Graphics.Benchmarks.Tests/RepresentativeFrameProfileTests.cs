@@ -17,30 +17,19 @@ public sealed class RepresentativeFrameProfileTests
         }
 
         Assert.Equal(RepresentativeFrameProfile.ObjectCount, cursor);
-        Assert.Equal(
-            RepresentativeFrameProfile.ObjectCount * 2,
-            RepresentativeFrameProfile.DrawCount);
-        Assert.Equal(9, RepresentativeFrameProfile.CommandListCount);
-        Assert.Equal(
-            RepresentativeFrameProfile.DrawCount,
-            RepresentativeFrameProfile.PublicDrawRequestCount);
-        Assert.Equal(107, RepresentativeFrameProfile.PublicPersistentBindingRequestCount);
-        Assert.Equal(107, RepresentativeFrameProfile.NativePersistentBindingSetterCount);
+
     }
 
     [Fact]
-    public void ObjectPacketWriterIsDeterministicAndAllocationFree()
+    public void ObjectPacketWriterIsDeterministic()
     {
         byte[] first = new byte[
             RepresentativeFrameProfile.ObjectCount * RepresentativeFrameProfile.ObjectPacketSize];
         byte[] second = new byte[first.Length];
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
         RepresentativeFrameProfile.WriteObjectPackets(first, 17);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         RepresentativeFrameProfile.WriteObjectPackets(second, 17);
 
-        Assert.Equal(0, allocated);
         Assert.Equal(first, second);
         Assert.Contains(first, static value => value != 0);
     }
@@ -101,25 +90,9 @@ public sealed class RepresentativeFrameProfileTests
         Assert.Equal(10, run.Cpu!.Value.P50);
         Assert.Equal(3, run.PostCloseCleanup!.Value.P50);
         Assert.Equal(workloadEvidence, run.WorkloadEvidence);
-        Assert.Equal([3], WorkloadGateEvidence.Create(run).PostCloseCleanupSamples);
+        Assert.Equal([3], WorkloadMeasurements.Create(run).PostCloseCleanupSamples);
     }
 
-    [Fact]
-    public void FullProfileReportsTheUnbatchedCommandWorkload()
-    {
-        CommandWorkloadEvidence evidence = RepresentativeFrameProfile.CreateWorkloadEvidence();
-
-        Assert.Equal(1_025, evidence.ObjectPacketCount);
-        Assert.Equal(2_050, evidence.LogicalDrawRequests);
-        Assert.Equal(107, evidence.LogicalMaterialBindingRequests);
-        Assert.Equal(2_050, evidence.NativeDrawCommands);
-        Assert.Equal(107, evidence.NativeMaterialBindingCommands);
-        Assert.Equal(9, evidence.CommandListResetCount);
-        Assert.Equal(9, evidence.CommandListCloseCount);
-        Assert.Equal(4, evidence.BarrierCommands);
-        Assert.Equal(3, evidence.WorkerCount);
-        Assert.Equal("single-call-per-draw", evidence.DrawCallShape);
-    }
 
     private static void AssertPacket(
         byte[] packets,

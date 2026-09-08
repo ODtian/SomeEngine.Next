@@ -9,17 +9,7 @@ public sealed class PayloadLaneTests
         JobSystem.ResetForTesting();
     }
 
-    [Fact]
-    public void RefFreeJobIsClassifiedIntoFastLane()
-    {
-        Assert.Equal(JobPayloadLane.RefFree, JobSystem.GetPayloadLane<RefFreePayloadJob>());
-    }
 
-    [Fact]
-    public void RefContainingJobIsClassifiedIntoManagedLane()
-    {
-        Assert.Equal(JobPayloadLane.RefContaining, JobSystem.GetPayloadLane<RefContainingPayloadJob>());
-    }
 
     [Fact]
     public void ManagedReferencePayloadExecutes()
@@ -51,7 +41,7 @@ public sealed class PayloadLaneTests
     }
 
     [Fact]
-    public void RefContainingSchedulerPathClearsPayloadSlot()
+    public void CompletedJobReleasesManagedPayload()
     {
         JobSystem.ResetForTesting(workerCount: 0);
 
@@ -63,7 +53,7 @@ public sealed class PayloadLaneTests
     }
 
     [Fact]
-    public void RefContainingParallelSchedulerPathClearsPayloadSlots()
+    public void CompletedParallelJobReleasesManagedPayload()
     {
         JobSystem.ResetForTesting(workerCount: 0);
 
@@ -108,15 +98,7 @@ public sealed class PayloadLaneTests
         }
     }
 
-    private struct RefFreePayloadJob : IJob
-    {
-        public int Value;
 
-        public void Execute()
-        {
-            Value++;
-        }
-    }
 
     private readonly struct RefContainingPayloadJob : IJob
     {

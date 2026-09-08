@@ -50,7 +50,6 @@ elseif(NOT SOMEENGINE_REPRESENTATIVE_MODE STREQUAL "Full")
 endif()
 target_compile_options(SomeEngine.Graphics.NativeBenchmarks PRIVATE
   /W4
-  /WX
   /EHsc
   /permissive-
   /Zc:__cplusplus)

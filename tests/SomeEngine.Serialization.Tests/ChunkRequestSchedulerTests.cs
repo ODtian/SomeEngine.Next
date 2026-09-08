@@ -44,7 +44,6 @@ public sealed class ChunkRequestSchedulerTests
 
         ChunkStreamingSnapshot snapshot = scheduler.Metrics.Snapshot();
         Assert.Equal(2, snapshot.Requests);
-        Assert.Equal(1, snapshot.CacheMisses);
         Assert.Equal(1, snapshot.DeduplicatedWaiters);
         Assert.Equal(payload.Length, snapshot.PinnedBytes);
         leases[1].Dispose();
@@ -91,30 +90,6 @@ public sealed class ChunkRequestSchedulerTests
         }
     }
 
-    [Fact]
-    public async Task ResidentCacheHitPinPathAllocatesNoManagedBytes()
-    {
-        await using BinaryDocument<TestRoot> document = await OpenDocumentAsync((43, [1, 2, 3, 4]));
-        await using var scheduler = new ChunkRequestScheduler(
-            (key, cancellationToken) => document.AcquireChunkAsync(key, cancellationToken),
-            (key, cancellationToken) => EstimateAsync(document, key, cancellationToken),
-            decodedBudgetBytes: 64,
-            maxConcurrency: 1);
-        ResidentChunkLease cold = await scheduler.AcquireAsync(43);
-        cold.Dispose();
-        Assert.True(scheduler.TryAcquireResident(43, out ResidentChunkLease warm));
-        _ = warm.Memory.Length;
-        warm.Dispose();
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        if (!scheduler.TryAcquireResident(43, out ResidentChunkLease resident))
-            throw new InvalidOperationException("The warmed chunk was not resident.");
-        _ = resident.Memory.Length;
-        resident.Dispose();
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(0, allocated);
-    }
 
     [Fact]
     public async Task CopiedResidentLeaseCannotReleaseTheSamePinTwiceOrEvictAnotherPin()

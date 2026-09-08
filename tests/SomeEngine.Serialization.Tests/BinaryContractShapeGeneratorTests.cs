@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SomeEngine.Generators;
@@ -56,12 +55,7 @@ public sealed class BinaryContractShapeGeneratorTests
         Diagnostic[] diagnostics = result.Diagnostics.Where(static item => item.Id == "SEBC003").ToArray();
 
         Assert.Equal(6, diagnostics.Length);
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("object requires runtime polymorphism", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("dynamic requires runtime polymorphism", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("delegates", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("Task", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("explicit closed [BinaryUnion]", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, item => item.GetMessage().Contains("process-local", StringComparison.Ordinal));
+        Assert.All(diagnostics, diagnostic => Assert.True(diagnostic.Location.IsInSource));
     }
 
     [Fact]
@@ -80,8 +74,8 @@ public sealed class BinaryContractShapeGeneratorTests
 
         GeneratorRun result = RunGenerator(source);
         Diagnostic diagnostic = Assert.Single(result.Diagnostics, static item => item.Id == "SEBC003");
+        Assert.True(diagnostic.Location.IsInSource);
 
-        Assert.Contains("canonical total ordering", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -106,8 +100,8 @@ public sealed class BinaryContractShapeGeneratorTests
 
         GeneratorRun result = RunGenerator(source);
         Diagnostic diagnostic = Assert.Single(result.Diagnostics, static item => item.Id == "SEBC003");
+        Assert.True(diagnostic.Location.IsInSource);
 
-        Assert.Contains("sealed, concrete", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,8 +126,13 @@ public sealed class BinaryContractShapeGeneratorTests
         GeneratorRun result = RunGenerator(source);
 
         Assert.DoesNotContain(result.Diagnostics, static item => item.Severity == DiagnosticSeverity.Error);
-        Assert.Contains(result.Sources, static item => item.HintName.EndsWith("RecordClass.BinaryContract.g.cs", StringComparison.Ordinal));
-        Assert.Contains(result.Sources, static item => item.HintName.EndsWith("RecordStruct.BinaryContract.g.cs", StringComparison.Ordinal));
+        Assert.True((bool)Execute(result, """
+            byte[] bytes = new byte[256];
+            if (!BinaryContractSerializer.TryWrite(bytes, new RecordClass { Name = "record" }, out int count)) return false;
+            if (BinaryContractSerializer.Deserialize<RecordClass>(bytes.AsSpan(0, count)).Name != "record") return false;
+            if (!BinaryContractSerializer.TryWrite(bytes, new RecordStruct { Value = 73 }, out count)) return false;
+            return BinaryContractSerializer.Deserialize<RecordStruct>(bytes.AsSpan(0, count)).Value == 73;
+            """)!);
     }
 
     [Fact]
@@ -156,8 +155,8 @@ public sealed class BinaryContractShapeGeneratorTests
 
         GeneratorRun result = RunGenerator(source);
         Diagnostic diagnostic = Assert.Single(result.Diagnostics, static item => item.Id == "SEBC001");
+        Assert.True(diagnostic.Location.IsInSource);
 
-        Assert.Contains("inherited storage cannot be silently omitted", diagnostic.GetMessage(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -177,13 +176,12 @@ public sealed class BinaryContractShapeGeneratorTests
 
         Assert.DoesNotContain(result.Diagnostics, static item => item.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(result.Diagnostics, static item => item.Id == "CS0108");
-        string generated = Assert.Single(
-            result.Sources,
-            static item => item.HintName.EndsWith("TypeMemberContract.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        Assert.Contains("GetTypeValue()", generated, StringComparison.Ordinal);
-        Assert.DoesNotContain(" GetType()", generated, StringComparison.Ordinal);
+        Assert.Equal(17, (int)Execute(result, """
+            byte[] bytes = new byte[256];
+            if (!BinaryContractSerializer.TryWrite(bytes, new TypeMemberContract { Type = 17 }, out int count)) throw new Exception();
+            var view = new TypeMemberContract.SpanView(bytes.AsSpan(0, count));
+            return view.GetTypeValue();
+            """)!);
     }
 
     private static ulong GenerateFingerprint(string memberType)
@@ -212,14 +210,20 @@ public sealed class BinaryContractShapeGeneratorTests
             """;
         GeneratorRun result = RunGenerator(source);
         Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = Assert.Single(
-            result.Sources,
-            static item => item.HintName.EndsWith("Holder.BinaryContract.g.cs", StringComparison.Ordinal))
-            .SourceText
-            .ToString();
-        Match match = Regex.Match(generated, @"SchemaFingerprint => 0x(?<value>[0-9A-F]{16})UL", RegexOptions.CultureInvariant);
-        Assert.True(match.Success, generated);
-        return Convert.ToUInt64(match.Groups["value"].Value, 16);
+        return (ulong)Execute(result, "return Holder.SchemaFingerprint;")!;
+    }
+
+    private static object? Execute(GeneratorRun result, string body)
+    {
+        Assert.DoesNotContain(result.Diagnostics, item => item.Severity == DiagnosticSeverity.Error);
+        string consumer = "using System; using SomeEngine.Serialization; public static class Consumer { public static object Execute() { " + body + " } }";
+        Compilation compilation = result.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
+            consumer, new CSharpParseOptions(LanguageVersion.Preview)));
+        using var stream = new MemoryStream();
+        var emitted = compilation.Emit(stream);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        var assembly = System.Reflection.Assembly.Load(stream.ToArray());
+        return assembly.GetType("Consumer")!.GetMethod("Execute")!.Invoke(null, null);
     }
 
     private static GeneratorRun RunGenerator(string source, bool allowUnsafe = false)
@@ -227,7 +231,7 @@ public sealed class BinaryContractShapeGeneratorTests
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
         SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "ContractShapeInput.cs");
         var compilation = CSharpCompilation.Create(
-            assemblyName: "BinaryContractShapeGeneratorTests",
+            assemblyName: "BinaryContractShapeGeneratorTests_" + Guid.NewGuid().ToString("N"),
             syntaxTrees: [syntaxTree],
             references: GetReferences(),
             options: new CSharpCompilationOptions(
@@ -249,10 +253,7 @@ public sealed class BinaryContractShapeGeneratorTests
             .GroupBy(static diagnostic => diagnostic.ToString(), StringComparer.Ordinal)
             .Select(static group => group.First())
             .ToArray();
-        GeneratedSourceResult[] sources = runResult.Results
-            .SelectMany(static result => result.GeneratedSources)
-            .ToArray();
-        return new GeneratorRun(diagnostics, sources);
+        return new GeneratorRun(diagnostics, outputCompilation);
     }
 
     private static MetadataReference[] GetReferences()
@@ -267,5 +268,5 @@ public sealed class BinaryContractShapeGeneratorTests
 
     private sealed record GeneratorRun(
         Diagnostic[] Diagnostics,
-        GeneratedSourceResult[] Sources);
+        Compilation Compilation);
 }

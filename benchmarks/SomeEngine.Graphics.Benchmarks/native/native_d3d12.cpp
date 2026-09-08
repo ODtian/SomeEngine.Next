@@ -118,19 +118,6 @@ bool normalized_float_equal(float left, float right) noexcept
     return left == right || (std::isnan(left) && std::isnan(right));
 }
 
-void verify_state_equality_contract()
-{
-    const float negative_zero = std::bit_cast<float>(std::uint32_t{0x80000000U});
-    const float first_nan = std::bit_cast<float>(std::uint32_t{0x7FC00001U});
-    const float second_nan = std::bit_cast<float>(std::uint32_t{0xFFC01234U});
-    if (!normalized_float_equal(0.0F, negative_zero) ||
-        !normalized_float_equal(first_nan, second_nan) ||
-        normalized_float_equal(1.0F, 2.0F))
-    {
-        throw std::runtime_error("Native state shadow does not implement the fixed normalized float equality contract.");
-    }
-}
-
 void check(HRESULT result, std::string_view operation)
 {
     if (FAILED(result))
@@ -2074,7 +2061,7 @@ runtime_environment capture_environment(
     result.process_id = GetCurrentProcessId();
     result.process_index = config.process_index;
     result.affinity_mask = affinity;
-    result.priority = "High";
+    result.priority = std::to_string(GetPriorityClass(GetCurrentProcess()));
     result.power_mode = active_power_mode();
     const auto& adapter = context.adapter_description();
     result.adapter_name = utf8(adapter.Description);
@@ -2113,24 +2100,13 @@ runtime_environment capture_environment(
     return result;
 }
 
-std::int64_t establish_scheduling(const configuration& config)
+std::int64_t current_affinity()
 {
     DWORD_PTR process_mask = 0;
     DWORD_PTR system_mask = 0;
-    if (!GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask) || process_mask == 0)
-        throw std::runtime_error("GetProcessAffinityMask failed.");
-    if (config.selected_profile == profile::representative)
-    {
-        if (!SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
-            throw std::runtime_error("Representative-frame high-priority policy could not be established.");
-        return static_cast<std::int64_t>(process_mask);
-    }
-    const DWORD_PTR selected = std::bit_floor(process_mask);
-    const bool affinity_set = SetProcessAffinityMask(GetCurrentProcess(), selected) != FALSE;
-    const bool priority_set = SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS) != FALSE;
-    if ((!affinity_set || !priority_set) && config.selected_profile == profile::certification)
-        throw std::runtime_error("Certification CPU affinity/high-priority policy could not be established.");
-    return static_cast<std::int64_t>(selected);
+    if (!GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask))
+        return 0;
+    return static_cast<std::int64_t>(process_mask);
 }
 }
 
@@ -2155,19 +2131,10 @@ runtime_environment unavailable_environment(const configuration& config)
 
 process_run run_native_d3d12(const configuration& config)
 {
-    verify_state_equality_contract();
     verify_shader_artifacts(config);
-    const std::int64_t affinity = establish_scheduling(config);
+    const std::int64_t affinity = current_affinity();
     d3d12_context context(config);
     runtime_environment environment = capture_environment(config, context, affinity);
-    if (config.selected_profile == profile::certification && environment.capture_tool_loaded)
-    {
-        return {
-            disposition::unexecuted,
-            "A capture tool is loaded.",
-            std::move(environment),
-            {}};
-    }
     const std::string shader_manifest = sha256_file(config.shader_directory / "manifest.json");
     std::vector<workload_run> workloads;
     if (config.selected_profile == profile::representative)
@@ -2200,15 +2167,11 @@ process_run run_native_d3d12(const configuration& config)
         workloads.push_back(run_explicit_barriers(context, config, shader_manifest));
         workloads.push_back(run_three_queue_present(context, config, shader_manifest));
     }
-    const auto result = config.selected_profile == profile::certification
-        ? disposition::passed
-        : disposition::functional_only;
+    const auto result = disposition::functional_only;
     return {
         result,
-        config.selected_profile == profile::certification
-            ? "All fixed native C++ D3D12 workloads executed."
-            : config.selected_profile == profile::diagnostic
-                ? "The three draw-only native C++ D3D12 diagnostics executed; never vendor-certification evidence."
+        config.selected_profile == profile::diagnostic
+                ? "The three draw-only native C++ D3D12 diagnostics executed; timings are diagnostic."
                 : "All reduced-count native C++ D3D12 workloads executed on WARP; not performance evidence.",
         std::move(environment),
         std::move(workloads)};

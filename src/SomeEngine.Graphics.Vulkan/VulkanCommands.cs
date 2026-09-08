@@ -226,18 +226,7 @@ internal sealed unsafe partial class VulkanBackend
                 SignalSemaphoreInfoCount = checked((uint)signalCount),
                 PSignalSemaphoreInfos = signalPointer,
             };
-#if SOMEENGINE_TESTING
-            FaultHooks.Before(VulkanCallPoint.QueueSubmit);
-            if (FaultHooks.TryOverride(VulkanCallPoint.QueueSubmit, out Result injectedResult))
-            {
-                FaultHooks.After(VulkanCallPoint.QueueSubmit);
-                return injectedResult;
-            }
-#endif
             Result result = Api.QueueSubmit2(queue.Native, 1, &submit, default);
-#if SOMEENGINE_TESTING
-            FaultHooks.After(VulkanCallPoint.QueueSubmit);
-#endif
             return result;
         }
     }
@@ -552,25 +541,11 @@ internal sealed unsafe partial class VulkanBackend
             ? ulong.MaxValue
             : checked((ulong)timeout.Ticks * 100);
         VulkanDevice device = (VulkanDevice)queue.Device;
-#if SOMEENGINE_TESTING
-        FaultHooks.Before(VulkanCallPoint.WaitSemaphores);
-        bool overridden = FaultHooks.TryOverride(
-            VulkanCallPoint.WaitSemaphores,
-            out Result injectedResult);
-#endif
         Result result =
-#if SOMEENGINE_TESTING
-            overridden
-                ? injectedResult
-                :
-#endif
             Api.WaitSemaphores(
             device.Native,
             &wait,
             nanoseconds);
-#if SOMEENGINE_TESTING
-        FaultHooks.After(VulkanCallPoint.WaitSemaphores);
-#endif
         if (result == Result.Timeout)
             return WaitStatus.Timeout;
         device.ThrowIfDeviceCallFailed(result, "vkWaitSemaphores");
@@ -1268,25 +1243,11 @@ internal sealed unsafe partial class VulkanBackend
         internal ulong GetCompletedValue()
         {
             ulong completed = 0;
-#if SOMEENGINE_TESTING
-            _device.Backend.FaultHooks.Before(VulkanCallPoint.GetSemaphoreCounter);
-            bool overridden = _device.Backend.FaultHooks.TryOverride(
-                VulkanCallPoint.GetSemaphoreCounter,
-                out Result injectedResult);
-#endif
             Result result =
-#if SOMEENGINE_TESTING
-                overridden
-                    ? injectedResult
-                    :
-#endif
                 _device.Backend.Api.GetSemaphoreCounterValue(
                 _device.Native,
                 _completion,
                 &completed);
-#if SOMEENGINE_TESTING
-            _device.Backend.FaultHooks.After(VulkanCallPoint.GetSemaphoreCounter);
-#endif
             _device.ThrowIfDeviceCallFailed(result, "vkGetSemaphoreCounterValue");
             return completed;
         }

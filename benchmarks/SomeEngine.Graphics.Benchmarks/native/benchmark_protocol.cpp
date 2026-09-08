@@ -20,7 +20,7 @@ namespace
 [[noreturn]] void usage(const std::string& message)
 {
     throw std::invalid_argument(message +
-        " Usage: native-runner --profile <warp|diagnose|certify|representative> --variant native-cpp "
+        " Usage: native-runner --profile <warp|diagnose|representative> --variant native-cpp "
         "--adapter <low>:<high> --process-index <n> --warmup <n> --samples <n> "
         "--draws <n> --barriers <n> --shader-dir <path> --output <path>");
 }
@@ -62,7 +62,6 @@ const char* disposition_name(disposition value)
 {
     switch (value)
     {
-    case disposition::passed: return "passed";
     case disposition::failed: return "failed";
     case disposition::functional_only: return "functionalOnly";
     case disposition::unexecuted: return "unexecuted";
@@ -191,12 +190,10 @@ configuration parse_arguments(int argc, wchar_t** argv)
         result.selected_profile = profile::warp;
     else if (profile_value == L"diagnose")
         result.selected_profile = profile::diagnostic;
-    else if (profile_value == L"certify")
-        result.selected_profile = profile::certification;
     else if (profile_value == L"representative")
         result.selected_profile = profile::representative;
     else
-        usage("--profile must be warp, diagnose, certify, or representative.");
+        usage("--profile must be warp, diagnose, or representative.");
     if (require(L"--variant") != L"native-cpp")
         usage("This executable only implements --variant native-cpp.");
     const std::wstring adapter = require(L"--adapter");
@@ -374,19 +371,14 @@ workload_run complete_workload(
 {
     workload_run result;
     result.workload = kind;
-    result.result = config.selected_profile == profile::certification
-        ? disposition::passed
-        : disposition::functional_only;
+    result.result = disposition::functional_only;
     switch (config.selected_profile)
     {
     case profile::warp:
         result.reason = "Reduced-count WARP functional workload executed; not performance evidence.";
         break;
     case profile::diagnostic:
-        result.reason = "Fast hardware diagnostic workload executed; never vendor-certification evidence.";
-        break;
-    case profile::certification:
-        result.reason = "Fixed vendor workload executed.";
+        result.reason = "Fast hardware diagnostic workload executed; timings are diagnostic.";
         break;
     case profile::representative:
         result.reason = "Public-source representative CPU frame workload executed without Queue submission.";

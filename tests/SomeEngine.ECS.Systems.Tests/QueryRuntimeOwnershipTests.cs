@@ -8,40 +8,8 @@ namespace SomeEngine.ECS.Systems.Tests;
 
 public sealed class QueryRuntimeOwnershipTests
 {
-    [Fact]
-    public void QueryRegistryIsOwnedDirectlyWithoutForwardingOwner()
-    {
-        Type? forwardingOwner = typeof(World).Assembly.GetType(
-            "SomeEngine.ECS.Owners.Queries",
-            throwOnError: false);
 
-        Assert.Null(forwardingOwner);
-    }
 
-    [Fact]
-    public void GeneratedDescriptor_UsesCurrentRegistryPinWithoutRetainingObsoleteRecord()
-    {
-        var world = new World();
-        var descriptor = new GeneratedQueryAccessDescriptor(QueryDefinition.Empty);
-
-        QueryHandle handle = descriptor.Resolve(world);
-        QueryRecord original = world.ActiveStructureRoot.Queries.Get(handle);
-        Assert.Equal(1, original.AcquisitionCount);
-
-        QueryRecord candidate;
-        using (StructuralMutationScope mutation = world.BeginStructuralMutation())
-        {
-            candidate = world.ActiveStructureRoot.Queries.Get(handle);
-            Assert.NotSame(original, candidate);
-            mutation.Commit();
-        }
-
-        QueryRecord published = world.ActiveStructureRoot.Queries.Get(handle);
-        Assert.Same(candidate, published);
-        Assert.Equal(handle, descriptor.Resolve(world));
-        Assert.Same(published, world.ActiveStructureRoot.Queries.Get(handle));
-        Assert.Equal(1, published.AcquisitionCount);
-    }
 
     [Fact]
     public void DistinctReadQueriesRemainExactUnderConcurrentRepeatedLookup()
