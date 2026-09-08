@@ -188,9 +188,10 @@ public sealed class RenderFrameCoordinator : IDisposable
                     "Tracked render submissions can only be drained without an open read or prepare scope.");
             }
 
-            _readerFences = [];
         }
         _renderDevice.WaitForTrackedSubmissions(Remaining(started));
+        lock (_gate)
+            ReleaseCompletedReadersLocked();
     }
 
     internal void RegisterFrameTimelines(ReadOnlySpan<RenderTimeline> timelines)
@@ -449,7 +450,7 @@ public sealed class RenderFrameCoordinator : IDisposable
 
     private bool ReleaseCompletedReadersLocked()
     {
-        QueueCompletion[] pending = new QueueCompletion[3];
+        QueueCompletion[] pending = new QueueCompletion[_readerFences.Length];
         int pendingCount = 0;
         foreach (QueueCompletion fence in _readerFences)
         {

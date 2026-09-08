@@ -8,8 +8,7 @@ namespace SomeEngine.Render.Frame;
 /// </summary>
 internal sealed class RenderTimeline
 {
-    private readonly QueueCompletion[] _generationFences;
-    private readonly int[] _generationFenceCounts;
+    private readonly QueueCompletion[][] _generationFences;
     private readonly RenderDevice _renderDevice;
 
     internal RenderTimeline(
@@ -23,8 +22,9 @@ internal sealed class RenderTimeline
         Owner = owner;
         _renderDevice = renderDevice;
         Device = renderDevice.Device;
-        _generationFences = new QueueCompletion[checked(generationCount * 3)];
-        _generationFenceCounts = new int[generationCount];
+        _generationFences = new QueueCompletion[generationCount][];
+        for (int generation = 0; generation < generationCount; generation++)
+            _generationFences[generation] = [];
     }
 
     /// <summary>The graphics device owner to which this timeline is permanently bound.</summary>
@@ -32,7 +32,7 @@ internal sealed class RenderTimeline
 
     internal RenderFrameCoordinator Owner { get; }
 
-    internal int GenerationCount => _generationFenceCounts.Length;
+    internal int GenerationCount => _generationFences.Length;
 
     internal ulong LastSubmissionSequence { get; set; }
 
@@ -45,14 +45,8 @@ internal sealed class RenderTimeline
         ReadOnlySpan<QueueCompletion> fences)
     {
         ValidateGeneration(generation);
-        QueueCompletion[] merged = RenderQueueCompletions.Merge(
-            GetGenerationFences(generation),
-            fences);
-        Span<QueueCompletion> destination =
-            _generationFences.AsSpan(checked(generation * 3), 3);
-        destination.Clear();
-        merged.CopyTo(destination);
-        _generationFenceCounts[generation] = merged.Length;
+        _generationFences[generation] = RenderQueueCompletions.Merge(
+            _generationFences[generation], fences);
     }
 
     internal bool IsGenerationAvailable(int generation)
@@ -72,16 +66,12 @@ internal sealed class RenderTimeline
     internal QueueCompletion[] GetGenerationFences(int generation)
     {
         ValidateGeneration(generation);
-        return _generationFences
-            .AsSpan(
-                checked(generation * 3),
-                _generationFenceCounts[generation])
-            .ToArray();
+        return _generationFences[generation].ToArray();
     }
 
     private void ValidateGeneration(int generation)
     {
-        if ((uint)generation >= (uint)_generationFenceCounts.Length)
+        if ((uint)generation >= (uint)_generationFences.Length)
             throw new ArgumentOutOfRangeException(nameof(generation));
     }
 }

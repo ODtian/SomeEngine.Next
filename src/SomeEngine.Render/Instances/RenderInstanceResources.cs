@@ -181,6 +181,8 @@ internal sealed class RenderInstanceResources : IDisposable
     private readonly UploadBuffer[] _batchMetadata;
     private readonly int _batchMetadataStrideBytes;
     private readonly PropertyStorage[] _properties;
+    private readonly record struct BufferBytes(Buffer Resource, BufferRange Range, byte[] Data);
+    private readonly Dictionary<int, BufferBytes[]> _batchOriginalBytes = [];
     private readonly object?[] _batchAllocations;
     private readonly bool[] _batchReady;
     private readonly PackedRange[] _batchRows;
@@ -406,7 +408,7 @@ internal sealed class RenderInstanceResources : IDisposable
             generation,
             metadata.ContentRevision)
         {
-            PropertyDataEndpoints = RequirePropertyData(generation).CaptureEndpoints(),
+            PropertyDataEndpoints = _propertyData[generation]?.CaptureEndpoints() ?? [],
             MetadataEndpoints = _batchMetadata[generation].CaptureEndpoints(),
         };
     }
@@ -417,7 +419,7 @@ internal sealed class RenderInstanceResources : IDisposable
             throw new ArgumentOutOfRangeException(nameof(generation));
         if (completion.Queue.Type != QueueType.Graphics)
             throw new ArgumentException("Render-instance endpoints require a Graphics Queue completion.", nameof(completion));
-        RequirePropertyData(generation).CommitEndpoint(
+        _propertyData[generation]?.CommitEndpoint(
             PipelineSync.AllShading,
             ResourceAccess.ShaderResource,
             completion);
@@ -767,38 +769,69 @@ internal sealed class RenderInstanceResources : IDisposable
         ArgumentNullException.ThrowIfNull(properties);
         ValidateBatchOwner(batch, nameof(batch));
         ValidateBatch(batch.Slot, batch.Allocation);
+        ValidateBatchReady(batch.Slot);
         foreach (RenderInstancePropertyDescriptor property in properties.Properties)
             _ = batch.Contract.RequireCompatible(property, nameof(properties));
         int writeGeneration = RequireWritableGeneration();
         int publishedGeneration = _batchGenerations[batch.Slot];
         if (writeGeneration != publishedGeneration)
-        {
-            CopyBatchState(
-                batch.Slot,
-                _batchRows[batch.Slot],
-                publishedGeneration,
-                writeGeneration);
-        }
+            CopyBatchState(batch.Slot, _batchRows[batch.Slot], publishedGeneration, writeGeneration);
+        else
+            _batchOriginalBytes.Add(batch.Slot, CaptureBatchBytes(batch.Slot, properties, writeGeneration));
         _batchReady[batch.Slot] = false;
-        return new BatchLease(
-            batch.Slot,
-            batch.Allocation,
-            batch.Contract,
-            _batchRows[batch.Slot]);
+        return new BatchLease(batch.Slot, batch.Allocation, batch.Contract, _batchRows[batch.Slot]);
     }
 
     internal ulong CompleteBatchUpdate(int batchSlot, object allocation)
     {
         ValidateBatch(batchSlot, allocation);
-        _batchGenerations[batchSlot] = RequireWriteGeneration();
+        int generation = RequireWriteGeneration();
+        ulong revision = NextContentRevision();
+        _batchGenerations[batchSlot] = generation;
         _batchReady[batchSlot] = true;
-        return NextContentRevision();
+        _batchOriginalBytes.Remove(batchSlot);
+        return revision;
     }
 
     internal void CancelBatchUpdate(int batchSlot, object allocation)
     {
         ValidateBatch(batchSlot, allocation);
+        if (_batchOriginalBytes.TryGetValue(batchSlot, out BufferBytes[]? original))
+        {
+            foreach (BufferBytes value in original)
+            {
+                using MappedBuffer mapping = _backend.Map(value.Resource, MapType.Write, value.Range);
+                value.Data.CopyTo(mapping.Bytes);
+            }
+            _batchOriginalBytes.Remove(batchSlot);
+        }
         _batchReady[batchSlot] = true;
+    }
+
+    private BufferBytes[] CaptureBatchBytes(int batchIndex, RenderInstancePropertyLayout properties, int generation)
+    {
+        var bytes = new List<BufferBytes>();
+        Capture(_batchMetadata[generation].Handle, BatchMetadataRange(batchIndex));
+        if (_propertyData[generation] is { } data)
+        {
+            PackedRange rows = _batchRows[batchIndex];
+            foreach (PropertyStorage storage in _properties)
+            {
+                RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
+                if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
+                Capture(data.Handle, SharedElementRange(storage, batchIndex));
+                Capture(data.Handle, new BufferRange(
+                    checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
+                    checked((ulong)(rows.Count * encoding.StorageStride))));
+            }
+        }
+        return bytes.ToArray();
+
+        void Capture(Buffer resource, BufferRange range)
+        {
+            using MappedBuffer mapping = _backend.Map(resource, MapType.Read, range);
+            bytes.Add(new BufferBytes(resource, range, mapping.Bytes.ToArray()));
+        }
     }
 
     private ulong NextContentRevision()
@@ -1035,6 +1068,7 @@ internal sealed class RenderInstanceResources : IDisposable
     {
         ValidateBatch(batchSlot, allocation);
         PackedRange rows = _batchRows[batchSlot];
+        _batchOriginalBytes.Remove(batchSlot);
         _batchAllocations[batchSlot] = null;
         _batchReady[batchSlot] = false;
         _batchRows[batchSlot] = default;
@@ -1084,7 +1118,8 @@ internal sealed class RenderInstanceResources : IDisposable
     private void ResetRows(PackedRange rows)
     {
         int generation = RequireWriteGeneration();
-        UploadBuffer propertyData = RequirePropertyData(generation);
+        UploadBuffer? propertyData = _propertyData[generation];
+        if (propertyData is null) return;
         BufferRange fullRange = new(0, propertyData.Size);
         using MappedBuffer mapping = _backend.Map(
             propertyData.Handle,

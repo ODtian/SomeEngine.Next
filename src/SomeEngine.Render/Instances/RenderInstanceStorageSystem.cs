@@ -18,7 +18,6 @@ public sealed class RenderInstanceStorageSystem : IDisposable
     private readonly RenderWorld _world;
     private readonly Device _device;
     private readonly RenderInstanceResources _storage;
-    private readonly HashSet<RenderInstanceBatch> _batches = [];
     private readonly WorldClaims _claims;
     private readonly object _claim = new();
     private bool _disposed;
@@ -113,11 +112,7 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         ArgumentNullException.ThrowIfNull(exactLayout);
         RenderInstanceBatchComposition composition =
             write.BeginBatch(exactLayout, instanceCount);
-        return new RenderInstanceWriteHandle(
-            this,
-            write,
-            composition,
-            registerBatch: true);
+        return new RenderInstanceWriteHandle(write, composition);
     }
 
     /// <summary>
@@ -134,23 +129,10 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         RequireWriteScope(scope, write);
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(properties);
-        if (!_batches.Contains(batch))
-            throw new ArgumentException("The batch is not owned by this instance system.", nameof(batch));
 
         RenderInstanceBatchComposition composition =
             write.BeginBatchUpdate(batch, properties);
-        return new RenderInstanceWriteHandle(
-            this,
-            write,
-            composition,
-            registerBatch: false);
-    }
-
-    internal void RegisterBatch(RenderInstanceBatch batch)
-    {
-        ArgumentNullException.ThrowIfNull(batch);
-        if (!_batches.Add(batch))
-            throw new InvalidOperationException("The render-instance batch is already registered.");
+        return new RenderInstanceWriteHandle(write, composition);
     }
 
     /// <summary>Retires one live batch at an exclusive prepare boundary.</summary>
@@ -162,11 +144,7 @@ public sealed class RenderInstanceStorageSystem : IDisposable
         ArgumentNullException.ThrowIfNull(scope);
         RequireWriteScope(scope, write);
         ArgumentNullException.ThrowIfNull(batch);
-        if (!_batches.Contains(batch))
-            throw new ArgumentException("The batch is not owned by this instance system.", nameof(batch));
         write.ReleaseBatch(batch);
-        if (!_batches.Remove(batch))
-            throw new InvalidOperationException("Render-instance batch ownership was lost.");
     }
 
     internal RenderInstanceStorageView OpenRead(RenderFrame frame) => Storage.OpenRead(frame);
