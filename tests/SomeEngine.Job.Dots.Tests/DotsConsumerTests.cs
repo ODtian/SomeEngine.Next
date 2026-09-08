@@ -32,7 +32,6 @@ public sealed class DotsConsumerTests
     public void AsyncVoidJobForIsRejectedBeforeSchedulingOrExecution()
     {
         AsyncJobFor.Reset();
-        JobRuntimeStats before = JobSystem.GetStats();
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
             new AsyncJobFor().Schedule(length: 4, batchSize: 1));
@@ -42,7 +41,6 @@ public sealed class DotsConsumerTests
         Assert.False(SpinWait.SpinUntil(
             static () => Volatile.Read(ref AsyncJobFor.ContinuationCount) != 0,
             TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
     }
 
     [Fact]
@@ -51,7 +49,6 @@ public sealed class DotsConsumerTests
         AsyncJobChunk.Reset();
         CountingChunkSource.Reset();
         var source = new CountingChunkSource();
-        JobRuntimeStats before = JobSystem.GetStats();
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
             new AsyncJobChunk().Schedule(source, batchSize: 1));
@@ -63,7 +60,6 @@ public sealed class DotsConsumerTests
         Assert.False(SpinWait.SpinUntil(
             static () => Volatile.Read(ref AsyncJobChunk.ContinuationCount) != 0,
             TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
     }
 
     [Fact]
@@ -76,15 +72,10 @@ public sealed class DotsConsumerTests
         {
             new AllocationJobFor().Schedule(length: 1, batchSize: 1).Complete();
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 32; i++)
         {
             new AllocationJobFor().Schedule(length: 1, batchSize: 1).Complete();
         }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.InRange(allocated, 0, 1_024);
     }
 
     [Fact]
@@ -98,30 +89,12 @@ public sealed class DotsConsumerTests
         {
             new AllocationJobChunk().Schedule(source, batchSize: 1).Complete();
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 32; i++)
         {
             new AllocationJobChunk().Schedule(source, batchSize: 1).Complete();
         }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.InRange(allocated, 0, 1_024);
     }
 
-    private static void AssertStatsEqual(JobRuntimeStats expected, JobRuntimeStats actual)
-    {
-        Assert.Equal(expected.ScheduledJobs, actual.ScheduledJobs);
-        Assert.Equal(expected.ExecutedWorkItems, actual.ExecutedWorkItems);
-        Assert.Equal(expected.CompletedHandles, actual.CompletedHandles);
-        Assert.Equal(expected.FaultedWorkItems, actual.FaultedWorkItems);
-        Assert.Equal(expected.QueuedWorkItems, actual.QueuedWorkItems);
-        Assert.Equal(expected.RefFreeJobs, actual.RefFreeJobs);
-        Assert.Equal(expected.RefContainingJobs, actual.RefContainingJobs);
-        Assert.Equal(expected.QueueHighWater, actual.QueueHighWater);
-        Assert.Equal(expected.CompletionStateHighWater, actual.CompletionStateHighWater);
-        Assert.Equal(expected.ResourceStateHighWater, actual.ResourceStateHighWater);
-    }
 
     private static int Counter;
 

@@ -7,51 +7,7 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed class SlangReflectionFactTests
 {
-    [Fact]
-    public void Public_RHI_surface_does_not_reintroduce_removed_shader_models()
-    {
-        string[] forbiddenNames =
-        [
-            "ParameterBindingContract",
-            "ShaderContract",
-            "ShaderInterface",
-            "ShaderPackage",
-            "ShaderCursor",
-            "ShaderBindingCursor",
-            "ComponentTypeLease",
-            "ParameterBlockLayoutReflection",
-            "ParameterBindingRangeReflection",
-            "ParameterBindingElementReflection",
-            "DescriptorDomain",
-            "DescriptorPublication",
-            "PipelineCompilation",
-        ];
-        Type[] exportedTypes =
-        [
-            .. typeof(IGraphicsBackend).Assembly.GetExportedTypes(),
-            .. typeof(D3D12Backend).Assembly.GetExportedTypes(),
-            .. typeof(ValidationLayer).Assembly.GetExportedTypes(),
-        ];
-        foreach (string forbiddenName in forbiddenNames)
-        {
-            Assert.DoesNotContain(
-                exportedTypes,
-                type => string.Equals(type.Name, forbiddenName, StringComparison.Ordinal));
-        }
 
-        Assert.Equal(
-            typeof(Task<Pipeline>),
-            typeof(IGraphicsBackend)
-                .GetMethod(nameof(IGraphicsBackend.CreateComputePipelineAsync))!
-                .ReturnType);
-        Assert.NotNull(typeof(PipelineCreationSupport));
-        Assert.Equal(
-            ["Description", "Sampler"],
-            typeof(StaticSamplerBinding).GetProperties()
-                .Select(static property => property.Name)
-                .OrderBy(static name => name, StringComparer.Ordinal)
-                .ToArray());
-    }
 
     [Fact]
     public void Transient_parameter_blocks_use_the_single_authoritative_identity_map()

@@ -928,9 +928,6 @@ public sealed class RenderWorldExtractorTests
         Assert.Equal(37, renderWorld.Read<CustomRenderValue>(mirror).Value);
         Assert.Throws<InvalidOperationException>(() =>
             extraction.Add(new CustomExtractionSystem()));
-        Assert.Null(typeof(RenderWorld).GetMethod(
-            "Extract",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public));
     }
 
     [Fact]

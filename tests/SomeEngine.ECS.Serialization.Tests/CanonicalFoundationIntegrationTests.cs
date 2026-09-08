@@ -86,16 +86,7 @@ public struct CanonicalFoundationReferenceFieldsCodec : ICanonicalComponentCodec
 
 public sealed class CanonicalFoundationIntegrationTests
 {
-    [Fact]
-    public void EcsReadBudgetHasNoBinaryDocumentLimitProjection()
-    {
-        Assert.Null(typeof(SerializationReadLimits).GetMethod(
-            "ToBinaryReadLimits",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
-        Assert.Null(typeof(SerializationReadBudget).GetProperty(
-            "BinaryLimits",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
-    }
+
 
     [Fact]
     public void FixedWidthComponentPayloadMatchesSharedCanonicalPrimitiveEncoding()

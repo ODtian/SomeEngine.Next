@@ -5,7 +5,7 @@
     <IsTestProject>true</IsTestProject>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SlangStandardModuleSourceRoot>$(MSBuildThisFileDirectory)Fixtures\$(SlangTestFixtureDirectory)</SlangStandardModuleSourceRoot>
-    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Isolation!=ProcessDestructive)&amp;(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
+    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == ''">(Isolation!=PresentationProcess)&amp;(Isolation!=DeviceLossProcess)</VSTestTestCaseFilter>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

@@ -10,31 +10,7 @@ namespace SomeEngine.Serialization.Tests;
 
 public sealed class RegressionAcceptanceTests
 {
-    [Fact]
-    public void CurrentApiHasNoBufferedBuilderOrViewMaterializationCompatibilitySurface()
-    {
-        Assert.DoesNotContain(
-            typeof(BinaryDocumentWriter).GetMethods(),
-            static method => method.Name is "Build" or "Materialize");
-        Assert.DoesNotContain(
-            typeof(BinaryDocumentView<,>).GetMethods(),
-            static method => method.Name == "Materialize");
-        Assert.DoesNotContain(
-            typeof(GeneratedExactContract.View).GetMethods(),
-            static method => method.Name == "Materialize");
-        Assert.DoesNotContain(
-            typeof(BinaryDataReader).GetMethods(),
-            static method => method.Name is "Skip" or "SkipRemaining");
 
-        var documentWrite = Assert.Single(
-            typeof(BinaryDocumentWriter).GetMethods(),
-            static method => method.Name == nameof(BinaryDocumentWriter.WriteAsync));
-        Assert.Equal(typeof(FileStream), documentWrite.GetParameters()[0].ParameterType);
-        var packWrite = Assert.Single(
-            typeof(AssetPackBuilder).GetMethods(),
-            static method => method.Name == nameof(AssetPackBuilder.WriteAsync));
-        Assert.Equal(typeof(FileStream), packWrite.GetParameters()[0].ParameterType);
-    }
 
     [Theory]
     [InlineData("SEIDX001")]

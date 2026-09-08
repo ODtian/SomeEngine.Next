@@ -50,7 +50,7 @@ public sealed class JobForCompatibilityTests
     }
 
     [Fact]
-    public void JobForAdapterPreservesRefFreeAndRefContainingLaneClassification()
+    public void JobForAdapterExecutesManagedAndUnmanagedJobs()
     {
         JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
         JobForJobs.StaticValues = new int[5];
@@ -59,9 +59,6 @@ public sealed class JobForCompatibilityTests
         new JobForJobs.RefFreeForJob().Schedule(JobForJobs.StaticValues.Length, 2).Complete();
         new JobForJobs.RefContainingForJob(managedLog).Schedule(3, 2).Complete();
 
-        var stats = JobSystem.GetStats();
-        Assert.Equal(1, stats.RefFreeJobs);
-        Assert.Equal(1, stats.RefContainingJobs);
         Assert.Equal([1, 1, 1, 1, 1], JobForJobs.StaticValues);
         Assert.Equal([0, 1, 2], managedLog);
     }

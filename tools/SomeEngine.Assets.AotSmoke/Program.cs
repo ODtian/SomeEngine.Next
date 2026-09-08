@@ -2,29 +2,6 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization.Streaming;
 
-string[] forbiddenRuntimeDependencies =
-[
-    "SharpGLTF",
-    "SlangShaderSharp",
-    "slang-compiler",
-    "MeshOptimizer",
-    "FlatSharp",
-    "FlatBuffers",
-];
-string[] unexpectedRuntimeFiles = Directory
-    .EnumerateFileSystemEntries(AppContext.BaseDirectory)
-    .Select(Path.GetFileName)
-    .OfType<string>()
-    .Where(name => forbiddenRuntimeDependencies.Any(
-        prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-    .Order(StringComparer.Ordinal)
-    .ToArray();
-if (unexpectedRuntimeFiles.Length != 0)
-{
-    throw new InvalidOperationException(
-        $"Runtime NativeAOT output contains importer or retired serialization dependencies: {string.Join(", ", unexpectedRuntimeFiles)}");
-}
-
 string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Assets-Aot-{Guid.NewGuid():N}");
 Directory.CreateDirectory(directory);
 const string relativePath = "native.texture.asset";

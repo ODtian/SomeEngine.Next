@@ -1631,26 +1631,12 @@ internal sealed unsafe partial class VulkanBackend
                 MemoryTypeIndex = typeIndex,
             };
             VkDeviceMemory native = default;
-#if SOMEENGINE_TESTING
-            Backend.FaultHooks.Before(VulkanCallPoint.AllocateMemory);
-            bool overridden = Backend.FaultHooks.TryOverride(
-                VulkanCallPoint.AllocateMemory,
-                out Result injectedResult);
-#endif
             Result allocationResult =
-#if SOMEENGINE_TESTING
-                overridden
-                    ? injectedResult
-                    :
-#endif
                 Backend.Api.AllocateMemory(
                 Native,
                 &allocateInfo,
                 null,
                 &native);
-#if SOMEENGINE_TESTING
-            Backend.FaultHooks.After(VulkanCallPoint.AllocateMemory);
-#endif
             ThrowIfDeviceCallFailed(allocationResult, "vkAllocateMemory");
             nint mapped = 0;
             try

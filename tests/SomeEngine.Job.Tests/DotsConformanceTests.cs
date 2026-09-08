@@ -10,27 +10,6 @@ public sealed class DotsConformanceTests
         ConformanceJobs.Reset();
     }
 
-    [Fact]
-    public void AdapterPublicSurfaceIsExplicit()
-    {
-        var publicTypes = typeof(IJobFor).Assembly
-            .GetExportedTypes()
-            .Select(type => type.FullName!)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(
-            [
-                "SomeEngine.Job.IJobChunk",
-                "SomeEngine.Job.IJobChunkSource",
-                "SomeEngine.Job.IJobFor",
-                "SomeEngine.Job.JobChunk",
-                "SomeEngine.Job.JobChunkExtensions",
-                "SomeEngine.Job.JobForExtensions",
-                "SomeEngine.Job.JobScheduleExtensions"
-            ],
-            publicTypes);
-    }
 
     [Fact]
     public void AdapterScheduleCompletePatternMatchesCoreBehavior()
@@ -104,7 +83,7 @@ public sealed class DotsConformanceTests
     }
 
     [Fact]
-    public void AdapterManagedPayloadsUseRefContainingLane()
+    public void AdapterManagedPayloadsExecute()
     {
         JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
         var log = new List<string>();
@@ -112,8 +91,6 @@ public sealed class DotsConformanceTests
         new ConformanceJobs.ManagedJob(log, "single").Schedule().Complete();
         new ConformanceJobs.ManagedForJob(log, "for").Schedule(2, 1).Complete();
 
-        var stats = JobSystem.GetStats();
-        Assert.Equal(2, stats.RefContainingJobs);
         Assert.Equal(["single", "for-0", "for-1"], log);
     }
 

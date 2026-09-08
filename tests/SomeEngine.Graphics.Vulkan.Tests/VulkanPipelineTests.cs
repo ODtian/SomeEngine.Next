@@ -42,7 +42,7 @@ public sealed class VulkanPipelineTests
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment),
             ("computeMain", SlangStage.Compute));
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         Format[] colors = [Format.R8G8B8A8UNorm];

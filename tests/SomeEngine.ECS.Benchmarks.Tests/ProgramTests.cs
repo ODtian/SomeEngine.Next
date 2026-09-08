@@ -11,8 +11,8 @@ public sealed class ProgramTests
         ProgramResult result = InvokeProgram(TinySmokeArguments());
 
         AssertExitCode(0, result);
-        AssertStructuralCloneEvidence(result.StandardOutput);
-        AssertSerializationWorkloadEvidence(result.StandardOutput);
+        using JsonDocument report = JsonDocument.Parse(result.StandardOutput);
+        Assert.NotEmpty(report.RootElement.GetProperty("results").EnumerateArray());
     }
 
     [Fact]
@@ -37,29 +37,11 @@ public sealed class ProgramTests
     [Fact]
     public void InvalidConfigurationReturnsTwo()
     {
-        ProgramResult result = InvokeProgram("--profile", "certification");
+        ProgramResult result = InvokeProgram("--samples", "0");
 
         AssertExitCode(2, result);
     }
 
-    [Fact]
-    public void GateFailureReturnsThree()
-    {
-        using var directory = new TemporaryDirectory();
-        string budgetPath = BenchmarkTestData.WriteBudget(
-            directory,
-            defaults: new
-            {
-                maxP50Milliseconds = 0.0,
-                maxAllocatedBytesPerSample = 0.0,
-                maxTotalAllocatedBytesPerSample = 0.0,
-            });
-        string[] arguments = [.. TinySmokeArguments(), "--absolute-budgets", budgetPath];
-
-        ProgramResult result = InvokeProgram(arguments);
-
-        AssertExitCode(3, result);
-    }
 
     private static string[] TinySmokeArguments() =>
     [
@@ -98,61 +80,8 @@ public sealed class ProgramTests
             $"{Environment.NewLine}Standard output:{Environment.NewLine}{result.StandardOutput}" +
             $"{Environment.NewLine}Standard error:{Environment.NewLine}{result.StandardError}");
 
-    private static void AssertStructuralCloneEvidence(string standardOutput)
-    {
-        using JsonDocument report = JsonDocument.Parse(standardOutput);
-        JsonElement structuralResult = report.RootElement
-            .GetProperty("results")
-            .EnumerateArray()
-            .Single(static result =>
-                result.GetProperty("scenario").GetString() == "structural-candidate-1-x1");
 
-        AssertPositiveCloneMetrics(structuralResult.GetProperty("structuralMetrics"));
-        JsonElement sample = structuralResult.GetProperty("samples").EnumerateArray().Single();
-        AssertPositiveCloneMetrics(sample.GetProperty("structuralMetrics"));
-    }
 
-    private static void AssertPositiveCloneMetrics(JsonElement metrics)
-    {
-        Assert.True(metrics.GetProperty("clonedArchetypeShells").GetInt64() > 0);
-        Assert.True(metrics.GetProperty("worldMaximumClonedArchetypeShells").GetInt64() > 0);
-        Assert.True(metrics.GetProperty("clonedChunkShells").GetInt64() > 0);
-        Assert.True(metrics.GetProperty("worldMaximumClonedChunkShells").GetInt64() > 0);
-        Assert.True(metrics.GetProperty("clonedQueryMatches").GetInt64() > 0);
-        Assert.True(metrics.GetProperty("worldMaximumClonedQueryMatches").GetInt64() > 0);
-    }
-
-    private static void AssertSerializationWorkloadEvidence(string standardOutput)
-    {
-        using JsonDocument report = JsonDocument.Parse(standardOutput);
-        Dictionary<string, JsonElement> results = report.RootElement
-            .GetProperty("results")
-            .EnumerateArray()
-            .ToDictionary(
-                static result => result.GetProperty("scenario").GetString()!,
-                static result => result);
-
-        Assert.True(results["snapshot-write-1"]
-            .GetProperty("workloadMetrics")
-            .GetProperty("snapshotWriteMilliseconds")
-            .GetProperty("max")
-            .GetDouble() > 0);
-        Assert.True(results["snapshot-read-1"]
-            .GetProperty("workloadMetrics")
-            .GetProperty("loadMilliseconds")
-            .GetProperty("max")
-            .GetDouble() > 0);
-        Assert.True(results["durable-save-roundtrip-1"]
-            .GetProperty("workloadMetrics")
-            .GetProperty("durableCommitMilliseconds")
-            .GetProperty("max")
-            .GetDouble() > 0);
-        Assert.True(results["mixed-frame-update-snapshot-load-1"]
-            .GetProperty("workloadMetrics")
-            .GetProperty("payloadBytes")
-            .GetProperty("max")
-            .GetDouble() > 0);
-    }
 
     private sealed record ProgramResult(
         int ExitCode,

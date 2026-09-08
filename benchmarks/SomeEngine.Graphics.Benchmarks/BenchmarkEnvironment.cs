@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -12,43 +11,12 @@ internal readonly record struct SchedulingResult(bool Established, string Reason
 
 internal static class BenchmarkEnvironment
 {
-    internal static SchedulingResult EstablishScheduling(BenchmarkProfile profile)
-    {
-        if (!OperatingSystem.IsWindows())
-            return new SchedulingResult(false, "The D3D12 benchmark requires Windows.");
-        try
-        {
-            using Process process = Process.GetCurrentProcess();
-            long available = process.ProcessorAffinity.ToInt64();
-            if (available == 0)
-                return new SchedulingResult(false, "The process has no available CPU affinity bits.");
-            if (profile == BenchmarkProfile.RepresentativeCpuFrame)
-            {
-                process.PriorityClass = ProcessPriorityClass.High;
-                return new SchedulingResult(
-                    true,
-                    $"Retained multicore affinity 0x{available:X} at High priority for representative parallel recording.");
-            }
-            long selected = SelectHighestAffinityBit(available);
-            process.ProcessorAffinity = new nint(selected);
-            process.PriorityClass = ProcessPriorityClass.High;
-            return new SchedulingResult(true, $"Pinned to affinity 0x{selected:X} at High priority.");
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-        {
-            return new SchedulingResult(
-                profile != BenchmarkProfile.VendorCertification,
-                $"CPU affinity/priority policy could not be established: {exception.Message}");
-        }
-    }
+    internal static SchedulingResult CheckPlatform() => OperatingSystem.IsWindows()
+        ? new SchedulingResult(true, "Measuring under the current process scheduling settings.")
+        : new SchedulingResult(false, "The D3D12 benchmark requires Windows.");
 
-    internal static long SelectHighestAffinityBit(long available)
-    {
-        ulong bits = unchecked((ulong)available);
-        if (bits == 0)
-            throw new ArgumentOutOfRangeException(nameof(available));
-        return unchecked((long)(1UL << BitOperations.Log2(bits)));
-    }
+
+
 
     internal static RuntimeEnvironment Capture(
         in WorkerConfiguration configuration,

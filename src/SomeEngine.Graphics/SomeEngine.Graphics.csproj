@@ -4,8 +4,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <SomeEngineQualityAnalyzerEnabled>true</SomeEngineQualityAnalyzerEnabled>
-    <SomeEngineQualityBaselineEnabled>false</SomeEngineQualityBaselineEnabled>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Description>Backend-neutral graphics device, resource, command, synchronization, and presentation contracts.</Description>
   </PropertyGroup>

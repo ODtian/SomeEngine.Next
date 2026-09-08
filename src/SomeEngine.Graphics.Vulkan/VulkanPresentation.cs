@@ -415,26 +415,12 @@ internal sealed unsafe partial class VulkanBackend
                 OldSwapchain = oldSwapchain,
             };
             VkSwapchain native = default;
-#if SOMEENGINE_TESTING
-            device.Backend.FaultHooks.Before(VulkanCallPoint.CreateSwapchain);
-            bool overridden = device.Backend.FaultHooks.TryOverride(
-                VulkanCallPoint.CreateSwapchain,
-                out Result injectedResult);
-#endif
             Result result =
-#if SOMEENGINE_TESTING
-                overridden
-                    ? injectedResult
-                    :
-#endif
                 device.SwapchainApi.CreateSwapchain(
                 device.Native,
                 &createInfo,
                 null,
                 &native);
-#if SOMEENGINE_TESTING
-            device.Backend.FaultHooks.After(VulkanCallPoint.CreateSwapchain);
-#endif
             device.ThrowIfDeviceCallFailed(result, "vkCreateSwapchainKHR");
             resolvedConfig = config with { Width = extent.Width, Height = extent.Height };
             return native;
@@ -781,22 +767,8 @@ internal sealed unsafe partial class VulkanBackend
             lock (queue.Gate)
             {
                 _device.ThrowIfUnavailable();
-#if SOMEENGINE_TESTING
-                _device.Backend.FaultHooks.Before(VulkanCallPoint.QueuePresent);
-                bool overridden = _device.Backend.FaultHooks.TryOverride(
-                    VulkanCallPoint.QueuePresent,
-                    out Result injectedResult);
-#endif
                 result =
-#if SOMEENGINE_TESTING
-                    overridden
-                        ? injectedResult
-                        :
-#endif
                     _device.SwapchainApi.QueuePresent(queue.Native, &present);
-#if SOMEENGINE_TESTING
-                _device.Backend.FaultHooks.After(VulkanCallPoint.QueuePresent);
-#endif
             }
             switch (result)
             {

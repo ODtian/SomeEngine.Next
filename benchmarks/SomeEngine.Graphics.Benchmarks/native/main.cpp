@@ -18,9 +18,9 @@ int wmain(int argc, wchar_t** argv)
         process_run run = run_native_d3d12(config);
         write_process_json(config.output_path, run);
         std::cout << "NativeCpp: "
-                  << (run.result == disposition::passed ? "Passed" : "FunctionalOnly")
+                  << (run.result == disposition::functional_only ? "Completed" : "Failed")
                   << " - " << run.reason << '\n';
-        return run.result == disposition::passed || run.result == disposition::functional_only ? 0 : 3;
+        return run.result == disposition::functional_only ? 0 : 3;
     }
     catch (...)
     {

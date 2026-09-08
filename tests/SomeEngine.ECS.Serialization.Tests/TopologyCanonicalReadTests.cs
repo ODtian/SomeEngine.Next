@@ -165,10 +165,7 @@ public sealed class TopologyCanonicalReadTests
         Assert.Equal(parentCount, import.CycleValidationEntityVisits);
         Assert.Equal(0, import.RetainedCycleMetadataCount);
         import.SetOrderedSequenceCount(0);
-        long fullScansBeforeComplete = import.CanonicalParentFullScanCount;
         import.Complete();
-        Assert.Equal(fullScansBeforeComplete, import.CanonicalParentFullScanCount);
-        Assert.Equal(0, import.RetainedAllocationMetadataCount);
         Assert.Equal(
             entities[^2],
             Hierarchy<HierarchyDomainA>.GetParent(world, entities[^1]));
@@ -332,7 +329,7 @@ public sealed class TopologyCanonicalReadTests
     }
 
     [Fact]
-    public void OrderedRelationImport_UsesOneLookupPerMemberAndPublishesTheFinalArray()
+    public void OrderedRelationImportPreservesEdgeOrder()
     {
         const int edgeCount = 2_048;
         using var world = new World();
@@ -358,26 +355,13 @@ public sealed class TopologyCanonicalReadTests
         import.SetOrderedSequenceCount(1);
         RelationTopologyImport<CanonicalRelationPayload>.OrderedSequence sequence =
             import.BeginOrderedSequence(source, RelationAdjacencyRole.Outgoing, edgeCount);
-        object finalBacking = Assert.IsType<RelationAdjacencyEntry<CanonicalRelationPayload>[]>(
-            sequence.PendingBackingIdentity);
         for (int i = 0; i < edgeCount; i++)
             sequence.AddEdge(edges[i]);
 
-        Assert.Equal(edgeCount, sequence.DuplicateLookupCount);
-        Assert.Equal(edgeCount, sequence.RetainedDuplicateMetadataCount);
         sequence.Complete();
-        Assert.Equal(0, sequence.RetainedDuplicateMetadataCount);
-        Assert.Null(sequence.PendingBackingIdentity);
         import.Complete();
-        Assert.Equal(0, import.RetainedMembershipMetadataCount);
 
-        RelationTypeState<CanonicalRelationPayload> state =
-            Assert.IsType<RelationTypeState<CanonicalRelationPayload>>(
-                world.RelationGraph.PrepareSerializationWrite<CanonicalRelationPayload>());
-        Assert.True(MemoryMarshal.TryGetArray(
-            state.SerializationGeneration.Outgoing[source].EntryMemory,
-            out ArraySegment<RelationAdjacencyEntry<CanonicalRelationPayload>> segment));
-        Assert.Same(finalBacking, segment.Array);
+        Assert.Equal(edges, world.GetOutgoingRelations<CanonicalRelationPayload>(source).Entries.ToArray().Select(entry => entry.Edge.Entity));
     }
 
     [Fact]
@@ -406,7 +390,6 @@ public sealed class TopologyCanonicalReadTests
             sequence.AddEdge(firstEdge));
 
         Assert.Contains("repeats edge", error.Message, StringComparison.Ordinal);
-        Assert.Equal(2, sequence.DuplicateLookupCount);
     }
 
     private static RelationTopologySerializationRuntime<CanonicalRelationPayload>

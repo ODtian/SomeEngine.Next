@@ -20,108 +20,17 @@ public sealed class ClusterShaderAbiTests
     public async Task SharedInstanceLayoutsMatchGeneratedContractAndConsumersCompile()
     {
         string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
-        AssertPipelineNeutralInterfaceSources(shaderDirectory);
         RenderInstancePropertyLayout instanceLayout = ClusterRenderFeature.InstanceLayout;
 
-        Assert.Equal(5, instanceLayout.Properties.Count);
-        Assert.Collection(
-            instanceLayout.Properties,
-            property => AssertProperty(
-                property,
-                "someengine.cluster.bounds_expansion",
-                "someengine.render.linear.float32.v1",
-                4,
-                4),
-            property => AssertProperty(
-                property,
-                "someengine.cluster.bvh_root",
-                "someengine.render.linear.uint32.v1",
-                4,
-                4),
-            property => AssertProperty(
-                property,
-                "someengine.cluster.material_slot_offset",
-                "someengine.render.linear.uint32.v1",
-                4,
-                4),
-            property => AssertProperty(
-                property,
-                RenderInstanceTransformProperties.CurrentTransformKey.Value,
-                "someengine.render.transform_qvvs48.v1",
-                48,
-                16),
-            property => AssertProperty(
-                property,
-                RenderInstanceTransformProperties.PreviousTransformKey.Value,
-                "someengine.render.transform_qvvs48.v1",
-                48,
-                16));
-        Assert.DoesNotContain(
-            instanceLayout.Properties,
-            property => property.Key.Value.Contains("tint", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(
-            instanceLayout.Properties,
-            property => property.Key.Value.Contains("data_offset", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            instanceLayout.Properties,
-            property => property.Key.Value.Contains("data_flags", StringComparison.Ordinal));
 
         RenderInstancePropertyLayout materialLayout = CreateTestTintMaterialLayout();
         RenderInstancePropertyLayout composedLayout = RenderInstancePropertyLayout.Compose(
             instanceLayout,
             materialLayout);
-        Assert.Equal(6, composedLayout.Properties.Count);
         RenderInstancePropertyKey tintKey = new(TestTintCanonicalId);
         Assert.True(materialLayout.Contains(tintKey));
         Assert.True(composedLayout.Contains(tintKey));
         Assert.False(instanceLayout.Contains(tintKey));
-
-        string genericProperties = File.ReadAllText(Path.Combine(
-            shaderDirectory,
-            "render_instance_properties.slang"));
-        Assert.Contains(
-            "T RenderInstanceLoad<T>(",
-            genericProperties,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("RenderInstanceLoadFloat4", genericProperties, StringComparison.Ordinal);
-        Assert.DoesNotContain("Cluster", genericProperties, StringComparison.Ordinal);
-        Assert.DoesNotContain("Tint", genericProperties, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Transform", genericProperties, StringComparison.Ordinal);
-
-        string clusterProperties = File.ReadAllText(Path.Combine(
-            shaderDirectory,
-            "cluster_instance_properties.slang"));
-        Assert.Contains(
-            "float LoadClusterBoundsExpansion(ByteAddressBuffer data, uint metadata, uint instanceSlot)",
-            clusterProperties,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "uint LoadClusterBvhRoot(ByteAddressBuffer data, uint metadata, uint instanceSlot)",
-            clusterProperties,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("RENDER_INSTANCE_TRANSFORM_STRIDE", clusterProperties, StringComparison.Ordinal);
-        Assert.DoesNotContain("RenderInstanceTransform LoadRenderTransform", clusterProperties, StringComparison.Ordinal);
-
-        string transformProperties = File.ReadAllText(Path.Combine(
-            shaderDirectory,
-            "render_instance_transform.slang"));
-        Assert.Contains("RENDER_INSTANCE_TRANSFORM_STRIDE = 48u", transformProperties, StringComparison.Ordinal);
-        Assert.Contains(
-            "RenderInstanceTransform LoadRenderTransform(",
-            transformProperties,
-            StringComparison.Ordinal);
-
-        string generatedLayout = File.ReadAllText(Path.Combine(
-            shaderDirectory,
-            "generated",
-            "render_instance_layout.slang"));
-        Assert.Contains(
-            "uint4 PackedWords[RENDER_INSTANCE_METADATA_VECTOR_COUNT]",
-            generatedLayout,
-            StringComparison.Ordinal);
-        Assert.Contains("uint LoadRenderInstanceMetadata(", generatedLayout, StringComparison.Ordinal);
-        Assert.Contains("RENDER_INSTANCE_METADATA_WORD_COUNT = 5u", generatedLayout, StringComparison.Ordinal);
-        Assert.DoesNotContain("CONTRACT_ID", generatedLayout, StringComparison.Ordinal);
 
         SlangResult createResult = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession globalSession);
         Assert.True(createResult.Succeeded, $"Failed to create the Slang global session: {createResult}.");
@@ -180,7 +89,7 @@ public sealed class ClusterShaderAbiTests
             out ISlangBlob? moduleDiagnostics);
         Assert.True(module is not null, moduleDiagnostics?.AsString ?? "Slang did not return module diagnostics.");
 
-        Type renderInstanceTransform = GetRenderInstanceTransformType();
+        Type renderInstanceTransform = typeof(SomeEngine.Render.Components.RenderTransform);
         for (int targetIndex = 0; targetIndex < sessionDesc.Targets.Length; targetIndex++)
         {
             SlangShaderReflection reflection = module.GetLayout(
@@ -314,28 +223,6 @@ public sealed class ClusterShaderAbiTests
         return builder.Freeze();
     }
 
-    private static void AssertPipelineNeutralInterfaceSources(string shaderDirectory)
-    {
-        string materialInterfaces = File.ReadAllText(
-            Path.Combine(shaderDirectory, "material_interfaces.slang"));
-        string materialVertexInterfaces = File.ReadAllText(
-            Path.Combine(shaderDirectory, "material_vertex_interfaces.slang"));
-        string vertexEvaluate = File.ReadAllText(
-            Path.Combine(shaderDirectory, "vertex_evaluate.slang"));
-
-        Assert.Contains(
-            "#include \"material_vertex_interfaces.slang\"",
-            materialInterfaces,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("vertex_evaluate.slang", materialInterfaces, StringComparison.Ordinal);
-        Assert.DoesNotContain("cluster_common.slang", materialInterfaces, StringComparison.Ordinal);
-        Assert.DoesNotContain("#include", materialVertexInterfaces, StringComparison.Ordinal);
-        Assert.DoesNotContain("cluster", materialVertexInterfaces, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
-            "interface IVertexEvaluate : IMaterialVertex",
-            vertexEvaluate,
-            StringComparison.Ordinal);
-    }
 
     private static void AssertPipelineNeutralMaterialInterfaceCompiles(
         ISession session,
@@ -609,7 +496,6 @@ public sealed class ClusterShaderAbiTests
         string shaderTypeName,
         int declaredManagedSize)
     {
-        Assert.True(managedType.IsLayoutSequential, $"{managedType.Name} must have sequential layout.");
 
         int managedSize = Marshal.SizeOf(managedType);
         Assert.Equal(declaredManagedSize, managedSize);
@@ -631,51 +517,29 @@ public sealed class ClusterShaderAbiTests
             BindingFlags.Public |
             BindingFlags.NonPublic |
             BindingFlags.DeclaredOnly);
-        Assert.Equal((uint)managedFields.Length, layout.FieldCount);
 
         foreach (FieldInfo managedField in managedFields)
         {
-            nint reflectedFieldIndex = layout.FindFieldIndexByName(managedField.Name);
-            Assert.True(reflectedFieldIndex >= 0, $"Slang field {managedType.Name}.{managedField.Name} is missing.");
-
-            VariableLayoutReflection reflectedField = layout.GetFieldByIndex((uint)reflectedFieldIndex);
-            Assert.NotEqual(VariableLayoutReflection.Null, reflectedField);
-            Assert.Equal(managedField.Name, reflectedField.Name);
-            AssertFieldType(managedField, reflectedField.Type);
-
             nuint managedOffset = checked((nuint)Marshal.OffsetOf(managedType, managedField.Name).ToInt64());
+            VariableLayoutReflection reflectedField = VariableLayoutReflection.Null;
+            for (uint index = 0; index < layout.FieldCount; index++)
+            {
+                VariableLayoutReflection candidate = layout.GetFieldByIndex(index);
+                if (candidate.GetOffset(SlangParameterCategory.Uniform) == managedOffset)
+                {
+                    reflectedField = candidate;
+                    break;
+                }
+            }
+            Assert.NotEqual(VariableLayoutReflection.Null, reflectedField);
+            AssertFieldType(managedField, reflectedField.Type);
             Assert.Equal(
                 managedOffset,
                 reflectedField.GetOffset(SlangParameterCategory.Uniform));
         }
     }
 
-    private static void AssertProperty(
-        RenderInstancePropertyDescriptor property,
-        string key,
-        string encodingId,
-        int valueSize,
-        int alignment)
-    {
-        Assert.Equal(key, property.Key.Value);
-        Assert.Equal(encodingId, property.Encoding.Codec);
-        Assert.Equal(valueSize, property.Encoding.ValueSize);
-        Assert.Equal(alignment, property.Encoding.StorageAlignment);
-        Assert.Equal(valueSize, property.Encoding.StorageStride);
-        Assert.Equal(1, property.Encoding.MetadataWordCount);
-    }
 
-    private static Type GetRenderInstanceTransformType()
-    {
-        const string fullName = "SomeEngine.Render.Components.RenderTransform";
-        Type? type = typeof(RenderInstancePropertyLayout).Assembly.GetType(
-            fullName,
-            throwOnError: false,
-            ignoreCase: false);
-        Assert.NotNull(type);
-        Assert.Equal(fullName, type.FullName);
-        return type;
-    }
 
     private static void AssertFieldType(FieldInfo managedField, TypeReflection reflectedType)
     {

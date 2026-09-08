@@ -5,18 +5,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public class ShaderSourcePolicyTests
 {
-    [Fact]
-    public void ShaderSourcesUseSlangExtension()
-    {
-        string projectRoot = TestProjectPaths.ProjectRoot();
-        string shaderDir = TestProjectPaths.ShaderDirectory();
-        string[] hlslSources = Directory
-            .EnumerateFiles(shaderDir, "*.hlsl", SearchOption.AllDirectories)
-            .Select(path => Path.GetRelativePath(projectRoot, path))
-            .ToArray();
 
-        Assert.Empty(hlslSources);
-    }
 
     [Theory]
     [InlineData("triangle.slang", "VSMain", "PSMain")]
@@ -34,23 +23,6 @@ public class ShaderSourcePolicyTests
         }
     }
 
-    [Fact]
-    public void ClusterShaderLayoutsDoNotDeclareAPageTable()
-    {
-        string[] layoutSources =
-        [
-            "cluster_draw.slang",
-            "cluster_resolve.slang",
-            "cluster_shade_pipeline.slang",
-            "debug_sphere.slang",
-        ];
-
-        foreach (string shaderFile in layoutSources)
-        {
-            string source = File.ReadAllText(TestProjectPaths.ShaderPath(shaderFile));
-            Assert.DoesNotContain("PageTable", source, StringComparison.OrdinalIgnoreCase);
-        }
-    }
 
     [Theory]
     [InlineData("cluster_draw.slang")]

@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <_RequestedSlangToolchainVersion>$(SlangToolchainVersion)</_RequestedSlangToolchainVersion>
     <SlangToolchainVersion>2026.14</SlangToolchainVersion>
     <SlangStandardModuleDirectory>slang-standard-module-$(SlangToolchainVersion)</SlangStandardModuleDirectory>

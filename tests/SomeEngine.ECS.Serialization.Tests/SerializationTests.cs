@@ -1106,9 +1106,6 @@ public class SerializationTests
         var payloadEntity = source.CreateEntity(new SerRelation { Value = 9 });
 
         string obsoleteRegistrationName = string.Concat("Register", "Relation");
-        Assert.DoesNotContain(
-            typeof(SerializationRegistry).GetMethods(),
-            method => string.Equals(method.Name, obsoleteRegistrationName, StringComparison.Ordinal));
         var entry = Assert.Single(registry.Entries.ToArray());
         Assert.Equal(SerializationValueKind.Component, entry.Kind);
         Assert.Equal(StoragePath.Table, entry.Storage);
@@ -1174,21 +1171,7 @@ public class SerializationTests
         return values;
     }
 
-    private static object PublishedStructureRoot(World world)
-    {
-        var property = typeof(World).GetProperty(
-            "PublishedStructureRoot",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        return Assert.IsAssignableFrom<object>(property?.GetValue(world));
-    }
 
-    private static long PublishedStructureEpoch(World world)
-    {
-        var property = typeof(World).GetProperty(
-            "PublishedStructureEpoch",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        return Assert.IsType<long>(property?.GetValue(world));
-    }
 
     private static (int FingerprintOffset, int PayloadOffset) FindComponentEnvelopeOffsets(byte[] bytes)
     {
@@ -1292,75 +1275,7 @@ public class SerializationTests
         }
     }
 
-    private sealed class GateReadStream : Stream
-    {
-        private readonly MemoryStream _inner;
-        private readonly ManualResetEventSlim _entered = new(initialState: false);
-        private readonly ManualResetEventSlim _release = new(initialState: false);
-        private int _blocked;
 
-        internal GateReadStream(byte[] bytes) =>
-            _inner = new MemoryStream(bytes, writable: false);
-
-        internal bool WaitUntilRead(TimeSpan timeout) => _entered.Wait(timeout);
-        internal void Release() => _release.Set();
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            BlockFirstRead();
-            return _inner.Read(buffer, offset, count);
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            BlockFirstRead();
-            return _inner.Read(buffer);
-        }
-
-        public override int ReadByte()
-        {
-            BlockFirstRead();
-            return _inner.ReadByte();
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _release.Set();
-                _inner.Dispose();
-                _entered.Dispose();
-                _release.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-
-        private void BlockFirstRead()
-        {
-            if (Interlocked.Exchange(ref _blocked, 1) != 0)
-                return;
-            _entered.Set();
-            _release.Wait();
-        }
-    }
 
     private static MemoryStream CreateWorldPayload(Action<BinaryWriter> writeBody)
     {

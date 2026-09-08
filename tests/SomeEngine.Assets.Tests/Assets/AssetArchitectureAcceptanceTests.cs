@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Reflection;
 using SomeEngine.Assets.Data;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
@@ -11,143 +10,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class AssetArchitectureAcceptanceTests
 {
-    [Fact]
-    public void AssetApiHasOneTypedServiceAndNoParallelAssetRepresentations()
-    {
-        Assembly assetAssembly = typeof(AssetProject).Assembly;
-        Type[] codecs = assetAssembly.ExportedTypes
-            .Where(static type => type.IsAbstract
-                && type.IsSealed
-                && type.Name.EndsWith("Codec", StringComparison.Ordinal))
-            .ToArray();
-        Assert.Empty(codecs);
 
-        string[] exportedNames = assetAssembly.ExportedTypes
-            .Select(static type => type.FullName ?? type.Name)
-            .ToArray();
-        Assert.DoesNotContain(
-            exportedNames,
-            static name => name.EndsWith("AssetDataIO", StringComparison.Ordinal));
-        Assert.DoesNotContain("SomeEngine.Assets.AssetDatabase", exportedNames);
-        Assert.DoesNotContain("SomeEngine.Assets.AssetDataReader", exportedNames);
-        Assert.DoesNotContain(
-            exportedNames,
-            static name => name.EndsWith("AssetData", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            exportedNames,
-            static name => name.Contains("RuntimeAsset", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            exportedNames,
-            static name => name.EndsWith("MeshPayloadSource", StringComparison.Ordinal));
-        Assert.DoesNotContain(exportedNames, static name => name.EndsWith("Provider", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            assetAssembly.GetTypes(),
-            static type => type.Name.EndsWith("AssetDataIO", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            assetAssembly.GetTypes(),
-            static type => type.Name.EndsWith("DocumentIO", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            assetAssembly.GetTypes(),
-            static type => type.Name == "IAsset`1");
-        Assert.DoesNotContain(typeof(IAssetImporter).GetMethods(), static method => method.Name == "Import");
-        Assert.DoesNotContain(
-            typeof(AssetProject).GetMethods(),
-            static method => method.Name is "Load" or "LoadAsync" or "Read" or "ReadAsync");
-        Assert.Contains(typeof(AssetProject).GetMethods(), static method => method.Name == "OpenAsync");
-        Assert.Contains(typeof(IAssetStorage).GetMethods(), static method => method.Name == "TryFind");
-        Assert.Contains(typeof(IAssetStorage).GetMethods(), static method => method.Name == "OpenAsync");
-        Assert.DoesNotContain(
-            typeof(IAssetStorage).GetMethods(),
-            static method => method.IsGenericMethod);
-        Assert.DoesNotContain(assetAssembly.GetTypes(), static type => type.Name == "AssetHandle`1");
-        Assert.DoesNotContain(assetAssembly.GetTypes(), static type => type.Name == "AssetRead`1");
-        Assert.Null(typeof(Mesh).GetMethod(
-            "TryRetainPayloadSource",
-            BindingFlags.Public | BindingFlags.Instance));
-
-        string[] loaderMethods = typeof(AssetLoader)
-            .GetMethods()
-            .Where(static method => method.DeclaringType == typeof(AssetLoader))
-            .Select(static method => method.Name)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        Assert.Contains("LoadAsync", loaderMethods);
-        Assert.Contains("ReloadAsync", loaderMethods);
-        Assert.Contains("GetRevision", loaderMethods);
-        Assert.Contains("TryGetAssetId", loaderMethods);
-        Assert.Contains("DisposeAsync", loaderMethods);
-        Assert.DoesNotContain("Load", loaderMethods);
-        Assert.DoesNotContain("WaitAsync", loaderMethods);
-        Assert.DoesNotContain("Read", loaderMethods);
-        Assert.DoesNotContain("TryRead", loaderMethods);
-        Assert.DoesNotContain("Get", loaderMethods);
-        Assert.DoesNotContain("TryGet", loaderMethods);
-        Assert.DoesNotContain("Request", loaderMethods);
-        Assert.DoesNotContain(
-            loaderMethods,
-            static name => name is "Publish" or "GetVersion"
-                or "RequestMesh" or "RequestTexture" or "RequestShader" or "RequestMaterial");
-        Assert.DoesNotContain(
-            assetAssembly.GetTypes(),
-            static type => type.Name == "IResidentAssetSet");
-        string[] loadContextMethods = typeof(AssetLoadContext)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Select(static method => method.Name)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        Assert.Contains("LoadDependencyAsync", loadContextMethods);
-        Assert.DoesNotContain("LoadAsync", loadContextMethods);
-        Type residentTable = assetAssembly.GetType("SomeEngine.Assets.ResidentAssetTable")!;
-        Assert.DoesNotContain(
-            residentTable.GetFields(BindingFlags.NonPublic | BindingFlags.Instance),
-            static field => field.FieldType.IsGenericType
-                && field.FieldType.GetGenericTypeDefinition() == typeof(Dictionary<,>)
-                && field.FieldType.GetGenericArguments()[0] == typeof(Type));
-        Assert.True(typeof(AssetId<>).IsValueType);
-        Assert.True(typeof(BinaryChunkRef).IsValueType);
-
-        Type[] sealedAssetTypes =
-        [
-            typeof(Texture),
-            typeof(Mesh),
-            typeof(Shader),
-            typeof(MaterialInstance),
-            typeof(ClusterShaders),
-        ];
-        foreach (Type assetType in sealedAssetTypes)
-        {
-            Assert.True(assetType.IsSealed, $"Asset root '{assetType.FullName}' must be sealed.");
-            Assert.DoesNotContain(
-                assetType.GetConstructors(BindingFlags.Public | BindingFlags.Instance),
-                constructor =>
-                {
-                    ParameterInfo[] parameters = constructor.GetParameters();
-                    return parameters.Length == 1 && parameters[0].ParameterType == assetType;
-                });
-            Assert.DoesNotContain(
-                assetType.GetProperties(BindingFlags.Public | BindingFlags.Instance),
-                property => property.GetAccessors().Any(static accessor => accessor.IsVirtual));
-            Assert.DoesNotContain(
-                assetType.GetMethods(
-                    BindingFlags.Public
-                        | BindingFlags.Static
-                        | BindingFlags.Instance
-                        | BindingFlags.DeclaredOnly),
-                static method => method.Name is
-                    "ReadAsync" or "OpenAsync" or "LoadAssetAsync" or "CreateWriter" or "GetDependencies");
-        }
-        Assert.False(typeof(Material).IsSealed);
-        Assert.True(typeof(Material).IsAssignableFrom(typeof(SomeEngine.Render.Materials.StandardMaterial)));
-
-        Assembly renderAssembly = typeof(SomeEngine.Render.Assets.LiveShaderProgram).Assembly;
-        string[] singleAssetNames = sealedAssetTypes
-            .Append(typeof(Material))
-            .Select(static type => type.Name)
-            .ToArray();
-        Assert.DoesNotContain(
-            renderAssembly.ExportedTypes,
-            type => singleAssetNames.Contains(type.Name, StringComparer.Ordinal));
-    }
 
     [Fact]
     public async Task RootOnlyAssetsRoundTripClusterShadersAndMaterialInstanceAsync()
@@ -174,10 +37,10 @@ public sealed class AssetArchitectureAcceptanceTests
         };
         AssetWriter.Write(instance, instancePath);
 
-        ClusterShaders loadedCluster =
-            await AssetProject.ReadAsync<ClusterShaders>(clusterPath);
-        MaterialInstance loadedInstance =
-            await AssetProject.ReadAsync<MaterialInstance>(instancePath);
+        await using var clusterDocument = await AssetProject.OpenAsync<ClusterShaders>(clusterPath);
+        await using var instanceDocument = await AssetProject.OpenAsync<MaterialInstance>(instancePath);
+        ClusterShaders loadedCluster = clusterDocument.Root;
+        MaterialInstance loadedInstance = instanceDocument.Root;
 
         Assert.Equal(cluster.AssetGuid, loadedCluster.AssetGuid);
         Assert.Equal(cluster.Name, loadedCluster.Name);
@@ -192,7 +55,7 @@ public sealed class AssetArchitectureAcceptanceTests
     }
 
     [Fact]
-    public async Task TextureMipTile_IsAvailableThroughInternalChunkLeaseReader()
+    public async Task TextureMipTile_IsAvailableThroughPublicDocument()
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("lease.texture.asset");
@@ -231,7 +94,7 @@ public sealed class AssetArchitectureAcceptanceTests
     }
 
     [Fact]
-    public async Task ShaderVariant_IsAvailableThroughInternalChunkLeaseReader()
+    public async Task ShaderVariant_IsAvailableThroughPublicDocument()
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("lease.shader.asset");
@@ -262,7 +125,7 @@ public sealed class AssetArchitectureAcceptanceTests
     }
 
     [Fact]
-    public async Task MeshPayloadRangeSource_ReadsOnlyRequestedSliceThroughInternalReader()
+    public async Task MeshPayloadRangeSource_ReadsOnlyRequestedSliceThroughPublicDocument()
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("range.mesh.asset");

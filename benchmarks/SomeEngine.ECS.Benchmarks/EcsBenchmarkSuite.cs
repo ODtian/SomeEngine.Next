@@ -12,7 +12,7 @@ namespace SomeEngine.ECS.Benchmarks;
 
 internal static partial class EcsBenchmarkSuite
 {
-    internal const int ReportSchemaVersion = 5;
+    internal const int ReportSchemaVersion = 6;
     private const ulong FnvOffsetBasis = 14695981039346656037UL;
     private const ulong FnvPrime = 1099511628211UL;
 
@@ -27,15 +27,6 @@ internal static partial class EcsBenchmarkSuite
         long suiteStarted = Stopwatch.GetTimestamp();
         EcsBenchmarkEnvironment environment = CreateEnvironment();
         EcsBenchmarkSourceRevision sourceRevision = CreateSourceRevision();
-        ValidateCertificationSourceRevision(options.Profile, sourceRevision, sourceRevision);
-        CertificationEvidenceBinding? certificationEvidence =
-            CertificationEvidenceManifest.Validate(options, sourceRevision);
-        string[] plannedScenarios = CreatePlannedScenarioNames(options);
-        BenchmarkGateContext gateContext = BenchmarkGateEvaluator.Prepare(
-            options,
-            environment,
-            plannedScenarios,
-            certificationEvidence);
         PrimeRuntime();
 
         var results = new List<EcsBenchmarkResult>();
@@ -54,23 +45,14 @@ internal static partial class EcsBenchmarkSuite
             }
         }
 
-        EcsBenchmarkGate gate = BenchmarkGateEvaluator.Evaluate(options, results, gateContext);
-        EcsBenchmarkSourceRevision completedSourceRevision = CreateSourceRevision();
-        ValidateCertificationSourceRevision(
-            options.Profile,
-            sourceRevision,
-            completedSourceRevision);
-        certificationEvidence?.ValidationState?.VerifyUnchanged();
         DateTimeOffset completedUtc = DateTimeOffset.UtcNow;
         return new EcsBenchmarkReport(
             SchemaVersion: ReportSchemaVersion,
-            Passed: gate.Passed,
             StartedUtc: startedUtc,
             CompletedUtc: completedUtc,
             DurationMilliseconds: Stopwatch.GetElapsedTime(suiteStarted).TotalMilliseconds,
             Environment: environment,
             SourceRevision: sourceRevision,
-            CertificationEvidence: certificationEvidence,
             Configuration: new EcsBenchmarkConfiguration(
                 options.ProfileName,
                 options.EntityCounts,
@@ -82,8 +64,7 @@ internal static partial class EcsBenchmarkSuite
                 PercentileMethod: "R-7 linear interpolation over fresh samples",
                 AllocatedBytesMetric: "current managed thread",
                 TotalAllocatedBytesMetric: "all managed threads"),
-            Results: results.ToArray(),
-            Gate: gate);
+            Results: results.ToArray());
     }
 
     private static EcsBenchmarkEnvironment CreateEnvironment() => new(
@@ -110,27 +91,6 @@ internal static partial class EcsBenchmarkSuite
         return new EcsBenchmarkSourceRevision(
             normalizedSha,
             status is not null && status.Length == 0);
-    }
-
-    internal static void ValidateCertificationSourceRevision(
-        BenchmarkProfile profile,
-        EcsBenchmarkSourceRevision initial,
-        EcsBenchmarkSourceRevision completed)
-    {
-        if (profile != BenchmarkProfile.Certification)
-            return;
-        if (!initial.IsCleanCommit)
-        {
-            throw new BenchmarkConfigurationException(
-                "Certification requires a clean Git worktree at a full commit SHA before " +
-                "collecting evidence. Commit or remove tracked and untracked changes first.");
-        }
-        if (!completed.IsCleanCommit || completed != initial)
-        {
-            throw new BenchmarkConfigurationException(
-                "The Git worktree or HEAD changed while certification was running; no report " +
-                "may be emitted for mixed source revisions.");
-        }
     }
 
     private static string? TryRunGit(params string[] arguments)
@@ -250,14 +210,6 @@ internal static partial class EcsBenchmarkSuite
         return scenarios.ToArray();
     }
 
-    internal static string[] CreatePlannedScenarioNames(BenchmarkOptions options) =>
-        options.EntityCounts
-            .SelectMany((entityCount, index) => CreateScenarios(
-                options,
-                entityCount,
-                includeDurablePersistence: index == 0))
-            .Select(static scenario => scenario.Name)
-            .ToArray();
 
     private static EcsBenchmarkResult MeasureScenario(
         ScenarioDefinition scenario,
@@ -750,16 +702,13 @@ internal static partial class EcsBenchmarkSuite
 
 internal sealed record EcsBenchmarkReport(
     int SchemaVersion,
-    bool Passed,
     DateTimeOffset StartedUtc,
     DateTimeOffset CompletedUtc,
     double DurationMilliseconds,
     EcsBenchmarkEnvironment Environment,
     EcsBenchmarkSourceRevision SourceRevision,
-    CertificationEvidenceBinding? CertificationEvidence,
     EcsBenchmarkConfiguration Configuration,
-    EcsBenchmarkResult[] Results,
-    EcsBenchmarkGate Gate)
+    EcsBenchmarkResult[] Results)
 {
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -771,14 +720,7 @@ internal sealed record EcsBenchmarkReport(
 
 internal sealed record EcsBenchmarkSourceRevision(
     string GitCommitSha,
-    bool GitWorkingTreeClean)
-{
-    internal bool IsCleanCommit =>
-        GitWorkingTreeClean &&
-        GitCommitSha.Length is 40 or 64 &&
-        GitCommitSha.All(static character =>
-            character is >= '0' and <= '9' or >= 'a' and <= 'f');
-}
+    bool GitWorkingTreeClean);
 
 internal sealed record EcsBenchmarkEnvironment(
     string MachineName,

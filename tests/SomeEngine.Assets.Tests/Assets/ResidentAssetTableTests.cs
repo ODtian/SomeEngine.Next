@@ -1,153 +1,119 @@
+using SomeEngine.Tests.Assets;
+using SomeEngine.Serialization.IO;
+
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class ResidentAssetTableTests
 {
     [Fact]
-    public async Task ConcurrentLoadsPublishOneCanonicalObject()
+    public async Task ConcurrentLoadsReturnOneObject()
     {
-        await using var table = new ResidentAssetTable();
-        AssetGuid guid = AssetGuid.New();
-        var publication = new TaskCompletionSource<AssetPublication<Probe>>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        int loadCount = 0;
-
-        ValueTask<Probe> first = table.LoadAsync(
-            guid,
-            (_, _) =>
+        await using var fixture = new Fixture();
+        ProbeAsset[] values = await Task.WhenAll(Enumerable.Range(0, 8)
+            .Select(_ => fixture.Loader.LoadAsync(fixture.Id).AsTask()));
+        Assert.All(values, value => { Assert.Same(values[0], value); Assert.Equal(7, value.Value); });
+    }
+    [Fact]
+    public async Task CallerCancellationDoesNotCancelOtherRequests()
+    {
+        await using var fixture = new Fixture();
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Storage.Resume = resume.Task;
+        using var cancellation = new CancellationTokenSource();
+        Task<ProbeAsset> cancelled = fixture.Loader.LoadAsync(fixture.Id, cancellation.Token).AsTask();
+        Task<ProbeAsset> surviving = fixture.Loader.LoadAsync(fixture.Id).AsTask();
+        try
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        }
+        finally { resume.TrySetResult(); }
+        Assert.Equal(7, (await surviving.WaitAsync(TimeSpan.FromSeconds(5))).Value);
+    }
+    [Fact]
+    public async Task ReloadChangesTheLoadedObjectAndRevision()
+    {
+        await using var fixture = new Fixture();
+        ProbeAsset original = await fixture.Loader.LoadAsync(fixture.Id);
+        fixture.Write(37);
+        ProbeAsset updated = await fixture.Loader.ReloadAsync(original);
+        Assert.Same(original, updated);
+        Assert.Equal(37, original.Value);
+        Assert.Equal<ulong>(2, fixture.Loader.GetRevision(original));
+    }
+    [Fact]
+    public async Task FailedReloadPreservesValueAndCanBeRetried()
+    {
+        await using var fixture = new Fixture();
+        ProbeAsset original = await fixture.Loader.LoadAsync(fixture.Id);
+        fixture.Storage.Fail = true;
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Loader.ReloadAsync(original).AsTask());
+        Assert.Equal(7, original.Value);
+        Assert.Equal<ulong>(1, fixture.Loader.GetRevision(original));
+        fixture.Storage.Fail = false;
+        fixture.Write(41);
+        Assert.Same(original, await fixture.Loader.ReloadAsync(original));
+        Assert.Equal(41, original.Value);
+    }
+    [Fact]
+    public async Task ClosedLoaderRejectsNewRequests()
+    {
+        await using var fixture = new Fixture();
+        _ = await fixture.Loader.LoadAsync(fixture.Id);
+        await fixture.Loader.DisposeAsync();
+        await fixture.Loader.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => fixture.Loader.LoadAsync(fixture.Id).AsTask());
+    }
+    private sealed class Fixture : IAsyncDisposable
+    {
+        private readonly string _directory = Path.Combine(Path.GetTempPath(), $"asset-load-{Guid.NewGuid():N}");
+        private readonly AssetGuid _guid = AssetGuid.New();
+        internal Storage Storage { get; }
+        internal AssetLoader Loader { get; }
+        internal AssetId<ProbeAsset> Id => new(_guid);
+        internal Fixture()
+        {
+            Directory.CreateDirectory(_directory);
+            Storage = new Storage(_guid, Path.Combine(_directory, "value.probe.asset"));
+            Write(7);
+            Loader = new AssetLoader(Storage);
+        }
+        internal void Write(int value)
+        {
+            string path = Path.Combine(_directory, $"{Guid.NewGuid():N}.probe.asset");
+            AssetWriter.Write(new ProbeAsset
             {
-                Interlocked.Increment(ref loadCount);
-                return publication.Task;
-            },
-            default);
-        ValueTask<Probe> second = table.LoadAsync<Probe>(
-            guid,
-            (_, _) => throw new InvalidOperationException("single-flight was not reused"),
-            default);
-
-        var expected = new Probe(11);
-        publication.SetResult(new AssetPublication<Probe>(expected));
-
-        Assert.Same(expected, await first);
-        Assert.Same(expected, await second);
-        Assert.Equal(1, loadCount);
-        Assert.True(table.TryFind(guid, out Probe? found));
-        Assert.Same(expected, found);
-        Assert.True(table.TryGetAssetGuid(expected, out AssetGuid foundGuid));
-        Assert.Equal(guid, foundGuid);
-        Assert.Equal<ulong>(1, table.GetRevision(expected));
+                AssetGuid = _guid.ToFlatString(), Name = "loaded", Value = value,
+            }, path);
+            Storage.Publish(path);
+        }
+        public async ValueTask DisposeAsync()
+        {
+            await Loader.DisposeAsync();
+            Directory.Delete(_directory, recursive: true);
+        }
     }
-
-    [Fact]
-    public async Task CallerCancellationDoesNotCancelSharedPublication()
+    private sealed class Storage(AssetGuid guid, string path) : IAssetStorage
     {
-        await using var table = new ResidentAssetTable();
-        AssetGuid guid = AssetGuid.New();
-        var publication = new TaskCompletionSource<AssetPublication<Probe>>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        using var callerCancellation = new CancellationTokenSource();
-
-        ValueTask<Probe> canceledCaller = table.LoadAsync(
-            guid,
-            (_, operationCancellation) =>
-            {
-                Assert.False(operationCancellation.IsCancellationRequested);
-                return publication.Task;
-            },
-            callerCancellation.Token);
-        ValueTask<Probe> survivingCaller = table.LoadAsync<Probe>(
-            guid,
-            (_, _) => throw new InvalidOperationException("single-flight was not reused"),
-            default);
-
-        callerCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => canceledCaller.AsTask());
-
-        var expected = new Probe(23);
-        publication.SetResult(new AssetPublication<Probe>(expected));
-        Assert.Same(expected, await survivingCaller);
-    }
-
-    [Fact]
-    public async Task ReloadMutatesCanonicalObjectAndAdvancesRevision()
-    {
-        await using var table = new ResidentAssetTable();
-        AssetGuid guid = AssetGuid.New();
-        var canonical = new Probe(3);
-        Probe loaded = await table.LoadAsync(
-            guid,
-            (_, _) => Task.FromResult(new AssetPublication<Probe>(canonical)),
-            default);
-        var replacement = new Probe(37);
-
-        Probe reloaded = await table.ReloadAsync(
-            loaded,
-            (_, _) => Task.FromResult(new AssetPublication<Probe>(replacement)),
-            static (current, incoming, _) =>
-            {
-                current.Value = incoming.Value;
-                return ValueTask.CompletedTask;
-            },
-            default);
-
-        Assert.Same(canonical, reloaded);
-        Assert.Equal(37, canonical.Value);
-        Assert.Equal<ulong>(2, table.GetRevision(canonical));
-    }
-
-    [Fact]
-    public async Task FailedReloadKeepsCanonicalObjectAndRevision()
-    {
-        await using var table = new ResidentAssetTable();
-        AssetGuid guid = AssetGuid.New();
-        var canonical = new Probe(5);
-        Probe loaded = await table.LoadAsync(
-            guid,
-            (_, _) => Task.FromResult(new AssetPublication<Probe>(canonical)),
-            default);
-
-        await Assert.ThrowsAsync<InvalidDataException>(
-            () => table.ReloadAsync(
-                loaded,
-                (_, _) => Task.FromException<AssetPublication<Probe>>(
-                    new InvalidDataException("broken publication")),
-                static (_, _, _) => ValueTask.CompletedTask,
-                default).AsTask());
-
-        Assert.Same(canonical, loaded);
-        Assert.Equal(5, canonical.Value);
-        Assert.Equal<ulong>(1, table.GetRevision(canonical));
-    }
-
-    [Fact]
-    public async Task DisposalReleasesCanonicalObjectsInReversePublicationOrder()
-    {
-        var order = new List<int>();
-        var table = new ResidentAssetTable();
-        DisposableProbe first = await table.LoadAsync(
-            AssetGuid.New(),
-            (_, _) => Task.FromResult(
-                new AssetPublication<DisposableProbe>(new DisposableProbe(1, order))),
-            default);
-        DisposableProbe second = await table.LoadAsync(
-            AssetGuid.New(),
-            (_, _) => Task.FromResult(
-                new AssetPublication<DisposableProbe>(new DisposableProbe(2, order))),
-            default);
-
-        Assert.NotSame(first, second);
-        await table.DisposeAsync();
-
-        Assert.Equal([2, 1], order);
-    }
-
-    private sealed class Probe(int value)
-    {
-        internal int Value { get; set; } = value;
-    }
-
-    private sealed class DisposableProbe(int id, List<int> order) : IDisposable
-    {
-        public void Dispose() => order.Add(id);
+        private AssetEntry _entry = new(guid, typeof(ProbeAsset).FullName!, ProbeAsset.SchemaFingerprint, Guid.NewGuid());
+        internal string Path { get; private set; } = path;
+        internal void Publish(string path)
+        {
+            Path = path;
+            _entry = new AssetEntry(guid, typeof(ProbeAsset).FullName!, ProbeAsset.SchemaFingerprint, Guid.NewGuid());
+        }
+        internal Task Resume { get; set; } = Task.CompletedTask;
+        internal bool Fail { get; set; }
+        public bool TryFind(AssetGuid requested, out AssetEntry entry)
+        {
+            entry = _entry;
+            return requested == guid;
+        }
+        public async ValueTask<IRangeSource> OpenAsync(AssetEntry entry, CancellationToken cancellationToken = default)
+        {
+            await Resume.WaitAsync(cancellationToken);
+            if (Fail) throw new InvalidDataException("Unreadable asset.");
+            return FileRangeSource.Open(Path);
+        }
     }
 }

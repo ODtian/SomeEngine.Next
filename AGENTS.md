@@ -1,38 +1,21 @@
-# SomeEngine Agent Entry
+项目使用C#
+# 代码风格
+此引擎是给人类使用的，请注意代码风格不要写无法辨识的代码
+数据优先以是什么数据命名，行为优先以是什么行为命名，不要用行为命名数据，用数据命名行为
+禁用词：Authoring Lease Cursor Plan Slot Owner Lease Runtime Publication Admission Canonical Exact Stable Physical Logical Prepared Pending Snapshot Fingerprint Module Program Sink Contract Abi Invocation，原因是含义空洞，不是具体数据也不是具体行为
+Debug、优化时，先问是否是架构造成的，不要在错误的架构下打补丁，能重构则尽早重构
+所有权、数据、状态是否有且仅有一个主要的持有者，是否进行了多余的维护
 
-## Default Workflow
+# Validation
+代码不要过度检验，先问值、状态是否已经在内部形成了不变量。
+如果需要检验，优先调用引擎统一的validation层（不止graphic）使其可以在运行时关闭。只有真的影响功能，才在运行时路径检验
 
-The previous preflight → harness-authoring → batch-workstream → harness-runner workflow is suspended. Do not enter it by default.
+临时运行、临时脚本、临时结果、临时探针，使用完成后立即删除，不要把临时内容保留在工作区内或者临时目录/
 
-The only project-specific workflow available by default is one Grill:
+# Testing
+测试范围仅覆盖行为与公共API，严禁针对内部具体实现进行测试
 
-1. Use `grilling` when the user explicitly asks to grill/stress-test a plan or when a design genuinely requires interactive clarification.
-2. Use `grill-with-docs` instead only when the user explicitly wants the grill to maintain ADRs, glossary, or other durable design documentation.
-3. Ask one question at a time. Inspect the repository instead of asking questions whose answers can be discovered locally.
-4. Once the Grill is accepted, stop the project-specific workflow. Any requested implementation proceeds as ordinary repository work with proportionate build/tests, not through preflight, harness authoring, batch workstreams, numeric runs, or a mandatory single-harness gate.
+# Rendering
+渲染架构采用Game world、Rendering world分离，严禁增加其他数据通路
+渲染架构不默认任何顶点属性布局，也不在运行时记录读取元数据动态多态。一切由用户自己的材质解释，管线只依赖用户shader解释
 
-Do not create `.agent-runs/`, grill transcript artifacts, harness code, review targets, batch instructions, or harness status reports merely because work is being implemented. Existing harness files may still be run or edited when the user explicitly requests them, but they are not a default workflow or completion requirement.
-
-Default builds and tests use `SomeEngine.slnx`, which excludes harness projects. The remaining harness checks are ordinary opt-in .NET tests, available only through `SomeEngine.Harness.slnx` or `just harness-test`. There is no PowerShell harness runner, hard/warning bucket, run-id protocol, or alternate scripted test orchestration.
-
-## Temporarily Disabled Skills
-
-- The only user-facing skills enabled by default are `grilling` and `grill-with-docs`.
-- All other repository, global, plugin, and project skills are temporarily disabled, even when their descriptions appear to match the task. Do not invoke them unless the user explicitly names or re-enables the skill in a later request.
-- `domain-modeling` is not independently enabled. It may be used only as the internal dependency required by an explicitly requested `grill-with-docs` session.
-- In particular, do not automatically invoke `preflight`, `harness-authoring`, `harness-runner`, `batch-workstream`, `batch-workstream-strict`, any `grill-*` sub-skill, or `grill-session-record`.
-- Do not delete disabled skill files. This is a temporary invocation policy, not removal of the installed skills.
-
-## Project Structure
-
-- `src/` contains product code.
-- `tests/` contains executable tests.
-- `tools/` contains project tools and validation executables.
-- `assets/` contains shaders, schemas, and project assets.
-- `external/` contains third-party dependencies.
-- `harness/` contains automatic checks, baselines, schemas, and run artifacts.
-  - `harness/maintainability/` — code quality, runtime metrics, wiki link gate.
-  - `harness/architecture/` — layer dependency, profiler禁区, API shape.
-  - `harness/behaviour/` — functional tests, diff intent cross-validation.
-- `wiki/` is an Obsidian vault for durable project knowledge.
-- `.agents/skills/` contains grill-sub skills forked from the global skill vault.

@@ -31,17 +31,18 @@ internal sealed record BenchmarkOptions(
     ReceiverVariant[] Variants,
     GraphicsWorkload[] Workloads,
     int[] GraphicsCpuResourceCounts,
-    GraphicsBackendKind GraphicsBackend)
+    GraphicsBackendKind GraphicsBackend,
+    int ProcessCount)
 {
     internal const string Usage = """
         Usage:
+          Controllers accept --processes <count> (default 1); warp and diagnose accept --variants <name,...>.
           SomeEngine.Graphics.Benchmarks warp [--output <report.json>] [--native-runner <exe>]
           SomeEngine.Graphics.Benchmarks probe --adapter <low>:<high> [--workloads <name,...>] [--variants <interface-receiver,direct-silk,direct-silk-default>] [--output <report.json>] [--resume <raw-directory>]
-          SomeEngine.Graphics.Benchmarks diagnose --adapter <low>:<high> [--direct-mode <optimized|default>] [--output <report.json>] --native-runner <exe> [--managed-runner <exe>] [--resume <raw-directory>]
-          SomeEngine.Graphics.Benchmarks certify --adapter <low>:<high> [--output <report.json>] --native-runner <exe> [--managed-runner <exe>] [--resume <raw-directory>]
+          SomeEngine.Graphics.Benchmarks diagnose --adapter <low>:<high> [--direct-mode <optimized|default>] [--output <report.json>] [--native-runner <exe>] [--managed-runner <exe>] [--resume <raw-directory>]
           SomeEngine.Graphics.Benchmarks evaluate --input <report.json>
-          SomeEngine.Graphics.Benchmarks graph-cpu --backend <d3d12|vulkan> --adapter <low>:<high> [--resource-counts <25,50,...,200>] [--output <report.json>] [--warmup <minimum-frames>] [--samples <frames>]
-          SomeEngine.Graphics.Benchmarks worker --profile <warp|probe|diagnose|certify|representative> --variant <interface-receiver|direct-silk|direct-silk-default> --adapter <low>:<high> --process-index <n> --shader-dir <path> --output <path> [--direct-mode <optimized|default>] [internal count options]
+          SomeEngine.Graphics.Benchmarks graph-cpu --backend <d3d12|vulkan> --adapter <low>:<high> [--resource-counts <count,...>] [--output <report.json>] [--warmup <minimum-frames>] [--samples <frames>]
+          SomeEngine.Graphics.Benchmarks worker --profile <warp|probe|diagnose|representative> --variant <interface-receiver|direct-silk|direct-silk-default> --adapter <low>:<high> --process-index <n> --shader-dir <path> --output <path> [--direct-mode <optimized|default>] [internal count options]
         """;
 
     internal static BenchmarkOptions Parse(string[] args)
@@ -66,7 +67,6 @@ internal sealed record BenchmarkOptions(
                 "graphics-benchmarks",
                 command switch
                 {
-                    BenchmarkCommand.Certify => "vendor-certification.json",
                     BenchmarkCommand.Diagnose => "fast-diagnostic.json",
                     BenchmarkCommand.Probe => "developer-probe.json",
                     BenchmarkCommand.GraphCpu => "rendergraph-cpu-development.json",
@@ -83,7 +83,6 @@ internal sealed record BenchmarkOptions(
             : null;
         BenchmarkProfile profile = command switch
         {
-            BenchmarkCommand.Certify => BenchmarkProfile.VendorCertification,
             BenchmarkCommand.Diagnose => BenchmarkProfile.FastDiagnostic,
             BenchmarkCommand.Warp => BenchmarkProfile.WarpFunctional,
             BenchmarkCommand.Worker => ParseProfile(
@@ -96,48 +95,43 @@ internal sealed record BenchmarkOptions(
 
         int warmup = ParsePositive(values, "warmup", profile switch
         {
-            BenchmarkProfile.WarpFunctional => FixedGraphicsProtocol.WarpWarmupFrames,
-            BenchmarkProfile.FastDiagnostic => FixedGraphicsProtocol.DiagnosticWarmupFrames,
-            BenchmarkProfile.VendorCertification => FixedGraphicsProtocol.WarmupFrames,
-            BenchmarkProfile.DeveloperProbe => FixedGraphicsProtocol.ProbeWarmupFrames,
-            BenchmarkProfile.RepresentativeCpuFrame => FixedGraphicsProtocol.RepresentativeWarmupFrames,
-            BenchmarkProfile.GraphicsCpuDevelopment => FixedGraphicsProtocol.GraphicsCpuMinimumWarmupFrames,
+            BenchmarkProfile.WarpFunctional => BenchmarkDefaults.WarpWarmupFrames,
+            BenchmarkProfile.FastDiagnostic => BenchmarkDefaults.DiagnosticWarmupFrames,
+            BenchmarkProfile.DeveloperProbe => BenchmarkDefaults.ProbeWarmupFrames,
+            BenchmarkProfile.RepresentativeCpuFrame => BenchmarkDefaults.RepresentativeWarmupFrames,
+            BenchmarkProfile.GraphicsCpuDevelopment => BenchmarkDefaults.GraphicsCpuMinimumWarmupFrames,
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         });
         int measured = ParsePositive(values, "samples", profile switch
         {
-            BenchmarkProfile.WarpFunctional => FixedGraphicsProtocol.WarpMeasuredFrames,
-            BenchmarkProfile.FastDiagnostic => FixedGraphicsProtocol.DiagnosticMeasuredFrames,
-            BenchmarkProfile.VendorCertification => FixedGraphicsProtocol.MeasuredFrames,
-            BenchmarkProfile.DeveloperProbe => FixedGraphicsProtocol.ProbeMeasuredFrames,
-            BenchmarkProfile.RepresentativeCpuFrame => FixedGraphicsProtocol.RepresentativeMeasuredFrames,
-            BenchmarkProfile.GraphicsCpuDevelopment => FixedGraphicsProtocol.GraphicsCpuMeasuredFrames,
+            BenchmarkProfile.WarpFunctional => BenchmarkDefaults.WarpMeasuredFrames,
+            BenchmarkProfile.FastDiagnostic => BenchmarkDefaults.DiagnosticMeasuredFrames,
+            BenchmarkProfile.DeveloperProbe => BenchmarkDefaults.ProbeMeasuredFrames,
+            BenchmarkProfile.RepresentativeCpuFrame => BenchmarkDefaults.RepresentativeMeasuredFrames,
+            BenchmarkProfile.GraphicsCpuDevelopment => BenchmarkDefaults.GraphicsCpuMeasuredFrames,
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         });
         int draws = ParsePositive(values, "draws", profile switch
         {
-            BenchmarkProfile.WarpFunctional => FixedGraphicsProtocol.WarpDrawCount,
-            BenchmarkProfile.FastDiagnostic => FixedGraphicsProtocol.DiagnosticDrawCount,
-            BenchmarkProfile.VendorCertification => FixedGraphicsProtocol.DrawCount,
-            BenchmarkProfile.DeveloperProbe => FixedGraphicsProtocol.ProbeDrawCount,
+            BenchmarkProfile.WarpFunctional => BenchmarkDefaults.WarpDrawCount,
+            BenchmarkProfile.FastDiagnostic => BenchmarkDefaults.DiagnosticDrawCount,
+            BenchmarkProfile.DeveloperProbe => BenchmarkDefaults.ProbeDrawCount,
             BenchmarkProfile.RepresentativeCpuFrame => RepresentativeFrameProfile.DrawCount,
             BenchmarkProfile.GraphicsCpuDevelopment => RepresentativeFrameProfile.DrawCount,
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         });
         int barriers = profile == BenchmarkProfile.FastDiagnostic
-            ? ParseNonNegative(values, "barriers", FixedGraphicsProtocol.DiagnosticBarrierCount)
+            ? ParseNonNegative(values, "barriers", BenchmarkDefaults.DiagnosticBarrierCount)
             : ParsePositive(
                 values,
                 "barriers",
-                profile == BenchmarkProfile.VendorCertification
-                    ? FixedGraphicsProtocol.BarrierCount
-                    : profile == BenchmarkProfile.DeveloperProbe
-                        ? FixedGraphicsProtocol.ProbeBarrierCount
+                profile == BenchmarkProfile.DeveloperProbe
+                        ? BenchmarkDefaults.ProbeBarrierCount
                         : profile == BenchmarkProfile.RepresentativeCpuFrame
                             ? RepresentativeFrameProfile.BarrierCount
                             : profile == BenchmarkProfile.GraphicsCpuDevelopment
                                 ? RepresentativeFrameProfile.BarrierCount
-                            : FixedGraphicsProtocol.WarpBarrierCount);
+                            : BenchmarkDefaults.WarpBarrierCount);
         int processIndex = ParseNonNegative(values, "process-index", 0);
         string? directMode = Get(values, "direct-mode");
         bool defaultDirectCalls = Normalize(directMode ?? "optimized") switch
@@ -157,21 +151,19 @@ internal sealed record BenchmarkOptions(
         ValidateKnown(values);
         if (command == BenchmarkCommand.Worker && (variant is null || adapterText is null))
             throw new BenchmarkUsageException("worker requires --variant and --adapter.");
-        if (command is BenchmarkCommand.Certify or BenchmarkCommand.Diagnose or BenchmarkCommand.Probe or BenchmarkCommand.GraphCpu && adapterText is null)
+        if (command is BenchmarkCommand.Diagnose or BenchmarkCommand.Probe or BenchmarkCommand.GraphCpu && adapterText is null)
             throw new BenchmarkUsageException($"{Normalize(args[0])} requires an explicit hardware --adapter LUID.");
-        if (command is BenchmarkCommand.Certify or BenchmarkCommand.Diagnose && Get(values, "native-runner") is null)
-            throw new BenchmarkUsageException($"{Normalize(args[0])} requires --native-runner; C++ comparison data cannot be omitted.");
         if (command == BenchmarkCommand.Evaluate && Get(values, "input") is null)
             throw new BenchmarkUsageException("evaluate requires --input.");
         if (Get(values, "resume") is not null &&
-            command is not BenchmarkCommand.Certify and not BenchmarkCommand.Diagnose and not BenchmarkCommand.Probe)
+            command is not BenchmarkCommand.Diagnose and not BenchmarkCommand.Probe)
         {
-            throw new BenchmarkUsageException("--resume is valid only with probe, diagnose, or certify.");
+            throw new BenchmarkUsageException("--resume is valid only with probe or diagnose.");
         }
         if (Get(values, "managed-runner") is not null &&
-            command is not BenchmarkCommand.Certify and not BenchmarkCommand.Diagnose)
+            command is not BenchmarkCommand.Diagnose)
         {
-            throw new BenchmarkUsageException("--managed-runner is valid only with diagnose or certify.");
+            throw new BenchmarkUsageException("--managed-runner is valid only with diagnose.");
         }
         if (directMode is not null &&
             command is not BenchmarkCommand.Diagnose and not BenchmarkCommand.Worker)
@@ -190,23 +182,6 @@ internal sealed record BenchmarkOptions(
             throw new BenchmarkUsageException("warp selects the D3D12 WARP adapter automatically; --adapter is not valid.");
         if (Get(values, "backend") is not null && command != BenchmarkCommand.GraphCpu)
             throw new BenchmarkUsageException("--backend is valid only with graph-cpu.");
-        if (command == BenchmarkCommand.Certify &&
-            (warmup != FixedGraphicsProtocol.WarmupFrames ||
-             measured != FixedGraphicsProtocol.MeasuredFrames ||
-             draws != FixedGraphicsProtocol.DrawCount ||
-             barriers != FixedGraphicsProtocol.BarrierCount))
-        {
-            throw new BenchmarkUsageException("The certification protocol counts are fixed and cannot be overridden.");
-        }
-        if (command == BenchmarkCommand.Diagnose &&
-            (warmup != FixedGraphicsProtocol.DiagnosticWarmupFrames ||
-             measured != FixedGraphicsProtocol.DiagnosticMeasuredFrames ||
-             draws != FixedGraphicsProtocol.DiagnosticDrawCount ||
-             barriers != FixedGraphicsProtocol.DiagnosticBarrierCount))
-        {
-            throw new BenchmarkUsageException("The fast diagnostic counts are fixed and cannot be overridden.");
-        }
-
         return new BenchmarkOptions(
             command,
             profile,
@@ -225,17 +200,17 @@ internal sealed record BenchmarkOptions(
             Get(values, "input") is string input ? FullPath(input) : null,
             Get(values, "resume") is string resume ? FullPath(resume) : null,
             defaultDirectCalls,
-            ParseVariants(Get(values, "variants"), command),
+            ParseVariants(Get(values, "variants"), command, Get(values, "native-runner") is not null),
             ParseWorkloads(Get(values, "workloads"), command),
             ParseGraphicsCpuResourceCounts(Get(values, "resource-counts"), command),
-            graphicsBackend);
+            graphicsBackend,
+            ParsePositive(values, "processes", 1));
     }
 
     private static BenchmarkCommand ParseCommand(string value) => Normalize(value) switch
     {
         "warp" => BenchmarkCommand.Warp,
         "diagnose" => BenchmarkCommand.Diagnose,
-        "certify" => BenchmarkCommand.Certify,
         "worker" => BenchmarkCommand.Worker,
         "evaluate" => BenchmarkCommand.Evaluate,
         "probe" => BenchmarkCommand.Probe,
@@ -247,7 +222,6 @@ internal sealed record BenchmarkOptions(
     {
         "warp" => BenchmarkProfile.WarpFunctional,
         "diagnose" => BenchmarkProfile.FastDiagnostic,
-        "certify" => BenchmarkProfile.VendorCertification,
         "probe" => BenchmarkProfile.DeveloperProbe,
         "representative" => BenchmarkProfile.RepresentativeCpuFrame,
         "graph-cpu" => BenchmarkProfile.GraphicsCpuDevelopment,
@@ -263,23 +237,28 @@ internal sealed record BenchmarkOptions(
         _ => throw new BenchmarkUsageException($"Unknown receiver variant '{value}'."),
     };
 
-    private static ReceiverVariant[] ParseVariants(string? value, BenchmarkCommand command)
+    private static ReceiverVariant[] ParseVariants(string? value, BenchmarkCommand command, bool hasNativeRunner)
     {
         ReceiverVariant[] result = value is null
-            ? (command == BenchmarkCommand.Probe ? FixedGraphicsProtocol.ProbeVariants : [])
+            ? (command == BenchmarkCommand.Probe ? BenchmarkDefaults.ProbeVariants :
+                hasNativeRunner ? BenchmarkDefaults.Variants : [ReceiverVariant.InterfaceReceiver, ReceiverVariant.DirectSilk])
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(ParseVariant).Distinct().ToArray();
-        if (command != BenchmarkCommand.Probe && value is not null)
-            throw new BenchmarkUsageException("--variants is valid only with probe.");
+        if (command is not BenchmarkCommand.Probe and not BenchmarkCommand.Warp and not BenchmarkCommand.Diagnose && value is not null)
+            throw new BenchmarkUsageException("--variants is valid with warp, probe, or diagnose.");
         if (command == BenchmarkCommand.Probe && (result.Length == 0 || result.Contains(ReceiverVariant.NativeCpp)))
-            throw new BenchmarkUsageException("probe requires at least one managed variant; native-cpp is reserved for formal protocols.");
+            throw new BenchmarkUsageException("probe requires at least one managed variant; native-cpp does not support custom workload selection.");
+        if (result.Length == 0)
+            throw new BenchmarkUsageException("Select at least one variant.");
+        if (result.Contains(ReceiverVariant.NativeCpp) && !hasNativeRunner)
+            throw new BenchmarkUsageException("The native-cpp variant requires --native-runner.");
         return result;
     }
 
     private static GraphicsWorkload[] ParseWorkloads(string? value, BenchmarkCommand command)
     {
         GraphicsWorkload[] result = value is null
-            ? (command == BenchmarkCommand.Probe ? FixedGraphicsProtocol.ProbeWorkloads : [])
+            ? (command == BenchmarkCommand.Probe ? BenchmarkDefaults.ProbeWorkloads : [])
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(ParseWorkload).Distinct().ToArray();
         if (command is not BenchmarkCommand.Probe and not BenchmarkCommand.Worker && value is not null)
@@ -328,10 +307,10 @@ internal sealed record BenchmarkOptions(
         if (command != BenchmarkCommand.GraphCpu && value is not null)
             throw new BenchmarkUsageException("--resource-counts is valid only with graph-cpu.");
         if (command == BenchmarkCommand.GraphCpu &&
-            (result.Length == 0 || result.Any(static count => count < 25 || count > 200 || count % 25 != 0)))
+            (result.Length == 0 || result.Any(static count => count < 4)))
         {
             throw new BenchmarkUsageException(
-                "graph-cpu resource counts must be one or more official sweep values: 25,50,75,100,125,150,175,200.");
+                "graph-cpu resource counts must contain at least one value of 4 or more.");
         }
         return result;
     }
@@ -382,7 +361,7 @@ internal sealed record BenchmarkOptions(
     {
         string[] known =
         [
-            "output", "adapter", "variant", "process-index", "warmup", "samples",
+            "output", "adapter", "variant", "process-index", "processes", "warmup", "samples",
             "draws", "barriers", "shader-dir", "native-runner", "managed-runner", "input", "profile", "resume", "variants", "workloads", "direct-mode", "resource-counts", "backend",
         ];
         foreach (string key in values.Keys)

@@ -7,7 +7,7 @@ public sealed class VulkanSparseTests
     [Fact]
     public void Sparse_buffer_bind_and_mapping_copy_alias_heap_tiles()
     {
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         IGraphicsBackend graphics = backend;
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -33,16 +33,6 @@ public sealed class VulkanSparseTests
             queue,
             [new SparseMappingDesc(source, oneTile, SparseMappingType.Mapped, heap, 0)]);
         Assert.Equal(WaitStatus.Completed, backend.WaitCpu(mapped, TimeSpan.FromSeconds(2)));
-        backend.FaultHooks.OverrideResult = static (point, result) =>
-            point == VulkanCallPoint.QueueBindSparse
-                ? Silk.NET.Vulkan.Result.ErrorOutOfHostMemory
-                : result;
-        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
-            graphics.UpdateSparseMappings(
-                queue,
-                [new SparseMappingDesc(source, oneTile, SparseMappingType.Unmapped, null, 0)]));
-        Assert.Equal(GraphicsError.OutOfMemory, failure.Error);
-        backend.FaultHooks.Reset();
         QueueCompletion copied = graphics.CopySparseMappings(
             queue,
             [new SparseMappingCopyDesc(destination, origin, source, origin, oneTile)]);

@@ -10,27 +10,7 @@ namespace SomeEngine.Tests.Assets;
 
 public sealed class AssetTypeExtensibilityTests
 {
-    [Fact]
-    public void GeneratedDescriptorIsClosedOverTheSingleAssetType()
-    {
-        AssetAttribute attribute = Assert.Single(
-            typeof(ProbeAsset).GetCustomAttributes<AssetAttribute>());
-        AssetTypeDescriptor<ProbeAsset> descriptor = AssetType<ProbeAsset>.Descriptor;
 
-        Assert.Equal(".probe.asset", attribute.PathSuffix);
-        Assert.Equal(typeof(ProbeAsset).FullName, descriptor.AssetType);
-        Assert.Equal(ProbeAsset.TypeId, descriptor.WireType.TypeId);
-        Assert.Equal(ProbeAsset.SchemaFingerprint, descriptor.SchemaFingerprint);
-        Assert.Equal(typeof(ProbeAsset), descriptor.GetAssetGuid.Method.GetParameters()[0].ParameterType);
-        Assert.False(typeof(AssetAttribute).IsGenericTypeDefinition);
-        ConstructorInfo assetConstructor = Assert.Single(typeof(AssetAttribute).GetConstructors());
-        ParameterInfo suffixParameter = Assert.Single(assetConstructor.GetParameters());
-        Assert.Equal(typeof(string), suffixParameter.ParameterType);
-        Assert.False(suffixParameter.IsOptional);
-        Assert.DoesNotContain(
-            typeof(ProbeAsset).GetInterfaces(),
-            static type => type.Name.StartsWith("IAsset", StringComparison.Ordinal));
-    }
 
     [Fact]
     public async Task NewAssetTypeNeedsNoCentralRegistrationAndEncodesOnce()
