@@ -10,9 +10,9 @@ internal sealed unsafe partial class VulkanBackend
         MemoryBarrier2 native = new()
         {
             SType = StructureType.MemoryBarrier2,
-            SrcStageMask = ToNative(barrier.SyncBefore),
+            SrcStageMask = ToNative(barrier.SyncBefore, (VulkanDevice)command.Device),
             SrcAccessMask = ToNative(barrier.AccessBefore),
-            DstStageMask = ToNative(barrier.SyncAfter),
+            DstStageMask = ToNative(barrier.SyncAfter, (VulkanDevice)command.Device),
             DstAccessMask = ToNative(barrier.AccessAfter),
         };
         EmitBarriers(command.NativeRecording, new ReadOnlySpan<MemoryBarrier2>(&native, 1), [], []);
@@ -124,9 +124,9 @@ internal sealed unsafe partial class VulkanBackend
             memories[memoryCount++] = new MemoryBarrier2
             {
                 SType = StructureType.MemoryBarrier2,
-                SrcStageMask = ToNative(barrier.SyncBefore),
+                SrcStageMask = ToNative(barrier.SyncBefore, (VulkanDevice)command.Device),
                 SrcAccessMask = ToNative(barrier.AccessBefore),
-                DstStageMask = ToNative(barrier.SyncAfter),
+                DstStageMask = ToNative(barrier.SyncAfter, (VulkanDevice)command.Device),
                 DstAccessMask = ToNative(barrier.AccessAfter),
             };
         }
@@ -305,9 +305,9 @@ internal sealed unsafe partial class VulkanBackend
         uint destinationFamily) => new()
     {
         SType = StructureType.BufferMemoryBarrier2,
-        SrcStageMask = ToNative(syncBefore),
+        SrcStageMask = ToNative(syncBefore, (VulkanDevice)buffer.Device),
         SrcAccessMask = ToNative(accessBefore),
-        DstStageMask = ToNative(syncAfter),
+        DstStageMask = ToNative(syncAfter, (VulkanDevice)buffer.Device),
         DstAccessMask = ToNative(accessAfter),
         SrcQueueFamilyIndex = sourceFamily,
         DstQueueFamilyIndex = destinationFamily,
@@ -329,9 +329,9 @@ internal sealed unsafe partial class VulkanBackend
         uint destinationFamily) => new()
     {
         SType = StructureType.ImageMemoryBarrier2,
-        SrcStageMask = ToNative(syncBefore),
+        SrcStageMask = ToNative(syncBefore, (VulkanDevice)texture.Device),
         SrcAccessMask = ToNative(accessBefore),
-        DstStageMask = ToNative(syncAfter),
+        DstStageMask = ToNative(syncAfter, (VulkanDevice)texture.Device),
         DstAccessMask = ToNative(accessAfter),
         OldLayout = ToNative(layoutBefore),
         NewLayout = ToNative(layoutAfter),
@@ -376,7 +376,7 @@ internal sealed unsafe partial class VulkanBackend
         destination = Vk.QueueFamilyIgnored;
     }
 
-    internal static PipelineStageFlags2 ToNative(PipelineSync sync)
+    private static PipelineStageFlags2 ToNative(PipelineSync sync, VulkanDevice device)
     {
         if (sync == PipelineSync.None)
             return PipelineStageFlags2.None;
@@ -395,8 +395,8 @@ internal sealed unsafe partial class VulkanBackend
         Add(PipelineSync.Resolve, PipelineStageFlags2.ResolveBit);
         Add(PipelineSync.ExecuteIndirect, PipelineStageFlags2.DrawIndirectBit);
         Add(PipelineSync.Predication, PipelineStageFlags2.ConditionalRenderingBitExt);
-        Add(PipelineSync.AllShading, PipelineStageFlags2.AllGraphicsBit | PipelineStageFlags2.ComputeShaderBit | PipelineStageFlags2.RayTracingShaderBitKhr);
-        Add(PipelineSync.NonPixelShading, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.ComputeShaderBit | PipelineStageFlags2.RayTracingShaderBitKhr);
+        Add(PipelineSync.AllShading, device.NonPixelShadingStages | PipelineStageFlags2.FragmentShaderBit);
+        Add(PipelineSync.NonPixelShading, device.NonPixelShadingStages);
         Add(PipelineSync.Clear, PipelineStageFlags2.ClearBit);
         Add(PipelineSync.AccelerationStructureCopy, PipelineStageFlags2.AccelerationStructureCopyBitKhr);
         Add(PipelineSync.EmitAccelerationStructurePostBuildInfo, PipelineStageFlags2.AccelerationStructureBuildBitKhr);

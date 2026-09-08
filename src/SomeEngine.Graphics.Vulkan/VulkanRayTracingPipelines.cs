@@ -345,11 +345,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanRayTracingPipelineState pipeline)
     {
         if (desc.RayGenerationRecordCount == 0 || desc.MaximumRecordSize == 0 ||
-            desc.MaximumRecordSize > pipeline.MaximumStride ||
-            desc.RayGenerationRecordCount > pipeline.GroupCount ||
-            desc.MissRecordCount > pipeline.GroupCount ||
-            desc.HitRecordCount > pipeline.GroupCount ||
-            desc.CallableRecordCount > pipeline.GroupCount)
+            desc.MaximumRecordSize > pipeline.MaximumStride)
             throw new ArgumentOutOfRangeException(nameof(desc));
     }
 

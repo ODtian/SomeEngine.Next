@@ -131,6 +131,19 @@ internal sealed unsafe partial class VulkanBackend
             MaxVertexOutputComponents = nativeProperties.Limits.MaxVertexOutputComponents;
             SupportsBufferDeviceAddress = bufferDeviceAddress;
             _extendedFeatures = extendedFeatures;
+            NonPixelShadingStages = PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.ComputeShaderBit;
+            if (nativeFeatures.GeometryShader)
+                NonPixelShadingStages |= PipelineStageFlags2.GeometryShaderBit;
+            if (nativeFeatures.TessellationShader)
+                NonPixelShadingStages |= PipelineStageFlags2.TessellationControlShaderBit | PipelineStageFlags2.TessellationEvaluationShaderBit;
+            if ((enabledFeatures & DeviceFeatures.RayTracing) != 0)
+                NonPixelShadingStages |= PipelineStageFlags2.RayTracingShaderBitKhr;
+            if ((enabledFeatures & DeviceFeatures.MeshShaders) != 0)
+            {
+                if (extendedFeatures.MeshShader) NonPixelShadingStages |= PipelineStageFlags2.MeshShaderBitExt;
+                if (extendedFeatures.TaskShader) NonPixelShadingStages |= PipelineStageFlags2.TaskShaderBitExt;
+            }
+
             _descriptorAllocator = new VulkanDescriptorAllocator(this);
             _bindlessPublisher = new VulkanBindlessPublisher(this);
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0 &&
@@ -145,6 +158,7 @@ internal sealed unsafe partial class VulkanBackend
             _pipelineWorker = new VulkanPipelineWorker();
         }
 
+        internal PipelineStageFlags2 NonPixelShadingStages { get; }
         internal VulkanBackend Backend => _backend;
         internal VkPhysicalDevice PhysicalDevice => _physicalDevice;
         internal VkDevice Native => _native;

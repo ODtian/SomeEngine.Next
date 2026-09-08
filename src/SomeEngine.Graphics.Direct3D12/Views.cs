@@ -719,7 +719,13 @@ internal sealed unsafe partial class D3D12Backend
             Shader4ComponentMapping = 5768,
         };
 
-        switch (desc.Dimension)
+        TextureViewDimension dimension = desc.Dimension;
+        if (dimension == TextureViewDimension.Cube && range.FirstArrayLayer != 0)
+        {
+            dimension = TextureViewDimension.CubeArray;
+            native.ViewDimension = SrvDimension.Texturecubearray;
+        }
+        switch (dimension)
         {
             case TextureViewDimension.Texture1D:
                 native.Texture1D = new Tex1DSrv

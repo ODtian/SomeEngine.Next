@@ -271,8 +271,6 @@ internal sealed unsafe partial class VulkanBackend
                     if (ResolveKind(shape) != kind)
                         continue;
                     ResourceBinding value = table.GetStagedValue(slot);
-                    if (value.IsNull)
-                        continue;
                     generation.Write(
                         table.FirstIndex + slot,
                         shape,

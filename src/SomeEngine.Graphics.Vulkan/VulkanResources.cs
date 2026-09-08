@@ -574,7 +574,8 @@ internal sealed unsafe partial class VulkanBackend
             }
             if (nativeViewFormats.Length != 0)
                 flags |= ImageCreateFlags.CreateMutableFormatBit;
-            if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6)
+            if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6 &&
+                desc.Width == desc.Height && desc.SampleCount == 1)
                 flags |= ImageCreateFlags.CreateCubeCompatibleBit;
             ImageCreateInfo createInfo = new()
             {
@@ -806,6 +807,8 @@ internal sealed unsafe partial class VulkanBackend
         if ((usages & BufferUsages.ShaderWrite) != 0) result |= BufferUsageFlags.StorageBufferBit | BufferUsageFlags.StorageTexelBufferBit | BufferUsageFlags.ShaderDeviceAddressBit;
         if ((usages & BufferUsages.Vertex) != 0) result |= BufferUsageFlags.VertexBufferBit;
         if ((usages & BufferUsages.Index) != 0) result |= BufferUsageFlags.IndexBufferBit;
+        if ((usages & BufferUsages.Predication) != 0)
+            result |= BufferUsageFlags.ConditionalRenderingBitExt;
         if ((usages & (BufferUsages.Indirect | BufferUsages.Predication)) != 0)
             result |= BufferUsageFlags.IndirectBufferBit;
         if ((usages & BufferUsages.Indirect) != 0)
@@ -1383,7 +1386,8 @@ internal sealed unsafe partial class VulkanBackend
         ImageCreateFlags flags = ImageCreateFlags.CreateAliasBit;
         if (!desc.PermittedViewFormats.IsEmpty)
             flags |= ImageCreateFlags.CreateMutableFormatBit;
-        if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6)
+        if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6 &&
+                desc.Width == desc.Height && desc.SampleCount == 1)
             flags |= ImageCreateFlags.CreateCubeCompatibleBit;
         PhysicalDeviceImageFormatInfo2 info = new()
         {

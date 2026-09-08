@@ -728,7 +728,26 @@ internal sealed unsafe partial class VulkanBackend
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
 
-    private static LogicOp ToNative(LogicOperation operation) => (LogicOp)operation;
+    private static LogicOp ToNative(LogicOperation operation) => operation switch
+    {
+        LogicOperation.Clear => LogicOp.Clear,
+        LogicOperation.Set => LogicOp.Set,
+        LogicOperation.Copy => LogicOp.Copy,
+        LogicOperation.CopyInverted => LogicOp.CopyInverted,
+        LogicOperation.NoOperation => LogicOp.NoOp,
+        LogicOperation.Invert => LogicOp.Invert,
+        LogicOperation.And => LogicOp.And,
+        LogicOperation.Nand => LogicOp.Nand,
+        LogicOperation.Or => LogicOp.Or,
+        LogicOperation.Nor => LogicOp.Nor,
+        LogicOperation.Xor => LogicOp.Xor,
+        LogicOperation.Equivalence => LogicOp.Equivalent,
+        LogicOperation.AndReverse => LogicOp.AndReverse,
+        LogicOperation.AndInverted => LogicOp.AndInverted,
+        LogicOperation.OrReverse => LogicOp.OrReverse,
+        LogicOperation.OrInverted => LogicOp.OrInverted,
+        _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+    };
 
     private static void ThrowPipelineFailure(
         VulkanDevice device,
