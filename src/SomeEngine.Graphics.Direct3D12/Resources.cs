@@ -110,7 +110,10 @@ nativeDevice.Native, visibleNodeMask,
             footprint.Footprint.RowPitch,
             rows,
             rowSize,
-            totalSize);
+            totalSize)
+        {
+            BlockHeight = FormatMappings.IsBlockCompressed(desc.Format) ? 4u : 1u,
+        };
     }
 
     private static PlacedSubresourceFootprint GetNativeCopyFootprint(

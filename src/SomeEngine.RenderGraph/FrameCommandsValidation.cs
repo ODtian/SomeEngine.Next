@@ -134,6 +134,19 @@ internal sealed partial class FrameExecutor
     }
 
     [Conditional("DEBUG")]
+    internal void ValidateTextureCopyBuffer(int pass, in BufferTextureCopy copy, bool write)
+    {
+        TextureInfo info = copy.Texture.Info;
+        var description = new TextureDesc(
+            info.Dimension, info.Width, info.Height, info.Depth,
+            info.MipLevelCount, info.ArrayLayerCount, info.SampleCount,
+            info.Format, info.Usages, info.PermittedViewFormats);
+        TextureCopyFootprint footprint = _frame.Backend.GetTextureCopyFootprint(
+            copy.Texture.Device, description, copy, copy.BufferOffset);
+        ValidateBuffer(pass, copy.Buffer, footprint.GetBufferRange(copy), write);
+    }
+
+    [Conditional("DEBUG")]
     internal void ValidateBuffer(int pass, Buffer buffer, in BufferRange range, bool write)
     {
         int resource = FindBuffer(buffer);

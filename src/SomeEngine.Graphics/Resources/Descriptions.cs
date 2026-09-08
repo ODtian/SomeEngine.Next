@@ -460,7 +460,23 @@ public readonly record struct TextureCopyFootprint(
     uint RowPitch,
     uint RowCount,
     ulong RowSize,
-    ulong TotalSize);
+    ulong TotalSize)
+{
+    public uint BlockHeight { get; init; } = 1;
+
+    public BufferRange GetBufferRange(in BufferTextureCopy copy)
+    {
+        if (RowCount == 0 || copy.Depth == 0)
+            return new BufferRange(copy.BufferOffset, 0);
+        ulong pitch = copy.BufferRowPitch == 0 ? RowSize : copy.BufferRowPitch;
+        ulong imageRows = copy.BufferImageHeight == 0
+            ? RowCount
+            : ((ulong)copy.BufferImageHeight + BlockHeight - 1) / BlockHeight;
+        ulong size = checked(
+            ((ulong)(copy.Depth - 1) * imageRows + RowCount - 1) * pitch + RowSize);
+        return new BufferRange(copy.BufferOffset, size);
+    }
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>

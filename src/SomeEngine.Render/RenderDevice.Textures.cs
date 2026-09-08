@@ -409,10 +409,7 @@ public sealed partial class RenderDevice
         if (requiredSource > checked((ulong)source.Length))
             throw new InvalidDataException("A Texture tile payload is shorter than its storage layout.");
 
-        ulong graphValidatedSize = checked(
-            footprint.Offset +
-            ((ulong)Math.Max(footprint.RowPitch, 1u) * Math.Max(tile.Height, 1u)));
-        byte[] result = new byte[checked((int)Math.Max(footprint.TotalSize, graphValidatedSize))];
+        byte[] result = new byte[checked((int)(footprint.Offset + footprint.TotalSize))];
         for (uint row = 0; row < footprint.RowCount; row++)
         {
             int sourceOffset = checked((int)((ulong)row * sourceRowPitch));

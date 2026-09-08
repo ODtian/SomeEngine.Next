@@ -67,7 +67,10 @@ internal sealed unsafe partial class VulkanBackend
             requestedBufferOffset,
             nativeDevice.Capabilities.Limits.TextureDataPlacementAlignment);
         ulong totalSize = checked((ulong)rowPitch * rowCount * copy.Depth);
-        return new TextureCopyFootprint(offset, rowPitch, rowCount, rowSize, totalSize);
+        return new TextureCopyFootprint(offset, rowPitch, rowCount, rowSize, totalSize)
+        {
+            BlockHeight = blockHeight,
+        };
     }
 
     internal RhiHeap CreateHeap(RhiDevice device, in HeapDesc desc)
