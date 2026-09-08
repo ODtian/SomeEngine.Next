@@ -271,14 +271,23 @@ internal sealed unsafe partial class VulkanBackend
         SparseImageMemoryBindInfo[] imageInfos = new SparseImageMemoryBindInfo[imageRecords.Count];
         SparseMemoryBind[] opaqueBinds = opaqueRecords.Select(static value => value.Bind).ToArray();
         SparseImageOpaqueMemoryBindInfo[] opaqueInfos = new SparseImageOpaqueMemoryBindInfo[opaqueRecords.Count];
-        IVulkanRetained[] retained = retainedSet.ToArray();
         List<VulkanSparseChangeSet> changes = BuildSparseChanges(mappings);
-        VulkanQueueWork work = queue.TakeWork();
+        VulkanQueueWork? work = null;
         bool committed = false;
         try
         {
-            work.EnsureCapacity(0, 0, 0, retained.Length, 0, 0);
-            RetainSparseWork(work, retained);
+            work = queue.TakeWork();
+            work.EnsureCapacity(0, 0, 0, checked(retainedSet.Count + changes.Count), 0, 0);
+            foreach (IVulkanRetained value in retainedSet)
+            {
+                value.RetainNative();
+                work.RetainedTimelines[work.TimelineCount++] = value;
+            }
+            foreach (VulkanSparseChangeSet change in changes)
+            {
+                VulkanSparseBindings bindings = change.State.CaptureBindings();
+                work.RetainedTimelines[work.TimelineCount++] = bindings;
+            }
 
             lock (queue.Gate)
             {
@@ -386,17 +395,6 @@ internal sealed unsafe partial class VulkanBackend
     {
         Result result = Api.QueueBindSparse(queue.Native, 1, bind, default);
         return result;
-    }
-
-    private static void RetainSparseWork(
-        VulkanQueueWork work,
-        ReadOnlySpan<IVulkanRetained> retained)
-    {
-        foreach (IVulkanRetained value in retained)
-        {
-            value.RetainNative();
-            work.RetainedTimelines[work.TimelineCount++] = value;
-        }
     }
 
     private static List<VulkanSparseChangeSet> BuildSparseChanges(
@@ -567,7 +565,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         private static long s_nextId;
         private readonly object _gate = new();
-        private Dictionary<SparseTileKey, SparseTileBinding> _bindings = [];
+        private VulkanSparseBindings _bindings = new([]);
 
         internal long Id { get; } = Interlocked.Increment(ref s_nextId);
         internal SparseResourceInfo Info { get; } = info;
@@ -579,17 +577,26 @@ internal sealed unsafe partial class VulkanBackend
         internal bool TryGet(in SparseTileKey key, out SparseTileBinding binding)
         {
             lock (_gate)
-                return _bindings.TryGetValue(key, out binding);
+                return _bindings.Values.TryGetValue(key, out binding);
         }
 
-        internal Dictionary<SparseTileKey, SparseTileBinding> BuildReplacement(
+        internal VulkanSparseBindings CaptureBindings()
+        {
+            lock (_gate)
+            {
+                _bindings.RetainNative();
+                return _bindings;
+            }
+        }
+
+        internal VulkanSparseBindings BuildReplacement(
             List<PreparedSparseMapping> mappings)
         {
             var replacement = new Dictionary<SparseTileKey, SparseTileBinding>(
-                _bindings.Count + mappings.Count);
+                _bindings.Values.Count + mappings.Count);
             try
             {
-                foreach ((SparseTileKey key, SparseTileBinding binding) in _bindings)
+                foreach ((SparseTileKey key, SparseTileBinding binding) in _bindings.Values)
                 {
                     binding.Heap.RetainNative();
                     replacement.Add(key, binding);
@@ -619,7 +626,7 @@ internal sealed unsafe partial class VulkanBackend
                         replacement.Add(key, new SparseTileBinding(prepared.Heap, heapOffset));
                     }
                 }
-                return replacement;
+                return new VulkanSparseBindings(replacement);
             }
             catch
             {
@@ -628,10 +635,10 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        internal Dictionary<SparseTileKey, SparseTileBinding> ReplaceBindingsNoThrow(
-            Dictionary<SparseTileKey, SparseTileBinding> replacement)
+        internal VulkanSparseBindings ReplaceBindingsNoThrow(
+            VulkanSparseBindings replacement)
         {
-            Dictionary<SparseTileKey, SparseTileBinding> previous = _bindings;
+            VulkanSparseBindings previous = _bindings;
             _bindings = replacement;
             return previous;
         }
@@ -658,17 +665,32 @@ internal sealed unsafe partial class VulkanBackend
         {
             lock (_gate)
             {
-                ReleaseBindingsNoThrow(_bindings);
+                _bindings.ReleaseNative();
             }
         }
     }
 
+    private sealed class VulkanSparseBindings : IVulkanRetained
+    {
+        private readonly VulkanLifetime _lifetime;
+
+        internal VulkanSparseBindings(Dictionary<SparseTileKey, SparseTileBinding> values)
+        {
+            Values = values;
+            _lifetime = new(() => VulkanSparseState.ReleaseBindingsNoThrow(Values));
+        }
+
+        internal Dictionary<SparseTileKey, SparseTileBinding> Values { get; }
+        public void RetainNative() => _lifetime.Retain();
+        public void ReleaseNative() => _lifetime.Release();
+    }
+
     private sealed class VulkanSparseChangeSet(
         VulkanSparseState state,
-        Dictionary<SparseTileKey, SparseTileBinding> replacement)
+        VulkanSparseBindings replacement)
     {
-        private Dictionary<SparseTileKey, SparseTileBinding>? _replacement = replacement;
-        private Dictionary<SparseTileKey, SparseTileBinding>? _previous;
+        private VulkanSparseBindings? _replacement = replacement;
+        private VulkanSparseBindings? _previous;
 
         internal VulkanSparseState State { get; } = state;
 
@@ -680,13 +702,13 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void ReleaseReplacementNoThrow()
         {
-            VulkanSparseState.ReleaseBindingsNoThrow(_replacement);
+            _replacement?.ReleaseNative();
             _replacement = null;
         }
 
         internal void ReleasePreviousNoThrow()
         {
-            VulkanSparseState.ReleaseBindingsNoThrow(_previous);
+            _previous?.ReleaseNative();
             _previous = null;
         }
     }

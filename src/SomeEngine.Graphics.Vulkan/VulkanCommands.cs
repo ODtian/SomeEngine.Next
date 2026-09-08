@@ -973,8 +973,43 @@ internal sealed unsafe partial class VulkanBackend
             return _swapchainUses[index];
         }
 
+        internal void CaptureSparseBindings(IVulkanRetained value)
+        {
+            switch (value)
+            {
+                case VulkanDescriptorGeneration descriptors:
+                    descriptors.CaptureSparseBindings(this);
+                    return;
+                case VulkanBindlessGeneration descriptors:
+                    descriptors.CaptureSparseBindings(this);
+                    return;
+                case VulkanBindlessSnapshot descriptors:
+                    descriptors.CaptureSparseBindings(this);
+                    return;
+            }
+            VulkanSparseState? state = value switch
+            {
+                VulkanBuffer buffer => buffer.SparseState,
+                VulkanTexture texture => texture.SparseState,
+                BufferCbv view => ((VulkanBuffer)view.Resource).SparseState,
+                BufferSrv view => ((VulkanBuffer)view.Resource).SparseState,
+                BufferUav view => ((VulkanBuffer)view.Resource).SparseState,
+                IVulkanTextureView view => view.Texture.SparseState,
+                _ => null,
+            };
+            if (state is not null)
+            {
+                VulkanSparseBindings bindings = state.CaptureBindings();
+                try { Capture(bindings); }
+                finally { bindings.ReleaseNative(); }
+            }
+            if (value is BufferUav { Description.CounterBuffer: VulkanBuffer counter })
+                CaptureSparseBindings(counter);
+        }
+
         internal void Capture(IVulkanRetained value)
         {
+            CaptureSparseBindings(value);
             if (!_captures.Add(value))
                 return;
             try
