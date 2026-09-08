@@ -66,8 +66,6 @@ internal sealed partial class FrameExecutor
 
     internal void ApplyEdit(GraphEditChanges changes)
     {
-        if (changes.ResourceMembershipChanged || changes.ViewMembershipChanged)
-            for (int pass = 0; pass < _passParameters.Count; pass++) _parameterPassChanges.Add(pass);
         if (!changes.IsEmpty && !changes.LabelsOnly) _analysisChanged = true;
         _rowChanges.Buffers.UnionWith(changes.Buffers);
         _rowChanges.Textures.UnionWith(changes.Textures);
@@ -616,8 +614,15 @@ internal sealed partial class FrameExecutor
             _allocationRows.Remove(_textures[index].AllocationIdentity);
             if (_textures[index].Resource is { } resource) _resourceRows.Remove(resource);
         }
+        for (int index = structure.Buffers.Count + _frame.DynamicBuffers.Count; index < _buffers.Count; index++)
+            ReconnectResourceParameters((GraphAccessTargetKind.Buffer, index));
+        for (int index = structure.Textures.Count + _frame.DynamicTextures.Count; index < _textures.Count; index++)
+            ReconnectResourceParameters((GraphAccessTargetKind.Texture, index));
         for (int index = structure.Views.Count + _frame.DynamicViews.Count; index < _views.Count; index++)
+        {
+            ReconnectViewParameters(index);
             DisconnectViewResources(index);
+        }
 
         foreach (GraphIdentity id in _rowChanges.Buffers)
             if (!structure.Buffers.Contains(id))
@@ -671,6 +676,8 @@ internal sealed partial class FrameExecutor
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetBufferRow);
         FrameBuffer previous = _buffers[index];
+        if (previous.Identity != row.Identity)
+            ReconnectResourceParameters((GraphAccessTargetKind.Buffer, index));
         bool retained = previous.AllocationIdentity.IsValid && previous.Description == row.Description &&
             previous.MemoryType == row.MemoryType && previous.Ownership == row.Ownership && previous.Lifetime == row.Lifetime &&
             (previous.Identity == row.Identity || previous.Definition is null && row.Definition is null);
@@ -709,6 +716,8 @@ internal sealed partial class FrameExecutor
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetTextureRow);
         FrameTexture previous = _textures[index];
+        if (previous.Identity != row.Identity)
+            ReconnectResourceParameters((GraphAccessTargetKind.Texture, index));
         bool retained = previous.AllocationIdentity.IsValid && previous.Dimension == row.Dimension &&
             previous.Width == row.Width && previous.Height == row.Height && previous.Depth == row.Depth &&
             previous.MipLevelCount == row.MipLevelCount && previous.ArrayLayerCount == row.ArrayLayerCount &&
@@ -751,11 +760,14 @@ internal sealed partial class FrameExecutor
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetViewRow);
         ConnectViewResources(index, ref row);
         FrameView previous = _views[index];
+        if (previous.Identity != row.Identity) ReconnectViewParameters(index);
         if (row.Kind != GraphViewKind.BufferCbv && row.View is null &&
             TryResolveViewResources(row, out Resource? primary, out Resource? secondary))
             row.View = _frame.Slot.TransientResources!.FindCachedView(row, primary!, secondary);
         _views[index] = row;
-        if (!ReferenceEquals(previous.View, row.View)) ChangeViewParameters(index);
+        if (!ReferenceEquals(previous.View, row.View) || previous.BufferIndex != row.BufferIndex ||
+            previous.BufferRange != row.BufferRange)
+            ChangeViewParameters(index);
         if (row.View is null)
             _materializeViews.Add(index);
         if (!ReferenceEquals(previous.View, row.View) && row.Texture.IsValid &&

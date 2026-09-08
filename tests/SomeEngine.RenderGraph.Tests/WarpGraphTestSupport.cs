@@ -77,15 +77,9 @@ internal sealed class WarpGraphTestSupport : IDisposable
     {
         foreach (ref readonly QueueCompletion completion in completions)
         {
-            try
-            {
-                if (Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)) != WaitStatus.Completed)
-                    throw new TimeoutException("A WARP Queue did not complete within ten seconds.");
-            }
-            catch (NullReferenceException)
-            {
-                // default QueueCompletion marks an unused Queue slot.
-            }
+            if (completion == default) continue;
+            if (Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)) != WaitStatus.Completed)
+                throw new TimeoutException("A WARP Queue did not complete within ten seconds.");
         }
     }
 

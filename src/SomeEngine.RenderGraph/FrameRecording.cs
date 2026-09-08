@@ -1270,6 +1270,18 @@ internal sealed partial class FrameExecutor
             _parameterValueChanges.UnionWith(connections);
     }
 
+    private void ReconnectViewParameters(int view)
+    {
+        if (_viewParameterConnections.TryGetValue(view, out HashSet<ParameterConnection>? connections))
+            foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Pass);
+    }
+
+    private void ReconnectResourceParameters((GraphAccessTargetKind Kind, int Index) resource)
+    {
+        if (_resourceParameterConnections.TryGetValue(resource, out HashSet<ParameterConnection>? connections))
+            foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Pass);
+    }
+
     private void ChangeResourceParameters((GraphAccessTargetKind Kind, int Index) resource)
     {
         if (_resourceParameterConnections.TryGetValue(resource, out HashSet<ParameterConnection>? connections))
