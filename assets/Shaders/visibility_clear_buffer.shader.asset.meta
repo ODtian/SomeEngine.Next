@@ -1,0 +1,17 @@
+{
+  "asset_guid": "1976ef5e-8434-56cf-90bc-11c0ea91d60c",
+  "source_guid": "40f81448-3b87-4b98-b5b8-19244fc92bba",
+  "sub_asset_key": "shader:main",
+  "content_fingerprint": "57da00c07fb6f126caf6880e63e595f9fa292abea792c92d3ccaed670e23271a",
+  "dependencies": [
+    {
+      "path": "assets/Shaders/visibility_clear.slang",
+      "hash": "792ffa994c7ba8e04f6d1dcdd5190bae6fca932d1707c7e281450666d8ae7d65"
+    },
+    {
+      "path": "assets/Shaders/visibility_clear_buffer.slang",
+      "hash": "9efb4d0b495c4e62c061e6d49484faad076d5a9ed5b01e3af39d19c70f7a8533"
+    }
+  ],
+  "importer_version": 26
+}

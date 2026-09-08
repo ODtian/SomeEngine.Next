@@ -75,7 +75,9 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder
         int recordBits = checked(
             positionBitsX + positionBitsY + positionBitsZ + 24 + 32 + uvBitsX + uvBitsY);
         int dataBits = checked(recordBits * clusterVertices.Length);
-        int blobSize = checked(HeaderSize + ((dataBits + 7) / 8));
+        // The shader reads words from each concatenated blob. Padding both aligns
+        // the next header and makes the final partial word safe to load.
+        int blobSize = checked((HeaderSize + ((dataBits + 7) / 8) + 3) & ~3);
         var blob = new byte[blobSize];
         var header = new StandardVertexBlobHeader
         {

@@ -45,6 +45,11 @@ public ref partial struct RenderGraphEdit
         ArgumentNullException.ThrowIfNull(buffer);
         if (!ReferenceEquals(buffer.Device, Graph.Device))
             throw new ArgumentException("The Buffer belongs to another Device.", nameof(buffer));
+        if (Graph.TryGetBufferId(buffer, out GraphBufferId registered) && Staging.Buffers.Contains(registered.Value))
+            return registered;
+        foreach (GraphIdentity changed in Changes.Buffers)
+            if (Staging.Buffers.Contains(changed) && ReferenceEquals(Staging.Buffers.Get(changed).RegisteredResource, buffer))
+                return new GraphBufferId(changed);
         GraphIdentity identity = Staging.Buffers.Add(Graph.Identity, new GraphBuffer
         {
             Description = new BufferDesc(buffer.Info.Size, buffer.Info.Usages, buffer.Label,
@@ -78,6 +83,11 @@ public ref partial struct RenderGraphEdit
         ArgumentNullException.ThrowIfNull(texture);
         if (!ReferenceEquals(texture.Device, Graph.Device))
             throw new ArgumentException("The Texture belongs to another Device.", nameof(texture));
+        if (Graph.StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity registered) && Staging.Textures.Contains(registered))
+            return new GraphTextureId(registered);
+        foreach (GraphIdentity changed in Changes.Textures)
+            if (Staging.Textures.Contains(changed) && ReferenceEquals(Staging.Textures.Get(changed).RegisteredResource, texture))
+                return new GraphTextureId(changed);
         TextureInfo info = texture.Info;
         GraphIdentity identity = Staging.Textures.Add(Graph.Identity, new GraphTexture
         {
@@ -216,6 +226,7 @@ public ref partial struct RenderGraphEdit
 
     public void Remove(GraphPassId pass)
     {
+        RemoveUnusedViews(pass);
         ValidateOwner(pass.Value);
         Changes.TouchPass(pass.Value, membership: true);
         GraphPass removed = Staging.Passes.Remove(pass.Value);
@@ -226,10 +237,11 @@ public ref partial struct RenderGraphEdit
             Changes.TouchAccess(access, row.Pass, row.Target, membership: true);
             _ = Staging.Accesses.Remove(access);
         }
-        foreach (ExplicitPassOrder order in Staging.Orders)
-            if (order.Predecessor.Equals(pass.Value) || order.Consumer.Equals(pass.Value))
-                Changes.TouchOrder(order.Predecessor, order.Consumer);
-        Staging.Orders.RemoveAll(order => order.Predecessor.Equals(pass.Value) || order.Consumer.Equals(pass.Value));
+        foreach (ExplicitPassOrder order in Staging.Orders.Incident(pass.Value).ToArray())
+        {
+            Changes.TouchOrder(order.Predecessor, order.Consumer);
+            Staging.Orders.Remove(order);
+        }
     }
 
     public void Remove(GraphBufferAccessId access) => RemoveAccess(access.Value);
@@ -273,7 +285,7 @@ public ref partial struct RenderGraphEdit
         ValidatePass(pass);
         ValidatePass(predecessor);
         ExplicitPassOrder order = new(predecessor.Value, pass.Value);
-        if (Staging.Orders.RemoveAll(candidate => candidate == order) != 0)
+        if (Staging.Orders.Remove(order))
             Changes.TouchOrder(order.Predecessor, order.Consumer);
     }
 
@@ -283,21 +295,32 @@ public ref partial struct RenderGraphEdit
         MemoryType memoryType = MemoryType.DeviceLocal)
     {
         ValidateBuffer(buffer);
-        GraphBuffer row = Staging.Buffers.GetMutable(buffer.Value);
+        GraphBuffer row = Staging.Buffers.Get(buffer.Value);
         if (row.Ownership != RenderGraphResourceOwnership.GraphOwned)
             throw new InvalidOperationException("A caller-owned Buffer description cannot be replaced.");
+        if (row.Description == description && row.MemoryType == memoryType) return;
+        row = Staging.Buffers.GetMutable(buffer.Value);
         row.Description = description;
         row.MemoryType = memoryType;
         row.Requirements = default;
+        row.PersistentResource = null;
+        row.BoundaryStates = [];
         Changes.TouchBuffer(buffer.Value);
     }
 
     public void SetTextureDescription(GraphTextureId texture, in TextureDesc description)
     {
         ValidateTexture(texture);
-        GraphTexture row = Staging.Textures.GetMutable(texture.Value);
+        GraphTexture row = Staging.Textures.Get(texture.Value);
         if (row.Ownership != RenderGraphResourceOwnership.GraphOwned)
             throw new InvalidOperationException("A caller-owned Texture description cannot be replaced.");
+        if (row.Dimension == description.Dimension && row.Width == description.Width &&
+            row.Height == description.Height && row.Depth == description.Depth &&
+            row.MipLevelCount == description.MipLevelCount && row.ArrayLayerCount == description.ArrayLayerCount &&
+            row.SampleCount == description.SampleCount && row.Format == description.Format && row.Usages == description.Usages &&
+            row.Label == description.Label && row.NodePlacement == description.NodePlacement &&
+            row.PermittedViewFormats.AsSpan().SequenceEqual(description.PermittedViewFormats)) return;
+        row = Staging.Textures.GetMutable(texture.Value);
         row.Dimension = description.Dimension;
         row.Width = description.Width;
         row.Height = description.Height;
@@ -311,6 +334,8 @@ public ref partial struct RenderGraphEdit
         row.Label = description.Label;
         row.NodePlacement = description.NodePlacement;
         row.Requirements = default;
+        row.PersistentResource = null;
+        row.BoundaryStates = [];
         Changes.TouchTexture(texture.Value);
     }
 
@@ -318,13 +343,15 @@ public ref partial struct RenderGraphEdit
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ValidatePass(pass);
+        if (Staging.Passes.Get(pass.Value).Label == label) return;
         Staging.Passes.GetMutable(pass.Value).Label = label;
-        Changes.TouchPass(pass.Value);
+        Changes.Labels.Add(pass.Value);
     }
 
     public void SetPassOptions(GraphPassId pass, in PassOptions options)
     {
         ValidatePass(pass);
+        if (Staging.Passes.Get(pass.Value).Options == options) return;
         Staging.Passes.GetMutable(pass.Value).Options = options;
         Changes.TouchPass(pass.Value);
     }
@@ -332,6 +359,8 @@ public ref partial struct RenderGraphEdit
     public void SetPassQueue(GraphPassId pass, in PassQueueSelection queue)
     {
         ValidatePass(pass);
+        PassQueueSelection current = Staging.Passes.Get(pass.Value).Queue;
+        if (current.Type == queue.Type && current.IsExact == queue.IsExact && ReferenceEquals(current.Queue, queue.Queue)) return;
         Staging.Passes.GetMutable(pass.Value).Queue = queue;
         Changes.TouchPass(pass.Value);
     }
@@ -344,12 +373,17 @@ public ref partial struct RenderGraphEdit
         ResourceAccess resourceAccess,
         in BufferRange range,
         bool dynamicRange = false,
-        ResourceContentState? resultContents = null)
+        ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange)
     {
         ValidateOwner(access.Value);
-        PassResourceAccess row = Staging.Accesses.GetMutable(access.Value);
+        PassResourceAccess row = Staging.Accesses.Get(access.Value);
         if (row.TargetKind != GraphAccessTargetKind.Buffer)
             throw new ArgumentException("The access is not a Buffer access.", nameof(access));
+        if (row.Mode == mode && row.Coverage == coverage && row.Sync == sync && row.Access == resourceAccess &&
+            row.BufferRange == range && row.DynamicRange == dynamicRange && row.ResultContents == resultContents &&
+            row.BufferContentScope == contentScope) return;
+        row = Staging.Accesses.GetMutable(access.Value);
         row.Mode = mode;
         row.Coverage = coverage;
         row.Sync = sync;
@@ -357,6 +391,7 @@ public ref partial struct RenderGraphEdit
         row.BufferRange = range;
         row.DynamicRange = dynamicRange;
         row.ResultContents = resultContents;
+        row.BufferContentScope = contentScope;
         Changes.TouchAccess(access.Value, row.Pass, row.Target);
     }
 
@@ -372,9 +407,13 @@ public ref partial struct RenderGraphEdit
         ResourceContentState? resultContents = null)
     {
         ValidateOwner(access.Value);
-        PassResourceAccess row = Staging.Accesses.GetMutable(access.Value);
+        PassResourceAccess row = Staging.Accesses.Get(access.Value);
         if (row.TargetKind != GraphAccessTargetKind.Texture)
             throw new ArgumentException("The access is not a Texture access.", nameof(access));
+        if (row.Mode == mode && row.Coverage == coverage && row.Sync == sync && row.Access == resourceAccess &&
+            row.TextureLayout == layout && row.TextureRange == range && row.DynamicRange == dynamicRange &&
+            row.ResultContents == resultContents) return;
+        row = Staging.Accesses.GetMutable(access.Value);
         row.Mode = mode;
         row.Coverage = coverage;
         row.Sync = sync;
@@ -401,7 +440,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new RasterPassCallbackStorage<TStatic, TFrame>(staticData, callback, Graph.FrameSlotCount));
+            new RasterPassCallbackStorage<TStatic, TFrame>(staticData, callback));
     }
 
     public GraphPassId AddComputePass<TStatic, TFrame>(
@@ -419,7 +458,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new ComputePassCallbackStorage<TStatic, TFrame>(staticData, callback, Graph.FrameSlotCount));
+            new ComputePassCallbackStorage<TStatic, TFrame>(staticData, callback));
     }
 
     public GraphPassId AddCopyPass<TStatic, TFrame>(
@@ -437,7 +476,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new CopyPassCallbackStorage<TStatic, TFrame>(staticData, callback, Graph.FrameSlotCount));
+            new CopyPassCallbackStorage<TStatic, TFrame>(staticData, callback));
     }
 
     public GraphPassId AddGeneralPass<TStatic, TFrame>(
@@ -455,7 +494,7 @@ public ref partial struct RenderGraphEdit
             staticData,
             options,
             declaration,
-            new GeneralPassCallbackStorage<TStatic, TFrame>(staticData, callback, Graph.FrameSlotCount));
+            new GeneralPassCallbackStorage<TStatic, TFrame>(staticData, callback));
     }
 
     public GraphBufferCbvId CreateBufferCbv(GraphBufferId buffer, in BufferRange range, string? label = null) =>
@@ -680,7 +719,9 @@ public ref partial struct RenderGraphEdit
         ResourceAccess access,
         in BufferRange range,
         bool dynamicRange,
-        ResourceContentState? resultContents)
+        ResourceContentState? resultContents,
+        BufferContentScope contentScope,
+        UnorderedAccessHazardMode unorderedAccessHazards)
     {
         ValidateBuffer(buffer);
         GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
@@ -695,6 +736,8 @@ public ref partial struct RenderGraphEdit
             BufferRange = range,
             DynamicRange = dynamicRange,
             ResultContents = resultContents,
+            BufferContentScope = contentScope,
+            UnorderedAccessHazards = unorderedAccessHazards,
         });
         Staging.Passes.GetMutable(pass).Accesses.Add(identity);
         Changes.TouchAccess(identity, pass, buffer.Value, membership: true);
@@ -711,7 +754,8 @@ public ref partial struct RenderGraphEdit
         TextureLayout layout,
         in TextureSubresourceRange range,
         bool dynamicRange,
-        ResourceContentState? resultContents)
+        ResourceContentState? resultContents,
+        UnorderedAccessHazardMode unorderedAccessHazards)
     {
         ValidateTexture(texture);
         GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
@@ -727,6 +771,7 @@ public ref partial struct RenderGraphEdit
             TextureRange = range,
             DynamicRange = dynamicRange,
             ResultContents = resultContents,
+            UnorderedAccessHazards = unorderedAccessHazards,
         });
         Staging.Passes.GetMutable(pass).Accesses.Add(identity);
         Changes.TouchAccess(identity, pass, texture.Value, membership: true);
@@ -804,13 +849,34 @@ public ref partial struct RenderGraphEdit
             checked((uint)Staging.Passes.DenseIndex(pass) + 1)));
     }
 
+    /// <summary>Edits the retained declaration of an existing pass.</summary>
+    public PassDefinition GetPass(GraphPassId pass)
+    {
+        ValidatePass(pass);
+        return new PassDefinition(this, pass.Value, Staging.Passes.Get(pass.Value).Kind);
+    }
+
+    /// <summary>
+    /// Replaces the retained shader binding stream. Resource accesses are separate declarations;
+    /// update them through GetPass and Remove when the resources or access modes change.
+    /// </summary>
+    public void SetPassParameterBindings(GraphPassId pass, scoped ReadOnlySpan<GraphParameterResourceBinding> bindings)
+    {
+        ValidatePass(pass);
+        foreach (ref readonly var binding in bindings) ValidateParameterBinding(binding);
+        GraphPass row = Staging.Passes.GetMutable(pass.Value);
+        row.ParameterBindings.Clear();
+        foreach (ref readonly var binding in bindings) row.ParameterBindings.Add(binding);
+        Changes.TouchPass(pass.Value);
+    }
+
     internal void SetPassPipeline(in GraphIdentity pass, Pipeline pipeline)
     {
         if (!ReferenceEquals(pipeline.Device, Graph.Device))
             throw new ArgumentException("The Pipeline belongs to another Device.", nameof(pipeline));
+        Pipeline? previous = Staging.Passes.Get(pass).Pipeline;
+        if (ReferenceEquals(previous, pipeline)) return;
         GraphPass row = Staging.Passes.GetMutable(pass);
-        if (row.Pipeline is not null)
-            throw new InvalidOperationException("The Pass pipeline is already assigned.");
         row.Pipeline = pipeline;
         Changes.TouchPass(pass);
     }
@@ -820,9 +886,9 @@ public ref partial struct RenderGraphEdit
         ShaderVariableLayout layout,
         ReadOnlySpan<byte> ordinaryData)
     {
+        GraphPass previous = Staging.Passes.Get(pass);
+        if (previous.ParameterLayout == layout && ordinaryData.SequenceEqual(previous.ParameterOrdinaryData)) return;
         GraphPass row = Staging.Passes.GetMutable(pass);
-        if (row.ParameterLayout != ShaderVariableLayout.Null)
-            throw new InvalidOperationException("The Pass parameter block is already assigned.");
         row.ParameterLayout = layout;
         row.ParameterOrdinaryData = ordinaryData.ToArray();
         Changes.TouchPass(pass);
@@ -929,5 +995,237 @@ public ref partial struct RenderGraphEdit
 
     private void ValidateParameterBinding(in GraphParameterResourceBinding binding)
         => binding.ValidateStatic(Staging, Graph.Device);
+
+    public GraphBufferInput CreateBufferInput(BufferUsages usages)
+    {
+        DevelopmentCheck.Require(usages != BufferUsages.None, "A buffer input requires declared usages.");
+        return new GraphBufferInput(Graph.Identity, usages);
+    }
+
+    public GraphBufferSrvId CreateBufferSrv(GraphBufferInput buffer, BufferRange? range = null,
+        Format? format = null, uint structureStride = 0, string? label = null) =>
+        new(AddBufferInputView(GraphViewKind.BufferSrv, buffer, range ?? BufferRange.Whole, format, structureStride, label));
+
+    public GraphBufferCbvId CreateBufferCbv(GraphBufferInput buffer, BufferRange? range = null, string? label = null) =>
+        new(AddBufferInputView(GraphViewKind.BufferCbv, buffer, range ?? BufferRange.Whole, null, 0, label));
+
+    public GraphBufferUavId CreateBufferUav(GraphBufferInput buffer, BufferRange? range = null,
+        Format? format = null, uint structureStride = 0, string? label = null) =>
+        new(AddBufferInputView(GraphViewKind.BufferUav, buffer, range ?? BufferRange.Whole, format, structureStride, label));
+
+    private GraphIdentity AddBufferInputView(GraphViewKind kind, GraphBufferInput buffer,
+        BufferRange range, Format? format, uint stride, string? label)
+    {
+        ValidateBufferInput(buffer);
+        GraphIdentity identity = Staging.Views.Add(Graph.Identity, new GraphView
+        {
+            Kind = kind,
+            BufferInput = buffer,
+            BufferRange = range,
+            BufferFormat = format,
+            StructureStride = stride,
+            Label = label,
+        });
+        Changes.TouchView(identity, membership: true);
+        return identity;
+    }
+
+    internal GraphBufferAccessId AddBufferInputAccess(GraphIdentity pass, GraphBufferInput buffer,
+        PipelineSync sync, ResourceAccess access, BufferRange range, BufferContentScope contentScope,
+        GraphAccessMode mode = GraphAccessMode.Read, WriteCoverage coverage = WriteCoverage.Partial,
+        ResourceContentState? resultContents = null,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
+    {
+        ValidateBufferInput(buffer);
+        GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
+        {
+            Pass = pass,
+            TargetKind = GraphAccessTargetKind.Buffer,
+            Target = default,
+            BufferInput = buffer,
+            Mode = mode,
+            Coverage = coverage,
+            Sync = sync,
+            Access = access,
+            BufferRange = range,
+            BufferContentScope = contentScope,
+            ResultContents = resultContents,
+            UnorderedAccessHazards = unorderedAccessHazards,
+        });
+        Staging.Passes.GetMutable(pass).Accesses.Add(identity);
+        Changes.TouchAccess(identity, pass, default, membership: true);
+        return new GraphBufferAccessId(identity);
+    }
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void ValidateBufferInput(GraphBufferInput input)
+    {
+        DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
+            "The buffer input must belong to this graph.");
+    }
+
+    public GraphTextureInput CreateTextureInput() => new(Graph.Identity);
+
+    public GraphTextureSrvId CreateTextureSrv(GraphTextureInput input, TextureSubresourceRange range,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        new(AddTextureInputView(GraphViewKind.TextureSrv, input, range, format, dimension, label));
+
+    public GraphTextureUavId CreateTextureUav(GraphTextureInput input, TextureSubresourceRange range,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        new(AddTextureInputView(GraphViewKind.TextureUav, input, range, format, dimension, label));
+
+    public GraphTextureSrvId CreateTextureSrv(GraphTextureInput input,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        new(AddTextureInputView(GraphViewKind.TextureSrv, input, null, format, dimension, label));
+
+    public GraphTextureUavId CreateTextureUav(GraphTextureInput input,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        new(AddTextureInputView(GraphViewKind.TextureUav, input, null, format, dimension, label));
+
+    public GraphTextureSrvId CreateTextureSrv(GraphTextureId texture,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        CreateTextureSrv(texture, WholeTextureRange(texture), format, dimension, label);
+
+    public GraphTextureUavId CreateTextureUav(GraphTextureId texture,
+        Format format, TextureViewDimension dimension, string? label = null) =>
+        CreateTextureUav(texture, WholeTextureRange(texture), format, dimension, label);
+
+    private TextureSubresourceRange WholeTextureRange(GraphTextureId texture)
+    {
+        ValidateTexture(texture);
+        GraphTexture value = Staging.Textures.Get(texture.Value);
+        return new TextureSubresourceRange(0, value.MipLevelCount, 0, value.ArrayLayerCount,
+            TextureFormatRules.Aspects(value.Format));
+    }
+
+    private GraphIdentity AddTextureInputView(GraphViewKind kind, GraphTextureInput input,
+        TextureSubresourceRange? range, Format format, TextureViewDimension dimension, string? label)
+    {
+        ValidateTextureInput(input);
+        GraphIdentity identity = Staging.Views.Add(Graph.Identity, new GraphView
+        {
+            Kind = kind,
+            TextureInput = input,
+            TextureRange = range ?? default,
+            TextureFormat = format,
+            Dimension = dimension,
+            Label = label,
+        });
+        Changes.TouchView(identity, membership: true);
+        return identity;
+    }
+
+    internal GraphTextureAccessId AddTextureInputAccess(GraphIdentity pass, GraphTextureInput input,
+        GraphAccessMode mode, WriteCoverage coverage, PipelineSync sync, ResourceAccess access,
+        TextureLayout layout, TextureSubresourceRange range, ResourceContentState? resultContents,
+        UnorderedAccessHazardMode unorderedAccessHazards)
+    {
+        ValidateTextureInput(input);
+        GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
+        {
+            Pass = pass,
+            TargetKind = GraphAccessTargetKind.Texture,
+            Target = default,
+            TextureInput = input,
+            Mode = mode,
+            Coverage = coverage,
+            Sync = sync,
+            Access = access,
+            TextureLayout = layout,
+            TextureRange = range,
+            ResultContents = resultContents,
+            UnorderedAccessHazards = unorderedAccessHazards,
+        });
+        Staging.Passes.GetMutable(pass).Accesses.Add(identity);
+        Changes.TouchAccess(identity, pass, default, membership: true);
+        return new GraphTextureAccessId(identity);
+    }
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void ValidateTextureInput(GraphTextureInput input)
+    {
+        DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
+            "The texture input must belong to this graph.");
+    }
+
+    private void RemoveUnusedViews(GraphPassId pass)
+    {
+        ValidatePass(pass);
+        var referenced = new HashSet<GraphIdentity>();
+        foreach (GraphIdentity identity in Staging.Passes.Identities)
+        {
+            if (identity == pass.Value) continue;
+            GraphPass other = Staging.Passes.Get(identity);
+            referenced.UnionWith(other.ViewReferences);
+            foreach (GraphParameterResourceBinding binding in other.ParameterBindings)
+                referenced.Add(binding.Value);
+        }
+        foreach (GraphPersistentParameterBindings value in Staging.PersistentBindings.Rows)
+            foreach (GraphParameterResourceBinding binding in value.Inventory)
+                referenced.Add(binding.Value);
+        foreach (GraphRayTracingShaderTable value in Staging.ShaderTables.Rows)
+            foreach (GraphParameterResourceBinding binding in value.Inventory)
+                referenced.Add(binding.Value);
+        GraphPass removed = Staging.Passes.Get(pass.Value);
+        var views = new HashSet<GraphIdentity>(removed.ViewReferences);
+        foreach (GraphParameterResourceBinding binding in removed.ParameterBindings) views.Add(binding.Value);
+        foreach (GraphIdentity view in views)
+        {
+            if (!Staging.Views.Contains(view) || referenced.Contains(view)) continue;
+            Changes.TouchView(view, membership: true);
+            _ = Staging.Views.Remove(view);
+        }
+    }
+
+    internal GraphView UseView(GraphIdentity pass, GraphIdentity view)
+    {
+        GraphView result = ResolveView(view);
+        Staging.Passes.GetMutable(pass).ViewReferences.Add(view);
+        Changes.TouchPass(pass);
+        return result;
+    }
+
+    public GraphParameterInput CreateParameterInput(ResourceBindingType type)
+    {
+        DevelopmentCheck.Require(type != ResourceBindingType.None && Enum.IsDefined(type),
+            "A parameter input requires a supported resource binding type.");
+        return new GraphParameterInput(Graph.Identity, type);
+    }
+
+    internal void AddParameterInput(GraphIdentity pass, GraphParameterInput input, PipelineSync sync)
+    {
+        DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
+            "The parameter input must belong to this graph.");
+        if (input.Type == ResourceBindingType.Sampler) return;
+        bool texture = input.Type is ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav;
+        bool writable = input.Type is ResourceBindingType.BufferUav or ResourceBindingType.TextureUav;
+        ResourceAccess access = input.Type switch
+        {
+            ResourceBindingType.ConstantBuffer => ResourceAccess.ConstantBuffer,
+            ResourceBindingType.AccelerationStructure => ResourceAccess.RayTracingAccelerationStructureRead,
+            _ => writable ? ResourceAccess.UnorderedAccess : ResourceAccess.ShaderResource,
+        };
+        int accessCount = writable ? 2 : 1;
+        for (int index = 0; index < accessCount; index++)
+        {
+            bool secondary = index == 1;
+            bool sampled = secondary && texture;
+            GraphIdentity identity = Staging.Accesses.Add(Graph.Identity, new PassResourceAccess
+            {
+                Pass = pass,
+                Target = default,
+                TargetKind = texture ? GraphAccessTargetKind.Texture : GraphAccessTargetKind.Buffer,
+                ParameterInput = input,
+                ParameterSecondary = secondary,
+                Mode = writable && !sampled ? GraphAccessMode.ReadWrite : GraphAccessMode.Read,
+                Coverage = WriteCoverage.Partial,
+                Sync = sync,
+                Access = sampled ? ResourceAccess.ShaderResource : access,
+                TextureLayout = texture ? (writable && !sampled ? TextureLayout.UnorderedAccess : TextureLayout.ShaderResource) : TextureLayout.Undefined,
+            });
+            Staging.Passes.GetMutable(pass).Accesses.Add(identity);
+            Changes.TouchAccess(identity, pass, default, membership: true);
+        }
+    }
 }
 

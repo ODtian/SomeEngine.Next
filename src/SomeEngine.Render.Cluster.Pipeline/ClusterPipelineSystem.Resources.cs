@@ -20,13 +20,10 @@ public sealed partial class ClusterPipelineSystem
     internal const int Phase2DrawArgsReadbackOffset = 48;
     internal const int RasterReserveReadbackOffset = 64;
     internal const int ShadeReserveReadbackOffset = 72;
-    internal const int DeformReserveReadbackOffset = 76;
-    internal const int CacheAllocationReadbackOffset = 80;
-    internal const int CachedDeformClustersReadbackOffset = 84;
-    internal const int SoftwareDebugReadbackOffset = 88;
-    internal const int ShadeBinCountReadbackOffset = 92;
-    internal const int PhaseOneTessellationCountersReadbackOffset = 96;
-    internal const int PhaseTwoTessellationCountersReadbackOffset = 112;
+    internal const int SoftwareDebugReadbackOffset = 76;
+    internal const int ShadeBinCountReadbackOffset = 80;
+    internal const int PhaseOneTessellationCountersReadbackOffset = 84;
+    internal const int PhaseTwoTessellationCountersReadbackOffset = 116;
     internal const int VisibilityProbeReadbackOffset = 512;
     internal const int VisibilityProbePixelCount = 64;
     internal const int VisibilityProbeRowPitch = VisibilityProbePixelCount * sizeof(uint);
@@ -34,30 +31,30 @@ public sealed partial class ClusterPipelineSystem
         VisibilityProbeReadbackOffset + VisibilityProbeRowPitch;
     private const uint MaxBinnedEntriesPerCluster = 9;
     private const uint ClusterVertexCapacity = 64;
-    private const uint DeformCachePrefixThreadCount = 256;
     private const int RasterBinStride = 32;
-    private const int DeformBinStride = 16;
-    private const int VisibleClusterStride = 16;
-    private const int CandidateStride = 16;
-    private const int BinnedClusterStride = 12;
-private const int TessellationWorkStride = 20;
-    private const int DicedTriangleStride = 48;
+    private const int VisibleClusterStride = 12;
+    private const int CandidateStride = 12;
+    private const int BinnedClusterStride = 4;
+    private const int TraversalNodeStride = 16;
+    private const int TraversalArgumentStride = 32;
+    private const int TessellationWorkPatchStride = 16;
+    private const int TessellationFinalPatchStride = 20;
+    private const int TessellationSplitLevelCount = 6;
     private FrameResources CreateFrameResources(
         ref RenderGraphEdit graph,
         in ClusterPipelineOutputDescription output,
         ClusterMaterialAssignmentSet assignments,
-        ClusterDeformStageSet deformStages,
         ClusterRasterStageSet rasterStages,
         ClusterShadeStageSet shadeStages)
     {
         uint rasterBinCount = rasterStages.BinCount;
-        uint deformBinCount = deformStages.BinCount;
+        uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
         ulong candidates = _options.MaxCandidates;
         ulong binnedCapacity = checked(candidates * MaxBinnedEntriesPerCluster);
         int width = output.Width;
         int height = output.Height;
-        uint viewCapacity = output.ViewCapacity;
+        uint viewCount = output.ViewCount;
         int pageFaultCapacity = _resources.PageFaultCapacity;
         ClusterResidencyBinding residency = _resources.Residency.GetBinding();
         RenderInstanceResources instanceResources = _resources.InstanceResources;
@@ -67,7 +64,9 @@ private const int TessellationWorkStride = 20;
             instanceMetadataStride * (ulong)instanceResources.Options.BatchCapacity);
         ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
             "The Cluster culling history was not created.");
-        history.EnsureDimensions(width, height);
+        history.EnsureDimensions(
+            width,
+            height);
         TextureInfo historyInfo = history.PreviousHiZ.Info;
         TextureDesc previousHistoryDescription = new(
             historyInfo.Dimension,
@@ -104,9 +103,8 @@ private const int TessellationWorkStride = 20;
         {
             Width = width,
             Height = height,
-            ViewCapacity = viewCapacity,
+            ViewCount = viewCount,
             RasterBinCount = rasterBinCount,
-            DeformBinCount = deformBinCount,
             ShadeBinCount = shadeBinCount,
             SlotCapacity = assignments.SlotCapacity,
             PageFaultCapacity = pageFaultCapacity,
@@ -129,22 +127,17 @@ private const int TessellationWorkStride = 20;
                 rasterStages.Slots.Span,
                 BufferUsages.ShaderRead,
                 "Cluster raster stage slots"),
-            DeformSlots = UploadWords(
-                ref graph,
-                deformStages.Slots.Span,
-                BufferUsages.ShaderRead,
-                "Cluster deform stage slots"),
-            ShadeSlots = UploadWords(
-                ref graph,
-                shadeStages.Slots.Span,
-                BufferUsages.ShaderRead,
-                "Cluster shade stage slots"),
             ReadOffsetZero = UploadBytes(
                 ref graph,
                 stackalloc byte[16],
                 BufferUsages.ShaderRead,
                 "Cluster zero read offset"),
         };
+        frame.ShadeSlots = UploadWords(
+            ref graph,
+            shadeStages.Slots.Span,
+            BufferUsages.ShaderRead,
+            "Cluster shade stage slots");
         if (_options.EnableFrameMetricsReadback)
         {
             frame.FrameMetricsReadback = DeclareExternalBuffer(
@@ -159,6 +152,33 @@ private const int TessellationWorkStride = 20;
             16,
             BufferUsages.Indirect | BufferUsages.CopySource,
             "Cluster candidate dispatch");
+        frame.NeutralPolicyValue = UploadWords(
+            ref graph,
+            [0u],
+            BufferUsages.ShaderRead,
+            "Cluster neutral policy value");
+        frame.NeutralPolicyView = UploadBytes(
+            ref graph,
+            stackalloc byte[48],
+            BufferUsages.ShaderRead,
+            "Cluster neutral target view");
+        frame.TraversalNodes = frame.AddBuffer(
+            ref graph,
+            checked(candidates * TraversalNodeStride),
+            BufferUsages.None,
+            "Cluster breadth-first hierarchy nodes");
+        ulong traversalArgumentBytes = checked(
+            ((ulong)_resources.HierarchyLevels + 1u) * TraversalArgumentStride);
+        frame.TraversalArguments0 = frame.AddBuffer(
+            ref graph,
+            traversalArgumentBytes,
+            BufferUsages.Indirect,
+            "Cluster hierarchy indirect arguments 0");
+        frame.TraversalArguments1 = frame.AddBuffer(
+            ref graph,
+            traversalArgumentBytes,
+            BufferUsages.Indirect,
+            "Cluster hierarchy indirect arguments 1");
         frame.CandidateArgsInitialization = UploadWords(
             ref graph,
             [0u, 1u, 1u, 0u],
@@ -188,6 +208,19 @@ private const int TessellationWorkStride = 20;
             "Cluster phase-two candidates");
         frame.Phase2CandidateCount = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.CopySource, "Cluster phase-two count");
         frame.Phase2DrawArgs = frame.AddBuffer(ref graph, 16, BufferUsages.CopySource, "Cluster phase-two counts");
+        if (_renderContext.IsValid)
+        {
+            frame.ContinuationDrawArgs = frame.AddBuffer(
+                ref graph,
+                16,
+                BufferUsages.CopySource,
+                "Cluster continuation counts");
+            frame.ContinuationPostDrawArgs = frame.AddBuffer(
+                ref graph,
+                16,
+                BufferUsages.CopySource,
+                "Cluster continuation post counts");
+        }
         frame.VisibleClusters = frame.AddBuffer(
             ref graph,
             checked(candidates * VisibleClusterStride),
@@ -203,20 +236,10 @@ private const int TessellationWorkStride = 20;
             checked(binnedCapacity * BinnedClusterStride),
             BufferUsages.None,
             "Cluster raster bin indices");
-        frame.BinnedDrawArgs = frame.AddBuffer(
-            ref graph,
-            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
-            BufferUsages.None,
-            "Cluster raster draw metadata");
-        frame.BinnedHardwareDrawArgs = frame.AddBuffer(
-            ref graph,
-            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
-            BufferUsages.CopySource,
-            "Cluster hardware draw metadata");
         frame.HardwareIndirectArgs = frame.AddBuffer(
             ref graph,
-            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
-            BufferUsages.Indirect | BufferUsages.CopyDestination,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.HardwareRasterStride),
+            BufferUsages.Indirect,
             "Cluster hardware indirect arguments");
         frame.BinningDispatchArgs = frame.AddBuffer(
             ref graph,
@@ -225,187 +248,326 @@ private const int TessellationWorkStride = 20;
             "Cluster binning dispatch");
         frame.SoftwareDispatchArgs = frame.AddBuffer(
             ref graph,
-            checked((ulong)rasterBinCount * 2 * ClusterIndirectAbi.DispatchBytes),
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
             BufferUsages.Indirect,
             "Cluster software raster dispatches");
         frame.RasterReserveCounters = frame.AddBuffer(ref graph, 4 * sizeof(uint), BufferUsages.CopySource, "Cluster raster reserve counters");
-        frame.DeformBinMeta = frame.AddBuffer(
-            ref graph,
-            checked((ulong)deformBinCount * DeformBinStride),
-            BufferUsages.None,
-            "Cluster deform bins");
-        frame.DeformBinnedClusters = frame.AddBuffer(
-            ref graph,
-            checked(candidates * BinnedClusterStride),
-            BufferUsages.None,
-            "Cluster deform bin indices");
-        frame.DeformDispatchArgs = frame.AddBuffer(
-            ref graph,
-            checked((ulong)(deformBinCount + 1u) * ClusterIndirectAbi.DispatchBytes),
-            BufferUsages.Indirect,
-            "Cluster deform dispatches");
-        frame.DeformReserveCounters = frame.AddBuffer(ref graph, 3 * sizeof(uint), BufferUsages.CopySource, "Cluster deform reserve counters");
-        frame.DeformCacheRequests = frame.AddBuffer(
-            ref graph,
-            checked(candidates * 2u * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster deform cache requests");
-        frame.DeformCachePrefixOffsets = frame.AddBuffer(
-            ref graph,
-            checked(candidates * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster deform cache prefix offsets");
-        ulong deformPrefixGroupCapacity =
-            (candidates + DeformCachePrefixThreadCount - 1u) /
-            DeformCachePrefixThreadCount;
-        frame.DeformCachePrefixGroups = frame.AddBuffer(
-            ref graph,
-            checked(deformPrefixGroupCapacity * 2u * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster deform cache prefix groups");
-        frame.CacheOffsets = frame.AddBuffer(
-            ref graph,
-            checked(candidates * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster deform cache offsets");
-        frame.CacheAllocationCounter = frame.AddBuffer(ref graph, 2 * sizeof(uint), BufferUsages.CopySource, "Cluster deform cache statistics");
-        frame.DeformCache = frame.AddBuffer(
-            ref graph,
-            _options.DeformCacheBytes,
-            BufferUsages.None,
-            "Cluster deform cache");
         frame.TessellationCounters = frame.AddBuffer(
             ref graph,
-            4 * sizeof(uint),
+            8 * sizeof(uint),
             BufferUsages.CopySource,
             "Cluster tessellation counters");
         frame.PhaseOneTessellationCounters = frame.AddBuffer(
             ref graph,
-            4 * sizeof(uint),
+            8 * sizeof(uint),
             BufferUsages.CopySource,
             "Cluster phase one tessellation counters");
-        frame.TessellationSplitWork = frame.AddBuffer(
+        frame.TessellationWorkPatches = frame.AddBuffer(
             ref graph,
-            checked((ulong)_options.MaxTessellationSplitWorkItems * TessellationWorkStride),
+            checked((ulong)_options.MaxCandidates * TessellationWorkPatchStride),
+            BufferUsages.Vertex,
+            "Cluster tessellation work patches");
+        frame.TessellationWorkPatchesAlternate = frame.AddBuffer(
+            ref graph,
+            checked((ulong)_options.MaxCandidates * TessellationWorkPatchStride),
             BufferUsages.None,
-            "Cluster tessellation split work");
-        frame.TessellationDiceDispatchArgs = frame.AddBuffer(
+            "Cluster tessellation alternate work patches");
+        frame.TessellationFinalPatches = frame.AddBuffer(
+            ref graph,
+            checked((ulong)_options.MaxCandidates * TessellationFinalPatchStride),
+            BufferUsages.None,
+            "Cluster tessellation final patches");
+        frame.TessellationLevelCounts = frame.AddBuffer(
+            ref graph,
+            TessellationSplitLevelCount * sizeof(uint),
+            BufferUsages.None,
+            "Cluster tessellation level counts");
+        frame.TessellationLevelDispatchArgs = new GraphBufferId[TessellationSplitLevelCount + 1];
+        for (int level = 0; level <= TessellationSplitLevelCount; level++)
+        {
+            frame.TessellationLevelDispatchArgs[level] = frame.AddBuffer(
+                ref graph,
+                ClusterIndirectAbi.DispatchBytes,
+                BufferUsages.Indirect,
+                $"Cluster tessellation level {level} dispatch");
+        }
+        frame.TessellationSourceDispatchArgs = frame.AddBuffer(
             ref graph,
             ClusterIndirectAbi.DispatchBytes,
             BufferUsages.Indirect,
-            "Cluster tessellation dice dispatch");
-        frame.DicedTriangles = frame.AddBuffer(
+            "Cluster tessellation source dispatch");
+        frame.TessellationSeedDispatchArgs = frame.AddBuffer(
             ref graph,
-            checked((ulong)_options.MaxDicedTriangles * DicedTriangleStride),
-            BufferUsages.None,
-            "Cluster diced triangles");
-        frame.TessellationRasterDispatchArgs = frame.AddBuffer(
-            ref graph,
-            ClusterIndirectAbi.DispatchBytes,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
             BufferUsages.Indirect,
-            "Cluster tessellation visibility dispatch");
-        frame.TessellationDispatchInitialization = UploadWords(
+            "Cluster tessellation seed dispatches");
+        frame.TessellationBinCounts = frame.AddBuffer(
             ref graph,
-            [0u, 1u, 1u, 0u],
-            BufferUsages.CopySource,
-            "Cluster tessellation dispatch initialization");
+            checked((ulong)tessellationBinCount * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster tessellation bin counts");
+        frame.TessellationBinOffsets = frame.AddBuffer(
+            ref graph,
+            checked((ulong)tessellationBinCount * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster tessellation bin offsets");
+        frame.TessellationBinScatterCounts = frame.AddBuffer(
+            ref graph,
+            checked((ulong)tessellationBinCount * sizeof(uint)),
+            BufferUsages.None,
+            "Cluster tessellation bin scatter counts");
+        frame.TessellationBinReserveCounter = frame.AddBuffer(
+            ref graph,
+            sizeof(uint),
+            BufferUsages.None,
+            "Cluster tessellation bin reserve counter");
+        frame.TessellationBinDispatchArgs = frame.AddBuffer(
+            ref graph,
+            checked((ulong)tessellationBinCount * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect,
+            "Cluster tessellation split or dice dispatches");
+        frame.TessellationHardwareDrawArgs = frame.AddBuffer(
+            ref graph,
+            checked((ulong)tessellationBinCount * ClusterIndirectAbi.DrawIndexedBytes +
+                (ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect,
+            "Cluster tessellation hardware draw arguments");
+        if (_visibilityMode == ClusterVisibilityMode.HardwareOnly && !ClusterRasterPipeline.SupportsMesh(_backend, _device))
+            frame.TessellationPatternIndices = UploadStructs<ushort>(ref graph,
+                CreateTessellationPatternIndices(), BufferUsages.Index | BufferUsages.ShaderRead,
+                "Cluster tessellation pattern indices");
+        ulong softwareDebugBytes =
+            _visibilityMode != ClusterVisibilityMode.HardwareOnly &&
+            _options.EnableFrameMetricsReadback
+                ? 4ul + 8192ul * 24ul
+                : (ulong)sizeof(uint);
         frame.SoftwareDebug = frame.AddBuffer(
             ref graph,
-            4 + 8192ul * 24,
+            softwareDebugBytes,
             BufferUsages.CopySource,
             "Cluster software raster debug output");
 
         frame.ShadeBinCounts = frame.AddBuffer(
-            ref graph,
-            checked((ulong)shadeBinCount * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade bin counts");
-        frame.ShadeBinOffsets = frame.AddBuffer(
-            ref graph,
-            checked((ulong)shadeBinCount * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade bin offsets");
-        frame.ShadeIndirectArgs = frame.AddBuffer(
-            ref graph,
-            checked((ulong)shadeBinCount * ClusterIndirectAbi.DispatchBytes),
-            BufferUsages.Indirect,
-            "Cluster shade dispatches");
-        frame.ShadeScatterCounts = frame.AddBuffer(
-            ref graph,
-            checked((ulong)shadeBinCount * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade scatter counts");
-        frame.ShadeReserveCounters = frame.AddBuffer(ref graph, sizeof(uint), BufferUsages.CopySource, "Cluster shade reserve counter");
+                ref graph,
+                checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade bin counts");
+            frame.ShadeBinOffsets = frame.AddBuffer(
+                ref graph,
+                checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade bin offsets");
+            frame.ShadeIndirectArgs = frame.AddBuffer(
+                ref graph,
+                checked((ulong)shadeBinCount * ClusterIndirectAbi.DispatchBytes),
+                BufferUsages.Indirect,
+                "Cluster shade dispatches");
+            frame.ShadeScatterCounts = frame.AddBuffer(
+                ref graph,
+                checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade scatter counts");
+            frame.ShadeReserveCounters = frame.AddBuffer(
+                ref graph,
+                sizeof(uint),
+                BufferUsages.CopySource,
+                "Cluster shade reserve counter");
         frame.PixelCoordinates = frame.AddBuffer(
-            ref graph,
-            checked((ulong)width * (ulong)height * viewCapacity * 2u * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade pixel coordinates");
+                ref graph,
+                checked((ulong)width * (ulong)height * viewCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade tiles and quads");
 
         frame.VisBuffer = graph.CreateTexture(new TextureDesc(
-            TextureDimension.Texture2D,
-            checked((uint)width),
-            checked((uint)height),
-            1,
-            1,
-            viewCapacity,
-            1,
-            Format.R32UInt,
-            TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment |
-            TextureUsages.CopySource,
-            label: "Cluster visibility buffer"));
-        frame.Depth = graph.CreateTexture(new TextureDesc(
-            TextureDimension.Texture2D,
-            checked((uint)width),
-            checked((uint)height),
-            1,
-            1,
-            viewCapacity,
-            1,
-            Format.D32Float,
-            TextureUsages.Sampled | TextureUsages.DepthStencilAttachment | TextureUsages.CopySource,
-            label: "Cluster scene depth"));
-        frame.SoftwareDepth = graph.CreateTexture(new TextureDesc(
-            TextureDimension.Texture2D,
-            checked((uint)width),
-            checked((uint)height),
-            1,
-            1,
-            viewCapacity,
-            1,
-            Format.R32UInt,
-            TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment,
-            label: "Cluster software depth"));
+                TextureDimension.Texture2D,
+                checked((uint)width),
+                checked((uint)height),
+                1,
+                1,
+                viewCount,
+                1,
+                Format.R32UInt,
+                TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment |
+                TextureUsages.CopySource,
+                label: "Cluster visibility buffer"));
+            if (_visibilityMode == ClusterVisibilityMode.ImageAtomic64)
+            {
+                frame.VisibilityWinnerImage = graph.CreateTexture(new TextureDesc(
+                    TextureDimension.Texture2D,
+                    checked((uint)width),
+                    checked((uint)height),
+                    1,
+                    1,
+                    viewCount,
+                    1,
+                    Format.R64UInt,
+                    TextureUsages.Sampled | TextureUsages.Storage,
+                    label: "Cluster visibility winner image"));
+            }
+            else if (_visibilityMode == ClusterVisibilityMode.BufferAtomic64)
+            {
+                frame.VisibilityWinnerBuffer = frame.AddBuffer(
+                    ref graph,
+                    checked((ulong)width * (ulong)height * viewCount * 8u),
+                    BufferUsages.None,
+                    "Cluster visibility winner buffer");
+            }
+            frame.Depth = graph.CreateTexture(new TextureDesc(
+                TextureDimension.Texture2D,
+                checked((uint)width),
+                checked((uint)height),
+                1,
+                1,
+                viewCount,
+                1,
+                Format.D32Float,
+                TextureUsages.Sampled | TextureUsages.DepthStencilAttachment | TextureUsages.CopySource,
+                label: "Cluster scene depth"));
+            {
+                frame.NeutralPolicyOutput = graph.CreateTexture(new TextureDesc(
+                    TextureDimension.Texture2D,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    Format.R32UInt,
+                    TextureUsages.Storage | TextureUsages.ColorAttachment,
+                    label: "Cluster neutral target output"));
+                if (_visibilityMode == ClusterVisibilityMode.HardwareOnly && _renderContext.IsValid)
+                {
+                    frame.PolicyVisibilityScratch = graph.CreateTexture(new TextureDesc(
+                        TextureDimension.Texture2D,
+                        _renderContext.RasterWidth,
+                        _renderContext.RasterHeight,
+                        1,
+                        1,
+                        1,
+                        1,
+                        Format.R32UInt,
+                        TextureUsages.ColorAttachment,
+                        label: "Cluster policy hardware visibility scratch"));
+                    frame.PolicyDepthScratch = graph.CreateTexture(new TextureDesc(
+                        TextureDimension.Texture2D,
+                        _renderContext.RasterWidth,
+                        _renderContext.RasterHeight,
+                        1,
+                        1,
+                        1,
+                        1,
+                        Format.D32Float,
+                        TextureUsages.DepthStencilAttachment,
+                        label: "Cluster policy hardware depth scratch"));
+                }
+            }
         frame.SceneColor = graph.CreateTexture(new TextureDesc(
-            TextureDimension.Texture2D,
-            checked((uint)width),
-            checked((uint)height),
-            1,
-            1,
-            viewCapacity,
-            1,
-            Format.R16G16B16A16Float,
-            TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
-            label: "Cluster scene color"));
+                TextureDimension.Texture2D,
+                checked((uint)width),
+                checked((uint)height),
+                1,
+                1,
+                viewCount,
+                1,
+                Format.R16G16B16A16Float,
+                TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
+                label: "Cluster scene color"));
+        frame.MotionVectors = graph.CreateTexture(new TextureDesc(
+                TextureDimension.Texture2D,
+                checked((uint)width),
+                checked((uint)height),
+                1,
+                1,
+                viewCount,
+                1,
+                Format.R16G16Float,
+                TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource,
+                label: "Cluster motion vectors"));
         RecordBufferInitialization(ref graph, in frame);
         RecordTargetInitialization(ref graph, in frame);
+        RecordVisibilityWinnerClear(ref graph, in frame);
         return frame;
+    }
+
+    private void RecordVisibilityWinnerClear(
+        ref RenderGraphEdit graph,
+        in FrameResources frame)
+    {
+        if (_visibilityMode == ClusterVisibilityMode.HardwareOnly)
+        {
+            _winnerClearPass = default;
+            return;
+        }
+
+        ClusterComputePipeline pipeline = _pipelines?.WinnerClear
+            ?? throw new InvalidOperationException("The selected A64 visibility mode has no clear pipeline.");
+        GraphBufferId uniforms = UploadUniform(
+            ref graph,
+            new ClusterVisibilityWinnerUniforms
+            {
+                Width = checked((uint)frame.Width),
+                Height = checked((uint)frame.Height),
+                ViewCount = frame.ViewCount,
+            },
+            "Cluster visibility winner clear uniforms");
+        int bindingCount = 0;
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
+            CreateConstantBufferView(graph, uniforms), PipelineSync.ComputeShading));
+        if (_visibilityMode == ClusterVisibilityMode.ImageAtomic64)
+        {
+            AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
+                CreateStorageTextureView(
+                    graph,
+                    frame.VisibilityWinnerImage,
+                    Format.R64UInt,
+                    null,
+                    TextureViewDimension.Texture2DArray),
+                PipelineSync.ComputeShading,
+                GraphAccessMode.Write,
+                WriteCoverage.Complete));
+            _winnerClearPass = AddComputePass(
+                ref graph,
+                "Clear Cluster visibility winner image",
+                pipeline,
+                new ClusterDispatchParameters(new DispatchArguments(
+                    Groups(frame.Width, 8),
+                    Groups(frame.Height, 8),
+                    frame.ViewCount)),
+                bindingCount,
+                ClusterDispatchParameters.Record);
+            return;
+        }
+
+        AddBinding(ref bindingCount, GraphParameterResourceBinding.WritableBuffer(
+            CreateStorageBufferView(graph, frame.VisibilityWinnerBuffer),
+            PipelineSync.ComputeShading,
+            GraphAccessMode.Write,
+            WriteCoverage.Complete));
+        ulong pixels = checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount);
+        ulong groups = (pixels + 63u) / 64u;
+        uint groupsX = checked((uint)Math.Min(groups, 65_535u));
+        uint groupsY = checked((uint)((groups + 65_534u) / 65_535u));
+        _winnerClearPass = AddComputePass(
+            ref graph,
+            "Clear Cluster visibility winner buffer",
+            pipeline,
+            new ClusterDispatchParameters(new DispatchArguments(groupsX, groupsY, 1)),
+            bindingCount,
+            ClusterDispatchParameters.Record);
     }
 
     private void ReconcileStageResources(
         ref RenderGraphEdit graph,
         ClusterMaterialAssignmentSet assignments,
-        ClusterDeformStageSet deformStages,
         ClusterRasterStageSet rasterStages,
         ClusterShadeStageSet shadeStages)
     {
         FrameResources frame = _frameResources;
         uint rasterBinCount = rasterStages.BinCount;
-        uint deformBinCount = deformStages.BinCount;
+        uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
 
         frame.RasterBinCount = rasterBinCount;
-        frame.DeformBinCount = deformBinCount;
         frame.ShadeBinCount = shadeBinCount;
         frame.SlotCapacity = assignments.SlotCapacity;
         frame.RasterSlots = UploadWords(
@@ -413,11 +575,6 @@ private const int TessellationWorkStride = 20;
             rasterStages.Slots.Span,
             BufferUsages.ShaderRead,
             "Cluster raster stage slots");
-        frame.DeformSlots = UploadWords(
-            ref graph,
-            deformStages.Slots.Span,
-            BufferUsages.ShaderRead,
-            "Cluster deform stage slots");
         frame.ShadeSlots = UploadWords(
             ref graph,
             shadeStages.Slots.Span,
@@ -432,64 +589,56 @@ private const int TessellationWorkStride = 20;
             "Cluster raster bins");
         SetStageBuffer(
             ref graph,
-            frame.BinnedDrawArgs,
-            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
-            BufferUsages.None,
-            "Cluster raster draw metadata");
-        SetStageBuffer(
-            ref graph,
-            frame.BinnedHardwareDrawArgs,
-            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
-            BufferUsages.CopySource,
-            "Cluster hardware draw metadata");
-        SetStageBuffer(
-            ref graph,
             frame.HardwareIndirectArgs,
-            checked((ulong)rasterBinCount * ClusterIndirectAbi.DrawBytes),
-            BufferUsages.Indirect | BufferUsages.CopyDestination,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.HardwareRasterStride),
+            BufferUsages.Indirect,
             "Cluster hardware indirect arguments");
         SetStageBuffer(
             ref graph,
             frame.SoftwareDispatchArgs,
-            checked((ulong)rasterBinCount * 2 * ClusterIndirectAbi.DispatchBytes),
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
             BufferUsages.Indirect,
             "Cluster software raster dispatches");
+        SetStageBuffer(ref graph, frame.TessellationSeedDispatchArgs,
+            checked((ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect, "Cluster tessellation seed dispatches");
+        SetStageBuffer(ref graph, frame.TessellationBinCounts, checked((ulong)tessellationBinCount * sizeof(uint)),
+            BufferUsages.None, "Cluster tessellation bin counts");
+        SetStageBuffer(ref graph, frame.TessellationBinOffsets, checked((ulong)tessellationBinCount * sizeof(uint)),
+            BufferUsages.None, "Cluster tessellation bin offsets");
+        SetStageBuffer(ref graph, frame.TessellationBinScatterCounts, checked((ulong)tessellationBinCount * sizeof(uint)),
+            BufferUsages.None, "Cluster tessellation bin scatter counts");
+        SetStageBuffer(ref graph, frame.TessellationBinDispatchArgs,
+            checked((ulong)tessellationBinCount * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect, "Cluster tessellation split or dice dispatches");
+        SetStageBuffer(ref graph, frame.TessellationHardwareDrawArgs,
+            checked((ulong)tessellationBinCount * ClusterIndirectAbi.DrawIndexedBytes +
+                (ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
+            BufferUsages.Indirect, "Cluster tessellation hardware draw arguments");
         SetStageBuffer(
-            ref graph,
-            frame.DeformBinMeta,
-            checked((ulong)deformBinCount * DeformBinStride),
-            BufferUsages.None,
-            "Cluster deform bins");
+                ref graph,
+                frame.ShadeBinCounts,
+                checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade bin counts");
         SetStageBuffer(
-            ref graph,
-            frame.DeformDispatchArgs,
-            checked((ulong)(deformBinCount + 1u) * ClusterIndirectAbi.DispatchBytes),
-            BufferUsages.Indirect,
-            "Cluster deform dispatches");
-        SetStageBuffer(
-            ref graph,
-            frame.ShadeBinCounts,
-            checked((ulong)shadeBinCount * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade bin counts");
-        SetStageBuffer(
-            ref graph,
-            frame.ShadeBinOffsets,
-            checked((ulong)shadeBinCount * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade bin offsets");
-        SetStageBuffer(
-            ref graph,
-            frame.ShadeIndirectArgs,
-            checked((ulong)shadeBinCount * ClusterIndirectAbi.DispatchBytes),
-            BufferUsages.Indirect,
-            "Cluster shade dispatches");
-        SetStageBuffer(
-            ref graph,
-            frame.ShadeScatterCounts,
-            checked((ulong)shadeBinCount * sizeof(uint)),
-            BufferUsages.None,
-            "Cluster shade scatter counts");
+                ref graph,
+                frame.ShadeBinOffsets,
+                checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade bin offsets");
+            SetStageBuffer(
+                ref graph,
+                frame.ShadeIndirectArgs,
+                checked((ulong)shadeBinCount * ClusterIndirectAbi.DispatchBytes),
+                BufferUsages.Indirect,
+                "Cluster shade dispatches");
+            SetStageBuffer(
+                ref graph,
+                frame.ShadeScatterCounts,
+                checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
+                BufferUsages.None,
+                "Cluster shade scatter counts");
 
         _frameResources = frame;
     }
@@ -518,12 +667,14 @@ private const int TessellationWorkStride = 20;
         ClusterCullingHistory history)
     {
         FrameResources frame = _frameResources;
-        BindBuffer(ref graph, frame.InstanceData, binding.PropertyData,
-            PipelineSync.AllShading, ResourceAccess.ShaderResource,
-            ResourceContentState.Defined);
-        BindBuffer(ref graph, frame.InstanceProperties, binding.InstancePropertyMetadata,
-            PipelineSync.AllShading, ResourceAccess.ConstantBuffer,
-            ResourceContentState.Defined);
+        graph.BindExternalBuffer(
+            frame.InstanceData,
+            binding.PropertyData,
+            binding.PropertyDataEndpoints);
+        graph.BindExternalBuffer(
+            frame.InstanceProperties,
+            binding.InstancePropertyMetadata,
+            binding.InstancePropertyMetadataEndpoints);
         graph.SetBufferRange(
             frame.InstanceProperties,
             binding.InstancePropertyMetadataRange);
@@ -595,7 +746,21 @@ private const int TessellationWorkStride = 20;
             previousBvhPass = pass;
         }
         if (previousBvhPass != default)
-            graph.OrderAfter(_traversalPass, previousBvhPass);
+        {
+            graph.OrderAfter(_sceneBoundsPass, previousBvhPass);
+            if (_traversalSeedPass != default)
+                graph.OrderAfter(_traversalSeedPass, previousBvhPass);
+            if (_continuationTraversalSeedPass != default)
+                graph.OrderAfter(_continuationTraversalSeedPass, previousBvhPass);
+            foreach (GraphPassId traversalLevel in _traversalLevelPasses)
+                graph.OrderAfter(traversalLevel, previousBvhPass);
+            foreach (GraphPassId traversalLevel in _primaryPostTraversalLevelPasses)
+                graph.OrderAfter(traversalLevel, previousBvhPass);
+            foreach (GraphPassId traversalLevel in _continuationTraversalLevelPasses)
+                graph.OrderAfter(traversalLevel, previousBvhPass);
+            foreach (GraphPassId traversalLevel in _continuationPostTraversalLevelPasses)
+                graph.OrderAfter(traversalLevel, previousBvhPass);
+        }
 
         static GraphPassId AddUpload(
             ref RenderGraphFrame activeGraph,
@@ -603,13 +768,13 @@ private const int TessellationWorkStride = 20;
             GraphBufferId destination,
             string label)
         {
-            GraphBufferId source = activeGraph.Upload(
+            GraphBufferSlice source = activeGraph.Upload(
                 upload.Bytes.Span,
                 BufferUsages.CopySource,
                 $"{label} staging");
             var data = new ClusterBufferCopyParameters(
-                source,
-                0,
+                source.Buffer,
+                source.Range.Offset,
                 destination,
                 upload.Offset,
                 checked((ulong)upload.Bytes.Length));
@@ -643,24 +808,69 @@ private const int TessellationWorkStride = 20;
         foreach (GraphPassId passId in _pageHeapReaderPasses)
         {
             PassDefinition pass = graph.GetPass(passId);
-            foreach (ref readonly BufferRange range in binding.ResidentPageRanges.AsSpan())
-            {
-                _ = pass.Read(
-                    _frameResources.PageHeap,
-                    range,
-                    PipelineSync.AllShading,
-                    ResourceAccess.ShaderResource);
-            }
+            pass.ReadRanges(_frameResources.PageHeap, _residentPageReads,
+                PipelineSync.AllShading, ResourceAccess.ShaderResource);
         }
 
-        if (!binding.BvhRange.IsWhole && binding.BvhRange.Size != 0)
+        BufferRange bvhRange = binding.BvhRange;
+        if (!bvhRange.IsWhole && bvhRange.Size != 0)
         {
-            PassDefinition traversal = graph.GetPass(_traversalPass);
-            _ = traversal.Read(
-                _frameResources.Bvh,
-                binding.BvhRange,
-                PipelineSync.ComputeShading,
-                ResourceAccess.ShaderResource);
+            PassDefinition sceneBounds = graph.GetPass(_sceneBoundsPass);
+            _ = sceneBounds.Read(_frameResources.Bvh, bvhRange, PipelineSync.ComputeShading, ResourceAccess.ShaderResource);
+            if (_traversalSeedPass != default)
+            {
+                PassDefinition seed = graph.GetPass(_traversalSeedPass);
+                _ = seed.Read(
+                    _frameResources.Bvh,
+                    bvhRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource);
+            }
+            foreach (GraphPassId traversalLevel in _traversalLevelPasses)
+            {
+                PassDefinition traversal = graph.GetPass(traversalLevel);
+                _ = traversal.Read(
+                    _frameResources.Bvh,
+                    bvhRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource);
+            }
+            foreach (GraphPassId traversalLevel in _primaryPostTraversalLevelPasses)
+            {
+                PassDefinition traversal = graph.GetPass(traversalLevel);
+                _ = traversal.Read(
+                    _frameResources.Bvh,
+                    bvhRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource);
+            }
+            if (_continuationTraversalSeedPass != default)
+            {
+                PassDefinition seed = graph.GetPass(_continuationTraversalSeedPass);
+                _ = seed.Read(
+                    _frameResources.Bvh,
+                    bvhRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource);
+            }
+            foreach (GraphPassId traversalLevel in _continuationTraversalLevelPasses)
+            {
+                PassDefinition traversal = graph.GetPass(traversalLevel);
+                _ = traversal.Read(
+                    _frameResources.Bvh,
+                    bvhRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource);
+            }
+            foreach (GraphPassId traversalLevel in _continuationPostTraversalLevelPasses)
+            {
+                PassDefinition traversal = graph.GetPass(traversalLevel);
+                _ = traversal.Read(
+                    _frameResources.Bvh,
+                    bvhRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource);
+            }
         }
     }
 
@@ -692,61 +902,33 @@ private const int TessellationWorkStride = 20;
         return result;
     }
 
+    private GraphBufferId _primaryTraversalSeedUniforms;
+    private GraphBufferId _continuationTraversalSeedUniforms;
+
     private void WriteFrameUploads(
-        ref RenderGraphFrame graph,
-        int generation,
-        ClusterDeformStageSet deformStages,
-        ClusterRasterStageSet rasterStages,
-        ClusterShadeStageSet shadeStages,
-        scoped ReadOnlySpan<ClusterViewUniforms> packedViews)
+        ref RenderGraphFrame graph, int generation, ClusterRasterStageSet rasterStages,
+        ClusterShadeStageSet shadeStages, scoped ReadOnlySpan<ClusterViewUniforms> packedViews,
+        int primaryViewCount)
     {
-        ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException(
-            "Cluster retained upload storage was not created.");
-        FrameResources frame = _frameResources;
-        uploads.BeginFrame();
+        ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException("Cluster uploads are unavailable.");
+        uploads.BeginFrame(generation);
         try
         {
-            WriteWords(ref graph, uploads, generation, rasterStages.Slots.Span,
-                "Cluster raster stage slots");
-            WriteWords(ref graph, uploads, generation, deformStages.Slots.Span,
-                "Cluster deform stage slots");
-            WriteWords(ref graph, uploads, generation, shadeStages.Slots.Span,
-                "Cluster shade stage slots");
-            WriteBytes(ref graph, uploads, generation, stackalloc byte[16],
-                "Cluster zero read offset");
-            WriteWords(ref graph, uploads, generation, [0u, 1u, 1u, 0u],
-                "Cluster candidate dispatch initialization");
-            WriteWords(ref graph, uploads, generation, [0u, 1u, 1u, 0u],
-                "Cluster tessellation dispatch initialization");
-            WriteStructs(ref graph, uploads, generation, packedViews,
-                "Cluster packed views");
-
-            WriteRasterPhaseUploads(ref graph, uploads, generation, frame, phaseOne: true);
-            WriteRasterPhaseUploads(ref graph, uploads, generation, frame, phaseOne: false);
-
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterShadeBinUniforms
+            uploads.WriteAndBind(ref graph, generation, MemoryMarshal.AsBytes(rasterStages.Slots.Span), _frameResources.RasterSlots);
+            uploads.WriteAndBind(ref graph, generation, MemoryMarshal.AsBytes(shadeStages.Slots.Span), _frameResources.ShadeSlots);
+            uploads.WriteAndBind(ref graph, generation, MemoryMarshal.AsBytes(packedViews), _frameResources.PackedViews);
+            WriteUniform(ref graph, uploads, generation, new ClusterTraversalSeedUniforms
+            {
+                ViewCount = checked((uint)primaryViewCount), ViewIndexMode = 0u,
+                MaxNodes = _options.MaxCandidates,
+            }, _primaryTraversalSeedUniforms);
+            if (_renderContext.IsValid)
+                WriteUniform(ref graph, uploads, generation, new ClusterTraversalSeedUniforms
                 {
-                    ScreenWidth = checked((uint)frame.Width),
-                    ScreenHeight = checked((uint)frame.Height),
-                    ShadeBinCount = frame.ShadeBinCount,
-                    SlotCapacity = frame.SlotCapacity,
-                },
-                "Cluster shade bin uniforms");
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterResolveUniforms
-                {
-                    ScreenWidth = checked((uint)frame.Width),
-                    ScreenHeight = checked((uint)frame.Height),
-                },
-                "Cluster resolve uniforms");
-            uploads.CompleteFrame();
+                    ViewCount = _renderContext.MaximumInvocationCount, ViewIndexMode = 1u,
+                    MaxNodes = _options.MaxCandidates,
+                }, _continuationTraversalSeedUniforms);
+            uploads.CompleteFrame(ref graph);
         }
         catch
         {
@@ -755,180 +937,59 @@ private const int TessellationWorkStride = 20;
         }
     }
 
-    private void WriteRasterPhaseUploads(
-        ref RenderGraphFrame graph,
-        ClusterFrameUploads uploads,
-        int generation,
-        in FrameResources frame,
-        bool phaseOne)
+    private void RecordUploadFinalization(ref RenderGraphEdit graph)
     {
-        WriteUniform(
-            ref graph,
-            uploads,
-            generation,
-            new ClusterRasterDeformBinningUniforms
-            {
-                RasterMaxBins = frame.RasterBinCount,
-                DeformMaxBins = frame.DeformBinCount,
-                SlotCapacity = frame.SlotCapacity,
-                MaxVisibleClusters = _options.MaxCandidates,
-                ResetCacheAllocationState = phaseOne ? 1u : 0u,
-            },
-            phaseOne
-                ? "Cluster phase one raster/deform binning uniforms"
-                : "Cluster phase two raster/deform binning uniforms");
-
-        for (uint bin = 0; bin < frame.DeformBinCount; bin++)
-        {
-            WriteUniform(
+        ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException("Cluster uploads are unavailable.");
+        FrameResources frame = _frameResources;
+            GraphPassId finalization = uploads.DeclareFinalization(
                 ref graph,
-                uploads,
-                generation,
-                new ClusterDeformUniforms
-                {
-                    MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
-                    MaxClusterVertices = ClusterVertexCapacity,
-                    CurrentBin = bin,
-                    Pass = 0u,
-                },
-                phaseOne
-                    ? "Cluster phase one deform size bin uniforms"
-                    : "Cluster phase two deform size bin uniforms");
-        }
+                frame.InstanceData,
+                checked((ulong)_resources.InstanceResources.PropertyDataBytes),
+                frame.InstanceProperties,
+                checked((ulong)_resources.InstanceResources.BatchMetadataStrideBytes *
+                    (ulong)_resources.InstanceResources.Options.BatchCapacity),
+                frame.PreviousHiZ,
+                frame.CurrentHiZ,
+                new TextureSubresourceRange(
+                    0,
+                    checked((uint)(_history ?? throw new InvalidOperationException(
+                        "Cluster culling history was not created.")).HiZMipCount),
+                    0,
+                    frame.ViewCount,
+                    TextureAspects.Color),
+                finalizeCurrentHiZ: true);
+            OrderUploadFinalization(ref graph, finalization);
+    }
 
-        WriteUniform(
-            ref graph,
-            uploads,
-            generation,
-            new ClusterDeformPrefixUniforms
-            {
-                MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
-            },
-            phaseOne
-                ? "Cluster phase one deform cache prefix uniforms"
-                : "Cluster phase two deform cache prefix uniforms");
+    private void OrderUploadFinalization(
+        ref RenderGraphEdit graph,
+        GraphPassId finalization)
+    {
+        var predecessors = new HashSet<GraphPassId>();
+        Add(_traversalPass);
+        Add(_primaryDeferredResumePass);
+        Add(_primaryPostTraversalPass);
+        Add(_continuationTraversalPass);
+        Add(_continuationDeferredResumePass);
+        Add(_continuationPostTraversalPass);
+        Add(_phaseOneCullPass);
+        Add(_phaseTwoCullPass);
+        Add(_continuationCullPass);
+        Add(_continuationPostCullPass);
+        Add(_phaseOneHiZPass);
+        Add(_phaseTwoHiZPass);
+        Add(_shadeResolvePass);
+        Add(_renderContext.FinishBefore);
+        foreach (GraphPassId pass in _stagePasses)
+            Add(pass);
+        foreach (GraphPassId predecessor in predecessors)
+            graph.OrderAfter(finalization, predecessor);
+        return;
 
-        for (uint bin = 0; bin < frame.DeformBinCount; bin++)
+        void Add(GraphPassId pass)
         {
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterDeformUniforms
-                {
-                    MaxDeformCacheBytes = checked((uint)_options.DeformCacheBytes),
-                    MaxClusterVertices = ClusterVertexCapacity,
-                    CurrentBin = bin,
-                    Pass = 1u,
-                },
-                phaseOne
-                    ? "Cluster phase one deform write bin uniforms"
-                    : "Cluster phase two deform write bin uniforms");
-        }
-
-        for (uint bin = 0; bin < frame.RasterBinCount; bin++)
-        {
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterTessellationUniforms
-                {
-                    ScreenWidth = checked((uint)frame.Width),
-                    ScreenHeight = checked((uint)frame.Height),
-                    CurrentBin = bin,
-                    DispatchGroupWidth = 65_535u,
-                    MaxSplitWorkItems = _options.MaxTessellationSplitWorkItems,
-                    MaxDicedTriangles = _options.MaxDicedTriangles,
-                    MaxFactor = _options.MaxTessellationFactor,
-                    TargetEdgePixels = _options.TessellationTargetEdgePixels,
-                },
-                phaseOne
-                    ? "Cluster phase one tessellation uniforms"
-                    : "Cluster phase two tessellation uniforms");
-        }
-
-        for (uint bin = 0; bin < frame.RasterBinCount; bin++)
-        {
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterTessellationUniforms
-                {
-                    ScreenWidth = checked((uint)frame.Width),
-                    ScreenHeight = checked((uint)frame.Height),
-                    CurrentBin = bin,
-                    DispatchGroupWidth = 65_535u,
-                    MaxSplitWorkItems = _options.MaxTessellationSplitWorkItems,
-                    MaxDicedTriangles = _options.MaxDicedTriangles,
-                    MaxFactor = _options.MaxTessellationFactor,
-                    TargetEdgePixels = _options.TessellationTargetEdgePixels,
-                },
-                phaseOne
-                    ? "Cluster phase one dicing uniforms"
-                    : "Cluster phase two dicing uniforms");
-        }
-
-        WriteUniform(
-            ref graph,
-            uploads,
-            generation,
-            new ClusterTessellationVisibilityUniforms
-            {
-                ScreenWidth = checked((uint)frame.Width),
-                ScreenHeight = checked((uint)frame.Height),
-                MaxDicedTriangles = _options.MaxDicedTriangles,
-            },
-            phaseOne
-                ? "Cluster phase one diced visibility uniforms"
-                : "Cluster phase two diced visibility uniforms");
-
-        for (uint bin = 0; bin < frame.RasterBinCount; bin++)
-        {
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterSoftwareRasterUniforms
-                {
-                    ScreenWidth = checked((uint)frame.Width),
-                    ScreenHeight = checked((uint)frame.Height),
-                    MaxBins = frame.RasterBinCount,
-                    DebugDump = _options.EnableFrameMetricsReadback ? 1u : 0u,
-                    CurrentBin = bin,
-                },
-                phaseOne
-                    ? "Cluster phase one software raster bin uniforms"
-                    : "Cluster phase two software raster bin uniforms");
-        }
-
-        WriteUniform(
-            ref graph,
-            uploads,
-            generation,
-            new ClusterDrawUniforms
-            {
-                ScreenWidth = checked((uint)frame.Width),
-                ScreenHeight = checked((uint)frame.Height),
-            },
-            phaseOne
-                ? "Cluster phase one hardware draw uniforms"
-                : "Cluster phase two hardware draw uniforms");
-
-        for (uint bin = 0; bin < frame.RasterBinCount; bin++)
-        {
-            WriteUniform(
-                ref graph,
-                uploads,
-                generation,
-                new ClusterDrawDispatchUniforms
-                {
-                    DrawArgsByteOffset = checked(bin * ClusterIndirectAbi.DrawStride),
-                },
-                phaseOne
-                    ? "Cluster phase one hardware bin dispatch uniforms"
-                    : "Cluster phase two hardware bin dispatch uniforms");
+            if (pass != default && pass != finalization)
+                predecessors.Add(pass);
         }
     }
 
@@ -937,7 +998,7 @@ private const int TessellationWorkStride = 20;
         ClusterFrameUploads uploads,
         int generation,
         in T value,
-        string label)
+        GraphBufferId id)
         where T : unmanaged
     {
         int valueSize = Unsafe.SizeOf<T>();
@@ -945,47 +1006,8 @@ private const int TessellationWorkStride = 20;
         Span<byte> bytes = stackalloc byte[byteSize];
         bytes.Clear();
         MemoryMarshal.Write(bytes, in value);
-        _ = uploads.WriteAndBind(ref graph, generation, bytes, label);
+        uploads.WriteAndBind(ref graph, generation, bytes, id);
     }
-
-    private static void WriteWords(
-        ref RenderGraphFrame graph,
-        ClusterFrameUploads uploads,
-        int generation,
-        scoped ReadOnlySpan<uint> values,
-        string label) =>
-        WriteBytes(
-            ref graph,
-            uploads,
-            generation,
-            MemoryMarshal.AsBytes(values),
-            label);
-
-    private static void WriteStructs<T>(
-        ref RenderGraphFrame graph,
-        ClusterFrameUploads uploads,
-        int generation,
-        scoped ReadOnlySpan<T> values,
-        string label)
-        where T : unmanaged
-    {
-        if (values.IsEmpty)
-            throw new ArgumentException("A Cluster structured upload cannot be empty.", nameof(values));
-        WriteBytes(
-            ref graph,
-            uploads,
-            generation,
-            MemoryMarshal.AsBytes(values),
-            label);
-    }
-
-    private static void WriteBytes(
-        ref RenderGraphFrame graph,
-        ClusterFrameUploads uploads,
-        int generation,
-        scoped ReadOnlySpan<byte> bytes,
-        string label) =>
-        _ = uploads.WriteAndBind(ref graph, generation, bytes, label);
 
     private static void BindBuffer(
         ref RenderGraphFrame graph,
@@ -1025,24 +1047,29 @@ private const int TessellationWorkStride = 20;
         ref RenderGraphEdit graph,
         in FrameResources frame)
     {
-        ReadOnlySpan<GraphBufferId> buffers = frame.ClearBuffers;
-        for (int index = 0; index < buffers.Length; index++)
-        {
-            ClusterBufferClearParameters passData = new(buffers[index]);
-            _ = graph.AddCopyFramePass(
-                $"Initialize Cluster frame buffer {index}",
-                PassQueueSelection.AnyOfType(QueueType.Copy),
-                passData,
-                default,
-                static (ref PassDefinition access, ref ClusterBufferClearParameters data) =>
-                    _ = access.Write(
-                        data.Buffer,
-                        BufferRange.Whole,
-                        PipelineSync.Copy,
-                        ResourceAccess.CopyDestination,
-                        WriteCoverage.Complete),
-                ClusterBufferClearParameters.Record);
-        }
+        AddSmallClear(ref graph, frame.CandidateCount, new BufferRange(0, sizeof(uint)),
+            "Initialize Cluster candidate count");
+        AddSmallClear(ref graph, frame.Phase2CandidateCount, new BufferRange(0, sizeof(uint)),
+            "Initialize Cluster deferred work count");
+        AddSmallClear(
+            ref graph,
+            frame.TraversalArguments0,
+            BufferRange.Whole,
+            "Initialize Cluster hierarchy arguments 0");
+        AddSmallClear(
+            ref graph,
+            frame.TraversalArguments1,
+            BufferRange.Whole,
+            "Initialize Cluster hierarchy arguments 1");
+        AddSmallClear(
+            ref graph,
+            frame.PageFaults,
+            new BufferRange(
+                0,
+                checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * sizeof(uint))),
+            "Initialize Cluster page-fault count");
+        AddSmallClear(ref graph, frame.SoftwareDebug, new BufferRange(0, sizeof(uint)),
+            "Initialize Cluster software debug count");
 
         ClusterBufferCopyParameters copy = new(
             frame.CandidateArgsInitialization,
@@ -1052,7 +1079,7 @@ private const int TessellationWorkStride = 20;
             16);
         _ = graph.AddCopyFramePass(
             "Initialize Cluster candidate dispatch arguments",
-            PassQueueSelection.AnyOfType(QueueType.Copy),
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
             copy,
             default,
             static (ref PassDefinition access, ref ClusterBufferCopyParameters data) =>
@@ -1070,6 +1097,55 @@ private const int TessellationWorkStride = 20;
                     WriteCoverage.Complete);
             },
             ClusterBufferCopyParameters.Record);
+
+        ClusterBufferCopyParameters phaseTwoCopy = new(
+            frame.CandidateArgsInitialization,
+            0,
+            frame.Phase2CandidateArgs,
+            0,
+            16);
+        _ = graph.AddCopyFramePass(
+            "Initialize Cluster deferred dispatch arguments",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            phaseTwoCopy,
+            default,
+            static (ref PassDefinition access, ref ClusterBufferCopyParameters data) =>
+            {
+                _ = access.Read(
+                    data.Source,
+                    new BufferRange(data.SourceOffset, data.ByteCount),
+                    PipelineSync.Copy,
+                    ResourceAccess.CopySource);
+                _ = access.Write(
+                    data.Destination,
+                    new BufferRange(data.DestinationOffset, data.ByteCount),
+                    PipelineSync.Copy,
+                    ResourceAccess.CopyDestination,
+                    WriteCoverage.Complete);
+            },
+            ClusterBufferCopyParameters.Record);
+
+        static void AddSmallClear(
+            ref RenderGraphEdit activeGraph,
+            GraphBufferId buffer,
+            in BufferRange range,
+            string label)
+        {
+            var clear = new ClusterBufferRangeClearParameters(buffer, range);
+            _ = activeGraph.AddCopyFramePass(
+                label,
+                PassQueueSelection.AnyOfType(QueueType.Graphics),
+                clear,
+                default,
+                static (ref PassDefinition access, ref ClusterBufferRangeClearParameters data) =>
+                    _ = access.Write(
+                        data.Buffer,
+                        data.Range,
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        WriteCoverage.Complete),
+                ClusterBufferRangeClearParameters.Record);
+        }
     }
 
     private static void RecordTargetInitialization(
@@ -1080,18 +1156,13 @@ private const int TessellationWorkStride = 20;
             0,
             1,
             0,
-            frame.ViewCapacity,
+            frame.ViewCount,
             TextureAspects.Color);
         GraphColorAttachmentViewId vis = graph.CreateColorAttachmentView(
             frame.VisBuffer,
             colors,
             dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster visibility clear view");
-        GraphColorAttachmentViewId softwareDepth = graph.CreateColorAttachmentView(
-            frame.SoftwareDepth,
-            colors,
-            dimension: TextureViewDimension.Texture2DArray,
-            label: "Cluster software depth clear view");
         GraphColorAttachmentViewId scene = graph.CreateColorAttachmentView(
             frame.SceneColor,
             colors,
@@ -1103,13 +1174,12 @@ private const int TessellationWorkStride = 20;
                 0,
                 1,
                 0,
-                frame.ViewCapacity,
+                frame.ViewCount,
                 TextureAspects.Depth),
             dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster depth clear view");
         ClusterTargetClearParameters data = new(
             vis,
-            softwareDepth,
             scene,
             depth);
         _ = graph.AddRasterFramePass(
@@ -1119,6 +1189,49 @@ private const int TessellationWorkStride = 20;
             default,
             ClusterTargetClearParameters.Declare,
             ClusterTargetClearParameters.Record);
+
+        {
+            GraphColorAttachmentViewId neutralPolicyOutput = graph.CreateColorAttachmentView(
+                frame.NeutralPolicyOutput,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                dimension: TextureViewDimension.Texture2D,
+                label: "Cluster neutral target output clear view");
+            ClusterColorAttachmentClearParameters neutralData = new(
+                neutralPolicyOutput,
+                Vector4.Zero);
+            _ = graph.AddRasterFramePass(
+                "Clear Cluster neutral target output",
+                PassQueueSelection.AnyOfType(QueueType.Graphics),
+                neutralData,
+                default,
+                ClusterColorAttachmentClearParameters.Declare,
+                ClusterColorAttachmentClearParameters.Record);
+        }
+        if (frame.PolicyVisibilityScratch != default && frame.PolicyDepthScratch != default)
+        {
+            GraphColorAttachmentViewId policyVisibility = graph.CreateColorAttachmentView(
+                frame.PolicyVisibilityScratch,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                format: Format.R32UInt,
+                dimension: TextureViewDimension.Texture2DArray,
+                label: "Cluster policy hardware visibility scratch clear view");
+            GraphDepthStencilViewId policyDepth = graph.CreateDepthStencilView(
+                frame.PolicyDepthScratch,
+                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
+                Format.D32Float,
+                TextureViewDimension.Texture2DArray,
+                label: "Cluster policy hardware depth scratch clear view");
+            ClusterPolicyTargetClearParameters policyData = new(
+                policyVisibility,
+                policyDepth);
+            _ = graph.AddRasterFramePass(
+                "Clear Cluster policy hardware scratch",
+                PassQueueSelection.AnyOfType(QueueType.Graphics),
+                policyData,
+                default,
+                ClusterPolicyTargetClearParameters.Declare,
+                ClusterPolicyTargetClearParameters.Record);
+        }
     }
 
     private void AuthorHistoryInitialization(
@@ -1133,7 +1246,7 @@ private const int TessellationWorkStride = 20;
                     checked((uint)mip),
                     1,
                     0,
-                    frame.ViewCapacity,
+                    frame.ViewCount,
                     TextureAspects.Color),
                 dimension: TextureViewDimension.Texture2DArray,
                 label: $"Cluster HiZ history initialization mip {mip}");
@@ -1161,6 +1274,32 @@ private const int TessellationWorkStride = 20;
         bytes.Clear();
         MemoryMarshal.Write(bytes, in value);
         return UploadBytes(ref graph, bytes, BufferUsages.Constant, name);
+    }
+
+    internal static ushort[] CreateTessellationPatternIndices()
+    {
+        // The eight regular triangular grids share this immutable index buffer.
+        var indices = new ushort[3 * 204];
+        int output = 0;
+        for (int factor = 1; factor <= 8; factor++)
+        for (int row = 0; row < factor; row++)
+        {
+            int top = row * (factor + 1) - row * (row - 1) / 2;
+            int bottom = top + factor + 1 - row;
+            for (int column = 0; column < factor - row; column++)
+            {
+                indices[output++] = checked((ushort)(top + column));
+                indices[output++] = checked((ushort)(top + column + 1));
+                indices[output++] = checked((ushort)(bottom + column));
+                if (column + 1 < factor - row)
+                {
+                    indices[output++] = checked((ushort)(top + column + 1));
+                    indices[output++] = checked((ushort)(bottom + column + 1));
+                    indices[output++] = checked((ushort)(bottom + column));
+                }
+            }
+        }
+        return indices;
     }
 
     private GraphBufferId UploadStructs<T>(
@@ -1213,9 +1352,8 @@ private const int TessellationWorkStride = 20;
 
         internal int Width;
         internal int Height;
-        internal uint ViewCapacity;
+        internal uint ViewCount;
         internal uint RasterBinCount;
-        internal uint DeformBinCount;
         internal uint ShadeBinCount;
         internal uint SlotCapacity;
         internal int PageFaultCapacity;
@@ -1230,10 +1368,15 @@ private const int TessellationWorkStride = 20;
         internal GraphTextureId CurrentHiZ;
         internal GraphBufferId PackedViews;
         internal GraphBufferId RasterSlots;
-        internal GraphBufferId DeformSlots;
         internal GraphBufferId ShadeSlots;
         internal GraphBufferId ReadOffsetZero;
         internal GraphBufferId CandidateArgs;
+        internal GraphBufferId NeutralPolicyValue;
+        internal GraphBufferId NeutralPolicyView;
+        internal GraphTextureId NeutralPolicyOutput;
+        internal GraphBufferId TraversalNodes;
+        internal GraphBufferId TraversalArguments0;
+        internal GraphBufferId TraversalArguments1;
         internal GraphBufferId CandidateArgsInitialization;
         internal GraphBufferId CandidateClusters;
         internal GraphBufferId CandidateCount;
@@ -1243,32 +1386,31 @@ private const int TessellationWorkStride = 20;
         internal GraphBufferId Phase2CandidateClusters;
         internal GraphBufferId Phase2CandidateCount;
         internal GraphBufferId Phase2DrawArgs;
+        internal GraphBufferId ContinuationDrawArgs;
+        internal GraphBufferId ContinuationPostDrawArgs;
         internal GraphBufferId VisibleClusters;
         internal GraphBufferId RasterBinMeta;
         internal GraphBufferId BinnedClusters;
-        internal GraphBufferId BinnedDrawArgs;
-        internal GraphBufferId BinnedHardwareDrawArgs;
         internal GraphBufferId HardwareIndirectArgs;
         internal GraphBufferId BinningDispatchArgs;
         internal GraphBufferId SoftwareDispatchArgs;
         internal GraphBufferId RasterReserveCounters;
-        internal GraphBufferId DeformBinMeta;
-        internal GraphBufferId DeformBinnedClusters;
-        internal GraphBufferId DeformDispatchArgs;
-        internal GraphBufferId DeformReserveCounters;
-        internal GraphBufferId DeformCacheRequests;
-        internal GraphBufferId DeformCachePrefixOffsets;
-        internal GraphBufferId DeformCachePrefixGroups;
-        internal GraphBufferId CacheOffsets;
-        internal GraphBufferId CacheAllocationCounter;
-        internal GraphBufferId DeformCache;
         internal GraphBufferId TessellationCounters;
         internal GraphBufferId PhaseOneTessellationCounters;
-        internal GraphBufferId TessellationSplitWork;
-        internal GraphBufferId TessellationDiceDispatchArgs;
-        internal GraphBufferId DicedTriangles;
-        internal GraphBufferId TessellationRasterDispatchArgs;
-        internal GraphBufferId TessellationDispatchInitialization;
+        internal GraphBufferId TessellationWorkPatches;
+        internal GraphBufferId TessellationWorkPatchesAlternate;
+        internal GraphBufferId TessellationFinalPatches;
+        internal GraphBufferId TessellationLevelCounts;
+        internal GraphBufferId[] TessellationLevelDispatchArgs = [];
+        internal GraphBufferId TessellationSourceDispatchArgs;
+        internal GraphBufferId TessellationSeedDispatchArgs;
+        internal GraphBufferId TessellationBinCounts;
+        internal GraphBufferId TessellationBinOffsets;
+        internal GraphBufferId TessellationBinScatterCounts;
+        internal GraphBufferId TessellationBinReserveCounter;
+        internal GraphBufferId TessellationBinDispatchArgs;
+        internal GraphBufferId TessellationHardwareDrawArgs;
+        internal GraphBufferId TessellationPatternIndices;
         internal GraphBufferId SoftwareDebug;
         internal GraphBufferId ShadeBinCounts;
         internal GraphBufferId ShadeBinOffsets;
@@ -1277,27 +1419,26 @@ private const int TessellationWorkStride = 20;
         internal GraphBufferId ShadeReserveCounters;
         internal GraphBufferId PixelCoordinates;
         internal GraphTextureId VisBuffer;
+        internal GraphTextureId VisibilityWinnerImage;
+        internal GraphBufferId VisibilityWinnerBuffer;
         internal GraphTextureId Depth;
-        internal GraphTextureId SoftwareDepth;
+        internal GraphTextureId PolicyVisibilityScratch;
+        internal GraphTextureId PolicyDepthScratch;
         internal GraphTextureId SceneColor;
-        internal readonly ReadOnlySpan<GraphBufferId> ClearBuffers => _scratch.ClearBuffers;
-
+        internal GraphTextureId MotionVectors;
         internal GraphBufferId AddBuffer(
             ref RenderGraphEdit graph,
             ulong size,
             BufferUsages additional,
             string name)
         {
-            _scratch.EnsureCanAddClearBuffer();
-            GraphBufferId result = graph.CreateTransientBuffer(new BufferDesc(
+            return graph.CreateTransientBuffer(new BufferDesc(
                 Math.Max(size, 4),
                 BufferUsages.ShaderRead |
                 BufferUsages.ShaderWrite |
                 BufferUsages.CopyDestination |
                 additional,
                 name));
-            _scratch.AddClearBuffer(result);
-            return result;
         }
 
     }
@@ -1305,20 +1446,7 @@ private const int TessellationWorkStride = 20;
     /// <summary>Reusable owner for the variable-length scratch used while authoring one frame.</summary>
     private sealed class FrameResourceScratch
     {
-        private const int ClearBufferCapacity = 64;
-
-        private readonly GraphBufferId[] _clearBuffers = new GraphBufferId[ClearBufferCapacity];
-        private int _clearBufferCount;
         private bool _active;
-
-        internal ReadOnlySpan<GraphBufferId> ClearBuffers
-        {
-            get
-            {
-                EnsureActive();
-                return _clearBuffers.AsSpan(0, _clearBufferCount);
-            }
-        }
 
         internal void Begin()
         {
@@ -1330,22 +1458,8 @@ private const int TessellationWorkStride = 20;
         internal void End()
         {
             EnsureActive();
-            _clearBufferCount = 0;
             _active = false;
         }
-
-        internal void EnsureCanAddClearBuffer()
-        {
-            EnsureActive();
-            if ((uint)_clearBufferCount >= (uint)_clearBuffers.Length)
-            {
-                throw new InvalidOperationException(
-                    "The Cluster frame clear-buffer capacity is exhausted.");
-            }
-        }
-
-        internal void AddClearBuffer(GraphBufferId buffer)
-            => _clearBuffers[_clearBufferCount++] = buffer;
 
         private void EnsureActive()
         {

@@ -1,26 +1,35 @@
-#include "cluster_tessellation_core.slang"
+#include "vertex_evaluate.slang"
 #include "phong_tessellation.slang"
 
-[MaterialTarget("cluster.tess.factor")]
+ByteAddressBuffer PageHeap;
+
+typedef StaticVertexEval VertexEvaluate;
+typedef PhongTessellation DomainEvaluate;
+typedef OpaquePixelEvaluate PixelEvaluate;
+
+#include "cluster_tessellation_entries.slang"
+
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("finite")]
+[ConservativeBounds("unbounded")]
 [shader("compute")]
-[numthreads(1, 1, 1)]
-void FactorPhongTessellation(uint3 threadId : SV_DispatchThreadID)
+[numthreads(32, 1, 1)]
+void SeedPhongTessellation(
+    uint3 groupId : SV_GroupID,
+    uint groupThreadIndex : SV_GroupThreadID)
 {
-    StaticVertexEval evaluator;
-    PhongTessellation surface = MakePhongTessellation();
-    FactorRasterBin(evaluator, surface, threadId);
+    StaticVertexEval vertex;
+    SeedTessellationRasterBin(vertex, groupId, groupThreadIndex);
 }
 
-[MaterialTarget("cluster.tess.dice")]
 [VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[ConservativeBounds("finite")]
+[ConservativeBounds("unbounded")]
 [shader("compute")]
-[numthreads(64, 1, 1)]
-void DicePhongTessellation(uint3 threadId : SV_DispatchThreadID)
+[numthreads(32, 1, 1)]
+void SplitPhongTessellation(
+    uint3 groupId : SV_GroupID,
+    uint groupThreadIndex : SV_GroupThreadID)
 {
-    StaticVertexEval evaluator;
-    PhongTessellation surface = MakePhongTessellation();
-    DiceSplitWork(evaluator, surface, threadId);
+    StaticVertexEval vertex;
+    PhongTessellation domain = MakePhongTessellation();
+    SplitTessellationPatches(vertex, domain, groupId, groupThreadIndex);
 }

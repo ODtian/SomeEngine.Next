@@ -407,9 +407,9 @@ public partial class ShaderMaterialScalarLayout
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderMaterialInstanceProperty
+public partial class ShaderInstanceProperty
 {
-    public ShaderMaterialInstanceProperty()
+    public ShaderInstanceProperty()
     {
     }
 
@@ -437,7 +437,7 @@ public partial class ShaderMetadata
     public IList<string>? Tags { get; set; }
     public IList<ShaderMaterialBinding>? MaterialBindings { get; set; }
     public IList<ShaderMaterialScalarLayout>? MaterialScalarLayouts { get; set; }
-    public IList<ShaderMaterialInstanceProperty>? MaterialInstanceProperties { get; set; }
+    public IList<ShaderInstanceProperty>? InstanceProperties { get; set; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
@@ -495,13 +495,16 @@ public enum ClusterShaderOperationRole : byte
     CullReset = 2,
     CullPhaseOne = 3,
     CullPhaseTwo = 5,
-    RasterDeformBinningReset = 6,
-    RasterDeformBinningCount = 7,
-    RasterDeformBinningReserve = 8,
-    RasterDeformBinningScatter = 9,
+    RasterBinningReset = 6,
+    RasterBinningCount = 7,
+    RasterBinningReserve = 8,
+    RasterBinningScatter = 9,
     SoftwareVisibilityRaster = 10,
     HardwareVisibilityRaster = 11,
-    SoftwareDepthMerge = 12,
+    VisibilityClearImage = 31,
+    VisibilityClearBuffer = 32,
+    VisibilityResolveImage = 33,
+    VisibilityResolveBuffer = 34,
     HiZInitialize = 13,
     HiZReduce = 14,
     HiZReducePair = 15,
@@ -510,12 +513,13 @@ public enum ClusterShaderOperationRole : byte
     MaterialBinningReserve = 18,
     MaterialBinningScatter = 19,
     VisibilityResolve = 20,
-    DeformCachePrefixLocal = 21,
-    DeformCachePrefixGlobal = 22,
-    DeformCachePrefixWrite = 23,
-    TessellationFactor = 24,
-    TessellationDice = 25,
-    TessellationVisibilityRaster = 26,
+    TessellationBinningReset = 24,
+    TessellationBinningCount = 25,
+    TessellationBinningReserve = 26,
+    TessellationBinningScatter = 27,
+    BvhTraversalInitialize = 28,
+    BvhDeferredResume = 30,
+    SceneBounds = 35,
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
@@ -528,442 +532,6 @@ public sealed partial class ClusterShaderOperation
 
     public ClusterShaderOperationRole Role { get; set; }
     public IList<ShaderRef>? Shaders { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial struct ParamValue : IBinaryContract<ParamValue>, IBinaryCustomViewContract<ParamValue>
-{
-    public enum ItemKind : byte
-    {
-        FloatVal = 1,
-        IntVal = 2,
-        BoolVal = 3,
-        Vec2Val = 4,
-        Vec3Val = 5,
-        Vec4Val = 6,
-        NONE = 0,
-    }
-
-    private readonly object? value;
-
-    public ItemKind Kind => (ItemKind)Discriminator;
-    public byte Discriminator { get; }
-
-    public ParamValue(FloatVal value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Discriminator = 1;
-        this.value = value;
-    }
-
-    public ParamValue(IntVal value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Discriminator = 2;
-        this.value = value;
-    }
-
-    public ParamValue(BoolVal value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Discriminator = 3;
-        this.value = value;
-    }
-
-    public ParamValue(Vec2Val value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Discriminator = 4;
-        this.value = value;
-    }
-
-    public ParamValue(Vec3Val value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Discriminator = 5;
-        this.value = value;
-    }
-
-    public ParamValue(Vec4Val value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        Discriminator = 6;
-        this.value = value;
-    }
-
-    public static implicit operator ParamValue(FloatVal value) => new(value);
-    public static implicit operator ParamValue(IntVal value) => new(value);
-    public static implicit operator ParamValue(BoolVal value) => new(value);
-    public static implicit operator ParamValue(Vec2Val value) => new(value);
-    public static implicit operator ParamValue(Vec3Val value) => new(value);
-    public static implicit operator ParamValue(Vec4Val value) => new(value);
-
-    public FloatVal FloatVal => Item1;
-    public FloatVal Item1 => Discriminator == 1 ? (FloatVal)value! : throw WrongKind(ItemKind.FloatVal);
-    public IntVal IntVal => Item2;
-    public IntVal Item2 => Discriminator == 2 ? (IntVal)value! : throw WrongKind(ItemKind.IntVal);
-    public BoolVal BoolVal => Item3;
-    public BoolVal Item3 => Discriminator == 3 ? (BoolVal)value! : throw WrongKind(ItemKind.BoolVal);
-    public Vec2Val Vec2Val => Item4;
-    public Vec2Val Item4 => Discriminator == 4 ? (Vec2Val)value! : throw WrongKind(ItemKind.Vec2Val);
-    public Vec3Val Vec3Val => Item5;
-    public Vec3Val Item5 => Discriminator == 5 ? (Vec3Val)value! : throw WrongKind(ItemKind.Vec3Val);
-    public Vec4Val Vec4Val => Item6;
-    public Vec4Val Item6 => Discriminator == 6 ? (Vec4Val)value! : throw WrongKind(ItemKind.Vec4Val);
-
-    public bool TryGet([NotNullWhen(true)] out FloatVal? value)
-    {
-        value = Discriminator == 1 ? (FloatVal)this.value! : null;
-        return value is not null;
-    }
-
-    public bool TryGet([NotNullWhen(true)] out IntVal? value)
-    {
-        value = Discriminator == 2 ? (IntVal)this.value! : null;
-        return value is not null;
-    }
-
-    public bool TryGet([NotNullWhen(true)] out BoolVal? value)
-    {
-        value = Discriminator == 3 ? (BoolVal)this.value! : null;
-        return value is not null;
-    }
-
-    public bool TryGet([NotNullWhen(true)] out Vec2Val? value)
-    {
-        value = Discriminator == 4 ? (Vec2Val)this.value! : null;
-        return value is not null;
-    }
-
-    public bool TryGet([NotNullWhen(true)] out Vec3Val? value)
-    {
-        value = Discriminator == 5 ? (Vec3Val)this.value! : null;
-        return value is not null;
-    }
-
-    public bool TryGet([NotNullWhen(true)] out Vec4Val? value)
-    {
-        value = Discriminator == 6 ? (Vec4Val)this.value! : null;
-        return value is not null;
-    }
-
-    public TReturn Match<TReturn>(
-        Func<FloatVal, TReturn> caseFloatVal,
-        Func<IntVal, TReturn> caseIntVal,
-        Func<BoolVal, TReturn> caseBoolVal,
-        Func<Vec2Val, TReturn> caseVec2Val,
-        Func<Vec3Val, TReturn> caseVec3Val,
-        Func<Vec4Val, TReturn> caseVec4Val)
-        => Discriminator switch
-        {
-            1 => caseFloatVal((FloatVal)value!),
-            2 => caseIntVal((IntVal)value!),
-            3 => caseBoolVal((BoolVal)value!),
-            4 => caseVec2Val((Vec2Val)value!),
-            5 => caseVec3Val((Vec3Val)value!),
-            6 => caseVec4Val((Vec4Val)value!),
-            _ => throw InvalidDiscriminator(Discriminator),
-        };
-
-    public static Guid TypeId => BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.ParamValue");
-
-    public static ulong SchemaFingerprint => BinaryFieldKey.FromName(
-        "SomeEngine.Assets.Schema.ParamValue|1:Float32|2:Int32|3:Boolean|4:Float32x2|5:Float32x3|6:Float32x4");
-
-    public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
-    public static uint SchemaEpoch => 1;
-
-    public static void Write(ref BinaryDataWriter writer, ParamValue value)
-    {
-        if (value.Discriminator > 6)
-            throw InvalidDiscriminator(value.Discriminator);
-
-        writer.WriteByte(value.Discriminator);
-        switch (value.Discriminator)
-        {
-            case 0:
-                return;
-            case 1:
-                writer.WriteSingle(value.Item1.V);
-                return;
-            case 2:
-                writer.WriteInt32(value.Item2.V);
-                return;
-            case 3:
-                writer.WriteBoolean(value.Item3.V);
-                return;
-            case 4:
-                writer.WriteSingle(value.Item4.X);
-                writer.WriteSingle(value.Item4.Y);
-                return;
-            case 5:
-                writer.WriteSingle(value.Item5.X);
-                writer.WriteSingle(value.Item5.Y);
-                writer.WriteSingle(value.Item5.Z);
-                return;
-            case 6:
-                writer.WriteSingle(value.Item6.X);
-                writer.WriteSingle(value.Item6.Y);
-                writer.WriteSingle(value.Item6.Z);
-                writer.WriteSingle(value.Item6.W);
-                return;
-            default:
-                throw InvalidDiscriminator(value.Discriminator);
-        }
-    }
-
-    public static ParamValue Read(ref BinaryDataReader reader)
-    {
-        byte discriminator = reader.ReadByte();
-        return discriminator switch
-        {
-            0 => default,
-            1 => new ParamValue(new FloatVal { V = reader.ReadSingle() }),
-            2 => new ParamValue(new IntVal { V = reader.ReadInt32() }),
-            3 => new ParamValue(new BoolVal { V = reader.ReadBoolean() }),
-            4 => new ParamValue(new Vec2Val { X = reader.ReadSingle(), Y = reader.ReadSingle() }),
-            5 => new ParamValue(new Vec3Val
-            {
-                X = reader.ReadSingle(),
-                Y = reader.ReadSingle(),
-                Z = reader.ReadSingle(),
-            }),
-            6 => new ParamValue(new Vec4Val
-            {
-                X = reader.ReadSingle(),
-                Y = reader.ReadSingle(),
-                Z = reader.ReadSingle(),
-                W = reader.ReadSingle(),
-            }),
-            _ => throw InvalidDiscriminator(discriminator),
-        };
-    }
-
-    public static void ValidateView(ref BinaryViewReader reader)
-    {
-        byte discriminator = reader.ReadByte();
-        switch (discriminator)
-        {
-            case 0:
-                return;
-            case 1:
-                _ = reader.ReadSingle();
-                return;
-            case 2:
-                _ = reader.ReadInt32();
-                return;
-            case 3:
-                _ = reader.ReadBoolean();
-                return;
-            case 4:
-                _ = reader.ReadSingle();
-                _ = reader.ReadSingle();
-                return;
-            case 5:
-                _ = reader.ReadSingle();
-                _ = reader.ReadSingle();
-                _ = reader.ReadSingle();
-                return;
-            case 6:
-                _ = reader.ReadSingle();
-                _ = reader.ReadSingle();
-                _ = reader.ReadSingle();
-                _ = reader.ReadSingle();
-                return;
-            default:
-                throw InvalidDiscriminator(discriminator);
-        }
-    }
-
-    private InvalidOperationException WrongKind(ItemKind requested)
-        => new($"ParamValue contains {Kind}, not {requested}.");
-
-    private static InvalidDataException InvalidDiscriminator(byte discriminator)
-        => new($"Invalid ParamValue discriminator {discriminator}.");
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class BoolVal
-{
-    public BoolVal()
-    {
-    }
-
-
-    public bool V { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ComponentEntry
-{
-    public ComponentEntry()
-    {
-    }
-
-
-    public string? TypeName { get; set; }
-    public string? Json { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class FloatVal
-{
-    public FloatVal()
-    {
-    }
-
-
-    public float V { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class IntVal
-{
-    public IntVal()
-    {
-    }
-
-
-    public int V { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class Material
-{
-    public Material()
-    {
-    }
-
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public IList<PassEntry>? Passes { get; set; }
-    public IList<TextureBinding>? Textures { get; set; }
-    public IList<ScalarParam>? Scalars { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class PassEntry
-{
-    public PassEntry()
-    {
-    }
-
-
-    public ShaderRef? Shader { get; set; }
-    public IList<TagEntry>? Tags { get; set; }
-    public IList<ComponentEntry>? Components { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ScalarParam
-{
-    public ScalarParam()
-    {
-    }
-
-
-    public string? Name { get; set; }
-    public ParamValue? Value { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class TagEntry
-{
-    public TagEntry()
-    {
-    }
-
-
-    public string? Name { get; set; }
-    public int Value { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class TextureBinding
-{
-    public TextureBinding()
-    {
-    }
-
-
-    public string? Name { get; set; }
-    public string? TextureGuid { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class Vec2Val
-{
-    public Vec2Val()
-    {
-    }
-
-
-    public float X { get; set; }
-    public float Y { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class Vec3Val
-{
-    public Vec3Val()
-    {
-    }
-
-
-    public float X { get; set; }
-    public float Y { get; set; }
-    public float Z { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class Vec4Val
-{
-    public Vec4Val()
-    {
-    }
-
-
-    public float X { get; set; }
-    public float Y { get; set; }
-    public float Z { get; set; }
-    public float W { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class MaterialInstance
-{
-    public MaterialInstance()
-    {
-    }
-
-    public string? AssetGuid { get; set; }
-    public string? ParentGuid { get; set; }
-    public IList<ParamOverride>? Overrides { get; set; }
-    public IList<ScalarOverride>? ScalarOverrides { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ParamOverride
-{
-    public ParamOverride()
-    {
-    }
-
-
-    public string? Name { get; set; }
-    public string? TextureGuid { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ScalarOverride
-{
-    public ScalarOverride()
-    {
-    }
-
-
-    public string? Name { get; set; }
-    public ParamValue? Value { get; set; }
 }
 
 #endif

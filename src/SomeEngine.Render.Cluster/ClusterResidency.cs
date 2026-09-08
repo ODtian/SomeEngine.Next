@@ -70,6 +70,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     private ulong _publicationSequence;
     private ClusterResidencyPublication? _activePublication;
 
+    internal int HierarchyLevels => _meshes.HierarchyLevels;
+
     internal ClusterResidency(
         IGraphicsBackend backend,
         Device device,
@@ -341,7 +343,8 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             cleanupFailure);
         meshCache = new ClusterMeshCacheDiagnostics(
             meshes.RegisteredMeshCount,
-            meshes.PublishedMeshCount);
+            meshes.PublishedMeshCount,
+            meshes.ManagerStateRevision);
     }
 
     internal ClusterResidencyProviderSnapshot CaptureSnapshot()

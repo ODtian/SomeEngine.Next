@@ -18,13 +18,13 @@ public sealed partial class RuntimeConfiguration
 
     public string? ClusterPipelineGuid { get; set; }
 
+    public string? VirtualShadowMapGuid { get; set; }
+
     public IList<ShaderRef>? UiShaders { get; set; }
 
     public IList<ShaderRef>? PresentationShaders { get; set; }
 
     public ShaderRef? LightingShader { get; set; }
-
-    public ShaderRef? MotionShader { get; set; }
 
     public IList<ShaderRef>? TemporalShaders { get; set; }
 

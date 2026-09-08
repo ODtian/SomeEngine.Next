@@ -19,12 +19,12 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
     public LightingFeatureSystem(
         LightingFeature feature,
         RenderLightSetSystem lights,
-        uint viewCapacity)
+        uint viewCount)
     {
         _feature = feature ?? throw new ArgumentNullException(nameof(feature));
         _lights = lights ?? throw new ArgumentNullException(nameof(lights));
-        ArgumentOutOfRangeException.ThrowIfZero(viewCapacity);
-        _views = new RenderView[checked((int)viewCapacity)];
+        ArgumentOutOfRangeException.ThrowIfZero(viewCount);
+        _views = new RenderView[checked((int)viewCount)];
         _collector = new ViewCollector(_views.Length);
     }
 

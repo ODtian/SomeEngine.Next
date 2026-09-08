@@ -12,6 +12,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in IndirectCommandLayoutDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         IndirectCommands capability = nativeDevice
             .RequireCapability<IndirectCommands>(nameof(CreateIndirectCommandLayout));
@@ -69,7 +70,7 @@ internal sealed unsafe partial class D3D12Backend
         catch
         {
             if (result is null)
-                _ = signature->Release();
+                _ = ResourceTrace.Release(signature);
             else
                 result.Dispose();
             throw;
@@ -312,8 +313,8 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = ID3D12CommandSignature.Guid;
             ThrowIfFailed(
                 nativeDevice,
-                nativeDevice.Native->CreateCommandSignature(
-                    &nativeDescription,
+                    DevicePipelineTrace.CreateCommandSignature(
+                nativeDevice.Native, &nativeDescription,
                     requiresRootSignature ? pipeline!.RootSignature.Native : null,
                     &iid,
                     (void**)&signature),
@@ -330,6 +331,7 @@ internal sealed unsafe partial class D3D12Backend
         uint maximumCommandCount,
         BufferRegion? count = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         IndirectCommands capability = command.NativeDevice
             .RequireCapability<IndirectCommands>(nameof(ExecuteIndirect));
@@ -380,34 +382,34 @@ internal sealed unsafe partial class D3D12Backend
         command.Capture(argumentBuffer);
         command.Capture(nativeLayout, nativeLayout.NativeLifetime);
         ID3D12Resource* nativeCountBuffer = countBuffer is null ? null : countBuffer.Native;
-        command.List->ExecuteIndirect(
-            nativeLayout.Native,
-            maximumCommandCount,
-            argumentBuffer.Native,
-            argumentRange.Offset,
-            nativeCountBuffer,
-            countOffset);
+        CommandExecutionTrace.ExecuteIndirect(
+                command.List, nativeLayout.Native,
+                    maximumCommandCount,
+                    argumentBuffer.Native,
+                    argumentRange.Offset,
+                    nativeCountBuffer,
+                    countOffset);
         command.InvalidateIndirectState(nativeLayout);
     }
 
     private static NativeIndirectArgumentType ToNativeIndirectArgumentType(
         SomeEngine.Graphics.IndirectArgumentType value) => value switch
-    {
-        SomeEngine.Graphics.IndirectArgumentType.Draw => NativeIndirectArgumentType.Draw,
-        SomeEngine.Graphics.IndirectArgumentType.DrawIndexed => NativeIndirectArgumentType.DrawIndexed,
-        SomeEngine.Graphics.IndirectArgumentType.Dispatch => NativeIndirectArgumentType.Dispatch,
-        SomeEngine.Graphics.IndirectArgumentType.DispatchMesh => NativeIndirectArgumentType.DispatchMesh,
-        SomeEngine.Graphics.IndirectArgumentType.DispatchRays => NativeIndirectArgumentType.DispatchRays,
-        SomeEngine.Graphics.IndirectArgumentType.VertexBuffer => NativeIndirectArgumentType.VertexBufferView,
-        SomeEngine.Graphics.IndirectArgumentType.IndexBuffer => NativeIndirectArgumentType.IndexBufferView,
-        SomeEngine.Graphics.IndirectArgumentType.Constants => NativeIndirectArgumentType.Constant,
-        SomeEngine.Graphics.IndirectArgumentType.ConstantBuffer => NativeIndirectArgumentType.ConstantBufferView,
-        SomeEngine.Graphics.IndirectArgumentType.ShaderResource => NativeIndirectArgumentType.ShaderResourceView,
-        SomeEngine.Graphics.IndirectArgumentType.UnorderedAccess => NativeIndirectArgumentType.UnorderedAccessView,
-        SomeEngine.Graphics.IndirectArgumentType.WorkGraph =>
-            throw new NotSupportedException("Indirect Work Graph dispatch is unavailable."),
-        _ => throw new ArgumentOutOfRangeException(nameof(value)),
-    };
+        {
+            SomeEngine.Graphics.IndirectArgumentType.Draw => NativeIndirectArgumentType.Draw,
+            SomeEngine.Graphics.IndirectArgumentType.DrawIndexed => NativeIndirectArgumentType.DrawIndexed,
+            SomeEngine.Graphics.IndirectArgumentType.Dispatch => NativeIndirectArgumentType.Dispatch,
+            SomeEngine.Graphics.IndirectArgumentType.DispatchMesh => NativeIndirectArgumentType.DispatchMesh,
+            SomeEngine.Graphics.IndirectArgumentType.DispatchRays => NativeIndirectArgumentType.DispatchRays,
+            SomeEngine.Graphics.IndirectArgumentType.VertexBuffer => NativeIndirectArgumentType.VertexBufferView,
+            SomeEngine.Graphics.IndirectArgumentType.IndexBuffer => NativeIndirectArgumentType.IndexBufferView,
+            SomeEngine.Graphics.IndirectArgumentType.Constants => NativeIndirectArgumentType.Constant,
+            SomeEngine.Graphics.IndirectArgumentType.ConstantBuffer => NativeIndirectArgumentType.ConstantBufferView,
+            SomeEngine.Graphics.IndirectArgumentType.ShaderResource => NativeIndirectArgumentType.ShaderResourceView,
+            SomeEngine.Graphics.IndirectArgumentType.UnorderedAccess => NativeIndirectArgumentType.UnorderedAccessView,
+            SomeEngine.Graphics.IndirectArgumentType.WorkGraph =>
+                throw new NotSupportedException("Indirect Work Graph dispatch is unavailable."),
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        };
 
     private static bool IsAction(SomeEngine.Graphics.IndirectArgumentType value) =>
         value is SomeEngine.Graphics.IndirectArgumentType.Draw or

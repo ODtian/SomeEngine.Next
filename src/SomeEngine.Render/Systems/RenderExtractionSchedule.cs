@@ -4,7 +4,6 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
-using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Systems;
 
@@ -15,6 +14,7 @@ namespace SomeEngine.Render.Systems;
 /// </summary>
 public sealed class RenderExtractionSystems : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite ExtractionTrace = new("ecs", "RenderExtraction");
     private readonly RenderWorld _renderWorld;
     private readonly List<IRenderExtractionSystem> _systems = [];
     private readonly MeshRenderExtractor _mesh;
@@ -113,6 +113,7 @@ public sealed class RenderExtractionSystems : IDisposable
     /// </summary>
     public void Extract(World mainWorld)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ExtractionTrace);
         ArgumentNullException.ThrowIfNull(mainWorld);
         if (mainWorld is RenderWorld)
         {
@@ -710,38 +711,22 @@ public sealed class RenderExtractionContext : IDisposable
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
-            Span<RenderTransform> current = chunk.ReadWrite<RenderTransform>();
-            Span<RenderPreviousTransform> previous =
-                chunk.ReadWrite<RenderPreviousTransform>();
+            int count = chunk.Entities.Length;
             int firstOrdinal = _transformWriteOrdinal;
-            int afterLastOrdinal = checked(firstOrdinal + current.Length);
+            int afterLastOrdinal = checked(firstOrdinal + count);
             if (afterLastOrdinal > _renderTransformCount)
             {
                 throw new InvalidOperationException(
                     "Render transform traversal exceeds its structural index.");
             }
 
-            int row = 0;
-            while (row < current.Length)
+            for (int row = 0; row < count; row++)
             {
-                while (row < current.Length &&
-                       _transformChangeEpochByOrdinal[firstOrdinal + row] !=
-                       _transformChangeEpoch)
-                    row++;
-                int runStart = row;
-                while (row < current.Length &&
-                       _transformChangeEpochByOrdinal[firstOrdinal + row] ==
-                       _transformChangeEpoch)
-                    row++;
-                int runCount = row - runStart;
-                if (runCount == 0) continue;
-
-                Span<RenderTransform> currentRun = current.Slice(runStart, runCount);
-                MemoryMarshal.Cast<RenderTransform, RenderPreviousTransform>(currentRun)
-                    .CopyTo(previous.Slice(runStart, runCount));
-                _transformValueByOrdinal
-                    .AsSpan(firstOrdinal + runStart, runCount)
-                    .CopyTo(currentRun);
+                if (_transformChangeEpochByOrdinal[firstOrdinal + row] != _transformChangeEpoch)
+                    continue;
+                ref RenderTransform current = ref chunk.ReadWrite<RenderTransform>(row);
+                chunk.ReadWrite<RenderPreviousTransform>(row) = new RenderPreviousTransform(current);
+                current = _transformValueByOrdinal[firstOrdinal + row];
             }
             _transformWriteOrdinal = afterLastOrdinal;
         }

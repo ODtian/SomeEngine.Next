@@ -14,7 +14,7 @@ public sealed class AssetArchitectureAcceptanceTests
 
 
     [Fact]
-    public async Task RootOnlyAssetsRoundTripClusterShadersAndMaterialInstanceAsync()
+    public async Task RootAssetsRoundTripClusterShadersAndStrongMaterialAsync()
     {
         using var directory = new TemporaryDirectory();
         AssetGuid shaderGuid = AssetGuid.New();
@@ -26,22 +26,20 @@ public sealed class AssetArchitectureAcceptanceTests
             shaderGuid);
         AssetWriter.Write(cluster, clusterPath);
 
-        AssetGuid parentGuid = AssetGuid.New();
-        AssetGuid instanceGuid = AssetGuid.New();
-        string instancePath = directory.File("root.materialinstance.asset");
-        var instance = new MaterialInstance
+        AssetGuid materialGuid = AssetGuid.New();
+        string materialPath = directory.File("root.material.asset");
+        Material material = new StandardMaterial
         {
-            AssetGuid = instanceGuid.ToFlatString(),
-            ParentGuid = parentGuid.ToFlatString(),
-            Overrides = [],
-            ScalarOverrides = [],
+            AssetGuid = materialGuid.ToFlatString(),
+            Name = "strong material",
+            Roughness = 0.37f,
         };
-        AssetWriter.Write(instance, instancePath);
+        AssetWriter.Write(material, materialPath);
 
         await using var clusterDocument = await AssetProject.OpenAsync<ClusterShaders>(clusterPath);
-        await using var instanceDocument = await AssetProject.OpenAsync<MaterialInstance>(instancePath);
+        await using var materialDocument = await AssetProject.OpenAsync<Material>(materialPath);
         ClusterShaders loadedCluster = clusterDocument.Root;
-        MaterialInstance loadedInstance = instanceDocument.Root;
+        Material loadedMaterial = materialDocument.Root;
 
         Assert.Equal(cluster.AssetGuid, loadedCluster.AssetGuid);
         Assert.Equal(cluster.Name, loadedCluster.Name);
@@ -51,8 +49,10 @@ public sealed class AssetArchitectureAcceptanceTests
             operation => Assert.All(
                 operation.Shaders!,
                 shader => Assert.Equal(shaderGuid.ToFlatString(), shader.AssetGuid)));
-        Assert.Equal(instance.AssetGuid, loadedInstance.AssetGuid);
-        Assert.Equal(parentGuid.ToFlatString(), loadedInstance.ParentGuid);
+        StandardMaterial standard = Assert.IsType<StandardMaterial>(loadedMaterial);
+        Assert.Equal(material.AssetGuid, standard.AssetGuid);
+        Assert.Equal("strong material", standard.Name);
+        Assert.Equal(0.37f, standard.Roughness);
     }
 
     [Fact]
@@ -158,14 +158,12 @@ public sealed class AssetArchitectureAcceptanceTests
         AssetGuid meshGuid = AssetGuid.New();
         AssetGuid shaderGuid = AssetGuid.New();
         AssetGuid materialGuid = AssetGuid.New();
-        AssetGuid instanceGuid = AssetGuid.New();
         AssetGuid clusterGuid = AssetGuid.New();
 
         string texturePath = directory.File("stored.texture.asset");
         string meshPath = directory.File("stored.mesh.asset");
         string shaderPath = directory.File("stored.shader.asset");
         string materialPath = directory.File("stored.material.asset");
-        string instancePath = directory.File("stored.materialinstance.asset");
         string clusterPath = directory.File("stored.clusterrender.asset");
 
         AssetWriter.Write(new Texture
@@ -198,16 +196,12 @@ public sealed class AssetArchitectureAcceptanceTests
             Programs = [new CookedShaderProgram { Backend = "test", Data = new byte[] { 3 } }],
             EntryPointReflections = [new ShaderEntryPointReflection { EntryPoint = "main" }],
         }, shaderPath);
-        AssetWriter.Write(new Material
+        Material material = new StandardMaterial
         {
-            AssetGuid = materialGuid.ToFlatString(), Name = "material",
-            Passes = [], Textures = [], Scalars = [],
-        }, materialPath);
-        AssetWriter.Write(new MaterialInstance
-        {
-            AssetGuid = instanceGuid.ToFlatString(), ParentGuid = materialGuid.ToFlatString(),
-            Overrides = [], ScalarOverrides = [],
-        }, instancePath);
+            AssetGuid = materialGuid.ToFlatString(),
+            Name = "material",
+        };
+        AssetWriter.Write(material, materialPath);
         AssetWriter.Write(
             CreateClusterRenderAsset(clusterGuid, "cluster", shaderGuid),
             clusterPath);
@@ -217,7 +211,6 @@ public sealed class AssetArchitectureAcceptanceTests
         manifest.AddAsset(meshGuid, "mesh", Path.GetFileName(meshPath), AssetType<Mesh>.Name, Mesh.SchemaFingerprint);
         manifest.AddAsset(shaderGuid, "shader", Path.GetFileName(shaderPath), AssetType<Shader>.Name, Shader.SchemaFingerprint);
         manifest.AddAsset(materialGuid, "material", Path.GetFileName(materialPath), AssetType<Material>.Name, Material.SchemaFingerprint);
-        manifest.AddAsset(instanceGuid, "instance", Path.GetFileName(instancePath), AssetType<MaterialInstance>.Name, MaterialInstance.SchemaFingerprint);
         manifest.AddAsset(clusterGuid, "cluster", Path.GetFileName(clusterPath), AssetType<ClusterShaders>.Name, ClusterShaders.SchemaFingerprint);
         IAssetStorage storage = new LooseAssetStorage(directory.Path, manifest);
 
@@ -225,7 +218,6 @@ public sealed class AssetArchitectureAcceptanceTests
         await AssertStorageOpenAsync<Mesh>(storage, meshGuid);
         await AssertStorageOpenAsync<Shader>(storage, shaderGuid);
         await AssertStorageOpenAsync<Material>(storage, materialGuid);
-        await AssertStorageOpenAsync<MaterialInstance>(storage, instanceGuid);
         await AssertStorageOpenAsync<ClusterShaders>(storage, clusterGuid);
     }
 
@@ -255,7 +247,8 @@ public sealed class AssetArchitectureAcceptanceTests
             Role = role,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.SoftwareDepthMerge)
+            or ClusterShaderOperationRole.VisibilityResolveImage
+            or ClusterShaderOperationRole.VisibilityResolveBuffer)
         {
             result.Shaders =
             [

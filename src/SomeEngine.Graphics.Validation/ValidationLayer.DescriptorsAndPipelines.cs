@@ -547,6 +547,18 @@ public sealed partial class ValidationLayer
                 continue;
             Require(resource);
             RequireSameDevice(device, resource.Device, "ResourceBinding");
+            if (resource is Buffer buffer)
+            {
+                BufferRange range = binding.BufferRange;
+                uint alignment = Math.Max(1u, device.Capabilities.Limits.ConstantBufferAlignment);
+                if (binding.Type != ResourceBindingType.ConstantBuffer ||
+                    (buffer.Info.Usages & BufferUsages.Constant) == 0 ||
+                    range.Size == 0 || range.Size > device.Capabilities.Limits.MaximumConstantBufferRange ||
+                    range.Offset > buffer.Info.Size ||
+                    range.Size > buffer.Info.Size - range.Offset ||
+                    range.Offset % alignment != 0 || range.Size % alignment != 0)
+                    Reject("Bindings", "A direct constant buffer binding requires a contained, aligned Constant buffer range.", buffer.Label);
+            }
             GraphicsObject? current = resource;
             while (current is not null && current is not Device)
             {

@@ -22,7 +22,9 @@ groupshared uint BlockBase;
 void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     uint bin = threadId.x;
-    uint count = bin < Uniforms.ShadeBinCount ? BinCounts[bin] : 0u;
+    uint tiles = bin < Uniforms.ShadeBinCount ? BinCounts[bin * 2u] : 0u;
+    uint quads = bin < Uniforms.ShadeBinCount ? BinCounts[bin * 2u + 1u] : 0u;
+    uint count = tiles + quads;
     Prefix[groupIndex] = count;
     GroupMemoryBarrierWithGroupSync();
 
@@ -38,13 +40,11 @@ void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV
         InterlockedAdd(ReserveCounters[0], Prefix[BLOCK_SIZE - 1u], BlockBase);
     GroupMemoryBarrierWithGroupSync();
 
-    ReserveShade(
-        BinOffsets,
-        ScatterCounts,
-        IndirectArgs,
-        bin,
-        Uniforms.ShadeBinCount,
-        BlockBase,
-        Prefix[groupIndex],
-        count);
+    if (bin >= Uniforms.ShadeBinCount) return;
+    uint offset = BlockBase + Prefix[groupIndex] - count;
+    BinOffsets[bin * 2u] = offset;
+    BinOffsets[bin * 2u + 1u] = offset + tiles;
+    ScatterCounts[bin * 2u] = 0u;
+    ScatterCounts[bin * 2u + 1u] = 0u;
+    WriteDispatch(IndirectArgs, bin, tiles + (quads + 15u) / 16u);
 }

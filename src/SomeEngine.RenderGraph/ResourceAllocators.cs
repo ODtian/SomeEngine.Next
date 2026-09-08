@@ -7,6 +7,7 @@ internal sealed class HeapByteBudget
     private ulong _committedBytes;
 
     internal HeapByteBudget(ulong maximumBytes) => _maximumBytes = maximumBytes;
+    internal ulong CommittedBytes { get { lock (_gate) return _committedBytes; } }
 
     internal bool TryReserve(ulong size)
     {
@@ -42,8 +43,7 @@ internal readonly record struct ResourcePlacement(
     Resource? AliasingPredecessor = null,
     PersistentHeapPage? PersistentPage = null,
     int PersistentRange = -1,
-    TransientHeapPage? TransientPage = null,
-    int TransientRegion = -1);
+    bool Aliases = false);
 
 internal sealed class PersistentResourceAllocator : IDisposable
 {
@@ -68,6 +68,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
     internal void ApplyStructure(
         GraphStructure previous,
         GraphStructure next,
+        GraphEditChanges changes,
         bool retireRemoved)
     {
         int originalPageCount = _pages.Count;
@@ -75,8 +76,10 @@ internal sealed class PersistentResourceAllocator : IDisposable
         var createdPlacements = new List<ResourcePlacement>();
         try
         {
-            foreach (GraphBuffer buffer in next.Buffers.Rows)
+            foreach (GraphIdentity id in changes.Buffers)
             {
+                if (!next.Buffers.Contains(id)) continue;
+                GraphBuffer buffer = next.Buffers.GetMutable(id);
                 if (buffer.Ownership != RenderGraphResourceOwnership.GraphOwned ||
                     buffer.Lifetime != RenderGraphResourceLifetime.Persistent ||
                     buffer.PersistentResource is not null)
@@ -107,8 +110,10 @@ internal sealed class PersistentResourceAllocator : IDisposable
                 createdPlacements.Add(placement);
             }
 
-            foreach (GraphTexture texture in next.Textures.Rows)
+            foreach (GraphIdentity id in changes.Textures)
             {
+                if (!next.Textures.Contains(id)) continue;
+                GraphTexture texture = next.Textures.GetMutable(id);
                 if (texture.Ownership != RenderGraphResourceOwnership.GraphOwned ||
                     texture.Lifetime != RenderGraphResourceLifetime.Persistent ||
                     texture.PersistentResource is not null)
@@ -146,8 +151,10 @@ internal sealed class PersistentResourceAllocator : IDisposable
                 createdPlacements.Add(placement);
             }
 
-            foreach (GraphView view in next.Views.Rows)
+            foreach (GraphIdentity id in changes.Views)
             {
+                if (!next.Views.Contains(id)) continue;
+                GraphView view = next.Views.GetMutable(id);
                 if (view.PersistentView is not null) continue;
                 DeviceResource? resourceView = CreatePersistentView(next, view);
                 if (resourceView is null) continue;
@@ -174,20 +181,14 @@ internal sealed class PersistentResourceAllocator : IDisposable
             throw;
         }
 
-        if (retireRemoved) RetireRemoved(previous, next);
+        if (retireRemoved) RetireRemoved(previous, next, changes);
     }
 
     private DeviceResource? CreatePersistentView(GraphStructure structure, GraphView view)
     {
+        if (view.BufferInput is not null || view.TextureInput is not null) return null;
         switch (view.Kind)
         {
-            case GraphViewKind.BufferCbv:
-                {
-                    Buffer? buffer = ResolvePersistentBuffer(structure, view.Buffer);
-                    return buffer is null ? null : _backend.CreateBufferCbv(
-                        _device,
-                        new BufferCbvDesc(buffer, view.BufferRange, view.Label));
-                }
             case GraphViewKind.BufferSrv:
                 {
                     Buffer? buffer = ResolvePersistentBuffer(structure, view.Buffer);
@@ -258,28 +259,31 @@ internal sealed class PersistentResourceAllocator : IDisposable
         return texture.PersistentResource ?? texture.RegisteredResource;
     }
 
-    internal void RetireRemoved(GraphStructure previous, GraphStructure next)
+    internal void RetireRemoved(GraphStructure previous, GraphStructure next, GraphEditChanges changes)
     {
-        var liveResources = new HashSet<DeviceResource>(ReferenceEqualityComparer.Instance);
-        foreach (GraphBuffer buffer in next.Buffers.Rows)
-            if (buffer.PersistentResource is not null) liveResources.Add(buffer.PersistentResource);
-        foreach (GraphTexture texture in next.Textures.Rows)
-            if (texture.PersistentResource is not null) liveResources.Add(texture.PersistentResource);
-        foreach (GraphView view in next.Views.Rows)
-            if (view.PersistentView is not null) liveResources.Add(view.PersistentView);
-
-        foreach (GraphView view in previous.Views.Rows)
-            if (view.PersistentView is not null && !liveResources.Contains(view.PersistentView))
-                Retire(view.PersistentView, CollectViewCompletions(previous, view));
-        foreach (GraphBuffer buffer in previous.Buffers.Rows)
+        foreach (GraphIdentity id in changes.Views)
         {
-            if (buffer.PersistentResource is null || liveResources.Contains(buffer.PersistentResource))
+            if (!previous.Views.Contains(id)) continue;
+            GraphView view = previous.Views.Get(id);
+            if (view.PersistentView is not null &&
+                (!next.Views.Contains(id) || !ReferenceEquals(view.PersistentView, next.Views.Get(id).PersistentView)))
+                Retire(view.PersistentView, CollectViewCompletions(previous, view));
+        }
+        foreach (GraphIdentity id in changes.Buffers)
+        {
+            if (!previous.Buffers.Contains(id)) continue;
+            GraphBuffer buffer = previous.Buffers.Get(id);
+            if (buffer.PersistentResource is null ||
+                (next.Buffers.Contains(id) && ReferenceEquals(buffer.PersistentResource, next.Buffers.Get(id).PersistentResource)))
                 continue;
             Retire(buffer.PersistentResource, Collect(buffer.BoundaryStates));
         }
-        foreach (GraphTexture texture in previous.Textures.Rows)
+        foreach (GraphIdentity id in changes.Textures)
         {
-            if (texture.PersistentResource is null || liveResources.Contains(texture.PersistentResource))
+            if (!previous.Textures.Contains(id)) continue;
+            GraphTexture texture = previous.Textures.Get(id);
+            if (texture.PersistentResource is null ||
+                (next.Textures.Contains(id) && ReferenceEquals(texture.PersistentResource, next.Textures.Get(id).PersistentResource)))
                 continue;
             Retire(texture.PersistentResource, Collect(texture.BoundaryStates));
         }
@@ -537,668 +541,557 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
     private readonly Device _device;
     private readonly HeapByteBudget _budget;
     private readonly List<TransientHeapPage> _pages = [];
-    private readonly Dictionary<TransientResourceCacheKey, CachedTransientResource> _resourceCache = [];
-    private readonly HashSet<Resource> _cachedResources = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<GraphIdentity, CachedTransientView> _viewCache = [];
-    private readonly Dictionary<GraphIdentity, PlacementSignature> _previousPlacements = [];
-    private readonly Dictionary<GraphIdentity, PlacementSignature> _currentPlacements = [];
-    private readonly Dictionary<GraphIdentity, ulong> _placementTokens = [];
-    private readonly Dictionary<PlacementSignature, int> _reservedPlacements = [];
-    private readonly Dictionary<Heap, Dictionary<ulong, int>> _reservedOffsets =
-        new(ReferenceEqualityComparer.Instance);
-    private ulong _structureVersion;
+    private readonly List<TransientHeapPage> _newPages = [];
+    private readonly Dictionary<GraphIdentity, TransientAllocation> _allocations = [];
+    private readonly HashSet<Resource> _resources = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<ViewDescription, CachedView> _views = [];
+    private readonly Dictionary<Resource, HashSet<ViewDescription>> _resourceViews = new(ReferenceEqualityComparer.Instance);
+    private readonly List<Resource> _releasedViewResources = [];
+    private readonly HashSet<TransientHeapPage.Region> _changedRegions = [];
+    private readonly HashSet<GraphIdentity> _changedLifetimes = [];
+    private readonly List<GraphIdentity> _invalidated = [], _changedPlacements = [];
+    private readonly List<TransientAllocation> _activeAllocations = [];
+    private readonly List<TransientHeapPage.Region> _regionWork = [];
     private FrameSubmissionMode _submissionMode;
     private RenderGraphDebugOptions _debug;
-    private bool _placementHistoryReady;
+    private bool _initialized;
 
     internal FrameTransientResourceAllocator(IGraphicsBackend backend, Device device, HeapByteBudget budget)
     {
-        _backend = backend;
-        _device = device;
-        _budget = budget;
+        _backend = backend; _device = device; _budget = budget;
     }
 
-    internal void Reset(
-        ulong structureVersion,
-        FrameSubmissionMode submissionMode,
-        RenderGraphDebugOptions debug,
-        GraphStructureIndex structureIndex)
+    internal void Reset(FrameSubmissionMode submissionMode, RenderGraphDebugOptions debug)
     {
-        bool invalidated = _structureVersion != 0 &&
-            (_submissionMode != submissionMode ||
-             _debug != debug);
-        if (invalidated)
-        {
-            ClearCache();
-            _previousPlacements.Clear();
-            _currentPlacements.Clear();
-            _reservedPlacements.Clear();
-            _reservedOffsets.Clear();
-            _placementHistoryReady = false;
-        }
+        if (_initialized && (_submissionMode != submissionMode || _debug != debug)) Compact();
+        _submissionMode = submissionMode; _debug = debug; _initialized = true;
+        ResetUploads();
+        _releasedViewResources.Clear();
+        foreach (Resource resource in _resourceViews.Keys)
+            if (resource.IsDisposed) _releasedViewResources.Add(resource);
+        foreach (Resource resource in _releasedViewResources) RemoveResourceViews(resource);
+        _releasedViewResources.Clear();
+    }
 
-        foreach ((GraphIdentity identity, ulong token) in _placementTokens.ToArray())
-        {
-            if (structureIndex.TransientPlacements.TryGetValue(
-                    identity,
-                    out GraphTransientPlacementState placement) &&
-                token == placement.Token)
-                continue;
-            InvalidateCachedResource(GraphAccessTargetKind.Buffer, identity);
-            InvalidateCachedResource(GraphAccessTargetKind.Texture, identity);
-            _previousPlacements.Remove(identity);
-        }
-        _placementTokens.Clear();
-        foreach ((GraphIdentity identity, GraphTransientPlacementState placement) in
-                 structureIndex.TransientPlacements)
-            _placementTokens.Add(identity, placement.Token);
+    internal void UpdateLifetime(GraphIdentity identity, int[] begin, int[] end, Queue firstQueue, Queue lastQueue)
+    {
+        if (!_allocations.TryGetValue(identity, out TransientAllocation? allocation)) return;
+        TransientAllocationRequest old = allocation.Request;
+        if (allocation.Active && old.Begin.AsSpan().SequenceEqual(begin) && old.End.AsSpan().SequenceEqual(end) &&
+            ReferenceEquals(old.FirstQueue, firstQueue) && ReferenceEquals(old.LastQueue, lastQueue)) return;
+        allocation.Active = true;
+        allocation.Request = old with { Begin = begin.ToArray(), End = end.ToArray(), FirstQueue = firstQueue, LastQueue = lastQueue };
+        _changedLifetimes.Add(identity);
+        _changedRegions.Add(allocation.Region);
+    }
 
-        _structureVersion = structureVersion;
-        _submissionMode = submissionMode;
-        _debug = debug;
-        _currentPlacements.Clear();
-        _reservedPlacements.Clear();
-        _reservedOffsets.Clear();
-        foreach ((GraphIdentity identity, PlacementSignature placement) in _previousPlacements)
+    internal void Deactivate(GraphIdentity identity)
+    {
+        if (!_allocations.TryGetValue(identity, out TransientAllocation? allocation) || !allocation.Active) return;
+        allocation.Active = false;
+        _changedRegions.Add(allocation.Region);
+    }
+
+    internal IReadOnlyList<GraphIdentity> ReconcileLifetimes()
+    {
+        _invalidated.Clear();
+        _regionWork.Clear(); _regionWork.AddRange(_changedRegions);
+        foreach (TransientHeapPage.Region region in _regionWork)
         {
-            if (!_placementTokens.ContainsKey(identity)) continue;
-            _reservedPlacements[placement] = _reservedPlacements.GetValueOrDefault(placement) + 1;
-            if (!_reservedOffsets.TryGetValue(placement.Heap, out Dictionary<ulong, int>? offsets))
+            for (int left = 0; left < region.Allocations.Count; left++)
             {
-                offsets = [];
-                _reservedOffsets.Add(placement.Heap, offsets);
-            }
-            offsets[placement.Offset] = offsets.GetValueOrDefault(placement.Offset) + 1;
-        }
-        foreach (TransientHeapPage page in _pages) page.Reset();
-    }
-
-    internal bool CanCacheResources => _placementHistoryReady;
-
-    internal bool TryGetPlacement(
-        in GraphIdentity identity,
-        out Heap? heap,
-        out ulong offset)
-    {
-        if (_previousPlacements.TryGetValue(identity, out PlacementSignature placement))
-        {
-            heap = placement.Heap;
-            offset = placement.Offset;
-            return true;
-        }
-        heap = null;
-        offset = 0;
-        return false;
-    }
-
-    internal void CompletePlacement()
-    {
-        bool samePlacement = _previousPlacements.Count != 0 &&
-            _previousPlacements.Count == _currentPlacements.Count;
-        if (samePlacement)
-        {
-            foreach ((GraphIdentity identity, PlacementSignature placement) in _currentPlacements)
-            {
-                if (_previousPlacements.TryGetValue(identity, out PlacementSignature previous) &&
-                    previous == placement)
-                    continue;
-                samePlacement = false;
-                break;
+                TransientAllocation before = region.Allocations[left];
+                if (!before.Active) continue;
+                for (int right = left + 1; right < region.Allocations.Count; right++)
+                {
+                    TransientAllocation after = region.Allocations[right];
+                    if (!after.Active || TransientHeapPage.CanShare(before.Request, after.Request)) continue;
+                    bool moveBefore = _changedLifetimes.Contains(before.Request.Identity) && !_changedLifetimes.Contains(after.Request.Identity);
+                    GraphIdentity removed = moveBefore ? before.Request.Identity : after.Request.Identity;
+                    _invalidated.Add(removed);
+                    RemoveResource(default, removed);
+                    if (moveBefore) { left--; break; }
+                    right--;
+                }
             }
         }
-
-        _placementHistoryReady = samePlacement;
-        _previousPlacements.Clear();
-        foreach ((GraphIdentity identity, PlacementSignature placement) in _currentPlacements)
-            _previousPlacements.Add(identity, placement);
-        _reservedPlacements.Clear();
-        _reservedOffsets.Clear();
+        _changedLifetimes.Clear();
+        return _invalidated;
     }
+
+    internal void Allocate(List<TransientAllocationRequest> requests)
+    {
+        if (requests.Count == 0) return;
+        requests.Sort(static (left, right) => right.Requirements.Size.CompareTo(left.Requirements.Size));
+        foreach (TransientAllocationRequest request in requests)
+        {
+            if (_allocations.ContainsKey(request.Identity)) continue;
+            uint creation = request.NodePlacement.CreationNodeMask == 0 ? 1u : request.NodePlacement.CreationNodeMask;
+            uint visible = request.NodePlacement.VisibleNodeMask == 0 ? creation : request.NodePlacement.VisibleNodeMask;
+            HeapCompatibilityKey key = new(request.MemoryType, request.Requirements.CompatibleHeapFlags, creation, visible);
+            TransientHeapPage? best = null;
+            TransientHeapPage.Region? region = null;
+            ulong waste = ulong.MaxValue;
+            foreach (TransientHeapPage page in _pages)
+            {
+                if (page.Key != key || page.Alignment != request.Requirements.Alignment) continue;
+                TransientHeapPage.Region? candidate = page.Find(request, out ulong remaining);
+                if (candidate is not null && remaining < waste)
+                {
+                    best = page; region = candidate; waste = remaining;
+                }
+            }
+            if (best is null)
+                foreach (TransientHeapPage page in _pages)
+                    if (page.Key == key && page.Alignment == request.Requirements.Alignment && page.CanAppend(request))
+                    { best = page; break; }
+            if (best is null)
+            {
+                best = new TransientHeapPage(key, request.Requirements.Alignment);
+                _pages.Add(best);
+                _newPages.Add(best);
+            }
+            region = best.Allocate(region, request);
+            TransientAllocation allocation = new()
+            {
+                Request = request with { Begin = request.Begin.ToArray(), End = request.End.ToArray() },
+                Page = best, Region = region,
+            };
+            region.Allocations.Add(allocation);
+            _allocations.Add(request.Identity, allocation);
+            _changedRegions.Add(region);
+        }
+        foreach (TransientHeapPage page in _newPages)
+        {
+            if (page.Heap is not null) continue;
+            ulong size = TransientHeapPage.AlignUp(page.Extent, page.Alignment);
+            if (!_budget.TryReserve(size))
+                throw new GraphicsException(GraphicsError.OutOfMemory, "The transient RenderGraph heap budget is exhausted.");
+            try
+            {
+                page.Heap = _backend.CreateHeap(_device, new HeapDesc(size, page.Alignment, page.Key.MemoryType,
+                    page.Key.Flags, page.Key.CreationNodeMask, page.Key.VisibleNodeMask, "RenderGraph transient heap"));
+            }
+            catch { _budget.Release(size); throw; }
+        }
+        _newPages.Clear();
+    }
+
+    internal ResourcePlacement GetPlacement(GraphIdentity identity)
+    {
+        TransientAllocation allocation = _allocations[identity];
+        return new ResourcePlacement(allocation.Page.Heap!, allocation.Region.Offset, allocation.Request.Requirements.Size,
+            allocation.Predecessor, Aliases: allocation.Aliases);
+    }
+
+    internal IReadOnlyList<GraphIdentity> CompletePlacement()
+    {
+        _changedPlacements.Clear();
+        foreach (TransientHeapPage.Region region in _changedRegions)
+        {
+            _activeAllocations.Clear();
+            foreach (TransientAllocation allocation in region.Allocations)
+                if (allocation.Active && allocation.Resource is not null) _activeAllocations.Add(allocation);
+            _activeAllocations.Sort(static (left, right) =>
+                TransientHeapPage.Before(left.Request.End, right.Request.Begin) ? -1 : 1);
+            for (int index = 0; index < _activeAllocations.Count; index++)
+            {
+                TransientAllocation allocation = _activeAllocations[index];
+                // The preceding execution has completed before this frame's heap is reused.
+                // Its first resource only needs activation; before-side deactivation belongs
+                // to resources whose last access occurs earlier in this execution.
+                Resource? predecessor = index > 0 ? _activeAllocations[index - 1].Resource : null;
+                bool aliases = _activeAllocations.Count > 1 || region.Used && !ReferenceEquals(region.LastUsed, allocation.Resource);
+                if (ReferenceEquals(allocation.Predecessor, predecessor) && allocation.Aliases == aliases) continue;
+                allocation.Predecessor = predecessor; allocation.Aliases = aliases;
+                _changedPlacements.Add(allocation.Request.Identity);
+            }
+        }
+        _changedRegions.Clear();
+        return _changedPlacements;
+    }
+
+    internal void SetResource(GraphIdentity identity, Resource resource)
+    {
+        TransientAllocation allocation = _allocations[identity];
+        allocation.Resource = resource; _resources.Add(resource); _changedRegions.Add(allocation.Region);
+    }
+
+    internal bool IsCached(Resource resource) => _resources.Contains(resource);
+
+    internal bool TryGetPlacement(in GraphIdentity identity, out Heap? heap, out ulong offset)
+    {
+        if (_allocations.TryGetValue(identity, out TransientAllocation? allocation))
+        { heap = allocation.Page.Heap; offset = allocation.Region.Offset; return heap is not null; }
+        heap = null; offset = 0; return false;
+    }
+
+    internal BufferBoundaryState[]? FindCachedBufferStates(in GraphIdentity identity, Resource resource) =>
+        _allocations.TryGetValue(identity, out TransientAllocation? allocation) && ReferenceEquals(allocation.Resource, resource) ? allocation.BufferStates : null;
+
+    internal TextureBoundaryState[]? FindCachedTextureStates(in GraphIdentity identity, Resource resource) =>
+        _allocations.TryGetValue(identity, out TransientAllocation? allocation) && ReferenceEquals(allocation.Resource, resource) ? allocation.TextureStates : null;
+
+    internal void StoreCachedBufferStates(in GraphIdentity identity, Resource resource, BufferBoundaryState[] states)
+    {
+        if (!_allocations.TryGetValue(identity, out TransientAllocation? allocation) || !ReferenceEquals(allocation.Resource, resource)) return;
+        allocation.BufferStates = states; Used(allocation);
+    }
+
+    internal void StoreCachedTextureStates(in GraphIdentity identity, Resource resource, TextureBoundaryState[] states)
+    {
+        if (!_allocations.TryGetValue(identity, out TransientAllocation? allocation) || !ReferenceEquals(allocation.Resource, resource)) return;
+        allocation.TextureStates = states; Used(allocation);
+    }
+
+    private void Used(TransientAllocation allocation)
+    {
+        TransientHeapPage.Region region = allocation.Region;
+        region.Used = true; region.LastUsed = allocation.Resource;
+        if (allocation.Aliases && region.Allocations.Count == 1) _changedRegions.Add(region);
+    }
+
+    // A view belongs to its actual resources and description. A changing graph row or
+    // swapchain image binding does not end any other image's descriptors.
+    internal DeviceResource? FindCachedView(in FrameView view, Resource primary, Resource? secondary) =>
+        _views.TryGetValue(DescribeView(view, primary, secondary), out CachedView cached) ? cached.View : null;
+
+    internal void CacheView(in FrameView definition, DeviceResource view, Resource primary, Resource? secondary)
+    {
+        ViewDescription key = DescribeView(definition, primary, secondary);
+        _views.Add(key, new(view, primary, secondary));
+        Add(primary);
+        if (secondary is not null) Add(secondary);
+        void Add(Resource resource)
+        {
+            if (!_resourceViews.TryGetValue(resource, out HashSet<ViewDescription>? views))
+                _resourceViews.Add(resource, views = []);
+            views.Add(key);
+        }
+    }
+
+    private void RemoveResourceViews(Resource resource)
+    {
+        if (!_resourceViews.Remove(resource, out HashSet<ViewDescription>? keys)) return;
+        foreach (ViewDescription key in keys)
+        {
+            if (!_views.Remove(key, out CachedView view)) continue;
+            RemoveReference(view.Primary);
+            if (view.Secondary is not null) RemoveReference(view.Secondary);
+            view.View.Dispose();
+            void RemoveReference(Resource other)
+            {
+                if (ReferenceEquals(other, resource) || !_resourceViews.TryGetValue(other, out var views)) return;
+                views.Remove(key);
+                if (views.Count == 0) _resourceViews.Remove(other);
+            }
+        }
+    }
+
+    private static ViewDescription DescribeView(in FrameView view, Resource primary, Resource? secondary) =>
+        new(view.Kind, primary, secondary,
+            primary is Buffer buffer ? GraphStructureIndex.ResolveRange(view.BufferRange, buffer.Info.Size) : default,
+            view.BufferFormat, view.StructureStride, view.CounterOffset, view.TextureRange,
+            view.TextureFormat, view.Dimension, view.ReadOnlyDepth, view.ReadOnlyStencil);
+
+    internal void RemoveResource(GraphAccessTargetKind kind, GraphIdentity identity)
+    {
+        if (!_allocations.Remove(identity, out TransientAllocation? allocation)) return;
+        if (allocation.Resource is { } resource)
+        {
+            RemoveResourceViews(resource);
+            _resources.Remove(resource);
+            resource.Dispose();
+        }
+        _changedRegions.Add(allocation.Region);
+        allocation.Page.Release(allocation);
+        if (allocation.Page.AllocationCount == 0)
+        {
+            if (allocation.Page.Heap is { } heap) { _budget.Release(heap.Info.Size); heap.Dispose(); }
+            _pages.Remove(allocation.Page); _newPages.Remove(allocation.Page);
+        }
+    }
+
+    internal ulong CapacityBytes => _pages.Aggregate(0UL, static (sum, page) => checked(sum + (page.Heap?.Info.Size ?? 0)));
+    internal ulong OccupiedBytes => _pages.Aggregate(0UL, static (sum, page) => checked(sum + page.Regions.Values.Aggregate(0UL,
+        static (used, region) => checked(used + (region.Allocations.Count == 0 ? 0 : region.Allocations.Max(static allocation => allocation.Request.Requirements.Size))))));
 
     internal void Compact()
     {
-        ClearCache();
-        _previousPlacements.Clear();
-        _currentPlacements.Clear();
-        _placementTokens.Clear();
-        _reservedPlacements.Clear();
-        _reservedOffsets.Clear();
-        _placementHistoryReady = false;
+        foreach (CachedView view in _views.Values) view.View.Dispose();
+        _views.Clear(); _resourceViews.Clear();
+        DisposeUploads();
+        foreach (Resource resource in _resources) resource.Dispose();
+        _resources.Clear(); _allocations.Clear();
         foreach (TransientHeapPage page in _pages)
+            if (page.Heap is { } heap) { _budget.Release(heap.Info.Size); heap.Dispose(); }
+        _pages.Clear(); _newPages.Clear(); _changedRegions.Clear(); _changedLifetimes.Clear(); _changedPlacements.Clear();
+    }
+
+    public void Dispose() => Compact();
+    private readonly record struct CachedView(DeviceResource View, Resource Primary, Resource? Secondary);
+    private readonly record struct ViewDescription(GraphViewKind Kind, Resource Primary, Resource? Secondary,
+        BufferRange BufferRange, Format? BufferFormat, uint StructureStride, ulong CounterOffset,
+        TextureSubresourceRange TextureRange, Format TextureFormat, TextureViewDimension Dimension,
+        bool ReadOnlyDepth, bool ReadOnlyStencil);
+
+    private readonly List<UploadPage> _uploadPages = [];
+    private const BufferUsages UploadReadUsages = BufferUsages.Constant | BufferUsages.ShaderRead;
+
+    internal sealed class UploadPage
+    {
+        internal required Buffer Buffer;
+        internal required MappedBuffer Mapping;
+        internal required ulong CommittedBytes;
+        internal required BufferBoundaryState[] BoundaryStates;
+        internal GraphBufferId GraphBuffer;
+        internal ulong Used;
+    }
+
+    private void ResetUploads()
+    {
+        foreach (UploadPage page in _uploadPages)
         {
-            page.DisposeResources(_cachedResources);
-            _budget.Release(page.Heap.Info.Size);
-            page.Heap.Dispose();
+            page.Used = 0;
+            page.GraphBuffer = default;
         }
-        _pages.Clear();
-        _structureVersion = 0;
     }
 
-    internal Resource? FindCachedResource(
-        GraphAccessTargetKind kind,
-        in GraphIdentity identity,
-        in ResourcePlacement placement)
+    internal (UploadPage UploadPage, BufferRange Range) WriteUpload(ReadOnlySpan<byte> data, BufferUsages usages, uint elementAlignment)
     {
-        var key = new TransientResourceCacheKey(kind, identity);
-        if (!_resourceCache.TryGetValue(key, out CachedTransientResource? cached) ||
-            !ReferenceEquals(cached.Heap, placement.Heap) ||
-            cached.Offset != placement.Offset)
-            return null;
-        return cached.Resource;
-    }
+        DevelopmentCheck.Require(!data.IsEmpty, "Upload data cannot be empty.");
+        DevelopmentCheck.Require(usages != 0 && (usages & ~(UploadReadUsages | BufferUsages.CopySource)) == 0,
+            "Upload pages support GPU reads only.");
 
-    internal BufferBoundaryState[]? FindCachedBufferStates(
-        in GraphIdentity identity,
-        Resource resource)
-    {
-        var key = new TransientResourceCacheKey(GraphAccessTargetKind.Buffer, identity);
-        return _resourceCache.TryGetValue(key, out CachedTransientResource? cached) &&
-            ReferenceEquals(cached.Resource, resource)
-                ? cached.BufferStates
-                : null;
-    }
+        bool staging = (usages & UploadReadUsages) == 0;
+        BufferUsages pageUsages = staging ? BufferUsages.CopySource : UploadReadUsages | BufferUsages.CopySource;
+        DeviceLimits limits = _device.Capabilities.Limits;
+        ulong alignment = LeastCommonMultiple(4, Math.Max(1u, elementAlignment));
+        if ((usages & BufferUsages.ShaderRead) != 0)
+            alignment = LeastCommonMultiple(alignment, Math.Max(1u, limits.ShaderBufferAlignment));
+        if (staging)
+            alignment = LeastCommonMultiple(alignment, Math.Max(1u, limits.TextureDataPlacementAlignment));
+        if ((usages & BufferUsages.Constant) != 0)
+            alignment = LeastCommonMultiple(alignment, Math.Max(1u, limits.ConstantBufferAlignment));
+        ulong size = checked((ulong)data.Length);
+        if ((usages & BufferUsages.Constant) != 0)
+            size = AlignUp(size, Math.Max(1u, limits.ConstantBufferAlignment));
 
-    internal TextureBoundaryState[]? FindCachedTextureStates(
-        in GraphIdentity identity,
-        Resource resource)
-    {
-        var key = new TransientResourceCacheKey(GraphAccessTargetKind.Texture, identity);
-        return _resourceCache.TryGetValue(key, out CachedTransientResource? cached) &&
-            ReferenceEquals(cached.Resource, resource)
-                ? cached.TextureStates
-                : null;
-    }
-
-    internal void StoreCachedBufferStates(
-        in GraphIdentity identity,
-        Resource resource,
-        ReadOnlySpan<BufferBoundaryState> states)
-    {
-        var key = new TransientResourceCacheKey(GraphAccessTargetKind.Buffer, identity);
-        if (!_resourceCache.TryGetValue(key, out CachedTransientResource? cached) ||
-            !ReferenceEquals(cached.Resource, resource))
-            return;
-        var result = new BufferBoundaryState[states.Length];
-        for (int index = 0; index < states.Length; index++)
-            result[index] = states[index] with { Contents = ResourceContentState.Undefined };
-        cached.BufferStates = result;
-    }
-
-    internal void StoreCachedTextureStates(
-        in GraphIdentity identity,
-        Resource resource,
-        ReadOnlySpan<TextureBoundaryState> states)
-    {
-        var key = new TransientResourceCacheKey(GraphAccessTargetKind.Texture, identity);
-        if (!_resourceCache.TryGetValue(key, out CachedTransientResource? cached) ||
-            !ReferenceEquals(cached.Resource, resource))
-            return;
-        var result = new TextureBoundaryState[states.Length];
-        for (int index = 0; index < states.Length; index++)
-            result[index] = states[index] with { Contents = ResourceContentState.Undefined };
-        cached.TextureStates = result;
-    }
-
-    internal bool CacheResource(
-        GraphAccessTargetKind kind,
-        in GraphIdentity identity,
-        in ResourcePlacement placement,
-        Resource resource)
-    {
-        var key = new TransientResourceCacheKey(kind, identity);
-        if (_resourceCache.Remove(key, out CachedTransientResource? previous))
+        UploadPage? target = null;
+        ulong offset = 0;
+        foreach (UploadPage page in _uploadPages)
         {
-            _cachedResources.Remove(previous.Resource);
-            foreach (TransientHeapPage page in _pages) page.ForgetResource(previous.Resource);
-            previous.Resource.Dispose();
-        }
-        _resourceCache.Add(key, new CachedTransientResource(resource, placement.Heap, placement.Offset));
-        _cachedResources.Add(resource);
-        return true;
-    }
-
-    internal bool IsCached(Resource resource) => _cachedResources.Contains(resource);
-
-    internal DeviceResource? FindCachedView(
-        in GraphIdentity identity,
-        Resource primary,
-        Resource? secondary)
-    {
-        if (!_viewCache.TryGetValue(identity, out CachedTransientView cached) ||
-            !ReferenceEquals(cached.Primary, primary) ||
-            !ReferenceEquals(cached.Secondary, secondary))
-            return null;
-        return cached.View;
-    }
-
-    internal bool CacheView(
-        in GraphIdentity identity,
-        DeviceResource view,
-        Resource primary,
-        Resource? secondary)
-    {
-        if (_viewCache.Remove(identity, out CachedTransientView previous))
-            previous.View.Dispose();
-        _viewCache.Add(identity, new CachedTransientView(view, primary, secondary));
-        return true;
-    }
-
-    internal ResourcePlacement Place(
-        in MemoryRequirements requirements,
-        MemoryType memoryType,
-        in ResourceNodePlacement nodePlacement,
-        int[] beginFrontier,
-        int[] endFrontier,
-        in GraphIdentity identity,
-        int resourceIndex)
-    {
-        uint creationMask = nodePlacement.CreationNodeMask == 0 ? 1u : nodePlacement.CreationNodeMask;
-        uint visibleMask = nodePlacement.VisibleNodeMask == 0 ? creationMask : nodePlacement.VisibleNodeMask;
-        var key = new HeapCompatibilityKey(memoryType, requirements.CompatibleHeapFlags, creationMask, visibleMask);
-        TransientHeapPage? best = null;
-        int region = -1;
-        int priority = int.MaxValue;
-        ulong waste = ulong.MaxValue;
-        bool hasExpected = _previousPlacements.TryGetValue(
-            identity,
-            out PlacementSignature expected);
-        if (hasExpected)
-        {
-            foreach (TransientHeapPage page in _pages)
+            if (page.Buffer.Info.Usages != pageUsages) continue;
+            offset = AlignUp(page.Used, alignment);
+            if (offset <= page.Buffer.Info.Size && size <= page.Buffer.Info.Size - offset)
             {
-                if (page.Key != key || !ReferenceEquals(page.Heap, expected.Heap)) continue;
-                if (!page.TryFindExpected(
-                        expected.Offset,
-                        requirements.Size,
-                        requirements.Alignment,
-                        beginFrontier,
-                        out region))
-                    continue;
-                best = page;
-                priority = -1;
-                waste = expected.Size - requirements.Size;
+                target = page;
                 break;
             }
         }
-        foreach (TransientHeapPage page in _pages)
+        if (target is null)
         {
-            if (priority < 0) break;
-            if (page.Key != key) continue;
-            if (!page.TryFind(requirements.Size, requirements.Alignment, beginFrontier, resourceIndex,
-                    _reservedOffsets.GetValueOrDefault(page.Heap),
-                    out int candidate, out ulong candidateWaste, out int candidatePriority))
-                continue;
-            if (candidatePriority > priority ||
-                (candidatePriority == priority && candidateWaste >= waste))
-                continue;
-            best = page;
-            region = candidate;
-            priority = candidatePriority;
-            waste = candidateWaste;
-        }
-
-        if (best is null)
-        {
-            ulong minimum = memoryType == MemoryType.DeviceLocal ? 128UL << 20 : 32UL << 20;
-            ulong size = Math.Max(minimum, NextPowerOfTwo(requirements.Size));
-            size = AlignUp(size, requirements.Alignment);
-            if (!_budget.TryReserve(size))
-                throw new GraphicsException(GraphicsError.OutOfMemory, "The transient RenderGraph heap budget is exhausted.");
-            Heap heap;
+            ulong capacity = Math.Max(staging ? 4UL << 20 : 1UL << 20, AlignUp(size, 65536));
+            DevelopmentCheck.Require(capacity <= int.MaxValue, "An upload page must fit in a mapped Span.");
+            var description = new BufferDesc(capacity, pageUsages, staging ? "Frame staging page" : "Frame parameter page");
+            MemoryRequirements requirements = _backend.GetBufferMemoryRequirements(_device, description, MemoryType.Upload);
+            if (!_budget.TryReserve(requirements.Size))
+                throw new InvalidOperationException("The render graph upload memory budget is exhausted.");
+            Buffer? buffer = null;
+            MappedBuffer mapping = default;
             try
             {
-                heap = _backend.CreateHeap(_device, new HeapDesc(
-                    size, requirements.Alignment, memoryType, requirements.CompatibleHeapFlags,
-                    creationMask, visibleMask, "RenderGraph transient heap"));
+                buffer = _backend.CreateBuffer(_device, description, MemoryType.Upload);
+                mapping = _backend.Map(buffer, MapType.Write, new BufferRange(0, capacity));
+                mapping.Bytes.Clear();
+                target = new UploadPage
+                {
+                    Buffer = buffer,
+                    Mapping = mapping,
+                    CommittedBytes = requirements.Size,
+                    BoundaryStates = [new BufferBoundaryState(new BufferRange(0, capacity),
+                        buffer.InitialSync, buffer.InitialAccess, ResourceContentState.Defined)],
+                };
+                _uploadPages.Add(target);
             }
             catch
             {
-                _budget.Release(size);
+                mapping.Dispose();
+                buffer?.Dispose();
+                _budget.Release(requirements.Size);
                 throw;
             }
-            best = new TransientHeapPage(heap, key);
-            _pages.Add(best);
-            _ = best.TryFind(
-                requirements.Size,
-                requirements.Alignment,
-                beginFrontier,
-                resourceIndex,
-                null,
-                out region,
-                out _,
-                out _);
+            offset = 0;
         }
+        Span<byte> destination = target.Mapping.Bytes.Slice(checked((int)offset), checked((int)size));
+        data.CopyTo(destination);
+        destination[data.Length..].Clear();
+        target.Used = checked(offset + size);
+        return (target, new BufferRange(offset, size));
+    }
 
-        (ulong offset, ulong sizeValue, int chosen, Resource? predecessor) = best.Assign(
-            region,
-            requirements.Size,
-            requirements.Alignment,
-            endFrontier,
-            resourceIndex);
-        var signature = new PlacementSignature(best.Heap, offset, sizeValue);
-        if (hasExpected) ReleaseReservation(expected);
-        if (_placementHistoryReady && hasExpected && expected != signature)
+    internal void FlushUploads()
+    {
+        foreach (UploadPage page in _uploadPages)
+            if (page.Used != 0) page.Mapping.Flush(new BufferRange(0, page.Used));
+    }
+
+    private void DisposeUploads()
+    {
+        foreach (UploadPage page in _uploadPages)
         {
-            throw new InvalidOperationException(
-                "A stable transient placement changed without a RenderGraph structural invalidation.");
+            page.Mapping.Dispose();
+            page.Buffer.Dispose();
+            _budget.Release(page.CommittedBytes);
         }
-        _currentPlacements.Add(identity, signature);
-        return new ResourcePlacement(
-            best.Heap,
-            offset,
-            sizeValue,
-            predecessor,
-            TransientPage: best,
-            TransientRegion: chosen);
+        _uploadPages.Clear();
     }
 
-    private void ReleaseReservation(in PlacementSignature placement)
+    private static ulong AlignUp(ulong value, ulong alignment) => checked((value + alignment - 1) / alignment * alignment);
+
+    private static ulong LeastCommonMultiple(ulong left, ulong right)
     {
-        if (_reservedPlacements.TryGetValue(placement, out int count))
-        {
-            if (count == 1) _reservedPlacements.Remove(placement);
-            else _reservedPlacements[placement] = count - 1;
-        }
-        if (!_reservedOffsets.TryGetValue(
-                placement.Heap,
-                out Dictionary<ulong, int>? offsets) ||
-            !offsets.TryGetValue(placement.Offset, out int offsetCount))
-            return;
-        if (offsetCount == 1) offsets.Remove(placement.Offset);
-        else offsets[placement.Offset] = offsetCount - 1;
-        if (offsets.Count == 0) _reservedOffsets.Remove(placement.Heap);
+        ulong a = left, b = right;
+        while (b != 0) (a, b) = (b, a % b);
+        return checked(left / a * right);
     }
+}
 
-    internal void SetResource(in ResourcePlacement placement, Resource resource)
-    {
-        if (placement.TransientPage is null || placement.TransientRegion < 0)
-            throw new ArgumentException("The placement is not transient.", nameof(placement));
-        placement.TransientPage.SetResource(placement.TransientRegion, resource);
-    }
+internal readonly record struct TransientAllocationRequest(GraphIdentity Identity, MemoryRequirements Requirements,
+    MemoryType MemoryType, ResourceNodePlacement NodePlacement, int[] Begin, int[] End, Queue FirstQueue, Queue LastQueue);
 
-    public void Dispose()
-    {
-        foreach (CachedTransientView cached in _viewCache.Values)
-            cached.View.Dispose();
-        _viewCache.Clear();
-        foreach (TransientHeapPage page in _pages)
-        {
-            page.DisposeResources(_cachedResources);
-            _budget.Release(page.Heap.Info.Size);
-            page.Heap.Dispose();
-        }
-        _pages.Clear();
-        foreach (CachedTransientResource cached in _resourceCache.Values)
-            cached.Resource.Dispose();
-        _resourceCache.Clear();
-        _cachedResources.Clear();
-    }
-
-    private void ClearCache()
-    {
-        foreach (CachedTransientView cached in _viewCache.Values)
-            cached.View.Dispose();
-        _viewCache.Clear();
-        foreach (TransientHeapPage page in _pages)
-            page.DisposeResources(_cachedResources);
-        foreach (CachedTransientResource cached in _resourceCache.Values)
-            cached.Resource.Dispose();
-        _resourceCache.Clear();
-        _cachedResources.Clear();
-    }
-
-    private void InvalidateCachedResource(
-        GraphAccessTargetKind kind,
-        in GraphIdentity identity)
-    {
-        var key = new TransientResourceCacheKey(kind, identity);
-        if (!_resourceCache.Remove(key, out CachedTransientResource? cached))
-            return;
-
-        foreach ((GraphIdentity viewIdentity, CachedTransientView view) in _viewCache.ToArray())
-        {
-            if (!ReferenceEquals(view.Primary, cached.Resource) &&
-                !ReferenceEquals(view.Secondary, cached.Resource))
-            {
-                continue;
-            }
-            _viewCache.Remove(viewIdentity);
-            view.View.Dispose();
-        }
-
-        _cachedResources.Remove(cached.Resource);
-        foreach (TransientHeapPage page in _pages)
-            page.ForgetResource(cached.Resource);
-        cached.Resource.Dispose();
-    }
-
-    private static ulong AlignUp(ulong value, ulong alignment)
-    {
-        ulong mask = alignment - 1;
-        return checked((value + mask) & ~mask);
-    }
-
-    private static ulong NextPowerOfTwo(ulong value)
-    {
-        if (value <= 1) return 1;
-        value--;
-        value |= value >> 1;
-        value |= value >> 2;
-        value |= value >> 4;
-        value |= value >> 8;
-        value |= value >> 16;
-        value |= value >> 32;
-        return checked(value + 1);
-    }
-
-    private readonly record struct TransientResourceCacheKey(
-        GraphAccessTargetKind Kind,
-        GraphIdentity Identity);
-
-    private readonly record struct PlacementSignature(Heap Heap, ulong Offset, ulong Size);
-
-    private sealed class CachedTransientResource
-    {
-        internal CachedTransientResource(Resource resource, Heap heap, ulong offset)
-        {
-            Resource = resource;
-            Heap = heap;
-            Offset = offset;
-        }
-
-        internal Resource Resource { get; }
-        internal Heap Heap { get; }
-        internal ulong Offset { get; }
-        internal BufferBoundaryState[]? BufferStates { get; set; }
-        internal TextureBoundaryState[]? TextureStates { get; set; }
-    }
-
-    private readonly record struct CachedTransientView(
-        DeviceResource View,
-        Resource Primary,
-        Resource? Secondary);
+internal sealed class TransientAllocation
+{
+    internal required TransientAllocationRequest Request;
+    internal required TransientHeapPage Page;
+    internal required TransientHeapPage.Region Region;
+    internal Resource? Resource, Predecessor;
+    internal BufferBoundaryState[]? BufferStates;
+    internal TextureBoundaryState[]? TextureStates;
+    internal bool Active = true, Aliases;
 }
 
 internal sealed class TransientHeapPage
 {
-    private sealed class AllocationRegion
+    internal sealed class Region(ulong offset, ulong size)
     {
-        internal ulong Offset;
-        internal ulong Size;
-        internal int[] EndFrontier = [];
-        internal int ResourceIndex = -1;
-        internal int LastResourceIndex = -1;
-        internal Resource? Resource;
+        internal readonly ulong Offset = offset;
+        internal ulong Size = size;
+        internal readonly List<TransientAllocation> Allocations = [];
+        internal Resource? LastUsed;
+        internal bool Used;
     }
 
-    private readonly List<AllocationRegion> _regions = [];
-    private ulong _tail;
+    internal readonly HeapCompatibilityKey Key;
+    internal readonly ulong Alignment;
+    internal Heap? Heap;
+    internal readonly SortedList<ulong, Region> Regions = [];
+    internal ulong Extent;
+    internal int AllocationCount;
 
-    internal TransientHeapPage(Heap heap, in HeapCompatibilityKey key)
+    internal TransientHeapPage(HeapCompatibilityKey key, ulong alignment)
     {
-        Heap = heap;
         Key = key;
+        Alignment = alignment;
     }
 
-    internal Heap Heap { get; }
-    internal HeapCompatibilityKey Key { get; }
-
-    internal void Reset()
+    internal Region? Find(in TransientAllocationRequest request, out ulong waste)
     {
-        foreach (AllocationRegion region in _regions)
-        {
-            region.ResourceIndex = -1;
-        }
-    }
-
-    internal bool TryFind(
-        ulong size,
-        ulong alignment,
-        int[] beginFrontier,
-        int resourceIndex,
-        IReadOnlyDictionary<ulong, int>? reservedOffsets,
-        out int region,
-        out ulong waste,
-        out int priority)
-    {
-        region = -1;
+        Region? best = null;
         waste = ulong.MaxValue;
-        priority = int.MaxValue;
-        for (int i = 0; i < _regions.Count; i++)
+        foreach (Region region in Regions.Values)
         {
-            AllocationRegion candidate = _regions[i];
-            if ((candidate.ResourceIndex >= 0 && !Before(candidate.EndFrontier, beginFrontier)) ||
-                reservedOffsets?.ContainsKey(candidate.Offset) == true ||
-                candidate.LastResourceIndex != resourceIndex ||
-                candidate.Offset % alignment != 0 || candidate.Size < size)
-                continue;
-            ulong candidateWaste = candidate.Size - size;
-            if (candidateWaste >= waste) continue;
-            region = i;
-            waste = candidateWaste;
+            ulong offset = region.Allocations.Count == 0 ? AlignUp(region.Offset, request.Requirements.Alignment) : region.Offset;
+            if (offset % request.Requirements.Alignment != 0 || offset - region.Offset > region.Size ||
+                request.Requirements.Size > region.Size - (offset - region.Offset)) continue;
+            bool compatible = true;
+            foreach (TransientAllocation allocation in region.Allocations)
+                if (allocation.Active && !CanShare(allocation.Request, request))
+                {
+                    compatible = false;
+                    break;
+                }
+            ulong remaining = region.Size - request.Requirements.Size;
+            if (!compatible || remaining >= waste) continue;
+            best = region;
+            waste = remaining;
         }
-        if (region >= 0)
-        {
-            priority = 0;
-            return true;
-        }
-
-        ulong offset = AlignUp(_tail, alignment);
-        if (offset <= Heap.Info.Size && size <= Heap.Info.Size - offset)
-        {
-            region = -2;
-            waste = Heap.Info.Size - offset - size;
-            priority = 1;
-            return true;
-        }
-
-        for (int i = 0; i < _regions.Count; i++)
-        {
-            AllocationRegion candidate = _regions[i];
-            if ((candidate.ResourceIndex >= 0 && !Before(candidate.EndFrontier, beginFrontier)) ||
-                reservedOffsets?.ContainsKey(candidate.Offset) == true ||
-                candidate.Offset % alignment != 0 || candidate.Size < size)
-                continue;
-            ulong candidateWaste = candidate.Size - size;
-            if (candidateWaste >= waste) continue;
-            region = i;
-            waste = candidateWaste;
-        }
-        if (region < 0)
-            return false;
-        priority = 2;
-        return true;
+        return best;
     }
 
-    internal bool TryFindExpected(
-        ulong offset,
-        ulong size,
-        ulong alignment,
-        int[] beginFrontier,
-        out int region)
+    internal bool CanAppend(in TransientAllocationRequest request)
     {
-        region = -1;
-        if (offset % alignment != 0) return false;
-        for (int i = 0; i < _regions.Count; i++)
+        ulong offset = AlignUp(Extent, request.Requirements.Alignment);
+        return Heap is null || offset <= Heap.Info.Size && request.Requirements.Size <= Heap.Info.Size - offset;
+    }
+
+    internal Region Allocate(Region? region, in TransientAllocationRequest request)
+    {
+        AllocationCount++;
+        ulong size = request.Requirements.Size;
+        if (region is null)
         {
-            AllocationRegion candidate = _regions[i];
-            if (candidate.Offset != offset || candidate.Size < size ||
-                candidate.ResourceIndex >= 0 && !Before(candidate.EndFrontier, beginFrontier))
-                continue;
-            region = i;
-            return true;
+            ulong offset = AlignUp(Extent, request.Requirements.Alignment);
+            if (offset > Extent) Regions.Add(Extent, new Region(Extent, offset - Extent));
+            region = new Region(offset, size);
+            Regions.Add(offset, region);
+            Extent = checked(offset + size);
         }
-        return false;
-    }
-
-    internal (ulong Offset, ulong Size, int RegionIndex, Resource? Predecessor) Assign(
-        int region,
-        ulong size,
-        ulong alignment,
-        int[] endFrontier,
-        int resourceIndex)
-    {
-        AllocationRegion selected;
-        if (region == -2)
+        else if (region.Allocations.Count == 0)
         {
-            ulong offset = AlignUp(_tail, alignment);
-            selected = new AllocationRegion { Offset = offset, Size = size };
-            _regions.Add(selected);
-            region = _regions.Count - 1;
-            _tail = offset + size;
+            ulong offset = AlignUp(region.Offset, request.Requirements.Alignment);
+            ulong end = region.Offset + region.Size;
+            Regions.Remove(region.Offset);
+            if (offset > region.Offset) Regions.Add(region.Offset, new Region(region.Offset, offset - region.Offset) { Used = region.Used });
+            Region selected = new(offset, size) { Used = region.Used, LastUsed = region.LastUsed };
+            Regions.Add(offset, selected);
+            if (offset + size < end) Regions.Add(offset + size, new Region(offset + size, end - offset - size) { Used = region.Used });
+            region = selected;
         }
-        else
+        return region;
+    }
+
+    internal void Release(TransientAllocation allocation)
+    {
+        Region region = allocation.Region;
+        region.Allocations.Remove(allocation);
+        AllocationCount--;
+        if (ReferenceEquals(region.LastUsed, allocation.Resource)) region.LastUsed = null;
+        if (region.Allocations.Count != 0) return;
+        int index = Regions.IndexOfKey(region.Offset);
+        if (index > 0 && Regions.Values[index - 1].Allocations.Count == 0)
         {
-            selected = _regions[region];
+            Region previous = Regions.Values[index - 1];
+            previous.Size += region.Size;
+            previous.Used |= region.Used;
+            previous.LastUsed = null;
+            Regions.RemoveAt(index);
+            region = previous;
+            index--;
         }
-        Resource? predecessor = selected.Resource;
-        selected.Resource = null;
-        if (selected.EndFrontier.Length != endFrontier.Length)
-            selected.EndFrontier = new int[endFrontier.Length];
-        Array.Copy(endFrontier, selected.EndFrontier, endFrontier.Length);
-        selected.ResourceIndex = resourceIndex;
-        selected.LastResourceIndex = resourceIndex;
-        return (selected.Offset, selected.Size, region, predecessor);
-    }
-
-    internal void SetResource(int region, Resource resource)
-    {
-        AllocationRegion selected = _regions[region];
-        if (selected.Resource is not null)
-            throw new InvalidOperationException("The transient region already owns a Resource.");
-        selected.Resource = resource;
-    }
-
-    internal void ForgetResource(Resource resource)
-    {
-        foreach (AllocationRegion region in _regions)
-            if (ReferenceEquals(region.Resource, resource)) region.Resource = null;
-    }
-
-    internal void DisposeResources(HashSet<Resource> excluded)
-    {
-        foreach (AllocationRegion region in _regions)
+        if (index + 1 < Regions.Count && Regions.Values[index + 1].Allocations.Count == 0)
         {
-            if (region.Resource is not null && !excluded.Contains(region.Resource))
-                region.Resource.Dispose();
-            region.Resource = null;
-            region.ResourceIndex = -1;
+            Region next = Regions.Values[index + 1];
+            region.Size += next.Size;
+            region.Used |= next.Used;
+            region.LastUsed = null;
+            Regions.RemoveAt(index + 1);
         }
     }
 
-    private static bool Before(int[] end, int[] begin)
+    internal static bool Before(int[] end, int[] begin)
     {
-        if (end.Length == 0) return true;
         if (end.Length != begin.Length) return false;
-        for (int lane = 0; lane < end.Length; lane++)
-            if (end[lane] > begin[lane]) return false;
+        for (int lane = 0; lane < end.Length; lane++) if (end[lane] > begin[lane]) return false;
         return true;
     }
 
-    private static ulong AlignUp(ulong value, ulong alignment)
-    {
-        ulong mask = alignment - 1;
-        return checked((value + mask) & ~mask);
-    }
-}
+    internal static bool CanShare(in TransientAllocationRequest left, in TransientAllocationRequest right) =>
+        // Uploads are populated before GPU execution; readbacks are consumed after it.
+        // Their host access intervals span the entire execution, even when GPU uses do not.
+        left.MemoryType == MemoryType.DeviceLocal && right.MemoryType == MemoryType.DeviceLocal &&
+        (Before(left.End, right.Begin) && ReferenceEquals(left.LastQueue, right.FirstQueue) ||
+         Before(right.End, left.Begin) && ReferenceEquals(right.LastQueue, left.FirstQueue));
 
+    internal static ulong AlignUp(ulong value, ulong alignment) => checked((value + alignment - 1) & ~(alignment - 1));
+}

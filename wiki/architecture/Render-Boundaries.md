@@ -18,32 +18,17 @@ details, pipeline state, pass scheduling, pipeline caches, or present/swapchain 
 
 ## Graphics and Render Graph
 
-`SomeEngine.Graphics` is the portable execution boundary. It owns the public immutable graphics
-facts, lifecycle entities, command recorder, finished command lists, queues, and synchronization
-coordinates. `SomeEngine.Graphics.Null` and `SomeEngine.Graphics.Direct3D12` are concrete
-implementations of those owners; they do not publish a parallel backend object model.
+`SomeEngine.Graphics` provides the portable Device, resource, Pipeline, binding, command, queue and completion API. D3D12 and Vulkan implement that API. Device limits and Slang reflection are facts supplied at this boundary; backend descriptor storage and native references remain inside the backend.
 
-Every native or logical lifecycle obligation has one owner object. Creation `Desc` values are
-scoped complete inputs and are not retained as owner metadata. Resources, views, bindings,
-pipelines, query pools, swapchains, work graphs, mappings, acquired images, bindless slots, command
-recorders, and finished command lists all follow direct owner/borrow/transfer boundaries. Public
-lifecycle handles plus `Destroy`, feature device interfaces, feature command contexts, backend
-record mirrors, and detached `Info` packets are not part of the boundary.
+`SomeEngine.RenderGraph` consumes Graphics. It stores declarations, determines resource value dependencies, schedules work, allocates transient resources, and emits the required RHI commands. Its current data model, mutation rules and failure handling are described in [[Render-Graph]]. RG does not maintain a separate shader reflection format or backend-specific alignment policy.
 
-`SomeEngine.RenderGraph` is one level above Graphics and depends only on portable owners. Its complete
-execution, synchronization, resource, cache, publication, presentation, diagnostics, and performance
-contract is defined only by [[Render-Graph]]. This boundary note does not restate or specialize that
-contract.
+The boundary separates three responsibilities:
 
-Shader assets cross into execution through one exact projection to `ShaderArtifact` and
-`ShaderSlot` facts. Pipelines and graph validation consume the same slot kind, stage visibility,
-effect, qualifier, and shape facts. Assets, Graphics, and Render Graph do not maintain parallel
-runtime shader-contract representations.
+- RG decides which resource ranges are accessed, how accesses depend on one another, and when their memory can be reused.
+- RHI translates those decisions into native operations and keeps recorded/submitted native dependencies alive until completion.
+- Optional Validation checks legal calls and synchronization using public resource and shader facts. Diagnostics observe execution and are not an input to scheduling.
 
-Render Graph diagnostics follow
-[[Render-Graph-Diagnostics-Limits-and-Performance#RG-EVID-001 — Direct diagnostics, no diagnostic model]].
-There is no `SomeEngine.RenderGraph.Diagnostics` topology-model assembly or detached graph
-observation object; this boundary note does not define another execution contract.
+Resource content validity, synchronization state, and queue completion are distinct facts. Successful submissions advance RG's resource boundaries. Frame storage waits for every successful submission before reuse, including submissions made before a later failure.
 
 ## RenderWorld ECS
 
@@ -71,7 +56,7 @@ Frame coordination establishes one CPU read/prepare exclusion boundary per exact
 
 `SomeEngine.Render.Cluster` is the backend-neutral runtime for immutable BVH topology, stable page identities, bounded page streaming, Cluster property contribution, and completion-gated residency publication. Device storage is accessed only through the portable Graphics boundary; no concrete backend API enters the Cluster model. Cluster owns no instance scene, slot, header, heap, property contract wrapper, material field registry, or persistent prepare system. `ClusterRenderFeature.InstanceLayout` declares current/previous transform, BVH root, material-slot offset, and bounds expansion; a caller composes any additional pipeline/material fields and supplies their generic writer. Cluster writes only its declared geometry values into the caller's batch and owns only algorithm resources such as BVH/page residency and mesh-cache state. It does not define shader permutations, handwritten binding slots, material-pass assembly, PSOs, or RenderGraph passes. Those contracts come only from the Graphics/RenderGraph boundaries and shader reflection. Diagnostics are observation data or separate visualization work. A diagnostic control must not silently change traversal, culling, residency, or LOD decisions.
 
-Tessellation is an extension of existing `RasterBin` work, not a separate bin domain. A pipeline-owned factor policy invokes an `ITriangleSurface` implementation, moves only batches with a factor greater than one into a fixed-capacity split-work queue, and empties their ordinary raster range. Bounded dicing writes world-space triangles plus the original visible-cluster index, original triangle index, and unified view index. Overflow increments split or diced drop counters and stops; it never retries, reallocates, or routes geometry through a fallback. Diced triangles re-enter through the installed software-raster executor, while untessellated batches retain the installed software/hardware execution path. Visibility therefore continues to encode the original Cluster identity. Deferred shade reconstructs world position from depth, reloads that original triangle, and uses the same generic surface interface for inverse projection before material evaluation. Linear, Phong, texture displacement, and future non-height-map surfaces supply only the forward `position`/`eval`/conservative-bounds contract; the Cluster factor, queue, dicing, visibility, and inverse policies do not branch on surface type.
+Tessellation is an extension of existing `RasterBin` work, not a separate bin domain. The presence of the material tessellation entries is the explicit runtime-domain opt-in: every valid triangle in such a batch enters the domain path, including a triangle whose final dicing factor is one, so a constant or low-curvature deformation cannot bypass `position`. Seed work is written directly into a bounded per-bin GPU work queue. A specialized splitter for that material repeatedly pops patches, evaluates them, and pushes children back into the same queue until the queue has no outstanding work; RenderGraph does not pre-build a fixed number of split passes. Queue references carry a generation tag, a popped parent node may be reused by one direct child with an incremented generation, and only additional children consume new nodes. Outstanding work includes queued and in-flight patches, so an empty head is not mistaken for completion while another worker is producing children. The domain supplies forward `position`/`eval`, inverse `reconstruct`, whole-triangle `bounds`, sub-domain `patchBounds`, and `DomainErrorBounds` containing three conservative shared-edge errors plus one conservative patch-interior error. Cluster owns the screen-space target, edge factors, split decisions, dicing pattern, and scheduling. Shared-edge error controls only that shared edge; interior error controls only interior refinement. Refinement continues until edge length and conservative projected error satisfy the target or an explicit quality/capacity limit is reached, in which case diagnostics record the limit instead of silently clamping it away. Final patches retain the factors already computed by the splitter, so dicing does not repeat domain analysis. Texture displacement answers range and error queries from a min/max mip hierarchy while retaining a full-source range for conservative fallback; source values are not restricted to a normalized interval, and importer tooling can build the matching min/max mip texture from scalar displacement samples. Root and child bounds are used for fine culling after the domain path is reached. A material whose programmable geometry has no numerical pre-domain bound is marked unbounded, which disables unsafe earlier BVH/cluster culling rather than treating a qualitative declaration as a numeric guarantee. Visibility continues to encode the original Cluster identity. Deferred shade reconstructs world position from depth, reloads that original triangle, and uses the same material-selected domain type for inverse projection before surface evaluation. Linear, Phong, texture displacement, and future non-height-map domains share the same interface; Cluster does not branch on their concrete type.
 
 The current Cluster runtime accepts only validated range-streamed `MeshPayloadSource` meshes; materialized payloads have no fallback adapter. `PageHeap` and the global BVH are device-local `ShaderRead | CopyDestination` buffers. Registration reads BVH bytes into sparse CPU staging, validates complete topology and the authenticated page relation, and leaves the staged range unpublished. Page bodies remain nonresident. The first demand for a page reserves a fresh unpublished GPU range, reads once into a CPU staging block, authenticates the bytes, validates page layout and every cluster record, and only then makes the range eligible for publication. Registration assigns stable CPU page IDs, records each page's exact global BVH leaves, and stages every missing leaf with `ChildPointer = PageFaultMarker`; no additional GPU indirection resource is introduced. RenderGraph copies page bytes and BVH ranges into device-local storage, then the successful submission commits roots and resident page state on the CPU. Page staging blocks are released at that commit rather than retained beside steady-state GPU residency.
 
@@ -156,4 +141,4 @@ The current default renderer's reconstruction boundary, deform-cache contract, r
 shapes, and remaining adopted-kernel provenance are recorded in
 [[Cluster-Algorithm-Reconstruction]].
 
-参见 [[Product-Boundary]]、[[Harness-Definition]]。
+参见 [[Product-Boundary]]、[[Render-Graph]]。

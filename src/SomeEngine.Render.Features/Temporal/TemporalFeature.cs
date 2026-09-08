@@ -12,10 +12,12 @@ public readonly record struct TemporalFeatureOutput(
     GraphTextureId ResolvedColor,
     Format Format,
     int Width,
-    int Height)
+    int Height,
+    GraphPassId CompletePass)
 {
     public bool IsValid =>
-        ResolvedColor != default && Format != default && Width > 0 && Height > 0;
+        ResolvedColor != default && Format != default && Width > 0 && Height > 0 &&
+        CompletePass != default;
 }
 
 /// <summary>
@@ -31,13 +33,16 @@ public sealed class TemporalFeature : IDisposable
 
     private readonly LinkedRasterPipeline _pipeline;
     private readonly TemporalResource[] _resourceOrder;
-    private readonly GraphTextureId[] _colorHistory = new GraphTextureId[2];
-    private readonly GraphTextureId[] _motionHistory = new GraphTextureId[2];
-    private readonly GraphTextureId[] _depthHistory = new GraphTextureId[2];
+    private readonly GraphTextureId _colorHistory;
+    private readonly GraphTextureId _motionHistory;
+    private readonly GraphTextureId _depthHistory;
     private readonly GraphPassId _initializePass;
     private readonly GraphPassId _resolvePass;
     private readonly GraphPassId _historyPass;
-    private int _historyGeneration;
+    private readonly GraphBufferInput _uniforms;
+    private readonly GraphTextureInput _sceneColor;
+    private readonly GraphTextureInput _sceneDepth;
+    private readonly GraphTextureInput _sceneMotion;
     private bool _historyValid;
     private bool _pending;
     private bool _disposed;
@@ -105,21 +110,18 @@ public sealed class TemporalFeature : IDisposable
                 TextureUsages.Sampled | TextureUsages.DepthStencilAttachment |
                     TextureUsages.CopySource | TextureUsages.CopyDestination,
                 label: "Temporal depth history");
-            for (int index = 0; index < 2; index++)
-            {
-                _colorHistory[index] = edit.CreatePersistentTexture(TextureDescription(
-                    colorHistory.Format,
-                    colorHistory.Usages,
-                    $"Temporal color history {index}"));
-                _motionHistory[index] = edit.CreatePersistentTexture(TextureDescription(
-                    motionHistory.Format,
-                    motionHistory.Usages,
-                    $"Temporal motion history {index}"));
-                _depthHistory[index] = edit.CreatePersistentTexture(TextureDescription(
-                    depthHistory.Format,
-                    depthHistory.Usages,
-                    $"Temporal depth history {index}"));
-            }
+            _colorHistory = edit.CreatePersistentTexture(TextureDescription(
+                colorHistory.Format,
+                colorHistory.Usages,
+                "Temporal color history"));
+            _motionHistory = edit.CreatePersistentTexture(TextureDescription(
+                motionHistory.Format,
+                motionHistory.Usages,
+                "Temporal motion history"));
+            _depthHistory = edit.CreatePersistentTexture(TextureDescription(
+                depthHistory.Format,
+                depthHistory.Usages,
+                "Temporal depth history"));
             GraphTextureId resolved = edit.CreatePersistentTexture(TextureDescription(
                 Format.R16G16B16A16Float,
                 TextureUsages.Sampled | TextureUsages.ColorAttachment | TextureUsages.CopySource,
@@ -130,12 +132,17 @@ public sealed class TemporalFeature : IDisposable
                 Format.R16G16B16A16Float,
                 SomeEngine.Graphics.TextureViewDimension.Texture2D,
                 "Temporal output");
+            _uniforms = edit.CreateBufferInput(BufferUsages.Constant);
+            _sceneColor = edit.CreateTextureInput();
+            _sceneDepth = edit.CreateTextureInput();
+            _sceneMotion = edit.CreateTextureInput();
             _initializePass = edit.AddCopyFramePass(
                 "Initialize temporal histories",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
-                default(TemporalInitializePassData),
+                new TemporalInitializePassData(_colorHistory, _motionHistory, _sceneDepth, _depthHistory,
+                    checked((uint)width), checked((uint)height)),
                 new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition _, ref TemporalInitializePassData _) => { },
+                static (ref PassDefinition pass, ref TemporalInitializePassData data) => data.Declare(ref pass),
                 TemporalInitializePassData.Record);
             _resolvePass = edit.AddRasterFramePass(
                 "Temporal resolve",
@@ -150,18 +157,52 @@ public sealed class TemporalFeature : IDisposable
             _historyPass = edit.AddCopyFramePass(
                 "Update temporal history",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
-                default(TemporalHistoryPassData),
+                new TemporalHistoryPassData(resolved, _colorHistory, _sceneMotion, _motionHistory,
+                    _sceneDepth, _depthHistory, checked((uint)width), checked((uint)height)),
                 new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition _, ref TemporalHistoryPassData _) => { },
+                static (ref PassDefinition pass, ref TemporalHistoryPassData data) => data.Declare(ref pass),
                 TemporalHistoryPassData.Record);
             edit.OrderAfter(_resolvePass, _initializePass);
             edit.OrderAfter(_historyPass, _resolvePass);
+            PassDefinition resolve = edit.GetPass(_resolvePass);
+            foreach (TemporalResource resource in _resourceOrder)
+            {
+                switch (resource)
+                {
+                    case TemporalResource.Uniforms:
+                        _ = resolve.Bind(
+                            _uniforms,
+                            PipelineSync.PixelShading);
+                        break;
+                    case TemporalResource.SceneColor:
+                        _ = resolve.Bind(edit.CreateTextureSrv(_sceneColor, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R16G16B16A16Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal scene color"), PipelineSync.PixelShading);
+                        break;
+                    case TemporalResource.PreviousSceneColor:
+                        BindTexture(edit, ref resolve, _colorHistory, Format.R16G16B16A16Float, TextureAspects.Color, 0, SomeEngine.Graphics.TextureViewDimension.Texture2D, "Temporal previous color");
+                        break;
+                    case TemporalResource.MotionVectors:
+                        _ = resolve.Bind(edit.CreateTextureSrv(_sceneMotion, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R16G16Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal motion"), PipelineSync.PixelShading);
+                        break;
+                    case TemporalResource.PreviousMotionVectors:
+                        BindTexture(edit, ref resolve, _motionHistory, Format.R16G16Float, TextureAspects.Color, 0, SomeEngine.Graphics.TextureViewDimension.Texture2D, "Temporal previous motion");
+                        break;
+                    case TemporalResource.SceneDepth:
+                        _ = resolve.Bind(edit.CreateTextureSrv(_sceneDepth, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth), Format.D32Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal scene depth"), PipelineSync.PixelShading);
+                        break;
+                    case TemporalResource.PreviousSceneDepth:
+                        BindTexture(edit, ref resolve, _depthHistory, Format.D32Float, TextureAspects.Depth, 0, SomeEngine.Graphics.TextureViewDimension.Texture2D, "Temporal previous depth");
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unknown temporal resource key.");
+                }
+            }
             edit.Commit();
             Output = new TemporalFeatureOutput(
                 resolved,
                 Format.R16G16B16A16Float,
                 width,
-                height);
+                height,
+                _resolvePass);
             _pipeline = pipeline;
             pipeline = null;
 
@@ -183,6 +224,12 @@ public sealed class TemporalFeature : IDisposable
 
     public TemporalFeatureOutput Output { get; }
 
+    public void OrderAfter(ref RenderGraphEdit graph, GraphPassId producer)
+    {
+        graph.OrderAfter(_initializePass, producer);
+        graph.OrderAfter(_resolvePass, producer);
+    }
+
     public void Record(
         ref RenderGraphFrame graph,
         GraphTextureId sceneColor,
@@ -198,81 +245,21 @@ public sealed class TemporalFeature : IDisposable
         if (sceneColor == default || sceneDepth == default || !motion.IsValid)
             throw new ArgumentException("Temporal resolve requires valid color, depth, and motion inputs.");
 
-        int previous = _historyGeneration;
-        int current = previous ^ 1;
         bool useHistory = enabled && _historyValid && !cameraCut;
         TemporalResolveUniforms uniforms = useHistory
             ? settings.ToUniforms()
             : settings.ToUniforms() with { HistoryWeight = 0.0f };
-        GraphBufferId uniformBuffer = FeatureUploads.UploadConstant(
+        GraphBufferSlice uniformBuffer = FeatureUploads.UploadConstant(
             ref graph,
             in uniforms,
             "Temporal resolve uniforms");
 
-        bool initializeHistory = !_historyValid || cameraCut;
-        graph.SetPassEnabled(_initializePass, initializeHistory);
-        if (initializeHistory)
-        {
-            var initialization = new TemporalInitializePassData(
-                _colorHistory[0], _colorHistory[1],
-                _motionHistory[0], _motionHistory[1],
-                sceneDepth,
-                _depthHistory[0], _depthHistory[1],
-                checked((uint)Output.Width),
-                checked((uint)Output.Height));
-            PassDefinition initialize = graph.GetPass(_initializePass);
-            initialization.Declare(ref initialize);
-            graph.SetPassData(_initializePass, initialization);
-        }
-        PassDefinition resolve = graph.GetPass(_resolvePass);
-        foreach (TemporalResource resource in _resourceOrder)
-        {
-            switch (resource)
-            {
-                case TemporalResource.Uniforms:
-                    _ = resolve.Bind(
-                        graph.CreateBufferCbv(uniformBuffer, label: "Temporal uniforms"),
-                        PipelineSync.PixelShading);
-                    break;
-                case TemporalResource.SceneColor:
-                    BindTexture(ref graph, ref resolve, sceneColor, Format.R16G16B16A16Float, TextureAspects.Color, 0, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal scene color");
-                    break;
-                case TemporalResource.PreviousSceneColor:
-                    BindTexture(ref graph, ref resolve, _colorHistory[previous], Format.R16G16B16A16Float, TextureAspects.Color, 0, SomeEngine.Graphics.TextureViewDimension.Texture2D, "Temporal previous color");
-                    break;
-                case TemporalResource.MotionVectors:
-                    BindTexture(ref graph, ref resolve, motion.MotionVectors, Format.R16G16Float, TextureAspects.Color, 0, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal motion");
-                    break;
-                case TemporalResource.PreviousMotionVectors:
-                    BindTexture(ref graph, ref resolve, _motionHistory[previous], Format.R16G16Float, TextureAspects.Color, 0, SomeEngine.Graphics.TextureViewDimension.Texture2D, "Temporal previous motion");
-                    break;
-                case TemporalResource.SceneDepth:
-                    BindTexture(ref graph, ref resolve, sceneDepth, Format.D32Float, TextureAspects.Depth, 0, SomeEngine.Graphics.TextureViewDimension.Texture2DArray, "Temporal scene depth");
-                    break;
-                case TemporalResource.PreviousSceneDepth:
-                    BindTexture(ref graph, ref resolve, _depthHistory[previous], Format.D32Float, TextureAspects.Depth, 0, SomeEngine.Graphics.TextureViewDimension.Texture2D, "Temporal previous depth");
-                    break;
-                default:
-                    throw new InvalidOperationException("Unknown temporal resource key.");
-            }
-        }
+        graph.SetBufferInput(_uniforms, uniformBuffer);
+        graph.SetTextureInput(_sceneColor, sceneColor);
+        graph.SetTextureInput(_sceneDepth, sceneDepth);
+        graph.SetTextureInput(_sceneMotion, motion.MotionVectors);
+        graph.SetPassEnabled(_initializePass, !_historyValid || cameraCut);
         graph.SetPassEnabled(_resolvePass, true);
-
-        PassDefinition history = graph.GetPass(_historyPass);
-        DeclareCopy(ref history, Output.ResolvedColor, _colorHistory[current], ColorRange, ColorRange);
-        DeclareCopy(ref history, motion.MotionVectors, _motionHistory[current], ColorRange, ColorRange);
-        DeclareCopy(ref history, sceneDepth, _depthHistory[current], DepthRange, DepthRange);
-        graph.SetPassData(
-            _historyPass,
-            new TemporalHistoryPassData(
-                Output.ResolvedColor,
-                _colorHistory[current],
-                motion.MotionVectors,
-                _motionHistory[current],
-                sceneDepth,
-                _depthHistory[current],
-                checked((uint)Output.Width),
-                checked((uint)Output.Height)));
         graph.SetPassEnabled(_historyPass, true);
         _pending = true;
     }
@@ -282,7 +269,6 @@ public sealed class TemporalFeature : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_pending)
             throw new InvalidOperationException("No temporal frame is waiting for commit.");
-        _historyGeneration ^= 1;
         _historyValid = true;
         _pending = false;
     }
@@ -306,9 +292,6 @@ public sealed class TemporalFeature : IDisposable
         if (_disposed)
             return;
         _pipeline.Dispose();
-        Array.Clear(_colorHistory);
-        Array.Clear(_motionHistory);
-        Array.Clear(_depthHistory);
         _pending = false;
         _historyValid = false;
         _disposed = true;
@@ -328,7 +311,7 @@ public sealed class TemporalFeature : IDisposable
         };
 
     private static void BindTexture(
-        ref RenderGraphFrame graph,
+        RenderGraphEdit graph,
         ref PassDefinition pass,
         GraphTextureId texture,
         Format format,
@@ -405,42 +388,33 @@ public sealed class TemporalFeature : IDisposable
     }
 
     private readonly record struct TemporalInitializePassData(
-        GraphTextureId Color0,
-        GraphTextureId Color1,
-        GraphTextureId Motion0,
-        GraphTextureId Motion1,
-        GraphTextureId SourceDepth,
-        GraphTextureId Depth0,
-        GraphTextureId Depth1,
+        GraphTextureId Color,
+        GraphTextureId Motion,
+        GraphTextureInput SourceDepth,
+        GraphTextureId Depth,
         uint Width,
         uint Height)
     {
         internal void Declare(ref PassDefinition pass)
         {
-            DeclareColor(ref pass, Color0);
-            DeclareColor(ref pass, Color1);
-            DeclareColor(ref pass, Motion0);
-            DeclareColor(ref pass, Motion1);
+            DeclareColor(ref pass, Color);
+            DeclareColor(ref pass, Motion);
             _ = pass.Read(
                 SourceDepth,
                 DepthRange,
                 PipelineSync.Copy,
                 ResourceAccess.CopySource,
                 TextureLayout.CopySource);
-            DeclareDepth(ref pass, Depth0);
-            DeclareDepth(ref pass, Depth1);
+            DeclareDepth(ref pass, Depth);
         }
 
         internal static void Record(
             ref CopyPassCommandScope commands,
             in TemporalInitializePassData data)
         {
-            Clear(ref commands, data.Color0);
-            Clear(ref commands, data.Color1);
-            Clear(ref commands, data.Motion0);
-            Clear(ref commands, data.Motion1);
-            CopyDepth(ref commands, data.SourceDepth, data.Depth0, data.Width, data.Height);
-            CopyDepth(ref commands, data.SourceDepth, data.Depth1, data.Width, data.Height);
+            Clear(ref commands, data.Color);
+            Clear(ref commands, data.Motion);
+            CopyDepth(ref commands, data.SourceDepth, data.Depth, data.Width, data.Height);
         }
 
         private static void DeclareColor(ref PassDefinition pass, GraphTextureId texture) =>
@@ -466,7 +440,7 @@ public sealed class TemporalFeature : IDisposable
 
         private static void CopyDepth(
             ref CopyPassCommandScope commands,
-            GraphTextureId source,
+            GraphTextureInput source,
             GraphTextureId destination,
             uint width,
             uint height) =>
@@ -483,33 +457,44 @@ public sealed class TemporalFeature : IDisposable
     private readonly record struct TemporalHistoryPassData(
         GraphTextureId SourceColor,
         GraphTextureId DestinationColor,
-        GraphTextureId SourceMotion,
+        GraphTextureInput SourceMotion,
         GraphTextureId DestinationMotion,
-        GraphTextureId SourceDepth,
+        GraphTextureInput SourceDepth,
         GraphTextureId DestinationDepth,
         uint Width,
         uint Height)
     {
+        internal void Declare(ref PassDefinition pass)
+        {
+            DeclareCopy(ref pass, SourceColor, DestinationColor, ColorRange, ColorRange);
+            _ = pass.Read(SourceMotion, ColorRange, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+            _ = pass.Write(DestinationMotion, ColorRange, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                TextureLayout.CopyDestination, WriteCoverage.Complete);
+            _ = pass.Read(SourceDepth, DepthRange, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+            _ = pass.Write(DestinationDepth, DepthRange, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                TextureLayout.CopyDestination, WriteCoverage.Complete);
+        }
+
         internal static void Record(
             ref CopyPassCommandScope commands,
             in TemporalHistoryPassData data)
         {
-            Copy(ref commands, data.SourceColor, data.DestinationColor, data.Width, data.Height);
-            Copy(ref commands, data.SourceMotion, data.DestinationMotion, data.Width, data.Height);
-            Copy(ref commands, data.SourceDepth, data.DestinationDepth, data.Width, data.Height, TextureAspects.Depth);
+            Copy(ref commands, commands.GetTexture(data.SourceColor), commands.GetTexture(data.DestinationColor), data.Width, data.Height);
+            Copy(ref commands, commands.GetTexture(data.SourceMotion), commands.GetTexture(data.DestinationMotion), data.Width, data.Height);
+            Copy(ref commands, commands.GetTexture(data.SourceDepth), commands.GetTexture(data.DestinationDepth), data.Width, data.Height, TextureAspects.Depth);
         }
 
         private static void Copy(
             ref CopyPassCommandScope commands,
-            GraphTextureId source,
-            GraphTextureId destination,
+            SomeEngine.Graphics.Texture source,
+            SomeEngine.Graphics.Texture destination,
             uint width,
             uint height,
             TextureAspects aspects = TextureAspects.Color) =>
             commands.CopyTexture(new TextureCopy(
-                commands.GetTexture(source),
+                source,
                 0, 0, aspects, 0, 0, 0,
-                commands.GetTexture(destination),
+                destination,
                 0, 0, aspects, 0, 0, 0,
                 width,
                 height,

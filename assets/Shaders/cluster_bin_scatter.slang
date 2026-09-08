@@ -6,27 +6,19 @@ ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
-ConstantBuffer<RasterDeformBinningUniforms> Uniforms;
-StructuredBuffer<uint4> VisibleClusters;
+ConstantBuffer<RasterBinningUniforms> Uniforms;
+StructuredBuffer<DrawRequest> VisibleClusters;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint3> BinnedClusterIndexBuffer;
+RWStructuredBuffer<uint> BinnedClusterIndexBuffer;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
+ByteAddressBuffer ClusterReadOffsetArgs1;
+ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
-StructuredBuffer<uint> DeformSlots;
 ByteAddressBuffer PageHeap;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<DeformBinEntry> DeformBinMeta;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint3> DeformBinnedClusterIndexBuffer;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> CacheOffsetsWrite;
-
-static const uint CACHE_OFFSET_UNINITIALIZED = 0xFFFFFFFEu;
 
 void ScatterRasterBatches(
     uint visibleIndex,
-    uint viewIndex,
     uint slotOffset,
     uint vrbInfo,
     uint triangleCount,
@@ -39,7 +31,8 @@ void ScatterRasterBatches(
 
     VRBDecoded vrb = DecodeVRB(vrbInfo);
     uint triangleStart = 0u;
-    for (uint batch = 0u; batch < vrb.batchCount && triangleStart < triangleCount; batch++)
+    uint batch = 0u;
+    for (; batch < vrb.batchCount && triangleStart < triangleCount; batch++)
     {
         uint triangleEnd = min(triangleStart + vrb.triCounts[batch], triangleCount);
         uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
@@ -48,9 +41,7 @@ void ScatterRasterBatches(
             BinnedClusterIndexBuffer,
             RasterKey(RasterSlots, Uniforms, slotOffset, material),
             visibleIndex,
-            viewIndex,
-            triangleStart,
-            triangleEnd,
+            batch,
             EmitsSw(isSoftware, batch, vrb.batchCount));
         triangleStart = triangleEnd;
     }
@@ -66,32 +57,11 @@ void ScatterRasterBatches(
             BinnedClusterIndexBuffer,
             RasterKey(RasterSlots, Uniforms, slotOffset, material),
             visibleIndex,
-            viewIndex,
-            triangleStart,
-            triangleEnd,
+            batch,
             false);
+        batch++;
         triangleStart = triangleEnd;
     }
-}
-
-void ScatterDeformCluster(
-    uint visibleIndex,
-    uint viewIndex,
-    uint slotOffset,
-    uint triangleCount,
-    uint deformMaterialIndex)
-{
-    if (triangleCount == 0u)
-        return;
-
-    ScatterDeform(
-        DeformBinMeta,
-        DeformBinnedClusterIndexBuffer,
-        CacheOffsetsWrite,
-        DeformKey(DeformSlots, Uniforms, slotOffset, deformMaterialIndex),
-        visibleIndex,
-        viewIndex,
-        CACHE_OFFSET_UNINITIALIZED);
 }
 
 [shader("compute")]
@@ -108,15 +78,16 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
     DecodeVisibleCluster(
         DrawArgs,
         ClusterReadOffsetArgs,
+        ClusterReadOffsetArgs1,
+        ClusterReadOffsetArgs2,
         Uniforms.MaxVisibleClusters,
         threadId.x,
         visibleIndex,
         isSoftware);
 
-    uint4 entry = VisibleClusters[visibleIndex];
+    DrawRequest entry = VisibleClusters[visibleIndex];
     uint vrbInfo;
     uint triangleCount;
-    uint deformMaterialIndex;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
@@ -124,7 +95,6 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         entry,
         vrbInfo,
         triangleCount,
-        deformMaterialIndex,
         packedMaterials,
         packedRanges);
     uint slotOffset = LoadClusterMaterialSlotOffset(
@@ -132,20 +102,13 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         LoadRenderInstanceMetadata(
             InstanceProperties,
             CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
-        entry.z);
+        entry.InstanceID);
     ScatterRasterBatches(
         visibleIndex,
-        entry.w,
         slotOffset,
         vrbInfo,
         triangleCount,
         packedMaterials,
         packedRanges,
         isSoftware);
-    ScatterDeformCluster(
-        visibleIndex,
-        entry.w,
-        slotOffset,
-        triangleCount,
-        deformMaterialIndex);
 }

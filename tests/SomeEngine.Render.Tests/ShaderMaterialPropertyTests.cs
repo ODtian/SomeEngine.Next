@@ -12,8 +12,8 @@ public sealed class ShaderMaterialPropertyTests
         Shader shader = CreateShader(sourceDefault);
 
         Shader.Validate(shader);
-        ShaderMaterialInstanceProperty property = Assert.Single(
-            shader.Metadata!.MaterialInstanceProperties!);
+        ShaderInstanceProperty property = Assert.Single(
+            shader.Metadata!.InstanceProperties!);
 
         Assert.Equal("test.material.tint", property.CanonicalId);
         Assert.Equal("TestScalars", property.MaterialScalarLayoutName);
@@ -58,9 +58,9 @@ public sealed class ShaderMaterialPropertyTests
             ],
             Metadata = new ShaderMetadata
             {
-                MaterialInstanceProperties =
+                InstanceProperties =
                 [
-                    new ShaderMaterialInstanceProperty
+                    new ShaderInstanceProperty
                     {
                         CanonicalId = "test.material.tint",
                         MaterialScalarLayoutName = "TestScalars",

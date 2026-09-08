@@ -188,15 +188,11 @@ public static partial class ClusterBuilder
         var meshlets = new List<BuilderMeshlet>();
         var globalIndices = new List<uint>();
         float[] materialIndices = ExtractMaterialIndices(prepared);
-        MaterialDeformCompatibility[] deformCompatibilities = materialSlots
-            .Select(static slot => slot.DeformCompatibility)
-            .ToArray();
         BuildClusterLod(
             ClusterLodConfig.GetDefault() with { ClusterSpatial = true },
             new ReadOnlySpan<Vector3>(prepared.Positions, 0, prepared.VertexCount),
             new ReadOnlySpan<uint>(prepared.Indices, 0, prepared.IndexCount),
             materialIndices,
-            deformCompatibilities,
             meshlets,
             globalIndices);
         RemoveInternalMaterialAttribute(prepared.Attributes);
@@ -668,8 +664,7 @@ public static partial class ClusterBuilder
                 GroupId = (short)meshlet.GroupId,
                 PackedCounts = PackedCounts(
                     encoded.VertexCount,
-                    meshlet.Level,
-                    meshlet.DeformMaterialIndex),
+                    meshlet.Level),
                 PackedMaterials = PackedMaterials(meshlet),
                 PackedRanges = PackedRanges(meshlet),
                 MaterialTableOffset = 0xFFFFFFFF,
@@ -685,11 +680,10 @@ public static partial class ClusterBuilder
     {
 
 
-        private uint PackedCounts(int vertexCount, int level, byte deformMaterialIndex)
+        private uint PackedCounts(int vertexCount, int level)
             => (uint)vertexCount
                 | ((uint)(LocalIndices.Count / 3) << 8)
-                | ((uint)(byte)level << 16)
-                | ((uint)deformMaterialIndex << 24);
+                | ((uint)(byte)level << 16);
 
         private static uint PackedMaterials(BuilderMeshlet meshlet)
             => (uint)meshlet.Mat0 | ((uint)meshlet.Mat1 << 8) | ((uint)meshlet.Mat2 << 16);

@@ -42,13 +42,10 @@ public class AssetStorageTests
             AssetGuid materialGuid = AssetGuid.New();
             string materialPath = Path.Combine(dir, "assets", "Materials", "generated.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = materialGuid.ToFlatString(),
                 Name = "GeneratedMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             }, materialPath);
 
             AssetProject project = AssetAuthoring.CreateProject(dir);

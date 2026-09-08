@@ -15,8 +15,10 @@ void ResetShadeBins(uint3 threadId : SV_DispatchThreadID)
 {
     if (threadId.x < Uniforms.ShadeBinCount)
     {
-        BinCounts[threadId.x] = 0u;
-        ScatterCounts[threadId.x] = 0u;
+        BinCounts[threadId.x * 2u] = 0u;
+        BinCounts[threadId.x * 2u + 1u] = 0u;
+        ScatterCounts[threadId.x * 2u] = 0u;
+        ScatterCounts[threadId.x * 2u + 1u] = 0u;
     }
     if (threadId.x == 0u)
         ReserveCounters[0] = 0u;

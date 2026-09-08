@@ -80,6 +80,21 @@ internal sealed class D3D12TestShaderProgram : IDisposable
             SlangCompileTarget.Dxil,
             profileName);
 
+    internal static D3D12TestShaderProgram CompileWithSearchPaths(
+        string moduleName,
+        string source,
+        ReadOnlySpan<D3D12TestShaderEntry> entries,
+        string profileName,
+        params string[] searchPaths) =>
+        CompileModule(
+            moduleName,
+            source,
+            entries,
+            ".slang",
+            SlangCompileTarget.Dxil,
+            profileName,
+            searchPaths: searchPaths);
+
     internal static D3D12TestShaderProgram CompileExperimental(
         string moduleName,
         string source,
@@ -133,7 +148,8 @@ internal sealed class D3D12TestShaderProgram : IDisposable
         string extension,
         SlangCompileTarget target,
         string profileName,
-        string? experimentalStandardModuleRoot = null)
+        string? experimentalStandardModuleRoot = null,
+        string[]? searchPaths = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
@@ -172,7 +188,7 @@ internal sealed class D3D12TestShaderProgram : IDisposable
                 DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
                 SearchPaths = experimentalStandardModuleRoot is not null
                     ? [experimentalStandardModuleRoot]
-                    : null,
+                    : searchPaths,
                 CompilerOptionEntries = options,
             };
             RequireSuccess(

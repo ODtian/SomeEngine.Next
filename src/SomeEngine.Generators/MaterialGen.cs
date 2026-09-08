@@ -148,8 +148,25 @@ public sealed class MaterialGen : IIncrementalGenerator
                 .Append(property.Slot).Append("u, \"").Append(Escape(property.Name))
                 .Append("\", typeof(").Append(property.TypeOf).AppendLine(")),");
         }
-        source.AppendLine("    ];");
-        source.AppendLine("}");
+            source.AppendLine("    ];");
+            source.AppendLine("}");
+            source.AppendLine();
+            source.Append("internal static class __").Append(Sanitize(material.Name))
+                .AppendLine("MaterialRegistration");
+            source.AppendLine("{");
+            source.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+            source.AppendLine("    internal static void Register()");
+            source.AppendLine("    {");
+            source.Append("        global::SomeEngine.Assets.Schema.Material.RegisterGeneratedType<global::")
+                .Append(material.Namespace.Length == 0 ? string.Empty : material.Namespace + ".")
+                .Append(material.Name).Append(">(")
+                .Append('"')
+                .Append(Escape(material.Namespace.Length == 0
+                    ? material.Name
+                    : material.Namespace + "." + material.Name))
+                .AppendLine("\");");
+            source.AppendLine("    }");
+            source.AppendLine("}");
         return source.ToString();
     }
 

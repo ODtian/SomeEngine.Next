@@ -7,6 +7,7 @@ internal sealed unsafe partial class D3D12Backend
 {
     public void BeginRendering(CommandContext context, in RenderingDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         command.RequireRenderingClosed();
         ValidateRenderingDescription(desc);
@@ -117,13 +118,13 @@ internal sealed unsafe partial class D3D12Backend
                 range with { Aspects = TextureAspects.Stencil });
         if (clearFlags == 0)
             return;
-        command.List->ClearDepthStencilView(
-            descriptor,
-            clearFlags,
-            attachment.ClearDepth,
-            attachment.ClearStencil,
-            0,
-            null);
+        CommandExecutionTrace.ClearDepthStencilView(
+                command.List, descriptor,
+                    clearFlags,
+                    attachment.ClearDepth,
+                    attachment.ClearStencil,
+                    0,
+                    null);
     }
 
     private int PrepareRenderingDescription(
@@ -311,6 +312,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void EndRendering(CommandContext context)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         command.RequireRenderingOpen();
 
@@ -399,24 +401,24 @@ internal sealed unsafe partial class D3D12Backend
             command.RenderingColorDestinationRange(index);
         for (uint layer = 0; layer < sourceRange.ArrayLayerCount; layer++)
         {
-            command.List->ResolveSubresourceRegion(
-                destination.Native,
-                NativeSubresource(
-                    destination.Info,
-                    destinationRange.FirstMipLevel,
-                    checked(destinationRange.FirstArrayLayer + layer),
-                    destinationRange.Aspects),
-                0,
-                0,
-                source.Native,
-                NativeSubresource(
-                    source.Info,
-                    sourceRange.FirstMipLevel,
-                    checked(sourceRange.FirstArrayLayer + layer),
-                    sourceRange.Aspects),
-                null,
-                FormatMappings.ToDxgi(command.RenderingColorFormat(index)),
-                command.RenderingColorResolveMode(index));
+            CommandTransferTrace.ResolveSubresourceRegion(
+                        command.List, destination.Native,
+                            NativeSubresource(
+                                destination.Info,
+                                destinationRange.FirstMipLevel,
+                                checked(destinationRange.FirstArrayLayer + layer),
+                                destinationRange.Aspects),
+                            0,
+                            0,
+                            source.Native,
+                            NativeSubresource(
+                                source.Info,
+                                sourceRange.FirstMipLevel,
+                                checked(sourceRange.FirstArrayLayer + layer),
+                                sourceRange.Aspects),
+                            null,
+                            FormatMappings.ToDxgi(command.RenderingColorFormat(index)),
+                            command.RenderingColorResolveMode(index));
         }
     }
 
@@ -460,7 +462,7 @@ internal sealed unsafe partial class D3D12Backend
                     null,
                     NativeSubresource(native.Info, mip, 0, range.Aspects),
                     1);
-                command.List->DiscardResource(native.Native, &nativeRange);
+                CommandExecutionTrace.DiscardResource(command.List, native.Native, &nativeRange);
             }
             return;
         }
@@ -479,7 +481,7 @@ internal sealed unsafe partial class D3D12Backend
                 null,
                 first,
                 range.MipLevelCount);
-            command.List->DiscardResource(native.Native, &nativeRange);
+            CommandExecutionTrace.DiscardResource(command.List, native.Native, &nativeRange);
         }
     }
 

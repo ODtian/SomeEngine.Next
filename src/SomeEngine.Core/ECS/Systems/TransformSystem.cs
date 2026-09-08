@@ -11,6 +11,11 @@ namespace SomeEngine.Core.ECS.Systems;
 
 public sealed class TransformSystem : ISystem<ImmediateSystemContext>
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite OnUpdateTrace = new("ecs", "TransformSystem.OnUpdate");
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateHierarchyTrace = new("ecs", "TransformSystem.UpdateHierarchy");
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateFlatLeafTransformsTrace = new("ecs", "TransformSystem.UpdateFlatLeafTransforms");
+    private static readonly SomeEngine.Diagnostics.TraceSite CollectDirtyRootsTrace = new("ecs", "TransformSystem.CollectDirtyRoots");
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateDirtyRootsTrace = new("ecs", "TransformSystem.UpdateDirtyRoots");
     private readonly List<EntityId> _rootsScratch = [];
     private readonly List<EntityId> _stackScratch = [];
     private readonly List<EntityId> _dirtyRootsScratch = [];
@@ -58,28 +63,28 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
-        using var scope = Profiler.BeginScope("TransformSystem.OnUpdate");
+        using var scope = SomeEngine.Diagnostics.EngineTrace.Begin(OnUpdateTrace);
         World world = context.World;
         Hierarchy.Maintain(world);
 
-        using (Profiler.BeginScope("TransformSystem.UpdateHierarchy"))
+        using (SomeEngine.Diagnostics.EngineTrace.Begin(UpdateHierarchyTrace))
         {
             bool forceChildren = _forceFullUpdate;
             if (!forceChildren)
             {
-                using (Profiler.BeginScope("TransformSystem.UpdateFlatLeafTransforms"))
+                using (SomeEngine.Diagnostics.EngineTrace.Begin(UpdateFlatLeafTransformsTrace))
                 {
                     UpdateFlatLeafTransforms(world, context.LastSystemVersion);
                 }
             }
 
-            using (Profiler.BeginScope("TransformSystem.CollectDirtyRoots"))
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(CollectDirtyRootsTrace))
             {
                 if (!CollectDirtyRoots(world, context.LastSystemVersion))
                     return;
             }
 
-            using (Profiler.BeginScope("TransformSystem.UpdateDirtyRoots"))
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(UpdateDirtyRootsTrace))
             {
                 _updatedSet.Clear();
                 for (int i = 0; i < _dirtyRootsScratch.Count; i++)

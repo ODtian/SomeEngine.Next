@@ -1,5 +1,6 @@
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Validation;
 using Xunit.Sdk;
 
 namespace SomeEngine.RenderGraph.Tests;
@@ -26,11 +27,12 @@ internal sealed class WarpGraphTestSupport : IDisposable
     internal Queue ComputeQueue { get; }
     internal Queue CopyQueue { get; }
 
-    internal static WarpGraphTestSupport Create()
+    internal static WarpGraphTestSupport Create(bool enableValidation = false)
     {
         if (!OperatingSystem.IsWindows())
             throw SkipException.ForSkip("D3D12 WARP requires Windows.");
-        IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        IGraphicsBackend native = D3D12GraphicsBackend.Create();
+        IGraphicsBackend backend = enableValidation ? new ValidationLayer(native) : native;
         try
         {
             AdapterEnumerationOptions options = new(

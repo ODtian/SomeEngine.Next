@@ -132,10 +132,18 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
 {
     private ClusterRasterPipeline(
         ShaderProgram program,
-        GraphicsPipeline pipeline)
+        GraphicsPipeline pipeline, bool usesMesh)
         : base(program, pipeline)
     {
+        UsesMesh = usesMesh;
     }
+
+    internal bool UsesMesh { get; }
+
+    internal static bool SupportsMesh(IGraphicsBackend backend, Device device) =>
+        backend.TryGetCapability(device, out MeshShaders? mesh) && mesh is not null &&
+        mesh.IndirectDispatch && mesh.MaximumThreadsPerGroup >= 32 &&
+        mesh.MaximumOutputVertices >= 96 && mesh.MaximumOutputPrimitives >= 64;
 
     internal static ClusterRasterPipeline Create(
         IGraphicsBackend backend,
@@ -151,7 +159,10 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
         uint sampleCount = 1,
         string? name = null,
         uint sampleMask = uint.MaxValue,
-        bool alphaToCoverage = false)
+        bool alphaToCoverage = false,
+        ReadOnlySpan<VertexBufferLayout> vertexBuffers = default,
+        ReadOnlySpan<VertexAttribute> vertexAttributes = default,
+        ShaderStage geometryStage = ShaderStage.Vertex)
     {
         GraphicsPipeline? pipeline = null;
         try
@@ -159,7 +170,7 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
             CookedShaderEntry vertex = shader.RequireEntry(
                 device.Capabilities.ShaderTarget,
                 vertexEntryPoint,
-                ShaderStage.Vertex);
+                geometryStage);
             CookedShaderEntry pixel = shader.RequireEntry(
                 device.Capabilities.ShaderTarget,
                 pixelEntryPoint,
@@ -178,8 +189,8 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 vertex.Program,
                 vertex.EntryPoint,
                 pixel.EntryPoint,
-                vertexBuffers: default,
-                vertexAttributes: default,
+                vertexBuffers,
+                vertexAttributes,
                 PrimitiveTopology.TriangleList,
                 StripCut.Disabled,
                 rasterizer,
@@ -189,8 +200,14 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 attachments,
                 DynamicStates.Viewport | DynamicStates.Scissor,
                 name);
-            pipeline = backend.CreateGraphicsPipeline(device, description);
-            return new ClusterRasterPipeline(vertex.Program, pipeline);
+            bool usesMesh = geometryStage == ShaderStage.Mesh;
+            pipeline = usesMesh
+                ? backend.CreateMeshPipeline(device, new MeshPipelineDesc(
+                    vertex.Program, vertex.EntryPoint, ShaderEntryPoint.Null, pixel.EntryPoint,
+                    rasterizer, multisample, depthStencil, blend, attachments,
+                    DynamicStates.Viewport | DynamicStates.Scissor, name))
+                : backend.CreateGraphicsPipeline(device, description);
+            return new ClusterRasterPipeline(vertex.Program, pipeline, usesMesh);
         }
         catch (Exception primary)
         {

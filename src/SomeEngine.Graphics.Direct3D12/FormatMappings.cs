@@ -41,6 +41,8 @@ internal static class FormatMappings
         Format.R32UInt => DxgiFormat.FormatR32Uint,
         Format.R32SInt => DxgiFormat.FormatR32Sint,
         Format.R32Float => DxgiFormat.FormatR32Float,
+        // Shader Model 6.6 exposes typed 64-bit UAV atomics through R32G32_UINT.
+        Format.R64UInt => DxgiFormat.FormatR32G32Uint,
         Format.R32G32UInt => DxgiFormat.FormatR32G32Uint,
         Format.R32G32SInt => DxgiFormat.FormatR32G32Sint,
         Format.R32G32Float => DxgiFormat.FormatR32G32Float,
@@ -136,7 +138,7 @@ internal static class FormatMappings
             Format.D24UNormS8UInt or Format.D32Float => 4,
         Format.R16G16B16A16UNorm or Format.R16G16B16A16SNorm or
             Format.R16G16B16A16UInt or Format.R16G16B16A16SInt or
-            Format.R16G16B16A16Float or Format.R32G32UInt or Format.R32G32SInt or
+            Format.R16G16B16A16Float or Format.R64UInt or Format.R32G32UInt or Format.R32G32SInt or
             Format.R32G32Float or Format.D32FloatS8UInt => 8,
         Format.R32G32B32Float => 12,
         Format.R32G32B32A32UInt or Format.R32G32B32A32SInt or
@@ -186,7 +188,7 @@ internal static class FormatMappings
             Format.R16UInt or Format.R16SInt or
             Format.R16G16UInt or Format.R16G16SInt or
             Format.R16G16B16A16UInt or Format.R16G16B16A16SInt or
-            Format.R32UInt or Format.R32SInt or
+            Format.R32UInt or Format.R32SInt or Format.R64UInt or
             Format.R32G32UInt or Format.R32G32SInt or
             Format.R32G32B32A32UInt or Format.R32G32B32A32SInt;
     }
@@ -243,7 +245,7 @@ internal static class FormatMappings
             DxgiFormat.FormatR16G16B16A16Typeless,
         Format.R32UInt or Format.R32SInt or Format.R32Float or Format.D32Float =>
             DxgiFormat.FormatR32Typeless,
-        Format.R32G32UInt or Format.R32G32SInt or Format.R32G32Float =>
+        Format.R64UInt or Format.R32G32UInt or Format.R32G32SInt or Format.R32G32Float =>
             DxgiFormat.FormatR32G32Typeless,
         Format.R32G32B32Float => DxgiFormat.FormatR32G32B32Typeless,
         Format.R32G32B32A32UInt or Format.R32G32B32A32SInt or

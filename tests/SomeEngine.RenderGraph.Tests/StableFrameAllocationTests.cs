@@ -108,6 +108,85 @@ public sealed class StableFrameAllocationTests
     }
 
     [Fact]
+    public void StableRegisteredTextureFrameDoesNotAllocateAfterWarmup()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        TextureDesc description = new(
+            TextureDimension.Texture2D,
+            width: 16,
+            height: 16,
+            depth: 1,
+            mipLevelCount: 1,
+            arrayLayerCount: 1,
+            sampleCount: 1,
+            format: Format.R8G8B8A8UNorm,
+            usages: TextureUsages.CopyDestination);
+        using Texture texture = support.Backend.CreateTexture(support.Device, description);
+        using var graph = new RenderGraph(
+            support.Backend,
+            support.Device,
+            [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphTextureId textureId = edit.RegisterExternalTexture(
+                texture,
+                [new TextureBoundaryState(
+                    range,
+                    texture.InitialSync,
+                    texture.InitialAccess,
+                    texture.InitialLayout,
+                    ResourceContentState.Undefined)]);
+            _ = edit.AddCopyPass<GraphTextureId, byte>(
+                "stable registered texture write",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                textureId,
+                new PassOptions(
+                    Culling: PassCullingMode.NeverCull,
+                    Recording: PassRecordingMode.CallingThread),
+                (ref PassDefinition access, ref GraphTextureId target) =>
+                    _ = access.Write(
+                        target,
+                        range,
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        TextureLayout.CopyDestination,
+                        WriteCoverage.Complete),
+                static (ref CopyPassCommandScope _, in GraphTextureId _, in byte _) => { });
+            edit.Commit();
+        }
+
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int frameIndex = 0; frameIndex < 32; frameIndex++)
+            ExecuteSubmittedFrame(graph, support, completions);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        for (int frameIndex = 0; frameIndex < 8; frameIndex++)
+            ExecuteSubmittedFrame(graph, support, completions);
+
+        long allocated = 0;
+        for (int frameIndex = 0; frameIndex < 128; frameIndex++)
+        {
+            completions.AsSpan().Clear();
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            using RenderGraphFrame frame = graph.BeginFrame();
+            if (frame.Execute(completions) != 1)
+                throw new InvalidOperationException(
+                    "The stable texture graph did not submit one Queue.");
+            allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+            support.Wait(completions);
+        }
+
+        Assert.True(
+            allocated == 0,
+            $"A stable registered texture graph allocated {allocated} managed bytes " +
+            "across 128 frames.");
+    }
+
+    [Fact]
     public void CommittedEditInvalidatesStableTransientExecution()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
@@ -239,9 +318,9 @@ public sealed class StableFrameAllocationTests
     }
 
     [Fact]
-    public void FirstUseCompleteBufferWriteDoesNotEmitAnEmptyTransition()
+    public void CachedCompleteBufferWriteEstablishesReusablePhysicalState()
     {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
         using var graph = new RenderGraph(
             support.Backend,
             support.Device,
@@ -264,7 +343,8 @@ public sealed class StableFrameAllocationTests
             completions,
             new RenderGraphFrameOptions(Diagnostics: CaptureStatistics));
 
-        Assert.Equal(0, statistics.BarrierCount);
+        Assert.Equal(support.Device.Capabilities.SupportsConcurrentBufferReads ? 0 : 1, statistics.BarrierCount);
+        ExecuteSubmittedFrame(graph, support, completions);
 
         void CaptureStatistics(in RenderGraphDiagnosticsView diagnostics) =>
             statistics = diagnostics.Statistics;

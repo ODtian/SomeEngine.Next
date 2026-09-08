@@ -327,8 +327,8 @@ internal static class RenderGraphCpuBenchmark
                 1,
                 false,
                 graphicsBackend == GraphicsBackendKind.Direct3D12,
-                statistics.LogicalTransientBytes,
-                statistics.PhysicalTransientBytes),
+                statistics.TransientResourceBytes,
+                statistics.TransientHeapBytes),
             $"Immediately before RenderGraph.BeginFrame through real {graphicsBackend} command-buffer close and Queue.Submit return; frame-slot GPU wait is outside.",
             minimumWarmupFrames,
             measurement.Warmup.Length,
@@ -532,9 +532,6 @@ internal static class RenderGraphCpuBenchmark
             PassCullingMode.NeverCull,
             PassSchedulingMode.PreserveDeclarationPosition,
             recording,
-            state.Kind == DagorPassKind.Raster
-                ? RasterPassMergeMode.Mergeable
-                : RasterPassMergeMode.Isolated,
             EstimatedExecutionCost: executionCost,
             EstimatedRecordingCost: recordingCost);
         string label = $"Dagor {state.Kind.ToString().ToLowerInvariant()} {state.KindOrdinal:D2} pass {pass:D2}";

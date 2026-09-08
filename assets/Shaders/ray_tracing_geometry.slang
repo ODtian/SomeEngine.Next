@@ -65,7 +65,7 @@ void BuildRayTracingGeometry(uint3 dispatchThreadId : SV_DispatchThreadID)
     LoadRayTracingClusterInfo(
         PageHeap,
         request.PageOffset,
-        request.ClusterID,
+        DrawRequestClusterID(request),
         vertexBlobAddress,
         vertexBlobSize,
         triangleStart,

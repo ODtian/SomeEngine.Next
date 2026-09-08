@@ -56,8 +56,8 @@ internal readonly record struct GraphicsCpuWorkloadShape(
     int FrameSlotCount,
     bool SplitBarriersEnabled,
     bool QueueSpecificCommonLayouts,
-    ulong LogicalTransientBytes,
-    ulong PhysicalTransientBytes);
+    ulong TransientResourceBytes,
+    ulong TransientHeapBytes);
 
 internal readonly record struct GraphicsCpuFrameSample(
     int FrameIndex,

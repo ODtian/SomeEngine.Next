@@ -9,6 +9,74 @@ namespace SomeEngine.Render.Tests;
 public sealed class RenderInstanceStorageUpdateTests
 {
     [Fact]
+    public void Changed_chunks_survive_skipped_frames_and_exclude_abandoned_updates()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        RenderInstancePropertyLayout layout = CreateLayout(out var first, out var second);
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend);
+        using var renderDevice = new RenderDevice(backend, device);
+        using var coordinator = new RenderFrameCoordinator(renderDevice);
+        var instances = new RenderInstanceStorageSystem(backend, device, coordinator, new RenderWorld(), layout,
+            new RenderInstanceOptions { RowCapacity = 256, BatchCapacity = 4 });
+        RenderInstanceBatch batch;
+        Assert.True(coordinator.TryBeginPrepare(out RenderPrepareScope? create));
+        using (create)
+        {
+            using (RenderInstanceWriteScope write = instances.OpenWrite(create))
+            using (RenderInstanceWriteHandle handle = instances.AllocateBatch(create, write, layout, 130))
+            {
+                RenderInstanceWriteSlice destination = handle.OpenWrite(layout);
+                destination.BindPerInstance(first);
+                destination.BindShared(second, 0u);
+                destination.Write(first, new uint[130]);
+                batch = handle.Publish();
+            }
+            create.Commit();
+        }
+        ulong original = batch.ContentRevision, middle = 0;
+        foreach (int row in new[] { 1, 129, 64 })
+        {
+            Assert.True(coordinator.TryBeginPrepare(out RenderPrepareScope? update));
+            using (update)
+            {
+                using (RenderInstanceWriteScope write = instances.OpenWrite(update))
+                using (RenderInstanceWriteHandle handle = instances.RewriteBatch(update, write, batch, layout))
+                {
+                    RenderInstanceWriteSlice destination = handle.OpenWrite(layout);
+                    destination.BindPerInstance(first);
+                    destination.Slice(row, 1).Write(first, new uint[] { 123u });
+                    if (row != 64) _ = handle.Publish();
+                }
+                update.Commit();
+            }
+            if (row == 1) middle = batch.ContentRevision;
+        }
+        var changed = new List<uint>();
+        batch.CollectChangedInstances(original, changed);
+        Assert.Equal([1u, 129u], changed);
+        changed.Clear();
+        batch.CollectChangedInstances(middle, changed);
+        Assert.Equal(new uint[] { 129 }, changed);
+        changed.Clear();
+        batch.CollectChangedInstances(batch.ContentRevision, changed);
+        Assert.Empty(changed);
+        var shared = new uint[130];
+        Array.Fill(shared, uint.MaxValue);
+        instances.Storage.ReadInstances(batch, second, shared.AsSpan());
+        Assert.All(shared, value => Assert.Equal(0u, value));
+        Assert.True(coordinator.TryBeginPrepare(out RenderPrepareScope? shutdown));
+        using (shutdown)
+        {
+            using (RenderInstanceWriteScope write = instances.OpenWrite(shutdown))
+                instances.Retire(shutdown, write, batch);
+            instances.Shutdown(shutdown);
+            shutdown.Commit();
+        }
+        instances.Dispose();
+    }
+
+    [Fact]
     public void PartialRewritePreservesUntouchedPropertiesAcrossUploadGenerations()
     {
         if (!OperatingSystem.IsWindows())
@@ -79,6 +147,9 @@ public sealed class RenderInstanceStorageUpdateTests
         Assert.Equal(7u, instances.Storage.ReadInstance(batch, 1, first));
         Assert.Equal(10u, instances.Storage.ReadInstance(batch, 0, second));
         Assert.Equal(20u, instances.Storage.ReadInstance(batch, 1, second));
+        uint[] bulk = new uint[2];
+        instances.Storage.ReadInstances(batch, first, bulk.AsSpan());
+        Assert.Equal(new uint[] { 1, 7 }, bulk);
 
         Assert.True(coordinator.TryBeginPrepare(out RenderPrepareScope? shutdown));
         using (shutdown)

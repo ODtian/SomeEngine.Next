@@ -72,20 +72,22 @@ public sealed class VulkanPipelineTests
         Assert.Equal(PipelineType.Compute, compute.Type);
     }
 
-    [Fact]
-    public void Multiple_compute_entries_execute_the_requested_spirv_entry_point()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Multiple_compute_entries_execute_the_requested_spirv_entry_point(bool requireWave32)
     {
         const string source = """
             RWStructuredBuffer<uint> Output;
             [shader("compute")]
             [numthreads(1, 1, 1)]
-            void writeEleven(uint3 id : SV_DispatchThreadID) { Output[0] = 11; }
+            void writeEleven(uint3 id : SV_DispatchThreadID) { Output[0] = 11; Output[1] = WaveGetLaneCount(); }
             [shader("compute")]
             [numthreads(1, 1, 1)]
-            void writeTwentyTwo(uint3 id : SV_DispatchThreadID) { Output[0] = 22; }
+            void writeTwentyTwo(uint3 id : SV_DispatchThreadID) { Output[0] = 22; Output[1] = WaveGetLaneCount(); }
             """;
         using VulkanTestShaderProgram shader = VulkanTestShaderProgram.Compile(
-            source,
+            requireWave32 ? source.Replace("[numthreads", "[WaveSize(32)] [numthreads", StringComparison.Ordinal) : source,
             ("writeEleven", SlangStage.Compute),
             ("writeTwentyTwo", SlangStage.Compute));
         ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -101,13 +103,13 @@ public sealed class VulkanPipelineTests
             new ComputePipelineDesc(shader.Program, shader.Entries[1]));
         using Buffer output = backend.CreateBuffer(
             device,
-            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+            new BufferDesc(8, BufferUsages.ShaderWrite | BufferUsages.CopySource));
         using BufferUav outputUav = backend.CreateBufferUav(
             device,
             new BufferUavDesc(output, BufferRange.Whole, StructureStride: sizeof(uint)));
         using Buffer readback = backend.CreateBuffer(
             device,
-            new BufferDesc(8, BufferUsages.CopyDestination),
+            new BufferDesc(16, BufferUsages.CopyDestination),
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
@@ -115,7 +117,7 @@ public sealed class VulkanPipelineTests
 
         backend.Begin(context);
         Record(first, 0);
-        Record(second, sizeof(uint));
+        Record(second, 2 * sizeof(uint));
         using RecordedCommands commands = backend.End(context);
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         QueueCompletion completion = backend.Submit(
@@ -127,7 +129,12 @@ public sealed class VulkanPipelineTests
         using MappedBuffer mapped = backend.Map(readback, MapType.Read, BufferRange.Whole);
         mapped.Invalidate(mapped.Range);
         Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes[..4]));
-        Assert.Equal(22u, BitConverter.ToUInt32(mapped.Bytes[4..8]));
+        Assert.Equal(22u, BitConverter.ToUInt32(mapped.Bytes[8..12]));
+        if (requireWave32)
+        {
+            Assert.Equal(32u, BitConverter.ToUInt32(mapped.Bytes[4..8]));
+            Assert.Equal(32u, BitConverter.ToUInt32(mapped.Bytes[12..16]));
+        }
 
         void Record(Pipeline pipeline, ulong readbackOffset)
         {
@@ -156,7 +163,7 @@ public sealed class VulkanPipelineTests
                 0,
                 readback,
                 readbackOffset,
-                sizeof(uint)));
+                2 * sizeof(uint)));
         }
     }
 

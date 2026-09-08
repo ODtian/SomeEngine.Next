@@ -12,7 +12,7 @@ internal sealed class ClusterCullingHistory : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly uint _viewCapacity;
+    private readonly uint _viewCount;
     private readonly Texture[] _hiZ = new Texture[2];
     private readonly TextureBoundaryState[] _hiZEndpoints = new TextureBoundaryState[2];
     private readonly bool[] _slotContentsAvailable = new bool[2];
@@ -32,18 +32,18 @@ internal sealed class ClusterCullingHistory : IDisposable
     internal ClusterCullingHistory(
         IGraphicsBackend backend,
         Device device,
-        uint viewCapacity)
+        uint viewCount)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        ArgumentOutOfRangeException.ThrowIfZero(viewCapacity);
-        _viewCapacity = viewCapacity;
-        int capacity = checked((int)viewCapacity);
-        _hasPreviousView = new bool[capacity];
-        _previousViews = new Matrix4x4[capacity];
-        _previousProjections = new Matrix4x4[capacity];
-        _pendingViews = new Matrix4x4[capacity];
-        _pendingProjections = new Matrix4x4[capacity];
+        ArgumentOutOfRangeException.ThrowIfZero(viewCount);
+        _viewCount = viewCount;
+        int count = checked((int)viewCount);
+        _hasPreviousView = new bool[count];
+        _previousViews = new Matrix4x4[count];
+        _previousProjections = new Matrix4x4[count];
+        _pendingViews = new Matrix4x4[count];
+        _pendingProjections = new Matrix4x4[count];
     }
 
     internal int HiZMipCount => _hiZMips;
@@ -129,7 +129,7 @@ internal sealed class ClusterCullingHistory : IDisposable
                     checked((uint)height),
                     1,
                     checked((uint)hiZMips),
-                    _viewCapacity,
+                    _viewCount,
                     1,
                     Format.R32Float,
                     TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
@@ -173,7 +173,9 @@ internal sealed class ClusterCullingHistory : IDisposable
     /// Publishes camera state and rotates slots only after a successful graph execute. Stores the
     /// frame completions as the physical readiness of both slots touched by the graph.
     /// </summary>
-    internal void Commit(ReadOnlySpan<QueueCompletion> completions)
+    internal void Commit(
+        ReadOnlySpan<QueueCompletion> completions,
+        bool currentHiZWritten)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_width == 0)
@@ -183,15 +185,17 @@ internal sealed class ClusterCullingHistory : IDisposable
         QueueCompletion graphicsCompletion = FindGraphicsCompletion(completions);
         int writeIndex = _writeIndex;
         int previousIndex = PreviousIndex;
-        TextureBoundaryState writeHiZ = ShaderReadEndpoint(
-            _hiZ[writeIndex], TextureAspects.Color, graphicsCompletion);
         TextureBoundaryState previousHiZ = ShaderReadEndpoint(
             _hiZ[previousIndex], TextureAspects.Color, graphicsCompletion);
 
-        _hiZEndpoints[writeIndex] = writeHiZ;
         _hiZEndpoints[previousIndex] = previousHiZ;
-        _slotContentsAvailable[writeIndex] = true;
         _slotContentsAvailable[previousIndex] = true;
+        if (currentHiZWritten)
+        {
+            _hiZEndpoints[writeIndex] = ShaderReadEndpoint(
+                _hiZ[writeIndex], TextureAspects.Color, graphicsCompletion);
+            _slotContentsAvailable[writeIndex] = true;
+        }
         for (int index = 0; index < _pendingViewCount; index++)
         {
             _previousViews[index] = _pendingViews[index];
@@ -200,7 +204,8 @@ internal sealed class ClusterCullingHistory : IDisposable
         }
         for (int index = _pendingViewCount; index < _hasPreviousView.Length; index++)
             _hasPreviousView[index] = false;
-        _writeIndex = 1 - _writeIndex;
+        if (currentHiZWritten)
+            _writeIndex = 1 - _writeIndex;
         ClearPending();
     }
 
@@ -234,7 +239,7 @@ internal sealed class ClusterCullingHistory : IDisposable
         QueueCompletion completion) =>
         new(
             FullRange(texture, aspects),
-            PipelineSync.AllShading,
+            PipelineSync.ComputeShading,
             ResourceAccess.ShaderResource,
             TextureLayout.ShaderResource,
             ResourceContentState.Defined,

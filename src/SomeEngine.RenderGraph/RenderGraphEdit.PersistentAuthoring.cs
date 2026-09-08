@@ -37,8 +37,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddRasterFramePass<TState>(
         string label,
@@ -62,8 +61,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new RasterFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddComputeFramePass<TState>(
         string label,
@@ -84,8 +82,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddComputeFramePass<TState>(
         string label,
@@ -109,8 +106,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new ComputeFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddCopyFramePass<TState>(
         string label,
@@ -131,8 +127,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new CopyFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphPassId AddGeneralFramePass<TState>(
         string label,
@@ -153,8 +148,7 @@ public ref partial struct RenderGraphEdit
             declaration,
             new GeneralFrameOnlyPassCallbackStorage<TState>(
                 declarationState,
-                callback,
-                Graph.FrameSlotCount));
+                callback));
 
     public GraphBufferCbvId CreateBufferCbv(
         GraphBufferId buffer,

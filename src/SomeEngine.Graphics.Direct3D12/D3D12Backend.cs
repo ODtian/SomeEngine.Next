@@ -141,6 +141,7 @@ internal sealed unsafe partial class D3D12Backend :
         Span<AdapterInfo> destination,
         out int requiredCount)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         ThrowIfDisposed();
         IDXGIFactory6* factory = EnsureFactory();
         GpuPreference preference = ToGpuPreference(options.Preference);
@@ -150,8 +151,8 @@ internal sealed unsafe partial class D3D12Backend :
         {
             IDXGIAdapter4* adapter = null;
             Guid iid = IDXGIAdapter4.Guid;
-            int result = factory->EnumAdapterByGpuPreference(
-                index,
+            int result = PresentationTrace.EnumAdapterByGpuPreference(
+factory, index,
                 preference,
                 &iid,
                 (void**)&adapter);
@@ -165,7 +166,7 @@ internal sealed unsafe partial class D3D12Backend :
                 AdapterDesc3 native = default;
                 ThrowIfFailed(
                     null,
-                    adapter->GetDesc3(&native),
+                        PresentationTrace.GetDesc3(adapter, &native),
                     NativeOperationType.Ordinary,
                     "IDXGIAdapter4::GetDesc3");
 
@@ -176,7 +177,7 @@ internal sealed unsafe partial class D3D12Backend :
             finally
             {
                 if (adapter is not null)
-                    _ = adapter->Release();
+                    _ = PresentationTrace.Release(adapter);
             }
         }
 
@@ -190,6 +191,7 @@ internal sealed unsafe partial class D3D12Backend :
 
     public Device CreateDevice(in DeviceDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         ThrowIfDisposed();
         ValidateDeviceDescription(desc);
         lock (_gate)
@@ -217,7 +219,7 @@ internal sealed unsafe partial class D3D12Backend :
         finally
         {
             if (adapter is not null)
-                _ = adapter->Release();
+                _ = PresentationTrace.Release(adapter);
         }
     }
 
@@ -281,6 +283,7 @@ internal sealed unsafe partial class D3D12Backend :
 
     public Surface CreateSurface(in SurfaceDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         ThrowIfDisposed();
         if (desc.Type != NativeWindowType.Win32)
             throw new ArgumentOutOfRangeException(nameof(desc), "Direct3D 12 supports Win32 surfaces.");
@@ -314,7 +317,7 @@ internal sealed unsafe partial class D3D12Backend :
 
             if (_factory is not null)
             {
-                _ = _factory->Release();
+                _ = PresentationTrace.Release(_factory);
                 _factory = null;
             }
         }
@@ -322,6 +325,7 @@ internal sealed unsafe partial class D3D12Backend :
 
     public void Dispose()
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         if (!_disposeGate.TryEnter())
             return;
 
@@ -378,18 +382,18 @@ internal sealed unsafe partial class D3D12Backend :
         {
             if (_factory is not null)
             {
-                _ = _factory->Release();
+                _ = PresentationTrace.Release(_factory);
                 _factory = null;
             }
             if (_deviceFactory is not null)
             {
-                _ = _deviceFactory->Release();
+                _ = DeviceQueryTrace.Release(_deviceFactory);
                 _deviceFactory = null;
             }
             if (_sdkConfiguration is not null)
             {
-                _sdkConfiguration->FreeUnusedSDKs();
-                _ = _sdkConfiguration->Release();
+                ResourceTrace.FreeUnusedSDKs(_sdkConfiguration);
+                _ = ResourceTrace.Release(_sdkConfiguration);
                 _sdkConfiguration = null;
             }
         }
@@ -462,8 +466,8 @@ internal sealed unsafe partial class D3D12Backend :
     private bool SupportsDirect3D12(IDXGIAdapter4* adapter)
     {
         Guid iid = ID3D12Device.Guid;
-        int result = _deviceFactory->CreateDevice(
-            (IUnknown*)adapter,
+        int result = DevicePipelineTrace.CreateDevice(
+_deviceFactory, (IUnknown*)adapter,
             D3DFeatureLevel.Level120,
             &iid,
             null);
@@ -481,8 +485,8 @@ internal sealed unsafe partial class D3D12Backend :
         {
             IDXGIAdapter4* adapter = null;
             Guid iid = IDXGIAdapter4.Guid;
-            int result = factory->EnumAdapterByGpuPreference(
-                index,
+            int result = PresentationTrace.EnumAdapterByGpuPreference(
+factory, index,
                 GpuPreference.HighPerformance,
                 &iid,
                 (void**)&adapter);
@@ -493,7 +497,7 @@ internal sealed unsafe partial class D3D12Backend :
             AdapterDesc3 native = default;
             try
             {
-                ThrowIfFailed(null, adapter->GetDesc3(&native), NativeOperationType.Ordinary, "IDXGIAdapter4::GetDesc3");
+                ThrowIfFailed(null, PresentationTrace.GetDesc3(adapter, &native), NativeOperationType.Ordinary, "IDXGIAdapter4::GetDesc3");
                 AdapterInfo candidate = ToAdapterInfo(adapter, native);
                 if ((id.IsDefault || candidate.Id == id) && SupportsDirect3D12(adapter))
                 {
@@ -503,23 +507,23 @@ internal sealed unsafe partial class D3D12Backend :
             }
             catch
             {
-                _ = adapter->Release();
+                _ = PresentationTrace.Release(adapter);
                 throw;
             }
 
-            _ = adapter->Release();
+            _ = PresentationTrace.Release(adapter);
         }
 
         if (!id.IsDefault)
         {
             IDXGIAdapter4* warp = null;
             Guid warpIid = IDXGIAdapter4.Guid;
-            int warpResult = factory->EnumWarpAdapter(&warpIid, (void**)&warp);
+            int warpResult = PresentationTrace.EnumWarpAdapter(factory, &warpIid, (void**)&warp);
             ThrowIfFailed(null, warpResult, NativeOperationType.Ordinary, "IDXGIFactory4::EnumWarpAdapter");
             AdapterDesc3 native = default;
             try
             {
-                ThrowIfFailed(null, warp->GetDesc3(&native), NativeOperationType.Ordinary, "IDXGIAdapter4::GetDesc3");
+                ThrowIfFailed(null, PresentationTrace.GetDesc3(warp, &native), NativeOperationType.Ordinary, "IDXGIAdapter4::GetDesc3");
                 AdapterInfo candidate = ToAdapterInfo(warp, native);
                 if (!id.IsDefault && candidate.Id == id && SupportsDirect3D12(warp))
                 {
@@ -529,11 +533,11 @@ internal sealed unsafe partial class D3D12Backend :
             }
             catch
             {
-                _ = warp->Release();
+                _ = PresentationTrace.Release(warp);
                 throw;
             }
 
-            _ = warp->Release();
+            _ = PresentationTrace.Release(warp);
         }
 
         throw new GraphicsException(
@@ -587,7 +591,7 @@ internal sealed unsafe partial class D3D12Backend :
     {
         Guid interfaceId = IDXGIDevice.Guid;
         long version = 0;
-        int result = adapter->CheckInterfaceSupport(&interfaceId, &version);
+        int result = PresentationTrace.CheckInterfaceSupport(adapter, &interfaceId, &version);
         if (result == DxgiErrorUnsupported)
             return "unavailable";
         ThrowIfFailed(null, result, NativeOperationType.Ordinary, "IDXGIAdapter::CheckInterfaceSupport");
@@ -603,8 +607,8 @@ internal sealed unsafe partial class D3D12Backend :
         ID3D12Debug1* debug = null;
         Guid classId = DebugClassId;
         Guid iid = ID3D12Debug1.Guid;
-        int result = _deviceFactory->GetConfigurationInterface(
-            &classId,
+        int result = DeviceQueryTrace.GetConfigurationInterface(
+_deviceFactory, &classId,
             &iid,
             (void**)&debug);
         if (result < 0 && result is not ENoInterface and not DxgiErrorSdkComponentMissing)
@@ -619,22 +623,22 @@ internal sealed unsafe partial class D3D12Backend :
         {
             try
             {
-                debug->EnableDebugLayer();
+                DeviceDebugTrace.EnableDebugLayer(debug);
                 _debugLayerEnabled = true;
                 if (!options.DisableGpuBasedValidation)
                 {
-                    debug->SetEnableGPUBasedValidation(true);
+                    DeviceDebugTrace.SetEnableGPUBasedValidation(debug, true);
                     _gpuBasedValidationEnabled = true;
                 }
                 if (!options.DisableSynchronizedQueueValidation)
                 {
-                    debug->SetEnableSynchronizedCommandQueueValidation(true);
+                    DeviceDebugTrace.SetEnableSynchronizedCommandQueueValidation(debug, true);
                     _synchronizedQueueValidationEnabled = true;
                 }
             }
             finally
             {
-                _ = debug->Release();
+                _ = DeviceDebugTrace.Release(debug);
             }
         }
 
@@ -643,8 +647,8 @@ internal sealed unsafe partial class D3D12Backend :
             ID3D12DeviceRemovedExtendedDataSettings1* dred = null;
             classId = DredClassId;
             iid = ID3D12DeviceRemovedExtendedDataSettings1.Guid;
-            result = _deviceFactory->GetConfigurationInterface(
-                &classId,
+            result = DeviceQueryTrace.GetConfigurationInterface(
+_deviceFactory, &classId,
                 &iid,
                 (void**)&dred);
             if (result < 0 && result is not ENoInterface and not DxgiErrorSdkComponentMissing)
@@ -666,14 +670,14 @@ internal sealed unsafe partial class D3D12Backend :
             {
                 try
                 {
-                    dred->SetAutoBreadcrumbsEnablement(DredEnablement.ForcedOn);
-                    dred->SetPageFaultEnablement(DredEnablement.ForcedOn);
-                    dred->SetBreadcrumbContextEnablement(DredEnablement.ForcedOn);
+                    DeviceDebugTrace.SetAutoBreadcrumbsEnablement(dred, DredEnablement.ForcedOn);
+                    DeviceDebugTrace.SetPageFaultEnablement(dred, DredEnablement.ForcedOn);
+                    DeviceDebugTrace.SetBreadcrumbContextEnablement(dred, DredEnablement.ForcedOn);
                     _dredEnabled = true;
                 }
                 finally
                 {
-                    _ = dred->Release();
+                    _ = DeviceDebugTrace.Release(dred);
                 }
             }
         }
@@ -697,8 +701,8 @@ internal sealed unsafe partial class D3D12Backend :
             iid = ID3D12DeviceFactory.Guid;
             ThrowIfFailed(
                 null,
-                configuration->CreateDeviceFactory(
-                    AgilitySdkVersion,
+                    ResourceTrace.CreateDeviceFactory(
+                configuration, AgilitySdkVersion,
                     sdkPath,
                     &iid,
                     (void**)&factory),
@@ -719,9 +723,9 @@ internal sealed unsafe partial class D3D12Backend :
         finally
         {
             if (factory is not null)
-                _ = factory->Release();
+                _ = DeviceQueryTrace.Release(factory);
             if (configuration is not null)
-                _ = configuration->Release();
+                _ = ResourceTrace.Release(configuration);
         }
     }
 

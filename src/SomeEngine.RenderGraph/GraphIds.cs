@@ -250,3 +250,35 @@ public readonly struct PassRenderingRegionId : IEquatable<PassRenderingRegionId>
     public static bool operator !=(PassRenderingRegionId left, PassRenderingRegionId right) => !left.Equals(right);
 }
 
+/// <summary>A buffer slice supplied each frame to an existing graph connection.</summary>
+public sealed class GraphBufferInput
+{
+    internal GraphBufferInput(ulong graph, BufferUsages usages)
+    {
+        Graph = graph;
+        Usages = usages;
+    }
+
+    internal ulong Graph { get; }
+    internal BufferUsages Usages { get; }
+}
+
+/// <summary>A texture supplied each frame to existing views and pass accesses.</summary>
+public sealed class GraphTextureInput
+{
+    internal GraphTextureInput(ulong graph) => Graph = graph;
+    internal ulong Graph { get; }
+}
+
+/// <summary>A shader resource position whose current imported resource is supplied by each frame.</summary>
+public sealed class GraphParameterInput
+{
+    internal GraphParameterInput(ulong graph, ResourceBindingType type)
+    {
+        Graph = graph;
+        Type = type;
+    }
+
+    internal ulong Graph { get; }
+    public ResourceBindingType Type { get; }
+}

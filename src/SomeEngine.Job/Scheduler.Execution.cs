@@ -18,6 +18,9 @@ internal sealed partial class Scheduler
                 completedWorkItems: abandonedWorkItems);
         }
 
+        using var association = SomeEngine.Diagnostics.EngineTrace.IsEnabled
+            ? SomeEngine.Diagnostics.EngineTrace.Associate(_execution.GetTraceContext(handle)) : default;
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Execute);
         ScopeToken previousScope = s_currentScope;
         ScopeToken nextScope = ScopeToken.FromHandle(handle);
         JobExecutionContext.Enter();

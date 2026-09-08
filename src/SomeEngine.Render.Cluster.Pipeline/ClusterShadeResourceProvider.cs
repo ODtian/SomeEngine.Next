@@ -5,12 +5,19 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 /// <summary>
 /// Binds one feature-owned resource required by a final linked material stage entry. Providers are
-/// resolved while the retained graph is reconciled, so frame recording invokes a fixed delegate
-/// and performs no feature-name lookup or shader reflection.
+/// resolved and connected while the graph is reconciled. Each frame only supplies resource values.
 /// </summary>
 public delegate void ClusterStageResourceBinder(
-    ref RenderGraphFrame graph,
+    ref RenderGraphEdit graph,
     ref PassDefinition pass);
+
+/// <summary>
+/// Gives a feature adapter the source view templates from which it emits flat raster
+/// invocations. The adapter owns its conversion pass and output storage.
+/// </summary>
+public delegate void ClusterInvocationSourceBinder(
+    ref RenderGraphFrame graph,
+    GraphBufferSlice sourceViews);
 
 /// <summary>
 /// Resolves feature resources reflected from final linked material stages. Implementations own the

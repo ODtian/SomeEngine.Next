@@ -12,11 +12,12 @@ public readonly record struct TranslucencyFeatureOutput(
     GraphTextureId Revealage,
     Format Format,
     int Width,
-    int Height)
+    int Height,
+    GraphPassId CompletePass)
 {
     public bool IsValid =>
         Color != default && Accumulation != default && Revealage != default &&
-        Width > 0 && Height > 0;
+        Width > 0 && Height > 0 && CompletePass != default;
 }
 
 /// <summary>
@@ -29,6 +30,8 @@ public sealed class TranslucencyFeature : IDisposable
     private readonly CompositionResource[] _resourceOrder;
     private readonly GraphPassId _clearPass;
     private readonly GraphPassId _composePass;
+    private readonly GraphBufferInput _uniforms;
+    private readonly GraphTextureInput _opaqueColor;
     private bool _disposed;
 
     public TranslucencyFeature(
@@ -118,6 +121,32 @@ public sealed class TranslucencyFeature : IDisposable
                 CompositionPassData.Declare,
                 CompositionPassData.Record);
             edit.OrderAfter(_composePass, _clearPass);
+            _uniforms = edit.CreateBufferInput(BufferUsages.Constant);
+            _opaqueColor = edit.CreateTextureInput();
+            PassDefinition compose = edit.GetPass(_composePass);
+            foreach (CompositionResource resource in _resourceOrder)
+            {
+                switch (resource)
+                {
+                    case CompositionResource.Uniforms:
+                        _ = compose.Bind(
+                            _uniforms,
+                            PipelineSync.PixelShading);
+                        break;
+                    case CompositionResource.OpaqueColor:
+                        _ = compose.Bind(edit.CreateTextureSrv(_opaqueColor, Format.R16G16B16A16Float,
+                            SomeEngine.Graphics.TextureViewDimension.Texture2D, "Opaque color"), PipelineSync.PixelShading);
+                        break;
+                    case CompositionResource.Accumulation:
+                        BindTexture(edit, ref compose, accumulation, Format.R16G16B16A16Float, "Translucency accumulation");
+                        break;
+                    case CompositionResource.Revealage:
+                        BindTexture(edit, ref compose, revealage, Format.R16Float, "Translucency revealage");
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unknown translucency composition resource key.");
+                }
+            }
             edit.Commit();
             Output = new TranslucencyFeatureOutput(
                 output,
@@ -125,7 +154,8 @@ public sealed class TranslucencyFeature : IDisposable
                 revealage,
                 Format.R16G16B16A16Float,
                 width,
-                height);
+                height,
+                _composePass);
             _pipeline = pipeline;
             pipeline = null;
         }
@@ -144,38 +174,17 @@ public sealed class TranslucencyFeature : IDisposable
         if (opaqueColor == default)
             throw new ArgumentException("Translucency composition requires opaque color.", nameof(opaqueColor));
         CompositionUniforms uniforms = new() { Enabled = enabled ? 1u : 0u };
-        GraphBufferId uniformBuffer = FeatureUploads.UploadConstant(
+        GraphBufferSlice uniformBuffer = FeatureUploads.UploadConstant(
             ref graph,
             in uniforms,
             "Translucency composition uniforms");
-        PassDefinition compose = graph.GetPass(_composePass);
-        foreach (CompositionResource resource in _resourceOrder)
-        {
-            switch (resource)
-            {
-                case CompositionResource.Uniforms:
-                    _ = compose.Bind(
-                        graph.CreateBufferCbv(uniformBuffer, label: "Translucency composition uniforms"),
-                        PipelineSync.PixelShading);
-                    break;
-                case CompositionResource.OpaqueColor:
-                    BindTexture(ref graph, ref compose, opaqueColor, Format.R16G16B16A16Float, "Opaque color");
-                    break;
-                case CompositionResource.Accumulation:
-                    BindTexture(ref graph, ref compose, Output.Accumulation, Format.R16G16B16A16Float, "Translucency accumulation");
-                    break;
-                case CompositionResource.Revealage:
-                    BindTexture(ref graph, ref compose, Output.Revealage, Format.R16Float, "Translucency revealage");
-                    break;
-                default:
-                    throw new InvalidOperationException("Unknown translucency composition resource key.");
-            }
-        }
+        graph.SetBufferInput(_uniforms, uniformBuffer);
+        graph.SetTextureInput(_opaqueColor, opaqueColor);
         graph.SetPassEnabled(_clearPass, true);
         graph.SetPassEnabled(_composePass, true);
     }
 
-    public void OrderCompositionAfter(ref RenderGraphFrame graph, GraphPassId translucentProducer)
+    public void OrderCompositionAfter(ref RenderGraphEdit graph, GraphPassId translucentProducer)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         graph.OrderAfter(_composePass, translucentProducer);
@@ -200,7 +209,7 @@ public sealed class TranslucencyFeature : IDisposable
         };
 
     private static void BindTexture(
-        ref RenderGraphFrame graph,
+        RenderGraphEdit graph,
         ref PassDefinition pass,
         GraphTextureId texture,
         Format format,

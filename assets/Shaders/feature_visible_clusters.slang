@@ -3,14 +3,6 @@
 
 #include "cluster_structures.slang"
 
-struct DrawRequest
-{
-    uint PageOffset;
-    uint ClusterID;
-    uint InstanceID;
-    uint ViewIndex;
-};
-
 uint ActiveVisibleClusterCount(
     ByteAddressBuffer phaseOneCounts,
     ByteAddressBuffer phaseTwoCounts,

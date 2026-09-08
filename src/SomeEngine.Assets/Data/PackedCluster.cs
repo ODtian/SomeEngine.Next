@@ -37,7 +37,7 @@ public struct PackedCluster
     // 56: [LODErrorHalf:16][TriangleStart:16]
     public uint PackedLodErrorTriangleStart;
 
-    // 60: [VertexCount:8][TriangleCount:8][LODLevel:8][DeformMaterialIndex:8]
+    // 60: [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
     public uint PackedCounts;
 
     // 64: [GroupId(i16):16][Reserved:16]
@@ -69,7 +69,7 @@ public struct PackedCluster
 
     public ushort LODErrorHalf
     {
-        readonly get => checked((ushort)PackedLodErrorTriangleStart);
+        readonly get => (ushort)(PackedLodErrorTriangleStart & 0xFFFFu);
         set => PackedLodErrorTriangleStart =
             (PackedLodErrorTriangleStart & 0xFFFF0000u) | value;
     }

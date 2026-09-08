@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -10,8 +10,17 @@ internal struct ClusterDrawUniforms
 {
     internal uint ScreenWidth;
     internal uint ScreenHeight;
+    internal uint RasterWidth;
+    internal uint RasterHeight;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
+internal struct ClusterVisibilityWinnerUniforms
+{
+    internal uint Width;
+    internal uint Height;
+    internal uint ViewCount;
     internal uint Pad0;
-    internal uint Pad1;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
@@ -37,25 +46,14 @@ internal struct ClusterSoftwareRasterUniforms
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
-internal struct ClusterRasterDeformBinningUniforms
+internal struct ClusterRasterBinningUniforms
 {
     internal uint RasterMaxBins;
-    internal uint DeformMaxBins;
     internal uint SlotCapacity;
     internal uint MaxVisibleClusters;
-    internal uint ResetCacheAllocationState;
-    internal uint Pad0;
+    internal uint CollectMetrics;
     internal uint Pad1;
     internal uint Pad2;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
-internal struct ClusterDeformUniforms
-{
-    internal uint MaxDeformCacheBytes;
-    internal uint MaxClusterVertices;
-    internal uint CurrentBin;
-    internal uint Pass;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
@@ -64,29 +62,20 @@ internal struct ClusterTessellationUniforms
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint CurrentBin;
-    internal uint DispatchGroupWidth;
-    internal uint MaxSplitWorkItems;
-    internal uint MaxDicedTriangles;
+    internal uint MaxPatchItems;
     internal uint MaxFactor;
     internal float TargetEdgePixels;
+    internal uint UsePreviousHiZ;
+    internal uint SplitLevel;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
-internal struct ClusterTessellationVisibilityUniforms
+internal struct ClusterTessellationBinUniforms
 {
-    internal uint ScreenWidth;
-    internal uint ScreenHeight;
-    internal uint MaxDicedTriangles;
+    internal uint BinCount;
+    internal uint MaxPatchItems;
+    internal uint SourceCounterOffset;
     internal uint Pad0;
-}
-
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
-internal struct ClusterDeformPrefixUniforms
-{
-    internal uint MaxDeformCacheBytes;
-    internal uint Pad0;
-    internal uint Pad1;
-    internal uint Pad2;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]

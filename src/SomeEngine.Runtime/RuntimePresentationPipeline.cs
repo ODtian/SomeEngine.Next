@@ -24,6 +24,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         Format inputFormat,
         int inputWidth,
         int inputHeight,
+        GraphPassId inputCompletePass,
         Shader shader,
         string vertexEntryPoint,
         string pixelEntryPoint,
@@ -35,6 +36,12 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         if (inputColor == default)
             throw new ArgumentException("Presentation requires a valid color input.", nameof(inputColor));
+        if (inputCompletePass == default)
+        {
+            throw new ArgumentException(
+                "Presentation requires a valid color producer.",
+                nameof(inputCompletePass));
+        }
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputHeight);
         if (!ReferenceEquals(graph.Device, device))
@@ -112,7 +119,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                         source,
                         PipelineSync.PixelShading),
                 ];
-                _ = edit.AddRasterFramePass(
+                GraphPassId pass = edit.AddRasterFramePass(
                     "Runtime tone map and present",
                     PassQueueSelection.AnyOfType(QueueType.Graphics),
                     data,
@@ -122,6 +129,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     bindings,
                     RuntimePresentationPassData.Declare,
                     RuntimePresentationPassData.Record);
+                edit.OrderAfter(pass, inputCompletePass);
                 edit.Commit();
                 _target = target;
             }

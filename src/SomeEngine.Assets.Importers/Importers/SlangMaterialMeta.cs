@@ -164,12 +164,12 @@ internal static partial class SlangMaterialMeta
 
     public static void SortInstanceProperties(Schema.ShaderMetadata metadata)
     {
-        if (metadata.MaterialInstanceProperties is not { Count: > 1 } properties)
+        if (metadata.InstanceProperties is not { Count: > 1 } properties)
         {
             return;
         }
 
-        metadata.MaterialInstanceProperties = properties
+        metadata.InstanceProperties = properties
             .OrderBy(static property => property.MaterialScalarLayoutName, StringComparer.Ordinal)
             .ThenBy(static property => property.CanonicalId, StringComparer.Ordinal)
             .ToList();
@@ -355,7 +355,7 @@ internal static partial class SlangMaterialMeta
                 $"Material instance property '{canonicalId}' has invalid reflected alignment {reflectedAlignment}.");
         }
 
-        var property = new Schema.ShaderMaterialInstanceProperty
+        var property = new Schema.ShaderInstanceProperty
         {
             CanonicalId = canonicalId,
             MaterialScalarLayoutName = materialScalarLayoutName,
@@ -369,8 +369,8 @@ internal static partial class SlangMaterialMeta
             DefaultValue = new byte[checked((int)fieldSize)],
         };
 
-        metadata.MaterialInstanceProperties ??= [];
-        foreach (Schema.ShaderMaterialInstanceProperty existing in metadata.MaterialInstanceProperties)
+        metadata.InstanceProperties ??= [];
+        foreach (Schema.ShaderInstanceProperty existing in metadata.InstanceProperties)
         {
             bool sameLayout = string.Equals(
                 existing.MaterialScalarLayoutName,
@@ -402,7 +402,7 @@ internal static partial class SlangMaterialMeta
             }
         }
 
-        metadata.MaterialInstanceProperties.Add(property);
+        metadata.InstanceProperties.Add(property);
     }
 
     private static AttributeReflection FindAttribute(VariableReflection variable, string name)
@@ -506,8 +506,8 @@ internal static partial class SlangMaterialMeta
     }
 
     private static bool SameInstanceProperty(
-        Schema.ShaderMaterialInstanceProperty left,
-        Schema.ShaderMaterialInstanceProperty right)
+        Schema.ShaderInstanceProperty left,
+        Schema.ShaderInstanceProperty right)
     {
         if (!string.Equals(left.CanonicalId, right.CanonicalId, StringComparison.Ordinal)
             || !string.Equals(
@@ -531,8 +531,8 @@ internal static partial class SlangMaterialMeta
     }
 
     private static bool SameInstanceEncoding(
-        Schema.ShaderMaterialInstanceProperty left,
-        Schema.ShaderMaterialInstanceProperty right)
+        Schema.ShaderInstanceProperty left,
+        Schema.ShaderInstanceProperty right)
     {
         if (!string.Equals(left.CanonicalId, right.CanonicalId, StringComparison.Ordinal)
             || left.Size != right.Size

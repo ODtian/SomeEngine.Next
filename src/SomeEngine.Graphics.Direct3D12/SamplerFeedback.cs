@@ -14,6 +14,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in SamplerFeedbackTextureDesc desc)
     {
+        using var trace = RhiTrace.BeginResourceCreation();
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         SamplerFeedback capability =
             nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackTexture));
@@ -53,8 +54,8 @@ internal sealed unsafe partial class D3D12Backend
         D3D12SamplerFeedbackTexture? result = null;
         try
         {
-            ResourceAllocationInfo allocation = nativeDevice.Native->GetResourceAllocationInfo2(
-                sampledInfo.VisibleNodeMask,
+            ResourceAllocationInfo allocation = DeviceQueryTrace.GetResourceAllocationInfo2(
+nativeDevice.Native, sampledInfo.VisibleNodeMask,
                 1,
                 &nativeDescription,
                 null);
@@ -99,7 +100,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (native is not null)
-                _ = native->Release();
+                _ = ResourceTrace.Release(native);
         }
     }
 
@@ -145,8 +146,8 @@ internal sealed unsafe partial class D3D12Backend
         fixed (ResourceDesc1* nativeDescription = &description)
         {
             int hr = device.EnhancedBarriers
-                ? device.Native->CreateCommittedResource3(
-                    nativeProperties,
+                ? DeviceResourceTrace.CreateCommittedResource3(
+device.Native, nativeProperties,
                     Silk.NET.Direct3D12.HeapFlags.None,
                     nativeDescription,
                     BarrierLayout.Undefined,
@@ -156,8 +157,8 @@ internal sealed unsafe partial class D3D12Backend
                     null,
                     &iid,
                     (void**)&result)
-                : device.Native->CreateCommittedResource2(
-                    nativeProperties,
+                : DeviceResourceTrace.CreateCommittedResource2(
+device.Native, nativeProperties,
                     Silk.NET.Direct3D12.HeapFlags.None,
                     nativeDescription,
                     ResourceStates.Common,
@@ -181,6 +182,7 @@ internal sealed unsafe partial class D3D12Backend
         SamplerFeedbackTexture texture,
         in TextureUavDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<SamplerFeedback>(nameof(CreateSamplerFeedbackUav));
         D3D12SamplerFeedbackTexture feedback = RequireSamplerFeedbackTexture(texture);
@@ -213,10 +215,10 @@ internal sealed unsafe partial class D3D12Backend
         D3D12SamplerFeedbackUav? result = null;
         try
         {
-            nativeDevice.Native->CreateSamplerFeedbackUnorderedAccessView(
-                sampled.Native,
-                feedbackResource.Native,
-                descriptor.Cpu);
+            DeviceResourceTrace.CreateSamplerFeedbackUnorderedAccessView(
+                        nativeDevice.Native, sampled.Native,
+                            feedbackResource.Native,
+                            descriptor.Cpu);
             result = new D3D12SamplerFeedbackUav(
                 nativeDevice,
                 feedbackResource,
@@ -240,6 +242,7 @@ internal sealed unsafe partial class D3D12Backend
         CommandContext context,
         SamplerFeedbackUav feedback)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ClearSamplerFeedback));
         D3D12SamplerFeedbackUav native = RequireSamplerFeedbackUav(feedback);
@@ -253,13 +256,13 @@ internal sealed unsafe partial class D3D12Backend
         command.Capture((TextureUav)native);
         command.Capture(native.SampledResource);
         uint* values = stackalloc uint[4] { 0, 0, 0, 0 };
-        command.List->ClearUnorderedAccessViewUint(
-            gpu,
-            cpu,
-            native.FeedbackResource.Native,
-            values,
-            0,
-            null);
+        CommandExecutionTrace.ClearUnorderedAccessViewUint(
+                command.List, gpu,
+                    cpu,
+                    native.FeedbackResource.Native,
+                    values,
+                    0,
+                    null);
     }
 
     public void ResolveSamplerFeedback(
@@ -268,6 +271,7 @@ internal sealed unsafe partial class D3D12Backend
         Buffer destination,
         in BufferRange destinationRange)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
         D3D12SamplerFeedbackTexture nativeFeedback =
@@ -298,16 +302,16 @@ internal sealed unsafe partial class D3D12Backend
         command.Capture(nativeFeedback.NativeResource);
         command.Capture(nativeFeedback.SampledResource);
         command.Capture(nativeDestination);
-        command.List->ResolveSubresourceRegion(
-            nativeDestination.Native,
-            0,
-            checked((uint)range.Offset),
-            0,
-            nativeFeedback.NativeResource.Native,
-            uint.MaxValue,
-            null,
-            DxgiFormat.FormatR8Uint,
-            ResolveMode.DecodeSamplerFeedback);
+        CommandTransferTrace.ResolveSubresourceRegion(
+                command.List, nativeDestination.Native,
+                    0,
+                    checked((uint)range.Offset),
+                    0,
+                    nativeFeedback.NativeResource.Native,
+                    uint.MaxValue,
+                    null,
+                    DxgiFormat.FormatR8Uint,
+                    ResolveMode.DecodeSamplerFeedback);
     }
 
     public void ResolveSamplerFeedback(
@@ -316,6 +320,7 @@ internal sealed unsafe partial class D3D12Backend
         Texture destination,
         in TextureSubresourceRange destinationRange)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<SamplerFeedback>(nameof(ResolveSamplerFeedback));
         D3D12SamplerFeedbackTexture nativeFeedback =
@@ -331,30 +336,30 @@ internal sealed unsafe partial class D3D12Backend
         for (uint layer = destinationRange.FirstArrayLayer;
              layer < destinationRange.FirstArrayLayer + destinationRange.ArrayLayerCount;
              layer++)
-        for (uint mip = destinationRange.FirstMipLevel;
-             mip < destinationRange.FirstMipLevel + destinationRange.MipLevelCount;
-             mip++)
-        {
-            uint sourceSubresource = nativeFeedback.Description.Type ==
-                SamplerFeedbackType.MinimumMip
-                    ? uint.MaxValue
-                    : checked(mip + layer * nativeFeedback.Info.MipLevelCount);
-            uint destinationSubresource = NativeSubresource(
-                nativeDestination.Info,
-                mip,
-                layer,
-                TextureAspects.Color);
-            command.List->ResolveSubresourceRegion(
-                nativeDestination.Native,
-                destinationSubresource,
-                0,
-                0,
-                nativeFeedback.NativeResource.Native,
-                sourceSubresource,
-                null,
-                DxgiFormat.FormatR8Uint,
-                ResolveMode.DecodeSamplerFeedback);
-        }
+            for (uint mip = destinationRange.FirstMipLevel;
+                 mip < destinationRange.FirstMipLevel + destinationRange.MipLevelCount;
+                 mip++)
+            {
+                uint sourceSubresource = nativeFeedback.Description.Type ==
+                    SamplerFeedbackType.MinimumMip
+                        ? uint.MaxValue
+                        : checked(mip + layer * nativeFeedback.Info.MipLevelCount);
+                uint destinationSubresource = NativeSubresource(
+                    nativeDestination.Info,
+                    mip,
+                    layer,
+                    TextureAspects.Color);
+                CommandTransferTrace.ResolveSubresourceRegion(
+                            command.List, nativeDestination.Native,
+                                destinationSubresource,
+                                0,
+                                0,
+                                nativeFeedback.NativeResource.Native,
+                                sourceSubresource,
+                                null,
+                                DxgiFormat.FormatR8Uint,
+                                ResolveMode.DecodeSamplerFeedback);
+            }
     }
 
     private static void ValidateFeedbackTextureDestination(
@@ -475,11 +480,15 @@ internal sealed unsafe partial class D3D12Backend
         {
             uint index = AllocateDescriptorPair(1, 0).ResourceBase;
             CpuDescriptorHandle cpu = GetCpuHandle(ParameterHeap.Resource, index);
-            _context.NativeDevice.Native->CopyDescriptorsSimple(
-                1,
-                cpu,
-                descriptor.Cpu,
-                DescriptorHeapType.CbvSrvUav);
+
+            DeviceQueryTrace.CopyDescriptorsSimple(
+                        _context.NativeDevice.Native, 1,
+                            cpu,
+                            descriptor.Cpu,
+                            DescriptorHeapType.CbvSrvUav);
+            if (_resourceContents.Length < _resourceCapacity)
+                Array.Resize(ref _resourceContents, checked((int)_resourceCapacity));
+            _resourceContents[index] = new DescriptorContent(descriptor, new DescriptorSlotDesc(ResourceBindingType.TextureUav));
             return (cpu, GetGpuHandle(ParameterHeap.Resource, index));
         }
 
@@ -488,12 +497,10 @@ internal sealed unsafe partial class D3D12Backend
             DescriptorHeapType nativeType = heap == ParameterHeap.Resource
                 ? DescriptorHeapType.CbvSrvUav
                 : DescriptorHeapType.Sampler;
-            ID3D12DescriptorHeap* descriptorHeap = heap == ParameterHeap.Resource
-                ? _resourceArena
-                : _samplerArena;
-            CpuDescriptorHandle start = descriptorHeap->GetCPUDescriptorHandleForHeapStart();
-            uint increment = _context.NativeDevice.Native
-                ->GetDescriptorHandleIncrementSize(nativeType);
+            CpuDescriptorHandle start = heap == ParameterHeap.Resource
+                ? _resourceCpuStart
+                : _samplerCpuStart;
+            uint increment = _context.NativeDevice.DescriptorIncrement(nativeType);
             return new CpuDescriptorHandle(
                 start.Ptr + checked((nuint)(index * increment)));
         }

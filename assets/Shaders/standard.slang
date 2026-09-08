@@ -5,12 +5,36 @@
 #include "cluster_shade_pipeline.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
+#include "vsm_sampling.slang"
 
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<uint2> ClusteredLightGrid;
 StructuredBuffer<uint> LightIndexList;
 Texture2DArray<float4> LightingCookieAtlas;
+
+struct VirtualShadowSamplingUniforms
+{
+    uint ViewCount;
+    uint DirectionalLightCount;
+    uint DirectionalClipmapLevels;
+    uint PointLightCount;
+    uint PointLightBufferOffset;
+    uint PointViewOffset;
+    uint SpotLightCount;
+    uint SpotLightBufferOffset;
+    uint SpotViewOffset;
+    uint BlockerSampleCount;
+    uint FilterSampleCount;
+    float BlockerSearchRadiusTexels;
+    float MaxFilterRadiusTexels;
+    float NormalBias;
+};
+
+StructuredBuffer<VirtualShadowMapParameters> VirtualShadowViews;
+StructuredBuffer<uint4> VirtualShadowPageTable;
+Texture2D<uint> VirtualShadowAtlas;
+ConstantBuffer<VirtualShadowSamplingUniforms> VirtualShadowSampling;
 
 float EvaluateLightingCookie(GPULight light, float3 worldPosition)
 {
@@ -53,24 +77,19 @@ struct StandardPixelContext
 StandardPixelContext BuildStandardPixelContext(
     uint3 pixelCoord,
     uint instanceID,
-    SurfaceEval surface,
-    float3 bary,
-    StaticVertexEval.DeformedVertex v0,
-    StaticVertexEval.DeformedVertex v1,
-    StaticVertexEval.DeformedVertex v2)
+    SurfaceEval surface)
 {
     StandardPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
     ctx.instanceID = instanceID;
     ctx.surfacePosition = surface.Position;
     ctx.worldNormal = surface.Normal;
-    float3 tangent = normalize(bary.x * v0.worldTangent.xyz + bary.y * v1.worldTangent.xyz + bary.z * v2.worldTangent.xyz);
-    ctx.worldTangent = float4(tangent, v0.worldTangent.w);
+    ctx.worldTangent = surface.Tangent;
     ctx.uv0 = surface.TexCoord;
     return ctx;
 }
 
-struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
+struct StandardMaterial : ISurfaceEvaluate
 {
     // Textures
     Texture2D AlbedoMap;
@@ -79,25 +98,18 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
     SamplerState MaterialSampler;
 
     void evaluateSurface(
-        uniform StaticVertexEval eval,
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        StaticVertexEval.DeformedVertex v0,
-        StaticVertexEval.DeformedVertex v1,
-        StaticVertexEval.DeformedVertex v2,
+        Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
         StandardPixelContext ctx = BuildStandardPixelContext(
             pixelCoord,
             instanceID,
-            surface,
-            bary,
-            v0,
-            v1,
-            v2);
+            surface);
 
         // Sample material textures
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
@@ -124,6 +136,31 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
         {
             GPULight light = LightBuffer[lightIndex];
+            float3 shadowPosition = ctx.surfacePosition +
+                mappedNormal * VirtualShadowSampling.NormalBias;
+            float shadow = 1.0;
+            if (lightIndex < VirtualShadowSampling.DirectionalLightCount &&
+                VirtualShadowSampling.DirectionalClipmapLevels != 0u)
+            {
+                uint firstShadowView =
+                    lightIndex * VirtualShadowSampling.DirectionalClipmapLevels;
+                if (firstShadowView < VirtualShadowSampling.ViewCount)
+                {
+                    shadow = SampleDirectionalVirtualShadowMap(
+                        VirtualShadowViews,
+                        VirtualShadowPageTable,
+                        VirtualShadowAtlas,
+                        firstShadowView,
+                        min(
+                            VirtualShadowSampling.DirectionalClipmapLevels,
+                            VirtualShadowSampling.ViewCount - firstShadowView),
+                        shadowPosition,
+                        VirtualShadowSampling.BlockerSampleCount,
+                        VirtualShadowSampling.FilterSampleCount,
+                        VirtualShadowSampling.BlockerSearchRadiusTexels,
+                        VirtualShadowSampling.MaxFilterRadiusTexels);
+                }
+            }
             finalColor += EvaluateDirectionalLight(
                 baseColor,
                 metallic,
@@ -131,7 +168,7 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
                 mappedNormal,
                 V,
                 -normalize(light.Direction),
-                light.Color * light.Intensity,
+                light.Color * (light.Intensity * shadow),
                 EvaluateLightingCookie(light, ctx.surfacePosition));
         }
 
@@ -148,7 +185,53 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         {
             uint lightIndex = LightIndexList[firstIndex + localIndex];
             GPULight light = LightBuffer[lightIndex];
-            float3 radiance = light.Color * light.Intensity;
+            float3 shadowPosition = ctx.surfacePosition +
+                mappedNormal * VirtualShadowSampling.NormalBias;
+            float shadow = 1.0;
+            if (lightIndex >= VirtualShadowSampling.PointLightBufferOffset &&
+                lightIndex < VirtualShadowSampling.PointLightBufferOffset +
+                    VirtualShadowSampling.PointLightCount)
+            {
+                uint pointLightIndex = lightIndex -
+                    VirtualShadowSampling.PointLightBufferOffset;
+                uint firstShadowView = VirtualShadowSampling.PointViewOffset +
+                    pointLightIndex * 6u;
+                if (firstShadowView + 5u < VirtualShadowSampling.ViewCount)
+                {
+                    shadow = SamplePointVirtualShadowMap(
+                        VirtualShadowViews,
+                        VirtualShadowPageTable,
+                        VirtualShadowAtlas,
+                        firstShadowView,
+                        shadowPosition,
+                        VirtualShadowSampling.BlockerSampleCount,
+                        VirtualShadowSampling.FilterSampleCount,
+                        VirtualShadowSampling.BlockerSearchRadiusTexels,
+                        VirtualShadowSampling.MaxFilterRadiusTexels);
+                }
+            }
+            else if (lightIndex >= VirtualShadowSampling.SpotLightBufferOffset &&
+                lightIndex < VirtualShadowSampling.SpotLightBufferOffset +
+                    VirtualShadowSampling.SpotLightCount)
+            {
+                uint spotLightIndex = lightIndex -
+                    VirtualShadowSampling.SpotLightBufferOffset;
+                uint shadowView = VirtualShadowSampling.SpotViewOffset + spotLightIndex;
+                if (shadowView < VirtualShadowSampling.ViewCount)
+                {
+                    shadow = SampleSpotVirtualShadowMap(
+                        VirtualShadowViews,
+                        VirtualShadowPageTable,
+                        VirtualShadowAtlas,
+                        shadowView,
+                        shadowPosition,
+                        VirtualShadowSampling.BlockerSampleCount,
+                        VirtualShadowSampling.FilterSampleCount,
+                        VirtualShadowSampling.BlockerSearchRadiusTexels,
+                        VirtualShadowSampling.MaxFilterRadiusTexels);
+                }
+            }
+            float3 radiance = light.Color * (light.Intensity * shadow);
             if (dot(light.Direction, light.Direction) > 1e-8 && light.OuterConeCos > 0.0)
             {
                 finalColor += EvaluateSpotLight(
@@ -186,16 +269,13 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
     }
 
     void evaluateDebug(
-        uniform StaticVertexEval eval,
         uint debugMode,
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        StaticVertexEval.DeformedVertex v0,
-        StaticVertexEval.DeformedVertex v1,
-        StaticVertexEval.DeformedVertex v2,
+        Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
         if (debugMode == 8)
@@ -207,11 +287,7 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         StandardPixelContext ctx = BuildStandardPixelContext(
             pixelCoord,
             instanceID,
-            surface,
-            bary,
-            v0,
-            v1,
-            v2);
+            surface);
 
         if (debugMode == 9)
         {
@@ -229,7 +305,7 @@ struct StandardMaterial : ISurfaceEvaluate<StaticVertexEval>
         if (debugMode == 11)
         {
             float3 pos = surface.Position;
-            float3 basePos = bary.x * v0.basePosition + bary.y * v1.basePosition + bary.z * v2.basePosition;
+            float3 basePos = EvalLinearPosition(triangle, bary);
             float3 delta = abs(pos - basePos) * 3.0;
             outputColor[pixelCoord] = float4(delta, 1.0);
             return;

@@ -4,6 +4,35 @@ namespace SomeEngine.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanBackend
 {
+    private void ValidateComputeSubgroupSize(VulkanDevice device, uint size)
+    {
+        PhysicalDeviceVulkan13Features features13 = new()
+        {
+            SType = StructureType.PhysicalDeviceVulkan13Features,
+        };
+        PhysicalDeviceFeatures2 features = new()
+        {
+            SType = StructureType.PhysicalDeviceFeatures2,
+            PNext = &features13,
+        };
+        Api.GetPhysicalDeviceFeatures2(device.PhysicalDevice, &features);
+        PhysicalDeviceSubgroupSizeControlProperties subgroup = new()
+        {
+            SType = StructureType.PhysicalDeviceSubgroupSizeControlProperties,
+        };
+        PhysicalDeviceProperties2 properties = new()
+        {
+            SType = StructureType.PhysicalDeviceProperties2,
+            PNext = &subgroup,
+        };
+        Api.GetPhysicalDeviceProperties2(device.PhysicalDevice, &properties);
+        if (!features13.SubgroupSizeControl ||
+            (subgroup.RequiredSubgroupSizeStages & ShaderStageFlags.ComputeBit) == 0 ||
+            size < subgroup.MinSubgroupSize ||
+            size > subgroup.MaxSubgroupSize)
+            throw new NotSupportedException($"The compute shader requires subgroup size {size}.");
+    }
+
     internal Pipeline CreateGraphicsPipeline(
         RhiDevice device,
         in GraphicsPipelineDesc desc,
@@ -121,6 +150,16 @@ internal sealed unsafe partial class VulkanBackend
                 Module = module,
                 PName = (byte*)entryName,
             };
+            PipelineShaderStageRequiredSubgroupSizeCreateInfo requiredSubgroup = new()
+            {
+                SType = StructureType.PipelineShaderStageRequiredSubgroupSizeCreateInfo,
+                RequiredSubgroupSize = checked((uint)desc.Compute.ComputeWaveSize),
+            };
+            if (requiredSubgroup.RequiredSubgroupSize != 0)
+            {
+                ValidateComputeSubgroupSize(nativeDevice, requiredSubgroup.RequiredSubgroupSize);
+                stage.PNext = &requiredSubgroup;
+            }
             ComputePipelineCreateInfo createInfo = new()
             {
                 SType = StructureType.ComputePipelineCreateInfo,

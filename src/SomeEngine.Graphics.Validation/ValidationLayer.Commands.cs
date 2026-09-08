@@ -399,8 +399,15 @@ public sealed partial class ValidationLayer
                 Reject("Commands", "Rendering width and height must be nonzero.", context.Label);
             if (desc.Colors.Length > 8)
                 Reject("Commands", "Rendering supports at most eight color attachments.", context.Label);
-            if (desc.Colors.IsEmpty && desc.DepthStencil is null)
-                Reject("Commands", "A rendering scope requires an attachment.", context.Label);
+            if (desc.Colors.IsEmpty &&
+                desc.DepthStencil is null &&
+                (desc.Options & RenderingOptions.AllowUnorderedAccessWrites) == 0)
+            {
+                Reject(
+                    "Commands",
+                    "An attachment-less rendering scope must explicitly allow unordered-access writes.",
+                    context.Label);
+            }
             foreach (ColorAttachmentDesc attachment in desc.Colors)
                 RequireOnDevice(context.Device, attachment.View, "Color attachment");
             if (desc.DepthStencil is { } depthStencil)

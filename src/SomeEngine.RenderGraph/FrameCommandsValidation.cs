@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace SomeEngine.RenderGraph;
 
@@ -22,8 +22,6 @@ internal sealed partial class FrameExecutor
         return resource!;
     }
 
-    internal BufferCbv GetBufferCbv(int pass, GraphBufferCbvId id) =>
-        GetView<BufferCbv>(pass, id.Value, GraphViewKind.BufferCbv);
     internal BufferSrv GetBufferSrv(int pass, GraphBufferSrvId id) =>
         GetView<BufferSrv>(pass, id.Value, GraphViewKind.BufferSrv);
     internal BufferUav GetBufferUav(int pass, GraphBufferUavId id) =>
@@ -120,7 +118,7 @@ internal sealed partial class FrameExecutor
     private T GetView<T>(int pass, in GraphIdentity identity, GraphViewKind kind)
         where T : DeviceResource
     {
-        bool found = _viewIndices.TryGetValue(identity, out int index);
+        bool found = TryResolveView(identity, out int index);
         DevelopmentCheck.Require(found, "The View identity is invalid or stale.");
         FrameView view = _views[index];
         DevelopmentCheck.Require(
@@ -192,6 +190,9 @@ internal sealed partial class FrameExecutor
             if (binding.IsNull) continue;
             switch (binding.Value)
             {
+                case Buffer buffer when binding.Type == ResourceBindingType.ConstantBuffer:
+                    ValidateBuffer(pass, buffer, binding.BufferRange, false);
+                    break;
                 case BufferCbv view:
                     ValidateBuffer(pass, view.Description.Buffer, view.Description.Range, false);
                     break;
@@ -303,7 +304,7 @@ internal sealed partial class FrameExecutor
 
     private int FindBuffer(Buffer buffer)
     {
-        for (int i = 0; i < _buffers.Length; i++)
+        for (int i = 0; i < _buffers.Count; i++)
             if (ReferenceEquals(_buffers[i].Resource, buffer)) return i;
         DevelopmentCheck.Fail("The Buffer is not owned or imported by this frame.");
         return 0;
@@ -311,7 +312,7 @@ internal sealed partial class FrameExecutor
 
     private int FindTexture(Texture texture)
     {
-        for (int i = 0; i < _textures.Length; i++)
+        for (int i = 0; i < _textures.Count; i++)
             if (ReferenceEquals(_textures[i].Resource, texture)) return i;
         DevelopmentCheck.Fail("The Texture is not owned or imported by this frame.");
         return 0;

@@ -159,8 +159,10 @@ public readonly record struct DeviceLimits(
     uint ResourceDescriptorCapacity,
     uint SamplerDescriptorCapacity,
     uint ConstantBufferAlignment,
+    uint ShaderBufferAlignment,
     uint TextureDataPitchAlignment,
-    uint TextureDataPlacementAlignment);
+    uint TextureDataPlacementAlignment,
+    uint MaximumConstantBufferRange);
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Thread-safe. Immutable values may be shared; referenced RHI objects retain their own contracts.</para>
@@ -287,7 +289,11 @@ public sealed class DeviceCapabilities
         bool supportsDepthBounds,
         DynamicStates supportedDynamicStates,
         ReadOnlySpan<FormatSupport> formats,
-        ShaderTarget shaderTarget = ShaderTarget.Dxil)
+        ShaderTarget shaderTarget = ShaderTarget.Dxil,
+        bool supportsBufferInt64Atomics = false,
+        bool supportsImageInt64Atomics = false,
+        bool supportsComputeForwardProgress = false,
+        bool supportsConcurrentBufferReads = false)
     {
         Limits = limits;
         SupportsBundles = supportsBundles;
@@ -307,6 +313,10 @@ public sealed class DeviceCapabilities
             throw new ArgumentOutOfRangeException(nameof(supportedDynamicStates));
         SupportedDynamicStates = supportedDynamicStates;
         ShaderTarget = shaderTarget;
+        SupportsBufferInt64Atomics = supportsBufferInt64Atomics;
+        SupportsImageInt64Atomics = supportsImageInt64Atomics;
+        SupportsComputeForwardProgress = supportsComputeForwardProgress;
+        SupportsConcurrentBufferReads = supportsConcurrentBufferReads;
         _formats = formats.ToArray();
 
         Format[] definedFormats = Enum.GetValues<Format>();
@@ -330,6 +340,19 @@ public sealed class DeviceCapabilities
     public bool SupportsDepthBounds { get; }
     public DynamicStates SupportedDynamicStates { get; }
     public ShaderTarget ShaderTarget { get; }
+    /// <summary>64-bit integer atomics on raw or structured storage buffers.</summary>
+    public bool SupportsBufferInt64Atomics { get; }
+    /// <summary>64-bit integer atomics on typed storage images.</summary>
+    public bool SupportsImageInt64Atomics { get; }
+    /// <summary>
+    /// Compute dispatches may safely use a bounded persistent work queue whose idle groups wait
+    /// for work published by other groups.  Backends must leave this false unless their execution
+    /// model provides that forward-progress guarantee.
+    /// </summary>
+    public bool SupportsComputeForwardProgress { get; }
+    /// <summary>Buffers support simultaneous reads on different queues without ownership transfers.
+    /// Writes still require ordering against other accesses; access scopes do not persist across submissions.</summary>
+    public bool SupportsConcurrentBufferReads { get; }
     public ReadOnlySpan<FormatSupport> Formats => _formats;
 
     public FormatSupport GetFormatSupport(Format format)

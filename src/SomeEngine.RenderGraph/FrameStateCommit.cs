@@ -2,98 +2,531 @@ namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
-    private void CommitPassState(int pass, QueueCompletion completion)
+    private readonly List<BufferStateValue> _bufferBoundaryScratch = [];
+    private readonly List<TextureStateValue> _textureBoundaryScratch = [];
+    private readonly List<BufferStateValue> _bufferContentScratch = [];
+    private readonly List<TextureStateValue> _textureContentScratch = [];
+    private List<BufferStateUpdate>[] _submissionBufferUpdates = [];
+    private List<TextureStateUpdate>[] _submissionTextureUpdates = [];
+    private List<QueryStateUpdate>[] _submissionQueryUpdates = [];
+    private List<ShaderTableStateUpdate>[] _submissionShaderTableUpdates = [];
+    private readonly List<QueryStateValue> _queryBoundaryScratch = [];
+    private readonly List<QueryStateValue> _queryContentScratch = [];
+    private readonly List<ShaderTableStateValue> _shaderTableBoundaryScratch = [];
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _lateStateResources = [];
+    private readonly List<BufferStateUpdate> _lateBufferStateUpdates = [];
+    private readonly List<TextureStateUpdate> _lateTextureStateUpdates = [];
+    private int _lateBufferStateCount;
+    private int _lateTextureStateCount;
+    private bool _stateUpdatesChanged = true;
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _stateConnectionChanges = [];
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _stateUpdateResourcesChanged = [];
+    private List<BufferStateUpdate>?[] _bufferUpdatesByResource = [];
+    private List<TextureStateUpdate>?[] _textureUpdatesByResource = [];
+    private List<QueryStateUpdate>?[] _queryUpdatesByResource = [];
+    private List<ShaderTableStateUpdate>?[] _shaderTableUpdatesByResource = [];
+
+    private readonly record struct TextureStateValue(TextureBoundaryState State, int CompletionSource);
+    private sealed class TextureStateUpdate
     {
-        foreach (int accessIndex in _passAccesses[pass])
+        internal int Submission;
+        internal int ResourceIndex;
+        internal int[] Accesses = [];
+        internal bool[] Acquired = [];
+        internal QueueRelease[] Releases = [];
+        internal bool Initialized;
+        internal TextureBoundaryState[] Before = [];
+        internal TextureStateValue[] After = [];
+        internal TextureBoundaryState[] Values = [];
+        internal QueueCompletion?[] Completions = [];
+    }
+
+    private readonly record struct BufferStateValue(BufferBoundaryState State, int CompletionSource);
+    private readonly record struct BufferStateStep(int Pass, int[] Accesses,
+        PipelineSync Sync, ResourceAccess Access, bool Writes, bool Acquired);
+
+    private sealed class BufferStateUpdate
+    {
+        internal int Submission;
+        internal int ResourceIndex;
+        internal BufferStateStep[] Steps = [];
+        internal QueueRelease[] Releases = [];
+        internal bool Initialized;
+        internal BufferBoundaryState[] Before = [];
+        internal BufferStateValue[] After = [];
+        internal BufferBoundaryState[] Values = [];
+        internal QueueCompletion?[] Completions = [];
+    }
+
+    private readonly record struct QueryStateValue(QueryBoundaryState State, int CompletionSource);
+    private sealed class QueryStateUpdate
+    {
+        internal int Submission;
+        internal int ResourceIndex;
+        internal int[] Accesses = [];
+        internal bool Initialized;
+        internal QueryBoundaryState[] Before = [];
+        internal QueryStateValue[] After = [];
+        internal QueryBoundaryState[] Values = [];
+        internal QueueCompletion?[] Completions = [];
+    }
+
+    private readonly record struct ShaderTableStateValue(RayTracingShaderTableBoundaryState State, int CompletionSource);
+    private sealed class ShaderTableStateUpdate
+    {
+        internal int Submission;
+        internal int ResourceIndex;
+        internal int[] Accesses = [];
+        internal bool Initialized;
+        internal RayTracingShaderTableBoundaryState[] Before = [];
+        internal ShaderTableStateValue[] After = [];
+        internal RayTracingShaderTableBoundaryState[] Values = [];
+        internal QueueCompletion?[] Completions = [];
+    }
+
+    // Relationships are built with the submission graph. The normal frame publishes one
+    // resource result per successful submission, without visiting the intermediate passes.
+    private void PrepareStateUpdates()
+    {
+        if (!_stateUpdatesChanged && _reuseRecording)
         {
-            FrameResourceAccess access = _accesses[accessIndex];
-            switch (access.TargetKind)
+            RefreshStateUpdates();
+            return;
+        }
+        ResizeStateResourceLists();
+        foreach (var values in _bufferUpdatesByResource) values?.Clear();
+        foreach (var values in _textureUpdatesByResource) values?.Clear();
+        foreach (var values in _queryUpdatesByResource) values?.Clear();
+        foreach (var values in _shaderTableUpdatesByResource) values?.Clear();
+        ResetStateLists(ref _submissionBufferUpdates, _submissionCount);
+        ResetStateLists(ref _submissionTextureUpdates, _submissionCount);
+        ResetStateLists(ref _submissionQueryUpdates, _submissionCount);
+        ResetStateLists(ref _submissionShaderTableUpdates, _submissionCount);
+        foreach (var key in _resourceAccessLists.Keys) BuildResourceStateUpdates(key);
+        _stateConnectionChanges.Clear();
+        _stateUpdateResourcesChanged.Clear();
+        _stateUpdatesChanged = false;
+    }
+
+    private static void ResetStateLists<T>(ref List<T>[] values, int count)
+    {
+        if (values.Length != count) values = new List<T>[count];
+        for (int index = 0; index < count; index++) (values[index] ??= []).Clear();
+    }
+
+    private void ResizeStateResourceLists()
+    {
+        if (_bufferUpdatesByResource.Length < _buffers.Count) Array.Resize(ref _bufferUpdatesByResource, _buffers.Count);
+        if (_textureUpdatesByResource.Length < _textures.Count) Array.Resize(ref _textureUpdatesByResource, _textures.Count);
+        if (_queryUpdatesByResource.Length < _queryPools.Count) Array.Resize(ref _queryUpdatesByResource, _queryPools.Count);
+        if (_shaderTableUpdatesByResource.Length < _shaderTables.Count) Array.Resize(ref _shaderTableUpdatesByResource, _shaderTables.Count);
+    }
+
+    private void BuildResourceStateUpdates((GraphAccessTargetKind Kind, int Index) key)
+    {
+        if (!_resourceAccessLists.TryGetValue(key, out List<int>? source) || source.Count == 0) return;
+        var groups = new Dictionary<int, List<int>>();
+        foreach (int index in source)
+        {
+            FrameResourceAccess access = _accesses[index];
+            if (!IsLive(access.PassIndex)) continue;
+            int submission = _submissionByPass[access.PassIndex];
+            if (submission < 0) continue;
+            if (!groups.TryGetValue(submission, out List<int>? indices)) groups.Add(submission, indices = []);
+            indices.Add(index);
+        }
+        foreach ((int submission, List<int> indices) in groups)
+        {
+            indices.Sort((left, right) =>
             {
-                case GraphAccessTargetKind.Buffer:
-                    CommitBuffer(access, completion);
-                    break;
-                case GraphAccessTargetKind.Texture:
-                    CommitTexture(access, completion);
-                    break;
-                case GraphAccessTargetKind.QueryPool:
-                    CommitQueryPool(access, completion);
-                    break;
-                case GraphAccessTargetKind.RayTracingShaderTable:
-                    CommitShaderTable(access, completion);
-                    break;
+                FrameResourceAccess a = _accesses[left], b = _accesses[right];
+                int order = _scheduledPosition[a.PassIndex].CompareTo(_scheduledPosition[b.PassIndex]);
+                return order != 0 ? order : a.PassAdjacencyIndex.CompareTo(b.PassAdjacencyIndex);
+            });
+            if (key.Kind == GraphAccessTargetKind.Buffer)
+            {
+                var steps = new List<BufferStateStep>();
+                for (int first = 0; first < indices.Count;)
+                {
+                    int pass = _accesses[indices[first]].PassIndex;
+                    int end = first;
+                    PipelineSync sync = default;
+                    ResourceAccess access = default;
+                    bool writes = false;
+                    while (end < indices.Count && _accesses[indices[end]].PassIndex == pass)
+                    {
+                        FrameResourceAccess value = _accesses[indices[end++]];
+                        sync |= value.Sync;
+                        access = MergeBufferAccess(access, value.Access);
+                        writes |= value.Mode != GraphAccessMode.Read;
+                    }
+                    steps.Add(new(pass, CollectionsMarshal.AsSpan(indices).Slice(first, end - first).ToArray(), sync, access, writes,
+                        HasIncomingBufferAcquire(pass, _buffers[key.Index].Resource)));
+                    first = end;
+                }
+                var update = new BufferStateUpdate { Submission = submission, ResourceIndex = key.Index,
+                    Steps = steps.ToArray(), Releases = ResourceReleases(submission, _buffers[key.Index].Resource) };
+                _submissionBufferUpdates[submission].Add(update);
+                (_bufferUpdatesByResource[key.Index] ??= []).Add(update);
+            }
+            else if (key.Kind == GraphAccessTargetKind.Texture)
+            {
+                var acquired = new bool[indices.Count];
+                for (int item = 0; item < indices.Count; item++)
+                {
+                    FrameResourceAccess access = _accesses[indices[item]];
+                    acquired[item] = HasIncomingTextureAcquire(access.PassIndex, _textures[key.Index].Resource, access.TextureRange);
+                }
+                var update = new TextureStateUpdate { Submission = submission, ResourceIndex = key.Index,
+                    Accesses = indices.ToArray(), Acquired = acquired,
+                    Releases = ResourceReleases(submission, _textures[key.Index].Resource) };
+                _submissionTextureUpdates[submission].Add(update);
+                (_textureUpdatesByResource[key.Index] ??= []).Add(update);
+            }
+            else if (key.Kind == GraphAccessTargetKind.QueryPool)
+            {
+                var update = new QueryStateUpdate { Submission = submission, ResourceIndex = key.Index, Accesses = indices.ToArray() };
+                _submissionQueryUpdates[submission].Add(update);
+                (_queryUpdatesByResource[key.Index] ??= []).Add(update);
+            }
+            else
+            {
+                var update = new ShaderTableStateUpdate { Submission = submission, ResourceIndex = key.Index, Accesses = indices.ToArray() };
+                _submissionShaderTableUpdates[submission].Add(update);
+                (_shaderTableUpdatesByResource[key.Index] ??= []).Add(update);
             }
         }
     }
 
-    private void CommitBuffer(in FrameResourceAccess access, QueueCompletion completion)
+    private QueueRelease[] ResourceReleases(int submission, Resource? resource)
     {
-        FrameBuffer frameBuffer = _buffers[access.ResourceIndex];
-        BufferBoundaryState[] current = frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent
-            ? frameBuffer.Definition?.BoundaryStates ?? frameBuffer.EntryBoundaryStates ?? []
-            : frameBuffer.EntryBoundaryStates ?? [];
-        ResourceContentState contents = access.ResultContents ?? access.Mode switch
+        var result = new List<QueueRelease>();
+        foreach (int pass in _submissionPasses[submission])
+            foreach (QueueRelease release in _releases[pass])
+                if (ReferenceEquals(release.Resource, resource)) result.Add(release);
+        return result.ToArray();
+    }
+
+    private Queue ReleaseDestination(QueueType type)
+    {
+        foreach (Queue queue in _frame.Graph.Queues)
+            if (queue.Type == type) return queue;
+        DevelopmentCheck.Fail("A queue release destination must be registered with the graph.");
+        return null!;
+    }
+
+    private void RefreshStateConnections()
+    {
+        if (_stateConnectionChanges.Count == 0) return;
+        ResizeStateResourceLists();
+        foreach (var key in _stateConnectionChanges)
         {
-            GraphAccessMode.Read => ResourceContentState.Defined,
-            GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-            GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
-            _ => FindBufferContents(current, access.BufferRange),
-        };
-        var endpoint = new BufferBoundaryState(
-            access.BufferRange,
-            access.Sync,
-            access.Access,
-            contents,
-            _passes[access.PassIndex].Queue,
-            completion);
-        BufferBoundaryState[] boundaryStates = UpdateBufferBoundaryStates(
-            current,
-            endpoint,
-            access.Mode == GraphAccessMode.Read);
-        if (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent &&
-            frameBuffer.Definition is { } resource)
-        {
-            resource.BoundaryStates = boundaryStates;
+            switch (key.Kind)
+            {
+                case GraphAccessTargetKind.Buffer:
+                    if ((uint)key.Index < (uint)_bufferUpdatesByResource.Length && _bufferUpdatesByResource[key.Index] is { } buffers)
+                    {
+                        foreach (BufferStateUpdate update in buffers) _submissionBufferUpdates[update.Submission].Remove(update);
+                        buffers.Clear();
+                    }
+                    break;
+                case GraphAccessTargetKind.Texture:
+                    if ((uint)key.Index < (uint)_textureUpdatesByResource.Length && _textureUpdatesByResource[key.Index] is { } textures)
+                    {
+                        foreach (TextureStateUpdate update in textures) _submissionTextureUpdates[update.Submission].Remove(update);
+                        textures.Clear();
+                    }
+                    break;
+                case GraphAccessTargetKind.QueryPool:
+                    if ((uint)key.Index < (uint)_queryUpdatesByResource.Length && _queryUpdatesByResource[key.Index] is { } queries)
+                    {
+                        foreach (QueryStateUpdate update in queries) _submissionQueryUpdates[update.Submission].Remove(update);
+                        queries.Clear();
+                    }
+                    break;
+                case GraphAccessTargetKind.RayTracingShaderTable:
+                    if ((uint)key.Index < (uint)_shaderTableUpdatesByResource.Length && _shaderTableUpdatesByResource[key.Index] is { } tables)
+                    {
+                        foreach (ShaderTableStateUpdate update in tables) _submissionShaderTableUpdates[update.Submission].Remove(update);
+                        tables.Clear();
+                    }
+                    break;
+            }
+            BuildResourceStateUpdates(key);
         }
+        _stateConnectionChanges.Clear();
+    }
+
+    private void RefreshStateUpdates()
+    {
+        RefreshStateConnections();
+        foreach ((GraphAccessTargetKind kind, int index) in _stateUpdateResourcesChanged)
+        {
+            if (kind == GraphAccessTargetKind.Buffer && (uint)index < (uint)_bufferUpdatesByResource.Length)
+            {
+                foreach (BufferStateUpdate update in _bufferUpdatesByResource[index] ?? [])
+                {
+                    update.Initialized = false;
+                    update.Releases = ResourceReleases(update.Submission, _buffers[index].Resource);
+                    for (int item = 0; item < update.Steps.Length; item++)
+                    {
+                        BufferStateStep step = update.Steps[item];
+                        PipelineSync sync = default;
+                        ResourceAccess access = default;
+                        bool writes = false;
+                        foreach (int accessIndex in step.Accesses)
+                        {
+                            FrameResourceAccess value = _accesses[accessIndex];
+                            sync |= value.Sync;
+                            access = MergeBufferAccess(access, value.Access);
+                            writes |= value.Mode != GraphAccessMode.Read;
+                        }
+                        update.Steps[item] = step with { Sync = sync, Access = access, Writes = writes,
+                            Acquired = HasIncomingBufferAcquire(step.Pass, _buffers[index].Resource) };
+                    }
+                }
+            }
+            else if (kind == GraphAccessTargetKind.Texture && (uint)index < (uint)_textureUpdatesByResource.Length)
+            {
+                foreach (TextureStateUpdate update in _textureUpdatesByResource[index] ?? [])
+                {
+                    update.Initialized = false;
+                    update.Releases = ResourceReleases(update.Submission, _textures[index].Resource);
+                    for (int item = 0; item < update.Accesses.Length; item++)
+                    {
+                        FrameResourceAccess access = _accesses[update.Accesses[item]];
+                        update.Acquired[item] = HasIncomingTextureAcquire(access.PassIndex, _textures[index].Resource, access.TextureRange);
+                    }
+                }
+            }
+            else if (kind == GraphAccessTargetKind.QueryPool && (uint)index < (uint)_queryUpdatesByResource.Length)
+                foreach (QueryStateUpdate update in _queryUpdatesByResource[index] ?? []) update.Initialized = false;
+            else if (kind == GraphAccessTargetKind.RayTracingShaderTable && (uint)index < (uint)_shaderTableUpdatesByResource.Length)
+                foreach (ShaderTableStateUpdate update in _shaderTableUpdatesByResource[index] ?? []) update.Initialized = false;
+        }
+        _stateUpdateResourcesChanged.Clear();
+    }
+
+    // Construct changed range results before Submit can succeed. No externally visible
+    // boundary is changed until the backend returns a completion for this submission.
+    private void PrepareSubmissionState(int submission)
+    {
+        foreach (BufferStateUpdate update in _submissionBufferUpdates[submission])
+        {
+            FrameBuffer buffer = _buffers[update.ResourceIndex];
+            BufferBoundaryState[] current = buffer.Lifetime == RenderGraphResourceLifetime.Persistent
+                ? buffer.Definition?.BoundaryStates ?? buffer.EntryBoundaryStates ?? []
+                : buffer.EntryBoundaryStates ?? [];
+            bool changed = !update.Initialized || update.Before.Length != current.Length;
+            if (!changed)
+                for (int item = 0; item < current.Length; item++)
+                    if (update.Before[item] != (current[item] with { ReadyAfter = null })) { changed = true; break; }
+            if (changed) BuildBufferStateUpdate(update, current);
+            for (int item = 0; item < update.After.Length; item++)
+            {
+                int source = update.After[item].CompletionSource;
+                update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
+            }
+        }
+        foreach (TextureStateUpdate update in _submissionTextureUpdates[submission])
+        {
+            FrameTexture texture = _textures[update.ResourceIndex];
+            TextureBoundaryState[] current = texture.Lifetime == RenderGraphResourceLifetime.Persistent
+                ? texture.Definition?.BoundaryStates ?? texture.EntryBoundaryStates ?? []
+                : texture.EntryBoundaryStates ?? [];
+            bool changed = !update.Initialized || update.Before.Length != current.Length;
+            if (!changed)
+                for (int item = 0; item < current.Length; item++)
+                    if (update.Before[item] != (current[item] with { ReadyAfter = null })) { changed = true; break; }
+            if (changed) BuildTextureStateUpdate(update, current);
+            for (int item = 0; item < update.After.Length; item++)
+            {
+                int source = update.After[item].CompletionSource;
+                update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
+            }
+        }
+        foreach (QueryStateUpdate update in _submissionQueryUpdates[submission])
+        {
+            QueryBoundaryState[] current = _queryPools[update.ResourceIndex].Definition.BoundaryStates;
+            bool changed = !update.Initialized || update.Before.Length != current.Length;
+            if (!changed)
+                for (int item = 0; item < current.Length; item++)
+                    if (update.Before[item] != (current[item] with { ReadyAfter = null })) { changed = true; break; }
+            if (changed) BuildQueryStateUpdate(update, current);
+            for (int item = 0; item < update.After.Length; item++)
+            {
+                int source = update.After[item].CompletionSource;
+                update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
+            }
+        }
+        foreach (ShaderTableStateUpdate update in _submissionShaderTableUpdates[submission])
+        {
+            RayTracingShaderTableBoundaryState[] current = _shaderTables[update.ResourceIndex].Definition.BoundaryStates;
+            bool changed = !update.Initialized || update.Before.Length != current.Length;
+            if (!changed)
+                for (int item = 0; item < current.Length; item++)
+                    if (update.Before[item] != (current[item] with { ReadyAfter = null })) { changed = true; break; }
+            if (changed) BuildShaderTableStateUpdate(update, current);
+            for (int item = 0; item < update.After.Length; item++)
+            {
+                int source = update.After[item].CompletionSource;
+                update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
+            }
+        }
+    }
+
+    private void CommitSubmissionState(int submission, QueueCompletion completion)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateCommit);
+        foreach (BufferStateUpdate update in _submissionBufferUpdates[submission])
+        {
+            CommitBuffer(update, completion);
+        }
+        foreach (TextureStateUpdate update in _submissionTextureUpdates[submission])
+        {
+            CommitTexture(update, completion);
+        }
+        foreach (QueryStateUpdate update in _submissionQueryUpdates[submission])
+        {
+            for (int item = 0; item < update.Values.Length; item++)
+                update.Values[item] = update.After[item].State with
+                { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+            ref FrameQueryPool pool = ref CollectionsMarshal.AsSpan(_queryPools)[update.ResourceIndex];
+            pool.Definition.BoundaryStates = update.Values;
+            pool.EntryBoundaryStates = update.Values;
+            _frame.Graph.BoundaryChanged(pool.Identity, GraphStoreKind.QueryPools);
+        }
+        foreach (ShaderTableStateUpdate update in _submissionShaderTableUpdates[submission])
+        {
+            for (int item = 0; item < update.Values.Length; item++)
+                update.Values[item] = update.After[item].State with
+                { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+            ref FrameRayTracingShaderTable table = ref CollectionsMarshal.AsSpan(_shaderTables)[update.ResourceIndex];
+            table.Definition.BoundaryStates = update.Values;
+            table.EntryBoundaryStates = update.Values;
+            _frame.Graph.BoundaryChanged(table.Identity, GraphStoreKind.ShaderTables);
+        }
+    }
+
+    private void CommitBuffer(BufferStateUpdate update, QueueCompletion completion)
+    {
+        BufferBoundaryState[] boundaryStates = update.Values;
+        for (int item = 0; item < boundaryStates.Length; item++)
+            boundaryStates[item] = update.After[item].State with { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+        StoreBufferStates(update.ResourceIndex, boundaryStates);
+    }
+
+    private void StoreBufferStates(int resourceIndex, BufferBoundaryState[] boundaryStates)
+    {
+        FrameBuffer frameBuffer = _buffers[resourceIndex];
+        if (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent && frameBuffer.Definition is { } resource)
+            resource.BoundaryStates = boundaryStates;
         else
         {
             frameBuffer.EntryBoundaryStates = boundaryStates;
-            _buffers[access.ResourceIndex] = frameBuffer;
-            if (frameBuffer.Lifetime == RenderGraphResourceLifetime.PerFrame &&
-                frameBuffer.Resource is not null)
-            {
-                _frame.Slot.TransientResources?.StoreCachedBufferStates(
-                    frameBuffer.Identity,
-                    frameBuffer.Resource,
-                    boundaryStates);
-            }
+            _buffers[resourceIndex] = frameBuffer;
+            if (frameBuffer.Ownership == RenderGraphResourceOwnership.CallerOwned && frameBuffer.Definition is not null)
+                frameBuffer.Definition.BoundaryStates = boundaryStates;
+            if (frameBuffer.Lifetime == RenderGraphResourceLifetime.PerFrame && frameBuffer.Resource is not null)
+                _frame.Slot.TransientResources?.StoreCachedBufferStates(frameBuffer.AllocationIdentity, frameBuffer.Resource, boundaryStates);
         }
+        if (frameBuffer.Definition is not null && (frameBuffer.Lifetime == RenderGraphResourceLifetime.Persistent ||
+            frameBuffer.Ownership == RenderGraphResourceOwnership.CallerOwned))
+            _frame.Graph.BoundaryChanged(frameBuffer.Identity, GraphStoreKind.Buffers);
+        else _changedBoundaryResources.Add((GraphAccessTargetKind.Buffer, resourceIndex));
     }
 
-    private void CommitTexture(in FrameResourceAccess access, QueueCompletion completion)
+    private void BuildBufferStateUpdate(BufferStateUpdate update, ReadOnlySpan<BufferBoundaryState> current)
     {
-        FrameTexture frameTexture = _textures[access.ResourceIndex];
-        TextureBoundaryState[] current = frameTexture.Lifetime == RenderGraphResourceLifetime.Persistent
-            ? frameTexture.Definition?.BoundaryStates ?? frameTexture.EntryBoundaryStates ?? []
-            : frameTexture.EntryBoundaryStates ?? [];
-        ResourceContentState contents = access.ResultContents ?? access.Mode switch
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        update.Before = new BufferBoundaryState[current.Length];
+        _bufferBoundaryScratch.Clear();
+        for (int item = 0; item < current.Length; item++)
         {
-            GraphAccessMode.Read => ResourceContentState.Defined,
-            GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-            GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
-            _ => FindTextureContents(current, access.TextureRange),
-        };
-        var endpoint = new TextureBoundaryState(
-            access.TextureRange,
-            access.Sync,
-            access.Access,
-            access.TextureLayout,
-            contents,
-            _passes[access.PassIndex].Queue,
-            completion);
-        TextureBoundaryState[] boundaryStates = UpdateTextureBoundaryStates(
-            current,
-            endpoint,
-            access.Mode == GraphAccessMode.Read);
+            BufferBoundaryState state = current[item] with { ReadyAfter = null };
+            update.Before[item] = state;
+            _bufferBoundaryScratch.Add(new(state, item));
+        }
+        foreach (BufferStateStep step in update.Steps)
+        {
+            bool retainDistinctQueueReaders = !step.Writes && !step.Acquired;
+            BufferBoundaryState endpoint = default;
+            foreach (int index in step.Accesses)
+            {
+                FrameResourceAccess access = _accesses[index];
+                ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
+                ResourceContentState contents = access.ResultContents ?? access.Mode switch
+                {
+                    GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                    GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                    _ => ResourceContentState.Undefined,
+                };
+                BufferContentScope contentScope = contents == ResourceContentState.Defined
+                    ? access.ResultContents.HasValue
+                        ? access.BufferContentScope
+                        : access.Mode switch
+                        {
+                            GraphAccessMode.Read => FindBufferContentScope(states, access.BufferRange),
+                            GraphAccessMode.ReadWrite => access.BufferContentScope,
+                            GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => BufferContentScope.FullRange,
+                            _ => FindBufferContentScope(states, access.BufferRange),
+                        }
+                    : BufferContentScope.FullRange;
+                endpoint = new BufferBoundaryState(access.BufferRange, step.Sync, step.Access,
+                    contents, _passes[step.Pass].Queue, null, contentScope);
+                bool preserveContents = access.Mode == GraphAccessMode.Write &&
+                    access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
+                if (preserveContents)
+                {
+                    _bufferContentScratch.Clear();
+                    _bufferContentScratch.AddRange(_bufferBoundaryScratch);
+                }
+                UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint, -1), retainDistinctQueueReaders);
+                if (preserveContents)
+                {
+                    // A partial write changes synchronization for its declared range,
+                    // but preserves the contents of each previously defined subrange.
+                    foreach (BufferStateValue previous in _bufferContentScratch)
+                    {
+                        if (previous.State.Contents != ResourceContentState.Defined) continue;
+                        ulong start = Math.Max(previous.State.Range.Offset, access.BufferRange.Offset);
+                        ulong end = Math.Min(previous.State.Range.Offset + previous.State.Range.Size,
+                            access.BufferRange.Offset + access.BufferRange.Size);
+                        if (start >= end) continue;
+                        UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint with
+                        {
+                            Range = new(start, end - start), Contents = previous.State.Contents,
+                            ContentScope = previous.State.ContentScope,
+                        }, -1), reader: false);
+                    }
+                    _bufferContentScratch.Clear();
+                }
+            }
+            if (endpoint.Queue?.Device.Capabilities.SupportsConcurrentBufferReads != true)
+                PublishBufferPhysicalState(CollectionsMarshal.AsSpan(_bufferBoundaryScratch), endpoint,
+                    retainDistinctQueueReaders, step.Acquired);
+        }
+        foreach (QueueRelease release in update.Releases)
+            ReleaseBufferStates(_bufferBoundaryScratch, _passes[_submissionPasses[update.Submission][0]].Queue!,
+                ReleaseDestination(release.DestinationQueueType));
+        _bufferBoundaryScratch.Sort(static (left, right) => left.State.Range.Offset.CompareTo(right.State.Range.Offset));
+        update.After = _bufferBoundaryScratch.ToArray();
+        update.Values = new BufferBoundaryState[update.After.Length];
+        update.Completions = new QueueCompletion?[update.After.Length];
+        update.Initialized = true;
+    }
+
+    private void CommitTexture(TextureStateUpdate update, QueueCompletion completion)
+    {
+        TextureBoundaryState[] boundaryStates = update.Values;
+        for (int item = 0; item < boundaryStates.Length; item++)
+            boundaryStates[item] = update.After[item].State with { ReadyAfter = update.After[item].CompletionSource < 0 ? completion : update.Completions[item] };
+        StoreTextureStates(update.ResourceIndex, boundaryStates);
+    }
+
+    private void StoreTextureStates(int resourceIndex, TextureBoundaryState[] boundaryStates)
+    {
+        FrameTexture frameTexture = _textures[resourceIndex];
         if (frameTexture.Lifetime == RenderGraphResourceLifetime.Persistent &&
             frameTexture.Definition is { } resource)
         {
@@ -102,221 +535,434 @@ internal sealed partial class FrameExecutor
         else
         {
             frameTexture.EntryBoundaryStates = boundaryStates;
-            _textures[access.ResourceIndex] = frameTexture;
+            _textures[resourceIndex] = frameTexture;
+            if (frameTexture.Ownership == RenderGraphResourceOwnership.CallerOwned && frameTexture.Definition is not null)
+                frameTexture.Definition.BoundaryStates = boundaryStates;
             if (frameTexture.Lifetime == RenderGraphResourceLifetime.PerFrame &&
                 frameTexture.Resource is not null)
             {
                 _frame.Slot.TransientResources?.StoreCachedTextureStates(
-                    frameTexture.Identity,
+                    frameTexture.AllocationIdentity,
                     frameTexture.Resource,
                     boundaryStates);
             }
         }
+        if (frameTexture.Definition is not null && (frameTexture.Lifetime == RenderGraphResourceLifetime.Persistent ||
+            frameTexture.Ownership == RenderGraphResourceOwnership.CallerOwned))
+            _frame.Graph.BoundaryChanged(frameTexture.Identity, GraphStoreKind.Textures);
+        else _changedBoundaryResources.Add((GraphAccessTargetKind.Texture, resourceIndex));
     }
 
-    private void CommitQueryPool(in FrameResourceAccess access, QueueCompletion completion)
+    private void BuildTextureStateUpdate(TextureStateUpdate update, ReadOnlySpan<TextureBoundaryState> current)
     {
-        FrameQueryPool framePool = _queryPools[access.ResourceIndex];
-        QueryBoundaryState[] current = framePool.Definition.BoundaryStates;
-        ResourceContentState contents = access.ResultContents ?? access.Mode switch
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        update.Before = new TextureBoundaryState[current.Length];
+        _textureBoundaryScratch.Clear();
+        for (int item = 0; item < current.Length; item++)
         {
-            GraphAccessMode.Read => FindQueryContents(current, access.QueryRange),
-            GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-            GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete =>
-                ResourceContentState.Defined,
-            _ => FindQueryContents(current, access.QueryRange),
-        };
-        var endpoint = new QueryBoundaryState(
-            access.QueryRange,
-            contents,
-            _passes[access.PassIndex].Queue,
-            completion);
-        QueryBoundaryState[] boundaryStates = UpdateQueryEndpoints(
-            current,
-            endpoint,
-            access.Mode == GraphAccessMode.Read);
-        framePool.Definition.BoundaryStates = boundaryStates;
-        framePool.EntryBoundaryStates = boundaryStates;
-        _queryPools[access.ResourceIndex] = framePool;
-    }
-
-    private void CommitShaderTable(in FrameResourceAccess access, QueueCompletion completion)
-    {
-        FrameRayTracingShaderTable frameTable = _shaderTables[access.ResourceIndex];
-        RayTracingShaderTableBoundaryState[] current = frameTable.Definition.BoundaryStates;
-        ResourceContentState contents = access.ResultContents ?? access.Mode switch
-        {
-            GraphAccessMode.Read => ResolveShaderTableContents(current),
-            GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-            GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete =>
-                ResourceContentState.Defined,
-            _ => ResolveShaderTableContents(current),
-        };
-        var endpoint = new RayTracingShaderTableBoundaryState(
-            contents,
-            _passes[access.PassIndex].Queue,
-            completion);
-        RayTracingShaderTableBoundaryState[] boundaryStates = UpdateShaderTableEndpoints(
-            current,
-            endpoint,
-            access.Mode == GraphAccessMode.Read);
-        frameTable.Definition.BoundaryStates = boundaryStates;
-        frameTable.EntryBoundaryStates = boundaryStates;
-        _shaderTables[access.ResourceIndex] = frameTable;
-    }
-
-    private static BufferBoundaryState[] UpdateBufferBoundaryStates(
-        BufferBoundaryState[] current,
-        in BufferBoundaryState update,
-        bool reader)
-    {
-        if (current.Length == 1 && current[0].Range == update.Range)
-        {
-            BufferBoundaryState existing = current[0];
-            bool distinctQueueReaders = reader &&
-                !ResourceAccessRules.Writes(existing.Access) &&
-                existing.Queue is not null &&
-                update.Queue is not null &&
-                !ReferenceEquals(existing.Queue, update.Queue);
-            if (!distinctQueueReaders)
-            {
-                current[0] = update;
-                return current;
-            }
+            TextureBoundaryState state = current[item] with { ReadyAfter = null };
+            update.Before[item] = state;
+            _textureBoundaryScratch.Add(new(state, item));
         }
-
-        var result = new List<BufferBoundaryState>(current.Length + 2);
-        ulong updateStart = update.Range.Offset;
-        ulong updateEnd = update.Range.Offset + update.Range.Size;
-        foreach (BufferBoundaryState existing in current)
+        for (int item = 0; item < update.Accesses.Length; item++)
         {
-            BufferRange range = existing.Range;
-            ulong start = range.Offset;
-            ulong end = range.Offset + range.Size;
-            if (end <= updateStart || start >= updateEnd)
+            FrameResourceAccess access = _accesses[update.Accesses[item]];
+            ResourceContentState contents = access.ResultContents ?? access.Mode switch
             {
-                result.Add(existing);
-                continue;
+                GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                _ => ResourceContentState.Undefined,
+            };
+            var endpoint = new TextureBoundaryState(access.TextureRange, access.Sync, access.Access,
+                access.TextureLayout, contents, _passes[access.PassIndex].Queue);
+            bool preserveContents = access.Mode == GraphAccessMode.Write &&
+                access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
+            if (preserveContents)
+            {
+                _textureContentScratch.Clear();
+                _textureContentScratch.AddRange(_textureBoundaryScratch);
             }
-            bool existingReader = !ResourceAccessRules.Writes(existing.Access);
-            if (reader && existingReader && existing.Queue is not null && update.Queue is not null)
+            UpdateTextureBoundaryStates(_textureBoundaryScratch, new(endpoint, -1),
+                access.Mode == GraphAccessMode.Read && !update.Acquired[item]);
+            if (preserveContents)
             {
-                if (!ReferenceEquals(existing.Queue, update.Queue)) result.Add(existing);
-                continue;
-            }
-            if (start < updateStart)
-                result.Add(existing with { Range = new BufferRange(start, updateStart - start) });
-            if (end > updateEnd)
-                result.Add(existing with { Range = new BufferRange(updateEnd, end - updateEnd) });
-        }
-        result.Add(update);
-        result.Sort(static (left, right) => left.Range.Offset.CompareTo(right.Range.Offset));
-        return result.ToArray();
-    }
-
-    private static QueryBoundaryState[] UpdateQueryEndpoints(
-        QueryBoundaryState[] current,
-        in QueryBoundaryState update,
-        bool reader)
-    {
-        var result = new List<QueryBoundaryState>(current.Length + 2);
-        uint updateStart = update.Range.FirstQuery;
-        uint updateEnd = checked(updateStart + update.Range.QueryCount);
-        foreach (QueryBoundaryState existing in current)
-        {
-            uint start = existing.Range.FirstQuery;
-            uint end = checked(start + existing.Range.QueryCount);
-            if (end <= updateStart || start >= updateEnd)
-            {
-                result.Add(existing);
-                continue;
-            }
-            if (reader && !ReferenceEquals(existing.Queue, update.Queue))
-            {
-                result.Add(existing);
-                continue;
-            }
-            if (start < updateStart)
-            {
-                result.Add(existing with
+                foreach (TextureStateValue previous in _textureContentScratch)
                 {
-                    Range = new QueryRange(start, updateStart - start),
-                });
+                    TextureSubresourceRange range = previous.State.Range;
+                    if (previous.State.Contents != ResourceContentState.Defined ||
+                        !Overlaps(range, access.TextureRange)) continue;
+                    uint mip = Math.Max(range.FirstMipLevel, access.TextureRange.FirstMipLevel);
+                    uint layer = Math.Max(range.FirstArrayLayer, access.TextureRange.FirstArrayLayer);
+                    TextureSubresourceRange overlap = new(mip,
+                        Math.Min(range.FirstMipLevel + range.MipLevelCount,
+                            access.TextureRange.FirstMipLevel + access.TextureRange.MipLevelCount) - mip,
+                        layer, Math.Min(range.FirstArrayLayer + range.ArrayLayerCount,
+                            access.TextureRange.FirstArrayLayer + access.TextureRange.ArrayLayerCount) - layer,
+                        range.Aspects & access.TextureRange.Aspects);
+                    UpdateTextureBoundaryStates(_textureBoundaryScratch,
+                        new(endpoint with { Range = overlap, Contents = previous.State.Contents }, -1), reader: false);
+                }
+                _textureContentScratch.Clear();
             }
-            if (end > updateEnd)
+        }
+        foreach (QueueRelease release in update.Releases)
+            TransferTextureStates(_textureBoundaryScratch, release.TextureRange!.Value,
+                _passes[_submissionPasses[update.Submission][0]].Queue!, ReleaseDestination(release.DestinationQueueType));
+        update.After = _textureBoundaryScratch.ToArray();
+        update.Values = new TextureBoundaryState[update.After.Length];
+        update.Completions = new QueueCompletion?[update.After.Length];
+        update.Initialized = true;
+    }
+
+    private static void ReleaseBufferStates(List<BufferStateValue> states, Queue queue, Queue? releasedTo)
+    {
+        for (int index = 0; index < states.Count; index++)
+            states[index] = new(states[index].State with
             {
-                result.Add(existing with
+                Sync = PipelineSync.None, Access = ResourceAccess.NoAccess,
+                Queue = queue, ReleasedTo = releasedTo, ReadyAfter = null,
+            }, -1);
+    }
+
+    private static void TransferTextureStates(List<TextureStateValue> states,
+        TextureSubresourceRange range, Queue queue, Queue? releasedTo)
+    {
+        for (int index = states.Count - 1; index >= 0; index--)
+        {
+            TextureStateValue current = states[index];
+            TextureSubresourceRange previous = current.State.Range;
+            if (!Overlaps(previous, range)) continue;
+            states.RemoveAt(index);
+            Subtract(current, range, states);
+            uint firstMip = Math.Max(previous.FirstMipLevel, range.FirstMipLevel);
+            uint firstLayer = Math.Max(previous.FirstArrayLayer, range.FirstArrayLayer);
+            var overlap = new TextureSubresourceRange(firstMip,
+                Math.Min(previous.FirstMipLevel + previous.MipLevelCount, range.FirstMipLevel + range.MipLevelCount) - firstMip,
+                firstLayer,
+                Math.Min(previous.FirstArrayLayer + previous.ArrayLayerCount, range.FirstArrayLayer + range.ArrayLayerCount) - firstLayer,
+                previous.Aspects & range.Aspects);
+            states.Add(new(current.State with
+            {
+                Range = overlap, Sync = PipelineSync.None, Access = ResourceAccess.NoAccess,
+                Layout = TextureLayout.General, Queue = queue, ReleasedTo = releasedTo,
+                ReleaseRange = releasedTo is null ? null : range, ReadyAfter = null,
+            }, -1));
+        }
+    }
+
+    private void PrepareLateReleaseState(Queue queue, List<PendingQueueRelease> releases)
+    {
+        _lateStateResources.Clear();
+        _lateBufferStateCount = _lateTextureStateCount = 0;
+        foreach (PendingQueueRelease release in releases)
+            if (_resourceRows.TryGetValue(release.Resource, out var key)) _lateStateResources.Add(key);
+        foreach (var key in _lateStateResources)
+        {
+            if (key.Kind == GraphAccessTargetKind.Buffer)
+            {
+                if (_lateBufferStateCount == _lateBufferStateUpdates.Count) _lateBufferStateUpdates.Add(new());
+                BufferStateUpdate update = _lateBufferStateUpdates[_lateBufferStateCount++];
+                update.ResourceIndex = key.Index;
+                FrameBuffer buffer = _buffers[key.Index];
+                ReadOnlySpan<BufferBoundaryState> current = BufferEntryStates(buffer);
+                _bufferBoundaryScratch.Clear();
+                for (int item = 0; item < current.Length; item++)
+                    _bufferBoundaryScratch.Add(new(current[item] with { ReadyAfter = null }, item));
+                foreach (PendingQueueRelease release in releases)
+                    if (ReferenceEquals(release.Resource, buffer.Resource) && release.AcquireFrom.HasValue)
+                        ReleaseBufferStates(_bufferBoundaryScratch, queue, null);
+                foreach (PendingQueueRelease release in releases)
+                    if (ReferenceEquals(release.Resource, buffer.Resource) && release.Release)
+                        ReleaseBufferStates(_bufferBoundaryScratch, queue, release.DestinationQueue);
+                update.After = _bufferBoundaryScratch.ToArray();
+                update.Values = new BufferBoundaryState[update.After.Length];
+                update.Completions = new QueueCompletion?[update.After.Length];
+                for (int item = 0; item < update.After.Length; item++)
                 {
-                    Range = new QueryRange(updateEnd, end - updateEnd),
-                });
+                    int source = update.After[item].CompletionSource;
+                    update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
+                }
+            }
+            else if (key.Kind == GraphAccessTargetKind.Texture)
+            {
+                if (_lateTextureStateCount == _lateTextureStateUpdates.Count) _lateTextureStateUpdates.Add(new());
+                TextureStateUpdate update = _lateTextureStateUpdates[_lateTextureStateCount++];
+                update.ResourceIndex = key.Index;
+                FrameTexture texture = _textures[key.Index];
+                ReadOnlySpan<TextureBoundaryState> current = TextureEntryStates(texture);
+                _textureBoundaryScratch.Clear();
+                for (int item = 0; item < current.Length; item++)
+                    _textureBoundaryScratch.Add(new(current[item] with { ReadyAfter = null }, item));
+                foreach (PendingQueueRelease release in releases)
+                    if (ReferenceEquals(release.Resource, texture.Resource) && release.AcquireFrom.HasValue)
+                        TransferTextureStates(_textureBoundaryScratch, release.TextureRange!.Value, queue, null);
+                foreach (PendingQueueRelease release in releases)
+                    if (ReferenceEquals(release.Resource, texture.Resource) && release.Release)
+                        TransferTextureStates(_textureBoundaryScratch, release.TextureRange!.Value, queue, release.DestinationQueue);
+                update.After = _textureBoundaryScratch.ToArray();
+                update.Values = new TextureBoundaryState[update.After.Length];
+                update.Completions = new QueueCompletion?[update.After.Length];
+                for (int item = 0; item < update.After.Length; item++)
+                {
+                    int source = update.After[item].CompletionSource;
+                    update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
+                }
             }
         }
-        result.Add(update);
-        result.Sort(static (left, right) =>
-            left.Range.FirstQuery.CompareTo(right.Range.FirstQuery));
-        return result.ToArray();
     }
 
-    private static RayTracingShaderTableBoundaryState[] UpdateShaderTableEndpoints(
-        RayTracingShaderTableBoundaryState[] current,
-        in RayTracingShaderTableBoundaryState update,
-        bool reader)
+    private void CommitLateReleaseState(QueueCompletion completion)
     {
-        if (!reader) return [update];
-        var result = new List<RayTracingShaderTableBoundaryState>(current.Length + 1);
-        foreach (RayTracingShaderTableBoundaryState existing in current)
-        {
-            if (!ReferenceEquals(existing.Queue, update.Queue))
-                result.Add(existing);
-        }
-        result.Add(update);
-        return result.ToArray();
+        for (int index = 0; index < _lateBufferStateCount; index++) CommitBuffer(_lateBufferStateUpdates[index], completion);
+        for (int index = 0; index < _lateTextureStateCount; index++) CommitTexture(_lateTextureStateUpdates[index], completion);
     }
 
-    private static TextureBoundaryState[] UpdateTextureBoundaryStates(
-        TextureBoundaryState[] current,
-        in TextureBoundaryState update,
+    private void BuildQueryStateUpdate(QueryStateUpdate update, ReadOnlySpan<QueryBoundaryState> current)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        update.Before = new QueryBoundaryState[current.Length];
+        _queryBoundaryScratch.Clear();
+        for (int item = 0; item < current.Length; item++)
+        {
+            QueryBoundaryState state = current[item] with { ReadyAfter = null };
+            update.Before[item] = state;
+            _queryBoundaryScratch.Add(new(state, item));
+        }
+        foreach (int index in update.Accesses)
+        {
+            FrameResourceAccess access = _accesses[index];
+            ResourceContentState contents = access.ResultContents ?? access.Mode switch
+            {
+                GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                _ => ResourceContentState.Undefined,
+            };
+            bool preserveContents = access.Mode == GraphAccessMode.Write &&
+                access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
+            if (preserveContents)
+            {
+                _queryContentScratch.Clear();
+                _queryContentScratch.AddRange(_queryBoundaryScratch);
+            }
+            var endpoint = new QueryBoundaryState(access.QueryRange, contents, _passes[access.PassIndex].Queue, null);
+            UpdateQueryEndpoints(_queryBoundaryScratch,
+                new(endpoint, -1),
+                access.Mode == GraphAccessMode.Read);
+            if (preserveContents)
+            {
+                foreach (QueryStateValue previous in _queryContentScratch)
+                {
+                    if (previous.State.Contents != ResourceContentState.Defined) continue;
+                    uint start = Math.Max(previous.State.Range.FirstQuery, access.QueryRange.FirstQuery);
+                    uint end = Math.Min(previous.State.Range.FirstQuery + previous.State.Range.QueryCount,
+                        access.QueryRange.FirstQuery + access.QueryRange.QueryCount);
+                    if (start >= end) continue;
+                    UpdateQueryEndpoints(_queryBoundaryScratch,
+                        new(endpoint with { Range = new(start, end - start), Contents = previous.State.Contents }, -1), reader: false);
+                }
+                _queryContentScratch.Clear();
+            }
+        }
+        update.After = _queryBoundaryScratch.ToArray();
+        update.Values = new QueryBoundaryState[update.After.Length];
+        update.Completions = new QueueCompletion?[update.After.Length];
+        update.Initialized = true;
+    }
+
+    private void BuildShaderTableStateUpdate(ShaderTableStateUpdate update,
+        ReadOnlySpan<RayTracingShaderTableBoundaryState> current)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        update.Before = new RayTracingShaderTableBoundaryState[current.Length];
+        _shaderTableBoundaryScratch.Clear();
+        for (int item = 0; item < current.Length; item++)
+        {
+            RayTracingShaderTableBoundaryState state = current[item] with { ReadyAfter = null };
+            update.Before[item] = state;
+            _shaderTableBoundaryScratch.Add(new(state, item));
+        }
+        foreach (int index in update.Accesses)
+        {
+            FrameResourceAccess access = _accesses[index];
+            ResourceContentState contents = access.ResultContents ?? access.Mode switch
+            {
+                GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                _ => FindShaderTableContents(CollectionsMarshal.AsSpan(_shaderTableBoundaryScratch)),
+            };
+            Queue queue = _passes[access.PassIndex].Queue!;
+            if (access.Mode != GraphAccessMode.Read) _shaderTableBoundaryScratch.Clear();
+            else
+                for (int item = _shaderTableBoundaryScratch.Count - 1; item >= 0; item--)
+                    if (ReferenceEquals(_shaderTableBoundaryScratch[item].State.Queue, queue))
+                        _shaderTableBoundaryScratch.RemoveAt(item);
+            _shaderTableBoundaryScratch.Add(new(new RayTracingShaderTableBoundaryState(contents, queue, null), -1));
+        }
+        update.After = _shaderTableBoundaryScratch.ToArray();
+        update.Values = new RayTracingShaderTableBoundaryState[update.After.Length];
+        update.Completions = new QueueCompletion?[update.After.Length];
+        update.Initialized = true;
+    }
+
+    private static ResourceContentState FindShaderTableContents(ReadOnlySpan<ShaderTableStateValue> values)
+    {
+        if (values.IsEmpty) return ResourceContentState.Undefined;
+        ResourceContentState contents = values[0].State.Contents;
+        foreach (ShaderTableStateValue value in values)
+            DevelopmentCheck.Require(value.State.Contents == contents,
+                "RayTracingShaderTable reader boundary states disagree about contents.");
+        return contents;
+    }
+
+    private static void UpdateBufferBoundaryStates(
+        List<BufferStateValue> current,
+        in BufferStateValue update,
         bool reader)
     {
-        var result = new List<TextureBoundaryState>(current.Length + 8);
-        foreach (TextureBoundaryState existing in current)
+        ulong updateStart = update.State.Range.Offset;
+        ulong updateEnd = checked(updateStart + update.State.Range.Size);
+        bool replaced = false;
+        for (int index = current.Count - 1; index >= 0; index--)
         {
-            if (!Overlaps(existing.Range, update.Range))
+            BufferStateValue value = current[index];
+            BufferBoundaryState existing = value.State;
+            ulong start = existing.Range.Offset;
+            ulong end = checked(start + existing.Range.Size);
+            if (end <= updateStart || start >= updateEnd)
+                continue;
+            if (reader && !ResourceAccessRules.Writes(existing.Access) &&
+                existing.Queue is not null && update.State.Queue is not null &&
+                !ReferenceEquals(existing.Queue, update.State.Queue))
+                continue;
+            if (!replaced && existing.Range == update.State.Range)
             {
-                result.Add(existing);
+                current[index] = update;
+                replaced = true;
                 continue;
             }
-
-            bool existingReader = !ResourceAccessRules.Writes(existing.Access);
-            if (reader && existingReader && !ReferenceEquals(existing.Queue, update.Queue))
-            {
-                // Distinct Queue readers coexist on the overlapping subresources.
-                result.Add(existing);
-                continue;
-            }
-
-            Subtract(existing, update.Range, result);
+            current.RemoveAt(index);
+            // A later reader supersedes only the bytes it reads. Keep the other
+            // content ranges and their completion, including on the same queue.
+            if (start < updateStart)
+                current.Add(value with { State = existing with { Range = new BufferRange(start, updateStart - start) } });
+            if (end > updateEnd)
+                current.Add(value with { State = existing with { Range = new BufferRange(updateEnd, end - updateEnd) } });
         }
-        result.Add(update);
-        result.Sort(static (left, right) =>
+        if (!replaced)
+            current.Add(update);
+    }
+
+    private static void PublishBufferPhysicalState(
+        Span<BufferStateValue> boundaryStates,
+        in BufferBoundaryState endpoint,
+        bool retainDistinctQueueReaders,
+        bool publishOwnership)
+    {
+        // Buffer barriers advance Sync/Access for the whole physical resource. A QueueAcquire is
+        // whole-resource as well, so its destination Queue and completion own every byte even when
+        // the consuming access covers only a smaller logical range. Content definition remains
+        // range-scoped in UpdateBufferBoundaryStates.
+        for (int index = 0; index < boundaryStates.Length; index++)
         {
-            int aspect = left.Range.Aspects.CompareTo(right.Range.Aspects);
+            BufferStateValue value = boundaryStates[index];
+            BufferBoundaryState state = value.State;
+            bool distinctQueueReader = retainDistinctQueueReaders &&
+                !ResourceAccessRules.Writes(state.Access) &&
+                state.Queue is not null &&
+                endpoint.Queue is not null &&
+                !ReferenceEquals(state.Queue, endpoint.Queue);
+            if (distinctQueueReader) continue;
+
+            boundaryStates[index] = value with
+            {
+                State = state with
+                {
+                    Sync = endpoint.Sync,
+                    Access = endpoint.Access,
+                    Queue = publishOwnership ? endpoint.Queue : state.Queue,
+                    ReleasedTo = publishOwnership ? null : state.ReleasedTo,
+                },
+                CompletionSource = publishOwnership ? -1 : value.CompletionSource,
+            };
+        }
+    }
+
+    private bool HasIncomingBufferAcquire(int pass, Buffer? buffer)
+    {
+        if (buffer is null) return false;
+        foreach (QueueAcquire acquire in _acquires[pass])
+            if (ReferenceEquals(acquire.Resource, buffer))
+                return true;
+        return false;
+    }
+
+    private bool HasIncomingTextureAcquire(
+        int pass,
+        Texture? texture,
+        in TextureSubresourceRange range)
+    {
+        if (texture is null) return false;
+        foreach (QueueAcquire acquire in _acquires[pass])
+        {
+            if (!ReferenceEquals(acquire.Resource, texture)) continue;
+            if (acquire.TextureRange is not { } acquiredRange ||
+                Overlaps(acquiredRange, range))
+                return true;
+        }
+        return false;
+    }
+
+    private static void UpdateQueryEndpoints(List<QueryStateValue> current, in QueryStateValue update, bool reader)
+    {
+        uint updateStart = update.State.Range.FirstQuery;
+        uint updateEnd = checked(updateStart + update.State.Range.QueryCount);
+        for (int item = current.Count - 1; item >= 0; item--)
+        {
+            QueryStateValue value = current[item];
+            QueryBoundaryState existing = value.State;
+            uint start = existing.Range.FirstQuery, end = checked(start + existing.Range.QueryCount);
+            if (end <= updateStart || start >= updateEnd ||
+                reader && !ReferenceEquals(existing.Queue, update.State.Queue)) continue;
+            current.RemoveAt(item);
+            if (start < updateStart)
+                current.Add(value with { State = existing with { Range = new QueryRange(start, updateStart - start) } });
+            if (end > updateEnd)
+                current.Add(value with { State = existing with { Range = new QueryRange(updateEnd, end - updateEnd) } });
+        }
+        current.Add(update);
+        current.Sort(static (left, right) => left.State.Range.FirstQuery.CompareTo(right.State.Range.FirstQuery));
+    }
+
+    private static void UpdateTextureBoundaryStates(
+        List<TextureStateValue> current, in TextureStateValue update, bool reader)
+    {
+        int count = current.Count;
+        for (int index = count - 1; index >= 0; index--)
+        {
+            TextureStateValue existing = current[index];
+            if (!Overlaps(existing.State.Range, update.State.Range)) continue;
+            if (reader && !ResourceAccessRules.Writes(existing.State.Access) &&
+                !ReferenceEquals(existing.State.Queue, update.State.Queue)) continue;
+            current.RemoveAt(index);
+            Subtract(existing, update.State.Range, current);
+        }
+        current.Add(update);
+        current.Sort(static (left, right) =>
+        {
+            int aspect = left.State.Range.Aspects.CompareTo(right.State.Range.Aspects);
             if (aspect != 0) return aspect;
-            int layer = left.Range.FirstArrayLayer.CompareTo(right.Range.FirstArrayLayer);
-            return layer != 0
-                ? layer
-                : left.Range.FirstMipLevel.CompareTo(right.Range.FirstMipLevel);
+            int layer = left.State.Range.FirstArrayLayer.CompareTo(right.State.Range.FirstArrayLayer);
+            return layer != 0 ? layer : left.State.Range.FirstMipLevel.CompareTo(right.State.Range.FirstMipLevel);
         });
-        return result.ToArray();
     }
 
     private static void Subtract(
-        in TextureBoundaryState existing,
+        in TextureStateValue existing,
         in TextureSubresourceRange removed,
-        List<TextureBoundaryState> destination)
+        List<TextureStateValue> destination)
     {
-        TextureBoundaryState endpoint = existing;
-        TextureSubresourceRange source = existing.Range;
+        TextureStateValue endpoint = existing;
+        TextureSubresourceRange source = existing.State.Range;
         TextureAspects untouchedAspects = source.Aspects & ~removed.Aspects;
         AddRange(source.FirstMipLevel, source.MipLevelCount,
             source.FirstArrayLayer, source.ArrayLayerCount, untouchedAspects);
@@ -357,63 +1003,19 @@ internal sealed partial class FrameExecutor
             if (mipCount == 0 || layerCount == 0 || aspects == TextureAspects.None) return;
             destination.Add(endpoint with
             {
-                Range = new TextureSubresourceRange(
-                    firstMip,
-                    mipCount,
-                    firstLayer,
-                    layerCount,
-                    aspects),
+                State = endpoint.State with { Range = new TextureSubresourceRange(
+                    firstMip, mipCount, firstLayer, layerCount, aspects) },
             });
         }
     }
 
-    private static ResourceContentState FindQueryContents(
-        QueryBoundaryState[] boundaryStates,
-        in QueryRange range)
-    {
-        uint cursor = range.FirstQuery;
-        uint end = checked(range.FirstQuery + range.QueryCount);
-        while (cursor < end)
-        {
-            uint coveredUntil = cursor;
-            ResourceContentState contents = ResourceContentState.Undefined;
-            foreach (QueryBoundaryState endpoint in boundaryStates)
-            {
-                uint endpointStart = endpoint.Range.FirstQuery;
-                uint endpointEnd = checked(
-                    endpoint.Range.FirstQuery + endpoint.Range.QueryCount);
-                if (endpointStart > cursor || endpointEnd <= cursor) continue;
-                if (endpoint.Contents != ResourceContentState.Defined)
-                    return ResourceContentState.Undefined;
-                if (endpointEnd > coveredUntil)
-                {
-                    coveredUntil = endpointEnd;
-                    contents = endpoint.Contents;
-                }
-            }
-            if (contents != ResourceContentState.Defined || coveredUntil == cursor)
-                return ResourceContentState.Undefined;
-            cursor = Math.Min(coveredUntil, end);
-        }
-        return ResourceContentState.Defined;
-    }
-
-    private static ResourceContentState FindBufferContents(
-        BufferBoundaryState[] boundaryStates,
+    private static BufferContentScope FindBufferContentScope(
+        ReadOnlySpan<BufferStateValue> boundaryStates,
         in BufferRange range)
     {
-        foreach (BufferBoundaryState endpoint in boundaryStates)
-            if (Contains(endpoint.Range, range)) return endpoint.Contents;
-        return ResourceContentState.Undefined;
-    }
-
-    private static ResourceContentState FindTextureContents(
-        TextureBoundaryState[] boundaryStates,
-        in TextureSubresourceRange range)
-    {
-        foreach (TextureBoundaryState endpoint in boundaryStates)
-            if (Contains(endpoint.Range, range)) return endpoint.Contents;
-        return ResourceContentState.Undefined;
+        foreach (BufferStateValue endpoint in boundaryStates)
+            if (Contains(endpoint.State.Range, range)) return endpoint.State.ContentScope;
+        return BufferContentScope.FullRange;
     }
 
     private static bool Overlaps(

@@ -4,8 +4,6 @@
 static const uint PACKED_CLUSTER_STRIDE_BYTES = 88;
 static const uint SLOT_INVALID = 0xFFFFu;
 static const uint BIN_INVALID = 0xFFFFFFFFu;
-static const uint DEFORM_CACHE_CLUSTER_BLOCK_SIZE = 4u;
-static const uint DEFORM_CACHE_PREFIX_THREAD_COUNT = 256u;
 
 struct PackedCluster
 {
@@ -18,7 +16,7 @@ struct PackedCluster
     float3 BoundMin;                    // 32 — conservative object-space AABB min
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
-    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][DeformMaterialIndex:8]
+    uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]
     uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
@@ -120,11 +118,6 @@ uint GetStageSlot(
         return SLOT_INVALID;
 
     return stageSlots[slotOffset + localMaterialIndex];
-}
-
-uint DecodeDeformMaterialIndex(PackedCluster c)
-{
-    return c.PackedCounts >> 24;
 }
 
 uint LocalMaterial(uint packedMaterials, uint packedRanges, uint triStart)
@@ -270,14 +263,106 @@ struct RasterBinEntry
     uint Pad;
 };
 
-// Deform Bin metadata (16B = 4xuint). Deform cache dispatch is keyed by VertexEval,
-// not RasterBin, so keep this layout independent of RasterBinEntry.
-struct DeformBinEntry
+// 12-byte geometry work item. Cluster ids are bounded to 12 bits by the packed-page ABI;
+// the remaining 20 bits carry the renderer-global view index without a fourth word.
+struct DrawRequest
 {
-    uint ClusterOffset;
-    uint BinCount;
-    uint Cursor;
-    uint Pad;
+    uint PageOffset;
+    uint InstanceID;
+    uint ClusterAndView;
+};
+
+DrawRequest MakeDrawRequest(
+    uint pageOffset,
+    uint clusterID,
+    uint instanceID,
+    uint viewIndex)
+{
+    DrawRequest request;
+    request.PageOffset = pageOffset;
+    request.InstanceID = instanceID;
+    request.ClusterAndView = (clusterID & 0xFFFu) | (viewIndex << 12u);
+    return request;
+}
+
+uint DrawRequestClusterID(DrawRequest request)
+{
+    return request.ClusterAndView & 0xFFFu;
+}
+
+uint DrawRequestViewIndex(DrawRequest request)
+{
+    return request.ClusterAndView >> 12u;
+}
+
+// One node carries up to 32 views through the hierarchy. Geometry and instance
+// data are fetched once; projection, LOD and occlusion remain specific to each view.
+struct ClusterTraversalNode
+{
+    uint NodeIndex;
+    uint InstanceID;
+    uint ViewIndex;
+    uint ViewMask;
+};
+
+ClusterTraversalNode MakeClusterTraversalNode(
+    uint nodeIndex, uint instanceID, uint viewIndex, uint viewMask)
+{
+    ClusterTraversalNode result;
+    result.NodeIndex = nodeIndex;
+    result.InstanceID = instanceID;
+    result.ViewIndex = viewIndex;
+    result.ViewMask = viewMask;
+    return result;
+}
+
+uint ClusterTraversalViewIndex(ClusterTraversalNode node)
+{
+    return node.ViewIndex;
+}
+
+// The phase-two buffer is a compact tagged union shared by hierarchy and leaf work. A
+// hierarchy item reserves the top bit of the first word; resident page offsets and BVH node
+// indices are both constrained below 2 GiB by the cooked Cluster address ABI.
+static const uint CLUSTER_DEFERRED_NODE_BIT = 0x80000000u;
+static const uint CLUSTER_DEFERRED_INDEX_MASK = 0x7FFFFFFFu;
+
+DrawRequest MakeDeferredTraversalNode(ClusterTraversalNode node)
+{
+    DrawRequest result;
+    result.PageOffset = CLUSTER_DEFERRED_NODE_BIT |
+        (node.NodeIndex & CLUSTER_DEFERRED_INDEX_MASK);
+    result.InstanceID = node.InstanceID;
+    result.ClusterAndView = node.ViewIndex;
+    return result;
+}
+
+bool IsDeferredTraversalNode(DrawRequest work)
+{
+    return (work.PageOffset & CLUSTER_DEFERRED_NODE_BIT) != 0u;
+}
+
+ClusterTraversalNode DecodeDeferredTraversalNode(DrawRequest work)
+{
+    ClusterTraversalNode result;
+    result.NodeIndex = work.PageOffset & CLUSTER_DEFERRED_INDEX_MASK;
+    result.InstanceID = work.InstanceID;
+    result.ViewIndex = work.ClusterAndView;
+    result.ViewMask = 1u;
+    return result;
+}
+
+struct ClusterMeshVertex
+{
+    float4 Pos : SV_POSITION;
+};
+
+struct ClusterMeshPrimitive
+{
+    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
+    nointerpolation uint TriangleID : TRIANGLE_ID;
+    nointerpolation uint ViewIndex : VIEW_INDEX;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
 
 #endif

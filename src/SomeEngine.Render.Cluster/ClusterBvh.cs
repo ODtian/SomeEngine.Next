@@ -19,7 +19,8 @@ internal readonly record struct ClusterBvhRegistration(
     int ByteLength,
     uint NodeCount,
     int PageCount,
-    uint[] LocalPageByNode);
+    uint[] LocalPageByNode,
+    int HierarchyLevels);
 
 internal readonly record struct ClusterBvhLeafIndex(
     uint FirstNode,
@@ -62,6 +63,8 @@ internal sealed class ClusterBvh
 
     internal ClusterBvh(IClusterBvhStorage? storage = null)
         => _storage = storage ?? new SparseClusterBvhStorage(DefaultCapacityBytes);
+
+    public int HierarchyLevels { get; private set; } = 1;
 
     public int RegisteredCount => _roots.Count;
     public int PublishedCount => _publishedCount;
@@ -170,7 +173,7 @@ internal sealed class ClusterBvh
         }
 
         Span<ClusterBVHNode> patched = MemoryMarshal.Cast<byte, ClusterBVHNode>(destination.Memory.Span);
-        ValidateTopology(patched);
+        int hierarchyDepth = ValidateTopology(patched);
         uint[] localPageByNode = PatchNodes(patched, firstNode, pages);
 
         uint root = firstNode + checked((uint)nodeCount) - 1;
@@ -182,7 +185,8 @@ internal sealed class ClusterBvh
             destination.Memory.Length,
             nodeCount32,
             pages.Count,
-            localPageByNode);
+            localPageByNode,
+            Math.Max(1, hierarchyDepth - 1));
     }
 
     public uint Commit(in ClusterBvhRegistration registration)
@@ -192,6 +196,7 @@ internal sealed class ClusterBvh
         var range = new ClusterBvhAllocation(byteOffset, checked((uint)registration.ByteLength));
         _allocations.Add(range);
         _count += registration.NodeCount;
+        HierarchyLevels = Math.Max(HierarchyLevels, registration.HierarchyLevels);
         _roots.Add(registration.Mesh, new ClusterRootState(registration.Root, Published: false));
         _leafIndexes.Add(new ClusterBvhLeafIndex(
             registration.FirstNode,
@@ -336,6 +341,7 @@ internal sealed class ClusterBvh
         _leafIndexes.Clear();
         _pendingRootMeshes.Clear();
         _count = 0;
+        HierarchyLevels = 1;
         _registeredPageCount = 0;
         _publishedCount = 0;
         try
@@ -481,7 +487,7 @@ internal sealed class ClusterBvh
             "Cluster page id is outside the BVH leaf index.");
     }
 
-    private static void ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
+    private static int ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
     {
         if (nodes.IsEmpty)
             throw new InvalidOperationException("A Cluster BVH must contain a root node.");
@@ -534,6 +540,7 @@ internal sealed class ClusterBvh
         int stackCount = 1;
         stackNodes[0] = root;
         states[root] = 1;
+        int maximumDepth = 1;
 
         while (stackCount != 0)
         {
@@ -560,6 +567,7 @@ internal sealed class ClusterBvh
                     stackNodes[stackCount] = child;
                     stackNextChildren[stackCount] = 0;
                     stackCount++;
+                    maximumDepth = Math.Max(maximumDepth, stackCount);
                 }
                 continue;
             }
@@ -575,6 +583,7 @@ internal sealed class ClusterBvh
         }
 
         ValidateTraversalStack(nodes, root, stackNodes);
+        return maximumDepth;
     }
 
     private static void ValidateTraversalStack(

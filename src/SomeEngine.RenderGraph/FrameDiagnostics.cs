@@ -4,12 +4,13 @@ internal sealed partial class FrameExecutor
 {
     private void PublishDiagnostics()
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.Diagnostics);
         RenderGraphDiagnosticsHandler? handler = _frame.Options.Diagnostics;
         if (handler is null) return;
 
-        var passes = new RenderGraphPassDiagnostic[_passes.Length];
+        var passes = new RenderGraphPassDiagnostic[_passes.Count];
         int liveCount = 0;
-        for (int index = 0; index < _passes.Length; index++)
+        for (int index = 0; index < _passes.Count; index++)
         {
             FramePass pass = _passes[index];
             if (_live[index]) liveCount++;
@@ -24,18 +25,16 @@ internal sealed partial class FrameExecutor
                 pass.Queue);
         }
 
-        var buffers = new RenderGraphBufferDiagnostic[_buffers.Length];
-        ulong logicalBytes = 0;
-        ulong physicalBytes = 0;
-        for (int index = 0; index < _buffers.Length; index++)
+        var buffers = new RenderGraphBufferDiagnostic[_buffers.Count];
+        ulong resourceBytes = 0;
+        for (int index = 0; index < _buffers.Count; index++)
         {
             FrameBuffer buffer = _buffers[index];
-            if (buffer.LastUse >= 0 &&
+            if (buffer.LastPass >= 0 &&
                 buffer.Ownership == RenderGraphResourceOwnership.GraphOwned &&
                 buffer.Lifetime == RenderGraphResourceLifetime.PerFrame)
             {
-                logicalBytes = checked(logicalBytes + buffer.Requirements.Size);
-                physicalBytes = checked(physicalBytes + buffer.Placement.Size);
+                resourceBytes = checked(resourceBytes + buffer.Requirements.Size);
             }
             buffers[index] = new RenderGraphBufferDiagnostic(
                 new GraphBufferId(buffer.Identity),
@@ -45,20 +44,19 @@ internal sealed partial class FrameExecutor
                 buffer.Description.Size,
                 buffer.Placement.Offset,
                 buffer.Placement.Size,
-                buffer.FirstUse == int.MaxValue ? -1 : buffer.FirstUse,
-                buffer.LastUse);
+                buffer.FirstPass < 0 ? -1 : _scheduledPosition[buffer.FirstPass],
+                buffer.LastPass < 0 ? -1 : _scheduledPosition[buffer.LastPass]);
         }
 
-        var textures = new RenderGraphTextureDiagnostic[_textures.Length];
-        for (int index = 0; index < _textures.Length; index++)
+        var textures = new RenderGraphTextureDiagnostic[_textures.Count];
+        for (int index = 0; index < _textures.Count; index++)
         {
             FrameTexture texture = _textures[index];
-            if (texture.LastUse >= 0 &&
+            if (texture.LastPass >= 0 &&
                 texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
                 texture.Lifetime == RenderGraphResourceLifetime.PerFrame)
             {
-                logicalBytes = checked(logicalBytes + texture.Requirements.Size);
-                physicalBytes = checked(physicalBytes + texture.Placement.Size);
+                resourceBytes = checked(resourceBytes + texture.Requirements.Size);
             }
             textures[index] = new RenderGraphTextureDiagnostic(
                 new GraphTextureId(texture.Identity),
@@ -70,12 +68,12 @@ internal sealed partial class FrameExecutor
                 texture.Format,
                 texture.Placement.Offset,
                 texture.Placement.Size,
-                texture.FirstUse == int.MaxValue ? -1 : texture.FirstUse,
-                texture.LastUse);
+                texture.FirstPass < 0 ? -1 : _scheduledPosition[texture.FirstPass],
+                texture.LastPass < 0 ? -1 : _scheduledPosition[texture.LastPass]);
         }
 
-        var accesses = new RenderGraphAccessDiagnostic[_accesses.Length];
-        for (int index = 0; index < _accesses.Length; index++)
+        var accesses = new RenderGraphAccessDiagnostic[_accesses.Count];
+        for (int index = 0; index < _accesses.Count; index++)
         {
             FrameResourceAccess access = _accesses[index];
             accesses[index] = new RenderGraphAccessDiagnostic(
@@ -89,12 +87,13 @@ internal sealed partial class FrameExecutor
                 access.BufferRange,
                 access.TextureRange,
                 access.TextureLayout,
-                access.ResultContents);
+                access.ResultContents,
+                access.BufferContentScope);
         }
 
         var dependencies = new List<RenderGraphDependencyDiagnostic>();
         var seen = new HashSet<(int From, int To, RenderGraphDependencyKind Kind)>();
-        for (int consumer = 0; consumer < _passes.Length; consumer++)
+        for (int consumer = 0; consumer < _passes.Count; consumer++)
         {
             if (!_live[consumer]) continue;
             foreach (int predecessor in _valuePredecessors[consumer])
@@ -106,7 +105,7 @@ internal sealed partial class FrameExecutor
         }
 
         var barriers = new List<RenderGraphBarrierDiagnostic>();
-        for (int pass = 0; pass < _passes.Length; pass++)
+        for (int pass = 0; pass < _passes.Count; pass++)
         {
             if (!_live[pass]) continue;
             GraphPassId passId = new(_passes[pass].Identity);
@@ -122,22 +121,27 @@ internal sealed partial class FrameExecutor
                 barriers.Add(new RenderGraphBarrierDiagnostic(passId, RenderGraphBarrierKind.QueueAcquire, BarrierPhase.Complete));
             foreach (QueueRelease _ in _releases[pass])
                 barriers.Add(new RenderGraphBarrierDiagnostic(passId, RenderGraphBarrierKind.QueueRelease, BarrierPhase.Complete));
-            foreach (AliasingResource _ in _aliasBeforeResources[pass])
+            for (int index = 0; index < Math.Max(_aliasBeforeResources[pass].Count, _aliasAfterResources[pass].Count); index++)
                 barriers.Add(new RenderGraphBarrierDiagnostic(passId, RenderGraphBarrierKind.Aliasing, BarrierPhase.Complete));
         }
 
         var statistics = new RenderGraphStatistics(
-            _passes.Length,
+            _passes.Count,
             liveCount,
             _schedule.Length,
-            _buffers.Length,
-            _textures.Length,
-            _accesses.Length,
+            _buffers.Count,
+            _textures.Count,
+            _accesses.Count,
             dependencies.Count,
             barriers.Count,
-            _queueLaneCount,
-            logicalBytes,
-            physicalBytes);
+            _queueLastPass.Count,
+            resourceBytes,
+            _frame.Slot.TransientResources!.OccupiedBytes,
+            _frame.Slot.TransientResources.CapacityBytes,
+            _frame.Graph.HeapByteBudget.CommittedBytes)
+        {
+            AnalysisReused = _reuseAnalysis,
+        };
         var view = new RenderGraphDiagnosticsView(
             _frame.StructureVersion,
             passes,

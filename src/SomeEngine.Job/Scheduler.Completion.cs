@@ -56,6 +56,7 @@ internal sealed partial class Scheduler
 
     private interface IExecutionStore
     {
+        SomeEngine.Diagnostics.TraceContext GetTraceContext(JobHandle handle);
         bool CanExecute(JobHandle handle);
 
         bool CompleteItems(
@@ -108,6 +109,7 @@ internal sealed partial class Scheduler
 
     internal void Complete(JobHandle handle)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Complete);
         if (handle.Index == 0)
         {
             return;

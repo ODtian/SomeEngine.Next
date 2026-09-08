@@ -30,6 +30,8 @@ internal sealed class GraphEditChanges
     internal readonly HashSet<GraphIdentity> ExtensionPoints = [];
     internal readonly HashSet<GraphIdentity> AffectedResources = [];
     internal readonly HashSet<GraphIdentity> OrderPasses = [];
+    internal readonly HashSet<ExplicitPassOrder> Orders = [];
+    internal readonly HashSet<GraphIdentity> Labels = [];
     internal GraphStoreKind Stores;
     internal bool PassMembershipChanged;
     internal bool AccessMembershipChanged;
@@ -37,6 +39,9 @@ internal sealed class GraphEditChanges
     internal bool ViewMembershipChanged;
     internal bool OrdersChanged;
     internal bool CompactTransientPlacements;
+
+    internal bool IsEmpty => Stores == GraphStoreKind.None && Labels.Count == 0 && !CompactTransientPlacements;
+    internal bool LabelsOnly => Stores == GraphStoreKind.None && Labels.Count != 0 && !CompactTransientPlacements;
 
     internal int EditedResourceCount =>
         Buffers.Count + Textures.Count + QueryPools.Count + ShaderTables.Count;
@@ -111,7 +116,7 @@ internal sealed class GraphEditChanges
         }
         Accesses.Add(identity);
         AffectedPasses.Add(pass);
-        AffectedResources.Add(resource);
+        if (resource.IsValid) AffectedResources.Add(resource);
         AccessMembershipChanged |= membership;
     }
 
@@ -128,6 +133,7 @@ internal sealed class GraphEditChanges
         OrdersChanged = true;
         OrderPasses.Add(predecessor);
         OrderPasses.Add(consumer);
+        Orders.Add(new ExplicitPassOrder(predecessor, consumer));
     }
 }
 

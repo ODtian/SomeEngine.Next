@@ -18,13 +18,14 @@ public sealed class ClusterPipelineOutputTests
         var description = new ClusterPipelineOutputDescription(64, 32, 4);
         Assert.Equal(64, description.Width);
         Assert.Equal(32, description.Height);
-        Assert.Equal(4u, description.ViewCapacity);
+        Assert.Equal(4u, description.ViewCount);
     }
 
     [Fact]
     public void Geometry_outputs_are_explicit_and_have_no_presentation_target()
     {
         var outputs = new ClusterPipelineOutputs(
+            default,
             default,
             default,
             default,
@@ -36,7 +37,7 @@ public sealed class ClusterPipelineOutputTests
         Assert.False(outputs.IsValid);
         Assert.Equal(64, outputs.Width);
         Assert.Equal(32, outputs.Height);
-        Assert.Equal(4u, outputs.ViewCapacity);
+        Assert.Equal(4u, outputs.ViewCount);
         Assert.DoesNotContain(
             typeof(ClusterPipelineOutputs).GetProperties(),
             static property => property.Name.Contains(

@@ -1,31 +1,23 @@
 #include "cluster_bin_common.slang"
+#include "cluster_tessellation_types.slang"
 #include "resource_effects.slang"
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
-ConstantBuffer<RasterDeformBinningUniforms> Uniforms;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWByteAddressBuffer BinnedDrawArgs;
+ConstantBuffer<RasterBinningUniforms> Uniforms;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer BinnedHWDrawArgs;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer BinnedSWDispatchArgs;
+[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
+RWByteAddressBuffer TessellationSeedDispatchArgs;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ReserveCounters;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<DeformBinEntry> DeformBinMeta;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWByteAddressBuffer PreDeformDispatchArgs;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> DeformReserveCounters;
-
 static const uint BLOCK_SIZE = 128u;
 groupshared uint RasterTotalPrefix[BLOCK_SIZE];
 groupshared uint RasterSoftwarePrefix[BLOCK_SIZE];
-groupshared uint DeformPrefix[BLOCK_SIZE];
 groupshared uint RasterTotalBase;
 groupshared uint RasterSoftwareBase;
-groupshared uint DeformBase;
 
 [shader("compute")]
 [numthreads(BLOCK_SIZE, 1, 1)]
@@ -38,24 +30,17 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_Grou
     uint hardwareCount = bin < Uniforms.RasterMaxBins
         ? RasterBinMeta[bin].BinHWCount
         : 0u;
-    uint deformCount = bin < Uniforms.DeformMaxBins
-        ? DeformBinMeta[bin].BinCount
-        : 0u;
-
     RasterTotalPrefix[groupIndex] = softwareCount + hardwareCount;
     RasterSoftwarePrefix[groupIndex] = softwareCount;
-    DeformPrefix[groupIndex] = deformCount;
     GroupMemoryBarrierWithGroupSync();
 
     for (uint offset = 1u; offset < BLOCK_SIZE; offset <<= 1u)
     {
         uint total = groupIndex >= offset ? RasterTotalPrefix[groupIndex - offset] : 0u;
         uint software = groupIndex >= offset ? RasterSoftwarePrefix[groupIndex - offset] : 0u;
-        uint deform = groupIndex >= offset ? DeformPrefix[groupIndex - offset] : 0u;
         GroupMemoryBarrierWithGroupSync();
         RasterTotalPrefix[groupIndex] += total;
         RasterSoftwarePrefix[groupIndex] += software;
-        DeformPrefix[groupIndex] += deform;
         GroupMemoryBarrierWithGroupSync();
     }
 
@@ -64,16 +49,16 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_Grou
     {
         InterlockedAdd(ReserveCounters[0], RasterTotalPrefix[blockLast], RasterTotalBase);
         InterlockedAdd(ReserveCounters[1], RasterSoftwarePrefix[blockLast], RasterSoftwareBase);
-        InterlockedAdd(ReserveCounters[2], RasterTotalPrefix[blockLast]);
-        InterlockedAdd(ReserveCounters[3], RasterSoftwarePrefix[blockLast]);
-        InterlockedAdd(DeformReserveCounters[0], DeformPrefix[blockLast], DeformBase);
-        InterlockedAdd(DeformReserveCounters[1], DeformPrefix[blockLast]);
+        if (Uniforms.CollectMetrics != 0u)
+        {
+            InterlockedAdd(ReserveCounters[2], RasterTotalPrefix[blockLast]);
+            InterlockedAdd(ReserveCounters[3], RasterSoftwarePrefix[blockLast]);
+        }
     }
     GroupMemoryBarrierWithGroupSync();
 
     ReserveRaster(
         RasterBinMeta,
-        BinnedDrawArgs,
         BinnedHWDrawArgs,
         BinnedSWDispatchArgs,
         bin,
@@ -84,34 +69,15 @@ void ReserveBins(uint3 threadId : SV_DispatchThreadID, uint groupIndex : SV_Grou
         RasterSoftwarePrefix[groupIndex],
         softwareCount,
         hardwareCount);
-    ReserveDeform(
-        DeformBinMeta,
-        PreDeformDispatchArgs,
-        bin,
-        Uniforms.DeformMaxBins,
-        DeformBase,
-        DeformPrefix[groupIndex],
-        deformCount);
-
-    GroupMemoryBarrierWithGroupSync();
-    if (groupIndex == 0u)
+    if (bin < Uniforms.RasterMaxBins)
     {
-        DeviceMemoryBarrier();
-        uint completedGroupCount;
-        InterlockedAdd(DeformReserveCounters[2], 1u, completedGroupCount);
-        uint reserveGroupCount = max(
-            1u,
-            (max(Uniforms.RasterMaxBins, Uniforms.DeformMaxBins) + BLOCK_SIZE - 1u) /
-                BLOCK_SIZE);
-        if (completedGroupCount + 1u == reserveGroupCount)
-        {
-            DeviceMemoryBarrier();
-            uint deformCountTotal = DeformReserveCounters[0];
-            WriteDispatch(
-                PreDeformDispatchArgs,
-                Uniforms.DeformMaxBins,
-                (deformCountTotal + DEFORM_CACHE_PREFIX_THREAD_COUNT - 1u) /
-                    DEFORM_CACHE_PREFIX_THREAD_COUNT);
-        }
+        uint batchCount = softwareCount + hardwareCount;
+        uint argumentOffset = bin * 12u;
+        uint groupsX = min(batchCount, 65535u);
+        uint groupsY = max(1u, (batchCount + 65534u) / 65535u);
+        TessellationSeedDispatchArgs.Store(argumentOffset + 0u, groupsX);
+        TessellationSeedDispatchArgs.Store(argumentOffset + 4u, groupsY);
+        TessellationSeedDispatchArgs.Store(argumentOffset + 8u, 1u);
+
     }
 }

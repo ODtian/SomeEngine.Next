@@ -1,112 +1,88 @@
+using GraphAdjacency = System.Collections.Immutable.ImmutableDictionary<SomeEngine.RenderGraph.GraphIdentity, SomeEngine.RenderGraph.GraphIdentity[]>.Builder;
+
 namespace SomeEngine.RenderGraph;
 
-internal readonly record struct GraphDependencyEdge(
-    GraphIdentity Predecessor,
-    GraphIdentity Consumer);
-
+internal readonly record struct GraphDependencyEdge(GraphIdentity Predecessor, GraphIdentity Consumer);
 internal readonly record struct GraphResourceScheduleLifetime(int FirstUse, int LastUse);
-
-internal readonly record struct GraphTransientPlacementState(
-    ulong Token,
-    GraphResourceScheduleLifetime Lifetime);
-
-internal sealed class GraphHazardTimeline
+internal readonly record struct GraphTransientPlacementState(ulong Token, GraphResourceScheduleLifetime Lifetime);
+internal sealed class GraphHazardTimeline(GraphDependencyEdge[] edges)
 {
-    internal GraphHazardTimeline(GraphDependencyEdge[] edges) => Edges = edges;
-
-    internal GraphDependencyEdge[] Edges { get; }
+    internal GraphDependencyEdge[] Edges { get; } = edges;
 }
 
 internal sealed class GraphStructureIndex
 {
-    private static readonly Dictionary<GraphIdentity, GraphIdentity[]> s_emptyAdjacency = [];
+    internal static readonly GraphStructureIndex Empty = new(new GraphStructure());
+    private GraphStructureIndex(GraphStructure structure) => Structure = structure;
+    internal GraphStructure Structure { get; private set; }
+    internal ImmutableList<GraphIdentity> BufferIds => Structure.Buffers.Identities;
+    internal ImmutableList<GraphIdentity> TextureIds => Structure.Textures.Identities;
+    internal ImmutableList<GraphIdentity> QueryPoolIds => Structure.QueryPools.Identities;
+    internal ImmutableList<GraphIdentity> ShaderTableIds => Structure.ShaderTables.Identities;
+    internal ImmutableList<GraphIdentity> ViewIds => Structure.Views.Identities;
+    internal ImmutableList<GraphIdentity> PassIds => Structure.Passes.Identities;
+    internal ImmutableList<GraphIdentity> AccessIds => Structure.Accesses.Identities;
+    internal ImmutableDictionary<Resource, GraphIdentity> ResourceIdentities { get; private set; } =
+        ImmutableDictionary.Create<Resource, GraphIdentity>(ReferenceEqualityComparer.Instance);
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> ResourceAccesses { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> PassAccessIdentities { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> ExplicitPredecessorIdentities { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> ExplicitSuccessorIdentities { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> DependencyPredecessors { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> DependencySuccessors { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> ViewResources { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal IReadOnlyDictionary<GraphParameterInput, GraphIdentity[]> ParameterInputAccesses { get; private init; } = new Dictionary<GraphParameterInput, GraphIdentity[]>();
+    internal IReadOnlyDictionary<GraphTextureInput, GraphIdentity[]> TextureInputViews { get; private init; } = new Dictionary<GraphTextureInput, GraphIdentity[]>();
+    internal IReadOnlyDictionary<GraphTextureInput, GraphIdentity[]> TextureInputAccesses { get; private init; } = new Dictionary<GraphTextureInput, GraphIdentity[]>();
+    internal IReadOnlyDictionary<GraphBufferInput, GraphIdentity[]> BufferInputViews { get; private init; } = new Dictionary<GraphBufferInput, GraphIdentity[]>();
+    internal IReadOnlyDictionary<GraphBufferInput, GraphIdentity[]> BufferInputAccesses { get; private init; } = new Dictionary<GraphBufferInput, GraphIdentity[]>();
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> ResourceViews { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> BindingReferences { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphIdentity[]> BindingDependents { get; private init; } = ImmutableDictionary<GraphIdentity, GraphIdentity[]>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphHazardTimeline> HazardTimelines { get; private init; } = ImmutableDictionary<GraphIdentity, GraphHazardTimeline>.Empty;
+    internal ImmutableDictionary<GraphDependencyEdge, int> HazardEdgeCounts { get; private init; } = ImmutableDictionary<GraphDependencyEdge, int>.Empty;
+    internal ImmutableHashSet<GraphDependencyEdge> ExplicitEdges { get; private init; } = ImmutableHashSet<GraphDependencyEdge>.Empty;
+    internal ImmutableSortedDictionary<int, GraphIdentity> Schedule { get; private init; } = ImmutableSortedDictionary<int, GraphIdentity>.Empty;
+    internal ImmutableDictionary<GraphIdentity, int> Positions { get; private init; } = ImmutableDictionary<GraphIdentity, int>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphResourceScheduleLifetime> ResourceLifetimes { get; private init; } = ImmutableDictionary<GraphIdentity, GraphResourceScheduleLifetime>.Empty;
+    internal ImmutableDictionary<GraphIdentity, GraphTransientPlacementState> TransientPlacements { get; private init; } = ImmutableDictionary<GraphIdentity, GraphTransientPlacementState>.Empty;
+    internal ulong NextPlacementToken { get; private init; } = 1;
+    internal int NonTransientResourceCount { get; private init; }
 
-    internal static readonly GraphStructureIndex Empty = new(
-        new GraphStructure(),
-        [], [], [], [], [], [], [], [], [],
-        s_emptyAdjacency, s_emptyAdjacency, s_emptyAdjacency, s_emptyAdjacency,
-        s_emptyAdjacency, s_emptyAdjacency, s_emptyAdjacency, s_emptyAdjacency,
-        [], [], [], [], [], [], 1);
-
-    private GraphStructureIndex(
-        GraphStructure structure,
-        GraphIdentity[] bufferIds,
-        GraphIdentity[] textureIds,
-        GraphIdentity[] queryPoolIds,
-        GraphIdentity[] shaderTableIds,
-        GraphIdentity[] viewIds,
-        GraphIdentity[] passIds,
-        GraphIdentity[] accessIds,
-        int[][] passAccesses,
-        int[][] explicitPredecessors,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceAccesses,
-        Dictionary<GraphIdentity, GraphIdentity[]> passAccessIdentities,
-        Dictionary<GraphIdentity, GraphIdentity[]> explicitPredecessorIdentities,
-        Dictionary<GraphIdentity, GraphIdentity[]> explicitSuccessorIdentities,
-        Dictionary<GraphIdentity, GraphIdentity[]> dependencyPredecessors,
-        Dictionary<GraphIdentity, GraphIdentity[]> dependencySuccessors,
-        Dictionary<GraphIdentity, GraphIdentity[]> viewResources,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceViews,
-        Dictionary<GraphIdentity, GraphHazardTimeline> hazardTimelines,
-        Dictionary<GraphDependencyEdge, int> hazardEdgeCounts,
-        HashSet<GraphDependencyEdge> explicitEdges,
-        GraphIdentity[] topologicalSchedule,
-        Dictionary<GraphIdentity, GraphResourceScheduleLifetime> resourceLifetimes,
-        Dictionary<GraphIdentity, GraphTransientPlacementState> transientPlacements,
-        ulong nextPlacementToken)
+    internal GraphStructureIndex WithStructure(GraphStructure structure)
     {
-        Structure = structure;
-        BufferIds = bufferIds;
-        TextureIds = textureIds;
-        QueryPoolIds = queryPoolIds;
-        ShaderTableIds = shaderTableIds;
-        ViewIds = viewIds;
-        PassIds = passIds;
-        AccessIds = accessIds;
-        PassAccessIndices = passAccesses;
-        ExplicitPredecessors = explicitPredecessors;
-        ResourceAccesses = resourceAccesses;
-        PassAccessIdentities = passAccessIdentities;
-        ExplicitPredecessorIdentities = explicitPredecessorIdentities;
-        ExplicitSuccessorIdentities = explicitSuccessorIdentities;
-        DependencyPredecessors = dependencyPredecessors;
-        DependencySuccessors = dependencySuccessors;
-        ViewResources = viewResources;
-        ResourceViews = resourceViews;
-        HazardTimelines = hazardTimelines;
-        HazardEdgeCounts = hazardEdgeCounts;
-        ExplicitEdges = explicitEdges;
-        TopologicalSchedule = topologicalSchedule;
-        ResourceLifetimes = resourceLifetimes;
-        TransientPlacements = transientPlacements;
-        NextPlacementToken = nextPlacementToken;
+        var result = (GraphStructureIndex)MemberwiseClone();
+        result.Structure = structure;
+        return result;
     }
 
-    internal GraphStructure Structure { get; }
-    internal GraphIdentity[] BufferIds { get; }
-    internal GraphIdentity[] TextureIds { get; }
-    internal GraphIdentity[] QueryPoolIds { get; }
-    internal GraphIdentity[] ShaderTableIds { get; }
-    internal GraphIdentity[] ViewIds { get; }
-    internal GraphIdentity[] PassIds { get; }
-    internal GraphIdentity[] AccessIds { get; }
-    internal int[][] PassAccessIndices { get; }
-    internal int[][] ExplicitPredecessors { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> ResourceAccesses { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> PassAccessIdentities { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> ExplicitPredecessorIdentities { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> ExplicitSuccessorIdentities { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> DependencyPredecessors { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> DependencySuccessors { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> ViewResources { get; }
-    internal Dictionary<GraphIdentity, GraphIdentity[]> ResourceViews { get; }
-    internal Dictionary<GraphIdentity, GraphHazardTimeline> HazardTimelines { get; }
-    internal Dictionary<GraphDependencyEdge, int> HazardEdgeCounts { get; }
-    internal HashSet<GraphDependencyEdge> ExplicitEdges { get; }
-    internal GraphIdentity[] TopologicalSchedule { get; }
-    internal Dictionary<GraphIdentity, GraphResourceScheduleLifetime> ResourceLifetimes { get; }
-    internal Dictionary<GraphIdentity, GraphTransientPlacementState> TransientPlacements { get; }
-    internal ulong NextPlacementToken { get; }
+    internal void UpdateResourceIdentities(GraphStructureIndex previous, GraphEditChanges changes)
+    {
+        var identities = previous.ResourceIdentities.ToBuilder();
+        foreach (GraphIdentity identity in changes.Buffers)
+        {
+            GraphBuffer? before = previous.Structure.Buffers.Contains(identity) ? previous.Structure.Buffers.Get(identity) : null;
+            GraphBuffer? after = Structure.Buffers.Contains(identity) ? Structure.Buffers.Get(identity) : null;
+            Update(identity, before?.PersistentResource ?? before?.RegisteredResource,
+                after?.PersistentResource ?? after?.RegisteredResource);
+        }
+        foreach (GraphIdentity identity in changes.Textures)
+        {
+            GraphTexture? before = previous.Structure.Textures.Contains(identity) ? previous.Structure.Textures.Get(identity) : null;
+            GraphTexture? after = Structure.Textures.Contains(identity) ? Structure.Textures.Get(identity) : null;
+            Update(identity, before?.PersistentResource ?? before?.RegisteredResource,
+                after?.PersistentResource ?? after?.RegisteredResource);
+        }
+        ResourceIdentities = identities.ToImmutable();
+        return;
+
+        void Update(GraphIdentity identity, Resource? before, Resource? after)
+        {
+            if (before is not null && identities.TryGetValue(before, out GraphIdentity found) && found == identity)
+                identities.Remove(before);
+            if (after is not null) identities[after] = identity;
+        }
+    }
 
     internal static GraphStructureIndex Build(RenderGraph graph, GraphStructure structure)
     {
@@ -115,70 +91,105 @@ internal sealed class GraphStructureIndex
         return Update(graph, Empty, structure, changes, out _);
     }
 
-    internal static GraphStructureIndex Update(
-        RenderGraph graph,
-        GraphStructureIndex previous,
-        GraphStructure structure,
-        GraphEditChanges changes,
-        out GraphIndexUpdateStatistics statistics)
+    internal static GraphStructureIndex Update(RenderGraph graph, GraphStructureIndex previous,
+        GraphStructure structure, GraphEditChanges changes, out GraphIndexUpdateStatistics statistics)
     {
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceAccesses = Clone(previous.ResourceAccesses);
-        Dictionary<GraphIdentity, GraphIdentity[]> passAccessIdentities = Clone(previous.PassAccessIdentities);
-        UpdateAccessAdjacency(previous.Structure, structure, changes, resourceAccesses, passAccessIdentities);
-
-        Dictionary<GraphIdentity, GraphIdentity[]> viewResources = Clone(previous.ViewResources);
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceViews = Clone(previous.ResourceViews);
+        GraphAdjacency resourceAccesses = previous.ResourceAccesses.ToBuilder();
+        GraphAdjacency passAccesses = previous.PassAccessIdentities.ToBuilder();
+        UpdateAccessAdjacency(previous.Structure, structure, changes, resourceAccesses, passAccesses);
+        GraphAdjacency viewResources = previous.ViewResources.ToBuilder();
+        GraphAdjacency resourceViews = previous.ResourceViews.ToBuilder();
         UpdateViewAdjacency(previous.Structure, structure, changes, viewResources, resourceViews);
+        GraphAdjacency bindingReferences = previous.BindingReferences.ToBuilder();
+        GraphAdjacency bindingDependents = previous.BindingDependents.ToBuilder();
+        UpdateBindingAdjacency(structure, changes, bindingReferences, bindingDependents);
 
-        Dictionary<GraphIdentity, GraphIdentity[]> explicitPredecessorIdentities =
-            Clone(previous.ExplicitPredecessorIdentities);
-        Dictionary<GraphIdentity, GraphIdentity[]> explicitSuccessorIdentities =
-            Clone(previous.ExplicitSuccessorIdentities);
-        UpdateExplicitAdjacency(
-            structure,
-            changes,
-            explicitPredecessorIdentities,
-            explicitSuccessorIdentities);
-
+        // Resource edits invalidate only their dependent views. Those row copies also
+        // isolate newly created GPU views from readers of the preceding structure.
+        foreach (GraphIdentity resource in changes.Buffers.Concat(changes.Textures))
+            foreach (GraphIdentity view in resourceViews.GetValueOrDefault(resource, []))
+                if (structure.Views.Contains(view))
+                {
+                    structure.Views.GetMutable(view).PersistentView = null;
+                    changes.TouchView(view);
+                }
         ValidateTouched(graph, structure, changes, resourceAccesses, resourceViews);
+        foreach (GraphIdentity target in changes.AffectedResources.Concat(changes.Views).Concat(changes.PersistentBindings))
+            foreach (GraphIdentity dependent in bindingDependents.GetValueOrDefault(target, []))
+                ValidateBindingReferences(structure, graph.Device, dependent);
 
-        GraphIdentity[] passIds = changes.Passes.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.PassIds
-            : BuildIds(graph.Identity, structure.Passes);
-        var hazardOrderDirty = new HashSet<GraphIdentity>(changes.AffectedPasses);
-        hazardOrderDirty.UnionWith(changes.OrderPasses);
-        GraphIdentity[] hazardOrder = RepairTopologicalSchedule(
-            structure,
-            passIds,
-            previous.TopologicalSchedule,
-            explicitPredecessorIdentities,
-            explicitSuccessorIdentities,
-            hazardOrderDirty,
-            out _);
-        Dictionary<GraphIdentity, int> hazardOrderPositions = BuildPositions(hazardOrder);
-
-        var hazardTimelines = new Dictionary<GraphIdentity, GraphHazardTimeline>(previous.HazardTimelines);
-        var hazardEdgeCounts = new Dictionary<GraphDependencyEdge, int>(previous.HazardEdgeCounts);
+        GraphAdjacency explicitPredecessors = previous.ExplicitPredecessorIdentities.ToBuilder();
+        GraphAdjacency explicitSuccessors = previous.ExplicitSuccessorIdentities.ToBuilder();
+        var explicitEdges = previous.ExplicitEdges.ToBuilder();
         var changedEdges = new HashSet<GraphDependencyEdge>();
-        int resourcesReanalyzed = 0;
-        int hazardEdgesRebuilt = 0;
-        foreach (GraphIdentity resource in changes.AffectedResources)
+        var addedExplicitEdges = new List<GraphDependencyEdge>();
+        foreach (ExplicitPassOrder order in changes.Orders)
         {
-            resourcesReanalyzed++;
-            if (hazardTimelines.Remove(resource, out GraphHazardTimeline? oldTimeline))
+            GraphDependencyEdge edge = new(order.Predecessor, order.Consumer);
+            changedEdges.Add(edge);
+            if (structure.Orders.Contains(order))
             {
+                _ = structure.Passes.Get(order.Predecessor);
+                _ = structure.Passes.Get(order.Consumer);
+                if (explicitEdges.Add(edge))
+                {
+                    AddAdjacency(explicitPredecessors, order.Consumer, order.Predecessor);
+                    AddAdjacency(explicitSuccessors, order.Predecessor, order.Consumer);
+                    addedExplicitEdges.Add(edge);
+                }
+            }
+            else if (explicitEdges.Remove(edge))
+            {
+                RemoveAdjacency(explicitPredecessors, order.Consumer, order.Predecessor);
+                RemoveAdjacency(explicitSuccessors, order.Predecessor, order.Consumer);
+            }
+        }
+
+        var positions = previous.Positions.ToBuilder();
+        var schedule = previous.Schedule.ToBuilder();
+        var reordered = new HashSet<GraphIdentity>();
+        foreach (GraphIdentity pass in changes.Passes)
+        {
+            if (!structure.Passes.Contains(pass))
+            {
+                if (positions.TryGetValue(pass, out int oldPosition))
+                {
+                    positions.Remove(pass);
+                    schedule.Remove(oldPosition);
+                }
+            }
+            else if (!positions.ContainsKey(pass))
+            {
+                int position = structure.Passes.Get(pass).DeclarationOrdinal;
+                positions.Add(pass, position);
+                schedule.Add(position, pass);
+                reordered.Add(pass);
+            }
+        }
+        foreach (GraphDependencyEdge edge in addedExplicitEdges)
+            RepairOrder(edge, explicitPredecessors, explicitSuccessors, positions, schedule, reordered);
+
+        var affectedResources = new HashSet<GraphIdentity>(changes.AffectedResources);
+        foreach (GraphIdentity pass in reordered)
+            foreach (GraphIdentity access in passAccesses.GetValueOrDefault(pass, []))
+                affectedResources.Add(structure.Accesses.Get(access).Target);
+        var hazardTimelines = previous.HazardTimelines.ToBuilder();
+        var hazardEdgeCounts = previous.HazardEdgeCounts.ToBuilder();
+        int hazardEdgesRebuilt = 0;
+        foreach (GraphIdentity resource in affectedResources)
+        {
+            if (hazardTimelines.TryGetValue(resource, out GraphHazardTimeline? oldTimeline))
+            {
+                hazardTimelines.Remove(resource);
                 foreach (GraphDependencyEdge edge in oldTimeline.Edges)
                 {
                     changedEdges.Add(edge);
                     Decrement(hazardEdgeCounts, edge);
                 }
             }
-
             if (!ContainsResource(structure, resource)) continue;
-            GraphHazardTimeline timeline = BuildHazardTimeline(
-                structure,
-                resourceAccesses.GetValueOrDefault(resource, []),
-                hazardOrderPositions);
+            GraphHazardTimeline timeline = BuildHazardTimeline(structure,
+                resourceAccesses.GetValueOrDefault(resource, []), positions);
             hazardTimelines.Add(resource, timeline);
             hazardEdgesRebuilt += timeline.Edges.Length;
             foreach (GraphDependencyEdge edge in timeline.Edges)
@@ -188,173 +199,234 @@ internal sealed class GraphStructureIndex
             }
         }
 
-        HashSet<GraphDependencyEdge> explicitEdges = changes.OrdersChanged ||
-            changes.PassMembershipChanged || ReferenceEquals(previous, Empty)
-                ? BuildExplicitEdges(structure)
-                : new HashSet<GraphDependencyEdge>(previous.ExplicitEdges);
-        if (!SetEquals(previous.ExplicitEdges, explicitEdges))
-        {
-            foreach (GraphDependencyEdge edge in previous.ExplicitEdges) changedEdges.Add(edge);
-            foreach (GraphDependencyEdge edge in explicitEdges) changedEdges.Add(edge);
-        }
-
-        Dictionary<GraphIdentity, GraphIdentity[]> dependencyPredecessors =
-            Clone(previous.DependencyPredecessors);
-        Dictionary<GraphIdentity, GraphIdentity[]> dependencySuccessors =
-            Clone(previous.DependencySuccessors);
-        var scheduleDirty = new HashSet<GraphIdentity>(changes.AffectedPasses);
-        scheduleDirty.UnionWith(changes.OrderPasses);
+        GraphAdjacency predecessors = previous.DependencyPredecessors.ToBuilder();
+        GraphAdjacency successors = previous.DependencySuccessors.ToBuilder();
+        var addedEdges = new List<GraphDependencyEdge>();
         foreach (GraphDependencyEdge edge in changedEdges)
         {
             bool oldPresent = previous.ExplicitEdges.Contains(edge) || previous.HazardEdgeCounts.ContainsKey(edge);
-            bool newPresent = explicitEdges.Contains(edge) || hazardEdgeCounts.ContainsKey(edge);
-            if (oldPresent == newPresent) continue;
-            scheduleDirty.Add(edge.Predecessor);
-            scheduleDirty.Add(edge.Consumer);
-            if (newPresent)
+            bool present = explicitEdges.Contains(edge) || hazardEdgeCounts.ContainsKey(edge);
+            if (oldPresent == present) continue;
+            if (present)
             {
-                AddAdjacency(dependencySuccessors, edge.Predecessor, edge.Consumer);
-                AddAdjacency(dependencyPredecessors, edge.Consumer, edge.Predecessor);
+                AddAdjacency(predecessors, edge.Consumer, edge.Predecessor);
+                AddAdjacency(successors, edge.Predecessor, edge.Consumer);
+                addedEdges.Add(edge);
             }
             else
             {
-                RemoveAdjacency(dependencySuccessors, edge.Predecessor, edge.Consumer);
-                RemoveAdjacency(dependencyPredecessors, edge.Consumer, edge.Predecessor);
+                RemoveAdjacency(predecessors, edge.Consumer, edge.Predecessor);
+                RemoveAdjacency(successors, edge.Predecessor, edge.Consumer);
             }
         }
-        foreach (GraphIdentity removed in previous.PassIds)
+        foreach (GraphIdentity pass in changes.Passes)
+            if (!structure.Passes.Contains(pass))
+            {
+                predecessors.Remove(pass);
+                successors.Remove(pass);
+            }
+        // Existing edges incident to moved nodes are the only old edges whose order
+        // can have changed. The rest of the graph needs no validation traversal.
+        foreach (GraphIdentity pass in reordered.ToArray())
         {
-            if (structure.Passes.Contains(removed)) continue;
-            dependencyPredecessors.Remove(removed);
-            dependencySuccessors.Remove(removed);
+            foreach (GraphIdentity consumer in successors.GetValueOrDefault(pass, []))
+                addedEdges.Add(new GraphDependencyEdge(pass, consumer));
+            foreach (GraphIdentity predecessor in predecessors.GetValueOrDefault(pass, []))
+                addedEdges.Add(new GraphDependencyEdge(predecessor, pass));
         }
+        foreach (GraphDependencyEdge edge in addedEdges)
+            RepairOrder(edge, predecessors, successors, positions, schedule, reordered);
 
-        GraphIdentity[] schedule = RepairTopologicalSchedule(
-            structure,
-            passIds,
-            previous.TopologicalSchedule,
-            dependencyPredecessors,
-            dependencySuccessors,
-            scheduleDirty,
-            out int scheduleNodesRevisited);
-
-        var lifetimeDirty = new HashSet<GraphIdentity>(changes.AffectedResources);
-        foreach (GraphIdentity pass in scheduleDirty)
-        {
-            if (!passAccessIdentities.TryGetValue(pass, out GraphIdentity[]? accesses)) continue;
-            foreach (GraphIdentity accessId in accesses)
-                if (structure.Accesses.Contains(accessId))
-                    lifetimeDirty.Add(structure.Accesses.Get(accessId).Target);
-        }
-        var resourceLifetimes = new Dictionary<GraphIdentity, GraphResourceScheduleLifetime>(
-            previous.ResourceLifetimes);
-        Dictionary<GraphIdentity, int> positions = BuildPositions(schedule);
+        var lifetimeDirty = new HashSet<GraphIdentity>(affectedResources);
+        foreach (GraphIdentity pass in reordered.Concat(changes.AffectedPasses))
+            foreach (GraphIdentity access in passAccesses.GetValueOrDefault(pass, []))
+                lifetimeDirty.Add(structure.Accesses.Get(access).Target);
+        var lifetimes = previous.ResourceLifetimes.ToBuilder();
+        var placements = previous.TransientPlacements.ToBuilder();
+        ulong nextPlacementToken = previous.NextPlacementToken;
+        int movedAllocations = 0;
+        if (changes.CompactTransientPlacements)
+            lifetimeDirty.UnionWith(previous.TransientPlacements.Keys);
         foreach (GraphIdentity resource in lifetimeDirty)
         {
             if (!ContainsResource(structure, resource))
             {
-                resourceLifetimes.Remove(resource);
+                lifetimes.Remove(resource);
+                placements.Remove(resource);
                 continue;
             }
-            resourceLifetimes[resource] = ResolveLifetime(
-                structure,
-                resourceAccesses.GetValueOrDefault(resource, []),
-                positions);
+            GraphResourceScheduleLifetime lifetime = ResolveLifetime(structure,
+                resourceAccesses.GetValueOrDefault(resource, []), positions);
+            lifetimes[resource] = lifetime;
+            if (!IsTransient(structure, resource))
+            {
+                placements.Remove(resource);
+                continue;
+            }
+            bool exists = placements.TryGetValue(resource, out GraphTransientPlacementState retained);
+            bool replace = changes.CompactTransientPlacements || changes.Buffers.Contains(resource) || changes.Textures.Contains(resource);
+            if (!exists || replace)
+            {
+                placements[resource] = new GraphTransientPlacementState(checked(nextPlacementToken++), lifetime);
+                if (exists) movedAllocations++;
+            }
+            else if (retained.Lifetime != lifetime)
+                placements[resource] = retained with { Lifetime = lifetime };
         }
-
-        var transientPlacements = new Dictionary<GraphIdentity, GraphTransientPlacementState>(
-            previous.TransientPlacements);
-        ulong nextPlacementToken = previous.NextPlacementToken;
-        int transientAllocationsMoved = 0;
-        foreach (GraphIdentity resource in previous.TransientPlacements.Keys)
-            if (!IsTransient(structure, resource)) transientPlacements.Remove(resource);
-        foreach (GraphIdentity resource in EnumerateTransientResources(graph.Identity, structure))
+        int nonTransientResources = previous.NonTransientResourceCount;
+        foreach (GraphIdentity id in changes.Buffers)
         {
-            GraphResourceScheduleLifetime lifetime = resourceLifetimes.GetValueOrDefault(
-                resource,
-                new GraphResourceScheduleLifetime(int.MaxValue, -1));
-            if (!transientPlacements.TryGetValue(resource, out GraphTransientPlacementState retained))
-            {
-                transientPlacements.Add(resource, new GraphTransientPlacementState(
-                    checked(nextPlacementToken++),
-                    lifetime));
-                continue;
-            }
-
-            bool replace = changes.CompactTransientPlacements ||
-                changes.Buffers.Contains(resource) || changes.Textures.Contains(resource);
-            if (replace)
-            {
-                retained = new GraphTransientPlacementState(checked(nextPlacementToken++), lifetime);
-                transientAllocationsMoved++;
-            }
-            else if (lifetime != retained.Lifetime)
-            {
-                retained = retained with { Lifetime = lifetime };
-            }
-            transientPlacements[resource] = retained;
+            if (previous.Structure.Buffers.Contains(id) && IsNonTransient(previous.Structure.Buffers.Get(id))) nonTransientResources--;
+            if (structure.Buffers.Contains(id) && IsNonTransient(structure.Buffers.Get(id))) nonTransientResources++;
         }
-
-        GraphIdentity[] bufferIds = changes.Buffers.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.BufferIds
-            : BuildIds(graph.Identity, structure.Buffers);
-        GraphIdentity[] textureIds = changes.Textures.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.TextureIds
-            : BuildIds(graph.Identity, structure.Textures);
-        GraphIdentity[] queryPoolIds = changes.QueryPools.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.QueryPoolIds
-            : BuildIds(graph.Identity, structure.QueryPools);
-        GraphIdentity[] shaderTableIds = changes.ShaderTables.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.ShaderTableIds
-            : BuildIds(graph.Identity, structure.ShaderTables);
-        GraphIdentity[] viewIds = changes.Views.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.ViewIds
-            : BuildIds(graph.Identity, structure.Views);
-        GraphIdentity[] accessIds = changes.Accesses.Count == 0 && !ReferenceEquals(previous, Empty)
-            ? previous.AccessIds
-            : BuildIds(graph.Identity, structure.Accesses);
-        int[][] passAccesses = changes.PassMembershipChanged || changes.AccessMembershipChanged ||
-            ReferenceEquals(previous, Empty)
-                ? BuildPassAccessIndices(structure)
-                : previous.PassAccessIndices;
-        int[][] explicitPredecessors = changes.OrdersChanged || changes.PassMembershipChanged ||
-            ReferenceEquals(previous, Empty)
-                ? BuildExplicitPredecessorIndices(structure)
-                : previous.ExplicitPredecessors;
-
-        statistics = new GraphIndexUpdateStatistics(
-            resourcesReanalyzed,
-            hazardEdgesRebuilt,
-            scheduleNodesRevisited,
-            transientAllocationsMoved);
-        return new GraphStructureIndex(
-            structure,
-            bufferIds,
-            textureIds,
-            queryPoolIds,
-            shaderTableIds,
-            viewIds,
-            passIds,
-            accessIds,
-            passAccesses,
-            explicitPredecessors,
-            resourceAccesses,
-            passAccessIdentities,
-            explicitPredecessorIdentities,
-            explicitSuccessorIdentities,
-            dependencyPredecessors,
-            dependencySuccessors,
-            viewResources,
-            resourceViews,
-            hazardTimelines,
-            hazardEdgeCounts,
-            explicitEdges,
-            schedule,
-            resourceLifetimes,
-            transientPlacements,
-            nextPlacementToken);
+        foreach (GraphIdentity id in changes.Textures)
+        {
+            if (previous.Structure.Textures.Contains(id) && IsNonTransient(previous.Structure.Textures.Get(id))) nonTransientResources--;
+            if (structure.Textures.Contains(id) && IsNonTransient(structure.Textures.Get(id))) nonTransientResources++;
+        }
+        statistics = new GraphIndexUpdateStatistics(affectedResources.Count, hazardEdgesRebuilt, reordered.Count, movedAllocations);
+        return new GraphStructureIndex(structure)
+        {
+            ParameterInputAccesses = CollectInputs(structure.Accesses.Identities, structure.Accesses.Rows.Select(access => access.ParameterInput)),
+            TextureInputViews = CollectInputs(structure.Views.Identities, structure.Views.Rows.Select(view => view.TextureInput)),
+            TextureInputAccesses = CollectInputs(structure.Accesses.Identities, structure.Accesses.Rows.Select(access => access.TextureInput)),
+            BufferInputViews = CollectInputs(structure.Views.Identities, structure.Views.Rows.Select(view => view.BufferInput)),
+            BufferInputAccesses = CollectInputs(structure.Accesses.Identities, structure.Accesses.Rows.Select(access => access.BufferInput)),
+            ResourceAccesses = resourceAccesses.ToImmutable(),
+            PassAccessIdentities = passAccesses.ToImmutable(),
+            ExplicitPredecessorIdentities = explicitPredecessors.ToImmutable(),
+            ExplicitSuccessorIdentities = explicitSuccessors.ToImmutable(),
+            DependencyPredecessors = predecessors.ToImmutable(),
+            DependencySuccessors = successors.ToImmutable(),
+            ViewResources = viewResources.ToImmutable(),
+            ResourceViews = resourceViews.ToImmutable(),
+            BindingReferences = bindingReferences.ToImmutable(),
+            BindingDependents = bindingDependents.ToImmutable(),
+            HazardTimelines = hazardTimelines.ToImmutable(),
+            HazardEdgeCounts = hazardEdgeCounts.ToImmutable(),
+            ExplicitEdges = explicitEdges.ToImmutable(),
+            Schedule = schedule.ToImmutable(),
+            Positions = positions.ToImmutable(),
+            ResourceLifetimes = lifetimes.ToImmutable(),
+            TransientPlacements = placements.ToImmutable(),
+            NonTransientResourceCount = nonTransientResources,
+            NextPlacementToken = nextPlacementToken,
+        };
     }
 
+    private static Dictionary<T, GraphIdentity[]> CollectInputs<T>(
+        IEnumerable<GraphIdentity> identities, IEnumerable<T?> inputs) where T : class
+    {
+        var values = new Dictionary<T, List<GraphIdentity>>();
+        using IEnumerator<GraphIdentity> ids = identities.GetEnumerator();
+        foreach (T? input in inputs)
+        {
+            bool found = ids.MoveNext();
+            DevelopmentCheck.Require(found, "The input index has inconsistent rows.");
+            if (input is null) continue;
+            if (!values.TryGetValue(input, out List<GraphIdentity>? references)) values.Add(input, references = []);
+            references.Add(ids.Current);
+        }
+        return values.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+    }
+
+    private static bool IsNonTransient(GraphBuffer resource) =>
+        resource.Ownership != RenderGraphResourceOwnership.GraphOwned || resource.Lifetime != RenderGraphResourceLifetime.PerFrame;
+
+    private static bool IsNonTransient(GraphTexture resource) =>
+        resource.Ownership != RenderGraphResourceOwnership.GraphOwned || resource.Lifetime != RenderGraphResourceLifetime.PerFrame;
+
+    private static void RepairOrder(GraphDependencyEdge edge,
+        IReadOnlyDictionary<GraphIdentity, GraphIdentity[]> predecessors,
+        IReadOnlyDictionary<GraphIdentity, GraphIdentity[]> successors,
+        ImmutableDictionary<GraphIdentity, int>.Builder positions,
+        ImmutableSortedDictionary<int, GraphIdentity>.Builder schedule,
+        HashSet<GraphIdentity> reordered)
+    {
+        if (!positions.TryGetValue(edge.Predecessor, out int upper) ||
+            !positions.TryGetValue(edge.Consumer, out int lower) || upper < lower) return;
+        var forward = new HashSet<GraphIdentity>();
+        var backward = new HashSet<GraphIdentity>();
+        var work = new Stack<GraphIdentity>();
+        work.Push(edge.Consumer);
+        while (work.TryPop(out GraphIdentity pass))
+        {
+            if (!positions.TryGetValue(pass, out int rank) || rank > upper || !forward.Add(pass)) continue;
+            if (pass == edge.Predecessor)
+                throw new InvalidOperationException("RG5001: The render graph contains a structural dependency cycle.");
+            foreach (GraphIdentity next in successors.GetValueOrDefault(pass, [])) work.Push(next);
+        }
+        work.Push(edge.Predecessor);
+        while (work.TryPop(out GraphIdentity pass))
+        {
+            if (!positions.TryGetValue(pass, out int rank) || rank < lower || !backward.Add(pass)) continue;
+            if (forward.Contains(pass))
+                throw new InvalidOperationException("RG5001: The render graph contains a structural dependency cycle.");
+            foreach (GraphIdentity next in predecessors.GetValueOrDefault(pass, [])) work.Push(next);
+        }
+        GraphIdentity[] before = backward.OrderBy(pass => positions[pass]).ToArray();
+        GraphIdentity[] after = forward.OrderBy(pass => positions[pass]).ToArray();
+        int[] ranks = before.Concat(after).Select(pass => positions[pass]).Order().ToArray();
+        int index = 0;
+        foreach (GraphIdentity pass in before.Concat(after))
+        {
+            int rank = ranks[index++];
+            if (positions[pass] == rank) continue;
+            positions[pass] = rank;
+            schedule[rank] = pass;
+            reordered.Add(pass);
+        }
+    }
+
+    private static void UpdateBindingAdjacency(GraphStructure structure, GraphEditChanges changes,
+        GraphAdjacency references, GraphAdjacency dependents)
+    {
+        foreach (GraphIdentity holder in changes.Passes.Concat(changes.PersistentBindings).Concat(changes.ShaderTables))
+        {
+            if (references.TryGetValue(holder, out GraphIdentity[]? old))
+            {
+                references.Remove(holder);
+                foreach (GraphIdentity target in old) RemoveAdjacency(dependents, target, holder);
+            }
+            var targets = new HashSet<GraphIdentity>();
+            foreach (GraphParameterResourceBinding binding in EnumerateBindings(structure, holder))
+            {
+                if (binding.Value.IsValid) targets.Add(binding.Value);
+                if (binding.SecondaryValue.IsValid) targets.Add(binding.SecondaryValue);
+            }
+            if (structure.Passes.Contains(holder))
+            {
+                targets.UnionWith(structure.Passes.Get(holder).PersistentBindings);
+                targets.UnionWith(structure.Passes.Get(holder).ViewReferences);
+            }
+            if (targets.Count == 0) continue;
+            references.Add(holder, targets.ToArray());
+            foreach (GraphIdentity target in targets) AddAdjacency(dependents, target, holder);
+        }
+    }
+
+    private static IEnumerable<GraphParameterResourceBinding> EnumerateBindings(GraphStructure structure, GraphIdentity holder)
+    {
+        if (structure.Passes.Contains(holder)) return structure.Passes.Get(holder).ParameterBindings;
+        if (structure.PersistentBindings.Contains(holder)) return structure.PersistentBindings.Get(holder).Inventory;
+        if (structure.ShaderTables.Contains(holder)) return structure.ShaderTables.Get(holder).Inventory;
+        return [];
+    }
+
+    private static void ValidateBindingReferences(GraphStructure structure, Device device, GraphIdentity holder)
+    {
+        foreach (GraphParameterResourceBinding binding in EnumerateBindings(structure, holder))
+            binding.ValidateStatic(structure, device);
+        if (structure.Passes.Contains(holder))
+        {
+            GraphPass pass = structure.Passes.Get(holder);
+            foreach (GraphIdentity view in pass.ViewReferences)
+                if (!structure.Views.Contains(view)) throw new ArgumentException("A Pass references a removed view.");
+            foreach (GraphIdentity bindings in pass.PersistentBindings)
+                if (!structure.PersistentBindings.Contains(bindings))
+                    throw new ArgumentException("A Pass references removed parameter bindings.");
+        }
+    }
     private static void TouchEverything(ulong owner, GraphStructure structure, GraphEditChanges changes)
     {
         for (int i = 0; i < structure.Buffers.Count; i++)
@@ -387,20 +459,20 @@ internal sealed class GraphStructureIndex
         GraphStructure previous,
         GraphStructure next,
         GraphEditChanges changes,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceAccesses,
-        Dictionary<GraphIdentity, GraphIdentity[]> passAccesses)
+        GraphAdjacency resourceAccesses,
+        GraphAdjacency passAccesses)
     {
         foreach (GraphIdentity accessId in changes.Accesses)
         {
             if (previous.Accesses.Contains(accessId))
             {
                 PassResourceAccess old = previous.Accesses.Get(accessId);
-                RemoveAdjacency(resourceAccesses, old.Target, accessId);
+                if (old.BufferInput is null && old.TextureInput is null && old.ParameterInput is null) RemoveAdjacency(resourceAccesses, old.Target, accessId);
                 RemoveAdjacency(passAccesses, old.Pass, accessId);
             }
             if (!next.Accesses.Contains(accessId)) continue;
             PassResourceAccess current = next.Accesses.Get(accessId);
-            AddAdjacency(resourceAccesses, current.Target, accessId);
+            if (current.BufferInput is null && current.TextureInput is null && current.ParameterInput is null) AddAdjacency(resourceAccesses, current.Target, accessId);
             AddAdjacency(passAccesses, current.Pass, accessId);
         }
         foreach (GraphIdentity pass in changes.Passes)
@@ -411,17 +483,18 @@ internal sealed class GraphStructureIndex
         GraphStructure previous,
         GraphStructure next,
         GraphEditChanges changes,
-        Dictionary<GraphIdentity, GraphIdentity[]> viewResources,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceViews)
+        GraphAdjacency viewResources,
+        GraphAdjacency resourceViews)
     {
         foreach (GraphIdentity viewId in changes.Views)
         {
-            if (viewResources.Remove(viewId, out GraphIdentity[]? oldResources))
+            if (viewResources.TryGetValue(viewId, out GraphIdentity[]? oldResources))
                 foreach (GraphIdentity resource in oldResources)
                     RemoveAdjacency(resourceViews, resource, viewId);
             else if (previous.Views.Contains(viewId))
                 foreach (GraphIdentity resource in ResolveViewResources(previous.Views.Get(viewId)))
                     RemoveAdjacency(resourceViews, resource, viewId);
+            viewResources.Remove(viewId);
             if (!next.Views.Contains(viewId)) continue;
             GraphIdentity[] resources = ResolveViewResources(next.Views.Get(viewId));
             viewResources.Add(viewId, resources);
@@ -432,40 +505,18 @@ internal sealed class GraphStructureIndex
 
     private static GraphIdentity[] ResolveViewResources(GraphView view)
     {
+        if (view.BufferInput is not null || view.TextureInput is not null) return [];
         if (view.Kind is GraphViewKind.BufferCbv or GraphViewKind.BufferSrv or GraphViewKind.BufferUav)
             return view.AdditionalBuffer.IsValid ? [view.Buffer, view.AdditionalBuffer] : [view.Buffer];
         return [view.Texture];
-    }
-
-    private static void UpdateExplicitAdjacency(
-        GraphStructure structure,
-        GraphEditChanges changes,
-        Dictionary<GraphIdentity, GraphIdentity[]> predecessors,
-        Dictionary<GraphIdentity, GraphIdentity[]> successors)
-    {
-        if (!changes.OrdersChanged && !changes.PassMembershipChanged) return;
-        var affected = new HashSet<GraphIdentity>(changes.OrderPasses);
-        affected.UnionWith(changes.Passes);
-        foreach (GraphIdentity pass in affected)
-        {
-            predecessors.Remove(pass);
-            successors.Remove(pass);
-        }
-        foreach (ExplicitPassOrder order in structure.Orders)
-        {
-            if (affected.Contains(order.Consumer))
-                AddAdjacency(predecessors, order.Consumer, order.Predecessor);
-            if (affected.Contains(order.Predecessor))
-                AddAdjacency(successors, order.Predecessor, order.Consumer);
-        }
     }
 
     private static void ValidateTouched(
         RenderGraph graph,
         GraphStructure structure,
         GraphEditChanges changes,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceAccesses,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceViews)
+        GraphAdjacency resourceAccesses,
+        GraphAdjacency resourceViews)
     {
         foreach (GraphIdentity id in changes.Buffers)
         {
@@ -547,22 +598,14 @@ internal sealed class GraphStructureIndex
                     throw new ArgumentException("A Pass references stale PersistentParameterBindings.");
         }
 
-        if (changes.ResourceMembershipChanged)
-        {
-            foreach (GraphPersistentParameterBindings bindings in structure.PersistentBindings.Rows)
-                foreach (ref readonly GraphParameterResourceBinding binding in bindings.Inventory.AsSpan())
-                    binding.ValidateStatic(structure, graph.Device);
-            foreach (GraphPass pass in structure.Passes.Rows)
-                foreach (GraphParameterResourceBinding binding in pass.ParameterBindings)
-                    binding.ValidateStatic(structure, graph.Device);
-        }
+
     }
 
     private static void ValidateResourceDependents(
         GraphStructure structure,
         in GraphIdentity resource,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceAccesses,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceViews,
+        GraphAdjacency resourceAccesses,
+        GraphAdjacency resourceViews,
         RenderGraph graph)
     {
         foreach (GraphIdentity access in resourceAccesses.GetValueOrDefault(resource, []))
@@ -573,8 +616,8 @@ internal sealed class GraphStructureIndex
 
     private static void RejectReferencedRemoval(
         in GraphIdentity resource,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceAccesses,
-        Dictionary<GraphIdentity, GraphIdentity[]> resourceViews)
+        GraphAdjacency resourceAccesses,
+        GraphAdjacency resourceViews)
     {
         if (resourceAccesses.GetValueOrDefault(resource, []).Length != 0 ||
             resourceViews.GetValueOrDefault(resource, []).Length != 0)
@@ -633,6 +676,11 @@ internal sealed class GraphStructureIndex
         PassResourceAccess earlier,
         PassResourceAccess later)
     {
+        if (earlier.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable &&
+            later.UnorderedAccessHazards == UnorderedAccessHazardMode.AtomicMergeable)
+        {
+            return false;
+        }
         bool bothRead = earlier.Mode == GraphAccessMode.Read && later.Mode == GraphAccessMode.Read;
         return earlier.TargetKind switch
         {
@@ -663,123 +711,10 @@ internal sealed class GraphStructureIndex
         right.FirstArrayLayer < left.FirstArrayLayer + left.ArrayLayerCount &&
         (left.Aspects & right.Aspects) != TextureAspects.None;
 
-    private static GraphIdentity[] RepairTopologicalSchedule(
-        GraphStructure structure,
-        GraphIdentity[] passIds,
-        GraphIdentity[] previousSchedule,
-        Dictionary<GraphIdentity, GraphIdentity[]> predecessors,
-        Dictionary<GraphIdentity, GraphIdentity[]> successors,
-        HashSet<GraphIdentity> dirty,
-        out int revisited)
-    {
-        if (passIds.Length == 0)
-        {
-            revisited = 0;
-            return [];
-        }
-
-        var existing = new HashSet<GraphIdentity>(passIds);
-        var schedule = new List<GraphIdentity>(passIds.Length);
-        foreach (GraphIdentity pass in previousSchedule)
-            if (existing.Remove(pass)) schedule.Add(pass);
-        GraphIdentity[] added = existing.ToArray();
-        Array.Sort(added, (left, right) => structure.Passes.Get(left).DeclarationOrdinal.CompareTo(
-            structure.Passes.Get(right).DeclarationOrdinal));
-        foreach (GraphIdentity pass in added)
-        {
-            int ordinal = structure.Passes.Get(pass).DeclarationOrdinal;
-            int insertion = schedule.FindIndex(candidate =>
-                structure.Passes.Get(candidate).DeclarationOrdinal > ordinal);
-            schedule.Insert(insertion < 0 ? schedule.Count : insertion, pass);
-            dirty.Add(pass);
-        }
-
-        Dictionary<GraphIdentity, int> positions = BuildPositions(schedule);
-        int minimum = schedule.Count;
-        int maximum = -1;
-        foreach (GraphIdentity pass in dirty)
-        {
-            if (!positions.TryGetValue(pass, out int position)) continue;
-            minimum = Math.Min(minimum, position);
-            maximum = Math.Max(maximum, position);
-        }
-        foreach ((GraphIdentity predecessor, GraphIdentity[] consumers) in successors)
-        {
-            if (!positions.TryGetValue(predecessor, out int predecessorPosition)) continue;
-            foreach (GraphIdentity consumer in consumers)
-            {
-                if (!positions.TryGetValue(consumer, out int consumerPosition) ||
-                    predecessorPosition < consumerPosition)
-                    continue;
-                minimum = Math.Min(minimum, consumerPosition);
-                maximum = Math.Max(maximum, predecessorPosition);
-            }
-        }
-
-        if (maximum < minimum)
-        {
-            revisited = 0;
-            ValidateTopological(schedule, positions, successors);
-            return schedule.ToArray();
-        }
-
-        var window = schedule.GetRange(minimum, maximum - minimum + 1);
-        var windowSet = new HashSet<GraphIdentity>(window);
-        var indegree = new Dictionary<GraphIdentity, int>();
-        var ready = new PriorityQueue<GraphIdentity, int>();
-        foreach (GraphIdentity pass in window)
-        {
-            int count = 0;
-            foreach (GraphIdentity predecessor in predecessors.GetValueOrDefault(pass, []))
-                if (windowSet.Contains(predecessor)) count++;
-            indegree.Add(pass, count);
-            if (count == 0) ready.Enqueue(pass, positions[pass]);
-        }
-        int destination = minimum;
-        while (ready.TryDequeue(out GraphIdentity pass, out _))
-        {
-            schedule[destination++] = pass;
-            foreach (GraphIdentity successor in successors.GetValueOrDefault(pass, []))
-            {
-                if (!indegree.TryGetValue(successor, out int count)) continue;
-                count--;
-                indegree[successor] = count;
-                if (count == 0) ready.Enqueue(successor, positions[successor]);
-            }
-        }
-        if (destination != maximum + 1)
-            throw new InvalidOperationException(
-                "RG5001: The render graph contains a structural dependency cycle.");
-
-        positions = BuildPositions(schedule);
-        ValidateTopological(schedule, positions, successors);
-        revisited = window.Count;
-        return schedule.ToArray();
-    }
-
-    private static void ValidateTopological(
-        List<GraphIdentity> schedule,
-        Dictionary<GraphIdentity, int> positions,
-        Dictionary<GraphIdentity, GraphIdentity[]> successors)
-    {
-        foreach ((GraphIdentity predecessor, GraphIdentity[] consumers) in successors)
-        {
-            if (!positions.TryGetValue(predecessor, out int predecessorPosition)) continue;
-            foreach (GraphIdentity consumer in consumers)
-                if (positions.TryGetValue(consumer, out int consumerPosition) &&
-                    predecessorPosition >= consumerPosition)
-                    throw new InvalidOperationException(
-                        "RG5001: The render graph contains a structural dependency cycle.");
-        }
-        if (positions.Count != schedule.Count)
-            throw new InvalidOperationException(
-                "RG5001: The retained schedule contains duplicate Pass identities.");
-    }
-
     private static GraphResourceScheduleLifetime ResolveLifetime(
         GraphStructure structure,
         GraphIdentity[] accessIds,
-        Dictionary<GraphIdentity, int> positions)
+        IReadOnlyDictionary<GraphIdentity, int> positions)
     {
         int first = int.MaxValue;
         int last = -1;
@@ -792,20 +727,6 @@ internal sealed class GraphStructureIndex
             last = Math.Max(last, position);
         }
         return new GraphResourceScheduleLifetime(first, last);
-    }
-
-    private static IEnumerable<GraphIdentity> EnumerateTransientResources(
-        ulong owner,
-        GraphStructure structure)
-    {
-        for (int i = 0; i < structure.Buffers.Count; i++)
-            if (structure.Buffers.Rows[i].Ownership == RenderGraphResourceOwnership.GraphOwned &&
-                structure.Buffers.Rows[i].Lifetime == RenderGraphResourceLifetime.PerFrame)
-                yield return structure.Buffers.IdentityAt(owner, i);
-        for (int i = 0; i < structure.Textures.Count; i++)
-            if (structure.Textures.Rows[i].Ownership == RenderGraphResourceOwnership.GraphOwned &&
-                structure.Textures.Rows[i].Lifetime == RenderGraphResourceLifetime.PerFrame)
-                yield return structure.Textures.IdentityAt(owner, i);
     }
 
     private static bool IsTransient(GraphStructure structure, in GraphIdentity resource)
@@ -822,70 +743,8 @@ internal sealed class GraphStructureIndex
             texture.Lifetime == RenderGraphResourceLifetime.PerFrame;
     }
 
-    private static Dictionary<GraphIdentity, int> BuildPositions(IReadOnlyList<GraphIdentity> schedule)
-    {
-        var result = new Dictionary<GraphIdentity, int>(schedule.Count);
-        for (int i = 0; i < schedule.Count; i++) result.Add(schedule[i], i);
-        return result;
-    }
-
-    private static GraphIdentity[] BuildIds<T>(ulong owner, SlotMap<T> values)
-    {
-        var result = new GraphIdentity[values.Count];
-        for (int i = 0; i < result.Length; i++) result[i] = values.IdentityAt(owner, i);
-        return result;
-    }
-
-    private static int[][] BuildPassAccessIndices(GraphStructure structure)
-    {
-        var result = new int[structure.Passes.Count][];
-        for (int passIndex = 0; passIndex < result.Length; passIndex++)
-        {
-            GraphPass pass = structure.Passes.Rows[passIndex];
-            int[] dense = new int[pass.Accesses.Count];
-            for (int i = 0; i < dense.Length; i++)
-                dense[i] = structure.Accesses.DenseIndex(pass.Accesses[i]);
-            result[passIndex] = dense;
-        }
-        return result;
-    }
-
-    private static int[][] BuildExplicitPredecessorIndices(GraphStructure structure)
-    {
-        var lists = new List<int>[structure.Passes.Count];
-        for (int i = 0; i < lists.Length; i++) lists[i] = [];
-        foreach (ExplicitPassOrder order in structure.Orders)
-        {
-            int predecessor = structure.Passes.DenseIndex(order.Predecessor);
-            int consumer = structure.Passes.DenseIndex(order.Consumer);
-            if (!lists[consumer].Contains(predecessor)) lists[consumer].Add(predecessor);
-        }
-        var result = new int[lists.Length][];
-        for (int i = 0; i < lists.Length; i++)
-        {
-            lists[i].Sort();
-            result[i] = lists[i].ToArray();
-        }
-        return result;
-    }
-
-    private static HashSet<GraphDependencyEdge> BuildExplicitEdges(GraphStructure structure)
-    {
-        var result = new HashSet<GraphDependencyEdge>();
-        foreach (ExplicitPassOrder order in structure.Orders)
-        {
-            _ = structure.Passes.Get(order.Predecessor);
-            _ = structure.Passes.Get(order.Consumer);
-            result.Add(new GraphDependencyEdge(order.Predecessor, order.Consumer));
-        }
-        return result;
-    }
-
-    private static Dictionary<GraphIdentity, GraphIdentity[]> Clone(
-        Dictionary<GraphIdentity, GraphIdentity[]> source) => new(source);
-
     private static void AddAdjacency(
-        Dictionary<GraphIdentity, GraphIdentity[]> values,
+        GraphAdjacency values,
         in GraphIdentity key,
         in GraphIdentity value)
     {
@@ -898,7 +757,7 @@ internal sealed class GraphStructureIndex
     }
 
     private static void RemoveAdjacency(
-        Dictionary<GraphIdentity, GraphIdentity[]> values,
+        GraphAdjacency values,
         in GraphIdentity key,
         in GraphIdentity value)
     {
@@ -918,21 +777,17 @@ internal sealed class GraphStructureIndex
     }
 
     private static void Increment(
-        Dictionary<GraphDependencyEdge, int> counts,
+        ImmutableDictionary<GraphDependencyEdge, int>.Builder counts,
         in GraphDependencyEdge edge) => counts[edge] = counts.GetValueOrDefault(edge) + 1;
 
     private static void Decrement(
-        Dictionary<GraphDependencyEdge, int> counts,
+        ImmutableDictionary<GraphDependencyEdge, int>.Builder counts,
         in GraphDependencyEdge edge)
     {
         int count = counts[edge] - 1;
         if (count == 0) counts.Remove(edge);
         else counts[edge] = count;
     }
-
-    private static bool SetEquals(
-        HashSet<GraphDependencyEdge> left,
-        HashSet<GraphDependencyEdge> right) => left.Count == right.Count && left.SetEquals(right);
 
     private static bool ContainsResource(GraphStructure structure, in GraphIdentity identity) =>
         structure.Buffers.Contains(identity) || structure.Textures.Contains(identity) ||
@@ -973,6 +828,18 @@ internal sealed class GraphStructureIndex
             case GraphViewKind.BufferCbv:
             case GraphViewKind.BufferSrv:
             case GraphViewKind.BufferUav:
+                if (view.BufferInput is not null)
+                {
+                    BufferUsages required = view.Kind switch
+                    {
+                        GraphViewKind.BufferCbv => BufferUsages.Constant,
+                        GraphViewKind.BufferUav => BufferUsages.ShaderWrite,
+                        _ => BufferUsages.ShaderRead,
+                    };
+                    DevelopmentCheck.Require((view.BufferInput.Usages & required) == required,
+                        "A buffer input view requires its corresponding usage.");
+                    break;
+                }
                 GraphBuffer buffer = structure.Buffers.Get(view.Buffer);
                 _ = ResolveRange(view.BufferRange, buffer.Description.Size);
                 if (view.AdditionalBuffer.IsValid)
@@ -987,7 +854,8 @@ internal sealed class GraphStructureIndex
             case GraphViewKind.TextureUav:
             case GraphViewKind.ColorAttachment:
             case GraphViewKind.DepthStencil:
-                ValidateTextureRange(structure.Textures.Get(view.Texture), view.TextureRange);
+                if (view.TextureInput is null)
+                    ValidateTextureRange(structure.Textures.Get(view.Texture), view.TextureRange);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(view.Kind));
@@ -1001,8 +869,7 @@ internal sealed class GraphStructureIndex
         if (!Enum.IsDefined(pass.Kind)) throw new ArgumentOutOfRangeException(nameof(pass.Kind));
         if (!Enum.IsDefined(pass.Options.Culling) ||
             !Enum.IsDefined(pass.Options.Scheduling) ||
-            !Enum.IsDefined(pass.Options.Recording) ||
-            !Enum.IsDefined(pass.Options.RasterMerging))
+            !Enum.IsDefined(pass.Options.Recording))
             throw new ArgumentOutOfRangeException(nameof(pass.Options));
         _ = graph.ResolveQueueCandidates(pass.Queue, pass.Kind);
     }
@@ -1011,21 +878,50 @@ internal sealed class GraphStructureIndex
     {
         if (!structure.Passes.Contains(access.Pass))
             throw new ArgumentException("A resource access references a stale Pass.");
-        if (!Enum.IsDefined(access.Mode) || !Enum.IsDefined(access.Coverage))
+        if (!Enum.IsDefined(access.Mode) || !Enum.IsDefined(access.Coverage) ||
+            !Enum.IsDefined(access.UnorderedAccessHazards))
             throw new ArgumentOutOfRangeException(nameof(access));
+        UnorderedAccessHazardRules.Validate(
+            access.UnorderedAccessHazards,
+            access.Mode,
+            access.Coverage,
+            access.Access,
+            access.TextureLayout,
+            access.ResultContents);
         bool physicalResource = access.TargetKind is
             GraphAccessTargetKind.Buffer or GraphAccessTargetKind.Texture;
         if (physicalResource &&
             (access.Sync == PipelineSync.None || access.Access == ResourceAccess.NoAccess))
             throw new ArgumentException("Pass access must name a real synchronization and access scope.");
+        if (access.ParameterInput is not null)
+        {
+            DevelopmentCheck.Require(access.ParameterInput.Graph == access.Pass.Owner,
+                "A parameter input belongs to another graph.");
+            ValidateMode(structure, access);
+            return;
+        }
         switch (access.TargetKind)
         {
             case GraphAccessTargetKind.Buffer:
+                if (access.BufferInput is not null)
+                {
+                    DevelopmentCheck.Require(access.BufferInput.Graph == access.Pass.Owner,
+                        "A buffer input belongs to another graph.");
+                    ValidateMode(structure, access);
+                    break;
+                }
                 GraphBuffer buffer = structure.Buffers.Get(access.Target);
                 _ = ResolveRange(access.BufferRange, buffer.Description.Size);
                 ValidateMode(structure, access);
                 break;
             case GraphAccessTargetKind.Texture:
+                if (access.TextureInput is not null)
+                {
+                    DevelopmentCheck.Require(access.TextureInput.Graph == access.Pass.Owner,
+                        "A texture input belongs to another graph.");
+                    ValidateMode(structure, access);
+                    break;
+                }
                 GraphTexture texture = structure.Textures.Get(access.Target);
                 ValidateTextureRange(texture, access.TextureRange);
                 ValidateMode(structure, access);
@@ -1068,8 +964,8 @@ internal sealed class GraphStructureIndex
     internal static BufferRange ResolveRange(in BufferRange range, ulong size)
     {
         if (range.IsWhole) return new BufferRange(0, size);
-        if (range.Size == 0 || range.Offset > size || range.Size > size - range.Offset)
-            throw new ArgumentOutOfRangeException(nameof(range));
+        DevelopmentCheck.Require(range.Size != 0 && range.Offset <= size && range.Size <= size - range.Offset,
+            "The buffer range must be nonempty and contained in its resource.");
         return range;
     }
 

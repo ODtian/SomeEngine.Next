@@ -39,6 +39,7 @@ internal sealed unsafe partial class D3D12Backend
         in GraphicsPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -52,6 +53,7 @@ internal sealed unsafe partial class D3D12Backend
         in ComputePipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -65,6 +67,7 @@ internal sealed unsafe partial class D3D12Backend
         in MeshPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         _ = nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipelineAsync));
@@ -79,6 +82,7 @@ internal sealed unsafe partial class D3D12Backend
         in RayTracingPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         RayTracing capability =
@@ -96,6 +100,7 @@ internal sealed unsafe partial class D3D12Backend
         in WorkGraphPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         _ = nativeDevice.RequireCapability<WorkGraphs>(nameof(CreateWorkGraphPipelineAsync));

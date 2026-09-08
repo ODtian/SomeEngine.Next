@@ -50,7 +50,7 @@ public sealed class RetainedGraphIncrementalTests
         Assert.Equal(0, graph.LastEditStatistics.ResourcesReanalyzed);
         Assert.Equal(1, graph.LastEditStatistics.CopiedStructureBlockCount);
         Assert.Equal(9, graph.LastEditStatistics.SharedStructureBlockCount);
-        Assert.InRange(graph.LastEditStatistics.ScheduleNodesRevisited, 1, 2);
+        Assert.Equal(0, graph.LastEditStatistics.ScheduleNodesRevisited);
 
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
@@ -85,7 +85,7 @@ public sealed class RetainedGraphIncrementalTests
         Assert.Equal(rightPlacement, orderEdit.TransientPlacements[right.Buffer.Value]);
         Assert.Equal(0, graph.LastEditStatistics.ResourcesReanalyzed);
         Assert.Equal(1, graph.LastEditStatistics.CopiedStructureBlockCount);
-        Assert.InRange(graph.LastEditStatistics.ScheduleNodesRevisited, 2, 3);
+        Assert.Equal(0, graph.LastEditStatistics.ScheduleNodesRevisited);
 
         ulong leftPlacementToken = orderEdit.TransientPlacements[left.Buffer.Value].Token;
         using (RenderGraphEdit edit = graph.BeginEdit())
@@ -194,6 +194,7 @@ public sealed class RetainedGraphIncrementalTests
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             edit.SetPassLabel(branch.ReadPass, "new-version reader");
+            edit.SetPassOptions(branch.ReadPass, new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedExecutionCost: 3));
             edit.Commit();
         }
         Assert.Equal(oldVersion + 1, graph.StructureVersion);

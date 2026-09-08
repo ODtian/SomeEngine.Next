@@ -1,0 +1,162 @@
+[
+  {
+    "id": "S01",
+    "priority": "P1",
+    "category": "实现",
+    "path": "src/SomeEngine.Graphics.Direct3D12/Presentation.cs",
+    "title": "swapchain 初始化失败存在同一 native 引用的双重释放",
+    "description": "CreateRegisteredSwapchain 把 native 交给 wrapper；初始化/注册失败时 Dispose wrapper，外层 native 仍未置空，finally 再 Release。同一份拥有权有两条失败清理路径。",
+    "sourceReferences": "DL-002 / C28",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S02",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Graphics.Vulkan/VulkanPipelines.cs",
+    "title": "Vulkan 管线构造的清理区间晚于取得 layout",
+    "description": "取得 native layout 后，编译和绑定归一化仍在清理 try 之外；失败时遗漏 layout。layout builder 的早期 static sampler 创建也需纳入同一失败清理边界。",
+    "sourceReferences": "VK-012 / C32 / 独立审查二 I9",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S03",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Render/Instances/RenderMeshInstanceCollection.cs",
+    "title": "集合句柄缺少所属集合身份",
+    "description": "句柄只包含 Index/Generation；两个集合分配同位置同代次时，另一个集合的句柄能命中无关对象。",
+    "sourceReferences": "RENDER-005 / C03",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S04",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Render/Instances/RenderMeshInstanceCollection.cs",
+    "title": "共享源捕获失败又被不完整回滚覆盖",
+    "description": "同一 buffered set 可重复加入集合；捕获同源两次会遇到不可递归读锁。destination++ 在 Capture 成功前推进，catch 对尚未构造的条目执行清理，覆盖原异常。当前任意-source 构造入口已收窄，不能继续以旧公开构造签名举例。",
+    "sourceReferences": "RENDER-006 / C04",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S05",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Render/Instances/RenderInstanceResources.cs",
+    "title": "同一代原地改写的取消不恢复已发布字节",
+    "description": "CancelBatchUpdate 恢复 ready，却没有恢复同一 generation 已写入的内容。“取消”若保留其事务语义，必须隔离未发布数据或具备实际恢复；关闭写入口不能充当回滚。",
+    "sourceReferences": "RENDER-008 / C13",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S06",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Render/Instances/RenderInstanceResources.cs",
+    "title": "metadata-only 编码仍被无条件要求线性属性存储",
+    "description": "允许零 StorageStride 的元数据编码时不分配属性 buffer，但 ResetRows、GetBatchView、CommitReadEndpoints 仍要求 PropertyData。公开允许的编码无法经过正常使用路径。",
+    "sourceReferences": "RENDER-009",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S07",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Render/Materials/ScalarLayout.cs",
+    "title": "有符号整数先转 uint 再转 float",
+    "description": "负 int 的浮点编码因此成为大正数。它与 B13 的字段顺序/hash 错误是同一类中的不同缺陷，应分别验证结果。",
+    "sourceReferences": "RENDER-010 / C11",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S08",
+    "priority": "P2",
+    "category": "实现／可关闭校验",
+    "path": "src/SomeEngine.RenderGraph/FrameCommandsValidation.cs",
+    "title": "范围包含的无符号减法仍可下溢",
+    "description": "子范围起点超过父范围末尾时，剩余长度减法回绕。当前位置是 Graph 命令声明校验，受 DEBUG 条件控制；独立审查二 I3 所写 Graphics.BufferRange.Contains 并不存在。不能把它描述成 Release 总是开启的保护。",
+    "sourceReferences": "RG-009 / C17 / 独立审查二 I3",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S09",
+    "priority": "P1",
+    "category": "实现",
+    "path": "src/SomeEngine.RenderGraph/FrameSynchronization.cs",
+    "title": "纹理初始完成条件没有覆盖每个子资源的首次使用",
+    "description": "初始等待挂到 accesses[0]；另一个子资源在不同但同类型队列首次使用时，ownership-transfer 路径又因队列类型相同跳过，不能由整纹理首用推导其已等待。",
+    "sourceReferences": "RG-006",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S10",
+    "priority": "P2",
+    "category": "能力表达／实现",
+    "path": "src/SomeEngine.RenderGraph/FrameRecording.cs",
+    "title": "General 内部区域之间的依赖未进入实际屏障位置",
+    "description": "访问和转换仍以 pass 为单位组织，多个区域之间需要的不同 layout 无法在中间位置表达，冲突可能在声明解析时被拒绝。不得把静态表达缺口一概宣称为已运行的 GPU 数据破坏。",
+    "sourceReferences": "RG-007",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S11",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.RenderGraph/FrameRecording.cs",
+    "title": "rendering region 的位置和数组层范围未被执行消费",
+    "description": "保存 X/Y/FirstArrayLayer/ArrayLayerCount，构造实际 rendering 主要只消费 Width/Height。修正应贯通实际原生描述，而不是仅在声明中保留字段。",
+    "sourceReferences": "RG-025",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S12",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.RenderGraph.Diagnostics/RenderGraphSnapshot.Validation.cs",
+    "title": "诊断序列化不能表示 query/shader-table 资源",
+    "description": "资源行只有 Buffer/Texture，QueryPool/ShaderTable access 对应资源数量为 0，合法图诊断无法按自身格式 round-trip；BufferContentScope 也未完整保留。",
+    "sourceReferences": "RG-027",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S13",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Graphics.Direct3D12/RayTracing.cs",
+    "title": "不同 hit group 复用同一 hit shader 被重复名检查拒绝",
+    "description": "shader export 身份与 hit-group record 身份混在一个名字检查中。Validation 同样有跨组成员去重问题。应分别判断 group 名称唯一性和可复用 shader 引用。",
+    "sourceReferences": "D3DP-003 / C29",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S14",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Runtime/RuntimeStartupOptions.cs",
+    "title": "多个运行选项解析成功却不被 Runtime 消费",
+    "description": "PresentSyncInterval、FPS/UPS、PipelineWarmup 等字段进入选项但帧循环未据此改变行为。只应保留真正支持的选项，或接入实际消费者。",
+    "sourceReferences": "RENDER-012 / 48项审查 M07",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S15",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Runtime/RuntimeCamera.cs",
+    "title": "相机右方向与右手视图的屏幕右方向相反",
+    "description": "Right 使用 Cross(up, forward)。朝向 -Z 时得到 -X，而 CreateLookAt 的屏幕右方向为 +X，横移符号相反。",
+    "sourceReferences": "RENDER-011 / C37",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  },
+  {
+    "id": "S16",
+    "priority": "P2",
+    "category": "实现",
+    "path": "src/SomeEngine.Graphics.Direct3D12/CommandBindings.cs",
+    "title": "持久参数创建在取得 descriptor 引用后仍有未保护区间",
+    "description": "CreateDescriptorRecords 已取得保留引用，CaptureSwapchainBindings、CreateOrdinaryDataResource 的失败发生在对应释放 try 之前，遗留 descriptor 依赖。",
+    "sourceReferences": "DL-010 / C27",
+    "evidence": "current static analysis; not counted as new public API reproduction"
+  }
+]

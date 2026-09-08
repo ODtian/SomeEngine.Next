@@ -14,6 +14,12 @@ internal sealed class RuntimeScene : IDisposable
 {
     private readonly World _world;
     private readonly SceneMotion[] _motions;
+    private readonly (Entity Entity, PointLight Value)[] _playbackLights;
+    private readonly Material[] _playbackMaterials;
+    private readonly Vector3 _initialCameraPosition;
+    private static readonly SomeEngine.Diagnostics.TraceSite MovingMeshesTrace = new("scene", "MovingMeshes");
+    private static readonly SomeEngine.Diagnostics.TraceSite MovingLightsTrace = new("scene", "MovingLights");
+    private static readonly SomeEngine.Diagnostics.TraceSite ChangingMaterialsTrace = new("scene", "ChangingMaterials");
     private readonly QueryHandle _motionQuery;
     private int[] _motionByEntitySlot;
     private readonly float _verticalFieldOfView;
@@ -26,6 +32,8 @@ internal sealed class RuntimeScene : IDisposable
     private RuntimeScene(
         World world,
         SceneMotion[] motions,
+        (Entity Entity, PointLight Value)[] playbackLights,
+        Material[] playbackMaterials,
         QueryHandle motionQuery,
         int[] motionByEntitySlot,
         RuntimeCamera camera,
@@ -38,6 +46,9 @@ internal sealed class RuntimeScene : IDisposable
     {
         _world = world;
         _motions = motions;
+        _playbackLights = playbackLights;
+        _playbackMaterials = playbackMaterials;
+        _initialCameraPosition = camera.Position;
         _motionQuery = motionQuery;
         _motionByEntitySlot = motionByEntitySlot;
         Camera = camera;
@@ -138,15 +149,18 @@ internal sealed class RuntimeScene : IDisposable
                 light.Intensity,
                 light.LayerMask));
         }
+        List<(Entity, PointLight)> playbackLights = [];
         foreach (ScenePointLight light in scene.PointLights ?? [])
         {
             Entity entity = world.CreateEntity();
-            world.Add(entity, new PointLight(
+            PointLight value = new(
                 VectorValue(light.Position, nameof(light.Position)),
                 light.Range,
                 VectorValue(light.Color, nameof(light.Color)),
                 light.Intensity,
-                light.LayerMask));
+                light.LayerMask);
+            world.Add(entity, value);
+            playbackLights.Add((entity, value));
         }
         foreach (SceneSpotLight light in scene.SpotLights ?? [])
         {
@@ -178,6 +192,8 @@ internal sealed class RuntimeScene : IDisposable
             return new RuntimeScene(
                 world,
                 motionRows,
+                [.. playbackLights],
+                [.. materials.Values],
                 motionQuery,
                 BuildMotionIndex(motionRows),
                 runtimeCamera,
@@ -208,15 +224,44 @@ internal sealed class RuntimeScene : IDisposable
 
     internal void Update(float elapsedSeconds)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
         _elapsedSeconds = elapsedSeconds;
         UpdateMotionRows();
         if (_motionIndexInvalid)
             RebuildMotionIndex();
+        SomeEngine.Diagnostics.EngineTrace.Counter(MovingMeshesTrace, _motions.Length);
+    }
+
+    // Reproducible input for renderer measurements; this is scene behavior, not trace policy.
+    internal void Play(float seconds, bool animateMaterials)
+    {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Playback);
+        Update(seconds);
+        Camera.SetPosition(_initialCameraPosition + new Vector3(MathF.Sin(seconds) * 0.3f, MathF.Sin(seconds * 0.7f) * 0.15f, 0));
+        for (int index = 0; index < _playbackLights.Length; index++)
+        {
+            (Entity entity, PointLight light) = _playbackLights[index];
+            _world.Replace(entity, new PointLight(
+                light.Position + new Vector3(MathF.Sin(seconds + index) * 0.5f, 0, 0), light.Range, light.Color,
+                light.Intensity * (0.9f + MathF.Cos(seconds + index) * 0.1f), light.LayerMask));
+        }
+        int changingMaterials = 0;
+        if (animateMaterials)
+            foreach (Material material in _playbackMaterials)
+                if (material is StandardMaterial standard)
+                {
+                    standard.Roughness = 0.5f + MathF.Sin(seconds) * 0.2f;
+                    changingMaterials++;
+                }
+        SomeEngine.Diagnostics.EngineTrace.Counter(MovingLightsTrace, _playbackLights.Length);
+        SomeEngine.Diagnostics.EngineTrace.Counter(ChangingMaterialsTrace, changingMaterials);
     }
 
     private void UpdateMotionRows()
     {
+        if (_motions.Length == 0)
+            return;
         RuntimeScene state = this;
         _world.ExecuteQuery(
             _motionQuery,
@@ -230,7 +275,6 @@ internal sealed class RuntimeScene : IDisposable
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
             ReadOnlySpan<Entity> entities = chunk.Entities;
-            Span<WorldTransform> transforms = chunk.ReadWrite<WorldTransform>();
             for (int row = 0; row < entities.Length; row++)
             {
                 Entity entity = entities[row];
@@ -253,7 +297,7 @@ internal sealed class RuntimeScene : IDisposable
                     MathF.Sin(_elapsedSeconds * motion.Frequency.Z) * motion.Amplitude.Z);
                 TransformQvvs value = motion.BaseTransform;
                 value.Position += offset;
-                transforms[row] = new WorldTransform { Qvvs = value };
+                chunk.ReadWrite<WorldTransform>(row) = new WorldTransform { Qvvs = value };
             }
         }
     }

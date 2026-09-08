@@ -10,6 +10,7 @@ using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Systems;
+using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Cluster;
 
@@ -52,6 +53,9 @@ internal readonly ref struct ClusterRenderBinding
                 nameof(instanceProperties));
         InstancePropertyMetadata = instanceProperties.Metadata;
         InstancePropertyMetadataRange = instanceProperties.MetadataRange;
+        PropertyDataEndpoints = instanceProperties.PropertyDataEndpoints;
+        InstancePropertyMetadataEndpoints = instanceProperties.MetadataEndpoints;
+        InstanceGeneration = instanceProperties.Generation;
         DispatchExtent = instanceProperties.InstanceCount;
         ReadbackEpoch = readbackEpoch.IsValid
             ? readbackEpoch
@@ -80,6 +84,12 @@ internal readonly ref struct ClusterRenderBinding
     internal Buffer InstancePropertyMetadata { get; }
 
     internal BufferRange InstancePropertyMetadataRange { get; }
+
+    internal BufferBoundaryState[] PropertyDataEndpoints { get; }
+
+    internal BufferBoundaryState[] InstancePropertyMetadataEndpoints { get; }
+
+    internal int InstanceGeneration { get; }
 
     internal int DispatchExtent { get; }
 
@@ -225,6 +235,8 @@ public sealed class ClusterRenderResources : IDisposable
     internal RenderTimeline InstanceTimeline => _instances.Timeline;
 
     internal int PublishedMeshCount => _meshes.PublishedMeshCount;
+
+    internal int HierarchyLevels => _residency.HierarchyLevels;
 
     internal int PageFaultCapacity => _residency.PageFaultCapacity;
 
@@ -374,6 +386,7 @@ public sealed class ClusterRenderResources : IDisposable
                 frameUse);
             frameUse = frame.AcquireUse([_residencyTimeline, _instances.Timeline]);
             frameUse.RegisterGeneration(_residencyTimeline, 0);
+            frameUse.RegisterGeneration(_instances.Timeline, batch.Generation);
             ClusterRenderBinding binding = new(
                 residency,
                 batch,
@@ -389,18 +402,28 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    /// <summary>Ingests page faults only from a later host visit to a submitted frame.</summary>
-    internal void IngestPageFaultReadback(
+    internal void CommitInstanceReadEndpoints(int generation, QueueCompletion completion)
+        => _instances.CommitReadEndpoints(generation, completion);
+
+    /// <summary>Ingests all page-fault producers from one later host visit to a submitted frame.</summary>
+    internal void IngestPageFaultReadbackBatch(
         ClusterReadbackTicket ticket,
-        ReadOnlySpan<byte> bytes)
+        ReadOnlySpan<byte[]> payloads)
     {
+        if (payloads.IsEmpty)
+            throw new ArgumentException("Cluster page-fault feedback must contain a producer payload.", nameof(payloads));
         EnterActiveOperation();
         try
         {
             lock (_feedbackGate)
             {
                 ValidateReadbackTicket(ticket, _lastFaultFeedbackFrame);
-                _residency.IngestFaults(bytes);
+                foreach (byte[] payload in payloads)
+                {
+                    if (payload is null)
+                        throw new ArgumentException("Cluster page-fault feedback contains a null payload.", nameof(payloads));
+                    _residency.IngestFaults(payload);
+                }
                 _lastFaultFeedbackFrame = ticket.SubmittedFrame;
             }
         }

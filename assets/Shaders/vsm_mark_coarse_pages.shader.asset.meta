@@ -1,0 +1,17 @@
+{
+  "asset_guid": "72823443-a8cb-5b69-998b-497eef6660ae",
+  "source_guid": "998e8a32-9a5d-482f-aa9f-1dd796886552",
+  "sub_asset_key": "shader:main",
+  "content_fingerprint": "0fbfdd12e22b872fb3170d0615005264c571de2418f515f247c257b8fa48d474",
+  "dependencies": [
+    {
+      "path": "assets/Shaders/vsm_mark_coarse_pages.slang",
+      "hash": "23eb3d96c32e5e71240f867bef46f9791c85bb3a4ae756bf8453fa9b7fd01fa8"
+    },
+    {
+      "path": "assets/Shaders/vsm_sampling.slang",
+      "hash": "f285536e76f922b82ed7b19e75213a39f7f10427636e84e3972b8ca69e7af0db"
+    }
+  ],
+  "importer_version": 26
+}

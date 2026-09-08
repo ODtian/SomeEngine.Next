@@ -3,6 +3,13 @@ using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Shadows;
 
+public enum VirtualShadowLightKind : uint
+{
+    Directional = 0,
+    Point = 1,
+    Spot = 2,
+}
+
 /// <summary>
 /// One shadow-caster projection and virtual-atlas mapping. A geometry pipeline may consume a span
 /// of these records in one multi-view submission.
@@ -10,7 +17,7 @@ namespace SomeEngine.Render.Shadows;
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 public struct VirtualShadowView
 {
-    public const int SizeInBytes = 144;
+    public const int SizeInBytes = 168;
     public const int PageTableEntrySizeInBytes = 16;
 
     public Matrix4x4 LightViewProjection;
@@ -30,6 +37,10 @@ public struct VirtualShadowView
     public float ResolutionLodBias;
     public int FirstClipmapLevel;
     public uint ClipmapLevelCount;
-    public uint Pad0;
-    public uint Pad1;
+    public uint CoarsePageShift;
+    public uint CoarsePageTableOffset;
+    public VirtualShadowLightKind LightKind;
+    public uint FaceIndex;
+    public Vector3 LightPosition;
+    public float LightRange;
 }

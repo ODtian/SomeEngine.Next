@@ -1,7 +1,6 @@
 #ifndef MATERIAL_INTERFACES_SLANG
 #define MATERIAL_INTERFACES_SLANG
 
-#include "material_vertex_interfaces.slang"
 #include "triangle_surface.slang"
 
 [__AttributeUsage(_AttributeTargets.Var)]
@@ -11,31 +10,53 @@ struct InstancePropertyAttribute
     string accessor;
 };
 
-interface ISurfaceEvaluate<TVE : IMaterialVertex>
+struct PixelEvaluateInput
+{
+    uint3 PixelCoord;
+    float Depth;
+};
+
+struct PixelEvaluateResult
+{
+    uint Visible;
+    float Depth;
+};
+
+interface IPixelEvaluate
+{
+    PixelEvaluateResult evaluate(PixelEvaluateInput input);
+};
+
+struct OpaquePixelEvaluate : IPixelEvaluate
+{
+    PixelEvaluateResult evaluate(PixelEvaluateInput input)
+    {
+        PixelEvaluateResult result;
+        result.Visible = 1u;
+        result.Depth = input.Depth;
+        return result;
+    }
+};
+
+interface ISurfaceEvaluate
 {
     void evaluateSurface(
-        uniform TVE eval,
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        TVE.DeformedVertex v0,
-        TVE.DeformedVertex v1,
-        TVE.DeformedVertex v2,
+        Triangle triangle,
         RWTexture2DArray<float4> outputColor);
 
     void evaluateDebug(
-        uniform TVE eval,
         uint debugMode,
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        TVE.DeformedVertex v0,
-        TVE.DeformedVertex v1,
-        TVE.DeformedVertex v2,
+        Triangle triangle,
         RWTexture2DArray<float4> outputColor);
 };
 

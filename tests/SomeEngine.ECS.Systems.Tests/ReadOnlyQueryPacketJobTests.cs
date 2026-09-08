@@ -8,6 +8,44 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class ReadOnlyQueryPacketJobTests
 {
     [Fact]
+    public void SlicedPacketsOnlyReportComponentAndBufferChangesInsideTheirRows()
+    {
+        var world = new World();
+        Entity[] entities = Enumerable.Range(0, 6).Select(i => world.CreateEntity(new PacketValue(i))).ToArray();
+        foreach (Entity entity in entities) world.AddBuffer<PacketElement>(entity);
+        uint baseline = world.CurrentTick;
+        _ = world.AcquireSystemVersion();
+        world.Replace(entities[1], new PacketValue(42));
+        world.ExecuteBufferWrite<PacketElement>(entities[4], buffer => buffer.Add(new PacketElement(7)));
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<PacketValue>().ReadBuffer<PacketElement>().Build());
+        var changed = new int[6];
+        world.ExecuteReadSnapshot(query, cursor =>
+        {
+            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 3);
+            var job = new ReadChangesJob(baseline, changed);
+            packets.ExecuteInline(in job);
+        });
+        Assert.Equal([0, 1, 0, 0, 2, 0], changed);
+        world.ReleaseQuery(query);
+    }
+
+    private readonly struct ReadChangesJob(uint baseline, int[] changes) : IReadOnlyQueryPacketJob
+    {
+        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
+        {
+            for (int row = 0; row < packet.Count; row++)
+            {
+                ReadOnlyQueryPacket slice = packet.Slice(row, 1);
+                changes[context.OutputStart + row] = (slice.ChangedSince<PacketValue>(baseline) ? 1 : 0) |
+                    (slice.BufferChangedSince<PacketElement>(baseline) ? 2 : 0);
+            }
+            Assert.False(packet.Slice(0, 0).ChangedSince<PacketValue>(baseline));
+        }
+    }
+
+    private readonly record struct PacketElement(int Value) : IBufferElement;
+
+    [Fact]
     public void RowFiltersBecomeDenseContiguousPacketsWithDisjointOutputRanges()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);

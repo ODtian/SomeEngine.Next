@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Frame;
+using SomeEngine.RenderGraph;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Instances;
@@ -72,7 +73,12 @@ public readonly record struct RenderInstanceBatchView(
     BufferRange MetadataRange,
     int InstanceCount,
     int Generation,
-    ulong ContentRevision);
+    ulong ContentRevision)
+{
+    internal BufferBoundaryState[] PropertyDataEndpoints { get; init; } = [];
+
+    internal BufferBoundaryState[] MetadataEndpoints { get; init; } = [];
+}
 
 /// <summary>
 /// Opaque handle and exact ABI of one live physical batch. It is not an entity or instance
@@ -95,6 +101,10 @@ public sealed class RenderInstanceBatch
         Contract = contract;
         InstanceCount = instanceCount;
         ContentRevision = contentRevision;
+        _chunkRevisions = new ulong[(instanceCount + 63) / 64];
+        Array.Fill(_chunkRevisions, contentRevision);
+        _instanceRevisions = new ulong[instanceCount];
+        Array.Fill(_instanceRevisions, contentRevision);
     }
 
     public int InstanceCount { get; }
@@ -105,6 +115,42 @@ public sealed class RenderInstanceBatch
     /// transport slot.
     /// </summary>
     public ulong ContentRevision { get; internal set; }
+
+    private readonly ulong[] _chunkRevisions;
+    private readonly ulong[] _instanceRevisions;
+
+    /// <summary>Appends rows modified after the supplied revision, skipping unchanged chunks.</summary>
+    public void CollectChangedInstances(ulong afterRevision, List<uint> destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (afterRevision >= ContentRevision)
+            return;
+        for (int chunk = 0; chunk < _chunkRevisions.Length; chunk++)
+        {
+            if (_chunkRevisions[chunk] <= afterRevision)
+                continue;
+            int end = Math.Min(InstanceCount, (chunk + 1) * 64);
+            for (int row = chunk * 64; row < end; row++)
+                if (_instanceRevisions[row] > afterRevision)
+                    destination.Add(checked((uint)row));
+        }
+    }
+
+    internal void RecordChanges(ReadOnlySpan<long> changedChunks)
+    {
+        for (int chunk = 0; chunk < changedChunks.Length; chunk++)
+            if (changedChunks[chunk] != 0)
+            {
+                _chunkRevisions[chunk] = ContentRevision;
+                ulong bits = unchecked((ulong)changedChunks[chunk]);
+                while (bits != 0)
+                {
+                    int bit = System.Numerics.BitOperations.TrailingZeroCount(bits);
+                    _instanceRevisions[chunk * 64 + bit] = ContentRevision;
+                    bits &= bits - 1;
+                }
+            }
+    }
 
     internal RenderInstanceResources Owner { get; }
 
@@ -358,7 +404,27 @@ internal sealed class RenderInstanceResources : IDisposable
             BatchMetadataRange(metadata.Slot),
             metadata.InstanceCount,
             generation,
-            metadata.ContentRevision);
+            metadata.ContentRevision)
+        {
+            PropertyDataEndpoints = RequirePropertyData(generation).CaptureEndpoints(),
+            MetadataEndpoints = _batchMetadata[generation].CaptureEndpoints(),
+        };
+    }
+
+    internal void CommitReadEndpoints(int generation, QueueCompletion completion)
+    {
+        if ((uint)generation >= (uint)_batchMetadata.Length)
+            throw new ArgumentOutOfRangeException(nameof(generation));
+        if (completion.Queue.Type != QueueType.Graphics)
+            throw new ArgumentException("Render-instance endpoints require a Graphics Queue completion.", nameof(completion));
+        RequirePropertyData(generation).CommitEndpoint(
+            PipelineSync.AllShading,
+            ResourceAccess.ShaderResource,
+            completion);
+        _batchMetadata[generation].CommitEndpoint(
+            PipelineSync.AllShading,
+            ResourceAccess.ConstantBuffer,
+            completion);
     }
 
     public RenderInstanceDiagnostics CaptureDiagnostics()
@@ -819,6 +885,26 @@ internal sealed class RenderInstanceResources : IDisposable
             MapType.Read,
             range);
         return RenderInstancePropertyValue<T>.Read(mapping.Bytes);
+    }
+
+    internal void ReadInstances<T>(RenderInstanceBatch batch,
+        ResolvedRenderInstanceProperty<T> property, Span<T> destination) where T : unmanaged
+    {
+        ValidateBatchOwner(batch, nameof(batch));
+        ValidateBatch(batch.Slot, batch.Allocation);
+        ValidateBatchReady(batch.Slot);
+        if (destination.Length != batch.InstanceCount)
+            throw new ArgumentException("The destination must cover the batch.", nameof(destination));
+        PropertyStorage storage = RequireStorage(property, nameof(property));
+        uint metadata = ReadMetadataWord(batch, property.Descriptor.MetadataWordOffset);
+        bool perInstance = (metadata & 0x80000000u) != 0u;
+        int stride = storage.Descriptor.Encoding.StorageStride;
+        ulong offset = metadata & 0x7FFFFFFFu;
+        ulong bytes = checked((ulong)(perInstance ? destination.Length : 1) * (ulong)stride);
+        using MappedBuffer mapping = _backend.Map(RequirePropertyData(_batchGenerations[batch.Slot]).Handle,
+            MapType.Read, new BufferRange(offset, bytes));
+        for (int index = 0; index < destination.Length; index++)
+            destination[index] = RenderInstancePropertyValue<T>.Read(mapping.Bytes.Slice(perInstance ? index * stride : 0, stride));
     }
 
     internal uint ReadMetadataWord(RenderInstanceBatch metadata, int word)
@@ -1431,6 +1517,7 @@ internal sealed class RenderInstanceResources : IDisposable
     private sealed class UploadBuffer : IDisposable
     {
         private readonly ulong _size;
+        private BufferBoundaryState _endpoint;
 
         internal UploadBuffer(
             IGraphicsBackend backend,
@@ -1443,6 +1530,11 @@ internal sealed class RenderInstanceResources : IDisposable
             {
                 handle = backend.CreateBuffer(device, description, MemoryType.Upload);
                 Handle = handle;
+                _endpoint = new BufferBoundaryState(
+                    new BufferRange(0, description.Size),
+                    handle.InitialSync,
+                    handle.InitialAccess,
+                    ResourceContentState.Defined);
             }
             catch
             {
@@ -1463,6 +1555,22 @@ internal sealed class RenderInstanceResources : IDisposable
         internal Buffer Handle { get; }
 
         internal ulong Size => _size;
+
+        internal BufferBoundaryState[] CaptureEndpoints() => [_endpoint];
+
+        internal void CommitEndpoint(
+            PipelineSync sync,
+            ResourceAccess access,
+            QueueCompletion completion)
+        {
+            _endpoint = new BufferBoundaryState(
+                new BufferRange(0, _size),
+                sync,
+                access,
+                ResourceContentState.Defined,
+                completion.Queue,
+                completion);
+        }
 
         public void Dispose() => Handle.Dispose();
     }
@@ -1621,6 +1729,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     // share the same lifetime. Packing them into one word avoids three independently allocated
     // side tables without changing the composition's unique ownership.
     private readonly long[] _propertyStates;
+    private readonly long[] _changedChunks;
     private readonly RenderInstancePropertyLayout _contract;
     private readonly RenderInstancePropertyLayout _authorization;
     private readonly RenderInstanceBatch? _existingBatch;
@@ -1667,6 +1776,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         _allocation = lease.Allocation;
         _instanceCount = lease.Rows.Count;
         _propertyStates = new long[lease.Contract.Properties.Count];
+        _changedChunks = mode == CompositionMode.Update ? new long[(_instanceCount + 63) / 64] : [];
         if (mode == CompositionMode.Create)
         {
             foreach (RenderInstancePropertyDescriptor property in authorization.Properties)
@@ -1730,6 +1840,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             in value);
         _propertyStates[destination.Ordinal] =
             (_propertyStates[destination.Ordinal] & ~BindingMask) | Shared;
+        RecordChangedRows(0, _instanceCount);
     }
 
     internal void BindPerInstance<T>(
@@ -1794,6 +1905,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         _ = Interlocked.Add(
             ref _propertyStates[destination.Ordinal],
             (long)source.Length << WrittenCountShift);
+        RecordChangedRows(destinationStart, source.Length);
     }
 
     internal void WriteEncoded(
@@ -1820,6 +1932,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         _ = Interlocked.Add(
             ref _propertyStates[destination.Ordinal],
             (long)destinationCount << WrittenCountShift);
+        RecordChangedRows(destinationStart, destinationCount);
     }
 
     internal void Write<T>(
@@ -1845,6 +1958,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         _ = Interlocked.Add(
             ref _propertyStates[destination.Ordinal],
             1L << WrittenCountShift);
+        RecordChangedRows(checked(destinationStart + destinationOffset), 1);
     }
 
     /// <summary>Copies producer-authored words directly into the final mapped metadata range.</summary>
@@ -1864,6 +1978,21 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             words);
         _propertyStates[destination.Ordinal] =
             (_propertyStates[destination.Ordinal] & ~BindingMask) | CustomMetadata;
+        RecordChangedRows(0, _instanceCount);
+    }
+
+    private void RecordChangedRows(int start, int count)
+    {
+        if (_changedChunks.Length == 0 || count == 0)
+            return;
+        int last = (start + count - 1) / 64;
+        for (int chunk = start / 64; chunk <= last; chunk++)
+        {
+            int firstBit = Math.Max(0, start - chunk * 64);
+            int endBit = Math.Min(64, start + count - chunk * 64);
+            ulong bits = (ulong.MaxValue << firstBit) & (ulong.MaxValue >> (64 - endBit));
+            _ = Interlocked.Or(ref _changedChunks[chunk], unchecked((long)bits));
+        }
     }
 
     private ResolvedRenderInstanceProperty<T> Resolve<T>(
@@ -1955,6 +2084,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         {
             _existingBatch.ContentRevision =
                 scope.Resources.CompleteBatchUpdate(_batchSlot, _allocation);
+            _existingBatch.RecordChanges(_changedChunks);
             result = _existingBatch;
         }
         Complete(scope);

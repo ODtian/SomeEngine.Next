@@ -20,6 +20,7 @@ internal sealed unsafe partial class D3D12Backend
         in GraphicsPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -104,7 +105,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 nativeState?.Release();
                 if (pipelineState is not null)
-                    _ = pipelineState->Release();
+                    _ = PipelineTrace.Release(pipelineState);
                 retainedProgram?.Dispose();
             }
             throw;
@@ -329,6 +330,7 @@ internal sealed unsafe partial class D3D12Backend
         in ComputePipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -374,8 +376,8 @@ internal sealed unsafe partial class D3D12Backend
                         : new CachedPipelineState(cachedPointer, (nuint)cachedData.Length),
                     PipelineStateFlags.None);
                 Guid iid = ID3D12PipelineState.Guid;
-                int createResult = nativeDevice.Native->CreateComputePipelineState(
-                    &native,
+                int createResult = DevicePipelineTrace.CreateComputePipelineState(
+nativeDevice.Native, &native,
                     &iid,
                     (void**)&pipelineState);
                 if (cacheCandidate is not null && RetryRejectedCachedPipeline(
@@ -386,8 +388,8 @@ internal sealed unsafe partial class D3D12Backend
                     "ID3D12Device::CreateComputePipelineState"))
                 {
                     native.CachedPSO = default;
-                    createResult = nativeDevice.Native->CreateComputePipelineState(
-                        &native,
+                    createResult = DevicePipelineTrace.CreateComputePipelineState(
+nativeDevice.Native, &native,
                         &iid,
                         (void**)&pipelineState);
                 }
@@ -430,7 +432,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 nativeState?.Release();
                 if (pipelineState is not null)
-                    _ = pipelineState->Release();
+                    _ = PipelineTrace.Release(pipelineState);
                 retainedProgram?.Dispose();
             }
             throw;
@@ -446,6 +448,7 @@ internal sealed unsafe partial class D3D12Backend
         in MeshPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         MeshShaders meshCapability =
             nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipeline));
@@ -548,7 +551,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 nativeState?.Release();
                 if (pipelineState is not null)
-                    _ = pipelineState->Release();
+                    _ = PipelineTrace.Release(pipelineState);
                 retainedProgram?.Dispose();
             }
             throw;
@@ -1183,8 +1186,8 @@ internal sealed unsafe partial class D3D12Backend
             (nuint)sizeof(GraphicsPipelineStream<TDepthStencil>),
             &stream);
         Guid iid = ID3D12PipelineState.Guid;
-        return device.Native->CreatePipelineState(
-            &description,
+        return DevicePipelineTrace.CreatePipelineState(
+device.Native, &description,
             &iid,
             (void**)pipelineState);
     }
@@ -1230,8 +1233,8 @@ internal sealed unsafe partial class D3D12Backend
             (nuint)sizeof(MeshPipelineStream<TDepthStencil>),
             &stream);
         Guid iid = ID3D12PipelineState.Guid;
-        return device.Native->CreatePipelineState(
-            &description,
+        return DevicePipelineTrace.CreatePipelineState(
+device.Native, &description,
             &iid,
             (void**)pipelineState);
     }
@@ -1498,7 +1501,7 @@ internal sealed unsafe partial class D3D12Backend
             return false;
         if (pipeline is not null)
         {
-            _ = pipeline->Release();
+            _ = PipelineTrace.Release(pipeline);
             pipeline = null;
         }
         if (IsOutOfMemoryCode(result) || IsDirectDeviceRemovalCode(result))
@@ -1523,11 +1526,11 @@ internal sealed unsafe partial class D3D12Backend
         if (cache is null)
             return;
         ID3D10Blob* blob = null;
-        int result = pipeline->GetCachedBlob(&blob);
+        int result = PipelineTrace.GetCachedBlob(pipeline, &blob);
         if (result < 0)
         {
             if (blob is not null)
-                _ = blob->Release();
+                _ = ResourceTrace.Release(blob);
             if (IsDirectDeviceRemovalCode(result))
             {
                 ThrowIfFailed(
@@ -1545,8 +1548,8 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache.CacheAdmission? admission;
             try
             {
-                nuint nativeSize = blob->GetBufferSize();
-                void* nativePointer = blob->GetBufferPointer();
+                nuint nativeSize = ResourceTrace.GetBufferSize(blob);
+                void* nativePointer = ResourceTrace.GetBufferPointer(blob);
                 if (nativeSize > int.MaxValue || (nativeSize != 0 && nativePointer == null))
                     return;
                 ReadOnlySpan<byte> bytes = new(nativePointer, (int)nativeSize);
@@ -1566,7 +1569,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         finally
         {
-            _ = blob->Release();
+            _ = ResourceTrace.Release(blob);
         }
     }
 

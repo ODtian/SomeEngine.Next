@@ -13,7 +13,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 /// <summary>
 /// Publishes only the direct local-material assignments extracted from RenderWorld. Execution
-/// compatibility belongs to the independent deform, raster, and shade stage subsystems.
+/// compatibility belongs to the independent raster and shade stage subsystems.
 /// </summary>
 public sealed class ClusterMaterialAssignments
 {

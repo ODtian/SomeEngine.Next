@@ -14,6 +14,7 @@ internal sealed unsafe partial class D3D12Backend
 {
     public BufferCbv CreateBufferCbv(Device device, in BufferCbvDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Buffer buffer = RequireBuffer(desc.Buffer);
         RequireSameDevice(nativeDevice, buffer, nameof(desc));
@@ -42,6 +43,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public BufferSrv CreateBufferSrv(Device device, in BufferSrvDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Buffer buffer = RequireBuffer(desc.Buffer);
         RequireSameDevice(nativeDevice, buffer, nameof(desc));
@@ -72,6 +74,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public BufferUav CreateBufferUav(Device device, in BufferUavDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12Buffer buffer = RequireBuffer(desc.Buffer);
         RequireSameDevice(nativeDevice, buffer, nameof(desc));
@@ -103,6 +106,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public TextureSrv CreateTextureSrv(Device device, in TextureSrvDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
         RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
@@ -133,6 +137,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public TextureUav CreateTextureUav(Device device, in TextureUavDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
         RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
@@ -165,6 +170,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in ColorAttachmentViewDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
         RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
@@ -197,6 +203,7 @@ internal sealed unsafe partial class D3D12Backend
         Device device,
         in SomeEngine.Graphics.DepthStencilViewDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         D3D12TextureResource texture = RequireTexture(desc.Texture);
         RequireSameDevice(nativeDevice, texture.Owner, nameof(desc));
@@ -227,6 +234,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public Sampler CreateSampler(Device device, in SomeEngine.Graphics.SamplerDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ValidateSampler(desc);
         DescriptorLease descriptor = nativeDevice.SamplerDescriptors.Allocate();
@@ -308,7 +316,14 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         if (range.Offset % elementSize != 0 || range.Size % elementSize != 0)
-            throw new ArgumentException("The Buffer view range is not element-aligned.");
+        {
+            throw new ArgumentException(
+                $"The Buffer view range is not element-aligned: " +
+                $"buffer='{buffer.Label}', offset={range.Offset}, size={range.Size}, " +
+                $"elementSize={elementSize}.");
+        }
+        if (requiredUsage != BufferUsages.Constant && elementFormat is null && structureStride == 0 && (range.Offset & 15) != 0)
+            throw new ArgumentException("A raw Buffer view offset must be 16-byte aligned.", nameof(requestedRange));
         if (range.Size / elementSize > uint.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(requestedRange), "The Buffer view has too many elements.");
     }
@@ -449,20 +464,20 @@ internal sealed unsafe partial class D3D12Backend
     private static bool IsCompatibleTextureViewDimension(
         in TextureInfo info,
         TextureViewDimension dimension) => info.Dimension switch
-    {
-        TextureDimension.Texture1D => dimension is
-            TextureViewDimension.Texture1D or TextureViewDimension.Texture1DArray,
-        TextureDimension.Texture2D when info.SampleCount == 1 => dimension is
-            TextureViewDimension.Texture2D or
-            TextureViewDimension.Texture2DArray or
-            TextureViewDimension.Cube or
-            TextureViewDimension.CubeArray,
-        TextureDimension.Texture2D => dimension is
-            TextureViewDimension.Texture2DMultisampled or
-            TextureViewDimension.Texture2DMultisampledArray,
-        TextureDimension.Texture3D => dimension == TextureViewDimension.Texture3D,
-        _ => false,
-    };
+        {
+            TextureDimension.Texture1D => dimension is
+                TextureViewDimension.Texture1D or TextureViewDimension.Texture1DArray,
+            TextureDimension.Texture2D when info.SampleCount == 1 => dimension is
+                TextureViewDimension.Texture2D or
+                TextureViewDimension.Texture2DArray or
+                TextureViewDimension.Cube or
+                TextureViewDimension.CubeArray,
+            TextureDimension.Texture2D => dimension is
+                TextureViewDimension.Texture2DMultisampled or
+                TextureViewDimension.Texture2DMultisampledArray,
+            TextureDimension.Texture3D => dimension == TextureViewDimension.Texture3D,
+            _ => false,
+        };
 
     private static void ValidateTextureViewLayerRange(
         in TextureInfo info,
@@ -577,10 +592,10 @@ internal sealed unsafe partial class D3D12Backend
         BufferRange range = desc.Range.Resolve(buffer.Info.Size);
         ConstantBufferViewDesc native = new()
         {
-            BufferLocation = buffer.Native->GetGPUVirtualAddress() + range.Offset,
+            BufferLocation = ResourceTrace.GetGPUVirtualAddress(buffer.Native) + range.Offset,
             SizeInBytes = checked((uint)range.Size),
         };
-        device.Native->CreateConstantBufferView(&native, destination);
+        DeviceResourceTrace.CreateConstantBufferView(device.Native, &native, destination);
     }
 
     private static void WriteBufferSrv(
@@ -612,7 +627,7 @@ internal sealed unsafe partial class D3D12Backend
             StructureByteStride = stride,
             Flags = flags,
         };
-        device.Native->CreateShaderResourceView(buffer.Native, &native, destination);
+        DeviceResourceTrace.CreateShaderResourceView(device.Native, buffer.Native, &native, destination);
     }
 
     private static void WriteBufferUav(
@@ -645,11 +660,11 @@ internal sealed unsafe partial class D3D12Backend
             CounterOffsetInBytes = desc.CounterOffset,
             Flags = srvFlags == BufferSrvFlags.Raw ? BufferUavFlags.Raw : BufferUavFlags.None,
         };
-        device.Native->CreateUnorderedAccessView(
-            buffer.Native,
-            counter is null ? null : counter.Native,
-            &native,
-            destination);
+        DeviceResourceTrace.CreateUnorderedAccessView(
+                device.Native, buffer.Native,
+                    counter is null ? null : counter.Native,
+                    &native,
+                    destination);
     }
 
     private static void GetBufferViewShape(
@@ -775,8 +790,8 @@ internal sealed unsafe partial class D3D12Backend
             default:
                 throw new ArgumentOutOfRangeException(nameof(desc));
         }
-
-        device.Native->CreateShaderResourceView(texture.Native, &native, destination);
+        DeviceResourceTrace.CreateShaderResourceView(
+                device.Native, texture.Native, &native, destination);
     }
 
     private static void WriteTextureUav(
@@ -846,7 +861,7 @@ internal sealed unsafe partial class D3D12Backend
             default:
                 throw new ArgumentOutOfRangeException(nameof(desc));
         }
-        device.Native->CreateUnorderedAccessView(texture.Native, null, &native, destination);
+        DeviceResourceTrace.CreateUnorderedAccessView(device.Native, texture.Native, null, &native, destination);
     }
 
     private static void WriteColorAttachmentView(
@@ -914,7 +929,7 @@ internal sealed unsafe partial class D3D12Backend
             default:
                 throw new ArgumentOutOfRangeException(nameof(desc));
         }
-        device.Native->CreateRenderTargetView(texture.Native, &native, destination);
+        DeviceResourceTrace.CreateRenderTargetView(device.Native, texture.Native, &native, destination);
     }
 
     private static void WriteDepthStencilView(
@@ -976,7 +991,7 @@ internal sealed unsafe partial class D3D12Backend
             default:
                 throw new ArgumentOutOfRangeException(nameof(desc));
         }
-        device.Native->CreateDepthStencilView(texture.Native, &native, destination);
+        DeviceResourceTrace.CreateDepthStencilView(device.Native, texture.Native, &native, destination);
     }
 
     private static void WriteSampler(
@@ -1002,7 +1017,7 @@ internal sealed unsafe partial class D3D12Backend
         native.BorderColor[1] = desc.BorderColor.Y;
         native.BorderColor[2] = desc.BorderColor.Z;
         native.BorderColor[3] = desc.BorderColor.W;
-        device.Native->CreateSampler(&native, destination);
+        DeviceResourceTrace.CreateSampler(device.Native, &native, destination);
     }
 
     private static SrvDimension ToSrvDimension(TextureViewDimension dimension) => dimension switch

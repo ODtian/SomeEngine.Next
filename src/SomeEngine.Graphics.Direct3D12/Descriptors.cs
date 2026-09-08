@@ -14,6 +14,7 @@ internal sealed unsafe partial class D3D12Backend
         uint nodeIndex = uint.MaxValue,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         cancellationToken.ThrowIfCancellationRequested();
@@ -54,6 +55,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public DescriptorIndex GetDescriptorIndex(DescriptorTable table, uint slot)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12DescriptorTable native = RequireDescriptorTable(table);
         native.CheckSlot(slot);
         return new DescriptorIndex(
@@ -66,6 +68,7 @@ internal sealed unsafe partial class D3D12Backend
         uint slot,
         in ResourceBinding value)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12DescriptorTable native = RequireDescriptorTable(table);
         native.CheckSlot(slot);
         DescriptorSlotDesc slotDesc = native.GetSlotDesc(slot);
@@ -85,6 +88,7 @@ internal sealed unsafe partial class D3D12Backend
         in ParameterBlockBindings bindings,
         string? label = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBindings);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         ObjectDisposedException.ThrowIf(pipeline.IsDisposed, pipeline);
@@ -115,6 +119,7 @@ internal sealed unsafe partial class D3D12Backend
         PersistentParameterBindings destination,
         in ParameterBlockBindings bindings)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiBindings);
         D3D12PersistentParameterBindings native =
             RequirePersistentParameterBindings(destination);
         native.StageReplacement(bindings);
@@ -125,6 +130,7 @@ internal sealed unsafe partial class D3D12Backend
         uint nodeIndex = uint.MaxValue,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         uint resolvedNodeIndex = nativeDevice.ResolveNodeIndex(nodeIndex, nameof(nodeIndex));
@@ -828,32 +834,32 @@ internal sealed unsafe partial class D3D12Backend
         internal static DescriptorSlotDesc GetDescriptorSlotDesc(
             GraphicsObject owner,
             ResourceBindingType type) => owner switch
-        {
-            BufferCbv => new DescriptorSlotDesc(ResourceBindingType.ConstantBuffer),
-            BufferSrv value => new DescriptorSlotDesc(
-                ResourceBindingType.BufferSrv,
-                value.Description.Format,
-                value.Description.StructureStride),
-            BufferUav value => new DescriptorSlotDesc(
-                ResourceBindingType.BufferUav,
-                value.Description.Format,
-                value.Description.StructureStride,
-                HasCounter: value.Description.CounterBuffer is not null),
-            TextureSrv value => new DescriptorSlotDesc(
-                ResourceBindingType.TextureSrv,
-                value.Description.Format,
-                TextureDimension: value.Description.Dimension,
-                Aspects: value.Description.Range.Aspects),
-            TextureUav value => new DescriptorSlotDesc(
-                ResourceBindingType.TextureUav,
-                value.Description.Format,
-                TextureDimension: value.Description.Dimension,
-                Aspects: value.Description.Range.Aspects),
-            Sampler => new DescriptorSlotDesc(ResourceBindingType.Sampler),
-            AccelerationStructureSrv =>
-                new DescriptorSlotDesc(ResourceBindingType.AccelerationStructure),
-            _ => new DescriptorSlotDesc(type),
-        };
+            {
+                BufferCbv or Buffer => new DescriptorSlotDesc(ResourceBindingType.ConstantBuffer),
+                BufferSrv value => new DescriptorSlotDesc(
+                    ResourceBindingType.BufferSrv,
+                    value.Description.Format,
+                    value.Description.StructureStride),
+                BufferUav value => new DescriptorSlotDesc(
+                    ResourceBindingType.BufferUav,
+                    value.Description.Format,
+                    value.Description.StructureStride,
+                    HasCounter: value.Description.CounterBuffer is not null),
+                TextureSrv value => new DescriptorSlotDesc(
+                    ResourceBindingType.TextureSrv,
+                    value.Description.Format,
+                    TextureDimension: value.Description.Dimension,
+                    Aspects: value.Description.Range.Aspects),
+                TextureUav value => new DescriptorSlotDesc(
+                    ResourceBindingType.TextureUav,
+                    value.Description.Format,
+                    TextureDimension: value.Description.Dimension,
+                    Aspects: value.Description.Range.Aspects),
+                Sampler => new DescriptorSlotDesc(ResourceBindingType.Sampler),
+                AccelerationStructureSrv =>
+                    new DescriptorSlotDesc(ResourceBindingType.AccelerationStructure),
+                _ => new DescriptorSlotDesc(type),
+            };
 
         private DescriptorRecord CreateBindingRecord(
             in ResourceBinding binding,
@@ -861,33 +867,13 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (binding.Value is null)
                 return DescriptorRecord.CreateNull(slot);
-            if (binding.Value is GraphicsObject owner && owner is INativeDescriptor descriptor)
-            {
-                return DescriptorRecord.Create(
-                    descriptor.NativeDescriptor,
-                    owner,
-                    slot.Type,
-                    slot);
-            }
-            throw new ArgumentException("The binding is not a D3D12 descriptor.", nameof(binding));
+            return DescriptorRecord.Create(GetBindingDescriptor(binding), binding.Value, slot.Type, slot);
         }
 
         private DescriptorRecord CreateBindingRecord(
             in ResourceBinding binding,
-            ResourceBindingType expectedType)
-        {
-            if (binding.Value is null)
-                return DescriptorRecord.CreateNull(expectedType);
-            if (binding.Value is GraphicsObject owner && owner is INativeDescriptor descriptor)
-            {
-                return DescriptorRecord.Create(
-                    descriptor.NativeDescriptor,
-                    owner,
-                    expectedType,
-                    new DescriptorSlotDesc(expectedType));
-            }
-            throw new ArgumentException("The binding is not a D3D12 descriptor.", nameof(binding));
-        }
+            ResourceBindingType expectedType) =>
+            CreateBindingRecord(binding, new DescriptorSlotDesc(expectedType));
 
         private static void RemovePendingRange(
             Dictionary<uint, DescriptorRecord> pending,
@@ -1042,27 +1028,29 @@ internal sealed unsafe partial class D3D12Backend
 
         private static (NativeLease? Primary, NativeLease? Secondary)
             GetResourceLifetimes(GraphicsObject owner) => owner switch
-        {
-            BufferCbv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
-            BufferSrv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
-            BufferUav view => (
-                RequireD3D12.Buffer(view.Resource).NativeLifetime,
-                view.Description.CounterBuffer is Buffer counter
-                    ? RequireD3D12.Buffer(counter).NativeLifetime
-                    : null),
-            D3D12SamplerFeedbackUav view => (
-                view.FeedbackResource.NativeLifetime,
-                view.SampledResource.NativeLifetime),
-            TextureSrv view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
-            TextureUav view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
-            AccelerationStructureSrv view => (
-                RequireD3D12.AccelerationStructure(view.Resource).NativeLifetime,
-                null),
-            _ => (null, null),
-        };
+            {
+                Buffer buffer => (RequireD3D12.Buffer(buffer).NativeLifetime, null),
+                BufferCbv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
+                BufferSrv view => (RequireD3D12.Buffer(view.Resource).NativeLifetime, null),
+                BufferUav view => (
+                    RequireD3D12.Buffer(view.Resource).NativeLifetime,
+                    view.Description.CounterBuffer is Buffer counter
+                        ? RequireD3D12.Buffer(counter).NativeLifetime
+                        : null),
+                D3D12SamplerFeedbackUav view => (
+                    view.FeedbackResource.NativeLifetime,
+                    view.SampledResource.NativeLifetime),
+                TextureSrv view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
+                TextureUav view => (RequireD3D12.Texture(view.Resource).NativeLifetime, null),
+                AccelerationStructureSrv view => (
+                    RequireD3D12.AccelerationStructure(view.Resource).NativeLifetime,
+                    null),
+                _ => (null, null),
+            };
 
         private static uint GetVisibleNodeMask(GraphicsObject owner) => owner switch
         {
+            Buffer buffer => RequireD3D12.Buffer(buffer).Info.VisibleNodeMask,
             BufferCbv view => RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
             BufferSrv view => RequireD3D12.Buffer(view.Resource).Info.VisibleNodeMask,
             BufferUav view => view.Description.CounterBuffer is Buffer counter
@@ -1084,6 +1072,8 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly DescriptorPublisher _publisher;
         private readonly DescriptorRecord[] _records;
+        private readonly DescriptorRecord?[] _resourceRecords;
+        private readonly DescriptorRecord?[] _samplerRecords;
         private ID3D12DescriptorHeap* _resources;
         private ID3D12DescriptorHeap* _samplers;
         private int _references = 1;
@@ -1095,7 +1085,9 @@ internal sealed unsafe partial class D3D12Backend
             uint samplerCount,
             ID3D12DescriptorHeap* resources,
             ID3D12DescriptorHeap* samplers,
-            DescriptorRecord[] records)
+            DescriptorRecord[] records,
+            DescriptorRecord?[] resourceRecords,
+            DescriptorRecord?[] samplerRecords)
         {
             _publisher = publisher;
             Identity = identity;
@@ -1103,12 +1095,20 @@ internal sealed unsafe partial class D3D12Backend
             SamplerCount = samplerCount;
             _resources = resources;
             _samplers = samplers;
+            ResourceGpuStart = resources is null ? default : ResourceTrace.GetGPUDescriptorHandleForHeapStart(resources);
+            SamplerGpuStart = samplers is null ? default : ResourceTrace.GetGPUDescriptorHandleForHeapStart(samplers);
             _records = records;
+            // Publishing replaces these arrays; it never mutates an installed array.
+            // Source records remain retained by this generation until GPU retirement.
+            _resourceRecords = resourceRecords;
+            _samplerRecords = samplerRecords;
         }
 
         internal ulong Identity { get; }
         internal uint ResourceCount { get; }
         internal uint SamplerCount { get; }
+        internal GpuDescriptorHandle ResourceGpuStart { get; }
+        internal GpuDescriptorHandle SamplerGpuStart { get; }
         internal ID3D12DescriptorHeap* ResourceHeap => _resources;
         internal ID3D12DescriptorHeap* SamplerHeap => _samplers;
 
@@ -1161,7 +1161,9 @@ internal sealed unsafe partial class D3D12Backend
                     samplerCount,
                     resourceHeap,
                     samplerHeap,
-                    retained);
+                    retained,
+                    resources,
+                    samplers);
             }
             catch
             {
@@ -1224,26 +1226,14 @@ internal sealed unsafe partial class D3D12Backend
             D3D12Device device,
             ID3D12DescriptorHeap* destination)
         {
-            if (ResourceCount == 0)
-                return;
-            device.Native->CopyDescriptorsSimple(
-                ResourceCount,
-                destination->GetCPUDescriptorHandleForHeapStart(),
-                ResourceHeap->GetCPUDescriptorHandleForHeapStart(),
-                DescriptorHeapType.CbvSrvUav);
+            int unused = 0;
+            CopyRecords(device, destination, DescriptorHeapType.CbvSrvUav, _resourceRecords, null, ref unused);
         }
 
-        internal void CopySamplerTo(
-            D3D12Device device,
-            ID3D12DescriptorHeap* destination)
+        internal void CopySamplerTo(D3D12Device device, ID3D12DescriptorHeap* destination)
         {
-            if (SamplerCount == 0)
-                return;
-            device.Native->CopyDescriptorsSimple(
-                SamplerCount,
-                destination->GetCPUDescriptorHandleForHeapStart(),
-                SamplerHeap->GetCPUDescriptorHandleForHeapStart(),
-                DescriptorHeapType.Sampler);
+            int unused = 0;
+            CopyRecords(device, destination, DescriptorHeapType.Sampler, _samplerRecords, null, ref unused);
         }
 
         private static ID3D12DescriptorHeap* CreateHeap(
@@ -1261,7 +1251,7 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = ID3D12DescriptorHeap.Guid;
             ThrowIfFailed(
                 device,
-                device.Native->CreateDescriptorHeap(&desc, &iid, (void**)&heap),
+                    DeviceResourceTrace.CreateDescriptorHeap(device.Native, &desc, &iid, (void**)&heap),
                 NativeOperationType.Ordinary,
                 "ID3D12Device::CreateDescriptorHeap");
             SetNativeName(
@@ -1274,7 +1264,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             if (heap is null)
                 return;
-            _ = heap->Release();
+            _ = ResourceTrace.Release(heap);
         }
 
         private static int CountRetainedRecords(DescriptorRecord?[] records)
@@ -1293,11 +1283,11 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12DescriptorHeap* heap,
             DescriptorHeapType type,
             DescriptorRecord?[] records,
-            DescriptorRecord[] retained,
+            DescriptorRecord[]? retained,
             ref int retainedCount)
         {
-            CpuDescriptorHandle destination = heap->GetCPUDescriptorHandleForHeapStart();
-            uint increment = device.Native->GetDescriptorHandleIncrementSize(type);
+            CpuDescriptorHandle destination = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
+            uint increment = device.DescriptorIncrement(type);
             for (int index = 0; index < records.Length; index++)
             {
                 DescriptorRecord? record = records[index];
@@ -1305,18 +1295,12 @@ internal sealed unsafe partial class D3D12Backend
                     destination.Ptr + checked((nuint)((uint)index * increment)));
                 if (record?.Source is DescriptorLease source)
                 {
-                    record.Retain();
-                    try
+                    if (retained is not null)
                     {
-                        retained[retainedCount] = record;
-                        retainedCount++;
+                        record.Retain();
+                        retained[retainedCount++] = record;
                     }
-                    catch
-                    {
-                        record.Release();
-                        throw;
-                    }
-                    device.Native->CopyDescriptorsSimple(1, target, source.Cpu, type);
+                    DeviceQueryTrace.CopyDescriptorsSimple(device.Native, 1, target, source.Cpu, type);
                     continue;
                 }
                 if (record is not null &&
@@ -1359,7 +1343,7 @@ internal sealed unsafe partial class D3D12Backend
         switch (slot.Type)
         {
             case ResourceBindingType.ConstantBuffer:
-                device.Native->CreateConstantBufferView(null, destination);
+                DeviceResourceTrace.CreateConstantBufferView(device.Native, null, destination);
                 return;
             case ResourceBindingType.BufferSrv:
                 WriteNullBufferSrv(device, slot, destination);
@@ -1412,7 +1396,7 @@ internal sealed unsafe partial class D3D12Backend
             StructureByteStride = stride,
             Flags = flags,
         };
-        device.Native->CreateShaderResourceView(null, &native, destination);
+        DeviceResourceTrace.CreateShaderResourceView(device.Native, null, &native, destination);
     }
 
     private static void WriteNullBufferUav(
@@ -1438,7 +1422,7 @@ internal sealed unsafe partial class D3D12Backend
                 ? BufferUavFlags.Raw
                 : BufferUavFlags.None,
         };
-        device.Native->CreateUnorderedAccessView(null, null, &native, destination);
+        DeviceResourceTrace.CreateUnorderedAccessView(device.Native, null, null, &native, destination);
     }
 
     private static void WriteNullTextureUav(
@@ -1460,7 +1444,7 @@ internal sealed unsafe partial class D3D12Backend
             ViewDimension = ToUavDimension(dimension),
         };
         InitializeNullUav(ref native, dimension);
-        device.Native->CreateUnorderedAccessView(null, null, &native, destination);
+        DeviceResourceTrace.CreateUnorderedAccessView(device.Native, null, null, &native, destination);
     }
 
     private static void WriteNullAccelerationStructure(
@@ -1474,7 +1458,7 @@ internal sealed unsafe partial class D3D12Backend
             Shader4ComponentMapping = 5768,
         };
         native.RaytracingAccelerationStructure = new RaytracingAccelerationStructureSrv(0);
-        device.Native->CreateShaderResourceView(null, &native, destination);
+        DeviceResourceTrace.CreateShaderResourceView(device.Native, null, &native, destination);
     }
 
     private static void WriteDummySampler(
@@ -1491,7 +1475,7 @@ internal sealed unsafe partial class D3D12Backend
             MaxAnisotropy = 1,
             MaxLOD = float.MaxValue,
         };
-        device.Native->CreateSampler(&sampler, destination);
+        DeviceResourceTrace.CreateSampler(device.Native, &sampler, destination);
     }
 
     private static void WriteNullTextureSrv(
@@ -1509,7 +1493,7 @@ internal sealed unsafe partial class D3D12Backend
             Shader4ComponentMapping = 5768,
         };
         InitializeNullSrv(ref native, dimension);
-        device.Native->CreateShaderResourceView(null, &native, destination);
+        DeviceResourceTrace.CreateShaderResourceView(device.Native, null, &native, destination);
     }
 
     private static void GetNullBufferShape(
@@ -1705,7 +1689,6 @@ internal sealed unsafe partial class D3D12Backend
                 if (Layout != bindings.Layout)
                     throw new ArgumentException("The parameter layout cannot change during an update.", nameof(bindings));
                 RequireNativeParameterBindings(
-                    Layout,
                     NativeLayout,
                     bindings.Resources,
                     bindings.OrdinaryData);

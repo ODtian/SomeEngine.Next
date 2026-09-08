@@ -1,0 +1,32 @@
+CHECK old column scope releases current write
+Get while current write scope exists=42
+current scope disposal failed=SynchronizationLockException
+CHECK scalar field order identity
+same sorted fields=True, same hash=False
+CHECK orthographic temporal jitter
+nonzero jitter leaves projection unchanged=True
+CHECK D3D12 parallel disjoint writes
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+parallel writer failed=InvalidOperationException: The Buffer already has an active mapping.
+update 0 completed
+CHECK Vulkan generation rewrite
+update 0 completed
+update 1 failed=System.ArgumentException: Upload Buffers do not support read mappings. (Parameter 'type')
+   at SomeEngine.Graphics.Vulkan.VulkanBackend.VulkanMappingLease.Map(MapType type, BufferRange range) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Graphics.Vulkan\VulkanResources.cs:line 1229
+   at SomeEngine.Graphics.Vulkan.VulkanBackend.Map(Buffer buffer, MapType type, BufferRange& range) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Graphics.Vulkan\VulkanResources.cs:line 284
+   at SomeEngine.Graphics.Vulkan.VulkanBackend.SomeEngine.Graphics.IGraphicsBackend.Map(Buffer buffer, MapType type, BufferRange& range) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Graphics.Vulkan\VulkanReceiver.cs:line 87
+   at SomeEngine.Render.Instances.RenderInstanceResources.CopyBatchState(Int32 batchSlot, PackedRange rows, Int32 sourceGeneration, Int32 destinationGeneration) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Render\Instances\RenderInstanceResources.cs:line 820
+   at SomeEngine.Render.Instances.RenderInstanceResources.BeginBatchUpdate(RenderInstanceBatch batch, RenderInstancePropertyLayout properties) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Render\Instances\RenderInstanceResources.cs:line 776
+   at SomeEngine.Render.Instances.RenderInstanceWriteScope.BeginBatchUpdate(RenderInstanceBatch batch, RenderInstancePropertyLayout properties) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Render\Instances\RenderInstanceResources.cs:line 1658
+   at SomeEngine.Render.Instances.RenderInstanceStorageSystem.RewriteBatch(RenderPrepareScope scope, RenderInstanceWriteScope write, RenderInstanceBatch batch, RenderInstancePropertyLayout properties) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Render\Instances\RenderInstanceStorageSystem.cs:line 140
+   at BatchWrites.OnUpdate(RenderPrepareSystemContext& context) in F:\SomeEngine.Next-render-enhancement\.review-probe3\Review.cs:line 66
+   at SomeEngine.ECS.Systems.SystemNode`2.OnUpdate(TContext& context) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.ECS.Systems\SystemNode.cs:line 31
+   at SomeEngine.ECS.Systems.SystemGroup`1.UpdateCore(Boolean useTemplate, TContext& template) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 269
+   at SomeEngine.ECS.Systems.SystemGroup`1.Update() in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.ECS.Systems\SystemGroup.cs:line 150
+   at SomeEngine.Render.Systems.RenderPrepareSystems.Update(RenderPrepareScope scope) in F:\SomeEngine.Next-render-enhancement\src\SomeEngine.Render\Systems\RenderSystemGroups.cs:line 263
+   at Program.<<Main>$>g__Run|0_0(String label, Boolean vulkan, Boolean parallel, <>c__DisplayClass0_0&) in F:\SomeEngine.Next-render-enhancement\.review-probe3\Review.cs:line 44

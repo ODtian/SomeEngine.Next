@@ -6,19 +6,14 @@ ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<RasterBinEntry> RasterBinMeta;
-ConstantBuffer<RasterDeformBinningUniforms> Uniforms;
-StructuredBuffer<uint4> VisibleClusters;
+ConstantBuffer<RasterBinningUniforms> Uniforms;
+StructuredBuffer<DrawRequest> VisibleClusters;
 ByteAddressBuffer DrawArgs;
 ByteAddressBuffer ClusterReadOffsetArgs;
+ByteAddressBuffer ClusterReadOffsetArgs1;
+ByteAddressBuffer ClusterReadOffsetArgs2;
 StructuredBuffer<uint> RasterSlots;
-StructuredBuffer<uint> DeformSlots;
 ByteAddressBuffer PageHeap;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<DeformBinEntry> DeformBinMeta;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> CacheOffsetsWrite;
-
-static const uint CACHE_OFFSET_OVERFLOW = 0xFFFFFFFDu;
 
 void CountRasterBatches(
     uint slotOffset,
@@ -57,18 +52,6 @@ void CountRasterBatches(
     }
 }
 
-void CountDeformCluster(
-    uint slotOffset,
-    uint triangleCount,
-    uint deformMaterialIndex)
-{
-    if (triangleCount == 0u)
-        return;
-    CountDeform(
-        DeformBinMeta,
-        DeformKey(DeformSlots, Uniforms, slotOffset, deformMaterialIndex));
-}
-
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void CountBins(uint3 threadId : SV_DispatchThreadID)
@@ -83,16 +66,16 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
     DecodeVisibleCluster(
         DrawArgs,
         ClusterReadOffsetArgs,
+        ClusterReadOffsetArgs1,
+        ClusterReadOffsetArgs2,
         Uniforms.MaxVisibleClusters,
         threadId.x,
         visibleIndex,
         isSoftware);
 
-    uint4 entry = VisibleClusters[visibleIndex];
-    CacheOffsetsWrite[visibleIndex] = CACHE_OFFSET_OVERFLOW;
+    DrawRequest entry = VisibleClusters[visibleIndex];
     uint vrbInfo;
     uint triangleCount;
-    uint deformMaterialIndex;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
@@ -100,7 +83,6 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         entry,
         vrbInfo,
         triangleCount,
-        deformMaterialIndex,
         packedMaterials,
         packedRanges);
     uint slotOffset = LoadClusterMaterialSlotOffset(
@@ -108,7 +90,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         LoadRenderInstanceMetadata(
             InstanceProperties,
             CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
-        entry.z);
+        entry.InstanceID);
     CountRasterBatches(
         slotOffset,
         vrbInfo,
@@ -116,5 +98,4 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         packedMaterials,
         packedRanges,
         isSoftware);
-    CountDeformCluster(slotOffset, triangleCount, deformMaterialIndex);
 }

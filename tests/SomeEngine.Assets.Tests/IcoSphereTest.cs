@@ -40,6 +40,29 @@ public class IcoSphereTest
         // The runtime contract is one opaque raw vertex record, not a fixed attribute schema.
         Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, meshAsset.VertexEncoding);
 
+        bool sawPartialWord = false;
+        int pageOffset = 0;
+        while ((ulong)pageOffset < meshAsset.BvhOffset)
+        {
+            ReadOnlySpan<byte> payload = meshAsset.Payload.Value.Span[pageOffset..];
+            var header = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Assets.Data.MeshPageHeader>(payload);
+            var clusters = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, SomeEngine.Assets.Data.PackedCluster>(
+                payload.Slice((int)header.ClustersOffset, (int)header.ClusterCount * SomeEngine.Assets.Data.PackedCluster.SizeInBytes));
+            foreach (ref readonly var cluster in clusters)
+            {
+                int address = checked((int)(header.VertexBlobsOffset + cluster.VertexBlobOffset));
+                Assert.Equal(0, address & 3);
+                Assert.Equal(0u, cluster.VertexBlobSize & 3u);
+                uint vertexCount = BitConverter.ToUInt32(payload.Slice(address + 8, 4));
+                uint stride = BitConverter.ToUInt32(payload.Slice(address + 16, 4));
+                uint bits = BitConverter.ToUInt32(payload.Slice(address + 20, 4)) + vertexCount * stride;
+                sawPartialWord |= (bits & 31u) != 0u;
+                Assert.Equal(((bits + 31u) / 32u) * 4u, cluster.VertexBlobSize);
+            }
+            pageOffset += checked((int)(header.ExtensionDataOffset + header.ExtensionDataSize));
+        }
+        Assert.True(sawPartialWord);
+
         // Save to test output, not the excluded samples workspace.
         string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh.asset");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);

@@ -162,7 +162,7 @@ public partial class Shader
         }
 
         ValidateScalarLayouts(asset.Metadata?.MaterialScalarLayouts);
-        ValidateMaterialInstanceProperties(asset.Metadata?.MaterialInstanceProperties);
+        ValidateInstanceProperties(asset.Metadata?.InstanceProperties);
     }
 
     private static void ValidateScalarLayouts(IList<ShaderMaterialScalarLayout>? layouts)
@@ -187,15 +187,15 @@ public partial class Shader
         }
     }
 
-    private static void ValidateMaterialInstanceProperties(
-        IList<ShaderMaterialInstanceProperty>? properties)
+    private static void ValidateInstanceProperties(
+        IList<ShaderInstanceProperty>? properties)
     {
         if (properties is null)
             return;
 
         for (int index = 0; index < properties.Count; index++)
         {
-            ShaderMaterialInstanceProperty property = properties[index];
+            ShaderInstanceProperty property = properties[index];
             if (string.IsNullOrWhiteSpace(property.CanonicalId)
                 || string.IsNullOrWhiteSpace(property.MaterialScalarLayoutName)
                 || string.IsNullOrWhiteSpace(property.MaterialScalarName)
@@ -211,7 +211,7 @@ public partial class Shader
 
             for (int previousIndex = 0; previousIndex < index; previousIndex++)
             {
-                ShaderMaterialInstanceProperty previous = properties[previousIndex];
+                ShaderInstanceProperty previous = properties[previousIndex];
                 if (string.Equals(previous.CanonicalId, property.CanonicalId, StringComparison.Ordinal)
                     && (string.Equals(
                             previous.MaterialScalarLayoutName,
@@ -227,8 +227,8 @@ public partial class Shader
     }
 
     private static bool HasSameEncodingContract(
-        ShaderMaterialInstanceProperty left,
-        ShaderMaterialInstanceProperty right)
+        ShaderInstanceProperty left,
+        ShaderInstanceProperty right)
         => left.Size == right.Size
             && left.Alignment == right.Alignment
             && left.RowCount == right.RowCount

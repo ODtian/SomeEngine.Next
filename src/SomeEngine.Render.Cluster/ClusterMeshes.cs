@@ -829,6 +829,7 @@ internal sealed partial class ClusterMeshes : IDisposable
                 }
             }
 
+            _residentPageRanges = publication.ResidentPageRanges;
             _evictedPageCount = checked(
                 _evictedPageCount + checked((uint)publication.Retirements.Length));
             _preparedPublication = null;
@@ -890,13 +891,20 @@ internal sealed partial class ClusterMeshes : IDisposable
             RecordCleanupFailure(ClusterCleanupStage.Publication, cleanupFailure);
     }
 
+    private BufferRange[] _residentPageRanges = [];
+
     internal BufferRange[] CaptureResidentPageRanges()
     {
         lock (_gate)
         {
             ThrowIfDisposed();
-            return BuildResidentPageRanges([], []);
+            return _residentPageRanges;
         }
+    }
+
+    internal int HierarchyLevels
+    {
+        get { lock (_gate) { ThrowIfDisposed(); return _bvh.HierarchyLevels; } }
     }
 
     internal BufferRange CaptureBvhRange()

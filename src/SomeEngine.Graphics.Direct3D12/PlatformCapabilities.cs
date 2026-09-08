@@ -13,6 +13,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public CalibratedTimestampInfo CalibrateTimestamps(Queue queue)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Queue native = RequireQueue(queue, nameof(queue));
         _ = native.NativeDevice.RequireCapability<CalibratedTimestamps>(nameof(CalibrateTimestamps));
         using (native.Gate.EnterScope())
@@ -22,12 +23,12 @@ internal sealed unsafe partial class D3D12Backend
             ulong cpuCounter = 0;
             ThrowIfFailed(
                 native.NativeDevice,
-                native.Native->GetTimestampFrequency(&queueFrequency),
+                    QueueTrace.GetTimestampFrequency(native.Native, &queueFrequency),
                 NativeOperationType.Ordinary,
                 "ID3D12CommandQueue::GetTimestampFrequency");
             ThrowIfFailed(
                 native.NativeDevice,
-                native.Native->GetClockCalibration(&queueCounter, &cpuCounter),
+                    QueueTrace.GetClockCalibration(native.Native, &queueCounter, &cpuCounter),
                 NativeOperationType.Ordinary,
                 "ID3D12CommandQueue::GetClockCalibration");
             return new CalibratedTimestampInfo(
@@ -44,6 +45,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferDesc desc,
         in ImportedResourceState state)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalResources capability =
             nativeDevice.RequireCapability<ExternalResources>(nameof(ImportBuffer));
@@ -68,6 +70,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferDesc desc,
         in ImportedResourceState state)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<D3D12NativeAccess>(nameof(ImportBuffer));
         _ = nativeDevice.RequireCapability<ExternalResources>(nameof(ImportBuffer));
@@ -81,6 +84,7 @@ internal sealed unsafe partial class D3D12Backend
         in TextureDesc desc,
         in ImportedResourceState state)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalResources capability =
             nativeDevice.RequireCapability<ExternalResources>(nameof(ImportTexture));
@@ -105,6 +109,7 @@ internal sealed unsafe partial class D3D12Backend
         in TextureDesc desc,
         in ImportedResourceState state)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<D3D12NativeAccess>(nameof(ImportTexture));
         _ = nativeDevice.RequireCapability<ExternalResources>(nameof(ImportTexture));
@@ -117,6 +122,7 @@ internal sealed unsafe partial class D3D12Backend
         ExternalHandle handle,
         in HeapDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalResources capability =
             nativeDevice.RequireCapability<ExternalResources>(nameof(ImportHeap));
@@ -140,6 +146,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeObjectOwnership ownership,
         in HeapDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<D3D12NativeAccess>(nameof(ImportHeap));
         _ = nativeDevice.RequireCapability<ExternalResources>(nameof(ImportHeap));
@@ -149,6 +156,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportBuffer(Buffer buffer, ExternalHandleType type)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Buffer native = RequireBuffer(buffer);
         D3D12Device device = RequireDevice(buffer.Device, nameof(buffer));
         ExternalResources capability =
@@ -167,6 +175,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportTexture(Texture texture, ExternalHandleType type)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12TextureResource native = RequireTexture(texture);
         D3D12Device device = RequireDevice(texture.Device, nameof(texture));
         ExternalResources capability =
@@ -185,6 +194,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportHeap(Heap heap, ExternalHandleType type)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Heap native = RequireHeap(heap);
         D3D12Device device = RequireDevice(heap.Device, nameof(heap));
         ExternalResources capability =
@@ -206,14 +216,15 @@ internal sealed unsafe partial class D3D12Backend
         ulong initialValue,
         string? label = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         _ = nativeDevice.RequireCapability<ExternalTimelines>(nameof(CreateExternalTimeline));
         ID3D12Fence* fence = null;
         Guid iid = ID3D12Fence.Guid;
         ThrowIfFailed(
             nativeDevice,
-            nativeDevice.Native->CreateFence(
-                initialValue,
+                DevicePipelineTrace.CreateFence(
+            nativeDevice.Native, initialValue,
                 FenceFlags.Shared,
                 &iid,
                 (void**)&fence),
@@ -233,7 +244,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (fence is not null)
-                _ = fence->Release();
+                _ = ResourceTrace.Release(fence);
         }
     }
 
@@ -242,6 +253,7 @@ internal sealed unsafe partial class D3D12Backend
         ExternalHandle handle,
         string? label = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         ExternalTimelines capability =
             nativeDevice.RequireCapability<ExternalTimelines>(nameof(ImportTimeline));
@@ -264,7 +276,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (fence is not null)
-                _ = fence->Release();
+                _ = ResourceTrace.Release(fence);
         }
     }
 
@@ -281,7 +293,7 @@ internal sealed unsafe partial class D3D12Backend
             RequireNativeObjectDevice(device, (ID3D12DeviceChild*)resource, nameof(resource));
             ValidateImportedResourceState(state, texture: false);
             NativeResourceDesc expectedDescription = CreateBufferDescription(desc);
-            ValidateImportedResourceDescription(resource->GetDesc(), expectedDescription, "Buffer");
+            ValidateImportedResourceDescription(ResourceTrace.GetDesc(resource), expectedDescription, "Buffer");
             (MemoryType memoryType, uint creationNodeMask, uint visibleNodeMask) =
                 GetImportedResourceHeapProperties(device, resource);
             ValidateImportedResourceNodePlacement(
@@ -289,8 +301,8 @@ internal sealed unsafe partial class D3D12Backend
                 creationNodeMask,
                 visibleNodeMask,
                 nameof(desc));
-            ResourceAllocationInfo allocation = device.Native->GetResourceAllocationInfo(
-                visibleNodeMask,
+            ResourceAllocationInfo allocation = DeviceQueryTrace.GetResourceAllocationInfo(
+device.Native, visibleNodeMask,
                 1,
                 &expectedDescription);
             EnsureAllocationInfo(allocation, "Buffer");
@@ -319,7 +331,7 @@ internal sealed unsafe partial class D3D12Backend
             if (result is not null)
                 result.Dispose();
             else if (ownsReference)
-                _ = resource->Release();
+                _ = ResourceTrace.Release(resource);
             throw;
         }
     }
@@ -338,7 +350,7 @@ internal sealed unsafe partial class D3D12Backend
             RequireNativeObjectDevice(device, (ID3D12DeviceChild*)resource, nameof(resource));
             ValidateImportedResourceState(state, texture: true);
             TextureLayout layout = state.Layout!.Value;
-            ValidateImportedResourceDescription(resource->GetDesc(), expectedDescription, "Texture");
+            ValidateImportedResourceDescription(ResourceTrace.GetDesc(resource), expectedDescription, "Texture");
             (MemoryType memoryType, uint creationNodeMask, uint visibleNodeMask) =
                 GetImportedResourceHeapProperties(device, resource);
             ValidateImportedResourceNodePlacement(
@@ -346,8 +358,8 @@ internal sealed unsafe partial class D3D12Backend
                 creationNodeMask,
                 visibleNodeMask,
                 nameof(desc));
-            ResourceAllocationInfo allocation = device.Native->GetResourceAllocationInfo(
-                visibleNodeMask,
+            ResourceAllocationInfo allocation = DeviceQueryTrace.GetResourceAllocationInfo(
+device.Native, visibleNodeMask,
                 1,
                 &expectedDescription);
             EnsureAllocationInfo(allocation, "Texture");
@@ -385,7 +397,7 @@ internal sealed unsafe partial class D3D12Backend
             if (result is not null)
                 result.Dispose();
             else if (ownsReference)
-                _ = resource->Release();
+                _ = ResourceTrace.Release(resource);
             throw;
         }
     }
@@ -401,7 +413,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             RequireNativeObjectDevice(device, (ID3D12DeviceChild*)heap, nameof(heap));
             ValidateHeapDescription(device, desc);
-            ValidateImportedHeapDescription(heap->GetDesc(), desc);
+            ValidateImportedHeapDescription(ResourceTrace.GetDesc(heap), desc);
             result = new D3D12Heap(
                 device,
                 heap,
@@ -422,7 +434,7 @@ internal sealed unsafe partial class D3D12Backend
             if (result is not null)
                 result.Dispose();
             else if (ownsReference)
-                _ = heap->Release();
+                _ = ResourceTrace.Release(heap);
             throw;
         }
     }
@@ -436,7 +448,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeHeapFlags flags = default;
         ThrowIfFailed(
             device,
-            resource->GetHeapProperties(&properties, &flags),
+                ResourceTrace.GetHeapProperties(resource, &properties, &flags),
             NativeOperationType.Ordinary,
             "ID3D12Resource::GetHeapProperties");
 
@@ -512,7 +524,7 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = ID3D12Device10.Guid;
             ThrowIfFailed(
                 expected,
-                value->GetDevice(&iid, (void**)&actual),
+                    DeviceQueryTrace.GetDevice(value, &iid, (void**)&actual),
                 NativeOperationType.Ordinary,
                 "ID3D12DeviceChild::GetDevice");
             if (actual != expected.Native)
@@ -525,7 +537,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (actual is not null)
-                _ = actual->Release();
+                _ = DeviceQueryTrace.Release(actual);
         }
     }
 
@@ -615,6 +627,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ExternalHandle ExportTimeline(ExternalTimeline timeline, ExternalHandleType type)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12ExternalTimeline native = RequireTimeline(timeline);
         D3D12Device device = RequireDevice(timeline.Device, nameof(timeline));
         ExternalTimelines capability =
@@ -642,7 +655,7 @@ internal sealed unsafe partial class D3D12Backend
                 : ID3D12Fence.Guid;
         ThrowIfFailed(
             device,
-            device.Native->OpenSharedHandle((void*)handle.Value, &iid, (void**)&result),
+                DeviceQueryTrace.OpenSharedHandle(device.Native, (void*)handle.Value, &iid, (void**)&result),
             NativeOperationType.Ordinary,
             "ID3D12Device::OpenSharedHandle");
         return result;
@@ -672,8 +685,8 @@ internal sealed unsafe partial class D3D12Backend
         void* handle = null;
         ThrowIfFailed(
             device,
-            device.Native->CreateSharedHandle(
-                value,
+                DevicePipelineTrace.CreateSharedHandle(
+            device.Native, value,
                 null,
                 GenericAll,
                 (char*)null,

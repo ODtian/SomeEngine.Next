@@ -19,7 +19,6 @@ public sealed class CrossCuttingFeatureArchitectureTests
         Type[] features =
         [
             typeof(LightingFeature),
-            typeof(MotionFeature),
             typeof(TemporalFeature),
             typeof(TranslucencyFeature),
             typeof(DebugFeature),
@@ -58,13 +57,12 @@ public sealed class CrossCuttingFeatureArchitectureTests
             "CullReset",
             "CullPhaseOne",
             "CullPhaseTwo",
-            "RasterDeformBinningReset",
-            "RasterDeformBinningCount",
-            "RasterDeformBinningReserve",
-            "RasterDeformBinningScatter",
+            "RasterBinningReset",
+            "RasterBinningCount",
+            "RasterBinningReserve",
+            "RasterBinningScatter",
             "SoftwareVisibilityRaster",
             "HardwareVisibilityRaster",
-            "SoftwareDepthMerge",
             "HiZInitialize",
             "HiZReduce",
             "HiZReducePair",
@@ -73,12 +71,17 @@ public sealed class CrossCuttingFeatureArchitectureTests
             "MaterialBinningReserve",
             "MaterialBinningScatter",
             "VisibilityResolve",
-            "DeformCachePrefixLocal",
-            "DeformCachePrefixGlobal",
-            "DeformCachePrefixWrite",
-            "TessellationFactor",
-            "TessellationDice",
-            "TessellationVisibilityRaster",
+            "TessellationBinningReset",
+            "TessellationBinningCount",
+            "TessellationBinningReserve",
+            "TessellationBinningScatter",
+            "BvhTraversalInitialize",
+            "BvhDeferredResume",
+            "VisibilityClearImage",
+            "VisibilityClearBuffer",
+            "VisibilityResolveImage",
+            "VisibilityResolveBuffer",
+            "SceneBounds",
         ],
             Enum.GetNames<ClusterShaderOperationRole>());
 
@@ -94,7 +97,8 @@ public sealed class CrossCuttingFeatureArchitectureTests
             "Height",
             "IsValid",
             "MaterialColor",
-            "ViewCapacity",
+            "MotionVectors",
+            "ViewCount",
             "Visibility",
             "Width",
         ],
@@ -135,7 +139,7 @@ public sealed class CrossCuttingFeatureArchitectureTests
         Assert.False(default(DebugFeatureOutput).IsValid);
         Assert.False(default(StreamOutputFeatureOutput).IsValid);
         Assert.False(default(RayTracingGeometryFeatureOutput).IsValid);
-        Assert.Equal(32u, RayTracingGeometryFeature.RecordStride);
+        Assert.Equal(28u, RayTracingGeometryFeature.RecordStride);
     }
 
     private static IEnumerable<Type> MemberTypes(MemberInfo member) => member switch

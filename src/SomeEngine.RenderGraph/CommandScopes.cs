@@ -15,8 +15,9 @@ public ref struct RasterPassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
-    public BufferCbv GetBufferCbv(GraphBufferCbvId id) => _frame.GetBufferCbv(_passIndex, id);
     public BufferSrv GetBufferSrv(GraphBufferSrvId id) => _frame.GetBufferSrv(_passIndex, id);
     public BufferUav GetBufferUav(GraphBufferUavId id) => _frame.GetBufferUav(_passIndex, id);
     public TextureSrv GetTextureSrv(GraphTextureSrvId id) => _frame.GetTextureSrv(_passIndex, id);
@@ -32,7 +33,7 @@ public ref struct RasterPassCommandScope
         _frame.Executor.ValidateBindings(_passIndex, bindings.Resources);
         _frame.Backend.SetTransientParameterBindings(_context, bindings);
     }
-    public void SetVertexBuffers(uint firstSlot, ReadOnlySpan<VertexBufferBinding> bindings)
+    public void SetVertexBuffers(uint firstSlot, scoped ReadOnlySpan<VertexBufferBinding> bindings)
     {
         foreach (ref readonly VertexBufferBinding binding in bindings)
             _frame.Executor.ValidateBuffer(_passIndex, binding.Buffer,
@@ -136,8 +137,9 @@ public ref struct ComputePassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
-    public BufferCbv GetBufferCbv(GraphBufferCbvId id) => _frame.GetBufferCbv(_passIndex, id);
     public BufferSrv GetBufferSrv(GraphBufferSrvId id) => _frame.GetBufferSrv(_passIndex, id);
     public BufferUav GetBufferUav(GraphBufferUavId id) => _frame.GetBufferUav(_passIndex, id);
     public TextureSrv GetTextureSrv(GraphTextureSrvId id) => _frame.GetTextureSrv(_passIndex, id);
@@ -331,6 +333,8 @@ public ref struct CopyPassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
     public void CopyBuffer(in BufferCopy copy)
     {
@@ -450,8 +454,9 @@ public ref struct GeneralPassCommandScope
     }
 
     public Buffer GetBuffer(GraphBufferId id) => _frame.GetBuffer(_passIndex, id);
+    public BufferRegion GetBufferRegion(GraphBufferInput input) => _frame.GetBufferRegion(_passIndex, input);
+    public Texture GetTexture(GraphTextureInput input) => _frame.GetTexture(_passIndex, input);
     public Texture GetTexture(GraphTextureId id) => _frame.GetTexture(_passIndex, id);
-    public BufferCbv GetBufferCbv(GraphBufferCbvId id) => _frame.GetBufferCbv(_passIndex, id);
     public BufferSrv GetBufferSrv(GraphBufferSrvId id) => _frame.GetBufferSrv(_passIndex, id);
     public BufferUav GetBufferUav(GraphBufferUavId id) => _frame.GetBufferUav(_passIndex, id);
     public TextureSrv GetTextureSrv(GraphTextureSrvId id) => _frame.GetTextureSrv(_passIndex, id);
@@ -483,7 +488,7 @@ public ref struct GeneralPassCommandScope
         _frame.Executor.ValidateBindings(_passIndex, bindings.Resources);
         _frame.Backend.SetTransientParameterBindings(_context, bindings);
     }
-    public void SetVertexBuffers(uint firstSlot, ReadOnlySpan<VertexBufferBinding> bindings)
+    public void SetVertexBuffers(uint firstSlot, scoped ReadOnlySpan<VertexBufferBinding> bindings)
     {
         foreach (ref readonly VertexBufferBinding binding in bindings)
             _frame.Executor.ValidateBuffer(_passIndex, binding.Buffer,

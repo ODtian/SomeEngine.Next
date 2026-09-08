@@ -1,4 +1,5 @@
 #include "vsm_sampling.slang"
+#include "render_lighting.slang"
 
 struct VirtualShadowPageDemandUniforms
 {
@@ -9,26 +10,90 @@ struct VirtualShadowPageDemandUniforms
     uint PageTableEntryCount;
     uint DirectionalLightCount;
     uint DirectionalClipmapLevels;
+    uint PointLightCount;
+    uint PointLightBufferOffset;
+    uint PointViewOffset;
+    uint SpotLightCount;
+    uint SpotLightBufferOffset;
+    uint SpotViewOffset;
+    uint ReceiverViewIndex;
+    uint FrameIndex;
+    float PageDilationBorderPages;
     uint Pad0;
     uint Pad1;
+    uint Pad2;
 };
 
 ConstantBuffer<VirtualShadowPageDemandUniforms> PageDemand;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
-Texture2D<float> ReceiverDepth;
+StructuredBuffer<ClusteredLightGridParameters> LightingViews;
+StructuredBuffer<uint2> ClusteredLightGrid;
+StructuredBuffer<uint> LightIndexList;
+Texture2DArray<float> ReceiverDepth;
 RWStructuredBuffer<uint> RequestedShadowPages;
-RWStructuredBuffer<uint> RequestedShadowPageList;
-RWStructuredBuffer<uint> RequestedShadowPageCount;
-RWByteAddressBuffer AllocatePageDispatchArgs;
+
+void PublishShadowPageRequest(uint tableIndex)
+{
+    if (tableIndex >= PageDemand.PageTableEntryCount)
+        return;
+    // All fine writers publish the same frame epoch. The store is idempotent, so an RMW
+    // atomic and a second append-list representation only add contention and memory traffic.
+    RequestedShadowPages[tableIndex] = PageDemand.FrameIndex;
+}
+
+void PublishVirtualShadowPage(
+    VirtualShadowMapParameters shadowView,
+    int2 localPage)
+{
+    int pageLimit = int(VirtualShadowPagesPerRow(shadowView));
+    if (any(localPage < 0) || any(localPage >= pageLimit))
+        return;
+
+    uint2 page = uint2(localPage);
+    PublishShadowPageRequest(VirtualShadowPageTableIndex(shadowView, page));
+}
+
+void PublishProjectedShadowView(
+    uint viewIndex,
+    float3 worldPosition,
+    float2 pageDilationDither)
+{
+    if (viewIndex >= PageDemand.ViewCount)
+        return;
+    VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
+    float3 shadowNdc;
+    float2 shadowUv;
+    if (!ProjectVirtualShadowPosition(shadowView, worldPosition, shadowNdc, shadowUv))
+        return;
+
+    float2 pageAddress = shadowUv *
+        (float(shadowView.VirtualResolution) / float(shadowView.PageSize));
+    int2 centerPage = int2(floor(pageAddress));
+    PublishVirtualShadowPage(shadowView, centerPage);
+
+    if (PageDemand.PageDilationBorderPages <= 0.0)
+        return;
+
+    float2 pageDilation =
+        PageDemand.PageDilationBorderPages * pageDilationDither;
+    int2 positivePage = int2(floor(pageAddress + pageDilation));
+    int2 negativePage = int2(floor(pageAddress - pageDilation));
+    if (any(positivePage != centerPage))
+        PublishVirtualShadowPage(shadowView, positivePage);
+    if (any(negativePage != centerPage) && any(negativePage != positivePage))
+        PublishVirtualShadowPage(shadowView, negativePage);
+}
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void MarkVirtualShadowPages(uint3 dispatchThreadId : SV_DispatchThreadID)
+void MarkVirtualShadowPages(
+    uint3 dispatchThreadId : SV_DispatchThreadID,
+    uint groupIndex : SV_GroupIndex)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (pixel.x >= PageDemand.ReceiverWidth || pixel.y >= PageDemand.ReceiverHeight)
         return;
-    float depth = ReceiverDepth.Load(int3(pixel, 0));
+    float depth = ReceiverDepth.Load(int4(pixel, 0, 0));
     if (depth >= 1.0)
         return;
 
@@ -40,6 +105,9 @@ void MarkVirtualShadowPages(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (abs(world.w) < 1e-8)
         return;
     float3 worldPosition = world.xyz / world.w;
+    float2 pageDilationDither = float2(
+        (groupIndex & 1u) != 0u ? 1.0 : -1.0,
+        (groupIndex & 2u) != 0u ? 1.0 : -1.0);
 
     uint clipmapLevels = max(PageDemand.DirectionalClipmapLevels, 1u);
     uint lightCount = min(
@@ -47,59 +115,60 @@ void MarkVirtualShadowPages(uint3 dispatchThreadId : SV_DispatchThreadID)
         PageDemand.ViewCount / clipmapLevels);
     for (uint lightIndex = 0u; lightIndex < lightCount; lightIndex++)
     {
-        uint viewIndex = lightIndex * clipmapLevels;
-        VirtualShadowMapParameters baseView = ShadowViews[viewIndex];
-        float distanceToClipmapOrigin = length(
-            worldPosition - baseView.ClipmapWorldOrigin);
+        uint baseViewIndex = lightIndex * clipmapLevels;
+        VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
+        float distanceToClipmapOrigin = length(worldPosition - baseView.ClipmapWorldOrigin);
         int absoluteLevel = (int)floor(
-            log2(max(distanceToClipmapOrigin, 1e-6)) +
-            baseView.ResolutionLodBias);
-        uint relativeLevel = (uint)max(
-            0,
-            absoluteLevel - baseView.FirstClipmapLevel);
+            log2(max(distanceToClipmapOrigin, 1e-6)) + baseView.ResolutionLodBias);
+        uint relativeLevel = (uint)max(0, absoluteLevel - baseView.FirstClipmapLevel);
         if (relativeLevel >= baseView.ClipmapLevelCount ||
-            viewIndex + relativeLevel >= PageDemand.ViewCount)
-            continue;
-        VirtualShadowMapParameters shadowView =
-            ShadowViews[viewIndex + relativeLevel];
-        float3 shadowNdc;
-        float2 shadowUv;
-        if (!ProjectVirtualShadowPosition(
-                shadowView,
-                worldPosition,
-                shadowNdc,
-                shadowUv))
+            baseViewIndex + relativeLevel >= PageDemand.ViewCount)
             continue;
 
-        uint virtualPagesPerRow = VirtualShadowPagesPerRow(shadowView);
-        uint2 localPage = min(
-            (uint2)(shadowUv * float(virtualPagesPerRow)),
-            virtualPagesPerRow - 1u);
-        uint pageTableIndex = VirtualShadowPageTableIndex(shadowView, localPage);
-        if (pageTableIndex < PageDemand.PageTableEntryCount)
+        PublishProjectedShadowView(
+            baseViewIndex + relativeLevel,
+            worldPosition,
+            pageDilationDither);
+    }
+
+    ClusteredLightGridParameters lighting =
+        LightingViews[PageDemand.ReceiverViewIndex];
+    float3 viewPosition = mul(float4(worldPosition, 1.0), lighting.View).xyz;
+    float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
+    uint cell = ClusteredLightCellIndex(
+        lighting,
+        PageDemand.ReceiverViewIndex,
+        pixel,
+        viewDepth);
+    uint localCount = min(
+        ClusteredLightGrid[cell].y,
+        lighting.MaxLightsPerCluster);
+    uint firstIndex = cell * lighting.MaxLightsPerCluster;
+    for (uint localIndex = 0u; localIndex < localCount; localIndex++)
+    {
+        uint lightIndex = LightIndexList[firstIndex + localIndex];
+        if (lightIndex >= PageDemand.PointLightBufferOffset &&
+            lightIndex < PageDemand.PointLightBufferOffset + PageDemand.PointLightCount)
         {
-            uint previous;
-            InterlockedCompareExchange(
-                RequestedShadowPages[pageTableIndex],
-                0u,
-                1u,
-                previous);
-            if (previous == 0u)
-            {
-                uint requestIndex;
-                InterlockedAdd(RequestedShadowPageCount[0], 1u, requestIndex);
-                if (requestIndex < PageDemand.PageTableEntryCount)
-                {
-                    RequestedShadowPageList[requestIndex] = pageTableIndex;
-                    uint ignored;
-                    AllocatePageDispatchArgs.InterlockedMax(
-                        0u,
-                        (requestIndex + 64u) / 64u,
-                        ignored);
-                    AllocatePageDispatchArgs.Store(4u, 1u);
-                    AllocatePageDispatchArgs.Store(8u, 1u);
-                }
-            }
+            uint pointLightIndex = lightIndex - PageDemand.PointLightBufferOffset;
+            uint firstView = PageDemand.PointViewOffset + pointLightIndex * 6u;
+            if (firstView + 5u >= PageDemand.ViewCount)
+                continue;
+            uint faceIndex = VirtualShadowPointFace(
+                worldPosition - ShadowViews[firstView].LightPosition);
+            PublishProjectedShadowView(
+                firstView + faceIndex,
+                worldPosition,
+                pageDilationDither);
+        }
+        else if (lightIndex >= PageDemand.SpotLightBufferOffset &&
+            lightIndex < PageDemand.SpotLightBufferOffset + PageDemand.SpotLightCount)
+        {
+            uint spotLightIndex = lightIndex - PageDemand.SpotLightBufferOffset;
+            PublishProjectedShadowView(
+                PageDemand.SpotViewOffset + spotLightIndex,
+                worldPosition,
+                pageDilationDither);
         }
     }
 }

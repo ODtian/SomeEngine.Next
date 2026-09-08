@@ -90,9 +90,9 @@ public sealed class AssetGenerator : IIncrementalGenerator
         INamedTypeSymbol type = candidate.Type;
         List<string> reasons = new();
         if (type.TypeKind != TypeKind.Class)
-            reasons.Add("only concrete classes are supported");
-        if (type.IsAbstract || type.IsStatic)
-            reasons.Add("the asset must be a non-abstract instance class");
+            reasons.Add("only classes are supported");
+        if (type.IsStatic)
+            reasons.Add("the asset must be an instance class");
         if (type.Arity != 0)
             reasons.Add("generic asset declarations are not supported");
         if (!IsAssemblyAccessible(type))

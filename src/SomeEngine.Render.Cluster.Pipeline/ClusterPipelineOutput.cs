@@ -9,21 +9,24 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// </summary>
 public readonly record struct ClusterPipelineOutputDescription
 {
-    public ClusterPipelineOutputDescription(int width, int height, uint viewCapacity)
+    public ClusterPipelineOutputDescription(int width, int height, uint viewCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
-        ArgumentOutOfRangeException.ThrowIfZero(viewCapacity);
+        ArgumentOutOfRangeException.ThrowIfZero(viewCount);
+        if (checked((ulong)width * (ulong)height * viewCount) > uint.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(viewCount),
+                "The combined view pixels must fit the 32-bit shading counters and offsets.");
         Width = width;
         Height = height;
-        ViewCapacity = viewCapacity;
+        ViewCount = viewCount;
     }
 
     public int Width { get; }
 
     public int Height { get; }
 
-    public uint ViewCapacity { get; }
+    public uint ViewCount { get; }
 }
 
 /// <summary>
@@ -34,19 +37,64 @@ public readonly record struct ClusterPipelineOutputs(
     GraphTextureId Visibility,
     GraphTextureId Depth,
     GraphTextureId MaterialColor,
+    GraphTextureId MotionVectors,
     ClusterGeometryCapabilities Geometry,
     int Width,
     int Height,
-    uint ViewCapacity)
+    uint ViewCount)
 {
     public bool IsValid =>
         Visibility != default &&
         Depth != default &&
         MaterialColor != default &&
+        MotionVectors != default &&
         Geometry is { IsValid: true } &&
         Width > 0 &&
         Height > 0 &&
-        ViewCapacity > 0;
+        ViewCount > 0;
+}
+
+/// <summary>
+/// Feature-owned policy data for views participating in the shared Cluster work stream.
+/// The context contributes only destination and occlusion policy resources; it never owns a
+/// second traversal, cull, bin, tessellation, or raster pipeline.
+/// </summary>
+public readonly record struct ClusterRenderContext(
+    uint PolicyId,
+    ClusterStageResourceBinder FilterResourcesBinder,
+    ClusterStageResourceBinder InvocationViewsBinder,
+    ClusterInvocationSourceBinder InvocationSourceBinder,
+    ClusterStageResourceBinder InvocationCountBinder,
+    GraphBufferId InvocationDispatchArguments,
+    uint MaximumInvocationCount,
+    uint RasterWidth,
+    uint RasterHeight,
+    GraphPassId ActivationReady,
+    GraphPassId IntermediateOcclusionBuildBegin,
+    GraphPassId IntermediateOcclusionReady,
+    GraphPassId FinalOcclusionBuildBegin,
+    GraphPassId FinalOcclusionReady,
+    uint OcclusionMipCount,
+    uint OcclusionTexelSize,
+    GraphPassId FinishBefore = default)
+{
+    public bool IsValid =>
+        PolicyId != 0u &&
+        FilterResourcesBinder is not null &&
+        InvocationViewsBinder is not null &&
+        InvocationSourceBinder is not null &&
+        InvocationCountBinder is not null &&
+        InvocationDispatchArguments != default &&
+        MaximumInvocationCount != 0 &&
+        RasterWidth != 0 &&
+        RasterHeight != 0 &&
+        ActivationReady != default &&
+        IntermediateOcclusionBuildBegin != default &&
+        IntermediateOcclusionReady != default &&
+        FinalOcclusionBuildBegin != default &&
+        FinalOcclusionReady != default &&
+        OcclusionMipCount != 0u &&
+        OcclusionTexelSize != 0u;
 }
 
 /// <summary>
@@ -55,7 +103,10 @@ public readonly record struct ClusterPipelineOutputs(
 /// </summary>
 public sealed class ClusterGeometryCapabilities
 {
-    private BufferRange[] _residentPageRanges = [];
+    private BufferRange[] _lastResidentPageRanges = [];
+    private BufferRangeSet _residentPageReads = BufferRangeSet.Empty;
+    private BufferRangeSet _lastResidentPageReads = BufferRangeSet.Empty;
+    private BufferRange _bvhRange;
 
     internal ClusterGeometryCapabilities(
         GraphBufferId packedViews,
@@ -68,8 +119,7 @@ public sealed class ClusterGeometryCapabilities
         uint visibleClusterCapacity,
         GraphBufferId pageHeap,
         GraphBufferId bvh,
-        GraphBufferId deformCache,
-        GraphBufferId cacheOffsets)
+        GraphPassId completePass)
     {
         PackedViews = packedViews;
         InstanceData = instanceData;
@@ -81,12 +131,14 @@ public sealed class ClusterGeometryCapabilities
         VisibleClusterCapacity = visibleClusterCapacity;
         PageHeap = pageHeap;
         Bvh = bvh;
-        DeformCache = deformCache;
-        CacheOffsets = cacheOffsets;
+        CompletePass = completePass;
     }
 
     public GraphBufferId PackedViews { get; }
+    public uint PackedViewStride => ClusterViewUniforms.SizeInBytes;
     public GraphBufferId InstanceData { get; }
+    public GraphBufferId InstanceWorldBounds { get; internal init; }
+    public GraphPassId BoundsReady { get; internal init; }
     public GraphBufferId InstanceProperties { get; }
     public BufferRange InstancePropertiesRange { get; }
     public GraphBufferId VisibleClusters { get; }
@@ -95,8 +147,8 @@ public sealed class ClusterGeometryCapabilities
     public uint VisibleClusterCapacity { get; }
     public GraphBufferId PageHeap { get; }
     public GraphBufferId Bvh { get; }
-    public GraphBufferId DeformCache { get; }
-    public GraphBufferId CacheOffsets { get; }
+    /// <summary>Feature-neutral fence after the geometry visibility/raster work is complete.</summary>
+    public GraphPassId CompletePass { get; }
 
     public bool IsValid =>
         PackedViews != default &&
@@ -108,34 +160,46 @@ public sealed class ClusterGeometryCapabilities
         VisibleClusterCapacity != 0 &&
         PageHeap != default &&
         Bvh != default &&
-        DeformCache != default &&
-        CacheOffsets != default &&
+        CompletePass != default &&
         InstancePropertiesRange.Size != 0;
 
     /// <summary>
-    /// Binds the page heap and declares only the authenticated resident ranges published for this
-    /// frame. Consumers cannot accidentally turn descriptor reachability into an RG dependency.
+    /// Connects the page heap descriptor. ReadPageHeap supplies each frame's resident ranges.
     /// </summary>
     public void BindPageHeap(
-        ref RenderGraphFrame graph,
+        RenderGraphEdit graph,
         ref PassDefinition pass,
         PipelineSync sync,
         string? label = null)
     {
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
             graph.CreateBufferSrv(PageHeap, label: label ?? "Cluster geometry page heap")));
-        foreach (ref readonly BufferRange range in _residentPageRanges.AsSpan())
-        {
-            _ = pass.Read(
-                PageHeap,
-                range,
-                sync,
-                ResourceAccess.ShaderResource);
-        }
     }
 
-    internal void SetResidentPageRanges(BufferRange[] ranges) =>
-        _residentPageRanges = ranges ?? throw new ArgumentNullException(nameof(ranges));
+    public void ReadPageHeap(ref PassDefinition pass, PipelineSync sync) =>
+        pass.ReadRanges(PageHeap, _residentPageReads, sync, ResourceAccess.ShaderResource);
 
-    internal void ClearFrame() => _residentPageRanges = [];
+    public bool HasBvhData => !_bvhRange.IsWhole && _bvhRange.Size != 0;
+
+    internal BufferRangeSet ResidentPageReads => _residentPageReads;
+
+    internal BufferRange BvhRange => _bvhRange;
+
+    internal void SetFrameRanges(BufferRange[] pageRanges, in BufferRange bvhRange)
+    {
+        ArgumentNullException.ThrowIfNull(pageRanges);
+        if (!ReferenceEquals(pageRanges, _lastResidentPageRanges))
+        {
+            _lastResidentPageRanges = pageRanges;
+            _lastResidentPageReads = new BufferRangeSet(pageRanges);
+        }
+        _residentPageReads = _lastResidentPageReads;
+        _bvhRange = bvhRange;
+    }
+
+    internal void ClearFrame()
+    {
+        _residentPageReads = BufferRangeSet.Empty;
+        _bvhRange = default;
+    }
 }

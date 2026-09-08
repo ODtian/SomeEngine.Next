@@ -2,11 +2,11 @@
   "asset_guid": "842453b7-81b6-54d6-8be0-352acbba2c73",
   "source_guid": "a37a154e-1fff-46ee-a0e8-7c599ba77ec0",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "12b5831f185bf8594fdbcaeaf1cd80ce5b45ced534b0b0e12dae0a68f249d219",
+  "content_fingerprint": "22b81665d74917131087b3d5944300166156dd1a529e6803fb5ea65e797c4bb7",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_resolve.slang",
-      "hash": "55b0c251fb341227fb33ba743146b1d2666d8666d71a5b015b969f550cbdf430"
+      "hash": "b0b3ae1e2489601969398c859dd3db8e8c5a1e90f5535bb6f4f44cf7ab88f1cc"
     },
     {
       "path": "assets/Shaders/visbuffer_encoding.slang",

@@ -18,7 +18,7 @@ artifacts/
 TestResults/
 BenchmarkDotNet.Artifacts/
 
-# Test / harness generated artifacts
+# Test artifacts
 *.log
 *.trx
 *.coveragexml
@@ -27,12 +27,7 @@ BenchmarkDotNet.Artifacts/
 *.etlx
 *.rdc
 *.speedscope.json
-harness/artifacts/*
-!harness/artifacts/.gitkeep
-harness/coverage/coverage.cobertura.xml
-harness/coverage/results/
 benchmarks/.codex-*-probe-*/
-harness/tmp_*.pdf
 tmp_resource_refs.txt
 *-checkpoint-*.zip
 
@@ -73,5 +68,3 @@ external/dxc/**
 !external/tracy/
 
 # Local agent run artifacts
-.agent-runs/
-harness/grill/sessions/

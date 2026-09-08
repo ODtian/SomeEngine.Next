@@ -126,7 +126,8 @@ public sealed class ClusterAssetLoaderTests
             Role = role,
         };
         if (role is ClusterShaderOperationRole.HardwareVisibilityRaster
-            or ClusterShaderOperationRole.SoftwareDepthMerge)
+            or ClusterShaderOperationRole.VisibilityResolveImage
+            or ClusterShaderOperationRole.VisibilityResolveBuffer)
         {
             result.Shaders =
             [

@@ -19,8 +19,15 @@ public readonly struct GraphParameterResourceBinding
         in BufferRange bufferRange,
         in TextureSubresourceRange textureRange,
         in TextureSubresourceRange secondaryTextureRange,
-        bool requiresExplicitAccess = false)
+        bool requiresExplicitAccess = false,
+        BufferContentScope bufferContentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered,
+        ShaderVariableLayout? parameterLayout = null,
+        byte[]? ordinaryData = null,
+        GraphBufferInput? bufferInput = null, GraphParameterInput? parameterInput = null)
     {
+        BufferInput = bufferInput;
+        ParameterInput = parameterInput;
         Type = type;
         Value = value;
         SecondaryValue = secondaryValue;
@@ -34,8 +41,14 @@ public readonly struct GraphParameterResourceBinding
         TextureRange = textureRange;
         SecondaryTextureRange = secondaryTextureRange;
         RequiresExplicitAccess = requiresExplicitAccess;
+        BufferContentScope = bufferContentScope;
+        UnorderedAccessHazards = unorderedAccessHazards;
+        ParameterLayout = parameterLayout ?? ShaderVariableLayout.Null;
+        OrdinaryData = ordinaryData;
     }
 
+    internal GraphParameterInput? ParameterInput { get; }
+    internal GraphBufferInput? BufferInput { get; }
     internal ResourceBindingType Type { get; }
     internal GraphIdentity Value { get; }
     internal GraphIdentity SecondaryValue { get; }
@@ -52,6 +65,48 @@ public readonly struct GraphParameterResourceBinding
     internal TextureSubresourceRange TextureRange { get; }
     internal TextureSubresourceRange SecondaryTextureRange { get; }
     internal bool RequiresExplicitAccess { get; }
+    internal BufferContentScope BufferContentScope { get; }
+    internal UnorderedAccessHazardMode UnorderedAccessHazards { get; }
+    internal ShaderVariableLayout ParameterLayout { get; }
+    internal byte[]? OrdinaryData { get; }
+    internal bool IsBufferRange => Type == ResourceBindingType.ConstantBuffer && (BufferInput is not null || Value.Domain == GraphIdentityDomain.Buffer);
+    internal bool BeginsParameterBlock => ParameterLayout is not null && ParameterLayout != ShaderVariableLayout.Null;
+    internal bool IsNull => Type != ResourceBindingType.None && !Value.IsValid && Resource is null && BufferInput is null && ParameterInput is null;
+
+    internal static GraphParameterResourceBinding FromInput(GraphParameterInput input) =>
+        new(input.Type, default, default, null, default, default, default,
+            default, null, default, default, default, requiresExplicitAccess: true, parameterInput: input);
+
+    public static GraphParameterResourceBinding Null(ResourceBindingType type)
+    {
+        DevelopmentCheck.Require(type != ResourceBindingType.None && Enum.IsDefined(type),
+            "A null binding requires a resource binding type.");
+        return new(type, default, default, null, default, default, default,
+            default, null, default, default, default, requiresExplicitAccess: true);
+    }
+
+    internal static GraphParameterResourceBinding BeginBlock(
+        ShaderVariableLayout layout, ReadOnlySpan<byte> ordinaryData)
+    {
+        DevelopmentCheck.Require(layout != ShaderVariableLayout.Null, "The parameter layout cannot be null.");
+        return new(ResourceBindingType.None, default, default, null, default,
+            default, default, default, null, default, default, default,
+            requiresExplicitAccess: true, parameterLayout: layout,
+            ordinaryData: ordinaryData.IsEmpty ? null : ordinaryData.ToArray());
+    }
+
+    public static GraphParameterResourceBinding ConstantBuffer(GraphBufferInput buffer, PipelineSync sync)
+    {
+        DevelopmentCheck.Require(buffer is not null, "A constant binding requires a buffer input.");
+        return new(ResourceBindingType.ConstantBuffer, default, default, null,
+            GraphAccessMode.Read, WriteCoverage.Partial, sync, TextureLayout.Undefined, null,
+            BufferRange.Whole, default, default, bufferInput: buffer);
+    }
+
+    public static GraphParameterResourceBinding ConstantBuffer(GraphBufferSlice buffer, PipelineSync sync) =>
+        new(ResourceBindingType.ConstantBuffer, buffer.Buffer.Value, default, null,
+            GraphAccessMode.Read, WriteCoverage.Partial, sync, TextureLayout.Undefined, null,
+            buffer.Range, default, default);
 
     public static GraphParameterResourceBinding ConstantBuffer(
         GraphBufferCbvId view,
@@ -62,10 +117,11 @@ public readonly struct GraphParameterResourceBinding
 
     public static GraphParameterResourceBinding ReadOnlyBuffer(
         GraphBufferSrvId view,
-        PipelineSync sync) =>
+        PipelineSync sync,
+        BufferContentScope contentScope = BufferContentScope.FullRange) =>
         ForGraphView(ResourceBindingType.BufferSrv, view.Value,
             GraphAccessMode.Read, WriteCoverage.Partial, sync,
-            TextureLayout.Undefined, null);
+            TextureLayout.Undefined, null, bufferContentScope: contentScope);
 
     /// <summary>
     /// Binds a whole Buffer SRV descriptor without inferring a whole-buffer synchronization read.
@@ -82,11 +138,22 @@ public readonly struct GraphParameterResourceBinding
         PipelineSync sync,
         GraphAccessMode mode = GraphAccessMode.ReadWrite,
         WriteCoverage coverage = WriteCoverage.Partial,
-        ResourceContentState? resultContents = null)
+        ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
         ValidateStorageMode(mode);
+        UnorderedAccessHazardRules.Validate(
+            unorderedAccessHazards,
+            mode,
+            coverage,
+            ResourceAccess.UnorderedAccess,
+            TextureLayout.Undefined,
+            resultContents);
         return ForGraphView(ResourceBindingType.BufferUav, view.Value,
-            mode, coverage, sync, TextureLayout.Undefined, resultContents);
+            mode, coverage, sync, TextureLayout.Undefined, resultContents,
+            bufferContentScope: contentScope,
+            unorderedAccessHazards: unorderedAccessHazards);
     }
 
     public static GraphParameterResourceBinding SampledTexture(
@@ -102,11 +169,20 @@ public readonly struct GraphParameterResourceBinding
         GraphAccessMode mode = GraphAccessMode.ReadWrite,
         WriteCoverage coverage = WriteCoverage.Partial,
         ResourceContentState? resultContents = null,
-        TextureLayout layout = TextureLayout.UnorderedAccess)
+        TextureLayout layout = TextureLayout.UnorderedAccess,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
         ValidateStorageMode(mode);
+        UnorderedAccessHazardRules.Validate(
+            unorderedAccessHazards,
+            mode,
+            coverage,
+            ResourceAccess.UnorderedAccess,
+            layout,
+            resultContents);
         return ForGraphView(ResourceBindingType.TextureUav, view.Value,
-            mode, coverage, sync, layout, resultContents);
+            mode, coverage, sync, layout, resultContents,
+            unorderedAccessHazards: unorderedAccessHazards);
     }
 
     public static GraphParameterResourceBinding SampledWith(Sampler sampler)
@@ -191,7 +267,9 @@ public readonly struct GraphParameterResourceBinding
         PipelineSync sync,
         TextureLayout layout,
         ResourceContentState? resultContents,
-        bool requiresExplicitAccess = false) =>
+        bool requiresExplicitAccess = false,
+        BufferContentScope bufferContentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         new(
             type,
             view,
@@ -205,10 +283,14 @@ public readonly struct GraphParameterResourceBinding
             default,
             default,
             default,
-            requiresExplicitAccess);
+            requiresExplicitAccess,
+            bufferContentScope,
+            unorderedAccessHazards);
 
     internal void ValidateStatic(GraphStructure structure, Device device)
     {
+        if (BeginsParameterBlock || IsNull || ParameterInput is not null)
+            return;
         if (Type == ResourceBindingType.Sampler)
         {
             Sampler sampler = Sampler ??
@@ -258,6 +340,21 @@ public readonly struct GraphParameterResourceBinding
             return;
         }
 
+        if (BufferInput is not null)
+        {
+            if ((BufferInput.Usages & BufferUsages.Constant) == 0)
+                throw new ArgumentException("A constant binding requires a Constant buffer input.");
+            return;
+        }
+        if (IsBufferRange)
+        {
+            GraphBuffer buffer = structure.Buffers.Get(Value);
+            _ = GraphStructureIndex.ResolveRange(BufferRange, buffer.Description.Size);
+            if ((buffer.Description.Usages & BufferUsages.Constant) == 0)
+                throw new ArgumentException("A constant binding requires a Constant buffer.");
+            return;
+        }
+
         GraphView graphView = structure.Views.Get(Value);
         bool valid = Type switch
         {
@@ -277,4 +374,5 @@ public readonly struct GraphParameterResourceBinding
         if (!Enum.IsDefined(mode))
             throw new ArgumentOutOfRangeException(nameof(mode));
     }
+
 }

@@ -168,8 +168,13 @@ public sealed partial class RenderDevice
         }
 
         EnsureImported(ref frame, realization);
+        EnsureFinalizationPass(ref frame, realization);
         foreach (GraphPassId upload in realization.UploadPasses)
+        {
             frame.OrderAfter(consumer, upload);
+            frame.OrderAfter(realization.FinalizationPass, upload);
+        }
+        frame.OrderAfter(realization.FinalizationPass, consumer);
         return realization.Resource;
     }
 
@@ -203,8 +208,13 @@ public sealed partial class RenderDevice
             realization.Initialized = true;
             realization.FirstResidentMip = 0;
         }
+        EnsureFinalizationPass(ref frame, realization);
         foreach (GraphPassId upload in realization.UploadPasses)
+        {
             frame.OrderAfter(consumer, upload);
+            frame.OrderAfter(realization.FinalizationPass, upload);
+        }
+        frame.OrderAfter(realization.FinalizationPass, consumer);
         return realization.Resource;
     }
 
@@ -433,8 +443,44 @@ public sealed partial class RenderDevice
         realization.FrameGraph = frame.Owner;
         realization.FrameIdentity = frame.FrameIdentity;
         realization.UploadPasses.Clear();
+        realization.FinalizationScheduled = false;
         TextureBoundaryState[] boundaries = CreateBoundaryStates(realization);
         realization.GraphResource = frame.Import(realization.Resource, boundaries);
+    }
+
+    private static void EnsureFinalizationPass(
+        ref RenderGraphFrame frame,
+        TextureRealization realization)
+    {
+        if (realization.FinalizationScheduled) return;
+        if (!realization.Initialized ||
+            realization.FirstResidentMip >= realization.Shape.MipLevelCount)
+        {
+            throw new InvalidOperationException(
+                "A RenderDevice Texture cannot be finalized before resident contents exist.");
+        }
+
+        var finalization = new TextureFinalizationPass(
+            realization.GraphResource,
+            realization.Shape.ResidentRange(realization.FirstResidentMip));
+        realization.FinalizationPass = frame.AddGeneralPass(
+            $"Finalize RenderDevice Texture '{realization.Resource.Label}'",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            finalization,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition access, ref TextureFinalizationPass data) =>
+                _ = access.Read(
+                    data.Texture,
+                    data.Range,
+                    PipelineSync.AllShading,
+                    ResourceAccess.ShaderResource,
+                    TextureLayout.ShaderResource),
+            static (ref GeneralPassCommandScope commands, in TextureFinalizationPass data) =>
+            {
+                _ = commands;
+                _ = data;
+            });
+        realization.FinalizationScheduled = true;
     }
 
     private TextureBoundaryState[] CreateBoundaryStates(TextureRealization realization)
@@ -452,33 +498,27 @@ public sealed partial class RenderDevice
             ];
         }
 
-        QueueCompletion[] completions = CaptureSubmittedCompletions();
-        if (completions.Length == 0)
+        Queue graphicsQueue = _backend.GetQueue(_device, QueueType.Graphics);
+        QueueCompletion? readyAfter = null;
+        foreach (QueueCompletion completion in CaptureSubmittedCompletions())
         {
-            return
-            [
-                new TextureBoundaryState(
-                    realization.Shape.FullRange,
-                    PipelineSync.AllShading,
-                    ResourceAccess.ShaderResource,
-                    TextureLayout.ShaderResource,
-                    ResourceContentState.Defined),
-            ];
+            if (ReferenceEquals(completion.Queue, graphicsQueue))
+            {
+                readyAfter = completion;
+                break;
+            }
         }
-        var result = new TextureBoundaryState[completions.Length];
-        for (int index = 0; index < result.Length; index++)
-        {
-            QueueCompletion completion = completions[index];
-            result[index] = new TextureBoundaryState(
-                realization.Shape.FullRange,
+        return
+        [
+            new TextureBoundaryState(
+                realization.Shape.ResidentRange(realization.FirstResidentMip),
                 PipelineSync.AllShading,
                 ResourceAccess.ShaderResource,
                 TextureLayout.ShaderResource,
                 ResourceContentState.Defined,
-                completion.Queue,
-                completion);
-        }
-        return result;
+                graphicsQueue,
+                readyAfter),
+        ];
     }
 
     private static void ScheduleUpload(
@@ -488,14 +528,14 @@ public sealed partial class RenderDevice
     {
         foreach (ref readonly PreparedTile tile in tiles)
         {
-            GraphBufferId upload = frame.Upload(
+            GraphBufferSlice upload = frame.Upload(
                 tile.Bytes,
                 BufferUsages.CopySource,
                 "Texture mip tile upload");
             var state = new TextureUploadPass(
                 upload,
                 realization.GraphResource,
-                tile.Footprint.Offset,
+                checked(upload.Range.Offset + tile.Footprint.Offset),
                 tile.Footprint.RowPitch,
                 tile.Height,
                 tile.MipLevel,
@@ -514,8 +554,8 @@ public sealed partial class RenderDevice
                 static (ref PassDefinition definition, ref TextureUploadPass value) =>
                 {
                     _ = definition.Read(
-                        value.Upload,
-                        BufferRange.Whole,
+                        value.Upload.Buffer,
+                        value.Upload.Range,
                         PipelineSync.Copy,
                         ResourceAccess.CopySource);
                     _ = definition.Write(
@@ -535,7 +575,7 @@ public sealed partial class RenderDevice
                 static (ref CopyPassCommandScope commands, in TextureUploadPass value) =>
                 {
                     commands.CopyBufferToTexture(new BufferTextureCopy(
-                        commands.GetBuffer(value.Upload),
+                        commands.GetBuffer(value.Upload.Buffer),
                         value.BufferOffset,
                         value.BufferRowPitch,
                         value.BufferImageHeight,
@@ -760,6 +800,8 @@ public sealed partial class RenderDevice
         internal ulong FrameIdentity { get; set; }
         internal SomeEngine.RenderGraph.RenderGraph? FrameGraph { get; set; }
         internal GraphTextureId GraphResource { get; set; }
+        internal GraphPassId FinalizationPass { get; set; }
+        internal bool FinalizationScheduled { get; set; }
         internal List<GraphPassId> UploadPasses { get; } = [];
         internal HashSet<ulong> UploadedChunks { get; } = [];
         internal HashSet<ulong> PendingUploadedChunks { get; } = [];
@@ -815,7 +857,7 @@ public sealed partial class RenderDevice
         uint Height);
 
     private readonly record struct TextureUploadPass(
-        GraphBufferId Upload,
+        GraphBufferSlice Upload,
         GraphTextureId Destination,
         ulong BufferOffset,
         uint BufferRowPitch,
@@ -887,4 +929,8 @@ public sealed partial class RenderDevice
                 usages);
         }
     }
+
+    private readonly record struct TextureFinalizationPass(
+        GraphTextureId Texture,
+        TextureSubresourceRange Range);
 }

@@ -8,7 +8,7 @@ internal static class FeatureUploads
 {
     private const int ConstantBufferAlignment = 256;
 
-    internal static GraphBufferId UploadConstant<T>(
+    internal static GraphBufferSlice UploadConstant<T>(
         ref RenderGraphFrame graph,
         in T value,
         string label)

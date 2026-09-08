@@ -1,6 +1,8 @@
 #ifndef CLUSTER_BIN_IO_SLANG
 #define CLUSTER_BIN_IO_SLANG
 
+#include "wave_aggregation.slang"
+
 DispatchArgs BinDispatch(uint count)
 {
     uint x = min(count, 65535u);
@@ -50,19 +52,6 @@ void ClearRaster(
     bins[bin].HWCursor = 0;
 }
 
-void ClearDeform(
-    RWStructuredBuffer<DeformBinEntry> bins,
-    uint bin,
-    uint maxBins)
-{
-    if (bin >= maxBins) return;
-
-    bins[bin].ClusterOffset = 0;
-    bins[bin].BinCount = 0;
-    bins[bin].Cursor = 0;
-    bins[bin].Pad = 0;
-}
-
 void CountRaster(
     RWStructuredBuffer<RasterBinEntry> bins,
     uint bin,
@@ -70,21 +59,17 @@ void CountRaster(
 {
     if (!IsBin(bin)) return;
 
-    uint unused;
-    if (sw)
-        InterlockedAdd(bins[bin].BinSWCount, 1, unused);
-    else
-        InterlockedAdd(bins[bin].BinHWCount, 1, unused);
-}
-
-void CountDeform(
-    RWStructuredBuffer<DeformBinEntry> bins,
-    uint bin)
-{
-    if (!IsBin(bin)) return;
-
-    uint unused;
-    InterlockedAdd(bins[bin].BinCount, 1, unused);
+    uint key = (bin << 1u) | (sw ? 1u : 0u);
+    uint4 matching = WaveMatchingLanes(key);
+    uint leader = WaveMaskFirstLane(matching);
+    if (WaveGetLaneIndex() == leader)
+    {
+        uint unused;
+        if (sw)
+            InterlockedAdd(bins[bin].BinSWCount, WaveMaskBitCount(matching), unused);
+        else
+            InterlockedAdd(bins[bin].BinHWCount, WaveMaskBitCount(matching), unused);
+    }
 }
 
 void CountShade(
@@ -93,13 +78,17 @@ void CountShade(
 {
     if (!IsBin(bin)) return;
 
-    uint unused;
-    InterlockedAdd(counts[bin], 1, unused);
+    uint4 matching = WaveMatchingLanes(bin);
+    uint leader = WaveMaskFirstLane(matching);
+    if (WaveGetLaneIndex() == leader)
+    {
+        uint unused;
+        InterlockedAdd(counts[bin], WaveMaskBitCount(matching), unused);
+    }
 }
 
 void ReserveRaster(
     RWStructuredBuffer<RasterBinEntry> bins,
-    RWByteAddressBuffer drawArgs,
     RWByteAddressBuffer hwArgs,
     RWByteAddressBuffer swArgs,
     uint bin,
@@ -124,118 +113,46 @@ void ReserveRaster(
     bins[bin].SWOffset = swOffset;
 
     StoreDrawInstancedArgs(
-        drawArgs,
-        bin * 16u,
-        DrawInstancedArgs(96, total, 0, totalOffset));
-    StoreDrawInstancedArgs(
         hwArgs,
-        bin * 16u,
+        bin * 32u,
         DrawInstancedArgs(96, hwCount, 0, totalOffset + swCount));
-    WriteDispatch(swArgs, bin, total);
-    WriteDispatch(swArgs, maxBins + bin, swCount);
-}
-
-void ReserveDeform(
-    RWStructuredBuffer<DeformBinEntry> bins,
-    RWByteAddressBuffer args,
-    uint bin,
-    uint maxBins,
-    uint baseOffset,
-    uint inclusive,
-    uint count)
-{
-    if (bin >= maxBins) return;
-
-    bins[bin].ClusterOffset = baseOffset + inclusive - count;
-    bins[bin].Cursor = 0;
-    WriteDispatch(
-        args,
-        bin,
-        (count + DEFORM_CACHE_CLUSTER_BLOCK_SIZE - 1u) /
-            DEFORM_CACHE_CLUSTER_BLOCK_SIZE);
+    StoreDispatchArgs(hwArgs, bin * 32u + 16u, BinDispatch(hwCount));
+    hwArgs.Store(bin * 32u + 28u, 0u);
+    WriteDispatch(swArgs, bin, swCount);
 }
 
 void ScatterRaster(
     RWStructuredBuffer<RasterBinEntry> bins,
-    RWStructuredBuffer<uint3> indices,
+    RWStructuredBuffer<uint> indices,
     uint bin,
     uint visible,
-    uint viewIndex,
-    uint triStart,
-    uint triEnd,
+    uint batchIndex,
     bool sw)
 {
     if (!IsBin(bin)) return;
 
     uint offset = bins[bin].ClusterOffset;
+    uint key = (bin << 1u) | (sw ? 1u : 0u);
+    uint4 matching = WaveMatchingLanes(key);
+    uint leader = WaveMaskFirstLane(matching);
+    uint localBase = 0u;
+    if (WaveGetLaneIndex() == leader)
+    {
+        if (sw)
+            InterlockedAdd(bins[bin].SWCursor, WaveMaskBitCount(matching), localBase);
+        else
+            InterlockedAdd(bins[bin].HWCursor, WaveMaskBitCount(matching), localBase);
+    }
+    localBase = WaveReadLaneAt(localBase, leader);
+    uint local = localBase + WaveMaskPrefix(matching, WaveGetLaneIndex());
     if (sw)
     {
-        uint local;
-        InterlockedAdd(bins[bin].SWCursor, 1, local);
-        indices[offset + local] = uint3(
-            visible,
-            (triStart << 16) | triEnd,
-            viewIndex);
+        indices[offset + local] = visible | (batchIndex << 22u);
         return;
     }
 
     uint swCount = bins[bin].BinSWCount;
-    uint local;
-    InterlockedAdd(bins[bin].HWCursor, 1, local);
-    indices[offset + swCount + local] = uint3(
-        visible,
-        (triStart << 16) | triEnd,
-        viewIndex);
-}
-
-void ScatterDeform(
-    RWStructuredBuffer<DeformBinEntry> bins,
-    RWStructuredBuffer<uint3> indices,
-    RWStructuredBuffer<uint> offsets,
-    uint bin,
-    uint visible,
-    uint viewIndex,
-    uint sentinel)
-{
-    if (!IsBin(bin)) return;
-
-    uint offset = bins[bin].ClusterOffset;
-    uint local;
-    InterlockedAdd(bins[bin].Cursor, 1, local);
-    offsets[visible] = sentinel;
-    indices[offset + local] = uint3(visible, 0u, viewIndex);
-}
-
-void ReserveShade(
-    RWStructuredBuffer<uint> offsets,
-    RWStructuredBuffer<uint> scatter,
-    RWByteAddressBuffer args,
-    uint bin,
-    uint maxBins,
-    uint baseOffset,
-    uint inclusive,
-    uint count)
-{
-    if (bin >= maxBins) return;
-
-    offsets[bin] = baseOffset + inclusive - count;
-    scatter[bin] = 0;
-    WriteDispatch(args, bin, count);
-}
-
-void ScatterShade(
-    RWStructuredBuffer<uint2> coords,
-    RWStructuredBuffer<uint> offsets,
-    RWStructuredBuffer<uint> scatter,
-    uint bin,
-    uint packedCoord,
-    uint viewIndex)
-{
-    if (!IsBin(bin)) return;
-
-    uint writeIdx;
-    InterlockedAdd(scatter[bin], 1, writeIdx);
-    coords[offsets[bin] + writeIdx] = uint2(packedCoord, viewIndex);
+    indices[offset + swCount + local] = visible | (batchIndex << 22u);
 }
 
 #endif

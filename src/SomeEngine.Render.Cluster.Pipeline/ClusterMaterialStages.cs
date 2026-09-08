@@ -1,3 +1,4 @@
+using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Materials;
@@ -5,26 +6,90 @@ using SlangShaderSharp;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-internal readonly record struct ClusterDeformCompatibilityKey(
-    ShaderProgram Program,
-    ShaderEntryPoint EntryPoint,
-    string Target);
+internal static class ClusterMaterialEntries
+{
+    internal const string Shade = "ClusterShade";
+    internal const string SoftwareRasterImageAtomic64 = "ClusterRasterSoftwareImageAtomic64";
+    internal const string SoftwareRasterBufferAtomic64 = "ClusterRasterSoftwareBufferAtomic64";
+    internal const string HardwareVertex = "ClusterRasterVertex";
+    internal const string HardwareMesh = "ClusterRasterMesh";
+    internal const string HardwarePixelImageAtomic64 = "ClusterRasterPixelImageAtomic64";
+    internal const string HardwarePixelBufferAtomic64 = "ClusterRasterPixelBufferAtomic64";
+    internal const string HardwarePixelHardwareOnly = "ClusterRasterPixelHardwareOnly";
+    internal const string TessellationSeed = "ClusterTessellationSeed";
+    internal const string TessellationSplit = "ClusterTessellationSplit";
+    internal const string TessellationDiceImageAtomic64 = "ClusterTessellationDiceImageAtomic64";
+    internal const string TessellationDiceBufferAtomic64 = "ClusterTessellationDiceBufferAtomic64";
+    internal const string TessellationHardwareMesh = "ClusterTessellationHardwareMesh";
+    internal const string TessellationHardwareVertex = "ClusterTessellationHardwareVertex";
+    internal const string TessellationHardwareMeshPixel = "ClusterTessellationHardwareMeshPixel";
+    internal const string TessellationHardwarePixel = "ClusterTessellationHardwarePixel";
 
-internal readonly record struct ClusterDeformGroupKey(
-    MaterialDeformCompatibility Compatibility,
-    string VertexEncoding);
+    internal static string SoftwareRaster(ClusterVisibilityMode mode) => mode switch
+    {
+        ClusterVisibilityMode.ImageAtomic64 => SoftwareRasterImageAtomic64,
+        ClusterVisibilityMode.BufferAtomic64 => SoftwareRasterBufferAtomic64,
+        ClusterVisibilityMode.HardwareOnly => throw new InvalidOperationException(
+            "Hardware-only visibility has no software raster entry."),
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
+    internal static string HardwarePixel(ClusterVisibilityMode mode, bool mesh) => (mode, mesh) switch
+    {
+        (ClusterVisibilityMode.ImageAtomic64, false) => HardwarePixelImageAtomic64,
+        (ClusterVisibilityMode.BufferAtomic64, false) => HardwarePixelBufferAtomic64,
+        (ClusterVisibilityMode.HardwareOnly, false) => HardwarePixelHardwareOnly,
+        (ClusterVisibilityMode.ImageAtomic64, true) => "ClusterRasterMeshPixelImageAtomic64",
+        (ClusterVisibilityMode.BufferAtomic64, true) => "ClusterRasterMeshPixelBufferAtomic64",
+        (ClusterVisibilityMode.HardwareOnly, true) => "ClusterRasterMeshPixelHardwareOnly",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
+    internal static string TessellationDice(ClusterVisibilityMode mode) => mode switch
+    {
+        ClusterVisibilityMode.ImageAtomic64 => TessellationDiceImageAtomic64,
+        ClusterVisibilityMode.BufferAtomic64 => TessellationDiceBufferAtomic64,
+        ClusterVisibilityMode.HardwareOnly => throw new InvalidOperationException(
+            "Hardware-only tessellation is consumed by fixed-function rasterization."),
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
+    internal static Shader RequireShader(Material material)
+        => material.ShaderAsset ?? throw new InvalidDataException(
+            $"Material '{material.Name}' has no loaded user shader.");
+
+    internal static AssetGuid RequireShaderGuid(Material material)
+        => AssetGuid.TryParse(material.ShaderGuid, out AssetGuid guid) && !guid.IsEmpty
+            ? guid
+            : throw new InvalidDataException(
+                $"Material '{material.Name}' has no valid user shader GUID.");
+
+    internal static bool HasEntry(
+        Shader shader,
+        ShaderTarget target,
+        string entryPoint,
+        ShaderStage stage)
+    {
+        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        return shader.TryEntry(backend, entryPoint, stage, out _, out _);
+    }
+}
+
+internal readonly record struct ClusterTessellationCompatibilityKey(
+    ClusterComputePipeline Seed,
+    ClusterComputePipeline Split,
+    ClusterComputePipeline? Dice,
+    ClusterRasterPipeline? Hardware);
 
 internal readonly record struct ClusterRasterCompatibilityKey(
-    ClusterComputePipeline Software,
+    ClusterComputePipeline? Software,
     ClusterRasterPipeline Hardware,
-    ClusterComputePipeline TessellationFactor,
-    ClusterComputePipeline TessellationDice,
+    ClusterTessellationCompatibilityKey? Tessellation,
     uint StageAbiRevision);
 
 internal readonly record struct ClusterShadeCompatibilityKey(
     ShaderProgram Program,
-    ShaderEntryPoint EntryPoint,
-    string Target);
+    ShaderEntryPoint EntryPoint);
 
 internal static class ClusterMaterialBindingDefaults
 {
@@ -116,7 +181,7 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
         for (int index = 0; index < bindings.Length; index++)
         {
             ClusterMaterialStageBinding binding = bindings[index];
-            if (!binding.IsMaterialResource)
+            if (!binding.IsMaterialResource || !linked[index].IsUsed)
                 continue;
             values.Add(new BindingValue(
                 binding.Type,
@@ -235,11 +300,6 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
     }
 }
 
-internal readonly record struct ClusterDeformBinKey(
-    ClusterDeformCompatibilityKey Execution,
-    string VertexEncoding,
-    ClusterCommandBindingKey Bindings);
-
 internal readonly record struct ClusterRasterBinKey(
     ClusterRasterCompatibilityKey Execution,
     string VertexEncoding,
@@ -252,328 +312,15 @@ internal readonly record struct ClusterShadeBinKey(
     uint ScalarPayloadBytes,
     ClusterCommandBindingKey Bindings);
 
-/// <summary>Owns deform-only compatibility grouping and its material-slot mapping.</summary>
-internal sealed class ClusterDeformStages : IDisposable
-{
-    internal const string Target = "cluster.deform.eval";
-
-    private readonly IGraphicsBackend _backend;
-    private readonly Device _device;
-    private readonly IClusterStageResourceProvider? _featureResources;
-    private readonly Dictionary<ClusterDeformCompatibilityKey, ClusterComputePipeline> _pipelines = [];
-    private readonly ClusterBinIndexMap<ClusterDeformBinKey> _binIndices = new();
-    private bool _disposed;
-
-    internal ClusterDeformStages(
-        IGraphicsBackend backend,
-        Device device,
-        IClusterStageResourceProvider? featureResources)
-    {
-        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
-        _device = device ?? throw new ArgumentNullException(nameof(device));
-        _featureResources = featureResources;
-    }
-
-    internal ClusterDeformStageSet Resolve(ClusterMaterialAssignmentSet assignments)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(assignments);
-        ReadOnlySpan<Material> materialSlots = assignments.Slots.Span;
-        ReadOnlySpan<string> vertexEncodings = assignments.VertexEncodings.Span;
-        var keys = new ClusterDeformBinKey[materialSlots.Length];
-        var invocationByKey = new Dictionary<ClusterDeformBinKey, ClusterDeformInvocation>();
-        var slots = new uint[checked((int)assignments.SlotCapacity)];
-
-        for (int slot = 0; slot < materialSlots.Length; slot++)
-        {
-            Material material = materialSlots[slot];
-            string vertexEncoding = vertexEncodings[slot];
-            MaterialDeformCompatibility compatibility = material.RequireDeformCompatibility();
-            ClusterDeformInvocation invocation = CreateInvocation(material, compatibility, vertexEncoding);
-            var key = new ClusterDeformBinKey(
-                invocation.Key,
-                vertexEncoding,
-                invocation.CommandBindings);
-            keys[slot] = key;
-            invocationByKey.TryAdd(key, invocation);
-        }
-
-        _binIndices.Reconcile([.. invocationByKey.Keys]);
-        var invocations = invocationByKey
-            .Select(pair => pair.Value with { BinIndex = _binIndices.Get(pair.Key) })
-            .OrderBy(static invocation => invocation.BinIndex)
-            .ToArray();
-        for (int slot = 0; slot < keys.Length; slot++)
-            slots[slot] = _binIndices.Get(keys[slot]);
-
-        return new ClusterDeformStageSet(
-            slots,
-            invocations,
-            _binIndices.Range,
-            materialSlots.ToArray(),
-            materialSlots.ToArray().Select(static material => material.Revision).ToArray());
-    }
-
-    private ClusterDeformInvocation CreateInvocation(
-        Material material,
-        MaterialDeformCompatibility compatibility,
-        string vertexEncoding)
-    {
-        ShaderRef shaderReference = ResolveEntry(material);
-        Shader shader = shaderReference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' has no resolved deform shader asset.");
-        if (!ClusterStageTargets.HasTarget(shader, compatibility.EntryPoint, Target))
-        {
-            throw new InvalidDataException(
-                $"Material '{material.Name}' deform entry '{compatibility.EntryPoint}' " +
-                $"does not implement '{Target}'.");
-        }
-        string subject = $"Material '{material.Name}' deform";
-        ClusterStageTargets.RequireVertexEncoding(
-            shader,
-            compatibility.EntryPoint,
-            vertexEncoding,
-            subject);
-        ClusterConservativeBounds bounds = ClusterGeometryContracts.RequireConservativeBounds(
-            shader,
-            compatibility.EntryPoint,
-            subject);
-        CookedShaderEntry cooked = shader.RequireEntry(
-            _device.Capabilities.ShaderTarget,
-            compatibility.EntryPoint,
-            ShaderStage.Compute);
-        var key = new ClusterDeformCompatibilityKey(cooked.Program, cooked.EntryPoint, Target);
-        if (!_pipelines.TryGetValue(key, out ClusterComputePipeline? pipeline))
-        {
-            pipeline = ClusterComputePipeline.Create(
-                _backend,
-                _device,
-                cooked,
-                $"Cluster deform {compatibility.EntryPoint}");
-            _pipelines.Add(key, pipeline);
-        }
-        ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(pipeline.ParameterLayout);
-        ClusterDeformCoreResource[] coreResources = ResolveDeformCoreResources(resources);
-        Dictionary<string, byte> materialResources = ResolveMaterialResources(shader);
-        resources.ValidateMaterialResources(materialResources);
-        ClusterStageResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
-            materialResources,
-            _featureResources,
-            ClusterDeformCoreResources.Contains);
-        ClusterMaterialStageBinding[] materialBindings = ResolveMaterialBindings(
-            material,
-            resources,
-            materialResources,
-            featureResourceBinders);
-        ClusterCommandBindingKey commandBindings = ClusterCommandBindingKey.Create(
-            material,
-            resources,
-            materialBindings);
-        return new ClusterDeformInvocation(
-            0,
-            material,
-            vertexEncoding,
-            compatibility,
-            key,
-            pipeline,
-            bounds,
-            resources,
-            coreResources,
-            materialBindings,
-            featureResourceBinders,
-            commandBindings);
-    }
-
-    private static ClusterDeformCoreResource[] ResolveDeformCoreResources(
-        ClusterLinkedStageLayout resources)
-    {
-        ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
-        var result = new ClusterDeformCoreResource[linked.Length];
-        for (int index = 0; index < linked.Length; index++)
-        {
-            ref readonly ClusterLinkedStageResource resource = ref linked[index];
-            result[index] = ClusterDeformCoreResources.Resolve(resource.Name, resource.Type);
-        }
-        return result;
-    }
-
-    private static Dictionary<string, byte> ResolveMaterialResources(Shader shader)
-    {
-        var result = new Dictionary<string, byte>(StringComparer.Ordinal);
-        foreach (ShaderMaterialBinding binding in shader.Metadata?.MaterialBindings ?? [])
-        {
-            string name = binding.Name ?? throw new InvalidDataException(
-                $"Shader '{shader.Name}' has an unnamed material resource.");
-            if (!result.TryAdd(name, binding.ResourceType))
-            {
-                throw new InvalidDataException(
-                    $"Shader '{shader.Name}' has duplicate material resource '{name}'.");
-            }
-        }
-        return result;
-    }
-
-    private static ClusterMaterialStageBinding[] ResolveMaterialBindings(
-        Material material,
-        ClusterLinkedStageLayout resources,
-        IReadOnlyDictionary<string, byte> materialResources,
-        ClusterStageResourceBinder?[] featureResourceBinders)
-    {
-        ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
-        var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialSlotDefinition> slots = material.Slots;
-        for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
-        {
-            if (featureResourceBinders[resourceIndex] is not null)
-                continue;
-            ref readonly ClusterLinkedStageResource resource = ref linked[resourceIndex];
-            if (!materialResources.ContainsKey(resource.Name))
-                continue;
-            uint materialSlot = FindMaterialSlot(material, slots, resource.Name);
-            result[resourceIndex] = new ClusterMaterialStageBinding(
-                materialSlot,
-                resource.Type,
-                true);
-        }
-        return result;
-    }
-
-    private static uint FindMaterialSlot(
-        Material material,
-        IReadOnlyList<MaterialSlotDefinition> slots,
-        string name)
-    {
-        for (uint slot = 0; slot < slots.Count; slot++)
-        {
-            if (string.Equals(
-                    slots[checked((int)slot)].Name,
-                    name,
-                    StringComparison.Ordinal))
-            {
-                return slot;
-            }
-        }
-        throw new InvalidDataException(
-            $"Material '{material.Name}' does not expose linked resource '{name}'.");
-    }
-
-    private static ShaderRef ResolveEntry(Material material)
-    {
-        ShaderRef? selected = null;
-        foreach (PassEntry pass in material.Passes ?? [])
-        {
-            if (pass.Tags?.Any(static tag =>
-                    string.Equals(tag.Name, Material.DeformPassTag, StringComparison.Ordinal)) != true)
-            {
-                continue;
-            }
-            if (selected is not null)
-                throw new InvalidDataException($"Material '{material.Name}' has multiple deform passes.");
-            selected = pass.Shader;
-        }
-        return selected ?? throw new InvalidDataException(
-            $"Material '{material.Name}' has no deform pass.");
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        List<Exception>? failures = null;
-        foreach (ClusterComputePipeline pipeline in _pipelines.Values)
-        {
-            try { pipeline.Dispose(); }
-            catch (Exception failure) { (failures ??= []).Add(failure); }
-        }
-        _pipelines.Clear();
-        _disposed = true;
-        if (failures is not null)
-            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
-    }
-}
-
-internal sealed class ClusterDeformStageSet
-{
-    private readonly ClusterDeformInvocation[] _invocations;
-    private readonly Material[] _materials;
-    private readonly ulong[] _materialRevisions;
-
-    internal ClusterDeformStageSet(
-        uint[] slots,
-        ClusterDeformInvocation[] invocations,
-        uint binCount,
-        Material[] materials,
-        ulong[] materialRevisions)
-    {
-        Slots = slots;
-        _invocations = invocations;
-        BinCount = binCount;
-        _materials = materials;
-        _materialRevisions = materialRevisions;
-    }
-
-    internal ReadOnlyMemory<uint> Slots { get; }
-    internal IReadOnlyList<ClusterDeformInvocation> Invocations => _invocations;
-    internal uint BinCount { get; }
-    internal bool HasFiniteBounds => _invocations.All(
-        static invocation => invocation.Bounds == ClusterConservativeBounds.Finite);
-    internal bool IsCurrent
-    {
-        get
-        {
-            for (int index = 0; index < _materials.Length; index++)
-                if (_materials[index].Revision != _materialRevisions[index])
-                    return false;
-            return true;
-        }
-    }
-
-    internal bool HasSameTopology(ClusterDeformStageSet other)
-    {
-        ArgumentNullException.ThrowIfNull(other);
-        if (BinCount != other.BinCount ||
-            !Slots.Span.SequenceEqual(other.Slots.Span) ||
-            _invocations.Length != other._invocations.Length)
-        {
-            return false;
-        }
-        for (int index = 0; index < _invocations.Length; index++)
-            if (_invocations[index].BinIndex != other._invocations[index].BinIndex ||
-                _invocations[index].Key != other._invocations[index].Key ||
-                !_invocations[index].CommandBindings.Equals(other._invocations[index].CommandBindings) ||
-                !string.Equals(
-                    _invocations[index].VertexEncoding,
-                    other._invocations[index].VertexEncoding,
-                    StringComparison.Ordinal))
-                return false;
-        return true;
-    }
-}
-
-internal sealed record ClusterDeformInvocation(
-    uint BinIndex,
-    Material Material,
-    string VertexEncoding,
-    MaterialDeformCompatibility CookCompatibility,
-    ClusterDeformCompatibilityKey Key,
-    ClusterComputePipeline Pipeline,
-    ClusterConservativeBounds Bounds,
-    ClusterLinkedStageLayout Resources,
-    ClusterDeformCoreResource[] CoreResources,
-    ClusterMaterialStageBinding[] MaterialBindings,
-    ClusterStageResourceBinder?[] FeatureResourceBinders,
-    ClusterCommandBindingKey CommandBindings);
-
 /// <summary>Owns raster-only compatibility grouping and its material-slot mapping.</summary>
 internal sealed class ClusterRasterStages : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly string _defaultVertexEncoding;
-    private readonly ClusterComputePipeline _defaultSoftware;
+    private readonly ClusterVisibilityMode _visibilityMode;
+    private readonly ClusterComputePipeline? _defaultSoftware;
     private readonly ClusterRasterPipeline _defaultHardware;
-    private readonly ClusterComputePipeline _defaultTessellationFactor;
-    private readonly ClusterComputePipeline _defaultTessellationDice;
     private readonly IClusterStageResourceProvider? _featureResources;
     private readonly Dictionary<ClusterRasterSoftwareKey, ClusterComputePipeline> _softwarePipelines = [];
     private readonly Dictionary<ClusterRasterSoftwareKey, ClusterComputePipeline> _tessellationPipelines = [];
@@ -584,23 +331,21 @@ internal sealed class ClusterRasterStages : IDisposable
     internal ClusterRasterStages(
         IGraphicsBackend backend,
         Device device,
+        ClusterVisibilityMode visibilityMode,
         string vertexEncoding,
-        ClusterComputePipeline defaultSoftware,
+        ClusterComputePipeline? defaultSoftware,
         ClusterRasterPipeline defaultHardware,
-        ClusterComputePipeline defaultTessellationFactor,
-        ClusterComputePipeline defaultTessellationDice,
         IClusterStageResourceProvider? featureResources)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _visibilityMode = visibilityMode;
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexEncoding);
         _defaultVertexEncoding = vertexEncoding;
-        _defaultSoftware = defaultSoftware ?? throw new ArgumentNullException(nameof(defaultSoftware));
+        if (visibilityMode != ClusterVisibilityMode.HardwareOnly && defaultSoftware is null)
+            throw new ArgumentNullException(nameof(defaultSoftware));
+        _defaultSoftware = defaultSoftware;
         _defaultHardware = defaultHardware ?? throw new ArgumentNullException(nameof(defaultHardware));
-        _defaultTessellationFactor = defaultTessellationFactor ??
-            throw new ArgumentNullException(nameof(defaultTessellationFactor));
-        _defaultTessellationDice = defaultTessellationDice ??
-            throw new ArgumentNullException(nameof(defaultTessellationDice));
         _featureResources = featureResources;
     }
 
@@ -635,33 +380,38 @@ internal sealed class ClusterRasterStages : IDisposable
         for (int slot = 0; slot < keys.Length; slot++)
             slots[slot] = _binIndices.Get(keys[slot]);
 
-        Material[] materials = materialSlots.ToArray();
         return new ClusterRasterStageSet(
             slots,
             invocations,
-            _binIndices.Range,
-            materials,
-            materials.Select(static material => material.Revision).ToArray());
+            _binIndices.Range);
     }
 
     private ClusterRasterInvocation ResolveInvocation(Material material, string vertexEncoding)
     {
-        (
-            ShaderRef? softwareReference,
-            ShaderRef? vertexReference,
-            ShaderRef? pixelReference,
-            ShaderRef? tessellationFactorReference,
-            ShaderRef? tessellationDiceReference) = ResolveEntries(material);
-        ClusterComputePipeline software;
+        Shader shader = ClusterMaterialEntries.RequireShader(material);
+        ShaderTarget target = _device.Capabilities.ShaderTarget;
+        ClusterComputePipeline? software;
         ClusterRasterPipeline hardware;
-        ClusterComputePipeline tessellationFactor;
-        ClusterComputePipeline tessellationDice;
         ClusterConservativeBounds bounds = ClusterConservativeBounds.Finite;
 
-        bool hasRasterOverride = softwareReference is not null ||
-            vertexReference is not null ||
-            pixelReference is not null;
-        if (!hasRasterOverride)
+        string? softwareEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            ? null
+            : ClusterMaterialEntries.SoftwareRaster(_visibilityMode);
+        string hardwarePixelEntry = ClusterMaterialEntries.HardwarePixel(_visibilityMode, ClusterRasterPipeline.SupportsMesh(_backend, _device));
+        string? tessellationDiceEntry = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            ? null
+            : ClusterMaterialEntries.TessellationDice(_visibilityMode);
+        bool hasSoftware = softwareEntry is not null && ClusterMaterialEntries.HasEntry(
+            shader, target, softwareEntry, ShaderStage.Compute);
+        bool usesMesh = ClusterRasterPipeline.SupportsMesh(_backend, _device);
+        string hardwareEntry = usesMesh ? ClusterMaterialEntries.HardwareMesh : ClusterMaterialEntries.HardwareVertex;
+        bool hasMesh = ClusterMaterialEntries.HasEntry(shader, target, ClusterMaterialEntries.HardwareMesh, ShaderStage.Mesh);
+        bool hasVertex = ClusterMaterialEntries.HasEntry(
+            shader, target, ClusterMaterialEntries.HardwareVertex, ShaderStage.Vertex);
+        bool hasPixel = ClusterMaterialEntries.HasEntry(
+            shader, target, hardwarePixelEntry, ShaderStage.Pixel);
+        bool hasVisibilityRaster = hasSoftware || hasVertex || hasMesh || hasPixel;
+        if (!hasVisibilityRaster)
         {
             if (!string.Equals(vertexEncoding, _defaultVertexEncoding, StringComparison.Ordinal))
             {
@@ -675,55 +425,68 @@ internal sealed class ClusterRasterStages : IDisposable
         }
         else
         {
-            if (softwareReference is null || vertexReference is null || pixelReference is null)
+            if ((_visibilityMode != ClusterVisibilityMode.HardwareOnly && !hasSoftware) ||
+                !hasVertex || (usesMesh && !hasMesh) ||
+                !hasPixel)
             {
                 throw new InvalidDataException(
-                    $"Material '{material.Name}' must override software, hardware vertex, and " +
-                    "hardware pixel raster entries together.");
+                    $"Material '{material.Name}' must provide all Cluster visibility raster entries together.");
             }
-            software = ResolveSoftwarePipeline(material, softwareReference, vertexEncoding);
-            hardware = ResolveHardwarePipeline(material, vertexReference, pixelReference, vertexEncoding);
-            bounds = ResolveBounds(material, softwareReference, vertexReference);
+            software = softwareEntry is null
+                ? null
+                : ResolveSoftwarePipeline(
+                    material,
+                    shader,
+                    softwareEntry,
+                    vertexEncoding);
+            hardware = ResolveHardwarePipeline(
+                material,
+                shader,
+                hardwareEntry,
+                hardwarePixelEntry,
+                vertexEncoding);
+            bounds = ResolveBounds(
+                material,
+                shader,
+                softwareEntry ?? hardwareEntry,
+                hardwareEntry);
         }
 
-        bool hasTessellationOverride = tessellationFactorReference is not null ||
-            tessellationDiceReference is not null;
-        if (!hasTessellationOverride)
+        bool hasSeed = ClusterMaterialEntries.HasEntry(
+            shader, target, ClusterMaterialEntries.TessellationSeed, ShaderStage.Compute);
+        bool hasSplit = ClusterMaterialEntries.HasEntry(
+            shader, target, ClusterMaterialEntries.TessellationSplit, ShaderStage.Compute);
+        bool hasDice = tessellationDiceEntry is not null && ClusterMaterialEntries.HasEntry(
+            shader, target, tessellationDiceEntry, ShaderStage.Compute);
+        bool hasTessellationHardwareVertex = ClusterMaterialEntries.HasEntry(
+            shader, target, ClusterMaterialEntries.TessellationHardwareVertex, ShaderStage.Vertex);
+        bool hasTessellationHardwarePixel = ClusterMaterialEntries.HasEntry(
+            shader, target, ClusterMaterialEntries.TessellationHardwarePixel, ShaderStage.Pixel);
+        bool hasTessellationTerminal = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+            ? hasTessellationHardwareVertex || hasTessellationHardwarePixel
+            : hasDice;
+        bool hasTessellationOverride = hasSeed || hasSplit || hasTessellationTerminal;
+        if (hasTessellationOverride)
         {
-            if (!string.Equals(vertexEncoding, _defaultVertexEncoding, StringComparison.Ordinal))
+            bool hasCompleteTerminal = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                ? hasTessellationHardwareVertex && hasTessellationHardwarePixel
+                : hasDice;
+            if (!hasSeed || !hasSplit || !hasCompleteTerminal)
             {
                 throw new InvalidDataException(
-                    $"Material '{material.Name}' uses mesh vertex encoding '{vertexEncoding}', but the " +
-                    $"default Cluster tessellation implementation accepts '{_defaultVertexEncoding}'. " +
-                    "Provide both tessellation factor and dicing overrides for this encoding.");
+                    $"Material '{material.Name}' must provide all Cluster tessellation entries together.");
             }
-            tessellationFactor = _defaultTessellationFactor;
-            tessellationDice = _defaultTessellationDice;
-        }
-        else
-        {
-            if (tessellationFactorReference is null || tessellationDiceReference is null)
+            if (!ClusterMaterialEntries.HasEntry(
+                    shader,
+                    target,
+                    ClusterMaterialEntries.Shade,
+                    ShaderStage.Compute))
             {
                 throw new InvalidDataException(
-                    $"Material '{material.Name}' must override tessellation factor and dicing entries together.");
+                    $"Material '{material.Name}' provides runtime tessellation, so its same shader must also " +
+                    "provide ClusterShade. Forward domain evaluation and depth reconstruction cannot come " +
+                    "from different shader compositions.");
             }
-            tessellationFactor = ResolveTessellationPipeline(
-                material,
-                tessellationFactorReference,
-                vertexEncoding,
-                "factor");
-            tessellationDice = ResolveTessellationPipeline(
-                material,
-                tessellationDiceReference,
-                vertexEncoding,
-                "dicing");
-            ClusterConservativeBounds tessellationBounds = ClusterGeometryContracts.RequireConservativeBounds(
-                tessellationDiceReference.Asset ?? throw new InvalidDataException(
-                    $"Material '{material.Name}' tessellation dicing entry has no resolved shader asset."),
-                tessellationDiceReference.EntryPoint!,
-                $"Material '{material.Name}' tessellation dicing");
-            if (tessellationBounds != ClusterConservativeBounds.Finite)
-                bounds = ClusterConservativeBounds.Unbounded;
         }
 
         return CreateInvocation(
@@ -731,77 +494,172 @@ internal sealed class ClusterRasterStages : IDisposable
             vertexEncoding,
             software,
             hardware,
-            tessellationFactor,
-            tessellationDice,
             bounds,
-            softwareReference?.Asset,
-            vertexReference?.Asset,
-            tessellationFactorReference?.Asset,
-            tessellationDiceReference?.Asset);
+            hasVisibilityRaster ? shader : null,
+            hasTessellationOverride ? shader : null);
     }
 
     private ClusterRasterInvocation CreateInvocation(
         Material material,
         string vertexEncoding,
-        ClusterComputePipeline software,
+        ClusterComputePipeline? software,
         ClusterRasterPipeline hardware,
-        ClusterComputePipeline tessellationFactor,
-        ClusterComputePipeline tessellationDice,
         ClusterConservativeBounds bounds,
-        Shader? softwareShader,
-        Shader? hardwareShader,
-        Shader? tessellationFactorShader,
-        Shader? tessellationDiceShader)
+        Shader? visibilityShader,
+        Shader? tessellationShader)
     {
-        var key = new ClusterRasterCompatibilityKey(
-            software,
-            hardware,
-            tessellationFactor,
-            tessellationDice,
-            StageAbiRevision: 1);
-        ClusterRasterStageResources<ClusterSoftwareRasterCoreResource> softwareResources = ResolveRasterResources(
-            material,
-            software.ParameterLayout,
-            softwareShader,
-            ClusterSoftwareRasterCoreResources.Resolve,
-            ClusterSoftwareRasterCoreResources.Contains);
+        ClusterRasterStageResources<ClusterSoftwareRasterCoreResource>? softwareResources = software is null
+            ? null
+            : ResolveRasterResources(
+                material,
+                software.ParameterLayout,
+                visibilityShader,
+                visibilityShader is null ? null : ClusterMaterialEntries.SoftwareRaster(_visibilityMode),
+                null,
+                ClusterSoftwareRasterCoreResources.Resolve,
+                ClusterSoftwareRasterCoreResources.Contains);
         ClusterRasterStageResources<ClusterHardwareRasterCoreResource> hardwareResources = ResolveRasterResources(
             material,
             hardware.ParameterLayout,
-            hardwareShader,
+            visibilityShader,
+            visibilityShader is null ? null : hardware.UsesMesh
+                ? ClusterMaterialEntries.HardwareMesh : ClusterMaterialEntries.HardwareVertex,
+            visibilityShader is null ? null : ClusterMaterialEntries.HardwarePixel(_visibilityMode, hardware.UsesMesh),
             ClusterHardwareRasterCoreResources.Resolve,
             ClusterHardwareRasterCoreResources.Contains);
-        ClusterRasterStageResources<ClusterTessellationCoreResource> tessellationFactorResources =
-            ResolveRasterResources(
-                material,
-                tessellationFactor.ParameterLayout,
-                tessellationFactorShader,
-                ClusterTessellationCoreResources.Resolve,
-                ClusterTessellationCoreResources.Contains);
-        ClusterRasterStageResources<ClusterTessellationCoreResource> tessellationDiceResources =
-            ResolveRasterResources(
-                material,
-                tessellationDice.ParameterLayout,
-                tessellationDiceShader,
-                ClusterTessellationCoreResources.Resolve,
-                ClusterTessellationCoreResources.Contains);
-        ClusterCommandBindingKey commandBindings = ClusterCommandBindingKey.Combine(
-            ClusterCommandBindingKey.Create(
+        var bindingKeys = new List<ClusterCommandBindingKey>();
+        if (softwareResources is not null)
+        {
+            bindingKeys.Add(ClusterCommandBindingKey.Create(
                 material,
                 softwareResources.Resources,
-                softwareResources.MaterialBindings),
-            ClusterCommandBindingKey.Create(
+                softwareResources.MaterialBindings));
+        }
+        bindingKeys.Add(ClusterCommandBindingKey.Create(
                 material,
                 hardwareResources.Resources,
-                hardwareResources.MaterialBindings),
-            ClusterCommandBindingKey.Create(
+                hardwareResources.MaterialBindings));
+        ClusterTessellationInvocation? tessellation = null;
+        if (tessellationShader is not null)
+        {
+            ClusterComputePipeline seed = ResolveTessellationPipeline(
                 material,
-                tessellationFactorResources.Resources,
-                tessellationFactorResources.MaterialBindings),
-            ClusterCommandBindingKey.Create(
+                tessellationShader,
+                ClusterMaterialEntries.TessellationSeed,
+                vertexEncoding,
+                "seed");
+            ClusterComputePipeline split = ResolveTessellationPipeline(
                 material,
-                tessellationDiceResources.Resources,
-                tessellationDiceResources.MaterialBindings));
+                tessellationShader,
+                ClusterMaterialEntries.TessellationSplit,
+                vertexEncoding,
+                "split");
+            ClusterComputePipeline? dice = _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                ? null
+                : ResolveTessellationPipeline(
+                    material,
+                    tessellationShader,
+                    ClusterMaterialEntries.TessellationDice(_visibilityMode),
+                    vertexEncoding,
+                    "dicing");
+            ClusterRasterPipeline? tessellationHardware =
+                _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                    ? ResolveHardwarePipeline(
+                        material,
+                        tessellationShader,
+                        ClusterRasterPipeline.SupportsMesh(_backend, _device)
+                            ? ClusterMaterialEntries.TessellationHardwareMesh : ClusterMaterialEntries.TessellationHardwareVertex,
+                        ClusterRasterPipeline.SupportsMesh(_backend, _device)
+                            ? ClusterMaterialEntries.TessellationHardwareMeshPixel : ClusterMaterialEntries.TessellationHardwarePixel,
+                        vertexEncoding)
+                    : null;
+            ClusterRasterStageResources<ClusterTessellationCoreResource> seedResources =
+                ResolveRasterResources(
+                    material,
+                    seed.ParameterLayout,
+                    tessellationShader,
+                    ClusterMaterialEntries.TessellationSeed,
+                    null,
+                    ClusterTessellationCoreResources.Resolve,
+                    ClusterTessellationCoreResources.Contains);
+            ClusterRasterStageResources<ClusterTessellationCoreResource> splitResources =
+                ResolveRasterResources(
+                    material,
+                    split.ParameterLayout,
+                    tessellationShader,
+                    ClusterMaterialEntries.TessellationSplit,
+                    null,
+                    ClusterTessellationCoreResources.Resolve,
+                    ClusterTessellationCoreResources.Contains);
+            ClusterRasterStageResources<ClusterTessellationCoreResource>? diceResources = dice is null
+                ? null
+                : ResolveRasterResources(
+                    material,
+                    dice.ParameterLayout,
+                    tessellationShader,
+                    ClusterMaterialEntries.TessellationDice(_visibilityMode),
+                    null,
+                    ClusterTessellationCoreResources.Resolve,
+                    ClusterTessellationCoreResources.Contains);
+            ClusterRasterStageResources<ClusterTessellationCoreResource>? tessellationHardwareResources =
+                tessellationHardware is null
+                    ? null
+                    : ResolveRasterResources(
+                        material,
+                        tessellationHardware.ParameterLayout,
+                        tessellationShader,
+                        ClusterRasterPipeline.SupportsMesh(_backend, _device)
+                            ? ClusterMaterialEntries.TessellationHardwareMesh : ClusterMaterialEntries.TessellationHardwareVertex,
+                        ClusterRasterPipeline.SupportsMesh(_backend, _device)
+                            ? ClusterMaterialEntries.TessellationHardwareMeshPixel : ClusterMaterialEntries.TessellationHardwarePixel,
+                    ClusterTessellationCoreResources.Resolve,
+                    ClusterTessellationCoreResources.Contains);
+            ClusterCommandBindingKey splitBindings = ClusterCommandBindingKey.Create(
+                material, splitResources.Resources, splitResources.MaterialBindings);
+            bindingKeys.Add(ClusterCommandBindingKey.Create(
+                material,
+                seedResources.Resources,
+                seedResources.MaterialBindings));
+            bindingKeys.Add(splitBindings);
+            if (diceResources is not null)
+            {
+                bindingKeys.Add(ClusterCommandBindingKey.Create(
+                    material,
+                    diceResources.Resources,
+                    diceResources.MaterialBindings));
+            }
+            if (tessellationHardwareResources is not null)
+            {
+                bindingKeys.Add(ClusterCommandBindingKey.Create(
+                    material,
+                    tessellationHardwareResources.Resources,
+                    tessellationHardwareResources.MaterialBindings));
+            }
+            tessellation = new ClusterTessellationInvocation(
+                new ClusterTessellationCompatibilityKey(seed, split, dice, tessellationHardware),
+                seed,
+                split,
+                dice,
+                tessellationHardware,
+                seedResources,
+                splitResources,
+                diceResources,
+                tessellationHardwareResources,
+                splitBindings);
+            ClusterConservativeBounds tessellationBounds =
+                ClusterGeometryContracts.RequireConservativeBounds(
+                    tessellationShader,
+                    ClusterMaterialEntries.TessellationSplit,
+                    $"Material '{material.Name}' tessellation split");
+            if (tessellationBounds != ClusterConservativeBounds.Finite)
+                bounds = ClusterConservativeBounds.Unbounded;
+        }
+        ClusterCommandBindingKey commandBindings = ClusterCommandBindingKey.Combine([.. bindingKeys]);
+        var key = new ClusterRasterCompatibilityKey(
+            software,
+            hardware,
+            tessellation?.Key,
+            StageAbiRevision: 4);
         return new ClusterRasterInvocation(
             0,
             material,
@@ -809,13 +667,10 @@ internal sealed class ClusterRasterStages : IDisposable
             key,
             software,
             hardware,
-            tessellationFactor,
-            tessellationDice,
+            tessellation,
             bounds,
             softwareResources,
             hardwareResources,
-            tessellationFactorResources,
-            tessellationDiceResources,
             commandBindings);
     }
 
@@ -823,14 +678,19 @@ internal sealed class ClusterRasterStages : IDisposable
         Material material,
         ShaderVariableLayout parameterLayout,
         Shader? shader,
+        string? firstEntry,
+        string? secondEntry,
         Func<string, ResourceBindingType, TCore> resolveCore,
         Func<string, bool> isCore)
         where TCore : struct, Enum
     {
-        ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(parameterLayout);
+        ClusterLinkedStageLayout resources = shader is null
+            ? ClusterLinkedStageLayout.Create(parameterLayout)
+            : ClusterLinkedStageLayout.Create(shader, _device.Capabilities.ShaderTarget,
+                firstEntry ?? throw new InvalidDataException("A custom raster stage has no entry name."), secondEntry);
         Dictionary<string, byte> materialResources = shader is null
             ? new Dictionary<string, byte>(StringComparer.Ordinal)
-            : ResolveMaterialResources(shader);
+            : ResolveMaterialResources(shader, resources);
         resources.ValidateMaterialResources(materialResources);
         ClusterStageResourceBinder?[] featureBinders = resources.ResolveFeatureResources(
             materialResources,
@@ -845,7 +705,8 @@ internal sealed class ClusterRasterStages : IDisposable
         for (int index = 0; index < coreKinds.Length; index++)
         {
             ref readonly ClusterLinkedStageResource resource = ref resources.Resources[index];
-            coreKinds[index] = resolveCore(resource.Name, resource.Type);
+            if (resource.IsUsed)
+                coreKinds[index] = resolveCore(resource.Name, resource.Type);
         }
         return new ClusterRasterStageResources<TCore>(
             resources,
@@ -854,13 +715,17 @@ internal sealed class ClusterRasterStages : IDisposable
             featureBinders);
     }
 
-    private static Dictionary<string, byte> ResolveMaterialResources(Shader shader)
+    private static Dictionary<string, byte> ResolveMaterialResources(
+        Shader shader,
+        ClusterLinkedStageLayout resources)
     {
         var result = new Dictionary<string, byte>(StringComparer.Ordinal);
         foreach (ShaderMaterialBinding binding in shader.Metadata?.MaterialBindings ?? [])
         {
             string name = binding.Name ?? throw new InvalidDataException(
                 $"Shader '{shader.Name}' has an unnamed material resource.");
+            if (!resources.Contains(name))
+                continue;
             if (!result.TryAdd(name, binding.ResourceType))
             {
                 throw new InvalidDataException(
@@ -911,13 +776,10 @@ internal sealed class ClusterRasterStages : IDisposable
 
     private ClusterComputePipeline ResolveSoftwarePipeline(
         Material material,
-        ShaderRef reference,
+        Shader shader,
+        string entryPoint,
         string vertexEncoding)
     {
-        Shader shader = reference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' software raster entry has no resolved shader asset.");
-        string entryPoint = reference.EntryPoint ?? throw new InvalidDataException(
-            $"Material '{material.Name}' software raster entry has no entry-point name.");
         ClusterStageTargets.RequireVertexEncoding(
             shader,
             entryPoint,
@@ -941,14 +803,11 @@ internal sealed class ClusterRasterStages : IDisposable
 
     private ClusterComputePipeline ResolveTessellationPipeline(
         Material material,
-        ShaderRef reference,
+        Shader shader,
+        string entryPoint,
         string vertexEncoding,
         string phase)
     {
-        Shader shader = reference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' tessellation {phase} entry has no resolved shader asset.");
-        string entryPoint = reference.EntryPoint ?? throw new InvalidDataException(
-            $"Material '{material.Name}' tessellation {phase} entry has no entry-point name.");
         ClusterStageTargets.RequireVertexEncoding(
             shader,
             entryPoint,
@@ -972,33 +831,23 @@ internal sealed class ClusterRasterStages : IDisposable
 
     private ClusterRasterPipeline ResolveHardwarePipeline(
         Material material,
-        ShaderRef vertexReference,
-        ShaderRef pixelReference,
+        Shader shader,
+        string vertexEntry,
+        string pixelEntry,
         string vertexEncoding)
     {
-        Shader vertexShader = vertexReference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' hardware raster vertex entry has no resolved shader asset.");
-        Shader pixelShader = pixelReference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' hardware raster pixel entry has no resolved shader asset.");
-        if (!ReferenceEquals(vertexShader, pixelShader))
-        {
-            throw new InvalidDataException(
-                $"Material '{material.Name}' hardware raster vertex and pixel entries must share one shader asset.");
-        }
-        string vertexEntry = vertexReference.EntryPoint ?? throw new InvalidDataException(
-            $"Material '{material.Name}' hardware raster vertex entry has no entry-point name.");
-        string pixelEntry = pixelReference.EntryPoint ?? throw new InvalidDataException(
-            $"Material '{material.Name}' hardware raster pixel entry has no entry-point name.");
         ClusterStageTargets.RequireVertexEncoding(
-            vertexShader,
+            shader,
             vertexEntry,
             vertexEncoding,
             $"Material '{material.Name}' hardware raster");
-        CookedShaderEntry vertex = vertexShader.RequireEntry(
+        ShaderStage geometryStage = vertexEntry is ClusterMaterialEntries.HardwareMesh or ClusterMaterialEntries.TessellationHardwareMesh
+            ? ShaderStage.Mesh : ShaderStage.Vertex;
+        CookedShaderEntry vertex = shader.RequireEntry(
             _device.Capabilities.ShaderTarget,
             vertexEntry,
-            ShaderStage.Vertex);
-        CookedShaderEntry pixel = pixelShader.RequireEntry(
+            geometryStage);
+        CookedShaderEntry pixel = shader.RequireEntry(
             _device.Capabilities.ShaderTarget,
             pixelEntry,
             ShaderStage.Pixel);
@@ -1010,108 +859,50 @@ internal sealed class ClusterRasterStages : IDisposable
         pipeline = ClusterRasterPipeline.Create(
             _backend,
             _device,
-            vertexShader,
+            shader,
             vertexEntry,
             pixelEntry,
-            [Format.R32UInt],
-            depthStencilFormat: Format.D32Float,
+            _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                ? [Format.R32UInt]
+                : [],
+            depthStencilFormat: _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                ? Format.D32Float
+                : null,
             rasterizer: new RasterizerState(Cull: CullType.Back),
-            depthStencil: new DepthStencilState(
-                DepthTest: true,
-                DepthWrite: true,
-                DepthComparison: SomeEngine.Graphics.CompareOperation.LessOrEqual),
-            name: $"Cluster material hardware raster {vertexEntry}/{pixelEntry}");
+            depthStencil: _visibilityMode == ClusterVisibilityMode.HardwareOnly
+                ? new DepthStencilState(
+                    DepthTest: true,
+                    DepthWrite: true,
+                    DepthComparison: SomeEngine.Graphics.CompareOperation.LessOrEqual)
+                : default,
+            name: $"Cluster material hardware raster {vertexEntry}/{pixelEntry}",
+            vertexBuffers: vertexEntry == ClusterMaterialEntries.TessellationHardwareVertex
+                ? [new VertexBufferLayout(0, sizeof(uint), PerInstance: true)] : [],
+            vertexAttributes: vertexEntry == ClusterMaterialEntries.TessellationHardwareVertex
+                ? [new VertexAttribute(0, 0, Format.R32UInt, 0)] : [],
+            geometryStage: geometryStage);
         _hardwarePipelines.Add(key, pipeline);
         return pipeline;
     }
 
     private static ClusterConservativeBounds ResolveBounds(
         Material material,
-        ShaderRef softwareReference,
-        ShaderRef vertexReference)
+        Shader shader,
+        string softwareEntry,
+        string vertexEntry)
     {
-        Shader softwareShader = softwareReference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' software raster entry has no resolved shader asset.");
-        Shader vertexShader = vertexReference.Asset ?? throw new InvalidDataException(
-            $"Material '{material.Name}' hardware raster entry has no resolved shader asset.");
         ClusterConservativeBounds software = ClusterGeometryContracts.RequireConservativeBounds(
-            softwareShader,
-            softwareReference.EntryPoint!,
+            shader,
+            softwareEntry,
             $"Material '{material.Name}' software raster");
         ClusterConservativeBounds hardware = ClusterGeometryContracts.RequireConservativeBounds(
-            vertexShader,
-            vertexReference.EntryPoint!,
+            shader,
+            vertexEntry,
             $"Material '{material.Name}' hardware raster");
         return software == ClusterConservativeBounds.Finite &&
             hardware == ClusterConservativeBounds.Finite
             ? ClusterConservativeBounds.Finite
             : ClusterConservativeBounds.Unbounded;
-    }
-
-    private static (
-        ShaderRef? Software,
-        ShaderRef? Vertex,
-        ShaderRef? Pixel,
-        ShaderRef? TessellationFactor,
-        ShaderRef? TessellationDice) ResolveEntries(
-        Material material)
-    {
-        ShaderRef? software = null;
-        ShaderRef? vertex = null;
-        ShaderRef? pixel = null;
-        ShaderRef? tessellationFactor = null;
-        ShaderRef? tessellationDice = null;
-        foreach (PassEntry pass in material.Passes ?? [])
-        {
-            ShaderRef shaderReference = pass.Shader ?? throw new InvalidDataException(
-                $"Material '{material.Name}' has a pass without a final shader entry.");
-            if (string.IsNullOrWhiteSpace(shaderReference.EntryPoint) ||
-                shaderReference.Asset is not { } shader)
-                continue;
-            string entry = shaderReference.EntryPoint;
-            if (shaderReference.Stage == ShaderStage.Compute &&
-                ClusterStageTargets.HasTarget(shader, entry, "cluster.raster.sw.cached"))
-            {
-                if (software is not null)
-                    throw new InvalidDataException($"Material '{material.Name}' has multiple software raster overrides.");
-                software = shaderReference;
-            }
-            else if (shaderReference.Stage == ShaderStage.Vertex &&
-                     ClusterStageTargets.HasTarget(shader, entry, "cluster.raster.vs.cached"))
-            {
-                if (vertex is not null)
-                    throw new InvalidDataException($"Material '{material.Name}' has multiple hardware raster vertex overrides.");
-                vertex = shaderReference;
-            }
-            else if (shaderReference.Stage == ShaderStage.Pixel &&
-                     ClusterStageTargets.HasTarget(shader, entry, "cluster.raster.ps"))
-            {
-                if (pixel is not null)
-                    throw new InvalidDataException($"Material '{material.Name}' has multiple hardware raster pixel overrides.");
-                pixel = shaderReference;
-            }
-            else if (shaderReference.Stage == ShaderStage.Compute &&
-                     ClusterStageTargets.HasTarget(shader, entry, "cluster.tess.factor"))
-            {
-                if (tessellationFactor is not null)
-                {
-                    throw new InvalidDataException(
-                        $"Material '{material.Name}' has multiple tessellation factor overrides.");
-                }
-                tessellationFactor = shaderReference;
-            }
-            else if (shaderReference.Stage == ShaderStage.Compute &&
-                     ClusterStageTargets.HasTarget(shader, entry, "cluster.tess.dice"))
-            {
-                if (tessellationDice is not null)
-                {
-                    throw new InvalidDataException(
-                        $"Material '{material.Name}' has multiple tessellation dicing overrides.");
-                }
-                tessellationDice = shaderReference;
-            }
-        }
-        return (software, vertex, pixel, tessellationFactor, tessellationDice);
     }
 
     public void Dispose()
@@ -1146,21 +937,15 @@ internal sealed class ClusterRasterStages : IDisposable
 internal sealed class ClusterRasterStageSet
 {
     private readonly ClusterRasterInvocation[] _invocations;
-    private readonly Material[] _materials;
-    private readonly ulong[] _materialRevisions;
 
     internal ClusterRasterStageSet(
         uint[] slots,
         ClusterRasterInvocation[] invocations,
-        uint binCount,
-        Material[] materials,
-        ulong[] materialRevisions)
+        uint binCount)
     {
         Slots = slots;
         _invocations = invocations;
         BinCount = binCount;
-        _materials = materials;
-        _materialRevisions = materialRevisions;
     }
 
     internal ReadOnlyMemory<uint> Slots { get; }
@@ -1168,16 +953,6 @@ internal sealed class ClusterRasterStageSet
     internal uint BinCount { get; }
     internal bool HasFiniteBounds => _invocations.All(
         static invocation => invocation.Bounds == ClusterConservativeBounds.Finite);
-    internal bool IsCurrent
-    {
-        get
-        {
-            for (int index = 0; index < _materials.Length; index++)
-                if (_materials[index].Revision != _materialRevisions[index])
-                    return false;
-            return true;
-        }
-    }
 
     internal bool HasSameTopology(ClusterRasterStageSet other)
     {
@@ -1191,7 +966,6 @@ internal sealed class ClusterRasterStageSet
         for (int index = 0; index < _invocations.Length; index++)
             if (_invocations[index].BinIndex != other._invocations[index].BinIndex ||
                 _invocations[index].Key != other._invocations[index].Key ||
-                !_invocations[index].CommandBindings.Equals(other._invocations[index].CommandBindings) ||
                 !string.Equals(
                     _invocations[index].VertexEncoding,
                     other._invocations[index].VertexEncoding,
@@ -1206,16 +980,25 @@ internal sealed record ClusterRasterInvocation(
     Material Material,
     string VertexEncoding,
     ClusterRasterCompatibilityKey Key,
-    ClusterComputePipeline Software,
+    ClusterComputePipeline? Software,
     ClusterRasterPipeline Hardware,
-    ClusterComputePipeline TessellationFactor,
-    ClusterComputePipeline TessellationDice,
+    ClusterTessellationInvocation? Tessellation,
     ClusterConservativeBounds Bounds,
-    ClusterRasterStageResources<ClusterSoftwareRasterCoreResource> SoftwareResources,
+    ClusterRasterStageResources<ClusterSoftwareRasterCoreResource>? SoftwareResources,
     ClusterRasterStageResources<ClusterHardwareRasterCoreResource> HardwareResources,
-    ClusterRasterStageResources<ClusterTessellationCoreResource> TessellationFactorResources,
-    ClusterRasterStageResources<ClusterTessellationCoreResource> TessellationDiceResources,
     ClusterCommandBindingKey CommandBindings);
+
+internal sealed record ClusterTessellationInvocation(
+    ClusterTessellationCompatibilityKey Key,
+    ClusterComputePipeline Seed,
+    ClusterComputePipeline Split,
+    ClusterComputePipeline? Dice,
+    ClusterRasterPipeline? Hardware,
+    ClusterRasterStageResources<ClusterTessellationCoreResource> SeedResources,
+    ClusterRasterStageResources<ClusterTessellationCoreResource> SplitResources,
+    ClusterRasterStageResources<ClusterTessellationCoreResource>? DiceResources,
+    ClusterRasterStageResources<ClusterTessellationCoreResource>? HardwareResources,
+    ClusterCommandBindingKey SplitBindings);
 
 internal sealed class ClusterRasterStageResources<TCore>
     where TCore : struct, Enum
@@ -1253,8 +1036,6 @@ internal readonly record struct ClusterRasterHardwareKey(
 /// </summary>
 internal sealed class ClusterShadeStages : IDisposable
 {
-    internal const string Target = "cluster.shade.cached";
-
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly IClusterStageResourceProvider? _featureResources;
@@ -1313,13 +1094,13 @@ internal sealed class ClusterShadeStages : IDisposable
             invocations,
             _binIndices.Range,
             materials,
-            materials.Select(static material => material.Revision).ToArray(),
             scalarLayouts);
     }
 
     private ClusterShadeInvocation CreateInvocation(Material material, string vertexEncoding)
     {
-        (Shader shader, string entryPoint) = ResolveEntry(material);
+        Shader shader = ClusterMaterialEntries.RequireShader(material);
+        string entryPoint = ClusterMaterialEntries.Shade;
         ClusterStageTargets.RequireVertexEncoding(
             shader,
             entryPoint,
@@ -1329,7 +1110,7 @@ internal sealed class ClusterShadeStages : IDisposable
             _device.Capabilities.ShaderTarget,
             entryPoint,
             ShaderStage.Compute);
-        var key = new ClusterShadeCompatibilityKey(cooked.Program, cooked.EntryPoint, Target);
+        var key = new ClusterShadeCompatibilityKey(cooked.Program, cooked.EntryPoint);
         if (!_pipelines.TryGetValue(key, out ClusterComputePipeline? pipeline))
         {
             pipeline = ClusterComputePipeline.Create(
@@ -1342,9 +1123,12 @@ internal sealed class ClusterShadeStages : IDisposable
 
         ScalarLayout scalars = ResolveScalarLayout(shader);
         ScalarLayout.ScalarMaterialLayout scalarMaterialLayout = scalars.Resolve(material);
-        ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(pipeline.ParameterLayout);
+        ClusterLinkedStageLayout resources = ClusterLinkedStageLayout.Create(
+            shader,
+            _device.Capabilities.ShaderTarget,
+            entryPoint);
         ClusterShadeCoreResource[] coreResources = ResolveShadeCoreResources(resources);
-        Dictionary<string, byte> materialResources = ResolveMaterialResources(shader);
+        Dictionary<string, byte> materialResources = ResolveMaterialResources(shader, resources);
         resources.ValidateMaterialResources(materialResources);
         ClusterStageResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
             materialResources,
@@ -1381,7 +1165,8 @@ internal sealed class ClusterShadeStages : IDisposable
         for (int index = 0; index < linked.Length; index++)
         {
             ref readonly ClusterLinkedStageResource resource = ref linked[index];
-            result[index] = ClusterShadeCoreResources.Resolve(resource.Name, resource.Type);
+            if (resource.IsUsed)
+                result[index] = ClusterShadeCoreResources.Resolve(resource.Name, resource.Type);
         }
         return result;
     }
@@ -1429,36 +1214,6 @@ internal sealed class ClusterShadeStages : IDisposable
         return result;
     }
 
-    private static (Shader Shader, string EntryPoint) ResolveEntry(Material material)
-    {
-        Shader? selectedShader = null;
-        string? selectedEntry = null;
-        foreach (PassEntry pass in material.Passes ?? [])
-        {
-            ShaderRef shaderReference = pass.Shader ?? throw new InvalidDataException(
-                $"Material '{material.Name}' has a pass without a final shader entry.");
-            if (shaderReference.Stage != ShaderStage.Compute ||
-                string.IsNullOrWhiteSpace(shaderReference.EntryPoint) ||
-                shaderReference.Asset is not { } shader ||
-                !ClusterStageTargets.HasTarget(shader, shaderReference.EntryPoint, Target))
-            {
-                continue;
-            }
-            if (selectedShader is not null)
-            {
-                throw new InvalidDataException(
-                    $"Material '{material.Name}' has more than one '{Target}' implementation.");
-            }
-            selectedShader = shader;
-            selectedEntry = shaderReference.EntryPoint;
-        }
-
-        return selectedShader is not null && selectedEntry is not null
-            ? (selectedShader, selectedEntry)
-            : throw new InvalidDataException(
-                $"Material '{material.Name}' has no final cooked '{Target}' implementation.");
-    }
-
     private static ScalarLayout ResolveScalarLayout(Shader shader)
     {
         IList<ShaderMaterialScalarLayout>? layouts = shader.Metadata?.MaterialScalarLayouts;
@@ -1471,13 +1226,17 @@ internal sealed class ClusterShadeStages : IDisposable
         };
     }
 
-    private static Dictionary<string, byte> ResolveMaterialResources(Shader shader)
+    private static Dictionary<string, byte> ResolveMaterialResources(
+        Shader shader,
+        ClusterLinkedStageLayout resources)
     {
         var result = new Dictionary<string, byte>(StringComparer.Ordinal);
         foreach (ShaderMaterialBinding binding in shader.Metadata?.MaterialBindings ?? [])
         {
             string name = binding.Name ?? throw new InvalidDataException(
                 $"Shader '{shader.Name}' has an unnamed material resource.");
+            if (!resources.Contains(name))
+                continue;
             if (!result.TryAdd(name, binding.ResourceType))
                 throw new InvalidDataException(
                     $"Shader '{shader.Name}' has duplicate material resource '{name}'.");
@@ -1504,9 +1263,11 @@ internal sealed class ClusterShadeStages : IDisposable
 
 internal sealed class ClusterShadeStageSet
 {
+    internal static ClusterShadeStageSet Empty { get; } =
+        new([], [], 0u, [], []);
+
     private readonly ClusterShadeInvocation[] _invocations;
     private readonly Material[] _materials;
-    private readonly ulong[] _materialRevisions;
     private readonly ScalarLayout.ScalarMaterialLayout?[] _scalarLayouts;
 
     internal ClusterShadeStageSet(
@@ -1514,14 +1275,12 @@ internal sealed class ClusterShadeStageSet
         ClusterShadeInvocation[] invocations,
         uint binCount,
         Material[] materials,
-        ulong[] materialRevisions,
         ScalarLayout.ScalarMaterialLayout?[] scalarLayouts)
     {
         Slots = slots;
         _invocations = invocations;
         BinCount = binCount;
         _materials = materials;
-        _materialRevisions = materialRevisions;
         _scalarLayouts = scalarLayouts;
     }
 
@@ -1529,16 +1288,6 @@ internal sealed class ClusterShadeStageSet
     internal IReadOnlyList<ClusterShadeInvocation> Invocations => _invocations;
     internal uint BinCount { get; }
 
-    internal bool IsCurrent
-    {
-        get
-        {
-            for (int index = 0; index < _materials.Length; index++)
-                if (_materials[index].Revision != _materialRevisions[index])
-                    return false;
-            return true;
-        }
-    }
 
     internal (uint[] Offsets, byte[] Region) EncodeScalars()
     {
@@ -1579,7 +1328,6 @@ internal sealed class ClusterShadeStageSet
                 _invocations[index].Key != other._invocations[index].Key ||
                 _invocations[index].Scalars.LayoutHash != other._invocations[index].Scalars.LayoutHash ||
                 _invocations[index].Scalars.PayloadByteSize != other._invocations[index].Scalars.PayloadByteSize ||
-                !_invocations[index].CommandBindings.Equals(other._invocations[index].CommandBindings) ||
                 !string.Equals(
                     _invocations[index].VertexEncoding,
                     other._invocations[index].VertexEncoding,
@@ -1610,21 +1358,6 @@ internal readonly record struct ClusterMaterialStageBinding(
     ResourceBindingType Type,
     bool IsMaterialResource);
 
-internal enum ClusterDeformCoreResource : byte
-{
-    None,
-    InstanceData,
-    InstanceProperties,
-    Uniforms,
-    PageHeap,
-    VisibleClusters,
-    BinnedClusters,
-    BinMetadata,
-    DeformCache,
-    CacheOffsets,
-    CacheRequests,
-}
-
 internal enum ClusterSoftwareRasterCoreResource : byte
 {
     None,
@@ -1632,15 +1365,15 @@ internal enum ClusterSoftwareRasterCoreResource : byte
     InstanceProperties,
     Uniforms,
     Views,
+    PolicyViews,
     PageHeap,
     VisibleClusters,
     BinnedClusters,
     BinMetadata,
     Depth,
     Visibility,
-    SoftwareDepth,
-    DeformCache,
-    CacheOffsets,
+    WinnerImage,
+    WinnerBuffer,
     Diagnostics,
 }
 
@@ -1651,13 +1384,14 @@ internal enum ClusterHardwareRasterCoreResource : byte
     InstanceProperties,
     Uniforms,
     Views,
+    PolicyViews,
     DispatchUniforms,
     PageHeap,
     BinnedClusters,
     VisibleClusters,
     DrawMetadata,
-    DeformCache,
-    CacheOffsets,
+    WinnerImage,
+    WinnerBuffer,
 }
 
 internal enum ClusterTessellationCoreResource : byte
@@ -1667,17 +1401,27 @@ internal enum ClusterTessellationCoreResource : byte
     InstanceProperties,
     Uniforms,
     Views,
+    PolicyViews,
     PageHeap,
     VisibleClusters,
     BinnedClusters,
     BinMetadata,
-    DeformCache,
-    CacheOffsets,
+    RasterSlots,
+    HiZ,
+    Depth,
+    Visibility,
+    WinnerImage,
+    WinnerBuffer,
     Counters,
-    SplitWork,
-    DiceArguments,
-    DicedTriangles,
-    RasterArguments,
+    WorkPatches0,
+    WorkPatches1,
+    LevelCounts,
+    NextLevelArgs,
+    FinalPatches,
+    GroupedPatchIndices,
+    RasterPatches,
+    BinCounts,
+    BinOffsets,
 }
 
 internal enum ClusterShadeCoreResource : byte
@@ -1695,8 +1439,7 @@ internal enum ClusterShadeCoreResource : byte
     VisibleClusters,
     PageHeap,
     OutputColor,
-    DeformCache,
-    CacheOffsets,
+    OutputMotionVectors,
     MaterialScalars,
     MaterialScalarOffsets,
 }
@@ -1710,6 +1453,55 @@ internal sealed class ClusterLinkedStageLayout
         => _resources = resources;
 
     internal ReadOnlySpan<ClusterLinkedStageResource> Resources => _resources;
+
+    internal bool Contains(string name)
+    {
+        foreach (ClusterLinkedStageResource resource in _resources)
+        {
+            if (resource.IsUsed && string.Equals(resource.Name, name, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
+    internal static ClusterLinkedStageLayout Create(
+        Shader shader, ShaderTarget target, string firstEntry, string? secondEntry = null)
+    {
+        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        if (!shader.TryProgram(backend, out ShaderProgram program))
+            throw new InvalidDataException($"Shader '{shader.Name}' has no {backend} shader data.");
+        string[] names = secondEntry is null ? [firstEntry] : [firstEntry, secondEntry];
+        HashSet<string> used = new(StringComparer.Ordinal);
+        foreach (string name in names)
+        {
+            if (!shader.TryReflection(backend, name, out ShaderEntryPointReflection reflection) ||
+                reflection.Reflection?.Resources is not { } resources)
+                throw new InvalidDataException($"Shader '{shader.Name}' has no resource usage for '{name}'.");
+            foreach (ShaderResourceReflection resource in resources)
+                used.Add(resource.Name ?? throw new InvalidDataException("A reflected resource has no name."));
+        }
+        List<ClusterLinkedStageResource> result = [];
+        AddBlock(program.Layout.GetGlobalParamsVarLayout());
+        foreach (string name in names)
+        {
+            ShaderEntryPoint entry = program.EntryPoints.First(value => value.Name == name);
+            AddBlock(entry.VarLayout);
+        }
+        return new ClusterLinkedStageLayout([.. result]);
+
+        void AddBlock(ShaderVariableLayout layout)
+        {
+            if (layout == ShaderVariableLayout.Null)
+                return;
+            ClusterLinkedStageLayout block = Create(layout);
+            if (block._resources.Length == 0)
+                return;
+            result.Add(new ClusterLinkedStageResource("", ResourceBindingType.None, 0)
+                { ParameterLayout = layout, IsUsed = false });
+            foreach (ClusterLinkedStageResource resource in block._resources)
+                result.Add(resource with { IsUsed = used.Contains(resource.Name) });
+        }
+    }
 
     internal static ClusterLinkedStageLayout Create(ShaderVariableLayout layout)
     {
@@ -1801,8 +1593,10 @@ internal sealed class ClusterLinkedStageLayout
             }
             if (!found)
             {
+                string linkedNames = string.Join(", ", _resources.Select(static resource => resource.Name));
                 throw new InvalidDataException(
-                    $"Material resource '{name}' is absent from the final linked entry layout.");
+                    $"Material resource '{name}' is absent from the final linked entry layout. " +
+                    $"Linked resources: [{linkedNames}].");
             }
         }
     }
@@ -1817,6 +1611,8 @@ internal sealed class ClusterLinkedStageLayout
         for (int index = 0; index < _resources.Length; index++)
         {
             ClusterLinkedStageResource resource = _resources[index];
+            if (!resource.IsUsed)
+                continue;
             if (isCoreResource(resource.Name) ||
                 materialResources.ContainsKey(resource.Name))
             {
@@ -1871,6 +1667,19 @@ internal sealed class ClusterLinkedStageLayout
         };
     }
 
+    private static ResourceBindingType ExpectedType(DescriptorType type) => type switch
+    {
+        DescriptorType.ConstantBuffer => ResourceBindingType.ConstantBuffer,
+        DescriptorType.SampledTexture => ResourceBindingType.TextureSrv,
+        DescriptorType.StorageTexture => ResourceBindingType.TextureUav,
+        DescriptorType.ReadOnlyBuffer => ResourceBindingType.BufferSrv,
+        DescriptorType.StorageBuffer => ResourceBindingType.BufferUav,
+        DescriptorType.Sampler => ResourceBindingType.Sampler,
+        DescriptorType.AccelerationStructure => ResourceBindingType.AccelerationStructure,
+        _ => throw new InvalidDataException(
+            $"Cooked shader resource type {type} cannot be represented by the RHI."),
+    };
+
     private static int ResolveIndex(nint value, int limit, string description)
     {
         int result = ResolveCount(value, description);
@@ -1892,7 +1701,11 @@ internal sealed class ClusterLinkedStageLayout
 internal readonly record struct ClusterLinkedStageResource(
     string Name,
     ResourceBindingType Type,
-    uint Element);
+    uint Element)
+{
+    internal bool IsUsed { get; init; } = true;
+    internal ShaderVariableLayout ParameterLayout { get; init; } = ShaderVariableLayout.Null;
+}
 
 internal static class ClusterShadeCoreResources
 {
@@ -1912,15 +1725,14 @@ internal static class ClusterShadeCoreResources
             ClusterShadeCoreResource.BinCounts or
             ClusterShadeCoreResource.VisibleClusters or
             ClusterShadeCoreResource.PageHeap or
-            ClusterShadeCoreResource.DeformCache or
-            ClusterShadeCoreResource.CacheOffsets or
             ClusterShadeCoreResource.MaterialScalars or
             ClusterShadeCoreResource.MaterialScalarOffsets => ResourceBindingType.BufferSrv,
             ClusterShadeCoreResource.InstanceProperties or
             ClusterShadeCoreResource.Uniforms => ResourceBindingType.ConstantBuffer,
             ClusterShadeCoreResource.Visibility or
             ClusterShadeCoreResource.Depth => ResourceBindingType.TextureSrv,
-            ClusterShadeCoreResource.OutputColor => ResourceBindingType.TextureUav,
+            ClusterShadeCoreResource.OutputColor or
+            ClusterShadeCoreResource.OutputMotionVectors => ResourceBindingType.TextureUav,
             _ => throw new InvalidOperationException($"Unknown Cluster shade core resource {result}."),
         };
         if (type != expected)
@@ -1945,58 +1757,10 @@ internal static class ClusterShadeCoreResources
         "VisibleClusters" => ClusterShadeCoreResource.VisibleClusters,
         "PageHeap" => ClusterShadeCoreResource.PageHeap,
         "OutputColor" => ClusterShadeCoreResource.OutputColor,
-        "DeformCache" => ClusterShadeCoreResource.DeformCache,
-        "CacheOffsets" => ClusterShadeCoreResource.CacheOffsets,
+        "OutputMotionVectors" => ClusterShadeCoreResource.OutputMotionVectors,
         "MaterialScalarRegion" => ClusterShadeCoreResource.MaterialScalars,
         "MaterialScalarOffsets" => ClusterShadeCoreResource.MaterialScalarOffsets,
         _ => ClusterShadeCoreResource.None,
-    };
-}
-
-internal static class ClusterDeformCoreResources
-{
-    internal static bool Contains(string name) => ResolveName(name) != ClusterDeformCoreResource.None;
-
-    internal static ClusterDeformCoreResource Resolve(string name, ResourceBindingType type)
-    {
-        ClusterDeformCoreResource result = ResolveName(name);
-        if (result == ClusterDeformCoreResource.None)
-            return result;
-        ResourceBindingType expected = result switch
-        {
-            ClusterDeformCoreResource.InstanceData or
-            ClusterDeformCoreResource.PageHeap or
-            ClusterDeformCoreResource.VisibleClusters or
-            ClusterDeformCoreResource.BinnedClusters or
-            ClusterDeformCoreResource.BinMetadata => ResourceBindingType.BufferSrv,
-            ClusterDeformCoreResource.InstanceProperties or
-            ClusterDeformCoreResource.Uniforms => ResourceBindingType.ConstantBuffer,
-            ClusterDeformCoreResource.DeformCache or
-            ClusterDeformCoreResource.CacheOffsets or
-            ClusterDeformCoreResource.CacheRequests => ResourceBindingType.BufferUav,
-            _ => throw new InvalidOperationException($"Unknown Cluster deform core resource {result}."),
-        };
-        if (type != expected)
-        {
-            throw new InvalidDataException(
-                $"Cluster deform core resource '{name}' must be {expected}, not {type}.");
-        }
-        return result;
-    }
-
-    private static ClusterDeformCoreResource ResolveName(string name) => name switch
-    {
-        "InstanceData" => ClusterDeformCoreResource.InstanceData,
-        "InstanceProperties" => ClusterDeformCoreResource.InstanceProperties,
-        "PushConstants" or "Uniforms" => ClusterDeformCoreResource.Uniforms,
-        "PageHeap" => ClusterDeformCoreResource.PageHeap,
-        "VisibleClusters" => ClusterDeformCoreResource.VisibleClusters,
-        "BinnedClusterIndexBuffer" => ClusterDeformCoreResource.BinnedClusters,
-        "DeformBinMeta" => ClusterDeformCoreResource.BinMetadata,
-        "DeformCache" => ClusterDeformCoreResource.DeformCache,
-        "CacheOffsetsWrite" => ClusterDeformCoreResource.CacheOffsets,
-        "DeformCacheRequests" => ClusterDeformCoreResource.CacheRequests,
-        _ => ClusterDeformCoreResource.None,
     };
 }
 
@@ -2013,17 +1777,17 @@ internal static class ClusterSoftwareRasterCoreResources
         {
             ClusterSoftwareRasterCoreResource.InstanceData or
             ClusterSoftwareRasterCoreResource.Views or
+            ClusterSoftwareRasterCoreResource.PolicyViews or
             ClusterSoftwareRasterCoreResource.PageHeap or
             ClusterSoftwareRasterCoreResource.VisibleClusters or
             ClusterSoftwareRasterCoreResource.BinnedClusters or
-            ClusterSoftwareRasterCoreResource.BinMetadata or
-            ClusterSoftwareRasterCoreResource.DeformCache or
-            ClusterSoftwareRasterCoreResource.CacheOffsets => ResourceBindingType.BufferSrv,
+            ClusterSoftwareRasterCoreResource.BinMetadata => ResourceBindingType.BufferSrv,
             ClusterSoftwareRasterCoreResource.InstanceProperties or
             ClusterSoftwareRasterCoreResource.Uniforms => ResourceBindingType.ConstantBuffer,
             ClusterSoftwareRasterCoreResource.Depth => ResourceBindingType.TextureSrv,
             ClusterSoftwareRasterCoreResource.Visibility or
-            ClusterSoftwareRasterCoreResource.SoftwareDepth => ResourceBindingType.TextureUav,
+            ClusterSoftwareRasterCoreResource.WinnerImage => ResourceBindingType.TextureUav,
+            ClusterSoftwareRasterCoreResource.WinnerBuffer => ResourceBindingType.BufferUav,
             ClusterSoftwareRasterCoreResource.Diagnostics => ResourceBindingType.BufferUav,
             _ => throw new InvalidOperationException($"Unknown Cluster software-raster core resource {result}."),
         };
@@ -2039,18 +1803,25 @@ internal static class ClusterSoftwareRasterCoreResources
     {
         "InstanceData" => ClusterSoftwareRasterCoreResource.InstanceData,
         "InstanceProperties" => ClusterSoftwareRasterCoreResource.InstanceProperties,
-        "PushConstants" or "Uniforms" => ClusterSoftwareRasterCoreResource.Uniforms,
-        "Views" => ClusterSoftwareRasterCoreResource.Views,
+        "PushConstants" or "Uniforms" or
+        "ClusterSoftwareRasterPushConstants" or
+        "ClusterSoftwareRasterUniformData" => ClusterSoftwareRasterCoreResource.Uniforms,
+        "Views" or "SoftwareRasterViews" => ClusterSoftwareRasterCoreResource.Views,
+        "PolicyClusterViews" or
+        "SoftwareRasterPolicyViews" => ClusterSoftwareRasterCoreResource.PolicyViews,
         "PageHeap" => ClusterSoftwareRasterCoreResource.PageHeap,
-        "VisibleClusters" => ClusterSoftwareRasterCoreResource.VisibleClusters,
-        "BinnedClusterIndexBuffer" => ClusterSoftwareRasterCoreResource.BinnedClusters,
-        "RasterBinMeta" => ClusterSoftwareRasterCoreResource.BinMetadata,
-        "DepthTarget" => ClusterSoftwareRasterCoreResource.Depth,
-        "VisBuffer" => ClusterSoftwareRasterCoreResource.Visibility,
-        "DepthUAV" => ClusterSoftwareRasterCoreResource.SoftwareDepth,
-        "DeformCache" => ClusterSoftwareRasterCoreResource.DeformCache,
-        "CacheOffsets" => ClusterSoftwareRasterCoreResource.CacheOffsets,
-        "DebugSWOutput" => ClusterSoftwareRasterCoreResource.Diagnostics,
+        "VisibleClusters" or "SoftwareRasterVisibleClusters" => ClusterSoftwareRasterCoreResource.VisibleClusters,
+        "BinnedClusterIndexBuffer" or
+        "SoftwareRasterBinnedClusterIndexBuffer" => ClusterSoftwareRasterCoreResource.BinnedClusters,
+        "RasterBinMeta" or "SoftwareRasterBinMeta" => ClusterSoftwareRasterCoreResource.BinMetadata,
+        "DepthTarget" or
+        "SoftwareVisibilityDepthTarget" => ClusterSoftwareRasterCoreResource.Depth,
+        "VisBuffer" or
+        "SoftwareVisibilityBuffer" => ClusterSoftwareRasterCoreResource.Visibility,
+        "DepthUAV" or
+        "VisibilityWinnerImage" => ClusterSoftwareRasterCoreResource.WinnerImage,
+        "VisibilityWinnerBuffer" => ClusterSoftwareRasterCoreResource.WinnerBuffer,
+        "DebugSWOutput" or "SoftwareRasterDebugOutput" => ClusterSoftwareRasterCoreResource.Diagnostics,
         _ => ClusterSoftwareRasterCoreResource.None,
     };
 }
@@ -2068,15 +1839,16 @@ internal static class ClusterHardwareRasterCoreResources
         {
             ClusterHardwareRasterCoreResource.InstanceData or
             ClusterHardwareRasterCoreResource.Views or
+            ClusterHardwareRasterCoreResource.PolicyViews or
             ClusterHardwareRasterCoreResource.PageHeap or
             ClusterHardwareRasterCoreResource.BinnedClusters or
             ClusterHardwareRasterCoreResource.VisibleClusters or
-            ClusterHardwareRasterCoreResource.DrawMetadata or
-            ClusterHardwareRasterCoreResource.DeformCache or
-            ClusterHardwareRasterCoreResource.CacheOffsets => ResourceBindingType.BufferSrv,
+            ClusterHardwareRasterCoreResource.DrawMetadata => ResourceBindingType.BufferSrv,
             ClusterHardwareRasterCoreResource.InstanceProperties or
             ClusterHardwareRasterCoreResource.Uniforms or
             ClusterHardwareRasterCoreResource.DispatchUniforms => ResourceBindingType.ConstantBuffer,
+            ClusterHardwareRasterCoreResource.WinnerImage => ResourceBindingType.TextureUav,
+            ClusterHardwareRasterCoreResource.WinnerBuffer => ResourceBindingType.BufferUav,
             _ => throw new InvalidOperationException($"Unknown Cluster hardware-raster core resource {result}."),
         };
         if (type != expected)
@@ -2091,15 +1863,19 @@ internal static class ClusterHardwareRasterCoreResources
     {
         "InstanceData" => ClusterHardwareRasterCoreResource.InstanceData,
         "InstanceProperties" => ClusterHardwareRasterCoreResource.InstanceProperties,
-        "Uniforms" => ClusterHardwareRasterCoreResource.Uniforms,
-        "Views" => ClusterHardwareRasterCoreResource.Views,
-        "DispatchUniforms" => ClusterHardwareRasterCoreResource.DispatchUniforms,
+        "Uniforms" or "HardwareRasterUniformData" => ClusterHardwareRasterCoreResource.Uniforms,
+        "Views" or "HardwareRasterViews" => ClusterHardwareRasterCoreResource.Views,
+        "PolicyClusterViews" or
+        "HardwareRasterPolicyViews" => ClusterHardwareRasterCoreResource.PolicyViews,
+        "DispatchUniforms" or
+        "HardwareRasterDispatchUniformData" => ClusterHardwareRasterCoreResource.DispatchUniforms,
         "PageHeap" => ClusterHardwareRasterCoreResource.PageHeap,
-        "BinnedClusterIndexBuffer" => ClusterHardwareRasterCoreResource.BinnedClusters,
-        "VisibleClusters" => ClusterHardwareRasterCoreResource.VisibleClusters,
-        "VisibleClusterMeta" => ClusterHardwareRasterCoreResource.DrawMetadata,
-        "DeformCache" => ClusterHardwareRasterCoreResource.DeformCache,
-        "CacheOffsets" => ClusterHardwareRasterCoreResource.CacheOffsets,
+        "BinnedClusterIndexBuffer" or
+        "HardwareRasterBinnedClusterIndexBuffer" => ClusterHardwareRasterCoreResource.BinnedClusters,
+        "VisibleClusters" or "HardwareRasterVisibleClusters" => ClusterHardwareRasterCoreResource.VisibleClusters,
+        "VisibleClusterMeta" or "HardwareRasterVisibleClusterMeta" => ClusterHardwareRasterCoreResource.DrawMetadata,
+        "VisibilityWinnerImage" => ClusterHardwareRasterCoreResource.WinnerImage,
+        "VisibilityWinnerBuffer" => ClusterHardwareRasterCoreResource.WinnerBuffer,
         _ => ClusterHardwareRasterCoreResource.None,
     };
 }
@@ -2117,19 +1893,29 @@ internal static class ClusterTessellationCoreResources
         {
             ClusterTessellationCoreResource.InstanceData or
             ClusterTessellationCoreResource.Views or
+            ClusterTessellationCoreResource.PolicyViews or
             ClusterTessellationCoreResource.PageHeap or
             ClusterTessellationCoreResource.VisibleClusters or
             ClusterTessellationCoreResource.BinMetadata or
-            ClusterTessellationCoreResource.DeformCache or
-            ClusterTessellationCoreResource.CacheOffsets => ResourceBindingType.BufferSrv,
+            ClusterTessellationCoreResource.RasterSlots or
+            ClusterTessellationCoreResource.GroupedPatchIndices or
+            ClusterTessellationCoreResource.RasterPatches or
+            ClusterTessellationCoreResource.BinCounts or
+            ClusterTessellationCoreResource.BinOffsets => ResourceBindingType.BufferSrv,
+            ClusterTessellationCoreResource.HiZ or
+            ClusterTessellationCoreResource.Depth => ResourceBindingType.TextureSrv,
             ClusterTessellationCoreResource.InstanceProperties or
             ClusterTessellationCoreResource.Uniforms => ResourceBindingType.ConstantBuffer,
+            ClusterTessellationCoreResource.Visibility or
+            ClusterTessellationCoreResource.WinnerImage => ResourceBindingType.TextureUav,
+            ClusterTessellationCoreResource.WinnerBuffer => ResourceBindingType.BufferUav,
             ClusterTessellationCoreResource.BinnedClusters or
             ClusterTessellationCoreResource.Counters or
-            ClusterTessellationCoreResource.SplitWork or
-            ClusterTessellationCoreResource.DiceArguments or
-            ClusterTessellationCoreResource.DicedTriangles or
-            ClusterTessellationCoreResource.RasterArguments => ResourceBindingType.BufferUav,
+            ClusterTessellationCoreResource.WorkPatches0 or
+            ClusterTessellationCoreResource.WorkPatches1 or
+            ClusterTessellationCoreResource.LevelCounts or
+            ClusterTessellationCoreResource.NextLevelArgs or
+            ClusterTessellationCoreResource.FinalPatches => ResourceBindingType.BufferUav,
             _ => throw new InvalidOperationException(
                 $"Unknown Cluster tessellation core resource {result}."),
         };
@@ -2145,19 +1931,37 @@ internal static class ClusterTessellationCoreResources
     {
         "InstanceData" => ClusterTessellationCoreResource.InstanceData,
         "InstanceProperties" => ClusterTessellationCoreResource.InstanceProperties,
-        "Uniforms" => ClusterTessellationCoreResource.Uniforms,
-        "Views" => ClusterTessellationCoreResource.Views,
+        "Uniforms" or "TessellationUniformData" => ClusterTessellationCoreResource.Uniforms,
+        "Views" or "TessellationViews" => ClusterTessellationCoreResource.Views,
+        "PolicyClusterViews" or
+        "TessellationPolicyViews" => ClusterTessellationCoreResource.PolicyViews,
         "PageHeap" => ClusterTessellationCoreResource.PageHeap,
-        "VisibleClusters" => ClusterTessellationCoreResource.VisibleClusters,
-        "BinnedClusterIndexBuffer" => ClusterTessellationCoreResource.BinnedClusters,
-        "RasterBinMeta" => ClusterTessellationCoreResource.BinMetadata,
-        "DeformCache" => ClusterTessellationCoreResource.DeformCache,
-        "CacheOffsets" => ClusterTessellationCoreResource.CacheOffsets,
+        "VisibleClusters" or
+        "TessellationVisibleClusters" => ClusterTessellationCoreResource.VisibleClusters,
+        "BinnedClusterIndexBuffer" or
+        "TessellationBinnedClusterIndexBuffer" => ClusterTessellationCoreResource.BinnedClusters,
+        "RasterBinMeta" or
+        "TessellationRasterBinMeta" => ClusterTessellationCoreResource.BinMetadata,
+        "TessellationRasterSlots" => ClusterTessellationCoreResource.RasterSlots,
+        "HiZTexture" or
+        "TessellationHiZTexture" => ClusterTessellationCoreResource.HiZ,
+        "DepthTarget" or
+        "SoftwareVisibilityDepthTarget" => ClusterTessellationCoreResource.Depth,
+        "VisBuffer" or
+        "SoftwareVisibilityBuffer" => ClusterTessellationCoreResource.Visibility,
+        "DepthUAV" or
+        "VisibilityWinnerImage" => ClusterTessellationCoreResource.WinnerImage,
+        "VisibilityWinnerBuffer" => ClusterTessellationCoreResource.WinnerBuffer,
         "TessellationCounters" => ClusterTessellationCoreResource.Counters,
-        "SplitWorkItems" => ClusterTessellationCoreResource.SplitWork,
-        "DiceDispatchArgs" => ClusterTessellationCoreResource.DiceArguments,
-        "DicedTriangles" => ClusterTessellationCoreResource.DicedTriangles,
-        "RasterDispatchArgs" => ClusterTessellationCoreResource.RasterArguments,
+        "TessellationWorkPatches0" => ClusterTessellationCoreResource.WorkPatches0,
+        "TessellationWorkPatches1" => ClusterTessellationCoreResource.WorkPatches1,
+        "TessellationLevelCounts" => ClusterTessellationCoreResource.LevelCounts,
+        "TessellationNextLevelArgs" => ClusterTessellationCoreResource.NextLevelArgs,
+        "TessellationFinalPatches" => ClusterTessellationCoreResource.FinalPatches,
+        "GroupedPatchIndices" => ClusterTessellationCoreResource.GroupedPatchIndices,
+        "TessellationRasterPatches" => ClusterTessellationCoreResource.RasterPatches,
+        "TessellationBinCounts" => ClusterTessellationCoreResource.BinCounts,
+        "TessellationBinOffsets" => ClusterTessellationCoreResource.BinOffsets,
         _ => ClusterTessellationCoreResource.None,
     };
 }
@@ -2182,19 +1986,4 @@ internal static class ClusterStageTargets
         }
     }
 
-    internal static bool HasTarget(Shader shader, string entryPoint, string target)
-    {
-        foreach (ShaderEntryPointAttribute attribute in shader.EntryPointAttributes ?? [])
-        {
-            if (!string.Equals(attribute.Name, "MaterialTarget", StringComparison.Ordinal) ||
-                attribute.Args is not { Count: > 0 } args ||
-                !args.Contains(target, StringComparer.Ordinal) ||
-                !shader.TryEntry(attribute, entryPoint, out _))
-            {
-                continue;
-            }
-            return true;
-        }
-        return false;
-    }
 }

@@ -1,5 +1,5 @@
 #include "cluster_shade_pipeline.slang"
-#include "phong_tessellation.slang"
+#include "triangle_surface.slang"
 
 [MaterialScalars]
 struct UnlitScalars
@@ -18,11 +18,7 @@ struct UnlitPixelContext
 UnlitPixelContext BuildUnlitPixelContext(
     uint3 pixelCoord,
     uint instanceID,
-    SurfaceEval surface,
-    float3 bary,
-    StaticVertexEval.DeformedVertex v0,
-    StaticVertexEval.DeformedVertex v1,
-    StaticVertexEval.DeformedVertex v2)
+    SurfaceEval surface)
 {
     UnlitPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
@@ -32,31 +28,24 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
+struct UnlitMaterial : ISurfaceEvaluate
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
 
     void evaluateSurface(
-        uniform StaticVertexEval eval,
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        StaticVertexEval.DeformedVertex v0,
-        StaticVertexEval.DeformedVertex v1,
-        StaticVertexEval.DeformedVertex v2,
+        Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
             instanceID,
-            surface,
-            bary,
-            v0,
-            v1,
-            v2);
+            surface);
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
         UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(materialSlot);
         outputColor[ctx.pixelCoord] = float4(
@@ -65,16 +54,13 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
     }
 
     void evaluateDebug(
-        uniform StaticVertexEval eval,
         uint debugMode,
         uint3 pixelCoord,
         uint instanceID,
         uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        StaticVertexEval.DeformedVertex v0,
-        StaticVertexEval.DeformedVertex v1,
-        StaticVertexEval.DeformedVertex v2,
+        Triangle triangle,
         RWTexture2DArray<float4> outputColor)
     {
         if (debugMode == 8)
@@ -86,11 +72,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
             instanceID,
-            surface,
-            bary,
-            v0,
-            v1,
-            v2);
+            surface);
 
         if (debugMode == 9)
         {
@@ -108,7 +90,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         if (debugMode == 11)
         {
             float3 pos = surface.Position;
-            float3 basePos = bary.x * v0.basePosition + bary.y * v1.basePosition + bary.z * v2.basePosition;
+            float3 basePos = EvalLinearPosition(triangle, bary);
             outputColor[pixelCoord] = float4(abs(pos - basePos) * 3.0, 1.0);
             return;
         }
@@ -117,26 +99,9 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
     }
 };
 
-UnlitMaterial Material;
+typedef StaticVertexEval VertexEvaluate;
+typedef LinearSurface DomainEvaluate;
+typedef OpaquePixelEvaluate PixelEvaluate;
+typedef UnlitMaterial SurfaceEvaluate;
 
-[MaterialTarget("cluster.shade")]
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
-{
-    StaticVertexEval vertexEval;
-    PhongTessellation surface = MakePhongTessellation();
-    CSShade(vertexEval, surface, Material, tid);
-}
-
-[MaterialTarget("cluster.shade.cached")]
-[VertexEncoding("someengine.vertex.standard.cluster.v1")]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CSUnlitShadeCached(uint3 tid : SV_DispatchThreadID)
-{
-    StaticVertexEval vertexEval;
-    PhongTessellation surface = MakePhongTessellation();
-    CSShadeFromCache(vertexEval, surface, Material, tid);
-}
+#include "cluster_material_entries.slang"

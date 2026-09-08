@@ -34,33 +34,20 @@ public sealed class AssetWriterAcceptanceTests
         byte[] original = [0x41, 0x53, 0x53, 0x45, 0x54];
         File.WriteAllBytes(fullPath, original);
         var project = new AssetProject(directory.Path, []);
-        var asset = new Material
+        Material asset = new StandardMaterial
         {
             Name = "invalid",
-            Passes =
-            [
-                new PassEntry
-                {
-                    Shader = new ShaderRef
-                    {
-                        AssetGuid = "not-a-guid",
-                        EntryPoint = "main",
-                        Stage = ShaderStage.Compute,
-                    },
-                },
-            ],
-            Textures = [],
-            Scalars = [],
+            AlbedoMap = new Texture { AssetGuid = "not-a-guid", Name = "invalid reference" },
         };
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            project.CreateAsset(relativePath, asset));
+            project.CreateAsset<Material>(relativePath, asset));
 
-        Assert.Contains("Passes[0].Shader.AssetGuid", error.Message, StringComparison.Ordinal);
+        Assert.Contains("AlbedoMap", error.Message, StringComparison.Ordinal);
         Assert.Equal(original, File.ReadAllBytes(fullPath));
         Assert.Empty(project.Manifest.Assets);
 
-        Assert.Throws<InvalidDataException>(() => AssetWriter.Write(asset, fullPath));
+        Assert.Throws<InvalidDataException>(() => AssetWriter.Write<Material>(asset, fullPath));
         Assert.Equal(original, File.ReadAllBytes(fullPath));
     }
 
@@ -105,13 +92,10 @@ public sealed class AssetWriterAcceptanceTests
         {
             Interlocked.Increment(ref asset._writerCreations);
             return asset.UseWrongRoot
-                ? BinaryDocumentWriter.Create(new Material
+                ? BinaryDocumentWriter.Create<Material>(new StandardMaterial
                 {
                     AssetGuid = asset.AssetGuid,
                     Name = "wrong contract",
-                    Passes = [],
-                    Textures = [],
-                    Scalars = [],
                 })
                 : BinaryDocumentWriter.Create(asset);
         }

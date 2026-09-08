@@ -6,16 +6,6 @@
 #include "cluster_instance_properties.slang"
 #include "visbuffer_encoding.slang"
 
-// ── Shared structures ──
-
-struct DrawRequest
-{
-    uint PageOffset;
-    uint ClusterID;
-    uint InstanceID;
-    uint ViewIndex;
-};
-
 // ── Page Heap helpers ──
 // These require a `ByteAddressBuffer PageHeap` to be declared in the calling shader.
 

@@ -16,7 +16,7 @@ namespace SomeEngine.Assets.Importers;
 public sealed partial class GltfSourceImporter : IAssetImporter
 {
     private static readonly string[] Extensions = [".gltf", ".glb"];
-    public const uint ImporterVersion = 3;
+    public const uint ImporterVersion = 4;
 
     public string ImporterName => nameof(GltfSourceImporter);
     public IReadOnlyList<string> SourceExtensions => Extensions;
@@ -101,7 +101,6 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             settings.LitMaterialTemplate = GltfImporterSettings.DefaultLitMaterialTemplate;
         if (string.IsNullOrWhiteSpace(settings.UnlitMaterialTemplate))
             settings.UnlitMaterialTemplate = GltfImporterSettings.DefaultUnlitMaterialTemplate;
-
         return settings;
     }
 
@@ -189,9 +188,7 @@ public sealed partial class GltfSourceImporter : IAssetImporter
     {
         return new ImportedMaterialInfo(
             index,
-            new MeshMaterialSlot(
-                AssetGuid.Parse(asset.AssetGuid!),
-                asset.RequireDeformCompatibility()),
+            new MeshMaterialSlot(AssetGuid.Parse(asset.AssetGuid!)),
             ImportedAsset.Create(asset, exportPath.SubAssetKey, exportPath.OutputPath));
     }
 
@@ -332,19 +329,9 @@ public sealed partial class GltfSourceImporter
         Material template,
         string materialName,
         AssetGuid assetGuid
-    )
-    {
-        return new Material
-        {
-            AssetGuid = assetGuid.IsEmpty
-                ? AssetGuid.New().ToFlatString()
-                : assetGuid.ToFlatString(),
-            Name = materialName,
-            Passes = template.Passes?.Select(ClonePass).ToList() ?? [],
-            Textures = template.Textures?.Select(CloneTexture).ToList() ?? [],
-            Scalars = template.Scalars?.Select(CloneScalar).ToList() ?? [],
-        };
-    }
+    ) => template.CloneForAuthoring(
+        materialName,
+        assetGuid.IsEmpty ? AssetGuid.New() : assetGuid);
 
     private static void ApplyMaterialSemantics(
         Material asset,
@@ -352,103 +339,58 @@ public sealed partial class GltfSourceImporter
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
     {
-        ApplySurfaceTags(asset, material);
-        ApplyStandardScalars(asset, material);
-        ApplyTextureBindings(asset, material, context, importedTextures);
-    }
-
-    private static void ApplySurfaceTags(Material asset, GltfMaterial material)
-    {
-        string[] semantics = material.Alpha switch
+        switch (asset)
         {
-            AlphaMode.MASK => material.DoubleSided ? ["masked", "two_sided"] : ["masked"],
-            AlphaMode.BLEND => material.DoubleSided
-                ? ["translucent", "two_sided"]
-                : ["translucent"],
-            _ => material.DoubleSided ? ["opaque", "two_sided"] : ["opaque"],
-        };
-
-        foreach (PassEntry pass in asset.Passes ?? [])
-        {
-            List<TagEntry> tags = pass.Tags?.ToList() ?? [];
-            tags.RemoveAll(static tag =>
-                string.Equals(tag.Name, "opaque", StringComparison.Ordinal)
-                || string.Equals(tag.Name, "masked", StringComparison.Ordinal)
-                || string.Equals(tag.Name, "translucent", StringComparison.Ordinal)
-                || string.Equals(tag.Name, "two_sided", StringComparison.Ordinal)
-            );
-            foreach (string semantic in semantics)
-            {
-                tags.Add(new TagEntry { Name = semantic });
-            }
-
-            pass.Tags = tags;
+            case StandardMaterial standard:
+                ApplyStandardMaterial(standard, material, context, importedTextures);
+                break;
+            case UnlitMaterial unlit:
+                ApplyUnlitMaterial(unlit, material, context, importedTextures);
+                break;
+            default:
+                throw new InvalidDataException(
+                    $"GLTF material templates must be concrete supported material types; got '{asset.GetType().FullName}'.");
         }
     }
 
-    private static void ApplyStandardScalars(Material asset, GltfMaterial material)
-    {
-        var baseColor = material.FindChannel("BaseColor");
-        var metallicRoughness = material.FindChannel("MetallicRoughness");
-        var emissive = material.FindChannel("Emissive");
-
-        SetScalar(
-            asset,
-            "BaseColorTint",
-            new ParamValue(
-                new Vec4Val
-                {
-                    X = baseColor?.Parameter.X ?? 1.0f,
-                    Y = baseColor?.Parameter.Y ?? 1.0f,
-                    Z = baseColor?.Parameter.Z ?? 1.0f,
-                    W = baseColor?.Parameter.W ?? 1.0f,
-                }
-            )
-        );
-        SetScalar(
-            asset,
-            "MetallicFactor",
-            new ParamValue(new FloatVal { V = metallicRoughness?.Parameter.Y ?? 1.0f })
-        );
-        SetScalar(
-            asset,
-            "Roughness",
-            new ParamValue(new FloatVal { V = metallicRoughness?.Parameter.X ?? 1.0f })
-        );
-
-        if (material.Alpha == AlphaMode.MASK)
-        {
-            SetScalar(
-                asset,
-                "AlphaCutoff",
-                new ParamValue(new FloatVal { V = material.AlphaCutoff })
-            );
-        }
-
-        SetScalar(
-            asset,
-            "EmissiveFactor",
-            new ParamValue(
-                new Vec3Val
-                {
-                    X = emissive?.Parameter.X ?? 0.0f,
-                    Y = emissive?.Parameter.Y ?? 0.0f,
-                    Z = emissive?.Parameter.Z ?? 0.0f,
-                }
-            )
-        );
-    }
-
-    private static void ApplyTextureBindings(
-        Material asset,
+    private static void ApplyStandardMaterial(
+        StandardMaterial asset,
         GltfMaterial material,
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
     {
+        var baseColor = material.FindChannel("BaseColor");
+        var metallicRoughness = material.FindChannel("MetallicRoughness");
+        var emissive = material.FindChannel("Emissive");
+        asset.BaseColorTint = new System.Numerics.Vector4(
+            baseColor?.Parameter.X ?? 1.0f,
+            baseColor?.Parameter.Y ?? 1.0f,
+            baseColor?.Parameter.Z ?? 1.0f,
+            baseColor?.Parameter.W ?? 1.0f);
+        asset.MetallicFactor = metallicRoughness?.Parameter.X ?? 1.0f;
+        asset.Roughness = metallicRoughness?.Parameter.Y ?? 1.0f;
+        asset.EmissiveFactor = new System.Numerics.Vector3(
+            emissive?.Parameter.X ?? 0.0f,
+            emissive?.Parameter.Y ?? 0.0f,
+            emissive?.Parameter.Z ?? 0.0f);
         ApplyTextureBinding(asset, "AlbedoMap", material.FindChannel("BaseColor")?.Texture, context, importedTextures);
         ApplyTextureBinding(asset, "NormalMap", material.FindChannel("Normal")?.Texture, context, importedTextures);
         ApplyArmTextureBinding(asset, material, context, importedTextures);
-        ApplyTextureBinding(asset, "EmissiveMap", material.FindChannel("Emissive")?.Texture, context, importedTextures);
+    }
+
+    private static void ApplyUnlitMaterial(
+        UnlitMaterial asset,
+        GltfMaterial material,
+        GltfImportContext context,
+        List<ImportedAsset> importedTextures)
+    {
+        var baseColor = material.FindChannel("BaseColor");
+        asset.BaseColorTint = new System.Numerics.Vector4(
+            baseColor?.Parameter.X ?? 1.0f,
+            baseColor?.Parameter.Y ?? 1.0f,
+            baseColor?.Parameter.Z ?? 1.0f,
+            baseColor?.Parameter.W ?? 1.0f);
+        ApplyTextureBinding(asset, "AlbedoMap", baseColor?.Texture, context, importedTextures);
     }
 
     private static void ApplyArmTextureBinding(
@@ -602,76 +544,10 @@ public sealed partial class GltfSourceImporter
 
     private static void SetTexture(Material asset, string name, string textureGuid)
     {
-        List<TextureBinding> textures = asset.Textures?.ToList() ?? [];
-        int existingIndex = textures.FindIndex(binding =>
-            string.Equals(binding.Name, name, StringComparison.Ordinal)
-        );
-        if (existingIndex >= 0)
-        {
-            textures[existingIndex].TextureGuid = textureGuid;
-        }
-        else
-        {
-            textures.Add(new TextureBinding { Name = name, TextureGuid = textureGuid });
-        }
-
-        asset.Textures = textures;
-    }
-
-    private static void SetScalar(Material asset, string name, ParamValue value)
-    {
-        List<ScalarParam> scalars = asset.Scalars?.ToList() ?? [];
-        int existingIndex = scalars.FindIndex(scalar =>
-            string.Equals(scalar.Name, name, StringComparison.Ordinal)
-        );
-        ScalarParam scalarParam = new() { Name = name, Value = value };
-        if (existingIndex >= 0)
-        {
-            scalars[existingIndex] = scalarParam;
-        }
-        else
-        {
-            scalars.Add(scalarParam);
-        }
-
-        asset.Scalars = scalars;
-    }
-
-    private static PassEntry ClonePass(PassEntry pass)
-    {
-        return new PassEntry
-        {
-            Shader = pass.Shader is null
-                ? null
-                : new ShaderRef
-                {
-                    AssetGuid = pass.Shader.AssetGuid,
-                    EntryPoint = pass.Shader.EntryPoint,
-                    Stage = pass.Shader.Stage,
-                },
-            Tags =
-                pass.Tags?.Select(tag => new TagEntry { Name = tag.Name, Value = tag.Value })
-                    .ToList()
-                ?? [],
-            Components =
-                pass.Components?.Select(static component => new ComponentEntry
-                    {
-                        TypeName = component.TypeName,
-                        Json = component.Json,
-                    })
-                    .ToList()
-                ?? [],
-        };
-    }
-
-    private static TextureBinding CloneTexture(TextureBinding binding)
-    {
-        return new TextureBinding { Name = binding.Name, TextureGuid = binding.TextureGuid };
-    }
-
-    private static ScalarParam CloneScalar(ScalarParam scalar)
-    {
-        return new ScalarParam { Name = scalar.Name, Value = scalar.Value };
+        uint slot = asset.RequireSlot(name, typeof(Texture));
+        if (!AssetGuid.TryParse(textureGuid, out AssetGuid guid) || guid.IsEmpty)
+            throw new InvalidDataException($"Texture slot '{name}' contains invalid GUID '{textureGuid}'.");
+        asset.SetTextureReference(slot, guid);
     }
 
     private static string SanitizeSegment(string? value, string fallback)
@@ -707,7 +583,9 @@ public sealed partial class GltfSourceImporter
         public string SourceDirectory => Path.GetDirectoryName(FullSourcePath)!;
     }
 
-    private readonly record struct MaterialTemplates(Material Lit, Material Unlit);
+    private readonly record struct MaterialTemplates(
+        Material Lit,
+        Material Unlit);
 
     private readonly record struct ExportPath(
         string OutputPath,

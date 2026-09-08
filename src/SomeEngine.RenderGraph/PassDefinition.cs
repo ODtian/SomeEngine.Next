@@ -1,6 +1,6 @@
 namespace SomeEngine.RenderGraph;
 
-public ref struct PassDefinition
+public ref partial struct PassDefinition
 {
     private RenderGraphEdit _edit;
     private RenderGraphFrameState? _frame;
@@ -28,7 +28,7 @@ public ref struct PassDefinition
 
     public void SetPipeline(Pipeline pipeline)
     {
-        ArgumentNullException.ThrowIfNull(pipeline);
+        DevelopmentCheck.Require(pipeline is not null, "The pipeline cannot be null.");
         if (_frame is null) _edit.SetPassPipeline(_pass, pipeline);
         else _frame.SetPassPipeline(_pass, pipeline);
     }
@@ -37,10 +37,58 @@ public ref struct PassDefinition
         ShaderVariableLayout layout,
         ReadOnlySpan<byte> ordinaryData = default)
     {
-        if (layout == ShaderVariableLayout.Null)
-            throw new ArgumentException("The parameter layout cannot be null.", nameof(layout));
+        DevelopmentCheck.Require(layout != ShaderVariableLayout.Null, "The parameter layout cannot be null.");
         if (_frame is null) _edit.SetPassParameterBlock(_pass, layout, ordinaryData);
         else _frame.SetPassParameterBlock(_pass, layout, ordinaryData);
+    }
+
+    public GraphBufferAccessId Bind(GraphBufferInput buffer, PipelineSync sync)
+    {
+        GraphBufferAccessId access = Read(buffer, BufferRange.Whole, sync, ResourceAccess.ConstantBuffer);
+        AddParameterBinding(GraphParameterResourceBinding.ConstantBuffer(buffer, sync));
+        return access;
+    }
+
+    public GraphBufferAccessId Read(GraphBufferInput buffer, in BufferRange range,
+        PipelineSync sync, ResourceAccess access, BufferContentScope contentScope = BufferContentScope.FullRange)
+    {
+        if (_frame is null) return _edit.AddBufferInputAccess(_pass, buffer, sync, access, range, contentScope);
+        GraphBufferSlice value = _frame.ResolveBufferInput(buffer);
+        return Read(value.Buffer, value.ResolveRange(range), sync, access, contentScope: contentScope);
+    }
+
+    public GraphBufferAccessId Write(GraphBufferInput buffer, in BufferRange range,
+        PipelineSync sync, ResourceAccess access, WriteCoverage coverage,
+        ResourceContentState? resultContents = null, BufferContentScope contentScope = BufferContentScope.FullRange) =>
+        AddBufferInputAccess(buffer, range, sync, access, GraphAccessMode.Write, coverage, resultContents, contentScope);
+
+    public GraphBufferAccessId ReadWrite(GraphBufferInput buffer, in BufferRange range,
+        PipelineSync sync, ResourceAccess access, ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
+        AddBufferInputAccess(buffer, range, sync, access, GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            resultContents, contentScope, unorderedAccessHazards);
+
+    private GraphBufferAccessId AddBufferInputAccess(GraphBufferInput buffer, BufferRange range,
+        PipelineSync sync, ResourceAccess access, GraphAccessMode mode, WriteCoverage coverage,
+        ResourceContentState? resultContents, BufferContentScope contentScope,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
+    {
+        UnorderedAccessHazardRules.Validate(unorderedAccessHazards, mode, coverage, access,
+            TextureLayout.Undefined, resultContents);
+        if (_frame is null)
+            return _edit.AddBufferInputAccess(_pass, buffer, sync, access, range, contentScope,
+                mode, coverage, resultContents, unorderedAccessHazards);
+        GraphBufferSlice value = _frame.ResolveBufferInput(buffer);
+        return AddBufferAccess(value.Buffer, mode, coverage, sync, access, value.ResolveRange(range),
+            false, resultContents, contentScope, unorderedAccessHazards);
+    }
+
+    public GraphBufferAccessId Bind(GraphBufferSlice buffer, PipelineSync sync)
+    {
+        GraphBufferAccessId access = Read(buffer.Buffer, buffer.Range, sync, ResourceAccess.ConstantBuffer);
+        AddParameterBinding(GraphParameterResourceBinding.ConstantBuffer(buffer, sync));
+        return access;
     }
 
     public GraphBufferAccessId Bind(GraphBufferCbvId view, PipelineSync sync)
@@ -50,29 +98,39 @@ public ref struct PassDefinition
         return access;
     }
 
-    public GraphBufferAccessId Bind(GraphBufferSrvId view, PipelineSync sync)
+    public GraphBufferAccessId Bind(
+        GraphBufferSrvId view,
+        PipelineSync sync,
+        BufferContentScope contentScope = BufferContentScope.FullRange)
     {
-        GraphBufferAccessId access = Read(view, sync);
-        AddParameterBinding(GraphParameterResourceBinding.ReadOnlyBuffer(view, sync));
+        GraphBufferAccessId access = Read(view, sync, contentScope);
+        AddParameterBinding(GraphParameterResourceBinding.ReadOnlyBuffer(view, sync, contentScope));
         return access;
     }
+
+    /// <summary>Starts the next reflected parameter block in this pass's binding stream.</summary>
+    public void BindParameterBlock(ShaderVariableLayout layout, ReadOnlySpan<byte> ordinaryData = default) =>
+        Bind(GraphParameterResourceBinding.BeginBlock(layout, ordinaryData));
 
     public GraphBufferAccessId Bind(
         GraphBufferUavId view,
         PipelineSync sync,
         GraphAccessMode mode = GraphAccessMode.ReadWrite,
         WriteCoverage coverage = WriteCoverage.Partial,
-        ResourceContentState? resultContents = null)
+        ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
         GraphBufferAccessId access = mode switch
         {
-            GraphAccessMode.Read => Read(view, sync),
-            GraphAccessMode.Write => Write(view, sync, coverage, resultContents),
-            GraphAccessMode.ReadWrite => ReadWrite(view, sync, resultContents),
+            GraphAccessMode.Read => Read(view, sync, contentScope),
+            GraphAccessMode.Write => Write(view, sync, coverage, resultContents, contentScope),
+            GraphAccessMode.ReadWrite => ReadWrite(
+                view, sync, resultContents, contentScope, unorderedAccessHazards),
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
         AddParameterBinding(GraphParameterResourceBinding.WritableBuffer(
-            view, sync, mode, coverage, resultContents));
+            view, sync, mode, coverage, resultContents, contentScope, unorderedAccessHazards));
         return access;
     }
 
@@ -92,17 +150,19 @@ public ref struct PassDefinition
         GraphAccessMode mode = GraphAccessMode.ReadWrite,
         WriteCoverage coverage = WriteCoverage.Partial,
         ResourceContentState? resultContents = null,
-        TextureLayout layout = TextureLayout.UnorderedAccess)
+        TextureLayout layout = TextureLayout.UnorderedAccess,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
         GraphTextureAccessId access = mode switch
         {
             GraphAccessMode.Read => Read(view, sync, layout),
             GraphAccessMode.Write => Write(view, sync, coverage, resultContents, layout),
-            GraphAccessMode.ReadWrite => ReadWrite(view, sync, resultContents, layout),
+            GraphAccessMode.ReadWrite => ReadWrite(
+                view, sync, resultContents, layout, unorderedAccessHazards),
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
         AddParameterBinding(GraphParameterResourceBinding.StorageTexture(
-            view, sync, mode, coverage, resultContents, layout));
+            view, sync, mode, coverage, resultContents, layout, unorderedAccessHazards));
         return access;
     }
 
@@ -134,25 +194,36 @@ public ref struct PassDefinition
         switch (binding.Type)
         {
             case ResourceBindingType.ConstantBuffer:
-                _ = Read(new GraphBufferCbvId(binding.Value), binding.Sync);
+                if (binding.BufferInput is not null)
+                    _ = Read(binding.BufferInput, binding.BufferRange, binding.Sync, ResourceAccess.ConstantBuffer);
+                else if (binding.IsBufferRange)
+                    _ = Read(new GraphBufferId(binding.Value), binding.BufferRange, binding.Sync, ResourceAccess.ConstantBuffer);
+                else _ = Read(new GraphBufferCbvId(binding.Value), binding.Sync);
                 break;
             case ResourceBindingType.BufferSrv:
-                _ = Read(new GraphBufferSrvId(binding.Value), binding.Sync);
+                _ = Read(
+                    new GraphBufferSrvId(binding.Value),
+                    binding.Sync,
+                    binding.BufferContentScope);
                 break;
             case ResourceBindingType.BufferUav:
                 if (binding.Mode == GraphAccessMode.Read)
                 {
-                    _ = Read(new GraphBufferUavId(binding.Value), binding.Sync);
+                    _ = Read(
+                        new GraphBufferUavId(binding.Value),
+                        binding.Sync,
+                        binding.BufferContentScope);
                 }
                 else if (binding.Mode == GraphAccessMode.Write)
                 {
                     _ = Write(new GraphBufferUavId(binding.Value), binding.Sync,
-                        binding.Coverage, binding.ResultContents);
+                        binding.Coverage, binding.ResultContents, binding.BufferContentScope);
                 }
                 else
                 {
                     _ = ReadWrite(new GraphBufferUavId(binding.Value), binding.Sync,
-                        binding.ResultContents);
+                        binding.ResultContents, binding.BufferContentScope,
+                        binding.UnorderedAccessHazards);
                 }
                 break;
             case ResourceBindingType.TextureSrv:
@@ -189,7 +260,8 @@ public ref struct PassDefinition
                 else
                 {
                     _ = ReadWrite(new GraphTextureUavId(binding.Value), binding.Sync,
-                        binding.ResultContents, binding.Layout);
+                        binding.ResultContents, binding.Layout,
+                        binding.UnorderedAccessHazards);
                 }
                 break;
             case ResourceBindingType.AccelerationStructure:
@@ -217,9 +289,10 @@ public ref struct PassDefinition
         in BufferRange range,
         PipelineSync sync,
         ResourceAccess access,
-        bool dynamicRange = false) =>
+        bool dynamicRange = false,
+        BufferContentScope contentScope = BufferContentScope.FullRange) =>
         AddBufferAccess(buffer, GraphAccessMode.Read, WriteCoverage.Partial,
-            sync, access, range, dynamicRange);
+            sync, access, range, dynamicRange, contentScope: contentScope);
 
     public GraphBufferAccessId Write(
         GraphBufferId buffer,
@@ -228,9 +301,25 @@ public ref struct PassDefinition
         ResourceAccess access,
         WriteCoverage coverage,
         ResourceContentState? resultContents = null,
-        bool dynamicRange = false) =>
+        bool dynamicRange = false,
+        BufferContentScope contentScope = BufferContentScope.FullRange) =>
         AddBufferAccess(buffer, GraphAccessMode.Write, coverage,
-            sync, access, range, dynamicRange, resultContents);
+            sync, access, range, dynamicRange, resultContents, contentScope);
+
+    /// <summary>Declares shared sparse reads independently of descriptor reachability.</summary>
+    public void ReadRanges(
+        GraphBufferId buffer,
+        BufferRangeSet ranges,
+        PipelineSync sync,
+        ResourceAccess access)
+    {
+        ArgumentNullException.ThrowIfNull(ranges);
+        if (_frame is not null)
+            _frame.AddBufferRangeRead(_pass, buffer, ranges, sync, access);
+        else
+            foreach (ref readonly BufferRange range in ranges.Ranges)
+                _ = Read(buffer, range, sync, access);
+    }
 
     public GraphBufferAccessId ReadWrite(
         GraphBufferId buffer,
@@ -238,9 +327,12 @@ public ref struct PassDefinition
         PipelineSync sync,
         ResourceAccess access,
         ResourceContentState? resultContents = null,
-        bool dynamicRange = false) =>
+        bool dynamicRange = false,
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         AddBufferAccess(buffer, GraphAccessMode.ReadWrite, WriteCoverage.Partial,
-            sync, access, range, dynamicRange, resultContents);
+            sync, access, range, dynamicRange, resultContents, contentScope,
+            unorderedAccessHazards);
 
     public GraphTextureAccessId Read(
         GraphTextureId texture,
@@ -271,33 +363,45 @@ public ref struct PassDefinition
         ResourceAccess access,
         TextureLayout layout,
         ResourceContentState? resultContents = null,
-        bool dynamicRange = false) =>
+        bool dynamicRange = false,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         AddTextureAccess(texture, GraphAccessMode.ReadWrite, WriteCoverage.Partial,
-            sync, access, layout, range, dynamicRange, resultContents);
+            sync, access, layout, range, dynamicRange, resultContents,
+            unorderedAccessHazards);
 
     public GraphBufferAccessId Read(GraphBufferCbvId view, PipelineSync sync) =>
         ReadBufferView(view.Value, sync, ResourceAccess.ConstantBuffer);
 
-    public GraphBufferAccessId Read(GraphBufferSrvId view, PipelineSync sync) =>
-        ReadBufferView(view.Value, sync, ResourceAccess.ShaderResource);
+    public GraphBufferAccessId Read(
+        GraphBufferSrvId view,
+        PipelineSync sync,
+        BufferContentScope contentScope = BufferContentScope.FullRange) =>
+        ReadBufferView(view.Value, sync, ResourceAccess.ShaderResource, contentScope);
 
     public GraphBufferAccessId Write(
         GraphBufferUavId view,
         PipelineSync sync,
         WriteCoverage coverage,
-        ResourceContentState? resultContents = null) =>
+        ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange) =>
         WriteBufferView(view.Value, sync, ResourceAccess.UnorderedAccess,
-            coverage, false, resultContents);
+            coverage, false, resultContents, contentScope);
 
-    public GraphBufferAccessId Read(GraphBufferUavId view, PipelineSync sync) =>
-        ReadBufferUav(view.Value, sync);
+    public GraphBufferAccessId Read(
+        GraphBufferUavId view,
+        PipelineSync sync,
+        BufferContentScope contentScope = BufferContentScope.FullRange) =>
+        ReadBufferUav(view.Value, sync, contentScope);
 
     public GraphBufferAccessId ReadWrite(
         GraphBufferUavId view,
         PipelineSync sync,
-        ResourceContentState? resultContents = null) =>
+        ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         WriteBufferView(view.Value, sync, ResourceAccess.UnorderedAccess,
-            WriteCoverage.Partial, true, resultContents);
+            WriteCoverage.Partial, true, resultContents, contentScope,
+            unorderedAccessHazards);
 
     public GraphTextureAccessId Read(
         GraphTextureSrvId view,
@@ -324,9 +428,11 @@ public ref struct PassDefinition
         GraphTextureUavId view,
         PipelineSync sync,
         ResourceContentState? resultContents = null,
-        TextureLayout layout = TextureLayout.UnorderedAccess) =>
+        TextureLayout layout = TextureLayout.UnorderedAccess,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered) =>
         WriteTextureView(view.Value, sync, ResourceAccess.UnorderedAccess,
-            layout, WriteCoverage.Partial, true, resultContents);
+            layout, WriteCoverage.Partial, true, resultContents,
+            unorderedAccessHazards);
 
     public void Read(
         GraphQueryPoolId pool,
@@ -373,6 +479,16 @@ public ref struct PassDefinition
     {
         EnsureKind(GraphPassKind.General);
         return AddRenderingRegion(x, y, width, height, firstArrayLayer, arrayLayerCount);
+    }
+
+    public void DefineRasterExtent(
+        uint width,
+        uint height,
+        uint firstArrayLayer = 0,
+        uint arrayLayerCount = 1)
+    {
+        EnsureKind(GraphPassKind.Raster);
+        _ = AddRenderingRegion(0, 0, width, height, firstArrayLayer, arrayLayerCount);
     }
 
     public void ColorAttachment(
@@ -431,13 +547,17 @@ public ref struct PassDefinition
     private GraphBufferAccessId ReadBufferView(
         in GraphIdentity viewId,
         PipelineSync sync,
-        ResourceAccess access)
+        ResourceAccess access,
+        BufferContentScope contentScope = BufferContentScope.FullRange)
     {
-        GraphView view = ResolveView(viewId);
+        FrameView view = ResolveView(viewId);
         if (view.Kind is not (GraphViewKind.BufferCbv or GraphViewKind.BufferSrv))
             throw new ArgumentException("The view is not a readable Buffer view.");
+        if (view.BufferInput is not null)
+            return Read(view.BufferInput, view.BufferRange, sync, access, contentScope);
         return AddBufferAccess(new GraphBufferId(view.Buffer), GraphAccessMode.Read,
-            WriteCoverage.Partial, sync, access, view.BufferRange, false);
+            WriteCoverage.Partial, sync, access, view.BufferRange, false,
+            contentScope: contentScope);
     }
 
     private GraphBufferAccessId WriteBufferView(
@@ -446,11 +566,17 @@ public ref struct PassDefinition
         ResourceAccess access,
         WriteCoverage coverage,
         bool readWrite,
-        ResourceContentState? resultContents)
+        ResourceContentState? resultContents,
+        BufferContentScope contentScope,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
-        GraphView view = ResolveView(viewId);
+        FrameView view = ResolveView(viewId);
         if (view.Kind != GraphViewKind.BufferUav)
             throw new ArgumentException("The view is not a writable Buffer view.");
+        if (view.BufferInput is not null)
+            return AddBufferInputAccess(view.BufferInput, view.BufferRange, sync, access,
+                readWrite ? GraphAccessMode.ReadWrite : GraphAccessMode.Write,
+                coverage, resultContents, contentScope, unorderedAccessHazards);
         GraphBufferAccessId result = AddBufferAccess(
             new GraphBufferId(view.Buffer),
             readWrite ? GraphAccessMode.ReadWrite : GraphAccessMode.Write,
@@ -459,7 +585,9 @@ public ref struct PassDefinition
             access,
             view.BufferRange,
             false,
-            resultContents);
+            resultContents,
+            contentScope,
+            unorderedAccessHazards);
         if (view.AdditionalBuffer.IsValid)
         {
             _ = AddBufferAccess(
@@ -474,14 +602,33 @@ public ref struct PassDefinition
         return result;
     }
 
-    private GraphBufferAccessId ReadBufferUav(in GraphIdentity viewId, PipelineSync sync)
+    private GraphBufferAccessId ReadBufferUav(
+        in GraphIdentity viewId,
+        PipelineSync sync,
+        BufferContentScope contentScope)
     {
-        GraphView view = ResolveView(viewId);
+        FrameView view = ResolveView(viewId);
         if (view.Kind != GraphViewKind.BufferUav)
             throw new ArgumentException("The view is not a Buffer UAV.");
+        if (view.BufferInput is not null)
+            return Read(view.BufferInput, view.BufferRange, sync, ResourceAccess.UnorderedAccess, contentScope);
         return AddBufferAccess(new GraphBufferId(view.Buffer), GraphAccessMode.Read,
             WriteCoverage.Partial, sync, ResourceAccess.UnorderedAccess,
-            view.BufferRange, false);
+            view.BufferRange, false, contentScope: contentScope);
+    }
+
+    private GraphTextureAccessId AddTextureInputAccess(GraphTextureInput input, GraphAccessMode mode,
+        WriteCoverage coverage, PipelineSync sync, ResourceAccess access, TextureLayout layout,
+        TextureSubresourceRange range, ResourceContentState? resultContents = null,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
+    {
+        UnorderedAccessHazardRules.Validate(unorderedAccessHazards, mode, coverage, access, layout, resultContents);
+        if (_frame is null)
+            return _edit.AddTextureInputAccess(_pass, input, mode, coverage, sync, access, layout,
+                range, resultContents, unorderedAccessHazards);
+        GraphTextureId texture = _frame.ResolveTextureInput(input);
+        return AddTextureAccess(texture, mode, coverage, sync, access, layout,
+            _frame.ResolveTextureRange(texture, range.MipLevelCount == 0 ? null : range), false, resultContents, unorderedAccessHazards);
     }
 
     private GraphTextureAccessId ReadTextureView(
@@ -490,9 +637,12 @@ public ref struct PassDefinition
         ResourceAccess access,
         TextureLayout layout)
     {
-        GraphView view = ResolveView(viewId);
+        FrameView view = ResolveView(viewId);
         if (view.Kind != GraphViewKind.TextureSrv)
             throw new ArgumentException("The view is not a readable Texture view.");
+        if (view.TextureInput is not null)
+            return AddTextureInputAccess(view.TextureInput, GraphAccessMode.Read, WriteCoverage.Partial,
+                sync, access, layout, view.TextureRange);
         return AddTextureAccess(new GraphTextureId(view.Texture), GraphAccessMode.Read,
             WriteCoverage.Partial, sync, access, layout, view.TextureRange, false);
     }
@@ -504,11 +654,15 @@ public ref struct PassDefinition
         TextureLayout layout,
         WriteCoverage coverage,
         bool readWrite,
-        ResourceContentState? resultContents)
+        ResourceContentState? resultContents,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
-        GraphView view = ResolveView(viewId);
+        FrameView view = ResolveView(viewId);
         if (view.Kind != GraphViewKind.TextureUav)
             throw new ArgumentException("The view is not a writable Texture view.");
+        if (view.TextureInput is not null)
+            return AddTextureInputAccess(view.TextureInput, readWrite ? GraphAccessMode.ReadWrite : GraphAccessMode.Write,
+                coverage, sync, access, layout, view.TextureRange, resultContents, unorderedAccessHazards);
         return AddTextureAccess(
             new GraphTextureId(view.Texture),
             readWrite ? GraphAccessMode.ReadWrite : GraphAccessMode.Write,
@@ -518,7 +672,8 @@ public ref struct PassDefinition
             layout,
             view.TextureRange,
             false,
-            resultContents);
+            resultContents,
+            unorderedAccessHazards);
     }
 
     private GraphTextureAccessId ReadTextureUav(
@@ -526,9 +681,12 @@ public ref struct PassDefinition
         PipelineSync sync,
         TextureLayout layout)
     {
-        GraphView view = ResolveView(viewId);
+        FrameView view = ResolveView(viewId);
         if (view.Kind != GraphViewKind.TextureUav)
             throw new ArgumentException("The view is not a Texture UAV.");
+        if (view.TextureInput is not null)
+            return AddTextureInputAccess(view.TextureInput, GraphAccessMode.Read, WriteCoverage.Partial,
+                sync, ResourceAccess.UnorderedAccess, layout, view.TextureRange);
         return AddTextureAccess(new GraphTextureId(view.Texture), GraphAccessMode.Read,
             WriteCoverage.Partial, sync, ResourceAccess.UnorderedAccess,
             layout, view.TextureRange, false);
@@ -547,7 +705,7 @@ public ref struct PassDefinition
     {
         if (_kind is not (GraphPassKind.Raster or GraphPassKind.General))
             throw new InvalidOperationException("Only Raster and Raw passes can declare attachments.");
-        GraphView view = ResolveView(viewId.Value);
+        FrameView view = ResolveView(viewId.Value);
         if (view.Kind != GraphViewKind.ColorAttachment)
             throw new ArgumentException("The view is not a color attachment view.", nameof(viewId));
         if ((_kind == GraphPassKind.Raster && region >= 0) ||
@@ -576,7 +734,7 @@ public ref struct PassDefinition
 
         if (resolveView.Value.IsValid)
         {
-            GraphView resolve = ResolveView(resolveView.Value);
+            FrameView resolve = ResolveView(resolveView.Value);
             _ = AddTextureAccess(
                 new GraphTextureId(resolve.Texture),
                 GraphAccessMode.Write,
@@ -603,7 +761,7 @@ public ref struct PassDefinition
     {
         if (_kind is not (GraphPassKind.Raster or GraphPassKind.General))
             throw new InvalidOperationException("Only Raster and Raw passes can declare attachments.");
-        GraphView view = ResolveView(viewId.Value);
+        FrameView view = ResolveView(viewId.Value);
         if (view.Kind != GraphViewKind.DepthStencil)
             throw new ArgumentException("The view is not a depth-stencil view.", nameof(viewId));
         if ((_kind == GraphPassKind.Raster && region >= 0) ||
@@ -669,13 +827,22 @@ public ref struct PassDefinition
         ResourceAccess access,
         in BufferRange range,
         bool dynamicRange,
-        ResourceContentState? resultContents = null)
+        ResourceContentState? resultContents = null,
+        BufferContentScope contentScope = BufferContentScope.FullRange,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
+        UnorderedAccessHazardRules.Validate(
+            unorderedAccessHazards,
+            mode,
+            coverage,
+            access,
+            TextureLayout.Undefined,
+            resultContents);
         return _frame is null
             ? _edit.AddBufferAccess(_pass, buffer, mode, coverage, sync, access, range,
-                dynamicRange, resultContents)
+                dynamicRange, resultContents, contentScope, unorderedAccessHazards)
             : _frame.AddBufferAccess(_pass, buffer, mode, coverage, sync, access, range,
-                resultContents);
+                resultContents, contentScope, unorderedAccessHazards);
     }
 
     private GraphTextureAccessId AddTextureAccess(
@@ -687,17 +854,25 @@ public ref struct PassDefinition
         TextureLayout layout,
         in TextureSubresourceRange range,
         bool dynamicRange,
-        ResourceContentState? resultContents = null)
+        ResourceContentState? resultContents = null,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
+        UnorderedAccessHazardRules.Validate(
+            unorderedAccessHazards,
+            mode,
+            coverage,
+            access,
+            layout,
+            resultContents);
         return _frame is null
             ? _edit.AddTextureAccess(_pass, texture, mode, coverage, sync, access, layout,
-                range, dynamicRange, resultContents)
+                range, dynamicRange, resultContents, unorderedAccessHazards)
             : _frame.AddTextureAccess(_pass, texture, mode, coverage, sync, access, layout,
-                range, resultContents);
+                range, resultContents, unorderedAccessHazards);
     }
 
-    private GraphView ResolveView(in GraphIdentity identity) =>
-        _frame is null ? _edit.ResolveView(identity) : _frame.ResolveView(identity);
+    private FrameView ResolveView(in GraphIdentity identity) =>
+        _frame is null ? new FrameView(_edit.UseView(_pass, identity)) : _frame.ResolveView(identity);
 
     private void DeclareShaderTableInventory(GraphRayTracingShaderTableId table)
     {
@@ -777,6 +952,25 @@ public ref struct PassDefinition
     {
         if (_kind != kind)
             throw new InvalidOperationException($"The operation requires a {kind} pass.");
+    }
+
+    public GraphTextureAccessId Read(GraphTextureInput texture, in TextureSubresourceRange range,
+        PipelineSync sync, ResourceAccess access, TextureLayout layout) =>
+        AddTextureInputAccess(texture, GraphAccessMode.Read, WriteCoverage.Partial, sync, access,
+            layout, range, null, UnorderedAccessHazardMode.Ordered);
+
+    public GraphTextureAccessId Write(GraphTextureInput texture, in TextureSubresourceRange range,
+        PipelineSync sync, ResourceAccess access, TextureLayout layout, WriteCoverage coverage,
+        ResourceContentState? resultContents = null) =>
+        AddTextureInputAccess(texture, GraphAccessMode.Write, coverage, sync, access,
+            layout, range, resultContents, UnorderedAccessHazardMode.Ordered);
+
+    public void Bind(GraphParameterInput input, PipelineSync sync)
+    {
+        DevelopmentCheck.Require(_frame is null,
+            "Parameter input connections must be declared during a graph edit.");
+        _edit.AddParameterInput(_pass, input, sync);
+        AddParameterBinding(GraphParameterResourceBinding.FromInput(input));
     }
 }
 

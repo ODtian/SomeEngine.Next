@@ -10,13 +10,15 @@ internal sealed unsafe partial class D3D12Backend
 {
     public void DispatchMesh(CommandContext context, in DispatchArguments arguments)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<MeshShaders>(nameof(DispatchMesh));
-        command.List->DispatchMesh(arguments.X, arguments.Y, arguments.Z);
+        CommandExecutionTrace.DispatchMesh(command.List, arguments.X, arguments.Y, arguments.Z);
     }
 
     public void DispatchMeshIndirect(CommandContext context, in BufferRegion arguments)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         MeshShaders capability =
             command.NativeDevice.RequireCapability<MeshShaders>(nameof(DispatchMeshIndirect));
@@ -34,13 +36,13 @@ internal sealed unsafe partial class D3D12Backend
         }
         command.PrepareCaptures(1, 0, 1);
         command.Capture(buffer);
-        command.List->ExecuteIndirect(
-            command.NativeDevice.MeshDispatchSignature,
-            1,
-            buffer.Native,
-            range.Offset,
-            null,
-            0);
+        CommandExecutionTrace.ExecuteIndirect(
+                command.List, command.NativeDevice.MeshDispatchSignature,
+                    1,
+                    buffer.Native,
+                    range.Offset,
+                    null,
+                    0);
     }
 
     public void SetShadingRate(
@@ -49,6 +51,7 @@ internal sealed unsafe partial class D3D12Backend
         ShadingRateCombiner primitiveCombiner,
         ShadingRateCombiner imageCombiner)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         VariableRateShading capability =
             command.NativeDevice.RequireCapability<VariableRateShading>(nameof(SetShadingRate));
@@ -67,12 +70,13 @@ internal sealed unsafe partial class D3D12Backend
             ToNativeShadingRateCombiner(primitiveCombiner),
             ToNativeShadingRateCombiner(imageCombiner),
         };
-        command.List->RSSetShadingRate(ToNativeShadingRate(rate), combiners);
+        CommandBindingTrace.RSSetShadingRate(command.List, ToNativeShadingRate(rate), combiners);
         command.RememberShadingRate(rate, primitiveCombiner, imageCombiner);
     }
 
     public void SetShadingRateImage(CommandContext context, Texture? texture)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         VariableRateShading capability = command.NativeDevice
             .RequireCapability<VariableRateShading>(nameof(SetShadingRateImage));
@@ -91,7 +95,7 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         ID3D12Resource* shadingRateImage = native is null ? null : native.Native;
-        command.List->RSSetShadingRateImage(shadingRateImage);
+        CommandBindingTrace.RSSetShadingRateImage(command.List, shadingRateImage);
         command.RememberShadingRateImage(texture);
     }
 
@@ -109,14 +113,14 @@ internal sealed unsafe partial class D3D12Backend
 
     private static NativeShadingRateCombiner ToNativeShadingRateCombiner(
         ShadingRateCombiner value) => value switch
-    {
-        ShadingRateCombiner.Passthrough => NativeShadingRateCombiner.Passthrough,
-        ShadingRateCombiner.Override => NativeShadingRateCombiner.Override,
-        ShadingRateCombiner.Minimum => NativeShadingRateCombiner.Min,
-        ShadingRateCombiner.Maximum => NativeShadingRateCombiner.Max,
-        ShadingRateCombiner.Sum => NativeShadingRateCombiner.Sum,
-        _ => throw new ArgumentOutOfRangeException(nameof(value)),
-    };
+        {
+            ShadingRateCombiner.Passthrough => NativeShadingRateCombiner.Passthrough,
+            ShadingRateCombiner.Override => NativeShadingRateCombiner.Override,
+            ShadingRateCombiner.Minimum => NativeShadingRateCombiner.Min,
+            ShadingRateCombiner.Maximum => NativeShadingRateCombiner.Max,
+            ShadingRateCombiner.Sum => NativeShadingRateCombiner.Sum,
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        };
 
     private sealed partial class D3D12Device
     {
@@ -144,8 +148,8 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12CommandSignature* signature = null;
             ThrowIfFailed(
                 this,
-                Native->CreateCommandSignature(
-                    &description,
+                    DevicePipelineTrace.CreateCommandSignature(
+                Native, &description,
                     null,
                     &iid,
                     (void**)&signature),
@@ -169,8 +173,8 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12CommandSignature* signature = null;
             ThrowIfFailed(
                 this,
-                Native->CreateCommandSignature(
-                    &description,
+                    DevicePipelineTrace.CreateCommandSignature(
+                Native, &description,
                     null,
                     &iid,
                     (void**)&signature),
@@ -184,11 +188,11 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12CommandSignature* ray = _rayDispatchSignature;
             _rayDispatchSignature = null;
             if (ray is not null)
-                _ = ray->Release();
+                _ = ResourceTrace.Release(ray);
             ID3D12CommandSignature* mesh = _meshDispatchSignature;
             _meshDispatchSignature = null;
             if (mesh is not null)
-                _ = mesh->Release();
+                _ = ResourceTrace.Release(mesh);
         }
     }
 

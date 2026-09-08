@@ -1,25 +1,35 @@
+using System.Numerics;
+
 namespace SomeEngine.Render.Cluster.Pipeline;
+
+/// <summary>
+/// Winner protocol used by hardware and software rasterization. There is deliberately no
+/// split 32-bit depth/id compatibility protocol because it cannot publish an atomic winner.
+/// </summary>
+public enum ClusterVisibilityMode : byte
+{
+    ImageAtomic64,
+    BufferAtomic64,
+    HardwareOnly,
+}
 
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>
 public sealed record ClusterPipelineOptions
 {
     private const uint CandidateThreadsPerGroup = 64;
     private const uint PortableDispatchDimension = 65_535;
-    internal const ulong MaximumDeformCacheBytes = 0xFFFFF000UL;
 
+    /// <summary>
+    /// Bounds visibility candidates, the final tessellation pool, and each level of
+    /// a compatible tessellation group's shared work queue. Overflow is counted;
+    /// increasing material count does not multiply the available work memory.
+    /// </summary>
     public uint MaxCandidates { get; init; } = 1_048_576;
 
-    public uint MaxTraversalDepth { get; init; } = 128;
 
     public float LodThreshold { get; init; } = 1.0f;
 
-    public ulong DeformCacheBytes { get; init; } = 64UL * 1024UL * 1024UL;
-
-    public uint MaxTessellationSplitWorkItems { get; init; } = 1_048_576;
-
-    public uint MaxDicedTriangles { get; init; } = 1_048_576;
-
-    public uint MaxTessellationFactor { get; init; } = 8;
+    public uint MaxTessellationFactor { get; init; } = 256;
 
     public float TessellationTargetEdgePixels { get; init; } = 8.0f;
 
@@ -27,7 +37,11 @@ public sealed record ClusterPipelineOptions
 
     public bool ForceHardwareRaster { get; init; }
 
-    public float SoftwareRasterAreaThreshold { get; init; } = 2_000.0f;
+    /// <summary>
+    /// Maximum projected Cluster edge length routed to software rasterization.  The hard
+    /// 64-pixel software bounding-box limit remains authoritative.
+    /// </summary>
+    public float SoftwareRasterEdgeThreshold { get; init; } = 32.0f;
 
     public bool EnableFrameMetricsReadback { get; init; }
 
@@ -40,37 +54,23 @@ public sealed record ClusterPipelineOptions
                 nameof(MaxCandidates),
                 "Cluster candidate capacity must fit one portable indirect-dispatch dimension.");
         }
-        if (MaxTraversalDepth is 0 or > 128)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(MaxTraversalDepth),
-                "Cluster traversal depth must fit the shader's proven 128-entry pending stack.");
-        }
         if (!float.IsFinite(LodThreshold) || LodThreshold < 0.0f)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(LodThreshold),
                 "Cluster LOD threshold must be finite and non-negative.");
         }
-        if (!float.IsFinite(SoftwareRasterAreaThreshold) || SoftwareRasterAreaThreshold < 0.0f)
+        if (!float.IsFinite(SoftwareRasterEdgeThreshold) || SoftwareRasterEdgeThreshold < 0.0f)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(SoftwareRasterAreaThreshold),
-                "Cluster software-raster area threshold must be finite and non-negative.");
+                nameof(SoftwareRasterEdgeThreshold),
+                "Cluster software-raster edge threshold must be finite and non-negative.");
         }
-        if (DeformCacheBytes is < 16 or > MaximumDeformCacheBytes)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(DeformCacheBytes),
-                "Cluster deform cache must fit below the shader's reserved invalid-offset range.");
-        }
-        ArgumentOutOfRangeException.ThrowIfZero(MaxTessellationSplitWorkItems);
-        ArgumentOutOfRangeException.ThrowIfZero(MaxDicedTriangles);
-        if (MaxTessellationFactor is 0 or > 16)
+        if (MaxTessellationFactor is 0 or > 256 || !BitOperations.IsPow2(MaxTessellationFactor))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(MaxTessellationFactor),
-                "Cluster tessellation factor must fit the bounded dicing policy [1, 16].");
+                "Cluster tessellation factor must be a power of two in [1, 256].");
         }
         if (!float.IsFinite(TessellationTargetEdgePixels) || TessellationTargetEdgePixels < 1.0f)
         {
@@ -80,7 +80,19 @@ public sealed record ClusterPipelineOptions
         }
         _ = checked((ulong)MaxCandidates * 12ul);
         _ = checked((ulong)MaxCandidates * 16ul);
-        _ = checked((ulong)MaxTessellationSplitWorkItems * 20ul);
-        _ = checked((ulong)MaxDicedTriangles * 48ul);
+        _ = checked((ulong)MaxCandidates * 16ul * 2ul);
+    }
+
+    internal ClusterVisibilityMode SelectVisibilityMode(
+        SomeEngine.Graphics.DeviceCapabilities capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        if (ForceHardwareRaster)
+            return ClusterVisibilityMode.HardwareOnly;
+        if (capabilities.SupportsImageInt64Atomics)
+            return ClusterVisibilityMode.ImageAtomic64;
+        if (capabilities.SupportsBufferInt64Atomics)
+            return ClusterVisibilityMode.BufferAtomic64;
+        return ClusterVisibilityMode.HardwareOnly;
     }
 }

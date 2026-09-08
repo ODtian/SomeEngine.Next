@@ -25,6 +25,12 @@ internal sealed class RuntimeCamera
 
     internal Vector3 Position { get; private set; }
 
+    internal void SetPosition(Vector3 position)
+    {
+        if (!IsFinite(position)) throw new ArgumentException("Camera position must be finite.", nameof(position));
+        Position = position;
+    }
+
     internal Matrix4x4 View => Matrix4x4.CreateLookAt(Position, Position + _forward, _worldUp);
 
     internal void Update(

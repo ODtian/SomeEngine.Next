@@ -168,13 +168,10 @@ public sealed class AssetProjectTests
             AssetGuid materialGuid = AssetGuid.New();
             string materialPath = Path.Combine(dir, "assets", "Materials", "test.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = materialGuid.ToFlatString(),
                 Name = "TestMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             }, materialPath);
 
             AssetProject project = AssetAuthoring.CreateProject(dir);
@@ -203,13 +200,10 @@ public sealed class AssetProjectTests
             const string path = "assets/Materials/mismatch.material.asset";
             string fullPath = Path.Combine(dir, path.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = payloadGuid.ToFlatString(),
                 Name = "MismatchMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             }, fullPath);
 
             AssetManifest manifest = new();
@@ -303,12 +297,9 @@ public sealed class AssetProjectTests
             AssetProject project = AssetAuthoring.CreateProject(dir);
             const string path = "assets/Materials/created.material.asset";
 
-            AssetGuid firstGuid = project.CreateAsset(path, new Material
+            AssetGuid firstGuid = project.CreateAsset<Material>(path, new StandardMaterial
             {
                 Name = "CreatedMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             });
 
             Assert.False(firstGuid.IsEmpty);
@@ -318,12 +309,9 @@ public sealed class AssetProjectTests
             Assert.Equal(firstGuid.ToFlatString(), firstLoad!.AssetGuid);
             Assert.Equal("CreatedMaterial", firstLoad.Name);
 
-            AssetGuid secondGuid = project.CreateAsset(path, new Material
+            AssetGuid secondGuid = project.CreateAsset<Material>(path, new StandardMaterial
             {
                 Name = "UpdatedMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             });
 
             Assert.Equal(firstGuid, secondGuid);
@@ -350,13 +338,10 @@ public sealed class AssetProjectTests
 
             AssetGuid staleGuid = AssetGuid.New();
             AssetGuid fileGuid = AssetGuid.New();
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = fileGuid.ToFlatString(),
                 Name = "ExistingFile",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             }, fullPath);
 
             AssetManifest manifest = new();
@@ -369,12 +354,9 @@ public sealed class AssetProjectTests
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = AssetAuthoring.CreateProject(dir);
-            AssetGuid createdGuid = project.CreateAsset(path, new Material
+            AssetGuid createdGuid = project.CreateAsset<Material>(path, new StandardMaterial
             {
                 Name = "Reconciled",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             });
 
             Assert.Equal(staleGuid, createdGuid);
@@ -428,7 +410,7 @@ public sealed class AssetProjectTests
             SourceGuid orphanSourceGuid = SourceGuid.New();
             SourceGuid validSourceGuid = SourceGuid.New();
             AssetGuid shaderGuid = AssetGuid.New();
-            AssetGuid missingShaderGuid = AssetGuid.New();
+            AssetGuid missingTextureGuid = AssetGuid.New();
             AssetGuid materialGuid = AssetGuid.New();
 
             // 创建 valid shader .asset 文件和 material .asset 文件
@@ -454,43 +436,34 @@ public sealed class AssetProjectTests
 
             string materialAssetPath = Path.Combine(dir, "assets", "Materials", "dangling.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialAssetPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = materialGuid.ToFlatString(),
                 Name = "DanglingMaterial",
-                Passes =
-                [
-                    new PassEntry
-                    {
-                        Shader = new ShaderRef
-                        {
-                            AssetGuid = missingShaderGuid.ToFlatString(),
-                            EntryPoint = "main",
-                            Stage = ShaderStage.Compute,
-                        },
-                    },
-                ],
-                Textures = [],
-                Scalars = [],
+                AlbedoMap = new Texture
+                {
+                    AssetGuid = missingTextureGuid.ToFlatString(),
+                    Name = "missing",
+                },
             }, materialAssetPath);
 
             // valid source 实际存在
             string validSourceFile = Path.Combine(dir, "assets", "Shaders", "valid.slang");
             File.WriteAllText(validSourceFile, "// shader");
 
-            // 构建 manifest：orphan source 指向不存在的文件，material 依赖不存在的 shader guid
+            // 构建 manifest：orphan source 指向不存在的文件，material 依赖不存在的 texture guid
             AssetManifest manifest = new();
             manifest.AddSource(orphanSourceGuid, "assets/Shaders/orphan.slang");
             manifest.AddSource(validSourceGuid, "assets/Shaders/valid.slang");
             manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/valid.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint, validSourceGuid, "shader:main");
-            manifest.AddAsset(materialGuid, "DanglingMaterial", "assets/Materials/dangling.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [missingShaderGuid]);
+            manifest.AddAsset(materialGuid, "DanglingMaterial", "assets/Materials/dangling.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [missingTextureGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = AssetAuthoring.CreateProject(dir);
             IReadOnlyList<AssetDiagnostic> diagnostics = project.Validate();
 
             Assert.Contains(diagnostics, static diagnostic => diagnostic.Kind == AssetDiagnosticKind.OrphanSourceMeta);
-            Assert.Contains(diagnostics, diagnostic => diagnostic.Kind == AssetDiagnosticKind.DanglingReference && diagnostic.AssetGuid == materialGuid && diagnostic.RelatedAssetGuid == missingShaderGuid);
+            Assert.Contains(diagnostics, diagnostic => diagnostic.Kind == AssetDiagnosticKind.DanglingReference && diagnostic.AssetGuid == materialGuid && diagnostic.RelatedAssetGuid == missingTextureGuid);
             Assert.DoesNotContain(diagnostics, static diagnostic => diagnostic.Kind == AssetDiagnosticKind.MissingAssetFile);
         }
         finally
@@ -514,13 +487,10 @@ public sealed class AssetProjectTests
             AssetGuid materialGuid = AssetGuid.New();
             string materialPath = Path.Combine(dir, "assets", "Materials", "imported.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = materialGuid.ToFlatString(),
                 Name = "ImportedMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             }, materialPath);
 
             AssetGuid imported = await project.RegisterAssetAsync<Material>(
@@ -545,13 +515,10 @@ public sealed class AssetProjectTests
             AssetGuid materialGuid = AssetGuid.New();
             string materialPath = Path.Combine(dir, "assets", "Materials", "lazy.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = materialGuid.ToFlatString(),
                 Name = "LazyMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
             }, materialPath);
 
             AssetProject project = AssetAuthoring.CreateProject(dir);
@@ -636,11 +603,10 @@ public sealed class AssetProjectTests
             AssetGuid guid = AssetGuid.New();
             string path = Path.Combine(dir, "assets", "Materials", "dup.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = guid.ToFlatString(),
                 Name = "Dup",
-                Passes = [], Textures = [], Scalars = [],
             }, path);
 
             AssetProject project = AssetAuthoring.CreateProject(dir);
@@ -663,8 +629,8 @@ public sealed class AssetProjectTests
             string p2 = Path.Combine(dir, "assets", "Materials", "b.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(p1)!);
 
-            AssetWriter.Write(new Material { AssetGuid = g1.ToFlatString(), Name = "A", Passes = [], Textures = [], Scalars = [] }, p1);
-            AssetWriter.Write(new Material { AssetGuid = g2.ToFlatString(), Name = "B", Passes = [], Textures = [], Scalars = [] }, p2);
+            AssetWriter.Write<Material>(new StandardMaterial { AssetGuid = g1.ToFlatString(), Name = "A" }, p1);
+            AssetWriter.Write<Material>(new StandardMaterial { AssetGuid = g2.ToFlatString(), Name = "B" }, p2);
 
             AssetProject project = AssetAuthoring.CreateProject(dir);
             await project.RegisterAssetAsync<Material>("assets/Materials/a.material.asset");
@@ -733,11 +699,10 @@ public sealed class AssetProjectTests
             AssetGuid guid = AssetGuid.New();
             string path = Path.Combine(dir, "assets", "Materials", "lazy2.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>(new StandardMaterial
             {
                 AssetGuid = guid.ToFlatString(),
                 Name = "Lazy2",
-                Passes = [], Textures = [], Scalars = [],
             }, path);
 
             AssetProject project = AssetAuthoring.CreateProject(dir);

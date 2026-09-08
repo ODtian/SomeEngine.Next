@@ -43,7 +43,7 @@ internal sealed unsafe partial class D3D12Backend
     private const uint DxgiUsageBackBuffer = 0x40;
     private const uint DxgiUsageUnorderedAccess = 0x400;
     private const uint DxgiMakeWindowAssociationNoAltEnter = 0x2;
-    private const uint DxgiPresentAllowTearing = 0x2;
+    private const uint DxgiPresentAllowTearing = 0x200;
     private const int DxgiStatusOccluded = 0x087A0001;
     private const int DxgiStatusModeChanged = 0x087A0007;
     private const int DxgiStatusModeChangeInProgress = 0x087A0008;
@@ -54,6 +54,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         if (desc.Surface is null)
             throw new ArgumentNullException(nameof(desc), "SwapchainDesc.Surface is required.");
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -116,7 +117,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (native is not null)
-                _ = native->Release();
+                _ = PresentationTrace.Release(native);
         }
     }
 
@@ -134,8 +135,8 @@ internal sealed unsafe partial class D3D12Backend
             {
                 ThrowIfFailed(
                     device,
-                    factory->CreateSwapChainForHwnd(
-                        (IUnknown*)queue.Native,
+                        PresentationTrace.CreateSwapChainForHwnd(
+                    factory, (IUnknown*)queue.Native,
                         surface.WindowHandle,
                         nativeDescription,
                         null,
@@ -149,13 +150,13 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = IDXGISwapChain4.Guid;
             ThrowIfFailed(
                 device,
-                initial->QueryInterface(&iid, (void**)&result),
+                    PresentationTrace.QueryInterface(initial, &iid, (void**)&result),
                 NativeOperationType.Ordinary,
                 "IDXGISwapChain1::QueryInterface(IDXGISwapChain4)");
             ThrowIfFailed(
                 device,
-                factory->MakeWindowAssociation(
-                    surface.WindowHandle,
+                    PresentationTrace.MakeWindowAssociation(
+                factory, surface.WindowHandle,
                     DxgiMakeWindowAssociationNoAltEnter),
                 NativeOperationType.Ordinary,
                 "IDXGIFactory::MakeWindowAssociation");
@@ -164,7 +165,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (initial is not null)
-                _ = initial->Release();
+                _ = PresentationTrace.Release(initial);
         }
     }
 
@@ -176,7 +177,7 @@ internal sealed unsafe partial class D3D12Backend
         SwapChainDesc1 resolved = default;
         ThrowIfFailed(
             device,
-            native->GetDesc1(&resolved),
+                PresentationTrace.GetDesc1(native, &resolved),
             NativeOperationType.Ordinary,
             "IDXGISwapChain1::GetDesc1");
         SwapchainConfig result = requested with
@@ -229,6 +230,7 @@ internal sealed unsafe partial class D3D12Backend
         in SwapchainAcquireOptions options,
         out SwapchainImage image)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Swapchain native = RequireSwapchain(swapchain);
         long started = Stopwatch.GetTimestamp();
         try
@@ -246,6 +248,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public PresentStatus Present(Queue queue, in SwapchainImage image)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiPresentation);
         D3D12Queue nativeQueue = RequireQueue(queue, nameof(queue));
         if (nativeQueue.Type != QueueType.Graphics)
             throw new ArgumentException("Present requires a Graphics Queue.", nameof(queue));
@@ -286,6 +289,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public ReconfigureStatus Reconfigure(Swapchain swapchain, in SwapchainConfig config)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12Swapchain native = RequireSwapchain(swapchain);
         long started = Stopwatch.GetTimestamp();
         try
@@ -324,9 +328,15 @@ internal sealed unsafe partial class D3D12Backend
 
     private bool QueryTearingSupport(D3D12Device device)
     {
+        // DXGI reports tearing support for the desktop globally, but a WARP
+        // swapchain cannot use DXGI_PRESENT_ALLOW_TEARING. Keep the advertised
+        // capability tied to the selected adapter so creation and Present agree.
+        if (!device.Adapter.HardwareAccelerated)
+            return false;
+
         uint supported = 0;
-        int result = EnsureFactory()->CheckFeatureSupport(
-            DxgiFeature.PresentAllowTearing,
+        int result = PresentationTrace.CheckFeatureSupport(
+EnsureFactory(), DxgiFeature.PresentAllowTearing,
             &supported,
             sizeof(uint));
         if (result < 0)
@@ -456,7 +466,7 @@ internal sealed unsafe partial class D3D12Backend
                 uint colorSupport = 0;
                 ThrowIfFailed(
                     device,
-                    native->CheckColorSpaceSupport(ToNativeColorSpace(colorSpace), &colorSupport),
+                        PresentationTrace.CheckColorSpaceSupport(native, ToNativeColorSpace(colorSpace), &colorSupport),
                     NativeOperationType.Ordinary,
                     "IDXGISwapChain3::CheckColorSpaceSupport");
                 if ((colorSupport & (uint)SwapChainColorSpaceSupportFlag.Present) == 0)
@@ -497,7 +507,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         ThrowIfFailed(
             device,
-            native->SetMaximumFrameLatency(config.MaximumFrameLatency),
+                PresentationTrace.SetMaximumFrameLatency(native, config.MaximumFrameLatency),
             NativeOperationType.Ordinary,
             "IDXGISwapChain2::SetMaximumFrameLatency");
 
@@ -505,7 +515,7 @@ internal sealed unsafe partial class D3D12Backend
         uint colorSupport = 0;
         ThrowIfFailed(
             device,
-            native->CheckColorSpaceSupport(colorSpace, &colorSupport),
+                PresentationTrace.CheckColorSpaceSupport(native, colorSpace, &colorSupport),
             NativeOperationType.Ordinary,
             "IDXGISwapChain3::CheckColorSpaceSupport");
         if ((colorSupport & (uint)SwapChainColorSpaceSupportFlag.Present) == 0)
@@ -516,7 +526,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         ThrowIfFailed(
             device,
-            native->SetColorSpace1(colorSpace),
+                PresentationTrace.SetColorSpace1(native, colorSpace),
             NativeOperationType.Ordinary,
             "IDXGISwapChain3::SetColorSpace1");
         ConfigureHdr10Metadata(device, native, config.Hdr10Metadata);
@@ -531,7 +541,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             ThrowIfFailed(
                 device,
-                native->SetHDRMetaData(HdrMetadataType.None, 0, null),
+                    PresentationTrace.SetHDRMetaData(native, HdrMetadataType.None, 0, null),
                 NativeOperationType.Ordinary,
                 "IDXGISwapChain4::SetHDRMetaData(None)");
             return;
@@ -540,8 +550,8 @@ internal sealed unsafe partial class D3D12Backend
         HdrMetadataHdr10 nativeMetadata = ToNativeHdr10Metadata(value);
         ThrowIfFailed(
             device,
-            native->SetHDRMetaData(
-                HdrMetadataType.Hdr10,
+                PresentationTrace.SetHDRMetaData(
+            native, HdrMetadataType.Hdr10,
                 (uint)sizeof(HdrMetadataHdr10),
                 &nativeMetadata),
             NativeOperationType.Ordinary,
@@ -651,7 +661,7 @@ internal sealed unsafe partial class D3D12Backend
             _surface = surface;
             _presentationQueue = presentationQueue;
             _native = native;
-            _frameLatencyHandle = (nint)native->GetFrameLatencyWaitableObject();
+            _frameLatencyHandle = (nint)PresentationTrace.GetFrameLatencyWaitableObject(native);
             if (_frameLatencyHandle == 0)
             {
                 ThrowAfterDeviceRemovedReasonQuery(
@@ -821,7 +831,7 @@ internal sealed unsafe partial class D3D12Backend
                     if (_outOfDate)
                         return SwapchainAcquireStatus.OutOfDate;
 
-                    uint imageIndex = _native->GetCurrentBackBufferIndex();
+                    uint imageIndex = PresentationTrace.GetCurrentBackBufferIndex(_native);
                     if (imageIndex >= _images.Length)
                     {
                         _outOfDate = true;
@@ -837,7 +847,7 @@ internal sealed unsafe partial class D3D12Backend
                         ThrowIfOperational();
                         if (_outOfDate)
                             return SwapchainAcquireStatus.OutOfDate;
-                        imageIndex = _native->GetCurrentBackBufferIndex();
+                        imageIndex = PresentationTrace.GetCurrentBackBufferIndex(_native);
                         if (imageIndex >= _images.Length)
                         {
                             _outOfDate = true;
@@ -905,8 +915,8 @@ internal sealed unsafe partial class D3D12Backend
                 if (!lease.TryBeginPresent(sequence))
                     throw new InvalidOperationException("The SwapchainImage has no Present right.");
 
-                int result = _native->Present(
-                    ToPresentInterval(Info.Config.PresentType),
+                int result = PresentationTrace.Present(
+_native, ToPresentInterval(Info.Config.PresentType),
                     ToPresentFlags(Info.Config));
                 PresentStatus status;
                 switch (result)
@@ -983,8 +993,8 @@ internal sealed unsafe partial class D3D12Backend
                     uint flags = (uint)SwapChainFlag.FrameLatencyWaitableObject;
                     if (SupportsTearing())
                         flags |= (uint)SwapChainFlag.AllowTearing;
-                    int resizeResult = _native->ResizeBuffers(
-                        Info.ImageCount,
+                    int resizeResult = PresentationTrace.ResizeBuffers(
+_native, Info.ImageCount,
                         config.Width,
                         config.Height,
                         ToSwapchainFormat(config.Format),
@@ -1005,7 +1015,7 @@ internal sealed unsafe partial class D3D12Backend
                         SwapChainDesc1 resolved = default;
                         ThrowIfFailed(
                             _device,
-                            _native->GetDesc1(&resolved),
+                                PresentationTrace.GetDesc1(_native, &resolved),
                             NativeOperationType.Ordinary,
                             "IDXGISwapChain1::GetDesc1");
                         if (resolved.Width == 0 || resolved.Height == 0)
@@ -1065,7 +1075,7 @@ internal sealed unsafe partial class D3D12Backend
                     IDXGISwapChain4* native = _native;
                     _native = null;
                     if (native is not null)
-                        _ = native->Release();
+                        _ = PresentationTrace.Release(native);
                     nint handle = _frameLatencyHandle;
                     _frameLatencyHandle = 0;
                     if (handle != 0)
@@ -1093,13 +1103,13 @@ internal sealed unsafe partial class D3D12Backend
                         Guid iid = NativeResource.Guid;
                         ThrowIfFailed(
                             _device,
-                            _native->GetBuffer(index, &iid, (void**)&resource),
+                                PresentationTrace.GetBuffer(_native, index, &iid, (void**)&resource),
                             NativeOperationType.Ordinary,
                             "IDXGISwapChain::GetBuffer");
 
-                        ResourceDesc nativeDescription = resource->GetDesc();
-                        ResourceAllocationInfo allocation = _device.Native->GetResourceAllocationInfo(
-                            _presentationQueue.NodeMask,
+                        ResourceDesc nativeDescription = ResourceTrace.GetDesc(resource);
+                        ResourceAllocationInfo allocation = DeviceQueryTrace.GetResourceAllocationInfo(
+_device.Native, _presentationQueue.NodeMask,
                             1,
                             &nativeDescription);
                         EnsureAllocationInfo(allocation, "Swapchain Texture");
@@ -1140,7 +1150,7 @@ internal sealed unsafe partial class D3D12Backend
                         if (texture is null)
                         {
                             if (resource is not null)
-                                _ = resource->Release();
+                                _ = ResourceTrace.Release(resource);
                         }
                         else
                         {
@@ -1233,7 +1243,7 @@ internal sealed unsafe partial class D3D12Backend
                 try
                 {
                     GraphicsException loss = exception as GraphicsException is
-                        { Error: GraphicsError.DeviceLost } graphics
+                    { Error: GraphicsError.DeviceLost } graphics
                             ? graphics
                             : new GraphicsException(
                                 GraphicsError.DeviceLost,
@@ -1346,7 +1356,7 @@ internal sealed unsafe partial class D3D12Backend
                 throw new ObjectDisposedException(nameof(D3D12Swapchain));
             var retained = new NativeLease[images.Length];
             int count = 0;
-            _ = swapchain->AddRef();
+            _ = PresentationTrace.AddRef(swapchain);
             try
             {
                 for (; count < retained.Length; count++)
@@ -1361,7 +1371,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 for (int index = 0; index < count; index++)
                     retained[index].Release();
-                _ = swapchain->Release();
+                _ = PresentationTrace.Release(swapchain);
                 throw;
             }
         }
@@ -1376,7 +1386,7 @@ internal sealed unsafe partial class D3D12Backend
             IDXGISwapChain4* swapchain = _swapchain;
             _swapchain = null;
             if (swapchain is not null)
-                _ = swapchain->Release();
+                _ = PresentationTrace.Release(swapchain);
         }
     }
 
@@ -1429,7 +1439,7 @@ internal sealed unsafe partial class D3D12Backend
             }
             try
             {
-                int setEventResult = Fence->SetEventOnCompletion(target, (void*)waitEvent);
+                int setEventResult = ResourceTrace.SetEventOnCompletion(Fence, target, (void*)waitEvent);
                 ThrowIfFailed(
                     _device,
                     setEventResult,
@@ -1468,11 +1478,11 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private ulong ReadFinalCompletionValue() => Fence->GetCompletedValue();
+        private ulong ReadFinalCompletionValue() => ResourceTrace.GetCompletedValue(Fence);
 
         internal void CollectCompletedUnderGate()
         {
-            ulong completed = Fence->GetCompletedValue();
+            ulong completed = ResourceTrace.GetCompletedValue(Fence);
             CollectRetiredPayloadsUnderGate(completed);
             CollectCapabilityRetirementsUnderGate(completed);
             CollectPresentationRetirementsUnderGate(completed);

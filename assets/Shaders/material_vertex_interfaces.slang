@@ -1,25 +1,23 @@
 #ifndef MATERIAL_VERTEX_INTERFACES_SLANG
 #define MATERIAL_VERTEX_INTERFACES_SLANG
 
-// Pipeline-neutral vertex capability required by surface materials. A render
-// pipeline may provide a richer evaluator while preserving this material ABI.
-interface IMaterialVertex
+// User-facing access to an opaque evaluated vertex. Pipelines operate on Vertex only
+// through this interface; the concrete vertex layout remains owned by the material shader.
+interface IVertexAccess
 {
-    associatedtype DeformedVertex;
-};
+    associatedtype Vertex;
 
-// Pipeline-neutral surface access. Materials depend on these operations rather than a concrete
-// deformed-vertex layout; imported glTF/PBR data is only one possible user implementation.
-interface ISurfaceMaterialVertex : IMaterialVertex
-{
-    float3 getPosition(DeformedVertex value);
-    float3 getNormal(DeformedVertex value);
-    float2 getTexCoord0(DeformedVertex value);
-};
+    float3 getPosition(Vertex value);
+    void setPosition(inout Vertex value, float3 position);
 
-interface ITangentSurfaceMaterialVertex : ISurfaceMaterialVertex
-{
-    float4 getTangent(DeformedVertex value);
+    float3 getNormal(Vertex value);
+    void setNormal(inout Vertex value, float3 normal);
+
+    float4 getTangent(Vertex value);
+    void setTangent(inout Vertex value, float4 tangent);
+
+    float2 getTexCoord0(Vertex value);
+    void setTexCoord0(inout Vertex value, float2 texCoord);
 };
 
 #endif

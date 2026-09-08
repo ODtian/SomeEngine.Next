@@ -308,9 +308,7 @@ public class ClusterBuilderTests
         };
         var indices = new uint[] { 0, 1, 2 };
         var materialGuid = SomeEngine.Assets.AssetGuid.New();
-        var materialSlot = new MeshMaterialSlot(
-            materialGuid,
-            ClusterBuilderTestMaterials.Slot(0).DeformCompatibility);
+        var materialSlot = new MeshMaterialSlot(materialGuid);
 
         var asset = ClusterBuilder.ProcessRaw(
             positions,
@@ -325,7 +323,7 @@ public class ClusterBuilderTests
     }
 
     [Fact]
-    public void ProcessRaw_PartitionsEveryClusterByDeformCompatibility()
+    public void ProcessRaw_DoesNotEncodeADeformationMaterialDiscriminator()
     {
         Vector3[] positions =
         [
@@ -346,8 +344,8 @@ public class ClusterBuilderTests
             false);
         MeshMaterialSlot[] materials =
         [
-            ClusterBuilderTestMaterials.Slot(0),
-            ClusterBuilderTestMaterials.Slot(1),
+            ClusterBuilderTestMaterials.Slot(),
+            ClusterBuilderTestMaterials.Slot(),
         ];
 
         var asset = ClusterBuilder.ProcessRaw(
@@ -363,36 +361,10 @@ public class ClusterBuilderTests
             payload.Slice(
                 checked((int)header.ClustersOffset),
                 checked((int)header.ClusterCount * PackedCluster.SizeInBytes)));
-        var explicitDeformMaterials = new HashSet<byte>();
         foreach (ref readonly PackedCluster cluster in clusters)
         {
-            byte deformMaterial = checked((byte)(cluster.PackedCounts >> 24));
-            explicitDeformMaterials.Add(deformMaterial);
-            byte material0 = checked((byte)cluster.PackedMaterials);
-            Assert.Equal(
-                materials[deformMaterial].DeformCompatibility,
-                materials[material0].DeformCompatibility);
-
-            uint triangleCount = (cluster.PackedCounts >> 8) & 0xFF;
-            uint range0End = cluster.PackedRanges & 0xFF;
-            uint range1End = (cluster.PackedRanges >> 8) & 0xFF;
-            if (range0End < triangleCount)
-            {
-                byte material1 = checked((byte)(cluster.PackedMaterials >> 8));
-                Assert.Equal(
-                    materials[deformMaterial].DeformCompatibility,
-                    materials[material1].DeformCompatibility);
-            }
-            if (range1End < triangleCount)
-            {
-                byte material2 = checked((byte)(cluster.PackedMaterials >> 16));
-                Assert.Equal(
-                    materials[deformMaterial].DeformCompatibility,
-                    materials[material2].DeformCompatibility);
-            }
+            Assert.Equal(0u, cluster.PackedCounts >> 24);
         }
-
-        Assert.Equal(new byte[] { 0, 1 }, explicitDeformMaterials.Order().ToArray());
     }
 
     private static List<DecodedStandardVertex> DecodeStandardVertices(

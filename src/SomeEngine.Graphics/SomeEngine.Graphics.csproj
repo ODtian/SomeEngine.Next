@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
+    <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
   </ItemGroup>
 
   <Target Name="GenerateSlangToolchainIdentity" BeforeTargets="CoreCompile"

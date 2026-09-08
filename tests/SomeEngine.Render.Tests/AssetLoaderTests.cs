@@ -44,42 +44,6 @@ public sealed class AssetLoaderTests
     }
 
     [Fact]
-    public async Task ConcurrentMaterialInstanceParentTypeMismatchFailsClosedWithoutDeadlock()
-    {
-        using var directory = new TemporaryDirectory();
-        AssetGuid firstGuid = AssetGuid.New();
-        AssetGuid secondGuid = AssetGuid.New();
-        string packPath = directory.File("material-cycle.sepack");
-        await new AssetPackBuilder()
-            .AddAsset(
-                firstGuid.Value,
-                AssetType<MaterialInstance>.Name,
-                CookMaterialInstance(firstGuid, secondGuid),
-                MaterialInstance.SchemaFingerprint)
-            .AddAsset(
-                secondGuid.Value,
-                AssetType<MaterialInstance>.Name,
-                CookMaterialInstance(secondGuid, firstGuid),
-                MaterialInstance.SchemaFingerprint)
-            .PublishAsync(packPath);
-
-        AssetPack pack = await AssetPack.OpenAsync(packPath);
-        var storage = new AssetPackStorage(new AssetPackOverlay([pack]));
-        await using var loader = new AssetLoader(storage);
-        Task<MaterialInstance> first = loader.LoadAsync(
-            new AssetId<MaterialInstance>(firstGuid)).AsTask();
-        Task<MaterialInstance> second = loader.LoadAsync(
-            new AssetId<MaterialInstance>(secondGuid)).AsTask();
-
-        Exception firstError = await Assert.ThrowsAnyAsync<Exception>(async () =>
-            await first.WaitAsync(TimeSpan.FromSeconds(2)));
-        Exception secondError = await Assert.ThrowsAnyAsync<Exception>(async () =>
-            await second.WaitAsync(TimeSpan.FromSeconds(2)));
-        Assert.True(firstError is InvalidDataException or InvalidOperationException);
-        Assert.True(secondError is InvalidDataException or InvalidOperationException);
-    }
-
-    [Fact]
     public async Task TextureIsSingleFlightAndOwnsItsOneStreamedDocument()
     {
         using var directory = new TemporaryDirectory();
@@ -208,11 +172,9 @@ public sealed class AssetLoaderTests
             Assert.True(mesh.IsStreamed);
 
             Material material = await loader.LoadAsync(new AssetId<Material>(materialGuid));
-            TextureBinding binding = Assert.Single(material.Textures!);
-            Assert.Equal(guid.ToFlatString(), binding.TextureGuid);
-            Assert.Contains(
-                Enumerable.Range(0, material.SlotCount),
-                slot => ReferenceEquals(texture, material.GetSlotValue(checked((uint)slot))));
+            StandardMaterial standard = Assert.IsType<StandardMaterial>(material);
+            Assert.Same(texture, standard.AlbedoMap);
+            Assert.Equal(guid.ToFlatString(), standard.AlbedoMap!.AssetGuid);
 
             await using var foreignLoader = new AssetLoader(new EmptyStorage());
             Assert.False(foreignLoader.TryGetAssetId(texture, out _));
@@ -295,21 +257,13 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.material.asset");
-        AssetWriter.Write(new Material
+        Material material = new StandardMaterial
         {
             AssetGuid = guid.ToFlatString(),
             Name = "stored-material",
-            Passes = [],
-            Textures =
-            [
-                new TextureBinding
-                {
-                    Name = "AlbedoMap",
-                    TextureGuid = textureGuid.ToFlatString(),
-                },
-            ],
-            Scalars = [],
-        }, path);
+            AlbedoMap = new Texture { AssetGuid = textureGuid.ToFlatString(), Name = "reference" },
+        };
+        AssetWriter.Write(material, path);
         return File.ReadAllBytes(path);
     }
 
@@ -333,20 +287,6 @@ public sealed class AssetLoaderTests
                     },
                 ]
                 : [],
-        }, path);
-        return File.ReadAllBytes(path);
-    }
-
-    private static byte[] CookMaterialInstance(AssetGuid guid, AssetGuid parentGuid)
-    {
-        using var directory = new TemporaryDirectory();
-        string path = directory.File("cycle.materialinstance.asset");
-        AssetWriter.Write(new MaterialInstance
-        {
-            AssetGuid = guid.ToFlatString(),
-            ParentGuid = parentGuid.ToFlatString(),
-            Overrides = [],
-            ScalarOverrides = [],
         }, path);
         return File.ReadAllBytes(path);
     }

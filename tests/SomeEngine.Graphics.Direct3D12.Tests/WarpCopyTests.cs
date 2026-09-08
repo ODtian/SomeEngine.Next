@@ -225,6 +225,113 @@ public sealed class WarpCopyTests
     }
 
     [Fact]
+    public void Warp_copies_a_narrow_texture_region_with_its_own_row_pitch()
+    {
+        using IGraphicsBackend backend = new D3D12Backend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Buffer upload = backend.CreateBuffer(
+            device,
+            new BufferDesc(512, BufferUsages.CopySource),
+            MemoryType.Upload);
+        using Buffer readback = backend.CreateBuffer(
+            device,
+            new BufferDesc(768, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        using Texture texture = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D,
+                128,
+                1,
+                1,
+                1,
+                1,
+                1,
+                Format.R32UInt,
+                TextureUsages.CopySource | TextureUsages.CopyDestination));
+        using (MappedBuffer mapping = backend.Map(upload, MapType.Write, BufferRange.Whole))
+        {
+            for (int index = 0; index < 128; index++)
+                BitConverter.GetBytes(index).CopyTo(mapping.Bytes[(index * sizeof(uint))..]);
+            mapping.Flush(new BufferRange(0, 512));
+        }
+
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+        BufferTextureCopy uploadCopy = new(
+            upload,
+            0,
+            512,
+            1,
+            texture,
+            0,
+            0,
+            TextureAspects.Color,
+            0,
+            0,
+            0,
+            128,
+            1,
+            1);
+        BufferTextureCopy readbackCopy = new(
+            readback,
+            512,
+            256,
+            1,
+            texture,
+            0,
+            0,
+            TextureAspects.Color,
+            32,
+            0,
+            0,
+            64,
+            1,
+            1);
+
+        backend.Begin(context);
+        backend.Barrier(context, new TextureBarrier(
+            texture,
+            range,
+            PipelineSync.None,
+            PipelineSync.Copy,
+            ResourceAccess.NoAccess,
+            ResourceAccess.CopyDestination,
+            TextureLayout.Undefined,
+            TextureLayout.CopyDestination));
+        backend.CopyBufferToTexture(context, uploadCopy);
+        backend.Barrier(context, new TextureBarrier(
+            texture,
+            range,
+            PipelineSync.Copy,
+            PipelineSync.Copy,
+            ResourceAccess.CopyDestination,
+            ResourceAccess.CopySource,
+            TextureLayout.CopyDestination,
+            TextureLayout.CopySource));
+        backend.CopyTextureToBuffer(context, readbackCopy);
+        using RecordedCommands recorded = backend.End(context);
+        RecordedCommands[] commands = [recorded];
+        QueueCompletion completion = backend.Submit(
+            queue,
+            new QueueSubmitDesc([], [], commands, [], []));
+        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+        backend.CollectCompleted(device);
+
+        using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
+        result.Invalidate(new BufferRange(512, 256));
+        for (int index = 0; index < 64; index++)
+        {
+            Assert.Equal(
+                checked((uint)(index + 32)),
+                BitConverter.ToUInt32(result.Bytes.Slice(512 + index * sizeof(uint), sizeof(uint))));
+        }
+    }
+
+    [Fact]
     public void Copy_context_rejects_a_first_use_texture_layout_transition()
     {
         using IGraphicsBackend backend = new D3D12Backend();

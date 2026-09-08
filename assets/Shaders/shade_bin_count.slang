@@ -7,32 +7,32 @@ ByteAddressBuffer InstanceData;
 RWStructuredBuffer<uint> BinCounts;
 ConstantBuffer<ShadeBinUniforms> Uniforms;
 Texture2DArray<uint> VisBuffer;
-StructuredBuffer<uint4> VisibleClusters;
+StructuredBuffer<DrawRequest> VisibleClusters;
 StructuredBuffer<uint> ShadeSlots;
 ByteAddressBuffer PageHeap;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void CountShadeBins(uint3 threadId : SV_DispatchThreadID)
+void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
 {
-    if (threadId.x >= Uniforms.ScreenWidth || threadId.y >= Uniforms.ScreenHeight)
-        return;
-
-    uint viewIndex = threadId.z;
-    uint visibility = VisBuffer[uint3(threadId.xy, viewIndex)];
-    if (IsVisBufferEmpty(visibility))
-        return;
-
-    uint4 cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
-    if (cluster.w != viewIndex)
-        return;
-    uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.z);
-    uint bin = FindShadeBin(
-        ShadeSlots,
-        PageHeap,
-        Uniforms,
-        slotOffset,
-        cluster,
-        DecodeVisBufferTriangleID(visibility));
-    CountShade(BinCounts, bin);
+    uint bin = 0xFFFFFFFFu;
+    if (threadId.x < Uniforms.ScreenWidth && threadId.y < Uniforms.ScreenHeight)
+    {
+        uint visibility = VisBuffer[threadId];
+        if (!IsVisBufferEmpty(visibility))
+        {
+            DrawRequest cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
+            if (DrawRequestViewIndex(cluster) == threadId.z)
+            {
+                uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID);
+                bin = FindShadeBin(ShadeSlots, PageHeap, Uniforms, slotOffset, cluster,
+                    DecodeVisBufferTriangleID(visibility));
+            }
+        }
+    }
+    uint mask;
+    bool fullTile;
+    if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
+    uint counter = bin * 2u + (fullTile ? 0u : 1u);
+    CountShade(BinCounts, counter);
 }

@@ -32,7 +32,6 @@ public partial class ClusterShaders
                 reference.Asset = shaders[shader];
             }
         }
-
         return asset;
     }
 }

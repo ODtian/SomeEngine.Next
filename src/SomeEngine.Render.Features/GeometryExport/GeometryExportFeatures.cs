@@ -38,7 +38,7 @@ public sealed class StreamOutputFeature : IDisposable
             geometry,
             shader,
             entryPoint,
-            outputStride: 16,
+            outputStride: 12,
             readsPageHeap: false,
             label: "Stream output geometry");
         Output = new StreamOutputFeatureOutput(
@@ -71,7 +71,7 @@ public readonly record struct RayTracingGeometryFeatureOutput(
 /// </summary>
 public sealed class RayTracingGeometryFeature : IDisposable
 {
-    public const uint RecordStride = 32;
+    public const uint RecordStride = 28;
     private readonly VisibleGeometryExportPass _implementation;
 
     public RayTracingGeometryFeature(
@@ -114,6 +114,7 @@ internal sealed class VisibleGeometryExportPass : IDisposable
     private readonly ExportResource[] _resourceOrder;
     private readonly GraphPassId _pass;
     private readonly bool _readsPageHeap;
+    private readonly GraphBufferInput _uniforms;
     private bool _disposed;
 
     internal VisibleGeometryExportPass(
@@ -167,6 +168,64 @@ internal sealed class VisibleGeometryExportPass : IDisposable
                 default,
                 static (ref PassDefinition _, ref ExportPassData _) => { },
                 ExportPassData.Record);
+            edit.OrderAfter(_pass, _geometry.CompletePass);
+            _uniforms = edit.CreateBufferInput(BufferUsages.Constant);
+            PassDefinition pass = edit.GetPass(_pass);
+            foreach (ExportResource resource in _resourceOrder)
+            {
+                switch (resource)
+                {
+                    case ExportResource.Uniforms:
+                        _ = pass.Bind(
+                            _uniforms,
+                            PipelineSync.ComputeShading);
+                        break;
+                    case ExportResource.PhaseOneCounts:
+                        _ = pass.Bind(
+                            edit.CreateBufferSrv(_geometry.PhaseOneCounts, label: "Geometry phase-one counts"),
+                            PipelineSync.ComputeShading);
+                        break;
+                    case ExportResource.PhaseTwoCounts:
+                        _ = pass.Bind(
+                            edit.CreateBufferSrv(_geometry.PhaseTwoCounts, label: "Geometry phase-two counts"),
+                            PipelineSync.ComputeShading);
+                        break;
+                    case ExportResource.VisibleClusters:
+                        _ = pass.Bind(
+                            edit.CreateBufferSrv(
+                                _geometry.VisibleClusters,
+                                structureStride: 12,
+                                label: "Visible geometry clusters"),
+                            PipelineSync.ComputeShading,
+                            BufferContentScope.CountBoundedPrefix);
+                        break;
+                    case ExportResource.PageHeap:
+                        if (!_readsPageHeap)
+                            throw new InvalidOperationException("This geometry export cannot read the page heap.");
+                        _geometry.BindPageHeap(
+                            edit,
+                            ref pass,
+                            PipelineSync.ComputeShading,
+                            "Ray tracing page heap");
+                        break;
+                    case ExportResource.Output:
+                        _ = pass.Bind(
+                            edit.CreateBufferUav(Output, label: "Geometry export records"),
+                            PipelineSync.ComputeShading,
+                            GraphAccessMode.Write,
+                            WriteCoverage.Partial);
+                        break;
+                    case ExportResource.Count:
+                        _ = pass.Bind(
+                            edit.CreateBufferUav(Count, label: "Geometry export count"),
+                            PipelineSync.ComputeShading,
+                            GraphAccessMode.Write,
+                            WriteCoverage.Complete);
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unknown geometry export resource key.");
+                }
+            }
             edit.Commit();
             _pipeline = pipeline;
             pipeline = null;
@@ -189,64 +248,15 @@ internal sealed class VisibleGeometryExportPass : IDisposable
             Capacity = _geometry.VisibleClusterCapacity,
             Enabled = enabled ? 1u : 0u,
         };
-        GraphBufferId uniformBuffer = FeatureUploads.UploadConstant(
+        GraphBufferSlice uniformBuffer = FeatureUploads.UploadConstant(
             ref graph,
             in uniforms,
             "Geometry export uniforms");
-        PassDefinition pass = graph.GetPass(_pass);
-        foreach (ExportResource resource in _resourceOrder)
+        graph.SetBufferInput(_uniforms, uniformBuffer);
+        if (_readsPageHeap)
         {
-            switch (resource)
-            {
-                case ExportResource.Uniforms:
-                    _ = pass.Bind(
-                        graph.CreateBufferCbv(uniformBuffer, label: "Geometry export uniforms"),
-                        PipelineSync.ComputeShading);
-                    break;
-                case ExportResource.PhaseOneCounts:
-                    _ = pass.Bind(
-                        graph.CreateBufferSrv(_geometry.PhaseOneCounts, label: "Geometry phase-one counts"),
-                        PipelineSync.ComputeShading);
-                    break;
-                case ExportResource.PhaseTwoCounts:
-                    _ = pass.Bind(
-                        graph.CreateBufferSrv(_geometry.PhaseTwoCounts, label: "Geometry phase-two counts"),
-                        PipelineSync.ComputeShading);
-                    break;
-                case ExportResource.VisibleClusters:
-                    _ = pass.Bind(
-                        graph.CreateBufferSrv(
-                            _geometry.VisibleClusters,
-                            structureStride: 16,
-                            label: "Visible geometry clusters"),
-                        PipelineSync.ComputeShading);
-                    break;
-                case ExportResource.PageHeap:
-                    if (!_readsPageHeap)
-                        throw new InvalidOperationException("This geometry export cannot read the page heap.");
-                    _geometry.BindPageHeap(
-                        ref graph,
-                        ref pass,
-                        PipelineSync.ComputeShading,
-                        "Ray tracing page heap");
-                    break;
-                case ExportResource.Output:
-                    _ = pass.Bind(
-                        graph.CreateBufferUav(Output, label: "Geometry export records"),
-                        PipelineSync.ComputeShading,
-                        GraphAccessMode.Write,
-                        WriteCoverage.Partial);
-                    break;
-                case ExportResource.Count:
-                    _ = pass.Bind(
-                        graph.CreateBufferUav(Count, label: "Geometry export count"),
-                        PipelineSync.ComputeShading,
-                        GraphAccessMode.Write,
-                        WriteCoverage.Complete);
-                    break;
-                default:
-                    throw new InvalidOperationException("Unknown geometry export resource key.");
-            }
+            PassDefinition pass = graph.GetPass(_pass);
+            _geometry.ReadPageHeap(ref pass, PipelineSync.ComputeShading);
         }
         graph.SetPassData(
             _pass,

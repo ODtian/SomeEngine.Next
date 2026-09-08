@@ -130,7 +130,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 ThrowIfFailed(
                     device,
-                    device.Native->CreateHeap(&description, &iid, (void**)&heap),
+                        DeviceResourceTrace.CreateHeap(device.Native, &description, &iid, (void**)&heap),
                     NativeOperationType.Ordinary,
                     $"ID3D12Device::CreateHeap(resource-pool size={size}, " +
                     $"memory={key.MemoryType}, class={key.Class})");
@@ -148,7 +148,7 @@ internal sealed unsafe partial class D3D12Backend
             {
                 lifetime?.Release();
                 if (heap is not null)
-                    _ = heap->Release();
+                    _ = ResourceTrace.Release(heap);
             }
         }
 
@@ -352,13 +352,13 @@ internal sealed unsafe partial class D3D12Backend
                 int heapCount = 0;
                 int allocationCount = 0;
                 foreach (List<ResourceHeapBlock> blocks in _blocks.Values)
-                foreach (ResourceHeapBlock block in blocks)
-                {
-                    heapBytes = checked(heapBytes + block.Size);
-                    allocatedBytes = checked(allocatedBytes + block.AllocatedBytes);
-                    heapCount++;
-                    allocationCount = checked(allocationCount + block.ActiveAllocations);
-                }
+                    foreach (ResourceHeapBlock block in blocks)
+                    {
+                        heapBytes = checked(heapBytes + block.Size);
+                        allocatedBytes = checked(allocatedBytes + block.AllocatedBytes);
+                        heapCount++;
+                        allocationCount = checked(allocationCount + block.ActiveAllocations);
+                    }
                 return new D3D12MemoryAllocatorInfo(
                     heapBytes,
                     allocatedBytes,
@@ -399,8 +399,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             uint nodeIndex = checked((uint)BitOperations.TrailingZeroCount(creationNodeMask));
             QueryVideoMemoryInfo info = default;
-            int result = ((IDXGIAdapter3*)_device.NativeAdapter)->QueryVideoMemoryInfo(
-                nodeIndex,
+            int result = PresentationTrace.QueryVideoMemoryInfo(
+((IDXGIAdapter3*)_device.NativeAdapter), nodeIndex,
                 MemorySegmentGroup.Local,
                 &info);
             ThrowIfFailed(
@@ -427,8 +427,8 @@ internal sealed unsafe partial class D3D12Backend
                     return;
                 _disposed = true;
                 foreach (List<ResourceHeapBlock> blocks in _blocks.Values)
-                foreach (ResourceHeapBlock block in blocks)
-                    block.Dispose();
+                    foreach (ResourceHeapBlock block in blocks)
+                        block.Dispose();
                 _blocks.Clear();
             }
         }
@@ -476,7 +476,7 @@ internal sealed unsafe partial class D3D12Backend
         finally
         {
             if (resource is not null)
-                _ = resource->Release();
+                _ = ResourceTrace.Release(resource);
             allocation?.Release();
         }
     }

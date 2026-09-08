@@ -1,38 +1,46 @@
 #include "cluster_structures.slang"
 #include "common.slang"
 #include "cluster_instance_properties.slang"
-#include "cluster_view.slang"
+#include "cluster_view_access.slang"
+#include "cluster_target_policy_contract.slang"
 #include "resource_effects.slang"
+#include "wave_aggregation.slang"
 
 StructuredBuffer<ClusterViewUniforms> Views;
 
 ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 ByteAddressBuffer PageHeap;
-StructuredBuffer<uint4> CandidateClusters;
+StructuredBuffer<DrawRequest> CandidateClusters;
 StructuredBuffer<uint> CandidateCount;
 #if CLUSTER_CULL_PHASE == 1
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer DrawArgs;
+ByteAddressBuffer BaseDrawArgs0;
+ByteAddressBuffer BaseDrawArgs1;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint4> VisibleClusters;
+RWStructuredBuffer<DrawRequest> VisibleClusters;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint4> NextCandidates;
+RWStructuredBuffer<DrawRequest> NextCandidates;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> NextCandidateCount;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer NextCandidateArgs;
 #elif CLUSTER_CULL_PHASE == 2
-ByteAddressBuffer DrawArgs;
+ByteAddressBuffer BaseDrawArgs0;
+ByteAddressBuffer BaseDrawArgs1;
+ByteAddressBuffer BaseDrawArgs2;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint4> VisibleClusters;
+RWStructuredBuffer<DrawRequest> VisibleClusters;
 Texture2DArray<float> HiZTexture;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer PhaseDrawArgs;
 #else
 #error CLUSTER_CULL_PHASE must be 1 or 2
 #endif
+
+StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
 float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
 {
@@ -78,15 +86,16 @@ bool PassesLODFilter(
     RenderInstanceTransform t,
     ClusterViewUniforms view)
 {
+    // Without a conservative deformation error we cannot select an approximate
+    // mesh LOD. Emit the original level once instead of overlapping every LOD.
     if (view.CullingEnabled == 0u)
-        return true;
+        return ((cluster.PackedCounts >> 16u) & 0xFFu) == 0u;
 
     float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
-    float clusterDist = max(0.0, distance(worldCenter, view.CameraPos) - worldRadius);
     float lodError = DecodeClusterLODError(cluster);
-    return lodError * view.LodScale <= view.LodThreshold * clusterDist;
+    return ClusterSphereError(worldCenter, worldRadius, lodError * maxScale, view) <= view.LodThreshold;
 }
 
 void BuildWorldAabbScreenBoundsAndNearDepth(
@@ -290,6 +299,13 @@ bool IsOccludedByHiZ(
     if (view.HiZMipCount == 0)
         return false;
 
+    if (view.TargetPolicy != 0u)
+        return ClusterTargetPolicyScreenBoundsOccluded(
+            minUv,
+            maxUv,
+            nearDepth,
+            usePrev,
+            view);
     hizDepth = SampleHiZMax(minUv, maxUv, mipLevel, viewIndex, view);
     return nearDepth > (hizDepth + epsilon);
 }
@@ -299,14 +315,22 @@ bool ShouldUseSWRaster(
     float2 maxUv,
     ClusterViewUniforms view)
 {
-    if (view.CullingEnabled == 0u || view.ForceHardwareRaster != 0u)
-        return false;
-
     float width = (maxUv.x - minUv.x) * view.ScreenWidth;
     float height = (maxUv.y - minUv.y) * view.ScreenHeight;
-    float area = width * height;
-    return area < view.SoftwareRasterAreaThreshold;
+    if (width > 64.0 || height > 64.0)
+        return false;
+    if (view.RasterMode == 1u)
+        return false;
+    if (view.RasterMode == 2u)
+        return true;
+    if (view.CullingEnabled == 0u)
+        return false;
+
+    float maximumEdge = max(width, height);
+    return maximumEdge <= view.SoftwareRasterEdgeThreshold;
 }
+
+#include "cluster_raster_target_filter.slang"
 
 #if CLUSTER_CULL_PHASE == 1
 void AppendVisible(
@@ -317,26 +341,49 @@ void AppendVisible(
     bool isSW,
     uint maxCandidates)
 {
-    uint totalIdx;
-    DrawArgs.InterlockedAdd(12, 1, totalIdx);
-    if (totalIdx >= maxCandidates)
+    CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
+    CullDrawArgs base1 = LoadCullDrawArgs(BaseDrawArgs1, 0u);
+    uint baseSWCount = base0.SWCount + base1.SWCount;
+    uint baseHWCount = base0.HWCount + base1.HWCount;
+    uint baseCount = baseSWCount + baseHWCount;
+    uint4 activeMask = WaveActiveBallot(true);
+    uint lane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(activeMask);
+    uint activeCount = WaveMaskBitCount(activeMask);
+    uint totalBase = 0u;
+    if (lane == leader)
+        DrawArgs.InterlockedAdd(12, activeCount, totalBase);
+    totalBase = WaveReadLaneAt(totalBase, leader);
+    bool admitted = baseCount + totalBase + WaveMaskPrefix(activeMask, lane) < maxCandidates;
+    if (!admitted)
         return;
 
-    uint outIdx;
+    uint4 routeMask = WaveActiveBallot(admitted && isSW);
+    if (!isSW)
+        routeMask = WaveActiveBallot(admitted && !isSW);
+    uint routeLeader = WaveMaskFirstLane(routeMask);
+    uint routeCount = WaveMaskBitCount(routeMask);
+    uint routeBase = 0u;
+    if (lane == routeLeader)
+    {
+        if (isSW)
+            DrawArgs.InterlockedAdd(4, routeCount, routeBase);
+        else
+            DrawArgs.InterlockedAdd(8, routeCount, routeBase);
+    }
+    routeBase = WaveReadLaneAt(routeBase, routeLeader);
+    uint outIdx = routeBase + WaveMaskPrefix(routeMask, lane);
     if (isSW)
     {
-        // SW clusters: write from front (CullDrawArgs.SWCount at byte 4)
-        DrawArgs.InterlockedAdd(4, 1, outIdx);
-        if (outIdx < maxCandidates)
-            VisibleClusters[outIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
+        uint globalIdx = baseSWCount + outIdx;
+        if (globalIdx < maxCandidates)
+            VisibleClusters[globalIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
     }
     else
     {
-        // HW clusters: write from back (CullDrawArgs.HWCount at byte 8)
-        DrawArgs.InterlockedAdd(8, 1, outIdx);
-        uint hwIdx = maxCandidates - 1 - outIdx;
-        if (outIdx < maxCandidates)
-            VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
+        uint hwIdx = maxCandidates - 1 - baseHWCount - outIdx;
+        if (baseHWCount + outIdx < maxCandidates)
+            VisibleClusters[hwIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
     }
 }
 
@@ -347,15 +394,25 @@ void AppendCandidate(
     uint viewIndex,
     uint maxCandidates)
 {
-    uint outIdx;
-    InterlockedAdd(NextCandidateCount[0], 1, outIdx);
+    uint4 activeMask = WaveActiveBallot(true);
+    uint lane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(activeMask);
+    uint waveCount = WaveMaskBitCount(activeMask);
+    uint waveBase = 0u;
+    if (lane == leader)
+        InterlockedAdd(NextCandidateCount[0], waveCount, waveBase);
+    waveBase = WaveReadLaneAt(waveBase, leader);
+    uint outIdx = waveBase + WaveMaskPrefix(activeMask, lane);
     if (outIdx >= maxCandidates)
         return;
 
-    uint groups = (outIdx + 64) / 64;
-    uint unused;
-    NextCandidateArgs.InterlockedMax(0, groups, unused);
-    NextCandidates[outIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
+    if (lane == leader)
+    {
+        uint groups = (min(waveBase + waveCount, maxCandidates) + 63u) / 64u;
+        uint unused;
+        NextCandidateArgs.InterlockedMax(0, groups, unused);
+    }
+    NextCandidates[outIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
 }
 #endif
 
@@ -383,12 +440,15 @@ bool LoadAndFilterCandidate(
     if (threadId >= count)
         return false;
 
-    uint4 candidate = CandidateClusters[threadId];
-    pageOffset = candidate.x;
-    clusterID = candidate.y;
-    instanceID = candidate.z;
-    viewIndex = candidate.w;
-    view = Views[viewIndex];
+    DrawRequest candidate = CandidateClusters[threadId];
+    pageOffset = candidate.PageOffset;
+    clusterID = DrawRequestClusterID(candidate);
+    instanceID = candidate.InstanceID;
+    viewIndex = DrawRequestViewIndex(candidate);
+    bool rasterRegion = (viewIndex & CLUSTER_RASTER_REGION_BIT) != 0u;
+    view = rasterRegion
+        ? LoadClusterView(Views, PolicyClusterViews, viewIndex)
+        : LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
     if (threadId >= view.MaxCandidates)
         return false;
 
@@ -404,15 +464,61 @@ bool LoadAndFilterCandidate(
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
             instanceID));
 
-    if (view.CullingEnabled == 0u)
-        return true;
+    return rasterRegion || PassesLODFilter(cluster, t, view);
+}
 
-    float3 worldCenter = TransformInstanceLocalPosition(cluster.LODCenter, t);
-    float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
-    float worldRadius = cluster.LODRadius * maxScale;
-    float clusterDist = max(0.0, distance(worldCenter, view.CameraPos) - worldRadius);
-    float lodError = DecodeClusterLODError(cluster);
-    return lodError * view.LodScale <= view.LodThreshold * clusterDist;
+#if CLUSTER_CULL_PHASE == 2
+void AppendVisiblePhase2(uint pageOffset, uint clusterID, uint instanceID,
+    uint viewIndex, bool isSW, uint maxCandidates);
+#endif
+
+void CullRasterRegions(
+    uint pageOffset, uint clusterID, uint instanceID,
+    PackedCluster cluster, RenderInstanceTransform transform,
+    float boundsExpansion, ClusterViewUniforms sourceView)
+{
+    float2 minUv = 0.0.xx;
+    float2 maxUv = 1.0.xx;
+    float nearDepth = 0.0;
+    uint unusedMip;
+    if (sourceView.CullingEnabled != 0u)
+        BuildClusterAabbScreenBoundsAndNearDepth(
+            cluster, transform, false, boundsExpansion, sourceView,
+            minUv, maxUv, nearDepth, unusedMip);
+    uint4 bounds = ClusterRasterGridBounds(minUv, maxUv, sourceView);
+    for (uint row = bounds.y; row <= bounds.w; row++)
+    {
+        for (uint word = bounds.x / 32u; word <= bounds.z / 32u; word++)
+        {
+            uint mask = ClusterRasterGridMask(row, word, bounds, sourceView);
+            while (mask != 0u)
+            {
+                uint column = word * 32u + firstbitlow(mask);
+                mask &= mask - 1u;
+                uint regionIndex = ClusterRasterGridRegion(row, column, sourceView);
+                uint viewIndex = ClusterEncodePolicyViewIndex(regionIndex);
+                ClusterViewUniforms view = ClusterApplyRasterRegion(
+                    sourceView, RasterTargetInvocations[regionIndex], regionIndex);
+                float2 regionMin, regionMax;
+#if CLUSTER_CULL_PHASE == 1
+                bool occluded = IsOccludedByHiZ(cluster, transform, boundsExpansion,
+                    true, viewIndex, view, regionMin, regionMax);
+                if (view.HasPrevHistory != 0u && occluded)
+                    AppendCandidate(pageOffset, clusterID, instanceID,
+                        viewIndex | CLUSTER_RASTER_REGION_BIT, view.MaxCandidates);
+                else
+                    AppendVisible(pageOffset, clusterID, instanceID, viewIndex,
+                        ShouldUseSWRaster(regionMin, regionMax, view), view.MaxCandidates);
+#else
+                bool occluded = IsOccludedByHiZ(cluster, transform, boundsExpansion,
+                    false, viewIndex, view, regionMin, regionMax);
+                if (!occluded)
+                    AppendVisiblePhase2(pageOffset, clusterID, instanceID, viewIndex,
+                        ShouldUseSWRaster(regionMin, regionMax, view), view.MaxCandidates);
+#endif
+            }
+        }
+    }
 }
 
 #if CLUSTER_CULL_PHASE == 1
@@ -439,6 +545,12 @@ void CullPhaseOne(uint3 dispatchThreadID: SV_DispatchThreadID)
             t,
             boundsExpansion))
         return;
+
+    if (view.TargetPolicy != 0u)
+    {
+        CullRasterRegions(pageOffset, clusterID, instanceID, cluster, t, boundsExpansion, view);
+        return;
+    }
 
     if (view.HasPrevHistory == 0)
     {
@@ -483,31 +595,51 @@ void AppendVisiblePhase2(
     uint maxCandidates)
 {
     uint localIdx;
-    CullDrawArgs phase1 = LoadCullDrawArgs(DrawArgs, 0u);
-    uint phase1SWCount = phase1.SWCount;
-    uint phase1HWCount = phase1.HWCount;
-    uint phase1Count = phase1SWCount + phase1HWCount;
+    CullDrawArgs base0 = LoadCullDrawArgs(BaseDrawArgs0, 0u);
+    CullDrawArgs base1 = LoadCullDrawArgs(BaseDrawArgs1, 0u);
+    CullDrawArgs base2 = LoadCullDrawArgs(BaseDrawArgs2, 0u);
+    uint baseSWCount = base0.SWCount + base1.SWCount + base2.SWCount;
+    uint baseHWCount = base0.HWCount + base1.HWCount + base2.HWCount;
+    uint baseCount = baseSWCount + baseHWCount;
 
-    uint totalIdx;
-    PhaseDrawArgs.InterlockedAdd(12, 1, totalIdx);
-    if (phase1Count + totalIdx >= maxCandidates)
+    uint4 activeMask = WaveActiveBallot(true);
+    uint lane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(activeMask);
+    uint activeCount = WaveMaskBitCount(activeMask);
+    uint totalBase = 0u;
+    if (lane == leader)
+        PhaseDrawArgs.InterlockedAdd(12, activeCount, totalBase);
+    totalBase = WaveReadLaneAt(totalBase, leader);
+    bool admitted = baseCount + totalBase + WaveMaskPrefix(activeMask, lane) < maxCandidates;
+    if (!admitted)
         return;
 
+    uint4 routeMask = WaveActiveBallot(admitted && isSW);
+    if (!isSW)
+        routeMask = WaveActiveBallot(admitted && !isSW);
+    uint routeLeader = WaveMaskFirstLane(routeMask);
+    uint routeCount = WaveMaskBitCount(routeMask);
+    uint routeBase = 0u;
+    if (lane == routeLeader)
+    {
+        if (isSW)
+            PhaseDrawArgs.InterlockedAdd(4, routeCount, routeBase);
+        else
+            PhaseDrawArgs.InterlockedAdd(8, routeCount, routeBase);
+    }
+    routeBase = WaveReadLaneAt(routeBase, routeLeader);
+    localIdx = routeBase + WaveMaskPrefix(routeMask, lane);
     if (isSW)
     {
-        // Phase2 SW: write after Phase1 SW (CullDrawArgs.SWCount at byte 4)
-        PhaseDrawArgs.InterlockedAdd(4, 1, localIdx);
-        uint globalIdx = phase1SWCount + localIdx;
+        uint globalIdx = baseSWCount + localIdx;
         if (globalIdx < maxCandidates)
-            VisibleClusters[globalIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
+            VisibleClusters[globalIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
     }
     else
     {
-        // Phase2 HW: write before Phase1 HW (CullDrawArgs.HWCount at byte 8)
-        PhaseDrawArgs.InterlockedAdd(8, 1, localIdx);
-        uint hwIdx = maxCandidates - 1 - phase1HWCount - localIdx;
+        uint hwIdx = maxCandidates - 1 - baseHWCount - localIdx;
         if (localIdx < maxCandidates)
-            VisibleClusters[hwIdx] = uint4(pageOffset, clusterID, instanceID, viewIndex);
+            VisibleClusters[hwIdx] = MakeDrawRequest(pageOffset, clusterID, instanceID, viewIndex);
     }
 }
 
@@ -534,6 +666,13 @@ void CullPhaseTwo(uint3 dispatchThreadID: SV_DispatchThreadID)
             t,
             boundsExpansion))
         return;
+
+    if (view.TargetPolicy != 0u && view.ViewPadding == 0u)
+    {
+        CullRasterRegions(pageOffset, clusterID, instanceID, cluster, t, boundsExpansion, view);
+        return;
+    }
+    viewIndex &= ~CLUSTER_RASTER_REGION_BIT;
 
     float2 minUv, maxUv;
     bool occluded = IsOccludedByHiZ(

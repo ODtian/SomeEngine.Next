@@ -7,7 +7,7 @@ ConstantBuffer<ShadeBinUniforms> Uniforms;
 Texture2DArray<uint> VisBuffer;
 [ResourceEffect(ResourceEffects.Read, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> BinOffsets;
-StructuredBuffer<uint4> VisibleClusters;
+StructuredBuffer<DrawRequest> VisibleClusters;
 StructuredBuffer<uint> ShadeSlots;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ScatterCounts;
@@ -17,32 +17,36 @@ RWStructuredBuffer<uint2> PixelCoordinates;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID)
+void ScatterShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
 {
-    if (threadId.x >= Uniforms.ScreenWidth || threadId.y >= Uniforms.ScreenHeight)
-        return;
-
-    uint viewIndex = threadId.z;
-    uint visibility = VisBuffer[uint3(threadId.xy, viewIndex)];
-    if (IsVisBufferEmpty(visibility))
-        return;
-
-    uint4 cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
-    if (cluster.w != viewIndex)
-        return;
-    uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.z);
-    uint bin = FindShadeBin(
-        ShadeSlots,
-        PageHeap,
-        Uniforms,
-        slotOffset,
-        cluster,
-        DecodeVisBufferTriangleID(visibility));
-    ScatterShade(
-        PixelCoordinates,
-        BinOffsets,
-        ScatterCounts,
-        bin,
-        (threadId.y << 16u) | threadId.x,
-        viewIndex);
+    uint bin = 0xFFFFFFFFu;
+    if (threadId.x < Uniforms.ScreenWidth && threadId.y < Uniforms.ScreenHeight)
+    {
+        uint visibility = VisBuffer[threadId];
+        if (!IsVisBufferEmpty(visibility))
+        {
+            DrawRequest cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
+            if (DrawRequestViewIndex(cluster) == threadId.z)
+            {
+                uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID);
+                bin = FindShadeBin(ShadeSlots, PageHeap, Uniforms, slotOffset, cluster,
+                    DecodeVisBufferTriangleID(visibility));
+            }
+        }
+    }
+    uint mask;
+    bool fullTile;
+    if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
+    uint counter = bin * 2u + (fullTile ? 0u : 1u);
+    uint2 topLeft = fullTile ? threadId.xy & ~7u.xx : threadId.xy & ~1u.xx;
+    uint coordinate = (threadId.z * Uniforms.ScreenHeight + topLeft.y) * Uniforms.ScreenWidth + topLeft.x;
+    uint4 matching = WaveMatchingLanes(counter);
+    uint waveLane = WaveGetLaneIndex();
+    uint leader = WaveMaskFirstLane(matching);
+    uint writeBase = 0u;
+    if (waveLane == leader)
+        InterlockedAdd(ScatterCounts[counter], WaveMaskBitCount(matching), writeBase);
+    writeBase = WaveReadLaneAt(writeBase, leader);
+    PixelCoordinates[BinOffsets[counter] + writeBase + WaveMaskPrefix(matching, waveLane)] =
+        uint2(coordinate, mask);
 }

@@ -18,6 +18,44 @@ namespace SomeEngine.Render.Tests;
 public sealed class RenderWorldExtractorTests
 {
     [Fact]
+    public void Extract_TransformDeltaMarksOnlyTheChangedMirrorRow()
+    {
+        World mainWorld = new();
+        RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        Mesh mesh = MeshAsset(1, 1);
+        Entity[] sources = Enumerable.Range(0, 128).Select(index =>
+            AddMeshSource(mainWorld, mesh, 0, new Vector3(index, 0, 0))).ToArray();
+        ExtractAndApply(extraction, mainWorld);
+        QueryHandle query = renderWorld.Query(new QueryDefinitionBuilder()
+            .Read<RenderSource>().Read<RenderTransform>().Read<RenderPreviousTransform>());
+        static void ReadVersions(QueryCursor cursor, ref Dictionary<Entity, (uint, uint)> versions)
+        {
+            foreach (QueryChunkView chunk in cursor.Chunks)
+            {
+                ReadOnlySpan<RenderSource> source = chunk.Read<RenderSource>();
+                ReadOnlySpan<uint> current = chunk.ReadWriteVersions<RenderTransform>();
+                ReadOnlySpan<uint> previous = chunk.ReadWriteVersions<RenderPreviousTransform>();
+                for (int row = 0; row < source.Length; row++)
+                    versions[source[row].Entity] = (current[row], previous[row]);
+            }
+        }
+        Dictionary<Entity, (uint, uint)> before = [];
+        renderWorld.ExecuteQuery(query, ref before, ReadVersions);
+        mainWorld.Replace(sources[3], new WorldTransform { Qvvs = new TransformQvvs(new Vector3(3, 1, 0), Quaternion.Identity) });
+        ExtractAndApply(extraction, mainWorld);
+        Dictionary<Entity, (uint, uint)> after = [];
+        renderWorld.ExecuteQuery(query, ref after, ReadVersions);
+        foreach (Entity source in sources)
+            if (source == sources[3]) Assert.NotEqual(before[source], after[source]);
+            else Assert.Equal(before[source], after[source]);
+        Entity changed = Mirror(renderWorld, sources[3]);
+        Assert.Equal(new Vector3(3, 1, 0), renderWorld.Read<RenderTransform>(changed).Position);
+        Assert.Equal(new Vector3(3, 0, 0), renderWorld.Read<RenderPreviousTransform>(changed).Value.Position);
+        renderWorld.ReleaseQuery(query);
+    }
+
+    [Fact]
     public void Extract_UsesInstalledSystemsAndUpdatesStableMirror()
     {
         World mainWorld = new();

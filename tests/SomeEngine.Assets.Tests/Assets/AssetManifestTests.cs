@@ -148,20 +148,18 @@ public class AssetManifestTests
     [Fact]
     public void GetReferencers_TracksIncomingDependencies()
     {
-        AssetGuid shaderGuid = AssetGuid.New();
+        AssetGuid textureGuid = AssetGuid.New();
         AssetGuid materialGuid = AssetGuid.New();
-        AssetGuid instanceGuid = AssetGuid.New();
         AssetGuid meshGuid = AssetGuid.New();
 
         AssetManifest manifest = new();
-        manifest.AddAsset(shaderGuid, "Shader", "assets/Shaders/test.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint);
-        manifest.AddAsset(materialGuid, "Material", "assets/Materials/test.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [shaderGuid]);
-        manifest.AddAsset(instanceGuid, "Instance", "assets/Materials/test.materialinstance.asset", AssetType<MaterialInstance>.Name, MaterialInstance.SchemaFingerprint, dependencies: [materialGuid]);
+        manifest.AddAsset(textureGuid, "Texture", "assets/Textures/test.texture.asset", AssetType<Texture>.Name, Texture.SchemaFingerprint);
+        manifest.AddAsset(materialGuid, "Material", "assets/Materials/test.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [textureGuid]);
         manifest.AddAsset(meshGuid, "Mesh", "assets/Meshes/test.mesh.asset", AssetType<Mesh>.Name, Mesh.SchemaFingerprint, dependencies: [materialGuid]);
 
-        Assert.Equal(new[] { materialGuid }, manifest.GetReferencers(shaderGuid));
-        AssertEquivalent(manifest.GetReferencers(materialGuid), new[] { instanceGuid, meshGuid });
-        Assert.Empty(manifest.GetReferencers(instanceGuid));
+        Assert.Equal(new[] { materialGuid }, manifest.GetReferencers(textureGuid));
+        Assert.Equal(new[] { meshGuid }, manifest.GetReferencers(materialGuid));
+        Assert.Empty(manifest.GetReferencers(meshGuid));
     }
 
     [Fact]

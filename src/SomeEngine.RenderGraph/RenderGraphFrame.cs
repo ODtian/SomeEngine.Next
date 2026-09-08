@@ -2,7 +2,7 @@ namespace SomeEngine.RenderGraph;
 
 using System.Runtime.InteropServices;
 
-public ref struct RenderGraphFrame
+public ref partial struct RenderGraphFrame
 {
     private RenderGraphFrameState? _state;
     private readonly ulong _identity;
@@ -102,27 +102,27 @@ public ref struct RenderGraphFrame
         State.AddBuffer(description, memoryType, RenderGraphResourceOwnership.GraphOwned,
             RenderGraphResourceLifetime.PerFrame);
 
-    public GraphBufferId Upload(
+    public GraphBufferSlice Upload(
         scoped ReadOnlySpan<byte> data,
         BufferUsages usages,
         string? label = null) =>
-        State.Upload(data, usages, label);
+        State.Upload(data, usages, label, 4);
 
-    public GraphBufferId Upload<T>(
+    public GraphBufferSlice Upload<T>(
         scoped ReadOnlySpan<T> data,
         BufferUsages usages,
         string? label = null)
         where T : unmanaged =>
-        State.Upload(MemoryMarshal.AsBytes(data), usages, label);
+        State.Upload(MemoryMarshal.AsBytes(data), usages, label, checked((uint)Unsafe.SizeOf<T>()));
 
-    public GraphBufferId Upload<T>(
+    public GraphBufferSlice Upload<T>(
         in T value,
         BufferUsages usages,
         string? label = null)
         where T : unmanaged
     {
         ReadOnlySpan<T> values = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(in value), 1);
-        return State.Upload(MemoryMarshal.AsBytes(values), usages, label);
+        return State.Upload(MemoryMarshal.AsBytes(values), usages, label, checked((uint)Unsafe.SizeOf<T>()));
     }
 
     public GraphTextureId CreateTexture(in TextureDesc description) =>
@@ -141,6 +141,15 @@ public ref struct RenderGraphFrame
     public GraphBufferId GetImported(Buffer buffer) => State.GetImported(buffer);
 
     public GraphTextureId GetImported(Texture texture) => State.GetImported(texture);
+
+    public GraphBufferCbvId CreateBufferCbv(
+        GraphBufferSlice buffer, BufferRange? range = null, string? label = null) =>
+        CreateBufferCbv(buffer.Buffer, buffer.ResolveRange(range), label);
+
+    public GraphBufferSrvId CreateBufferSrv(
+        GraphBufferSlice buffer, BufferRange? range = null, Format? format = null,
+        uint structureStride = 0, string? label = null) =>
+        CreateBufferSrv(buffer.Buffer, buffer.ResolveRange(range), format, structureStride, label);
 
     public GraphBufferCbvId CreateBufferCbv(
         GraphBufferId buffer,
@@ -309,4 +318,11 @@ public ref struct RenderGraphFrame
         _state = null;
         state?.Cancel(_identity);
     }
+
+    public void SetBufferInput(GraphBufferInput input, GraphBufferSlice value) => State.SetBufferInput(input, value);
+
+    public void SetTextureInput(GraphTextureInput input, GraphTextureId value) => State.SetTextureInput(input, value);
+
+    /// <summary>Supplies an existing RHI binding after importing its resources into this frame.</summary>
+    public void SetParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetParameterInput(input, value);
 }

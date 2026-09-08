@@ -1000,6 +1000,7 @@ internal sealed unsafe partial class VulkanBackend
             return (type.ScalarType, components) switch
             {
                 (SlangScalarType.Bool or SlangScalarType.UInt32, 1) => RhiFormat.R32UInt,
+                (SlangScalarType.UInt64, 1) => RhiFormat.R64UInt,
                 (SlangScalarType.Bool or SlangScalarType.UInt32, 2) => RhiFormat.R32G32UInt,
                 (SlangScalarType.Bool or SlangScalarType.UInt32, 4) => RhiFormat.R32G32B32A32UInt,
                 (SlangScalarType.Int32, 1) => RhiFormat.R32SInt,

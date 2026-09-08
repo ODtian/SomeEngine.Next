@@ -273,7 +273,7 @@ public static partial class SlangShaderImporter
             Tags = [],
             MaterialBindings = [],
             MaterialScalarLayouts = [],
-            MaterialInstanceProperties = [],
+            InstanceProperties = [],
         };
     }
 
@@ -525,12 +525,22 @@ public static partial class SlangShaderImporter
         ShaderStage stage = entryReflection.Stage != SlangStage.None
             ? MapStage(entryReflection.Stage)
             : ShaderStage.Vertex;
-        var entryResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
+        var globalResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
         CollectGlobalMaterialResources(reflection, state.Metadata);
-        HashSet<string> materialResourceNames = EntryPointMaterialResources(entryReflection, state.Metadata);
-        CollectGlobalResources(reflection, stage, entryResources, backendName, materialResourceNames);
-        CollectEntryPointResources(entryReflection, stage, entryResources, backendName);
-        RemoveUnusedEntryPointResources(entryResources, backendName, metadata);
+        EntryPointMaterialResources(entryReflection, state.Metadata);
+        CollectGlobalResources(reflection, stage, globalResources, backendName);
+        Dictionary<SlangBindingMap.SpaceKey, uint> entryBases =
+            SlangBindingMap.Next(globalResources, backendName);
+        var parameterResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
+        CollectEntryPointResources(
+            entryReflection,
+            stage,
+            parameterResources,
+            backendName,
+            entryBases);
+        RemoveUnusedEntryPointResources(globalResources, backendName, metadata);
+        SlangBindingMap.Merge(globalResources, parameterResources);
+        Dictionary<SlangBindingMap.ResourceKey, uint> entryResources = globalResources;
         SlangBindingMap.Merge(state.BackendResourceMaps[backendName], entryResources);
         state.Asset.EntryPointReflections!.Add(
             new Schema.ShaderEntryPointReflection
@@ -623,8 +633,7 @@ public static partial class SlangShaderImporter
         ShaderReflection reflection,
         ShaderStage stage,
         Dictionary<SlangBindingMap.ResourceKey, uint> resources,
-        string backendName,
-        HashSet<string> materialResourceNames)
+        string backendName)
     {
         for (uint parameterIndex = 0; parameterIndex < reflection.ParameterCount; parameterIndex++)
         {
@@ -632,8 +641,7 @@ public static partial class SlangShaderImporter
                 reflection.GetParameterByIndex(parameterIndex),
                 stage,
                 resources,
-                backendName,
-                skipNames: materialResourceNames);
+                backendName);
         }
     }
 
@@ -641,9 +649,9 @@ public static partial class SlangShaderImporter
         EntryPointReflection entryReflection,
         ShaderStage stage,
         Dictionary<SlangBindingMap.ResourceKey, uint> resources,
-        string backendName)
+        string backendName,
+        IReadOnlyDictionary<SlangBindingMap.SpaceKey, uint> bindingBases)
     {
-        var bindingBases = SlangBindingMap.Next(resources, backendName);
         for (uint parameterIndex = 0; parameterIndex < entryReflection.ParameterCount; parameterIndex++)
         {
             SlangBindingMap.Collect(

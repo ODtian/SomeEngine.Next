@@ -14,15 +14,21 @@ internal sealed class ClusterFrameUploads : IDisposable
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly int _generationCount;
-    private readonly List<Slot> _slots = [];
-    private readonly Dictionary<string, List<Slot>> _slotsByLabel = new(StringComparer.Ordinal);
+    private readonly List<UploadBuffer> _uploadBuffers = [];
+    private readonly Dictionary<string, List<UploadBuffer>> _buffersByLabel = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _declarationOccurrences = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _frameOccurrences = new(StringComparer.Ordinal);
+    private readonly Dictionary<GraphBufferId, UploadBuffer> _buffersById = [];
     private readonly List<DeclarationChange> _declarationChanges = [];
-    private readonly List<Slot> _deactivatedSlots = [];
+    private readonly List<UploadBuffer> _deactivatedBuffers = [];
+    private readonly List<UploadBuffer> _frameBuffers = [];
+    private int _pendingGeneration = -1;
     private bool _declaring;
     private bool _writing;
     private bool _disposed;
+    private GraphPassId _finalizationPass;
+    private GraphPassId _previousFinalizationPass;
+
+    internal GraphPassId FinalizationPass => _finalizationPass;
 
     internal ClusterFrameUploads(
         IGraphicsBackend backend,
@@ -44,53 +50,67 @@ internal sealed class ClusterFrameUploads : IDisposable
             throw new InvalidOperationException("Cluster frame upload declarations are already active.");
         _declarationOccurrences.Clear();
         _declarationChanges.Clear();
-        _deactivatedSlots.Clear();
+        _deactivatedBuffers.Clear();
+        _previousFinalizationPass = _finalizationPass;
         _declaring = true;
     }
 
-    internal void CompleteDeclarations(ref RenderGraphEdit edit)
+    internal void RemoveUnusedDeclarations(ref RenderGraphEdit edit)
     {
         if (!_declaring)
             throw new InvalidOperationException("Cluster frame upload declarations are not active.");
         foreach ((string label, int activeCount) in _declarationOccurrences)
         {
-            if (!_slotsByLabel.TryGetValue(label, out List<Slot>? slots))
+            if (!_buffersByLabel.TryGetValue(label, out List<UploadBuffer>? slots))
                 continue;
             for (int occurrence = activeCount; occurrence < slots.Count; occurrence++)
             {
-                Slot slot = slots[occurrence];
+                UploadBuffer slot = slots[occurrence];
                 if (!slot.Active)
                     continue;
                 edit.Remove(slot.Id);
                 slot.Active = false;
-                _deactivatedSlots.Add(slot);
+                _deactivatedBuffers.Add(slot);
             }
         }
+    }
+
+    internal void CompleteDeclarations(SomeEngine.RenderGraph.RenderGraph graph)
+    {
         _declaring = false;
+        foreach (UploadBuffer buffer in _deactivatedBuffers)
+        {
+            _uploadBuffers.Remove(buffer);
+            _buffersById.Remove(buffer.Id);
+            graph.RetireAfterSubmittedFrames(buffer);
+        }
         _declarationOccurrences.Clear();
         _declarationChanges.Clear();
-        _deactivatedSlots.Clear();
+        _deactivatedBuffers.Clear();
     }
 
     internal void CancelDeclarations()
     {
+        if (!_declaring) return;
+        _finalizationPass = _previousFinalizationPass;
         for (int index = _declarationChanges.Count - 1; index >= 0; index--)
         {
             DeclarationChange change = _declarationChanges[index];
-            if (!_slotsByLabel.TryGetValue(change.Label, out List<Slot>? values))
+            if (!_buffersByLabel.TryGetValue(change.Label, out List<UploadBuffer>? values))
                 continue;
             if (change.Previous is { } previous)
                 values[change.Occurrence] = previous;
             else if (change.Occurrence == values.Count - 1)
                 values.RemoveAt(change.Occurrence);
             if (values.Count == 0)
-                _slotsByLabel.Remove(change.Label);
-            _slots.Remove(change.Current);
+                _buffersByLabel.Remove(change.Label);
+            _uploadBuffers.Remove(change.Current);
+            _buffersById.Remove(change.Current.Id);
             change.Current.Dispose();
         }
-        for (int index = 0; index < _deactivatedSlots.Count; index++)
-            _deactivatedSlots[index].Active = true;
-        _deactivatedSlots.Clear();
+        for (int index = 0; index < _deactivatedBuffers.Count; index++)
+            _deactivatedBuffers[index].Active = true;
+        _deactivatedBuffers.Clear();
         _declarationChanges.Clear();
         _declaring = false;
         _declarationOccurrences.Clear();
@@ -113,30 +133,31 @@ internal sealed class ClusterFrameUploads : IDisposable
 
         BufferDesc description = new(
             checked((ulong)initialValue.Length),
-            usages,
+            usages | BufferUsages.CopySource,
             label);
         int occurrence = _declarationOccurrences.GetValueOrDefault(label);
         _declarationOccurrences[label] = checked(occurrence + 1);
-        if (_slotsByLabel.TryGetValue(label, out List<Slot>? existing) &&
+        if (_buffersByLabel.TryGetValue(label, out List<UploadBuffer>? existing) &&
             occurrence < existing.Count)
         {
-            Slot retained = existing[occurrence];
-            if (retained.Active && retained.HasDescription(description))
+            UploadBuffer retained = existing[occurrence];
+            if (retained.Active && retained.HasDescription(description) && retained.HasInitialValue(initialValue))
                 return retained.Id;
         }
 
         GraphBufferId id = edit.DeclareExternalBuffer(description, MemoryType.Upload);
-        var slot = new Slot(_backend, _device, id, description, _generationCount);
+        var slot = new UploadBuffer(_backend, _device, id, description, _generationCount);
         try
         {
             slot.Initialize(initialValue);
-            _slots.Add(slot);
-            if (!_slotsByLabel.TryGetValue(label, out List<Slot>? values))
+            _uploadBuffers.Add(slot);
+            _buffersById.Add(id, slot);
+            if (!_buffersByLabel.TryGetValue(label, out List<UploadBuffer>? values))
             {
                 values = [];
-                _slotsByLabel.Add(label, values);
+                _buffersByLabel.Add(label, values);
             }
-            Slot? previous = null;
+            UploadBuffer? previous = null;
             if (occurrence < values.Count)
             {
                 previous = values[occurrence];
@@ -144,7 +165,7 @@ internal sealed class ClusterFrameUploads : IDisposable
                 {
                     edit.Remove(previous.Id);
                     previous.Active = false;
-                    _deactivatedSlots.Add(previous);
+                    _deactivatedBuffers.Add(previous);
                 }
                 values[occurrence] = slot;
             }
@@ -164,52 +185,110 @@ internal sealed class ClusterFrameUploads : IDisposable
         }
     }
 
-    internal void BeginFrame()
+    internal void BeginFrame(int generation)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_writing)
             throw new InvalidOperationException("Cluster frame uploads are already being written.");
-        _frameOccurrences.Clear();
+        if (_pendingGeneration >= 0)
+            throw new InvalidOperationException("The previous Cluster frame uploads are awaiting commit or discard.");
+        if ((uint)generation >= (uint)_generationCount)
+            throw new ArgumentOutOfRangeException(nameof(generation));
+        _frameBuffers.Clear();
+        _pendingGeneration = generation;
+        foreach (UploadBuffer slot in _uploadBuffers)
+            slot.Bound = false;
         _writing = true;
     }
 
-    internal GraphBufferId WriteAndBind(
-        ref RenderGraphFrame frame,
-        int generation,
-        scoped ReadOnlySpan<byte> value,
-        string label)
+    internal void WriteAndBind(ref RenderGraphFrame frame, int generation,
+        scoped ReadOnlySpan<byte> value, GraphBufferId id)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_writing)
-            throw new InvalidOperationException("Cluster frame uploads are not being written.");
-        int occurrence = _frameOccurrences.GetValueOrDefault(label);
-        _frameOccurrences[label] = checked(occurrence + 1);
-        if (!_slotsByLabel.TryGetValue(label, out List<Slot>? slots) || occurrence >= slots.Count)
-        {
-            throw new InvalidOperationException(
-                $"Cluster frame upload '{label}' occurrence {occurrence} was not authored.");
-        }
-        Slot slot = slots[occurrence];
-        if (!slot.Active)
-        {
-            throw new InvalidOperationException(
-                $"Cluster frame upload '{label}' occurrence {occurrence} is not active in this graph version.");
-        }
-        slot.WriteAndBind(ref frame, generation, value, label);
-        return slot.Id;
+        if (!_writing || generation != _pendingGeneration)
+            throw new InvalidOperationException("Cluster frame uploads are not being written for this generation.");
+        if (!_buffersById.TryGetValue(id, out UploadBuffer? buffer) || !buffer.Active)
+            throw new InvalidOperationException("The Cluster upload buffer is not active in this graph version.");
+        buffer.WriteAndBind(ref frame, generation, value);
     }
 
-    internal void CompleteFrame()
+    internal GraphPassId DeclareFinalization(
+        ref RenderGraphEdit frame,
+        GraphBufferId instanceData,
+        ulong instanceDataSize,
+        GraphBufferId instanceMetadata,
+        ulong instanceMetadataSize,
+        GraphTextureId previousHiZ,
+        GraphTextureId currentHiZ,
+        TextureSubresourceRange hiZRange,
+        bool finalizeCurrentHiZ)
     {
-        if (!_writing)
-            throw new InvalidOperationException("Cluster frame uploads are not being written.");
+        UploadBuffer[] active = _uploadBuffers.Where(static value => value.Active).ToArray();
+        var resources = new UploadFinalizationResource[active.Length];
+        for (int index = 0; index < resources.Length; index++)
+            resources[index] = new UploadFinalizationResource(active[index].Id, active[index].Size);
+        if (_finalizationPass != default)
+            frame.Remove(_finalizationPass);
+        var data = new UploadFinalizationPassData(
+            resources,
+            instanceData,
+            instanceDataSize,
+            instanceMetadata,
+            instanceMetadataSize,
+            previousHiZ,
+            currentHiZ,
+            hiZRange,
+            finalizeCurrentHiZ);
+        GraphPassId finalization = frame.AddGeneralFramePass(
+            "Finalize Cluster frame resource endpoints",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            data,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            UploadFinalizationPassData.Declare,
+            UploadFinalizationPassData.Record);
+        _finalizationPass = finalization;
+        return finalization;
+    }
+
+    internal void CompleteFrame(ref RenderGraphFrame frame)
+    {
+        if (!_writing || _finalizationPass == default)
+            throw new InvalidOperationException("Cluster upload finalization was not declared.");
+        // Constant uploads participate every frame even when no value changes.
+        // They use the same generation and endpoint tracking as dynamic values.
+        foreach (UploadBuffer slot in _uploadBuffers)
+        {
+            if (!slot.Active)
+                continue;
+            if (!slot.Bound)
+                slot.Bind(ref frame, _pendingGeneration);
+            _frameBuffers.Add(slot);
+        }
         _writing = false;
-        _frameOccurrences.Clear();
     }
 
     internal void CancelFrame()
     {
-        _frameOccurrences.Clear();
+        _frameBuffers.Clear();
+        _pendingGeneration = -1;
+        _writing = false;
+    }
+
+    internal void Commit(int generation, ReadOnlySpan<QueueCompletion> completions)
+    {
+        if (_writing || generation != _pendingGeneration)
+            throw new InvalidOperationException("Cluster frame upload commit does not match the pending generation.");
+        QueueCompletion completion = FindCompletion(completions, QueueType.Graphics);
+        foreach (UploadBuffer slot in _frameBuffers)
+            slot.Commit(generation, completion);
+        _frameBuffers.Clear();
+        _pendingGeneration = -1;
+    }
+
+    internal void DiscardFrame()
+    {
+        _frameBuffers.Clear();
+        _pendingGeneration = -1;
         _writing = false;
     }
 
@@ -218,46 +297,58 @@ internal sealed class ClusterFrameUploads : IDisposable
         if (_disposed)
             return;
         List<Exception>? failures = null;
-        for (int index = _slots.Count - 1; index >= 0; index--)
+        for (int index = _uploadBuffers.Count - 1; index >= 0; index--)
         {
-            try { _slots[index].Dispose(); }
+            try { _uploadBuffers[index].Dispose(); }
             catch (Exception failure) { (failures ??= []).Add(failure); }
         }
-        _slots.Clear();
-        _slotsByLabel.Clear();
+        _uploadBuffers.Clear();
+        _buffersById.Clear();
+        _buffersByLabel.Clear();
         _declarationOccurrences.Clear();
-        _frameOccurrences.Clear();
         _declarationChanges.Clear();
-        _deactivatedSlots.Clear();
+        _deactivatedBuffers.Clear();
+        _frameBuffers.Clear();
+        _pendingGeneration = -1;
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
     }
 
-    private sealed class Slot : IDisposable
+    private sealed class UploadBuffer : IDisposable
     {
-        private readonly IGraphicsBackend _backend;
+        private byte[] _initialValue = [];
         private Buffer?[] _buffers;
+        private MappedBuffer[] _mappings;
+        private BufferBoundaryState[] _endpoints;
 
-        internal Slot(
+        internal UploadBuffer(
             IGraphicsBackend backend,
             Device device,
             GraphBufferId id,
             in BufferDesc description,
             int generationCount)
         {
-            _backend = backend;
             Id = id;
             Description = description;
             _buffers = new Buffer?[generationCount];
+            _mappings = new MappedBuffer[generationCount];
+            _endpoints = new BufferBoundaryState[generationCount];
             try
             {
                 for (int generation = 0; generation < generationCount; generation++)
                 {
-                    _buffers[generation] = backend.CreateBuffer(
+                    Buffer buffer = backend.CreateBuffer(
                         device,
                         description with { Label = $"{description.Label} {generation}" },
                         MemoryType.Upload);
+                    _buffers[generation] = buffer;
+                    _mappings[generation] = backend.Map(buffer, MapType.Write, new BufferRange(0, description.Size));
+                    _endpoints[generation] = new BufferBoundaryState(
+                        new BufferRange(0, description.Size),
+                        buffer.InitialSync,
+                        buffer.InitialAccess,
+                        ResourceContentState.Defined);
                 }
             }
             catch
@@ -270,13 +361,19 @@ internal sealed class ClusterFrameUploads : IDisposable
         internal GraphBufferId Id { get; }
 
         internal bool Active { get; set; } = true;
+        internal bool Bound { get; set; }
+
+        internal ulong Size => Description.Size;
 
         private BufferDesc Description { get; }
 
         internal bool HasDescription(in BufferDesc description) => Description == description;
 
+        internal bool HasInitialValue(scoped ReadOnlySpan<byte> value) => value.SequenceEqual(_initialValue);
+
         internal void Initialize(scoped ReadOnlySpan<byte> value)
         {
+            _initialValue = value.ToArray();
             for (int generation = 0; generation < _buffers.Length; generation++)
                 Write(generation, value);
         }
@@ -284,24 +381,33 @@ internal sealed class ClusterFrameUploads : IDisposable
         internal void WriteAndBind(
             ref RenderGraphFrame frame,
             int generation,
-            scoped ReadOnlySpan<byte> value,
-            string label)
+            scoped ReadOnlySpan<byte> value)
         {
-            if (!string.Equals(Description.Label, label, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"Cluster upload slot '{Description.Label}' was replayed as '{label}'.");
-            }
-            Buffer buffer = Write(generation, value);
-            BufferRange range = new(0, Description.Size);
+            Write(generation, value);
+            Bind(ref frame, generation);
+        }
+
+        internal void Bind(ref RenderGraphFrame frame, int generation)
+        {
+            Buffer buffer = _buffers[generation] ?? throw new ObjectDisposedException(nameof(UploadBuffer));
+            Bound = true;
             frame.BindExternalBuffer(
                 Id,
                 buffer,
-                [new BufferBoundaryState(
-                    range,
-                    buffer.InitialSync,
-                    buffer.InitialAccess,
-                    ResourceContentState.Defined)]);
+                [_endpoints[generation]]);
+        }
+
+        internal void Commit(int generation, QueueCompletion completion)
+        {
+            if ((uint)generation >= (uint)_endpoints.Length)
+                throw new ArgumentOutOfRangeException(nameof(generation));
+            _endpoints[generation] = new BufferBoundaryState(
+                new BufferRange(0, Description.Size),
+                PipelineSync.Copy,
+                ResourceAccess.CopySource,
+                ResourceContentState.Defined,
+                completion.Queue,
+                completion);
         }
 
         private Buffer Write(int generation, scoped ReadOnlySpan<byte> value)
@@ -314,7 +420,7 @@ internal sealed class ClusterFrameUploads : IDisposable
                     $"Cluster upload '{Description.Label}' changed from {Description.Size} to {value.Length} bytes.");
             }
             BufferRange range = new(0, Description.Size);
-            using MappedBuffer mapping = _backend.Map(buffer, MapType.Write, range);
+            MappedBuffer mapping = _mappings[generation];
             value.CopyTo(mapping.Bytes);
             mapping.Flush(range);
             return buffer;
@@ -325,11 +431,15 @@ internal sealed class ClusterFrameUploads : IDisposable
             List<Exception>? failures = null;
             for (int generation = _buffers.Length - 1; generation >= 0; generation--)
             {
+                try { _mappings[generation].Dispose(); }
+                catch (Exception failure) { (failures ??= []).Add(failure); }
                 try { _buffers[generation]?.Dispose(); }
                 catch (Exception failure) { (failures ??= []).Add(failure); }
                 _buffers[generation] = null;
             }
             _buffers = [];
+            _mappings = [];
+            _endpoints = [];
             if (failures is not null)
                 throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
         }
@@ -338,6 +448,77 @@ internal sealed class ClusterFrameUploads : IDisposable
     private readonly record struct DeclarationChange(
         string Label,
         int Occurrence,
-        Slot? Previous,
-        Slot Current);
+        UploadBuffer? Previous,
+        UploadBuffer Current);
+
+    private readonly record struct UploadFinalizationResource(GraphBufferId Id, ulong Size);
+
+    private readonly record struct UploadFinalizationPassData(
+        UploadFinalizationResource[] Resources,
+        GraphBufferId InstanceData,
+        ulong InstanceDataSize,
+        GraphBufferId InstanceMetadata,
+        ulong InstanceMetadataSize,
+        GraphTextureId PreviousHiZ,
+        GraphTextureId CurrentHiZ,
+        TextureSubresourceRange HiZRange,
+        bool FinalizeCurrentHiZ)
+    {
+        internal static void Declare(
+            ref PassDefinition access,
+            ref UploadFinalizationPassData data)
+        {
+            foreach (UploadFinalizationResource resource in data.Resources)
+            {
+                _ = access.Read(
+                    resource.Id,
+                    new BufferRange(0, resource.Size),
+                    PipelineSync.Copy,
+                    ResourceAccess.CopySource);
+            }
+            _ = access.Read(
+                data.InstanceData,
+                new BufferRange(0, data.InstanceDataSize),
+                PipelineSync.AllShading,
+                ResourceAccess.ShaderResource);
+            _ = access.Read(
+                data.InstanceMetadata,
+                new BufferRange(0, data.InstanceMetadataSize),
+                PipelineSync.AllShading,
+                ResourceAccess.ConstantBuffer);
+            _ = access.Read(
+                data.PreviousHiZ,
+                data.HiZRange,
+                PipelineSync.ComputeShading,
+                ResourceAccess.ShaderResource,
+                TextureLayout.ShaderResource);
+            if (data.FinalizeCurrentHiZ)
+            {
+                _ = access.Read(
+                    data.CurrentHiZ,
+                    data.HiZRange,
+                    PipelineSync.ComputeShading,
+                    ResourceAccess.ShaderResource,
+                    TextureLayout.ShaderResource);
+            }
+        }
+
+        internal static void Record(
+            ref GeneralPassCommandScope commands,
+            in UploadFinalizationPassData data)
+        {
+            _ = commands;
+            _ = data;
+        }
+    }
+
+    private static QueueCompletion FindCompletion(
+        ReadOnlySpan<QueueCompletion> completions,
+        QueueType type)
+    {
+        foreach (ref readonly QueueCompletion completion in completions)
+            if (completion.Queue.Type == type)
+                return completion;
+        throw new InvalidOperationException($"Cluster frame uploads require a {type} Queue completion.");
+    }
 }

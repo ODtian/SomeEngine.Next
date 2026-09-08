@@ -12,6 +12,9 @@ public sealed partial class RuntimeConfiguration
         RuntimeConfiguration asset = document.Root;
         AssetGuid scene = Require(asset.SceneGuid, nameof(SceneGuid));
         AssetGuid pipeline = Require(asset.ClusterPipelineGuid, nameof(ClusterPipelineGuid));
+        AssetGuid virtualShadow = Require(
+            asset.VirtualShadowMapGuid,
+            nameof(VirtualShadowMapGuid));
         AssetGuid uiShader = RequireRasterShaderPair(asset.UiShaders, nameof(UiShaders));
         AssetGuid presentationShader = RequireRasterShaderPair(
             asset.PresentationShaders,
@@ -19,7 +22,6 @@ public sealed partial class RuntimeConfiguration
         AssetGuid lightingShader = RequireComputeShader(
             asset.LightingShader,
             nameof(LightingShader));
-        AssetGuid motionShader = RequireComputeShader(asset.MotionShader, nameof(MotionShader));
         AssetGuid temporalShader = RequireRasterShaderPair(asset.TemporalShaders, nameof(TemporalShaders));
         AssetGuid translucencyShader = RequireRasterShaderPair(
             asset.TranslucencyShaders,
@@ -32,13 +34,13 @@ public sealed partial class RuntimeConfiguration
         cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<ClusterShaders>(pipeline)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
+        _ = await context.LoadDependencyAsync(new AssetId<VirtualShadowMapShaders>(virtualShadow)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(uiShader)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(presentationShader)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(lightingShader)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(motionShader)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         _ = await context.LoadDependencyAsync(new AssetId<Shader>(temporalShader)).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -56,10 +58,10 @@ public sealed partial class RuntimeConfiguration
         [
             Require(SceneGuid, nameof(SceneGuid)),
             Require(ClusterPipelineGuid, nameof(ClusterPipelineGuid)),
+            Require(VirtualShadowMapGuid, nameof(VirtualShadowMapGuid)),
             RequireRasterShaderPair(UiShaders, nameof(UiShaders)),
             RequireRasterShaderPair(PresentationShaders, nameof(PresentationShaders)),
             RequireComputeShader(LightingShader, nameof(LightingShader)),
-            RequireComputeShader(MotionShader, nameof(MotionShader)),
             RequireRasterShaderPair(TemporalShaders, nameof(TemporalShaders)),
             RequireRasterShaderPair(TranslucencyShaders, nameof(TranslucencyShaders)),
             RequireRasterShaderPair(DebugShaders, nameof(DebugShaders)),

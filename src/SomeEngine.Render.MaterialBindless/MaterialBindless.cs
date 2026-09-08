@@ -725,7 +725,7 @@ public sealed class MaterialBindless : IDisposable
             ReadOnlySpan<uint> values = _mirror.AsSpan(
                 checked((int)dirty.Start),
                 checked((int)dirty.Count));
-            GraphBufferId upload = frame.Upload(
+            GraphBufferSlice upload = frame.Upload(
                 values,
                 BufferUsages.CopySource,
                 "MaterialBindlessValues dirty upload");
@@ -742,8 +742,8 @@ public sealed class MaterialBindless : IDisposable
                 static (ref PassDefinition definition, ref ValuesUploadPass value) =>
                 {
                     _ = definition.Read(
-                        value.Upload,
-                        BufferRange.Whole,
+                        value.Upload.Buffer,
+                        value.Upload.Range,
                         PipelineSync.Copy,
                         ResourceAccess.CopySource);
                     _ = definition.Write(
@@ -757,8 +757,8 @@ public sealed class MaterialBindless : IDisposable
                 static (ref CopyPassCommandScope commands, in ValuesUploadPass value) =>
                 {
                     commands.CopyBuffer(new BufferCopy(
-                        commands.GetBuffer(value.Upload),
-                        0,
+                        commands.GetBuffer(value.Upload.Buffer),
+                        value.Upload.Range.Offset,
                         commands.GetBuffer(value.Destination),
                         value.DestinationOffset,
                         value.Size));
@@ -929,7 +929,7 @@ public sealed class MaterialBindless : IDisposable
     private readonly record struct ValueRange(uint Start, uint Count);
 
     private readonly record struct ValuesUploadPass(
-        GraphBufferId Upload,
+        GraphBufferSlice Upload,
         GraphBufferId Destination,
         ulong DestinationOffset,
         ulong Size);

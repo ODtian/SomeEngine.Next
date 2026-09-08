@@ -18,13 +18,26 @@ public sealed class ClusterStreamingFeedbackChannel
     {
         if (!ticket.IsValid)
             throw new ArgumentException("Cluster streaming feedback requires a valid ticket.", nameof(ticket));
+        for (int offset = 0; offset < _count; offset++)
+        {
+            int packetIndex = (_readIndex + offset) % Capacity;
+            ClusterStreamingFeedbackPacket packet = _packets[packetIndex];
+            if (packet.Ticket != ticket)
+                continue;
+
+            byte[][] payloads = new byte[packet.Payloads.Length + 1][];
+            packet.Payloads.CopyTo(payloads, 0);
+            payloads[^1] = payload.ToArray();
+            _packets[packetIndex] = new ClusterStreamingFeedbackPacket(ticket, payloads);
+            return;
+        }
         if (_count == Capacity)
         {
             throw new InvalidOperationException(
                 "Cluster streaming feedback was not consumed before its fixed publication capacity filled.");
         }
         int writeIndex = (_readIndex + _count) % Capacity;
-        _packets[writeIndex] = new ClusterStreamingFeedbackPacket(ticket, payload.ToArray());
+        _packets[writeIndex] = new ClusterStreamingFeedbackPacket(ticket, [payload.ToArray()]);
         _count++;
     }
 
@@ -63,11 +76,11 @@ public sealed class ClusterStreamingFeedbackConsumer
     public void Pump()
     {
         while (_channel.TryTake(out ClusterStreamingFeedbackPacket packet))
-            _resources.IngestPageFaultReadback(packet.Ticket, packet.Payload);
+            _resources.IngestPageFaultReadbackBatch(packet.Ticket, packet.Payloads);
         _resources.PumpStreaming();
     }
 }
 
 internal readonly record struct ClusterStreamingFeedbackPacket(
     ClusterReadbackTicket Ticket,
-    byte[] Payload);
+    byte[][] Payloads);

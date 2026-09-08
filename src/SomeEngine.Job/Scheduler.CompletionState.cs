@@ -16,6 +16,7 @@ internal sealed partial class Scheduler
         internal int PendingChildren;
         internal int ActiveCompleters;
         internal ScopeToken Parent;
+        internal SomeEngine.Diagnostics.TraceContext TraceContext;
         internal ExceptionDispatchInfo? Fault;
         internal bool FaultObserved;
         internal bool QueuedForFaultReuse;
@@ -42,6 +43,7 @@ internal sealed partial class Scheduler
 
         internal void Reset(int pendingWork, int pendingDependencies, bool scheduleDependenciesSealed)
         {
+            TraceContext = SomeEngine.Diagnostics.EngineTrace.Context;
             Version++;
             InUse = true;
             Completed = false;
@@ -71,6 +73,7 @@ internal sealed partial class Scheduler
 
         internal void Release()
         {
+            TraceContext = default;
             InUse = false;
             Completed = true;
             PendingWork = 0;

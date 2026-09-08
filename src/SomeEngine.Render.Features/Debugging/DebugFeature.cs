@@ -16,9 +16,11 @@ public readonly record struct DebugFeatureOutput(
     GraphTextureId Color,
     Format Format,
     int Width,
-    int Height)
+    int Height,
+    GraphPassId CompletePass)
 {
-    public bool IsValid => Color != default && Width > 0 && Height > 0;
+    public bool IsValid =>
+        Color != default && Width > 0 && Height > 0 && CompletePass != default;
 }
 
 /// <summary>
@@ -30,6 +32,9 @@ public sealed class DebugFeature : IDisposable
     private readonly LinkedRasterPipeline _pipeline;
     private readonly DebugResource[] _resourceOrder;
     private readonly GraphPassId _pass;
+    private readonly GraphBufferInput _uniforms;
+    private readonly GraphTextureInput _color;
+    private readonly GraphTextureInput _depth;
     private bool _disposed;
 
     public DebugFeature(
@@ -85,8 +90,49 @@ public sealed class DebugFeature : IDisposable
                 default,
                 DebugPassData.Declare,
                 DebugPassData.Record);
+            _uniforms = edit.CreateBufferInput(BufferUsages.Constant);
+            _color = edit.CreateTextureInput();
+            _depth = edit.CreateTextureInput();
+            PassDefinition pass = edit.GetPass(_pass);
+            foreach (DebugResource resource in _resourceOrder)
+            {
+                switch (resource)
+                {
+                    case DebugResource.Uniforms:
+                        _ = pass.Bind(
+                            _uniforms,
+                            PipelineSync.PixelShading);
+                        break;
+                    case DebugResource.Color:
+                        _ = pass.Bind(
+                            edit.CreateTextureSrv(
+                                _color,
+                                format: Format.R16G16B16A16Float,
+                                dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
+                                label: "Debug input color"),
+                            PipelineSync.PixelShading);
+                        break;
+                    case DebugResource.Depth:
+                        _ = pass.Bind(
+                            edit.CreateTextureSrv(
+                                _depth,
+                                new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
+                                Format.D32Float,
+                                SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
+                                "Debug input depth"),
+                            PipelineSync.PixelShading);
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unknown debug resource key.");
+                }
+            }
             edit.Commit();
-            Output = new DebugFeatureOutput(output, Format.R16G16B16A16Float, width, height);
+            Output = new DebugFeatureOutput(
+                output,
+                Format.R16G16B16A16Float,
+                width,
+                height,
+                _pass);
             _pipeline = pipeline;
             pipeline = null;
         }
@@ -112,44 +158,26 @@ public sealed class DebugFeature : IDisposable
         if (!Enum.IsDefined(mode))
             throw new ArgumentOutOfRangeException(nameof(mode));
         var uniforms = new DebugUniforms { Mode = (uint)mode, DepthScale = depthScale };
-        GraphBufferId uniformBuffer = FeatureUploads.UploadConstant(
+        GraphBufferSlice uniformBuffer = FeatureUploads.UploadConstant(
             ref graph,
             in uniforms,
             "Debug overlay uniforms");
-        PassDefinition pass = graph.GetPass(_pass);
-        foreach (DebugResource resource in _resourceOrder)
-        {
-            switch (resource)
-            {
-                case DebugResource.Uniforms:
-                    _ = pass.Bind(
-                        graph.CreateBufferCbv(uniformBuffer, label: "Debug overlay uniforms"),
-                        PipelineSync.PixelShading);
-                    break;
-                case DebugResource.Color:
-                    _ = pass.Bind(
-                        graph.CreateTextureSrv(
-                            inputColor,
-                            format: Format.R16G16B16A16Float,
-                            dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
-                            label: "Debug input color"),
-                        PipelineSync.PixelShading);
-                    break;
-                case DebugResource.Depth:
-                    _ = pass.Bind(
-                        graph.CreateTextureSrv(
-                            inputDepth,
-                            new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
-                            Format.D32Float,
-                            SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
-                            "Debug input depth"),
-                        PipelineSync.PixelShading);
-                    break;
-                default:
-                    throw new InvalidOperationException("Unknown debug resource key.");
-            }
-        }
+        graph.SetBufferInput(_uniforms, uniformBuffer);
+        graph.SetTextureInput(_color, inputColor);
+        graph.SetTextureInput(_depth, inputDepth);
         graph.SetPassEnabled(_pass, true);
+    }
+
+    public void OrderAfter(ref RenderGraphEdit graph, GraphPassId colorProducer)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (colorProducer == default)
+        {
+            throw new ArgumentException(
+                "Debug visualization requires a valid color producer.",
+                nameof(colorProducer));
+        }
+        graph.OrderAfter(_pass, colorProducer);
     }
 
     public void Dispose()

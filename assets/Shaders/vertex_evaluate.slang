@@ -127,35 +127,11 @@ StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
     return attrs;
 }
 
-interface IVertexEvaluate : IMaterialVertex
+interface IVertexEvaluate : IVertexAccess
 {
     // Geometry implementations may be invoked zero, one, or multiple times for any logical
     // vertex. Correctness must not depend on call count, order, or cross-call side effects.
-    DeformedVertex evaluate(VertexEvalContext ctx);
-    float3 getPosition(DeformedVertex v);
-    float3 getNormal(DeformedVertex v);
-    float4 getTangent(DeformedVertex v);
-    float2 getTexCoord0(DeformedVertex v);
-
-    uint getCacheByteSize(uint vertexCount);
-    uint getCacheByteAlignment();
-    void writeCache(
-        RWByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx,
-        DeformedVertex current,
-        DeformedVertex previous);
-    DeformedVertex readCache(
-        ByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx);
-    DeformedVertex readPreviousCache(
-        ByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx);
+    Vertex evaluate(VertexEvalContext ctx);
 };
 
 struct StaticDeformedVertex
@@ -169,14 +145,14 @@ struct StaticDeformedVertex
 
 struct StaticVertexEval : IVertexEvaluate
 {
-    typedef StaticDeformedVertex DeformedVertex;
+    typedef StaticDeformedVertex Vertex;
 
-    DeformedVertex evaluate(VertexEvalContext ctx)
+    Vertex evaluate(VertexEvalContext ctx)
     {
         float3 worldPosition = EvalWorldPosition(ctx);
         StaticVertexAttributes attrs = EvalStaticVertexAttributes(ctx);
 
-        DeformedVertex v;
+        Vertex v;
         v.position = worldPosition;
         v.basePosition = worldPosition;
         v.worldNormal = attrs.worldNormal;
@@ -185,83 +161,44 @@ struct StaticVertexEval : IVertexEvaluate
         return v;
     }
 
-    float3 getPosition(DeformedVertex v)
+    float3 getPosition(Vertex v)
     {
         return v.position;
     }
 
-    float3 getNormal(DeformedVertex v)
+    void setPosition(inout Vertex v, float3 position)
+    {
+        v.position = position;
+    }
+
+    float3 getNormal(Vertex v)
     {
         return v.worldNormal;
     }
 
-    float4 getTangent(DeformedVertex v)
+    void setNormal(inout Vertex v, float3 normal)
+    {
+        v.worldNormal = normal;
+    }
+
+    float4 getTangent(Vertex v)
     {
         return v.worldTangent;
     }
 
-    float2 getTexCoord0(DeformedVertex v)
+    void setTangent(inout Vertex v, float4 tangent)
+    {
+        v.worldTangent = tangent;
+    }
+
+    float2 getTexCoord0(Vertex v)
     {
         return v.uv0;
     }
 
-    uint getCacheByteSize(uint vertexCount)
+    void setTexCoord0(inout Vertex v, float2 texCoord)
     {
-        return vertexCount * 72u;
-    }
-
-    uint getCacheByteAlignment()
-    {
-        return 16u;
-    }
-
-    void writeCache(
-        RWByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx,
-        DeformedVertex current,
-        DeformedVertex previous)
-    {
-        uint byteAddr = cacheBaseByte + localVertIdx * 72u;
-        cache.Store3(byteAddr + 0u, asuint(current.position));
-        cache.Store3(byteAddr + 12u, asuint(current.basePosition));
-        cache.Store3(byteAddr + 24u, asuint(current.worldNormal));
-        cache.Store4(byteAddr + 36u, asuint(current.worldTangent));
-        cache.Store2(byteAddr + 52u, asuint(current.uv0));
-        cache.Store3(byteAddr + 60u, asuint(previous.position));
-    }
-
-    DeformedVertex readCache(
-        ByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx)
-    {
-        uint byteAddr = cacheBaseByte + localVertIdx * 72u;
-        DeformedVertex v;
-        v.position = asfloat(cache.Load3(byteAddr + 0u));
-        v.basePosition = asfloat(cache.Load3(byteAddr + 12u));
-        v.worldNormal = asfloat(cache.Load3(byteAddr + 24u));
-        v.worldTangent = asfloat(cache.Load4(byteAddr + 36u));
-        v.uv0 = asfloat(cache.Load2(byteAddr + 52u));
-        return v;
-    }
-
-    DeformedVertex readPreviousCache(
-        ByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx)
-    {
-        uint byteAddr = cacheBaseByte + localVertIdx * 72u;
-        DeformedVertex v;
-        v.position = asfloat(cache.Load3(byteAddr + 60u));
-        v.basePosition = v.position;
-        v.worldNormal = float3(0.0, 1.0, 0.0);
-        v.worldTangent = float4(1.0, 0.0, 0.0, 1.0);
-        v.uv0 = float2(0.0);
-        return v;
+        v.uv0 = texCoord;
     }
 };
 
@@ -276,9 +213,9 @@ struct WaveDeformedVertex
 
 struct WaveVertexEval : IVertexEvaluate
 {
-    typedef WaveDeformedVertex DeformedVertex;
+    typedef WaveDeformedVertex Vertex;
 
-    DeformedVertex evaluate(VertexEvalContext ctx)
+    Vertex evaluate(VertexEvalContext ctx)
     {
         float3 basePosition = EvalWorldPosition(ctx);
         StaticVertexAttributes attrs = EvalStaticVertexAttributes(ctx);
@@ -287,7 +224,7 @@ struct WaveVertexEval : IVertexEvaluate
         float amplitude = 0.3;
         float offset = sin(basePosition.x * freq) * cos(basePosition.z * freq) * amplitude;
 
-        DeformedVertex v;
+        Vertex v;
         v.position = basePosition + float3(0.0, offset, 0.0);
         v.basePosition = basePosition;
         v.worldNormal = attrs.worldNormal;
@@ -296,83 +233,44 @@ struct WaveVertexEval : IVertexEvaluate
         return v;
     }
 
-    float3 getPosition(DeformedVertex v)
+    float3 getPosition(Vertex v)
     {
         return v.position;
     }
 
-    float3 getNormal(DeformedVertex v)
+    void setPosition(inout Vertex v, float3 position)
+    {
+        v.position = position;
+    }
+
+    float3 getNormal(Vertex v)
     {
         return v.worldNormal;
     }
 
-    float4 getTangent(DeformedVertex v)
+    void setNormal(inout Vertex v, float3 normal)
+    {
+        v.worldNormal = normal;
+    }
+
+    float4 getTangent(Vertex v)
     {
         return v.worldTangent;
     }
 
-    float2 getTexCoord0(DeformedVertex v)
+    void setTangent(inout Vertex v, float4 tangent)
+    {
+        v.worldTangent = tangent;
+    }
+
+    float2 getTexCoord0(Vertex v)
     {
         return v.uv0;
     }
 
-    uint getCacheByteSize(uint vertexCount)
+    void setTexCoord0(inout Vertex v, float2 texCoord)
     {
-        return vertexCount * 72u;
-    }
-
-    uint getCacheByteAlignment()
-    {
-        return 16u;
-    }
-
-    void writeCache(
-        RWByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx,
-        DeformedVertex current,
-        DeformedVertex previous)
-    {
-        uint byteAddr = cacheBaseByte + localVertIdx * 72u;
-        cache.Store3(byteAddr + 0u, asuint(current.position));
-        cache.Store3(byteAddr + 12u, asuint(current.basePosition));
-        cache.Store3(byteAddr + 24u, asuint(current.worldNormal));
-        cache.Store4(byteAddr + 36u, asuint(current.worldTangent));
-        cache.Store2(byteAddr + 52u, asuint(current.uv0));
-        cache.Store3(byteAddr + 60u, asuint(previous.position));
-    }
-
-    DeformedVertex readCache(
-        ByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx)
-    {
-        uint byteAddr = cacheBaseByte + localVertIdx * 72u;
-        DeformedVertex v;
-        v.position = asfloat(cache.Load3(byteAddr + 0u));
-        v.basePosition = asfloat(cache.Load3(byteAddr + 12u));
-        v.worldNormal = asfloat(cache.Load3(byteAddr + 24u));
-        v.worldTangent = asfloat(cache.Load4(byteAddr + 36u));
-        v.uv0 = asfloat(cache.Load2(byteAddr + 52u));
-        return v;
-    }
-
-    DeformedVertex readPreviousCache(
-        ByteAddressBuffer cache,
-        uint cacheBaseByte,
-        uint vertexCount,
-        uint localVertIdx)
-    {
-        uint byteAddr = cacheBaseByte + localVertIdx * 72u;
-        DeformedVertex v;
-        v.position = asfloat(cache.Load3(byteAddr + 60u));
-        v.basePosition = v.position;
-        v.worldNormal = float3(0.0, 1.0, 0.0);
-        v.worldTangent = float4(1.0, 0.0, 0.0, 1.0);
-        v.uv0 = float2(0.0);
-        return v;
+        v.uv0 = texCoord;
     }
 };
 

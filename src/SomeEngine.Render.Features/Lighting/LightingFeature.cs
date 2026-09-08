@@ -18,7 +18,7 @@ public readonly record struct LightingFeatureResources(
     GraphTextureId CookieAtlas,
     uint CellCountPerView,
     uint MaxLightsPerCell,
-    uint ViewCapacity)
+    uint ViewCount)
 {
     public bool IsValid =>
         Grid != default &&
@@ -26,7 +26,7 @@ public readonly record struct LightingFeatureResources(
         CookieAtlas != default &&
         CellCountPerView != 0 &&
         MaxLightsPerCell != 0 &&
-        ViewCapacity != 0;
+        ViewCount != 0;
 }
 
 /// <summary>
@@ -38,6 +38,7 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
 {
     private const uint ThreadCount = 64;
     private readonly LinkedComputePipeline _pipeline;
+    private readonly LinkedComputePipeline _clearPipeline;
     private readonly GraphPassId _clearPass;
     private readonly GraphPassId _buildPass;
     private readonly GraphPassId _cookieInitializePass;
@@ -46,13 +47,12 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
     private readonly GraphTextureId _cookieAtlas;
     private readonly int _width;
     private readonly int _height;
-    private readonly uint _viewCapacity;
+    private readonly uint _viewCount;
     private readonly ClusteredLightGridSettings _settings;
     private readonly List<GpuLight> _gpuLights;
     private readonly ClusteredLightGridParameters[] _viewParameters;
-    private GraphBufferId _frameLights;
-    private GraphBufferId _frameViews;
-    private ulong _frameIdentity;
+    private readonly GraphBufferInput _frameLights;
+    private readonly GraphBufferInput _frameViews;
     private bool _disposed;
 
     public LightingFeature(
@@ -74,20 +74,21 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
 
         _width = output.Width;
         _height = output.Height;
-        _viewCapacity = output.ViewCapacity;
+        _viewCount = output.ViewCount;
         _settings = settings ?? new ClusteredLightGridSettings();
         _settings.Validate();
         _gpuLights = new List<GpuLight>(_settings.MaxLights);
-        _viewParameters = new ClusteredLightGridParameters[checked((int)_viewCapacity)];
+        _viewParameters = new ClusteredLightGridParameters[checked((int)_viewCount)];
 
         uint tileCountX = DivideRoundUp(checked((uint)_width), _settings.TileSize);
         uint tileCountY = DivideRoundUp(checked((uint)_height), _settings.TileSize);
         uint cellsPerView = checked(tileCountX * tileCountY * _settings.DepthSliceCount);
-        ulong gridBytes = checked((ulong)cellsPerView * _viewCapacity * 2u * sizeof(uint));
+        ulong gridBytes = checked((ulong)cellsPerView * _viewCount * 2u * sizeof(uint));
         ulong indexBytes = checked(
-            (ulong)cellsPerView * _viewCapacity * _settings.MaxLightsPerCell * sizeof(uint));
+            (ulong)cellsPerView * _viewCount * _settings.MaxLightsPerCell * sizeof(uint));
 
         LinkedComputePipeline? pipeline = null;
+        LinkedComputePipeline? clearPipeline = null;
         try
         {
             pipeline = LinkedComputePipeline.Create(
@@ -96,18 +97,20 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                 shader,
                 entryPoint,
                 "Build clustered lighting grid");
+            clearPipeline = LinkedComputePipeline.Create(
+                backend, device, shader, "ClearClusteredLightGrid", "Clear clustered lighting counts");
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
+                _frameLights = edit.CreateBufferInput(BufferUsages.ShaderRead);
+                _frameViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _grid = edit.CreateBuffer(new BufferDesc(
                     gridBytes,
-                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
-                        BufferUsages.CopyDestination,
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                     "Lighting clustered grid"));
                 _lightIndices = edit.CreateBuffer(new BufferDesc(
                     indexBytes,
-                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
-                        BufferUsages.CopyDestination,
+                    BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                         "Lighting clustered indices"));
                 _cookieAtlas = edit.CreatePersistentTexture(new TextureDesc(
                     TextureDimension.Texture2D,
@@ -139,14 +142,17 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                             commands.GetTexture(texture),
                             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
                             System.Numerics.Vector4.One));
-                var clear = new LightingClearPassData(_grid, _lightIndices);
-                _clearPass = edit.AddCopyFramePass(
+                var clearData = new LightingBuildPassData(default);
+                _clearPass = edit.AddComputeFramePass(
                     "Clear lighting assignment",
-                    PassQueueSelection.AnyOfType(QueueType.Copy),
-                    clear,
+                    PassQueueSelection.AnyOfType(QueueType.Compute),
+                    clearData,
                     new PassOptions(Culling: PassCullingMode.NeverCull),
-                    LightingClearPassData.Declare,
-                    LightingClearPassData.Record);
+                    clearPipeline.Pipeline,
+                    clearPipeline.ParameterLayout,
+                    default,
+                    static (ref PassDefinition _, ref LightingBuildPassData _) => { },
+                    LightingBuildPassData.Record);
                 var build = new LightingBuildPassData(default);
                 _buildPass = edit.AddComputeFramePass(
                     "Build lighting assignment",
@@ -158,6 +164,41 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                     default,
                     static (ref PassDefinition _, ref LightingBuildPassData _) => { },
                     LightingBuildPassData.Record);
+                for (int assignment = 0; assignment < 2; assignment++)
+                {
+                    bool clear = assignment == 0;
+                    PassDefinition pass = edit.GetPass(clear ? _clearPass : _buildPass);
+                    _ = pass.Bind(
+                        edit.CreateBufferSrv(
+                            _frameViews,
+                            structureStride: ClusteredLightGridParameters.SizeInBytes,
+                            label: "Lighting view parameters"),
+                        PipelineSync.ComputeShading);
+                    _ = pass.Bind(
+                        edit.CreateBufferSrv(
+                            _frameLights,
+                            structureStride: GpuLight.SizeInBytes,
+                            label: "Lighting lights"),
+                        PipelineSync.ComputeShading);
+                    _ = pass.Bind(
+                        edit.CreateBufferUav(
+                            _grid,
+                            structureStride: 2 * sizeof(uint),
+                            label: "Lighting grid output"),
+                        PipelineSync.ComputeShading,
+                        clear ? GraphAccessMode.Write : GraphAccessMode.ReadWrite,
+                        clear ? WriteCoverage.Complete : WriteCoverage.Partial);
+                    _ = pass.Bind(
+                        edit.CreateBufferUav(
+                            _lightIndices,
+                            structureStride: sizeof(uint),
+                            label: "Lighting index output"),
+                        PipelineSync.ComputeShading,
+                        GraphAccessMode.Write,
+                        WriteCoverage.Partial,
+                        resultContents: ResourceContentState.Defined,
+                        contentScope: BufferContentScope.CountBoundedPrefix);
+                }
                 edit.Commit();
             }
             finally
@@ -165,18 +206,21 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                 edit.Dispose();
             }
             _pipeline = pipeline;
+            _clearPipeline = clearPipeline;
             pipeline = null;
+            clearPipeline = null;
             Resources = new LightingFeatureResources(
                 _grid,
                 _lightIndices,
                 _cookieAtlas,
                 cellsPerView,
                 _settings.MaxLightsPerCell,
-                _viewCapacity);
+                _viewCount);
         }
         catch
         {
             pipeline?.Dispose();
+            clearPipeline?.Dispose();
             throw;
         }
     }
@@ -225,48 +269,25 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                 nonDirectionalCount);
         }
 
-        _frameLights = graph.Upload(
+        graph.SetBufferInput(_frameLights, graph.Upload(
             CollectionsMarshal.AsSpan(_gpuLights),
             BufferUsages.ShaderRead,
-            "Lighting frame lights");
-        _frameViews = graph.Upload(
+            "Lighting frame lights"));
+        graph.SetBufferInput(_frameViews, graph.Upload(
             parameters,
             BufferUsages.ShaderRead,
-            "Lighting frame views");
-        _frameIdentity = graph.FrameIdentity;
+            "Lighting frame views"));
 
-        PassDefinition pass = graph.GetPass(_buildPass);
-        _ = pass.Bind(
-            graph.CreateBufferSrv(
-                _frameViews,
-                structureStride: ClusteredLightGridParameters.SizeInBytes,
-                label: "Lighting view parameters"),
-            PipelineSync.ComputeShading);
-        _ = pass.Bind(
-            graph.CreateBufferSrv(
-                _frameLights,
-                structureStride: GpuLight.SizeInBytes,
-                label: "Lighting lights"),
-            PipelineSync.ComputeShading);
-        _ = pass.Bind(
-            graph.CreateBufferUav(
-                _grid,
-                structureStride: 2 * sizeof(uint),
-                label: "Lighting grid output"),
-            PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite);
-        _ = pass.Bind(
-            graph.CreateBufferUav(
-                _lightIndices,
-                structureStride: sizeof(uint),
-                label: "Lighting index output"),
-            PipelineSync.ComputeShading,
-            GraphAccessMode.Write,
-            WriteCoverage.Partial);
+        graph.SetPassData(
+            _clearPass,
+            new LightingBuildPassData(new DispatchArguments(
+                DivideRoundUp(Resources.CellCountPerView, ThreadCount),
+                checked((uint)views.Length),
+                1)));
         graph.SetPassData(
             _buildPass,
             new LightingBuildPassData(new DispatchArguments(
-                DivideRoundUp(nonDirectionalCount, ThreadCount),
+                nonDirectionalCount,
                 checked((uint)views.Length),
                 1)));
         graph.SetPassEnabled(_clearPass, true);
@@ -292,9 +313,8 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
         return binder is not null;
     }
 
-    private void BindLightingViews(ref RenderGraphFrame graph, ref PassDefinition pass)
+    private void BindLightingViews(ref RenderGraphEdit graph, ref PassDefinition pass)
     {
-        RequireRecordedFrame(in graph);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameViews,
@@ -303,9 +323,8 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
             PipelineSync.ComputeShading);
     }
 
-    private void BindLights(ref RenderGraphFrame graph, ref PassDefinition pass)
+    private void BindLights(ref RenderGraphEdit graph, ref PassDefinition pass)
     {
-        RequireRecordedFrame(in graph);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameLights,
@@ -314,9 +333,8 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
             PipelineSync.ComputeShading);
     }
 
-    private void BindGrid(ref RenderGraphFrame graph, ref PassDefinition pass)
+    private void BindGrid(ref RenderGraphEdit graph, ref PassDefinition pass)
     {
-        RequireRecordedFrame(in graph);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _grid,
@@ -325,20 +343,19 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
             PipelineSync.ComputeShading);
     }
 
-    private void BindIndices(ref RenderGraphFrame graph, ref PassDefinition pass)
+    private void BindIndices(ref RenderGraphEdit graph, ref PassDefinition pass)
     {
-        RequireRecordedFrame(in graph);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _lightIndices,
                 structureStride: sizeof(uint),
                 label: "Standard shade light indices"),
-            PipelineSync.ComputeShading);
+            PipelineSync.ComputeShading,
+            BufferContentScope.CountBoundedPrefix);
     }
 
-    private void BindCookieAtlas(ref RenderGraphFrame graph, ref PassDefinition pass)
+    private void BindCookieAtlas(ref RenderGraphEdit graph, ref PassDefinition pass)
     {
-        RequireRecordedFrame(in graph);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _cookieAtlas,
@@ -348,13 +365,29 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
             PipelineSync.ComputeShading);
     }
 
-    private void RequireRecordedFrame(in RenderGraphFrame graph)
+    internal void BindVirtualShadowPageMarking(
+        ref RenderGraphEdit graph,
+        ref PassDefinition pass)
     {
-        if (_frameIdentity != graph.FrameIdentity || _frameLights == default || _frameViews == default)
-        {
-            throw new InvalidOperationException(
-                "Lighting must record its frame resources before Standard shade records.");
-        }
+        _ = pass.Bind(
+            graph.CreateBufferSrv(
+                _frameViews,
+                structureStride: ClusteredLightGridParameters.SizeInBytes,
+                label: "Virtual shadow lighting views"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(
+            graph.CreateBufferSrv(
+                _grid,
+                structureStride: 2 * sizeof(uint),
+                label: "Virtual shadow clustered light grid"),
+            PipelineSync.ComputeShading);
+        _ = pass.Bind(
+            graph.CreateBufferSrv(
+                _lightIndices,
+                structureStride: sizeof(uint),
+                label: "Virtual shadow clustered light indices"),
+            PipelineSync.ComputeShading,
+            BufferContentScope.CountBoundedPrefix);
     }
 
     private void EncodeLights(RenderLightSet source)
@@ -423,45 +456,10 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
         if (_disposed)
             return;
         _pipeline.Dispose();
+        _clearPipeline.Dispose();
         _gpuLights.Clear();
         Array.Clear(_viewParameters);
-        _frameLights = default;
-        _frameViews = default;
-        _frameIdentity = 0;
         _disposed = true;
-    }
-
-    private readonly record struct LightingClearPassData(
-        GraphBufferId Grid,
-        GraphBufferId LightIndices)
-    {
-        internal static void Declare(
-            ref PassDefinition access,
-            ref LightingClearPassData data)
-        {
-            _ = access.Write(
-                data.Grid,
-                BufferRange.Whole,
-                PipelineSync.Copy,
-                ResourceAccess.CopyDestination,
-                WriteCoverage.Complete);
-            _ = access.Write(
-                data.LightIndices,
-                BufferRange.Whole,
-                PipelineSync.Copy,
-                ResourceAccess.CopyDestination,
-                WriteCoverage.Complete);
-        }
-
-        internal static void Record(
-            ref CopyPassCommandScope commands,
-            in LightingClearPassData data)
-        {
-            Buffer grid = commands.GetBuffer(data.Grid);
-            commands.ClearBuffer(grid, new BufferRange(0, grid.Info.Size));
-            Buffer indices = commands.GetBuffer(data.LightIndices);
-            commands.ClearBuffer(indices, new BufferRange(0, indices.Info.Size));
-        }
     }
 
     private readonly record struct LightingBuildPassData(DispatchArguments Dispatch)
