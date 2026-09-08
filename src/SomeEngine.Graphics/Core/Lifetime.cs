@@ -56,6 +56,8 @@ public abstract class GraphicsObject : IDisposable
 {
     private DisposeGate _disposeGate;
 
+    internal event Action<GraphicsObject>? Disposed;
+
     internal GraphicsObject? DeviceLossWorkNext;
     internal GraphicsObject? RegistryDrainNext;
     internal GraphicsObject? SecondaryRegistryDrainNext;
@@ -104,7 +106,18 @@ public abstract class GraphicsObject : IDisposable
         }
         finally
         {
-            _disposeGate.Exit();
+            try
+            {
+                Disposed?.Invoke(this);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                Disposed = null;
+                _disposeGate.Exit();
+            }
         }
     }
 

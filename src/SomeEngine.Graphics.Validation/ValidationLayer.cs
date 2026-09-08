@@ -531,8 +531,9 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         internal bool WorkGraphBound;
         internal int EventDepth;
         internal RecordingValidationPayload Payload = new();
-        internal readonly Stack<RecordingValidationPayload> AvailablePayloads = [];
-        internal readonly Stack<RecordedValidationState> AvailableRecordings = [];
+        private readonly object _recyclingGate = new();
+        private readonly Stack<RecordingValidationPayload> AvailablePayloads = [];
+        private readonly Stack<RecordedValidationState> AvailableRecordings = [];
         internal List<QueryValidationEvent> QueryEvents => Payload.QueryEvents;
         internal Dictionary<QuerySlot, QueryLocalPhase> QueryPhases => Payload.QueryPhases;
         internal List<ResourceValidationEvent> ResourceEvents => Payload.ResourceEvents;
@@ -541,42 +542,63 @@ public sealed partial class ValidationLayer : IGraphicsBackend
 
         internal RecordingValidationPayload TransferPayload()
         {
-            AvailablePayloads.EnsureCapacity(checked(AvailablePayloads.Count + 1));
-            RecordingValidationPayload transferred = Payload;
-            Payload = AvailablePayloads.Count == 0
-                ? new RecordingValidationPayload()
-                : AvailablePayloads.Pop();
-            return transferred;
+            lock (_recyclingGate)
+            {
+                AvailablePayloads.EnsureCapacity(checked(AvailablePayloads.Count + 1));
+                RecordingValidationPayload transferred = Payload;
+                Payload = AvailablePayloads.Count == 0
+                    ? new RecordingValidationPayload()
+                    : AvailablePayloads.Pop();
+                return transferred;
+            }
         }
 
         internal void RestorePayload(RecordingValidationPayload transferred)
         {
-            RecordingValidationPayload replacement = Payload;
-            Payload = transferred;
-            AvailablePayloads.Push(replacement);
+            lock (_recyclingGate)
+            {
+                RecordingValidationPayload replacement = Payload;
+                Payload = transferred;
+                AvailablePayloads.Push(replacement);
+            }
         }
 
         internal void RecyclePayload(RecordingValidationPayload payload)
         {
-            payload.Clear();
-            AvailablePayloads.Push(payload);
+            lock (_recyclingGate)
+            {
+                payload.Clear();
+                AvailablePayloads.Push(payload);
+            }
         }
 
         internal RecordedValidationState RentRecording(RecordingValidationPayload payload)
         {
-            AvailableRecordings.EnsureCapacity(checked(AvailableRecordings.Count + 1));
-            RecordedValidationState recording = AvailableRecordings.Count == 0
-                ? new RecordedValidationState()
-                : AvailableRecordings.Pop();
-            recording.Initialize(this, payload);
-            return recording;
+            lock (_recyclingGate)
+            {
+                AvailableRecordings.EnsureCapacity(checked(AvailableRecordings.Count + 1));
+                RecordedValidationState recording = AvailableRecordings.Count == 0
+                    ? new RecordedValidationState()
+                    : AvailableRecordings.Pop();
+                recording.Initialize(this, payload);
+                return recording;
+            }
+        }
+
+        internal void ReturnRecording(RecordedValidationState recording)
+        {
+            lock (_recyclingGate)
+                AvailableRecordings.Push(recording);
         }
 
         internal void RecycleRecording(RecordedValidationState recording)
         {
-            RecordingValidationPayload payload = recording.ReleasePayload();
-            RecyclePayload(payload);
-            AvailableRecordings.Push(recording);
+            lock (_recyclingGate)
+            {
+                RecordingValidationPayload payload = recording.ReleasePayload();
+                RecyclePayload(payload);
+                AvailableRecordings.Push(recording);
+            }
         }
     }
 
@@ -678,6 +700,12 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         {
             Lease = commands.Lease;
             Sequence = commands.Sequence;
+        }
+
+        internal RecordedCommandsKey(RecordedCommandsLease commands, ulong sequence)
+        {
+            Lease = commands;
+            Sequence = sequence;
         }
 
         internal RecordedCommandsLease Lease { get; }

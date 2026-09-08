@@ -93,7 +93,10 @@ public sealed partial class ValidationLayer
                 result = Backend.End(context);
                 backendEnded = true;
                 lock (_gate)
+                {
                     _recorded.Add(new RecordedCommandsKey(result), validation);
+                    result.Lease.Discarded += ForgetDiscardedCommands;
+                }
                 ResetContextRecordingState(state);
                 return result;
             }
@@ -107,7 +110,7 @@ public sealed partial class ValidationLayer
                 else
                 {
                     _ = validation.ReleasePayload();
-                    state.AvailableRecordings.Push(validation);
+                    state.ReturnRecording(validation);
                     state.RestorePayload(payload);
                 }
                 throw;
@@ -903,6 +906,19 @@ public sealed partial class ValidationLayer
         }
     }
 
+    private void ForgetDiscardedCommands(RecordedCommandsLease commands, ulong sequence)
+    {
+        lock (_gate)
+        {
+            var key = new RecordedCommandsKey(commands, sequence);
+            if (_recorded.Remove(key, out RecordedValidationState? recording))
+            {
+                commands.Discarded -= ForgetDiscardedCommands;
+                recording.Owner.RecycleRecording(recording);
+            }
+        }
+    }
+
     private void ForgetRecordedSubmission(
         ReadOnlySpan<RecordedCommands> commands,
         bool onlyConsumed)
@@ -915,7 +931,10 @@ public sealed partial class ValidationLayer
                 {
                     var key = new RecordedCommandsKey(command);
                     if (_recorded.Remove(key, out RecordedValidationState? recording))
+                    {
+                        key.Lease.Discarded -= ForgetDiscardedCommands;
                         recording.Owner.RecycleRecording(recording);
+                    }
                 }
             }
         }

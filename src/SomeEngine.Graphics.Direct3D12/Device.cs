@@ -1176,6 +1176,14 @@ internal sealed unsafe partial class D3D12Backend
 
         internal QueueCompletion SignalCompletionUnderGate()
         {
+            if (ResourceTrace.GetCompletedValue(Fence) == ulong.MaxValue)
+            {
+                throw PublishDeviceLoss(
+                    _device,
+                    DxgiErrorDeviceRemoved,
+                    "D3D12 reported the device-removal completion sentinel.",
+                    DxgiErrorDeviceRemoved);
+            }
             if (_nextCompletion == ulong.MaxValue)
                 throw new InvalidOperationException("The Queue completion domain is exhausted.");
             ulong value = _nextCompletion;

@@ -116,6 +116,16 @@ public sealed partial class ValidationLayer
         return Backend.Reconfigure(swapchain, config);
     }
 
+    private void ForgetQueryPool(GraphicsObject value)
+    {
+        var pool = (QueryPool)value;
+        lock (_gate)
+        {
+            for (uint index = 0; index < pool.Description.Count; index++)
+                _queryStates.Remove(new QuerySlot(pool, index));
+        }
+    }
+
     public QueryPool CreateQueryPool(Device device, in QueryPoolDesc desc)
     {
         RequireDevice(device);
@@ -136,6 +146,7 @@ public sealed partial class ValidationLayer
                 result = Backend.CreateQueryPool(device, createDesc);
                 _objects.Add(result, objectInfo);
                 objectAdded = true;
+                result.Disposed += ForgetQueryPool;
                 return result;
             }
             catch

@@ -62,6 +62,8 @@ internal abstract class RecordedCommandsLease
     private int _callerReleaseState = 2;
     private int _callerReleaseOwnerThreadId;
 
+    internal event Action<RecordedCommandsLease, ulong>? Discarded;
+
     protected RecordedCommandsLease(Device device, Queue queue)
     {
         Device = device;
@@ -148,15 +150,20 @@ internal abstract class RecordedCommandsLease
 
     internal void MarkDeviceLost(ulong sequence)
     {
+        bool discard;
         lock (_gate)
         {
             EnsureSequenceUnderGate(sequence);
+            discard = _status == RecordedCommandsStatus.Executable;
             _status = RecordedCommandsStatus.DeviceLost;
         }
+        if (discard)
+            NotifyDiscarded(sequence);
     }
 
     protected bool TryMarkDeviceLostFromDevice(out ulong sequence, out bool abandon)
     {
+        bool changed;
         lock (_gate)
         {
             sequence = _sequence;
@@ -166,15 +173,21 @@ internal abstract class RecordedCommandsLease
                 case RecordedCommandsStatus.Executable:
                     _status = RecordedCommandsStatus.DeviceLost;
                     abandon = true;
-                    return true;
+                    changed = true;
+                    break;
                 case RecordedCommandsStatus.Submitting:
                 case RecordedCommandsStatus.Submitted:
                     _status = RecordedCommandsStatus.DeviceLost;
-                    return true;
+                    changed = true;
+                    break;
                 default:
-                    return false;
+                    changed = false;
+                    break;
             }
         }
+        if (abandon)
+            NotifyDiscarded(sequence);
+        return changed;
     }
 
     protected bool TryDiscardExecutableFromDevice(out ulong sequence)
@@ -194,8 +207,9 @@ internal abstract class RecordedCommandsLease
                 return false;
 
             _status = RecordedCommandsStatus.Discarded;
-            return true;
         }
+        NotifyDiscarded(sequence);
+        return true;
     }
 
     protected void EnsureSequence(ulong sequence)
@@ -247,6 +261,7 @@ internal abstract class RecordedCommandsLease
         }
         finally
         {
+            NotifyDiscarded(sequence);
             lock (_gate)
             {
                 if (_sequence == sequence)
@@ -271,6 +286,12 @@ internal abstract class RecordedCommandsLease
             _callerReleaseState = 2;
             _callerReleaseOwnerThreadId = 0;
         }
+    }
+
+    private void NotifyDiscarded(ulong sequence)
+    {
+        try { Discarded?.Invoke(this, sequence); }
+        catch { }
     }
 
     protected abstract void DiscardUnsubmitted(ulong sequence);
