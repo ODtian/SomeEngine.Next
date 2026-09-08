@@ -34,12 +34,11 @@ public sealed class RenderExtractionSystems : IDisposable
     private bool _extractionActive;
     private bool _disposed;
 
-    public RenderExtractionSystems(RenderWorld renderWorld)
+    public RenderExtractionSystems(RenderWorld renderWorld, params ReadOnlySpan<IRenderExtractionSystem> systems)
     {
         _renderWorld = renderWorld ?? throw new ArgumentNullException(nameof(renderWorld));
         _context = new RenderExtractionContext(renderWorld);
-        _systems.Add(new MeshRenderExtractor());
-        _systems.Add(new LightRenderExtractor());
+        foreach (IRenderExtractionSystem system in systems) Add(system);
     }
 
     public int Count

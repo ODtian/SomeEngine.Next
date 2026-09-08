@@ -25,7 +25,7 @@ public sealed class InstancedMeshExtractionTests
 
         using var mainWorld = new World();
         using var renderWorld = new RenderWorld();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = mainWorld.CreateEntity();
         mainWorld.Add(source, new WorldTransform
         {
@@ -59,7 +59,7 @@ public sealed class InstancedMeshExtractionTests
         RenderMeshInstanceHandle handle = collection.Add(set);
         using var mainWorld = new World();
         using var renderWorld = new RenderWorld();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = mainWorld.CreateEntity();
         mainWorld.Add(source, new WorldTransform { Qvvs = TransformQvvs.Identity });
         mainWorld.Add(source, new InstancedMesh(handle));

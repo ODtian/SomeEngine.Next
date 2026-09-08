@@ -311,7 +311,7 @@ internal static class RuntimeApplication
     {
         using var mainWorld = new World(initialEntityCapacity: 2048);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048);
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets, sceneAsset).AsTask(),

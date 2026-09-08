@@ -22,7 +22,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Mesh mesh = MeshAsset(1, 1);
         Entity[] sources = Enumerable.Range(0, 128).Select(index =>
             AddMeshSource(mainWorld, mesh, 0, new Vector3(index, 0, 0))).ToArray();
@@ -63,7 +63,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(1, 1),
@@ -86,7 +86,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extractionSystems = new RenderExtractionSystems(renderWorld);
+        using var extractionSystems = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(1, 1),
@@ -134,7 +134,7 @@ public sealed class RenderWorldExtractorTests
     {
         using var mainWorld = new World();
         using var renderWorld = new RenderWorld();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(3, 1),
@@ -196,7 +196,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Mesh firstOldMesh = MeshAsset(11, 1);
         Mesh secondOldMesh = MeshAsset(12, 1);
         Material oldMaterial = MaterialAsset(21, 1);
@@ -258,7 +258,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Mesh originalMesh = MeshAsset(43, 1);
         Entity source = AddMeshSource(
             mainWorld,
@@ -308,7 +308,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity firstSource = AddMeshSource(
             mainWorld,
             MeshAsset(51, 1),
@@ -370,7 +370,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity firstSource = AddMeshSource(
             mainWorld,
             MeshAsset(1, 1),
@@ -401,7 +401,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         QueryHandle renderSourceQuery = renderWorld.Query(
             new QueryDefinitionBuilder().Read<RenderSource>());
         QueryHandle sourceQuery = mainWorld.Query(SourceExtractionDefinition());
@@ -424,7 +424,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Mesh mesh = MeshAsset(17, 3);
         var sourceTransform = new TransformQvvs(
             new Vector3(3, 2, 1),
@@ -457,7 +457,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(5, 1),
@@ -495,8 +495,8 @@ public sealed class RenderWorldExtractorTests
         World referenceMainWorld = new();
         RenderWorld deltaRenderWorld = new();
         RenderWorld referenceRenderWorld = new();
-        using var deltaExtraction = new RenderExtractionSystems(deltaRenderWorld);
-        using var referenceExtraction = new RenderExtractionSystems(referenceRenderWorld);
+        using var deltaExtraction = new RenderExtractionSystems(deltaRenderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        using var referenceExtraction = new RenderExtractionSystems(referenceRenderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Mesh initialMesh = MeshAsset(81, 1);
         Material initialMaterial = MaterialAsset(82, 1);
         Entity deltaMeshSource = AddMeshSource(
@@ -690,7 +690,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         DirectionalLight directional = new(
             new Vector3(0, -1, 0),
             new Vector3(1, 0.5f, 0.25f),
@@ -765,7 +765,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(7, 1),
@@ -794,7 +794,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(8, 1),
@@ -817,7 +817,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity rendererOnly = renderWorld.CreateEntity();
         renderWorld.Add(rendererOnly, new PipelinePreparedState(91));
         AddMeshSource(
@@ -839,7 +839,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(10, 1),
@@ -862,7 +862,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity removedSource = AddMeshSource(
             mainWorld,
             MeshAsset(73, 1),
@@ -912,7 +912,7 @@ public sealed class RenderWorldExtractorTests
     {
         World mainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity source = AddMeshSource(
             mainWorld,
             MeshAsset(11, 1),
@@ -937,7 +937,7 @@ public sealed class RenderWorldExtractorTests
         World rejectedMainWorld = new();
         World acceptedMainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity rejectedSource = AddMeshSource(
             rejectedMainWorld,
             MeshAsset(71, 1),
@@ -980,7 +980,7 @@ public sealed class RenderWorldExtractorTests
         World firstMainWorld = new();
         World secondMainWorld = new();
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         Entity firstSource = AddMeshSource(
             firstMainWorld,
             MeshAsset(41, 1),
@@ -1007,7 +1007,7 @@ public sealed class RenderWorldExtractorTests
     public void Extract_RejectsUsingRenderWorldAsItsOwnMainWorld()
     {
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
 
         ArgumentException error = Assert.Throws<ArgumentException>(
             () => ExtractAndApply(extraction, renderWorld));
@@ -1046,7 +1046,7 @@ public sealed class RenderWorldExtractorTests
     {
         RenderWorld source = new();
         RenderWorld destination = new();
-        using var extraction = new RenderExtractionSystems(destination);
+        using var extraction = new RenderExtractionSystems(destination, new MeshRenderExtractor(), new LightRenderExtractor());
 
         ArgumentException error = Assert.Throws<ArgumentException>(
             () => ExtractAndApply(extraction, source));
