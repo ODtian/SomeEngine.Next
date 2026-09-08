@@ -87,6 +87,8 @@ public sealed class MaterialGen : IIncrementalGenerator
                         : type.ContainingNamespace.ToDisplayString(),
                     AccessibilityText(type.DeclaredAccessibility),
                     type.IsSealed,
+                    type.IsAbstract,
+                    type.BaseType!.ToDisplayString(QualifiedTypeFormat),
                     type.Name,
                     Sanitize(type.ToDisplayString()) + ".Material.g.cs",
                     properties));
@@ -127,29 +129,42 @@ public sealed class MaterialGen : IIncrementalGenerator
             source.Append("sealed ");
         source.Append("partial class ").Append(material.Name).AppendLine();
         source.AppendLine("{");
+        if (!material.IsSealed)
+        {
+            source.Append("    protected new const uint MaterialPropertyCount = ")
+                .Append(material.BaseType).Append(".MaterialPropertyCount + ")
+                .Append(material.Properties.Length).AppendLine("u;");
+            source.AppendLine();
+        }
         foreach (PropertyInfo property in material.Properties)
         {
             source.Append("    ").Append(property.Accessibility).Append(" partial ")
                 .Append(property.Type).Append(' ').Append(property.Name).AppendLine();
             source.AppendLine("    {");
             source.Append("        get => GetSlot<").Append(property.Type).Append(">(")
+                .Append(material.BaseType).Append(".MaterialPropertyCount + ")
                 .Append(property.Slot).AppendLine("u);");
             source.Append("        ").Append(property.IsInitOnly ? "init" : "set")
-                .Append(" => SetSlot(").Append(property.Slot).AppendLine("u, value);");
+                .Append(" => SetSlot(").Append(material.BaseType)
+                .Append(".MaterialPropertyCount + ").Append(property.Slot).AppendLine("u, value);");
             source.AppendLine("    }");
             source.AppendLine();
         }
 
         source.AppendLine("    protected override global::SomeEngine.Assets.Schema.MaterialSlotDefinition[] CreateSlots() =>");
         source.AppendLine("    [");
+        source.AppendLine("        ..base.CreateSlots(),");
         foreach (PropertyInfo property in material.Properties)
         {
             source.Append("        new global::SomeEngine.Assets.Schema.MaterialSlotDefinition(")
+                .Append(material.BaseType).Append(".MaterialPropertyCount + ")
                 .Append(property.Slot).Append("u, \"").Append(Escape(property.Name))
                 .Append("\", typeof(").Append(property.TypeOf).AppendLine(")),");
         }
             source.AppendLine("    ];");
             source.AppendLine("}");
+            if (material.IsAbstract)
+                return source.ToString();
             source.AppendLine();
             source.Append("internal static class __").Append(Sanitize(material.Name))
                 .AppendLine("MaterialRegistration");
@@ -206,6 +221,8 @@ public sealed class MaterialGen : IIncrementalGenerator
             string ns,
             string accessibility,
             bool isSealed,
+            bool isAbstract,
+            string baseType,
             string name,
             string hintName,
             ImmutableArray<PropertyInfo> properties)
@@ -213,6 +230,8 @@ public sealed class MaterialGen : IIncrementalGenerator
             Namespace = ns;
             Accessibility = accessibility;
             IsSealed = isSealed;
+            IsAbstract = isAbstract;
+            BaseType = baseType;
             Name = name;
             HintName = hintName;
             Properties = properties;
@@ -221,6 +240,8 @@ public sealed class MaterialGen : IIncrementalGenerator
         internal string Namespace { get; }
         internal string Accessibility { get; }
         internal bool IsSealed { get; }
+        internal bool IsAbstract { get; }
+        internal string BaseType { get; }
         internal string Name { get; }
         internal string HintName { get; }
         internal ImmutableArray<PropertyInfo> Properties { get; }

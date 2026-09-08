@@ -36,8 +36,14 @@ public static class TemporalJitter
 
     private static Matrix4x4 ApplyNdc(Matrix4x4 projection, Vector2 jitterNdc)
     {
+        projection.M11 += jitterNdc.X * projection.M14;
+        projection.M12 += jitterNdc.Y * projection.M14;
+        projection.M21 += jitterNdc.X * projection.M24;
+        projection.M22 += jitterNdc.Y * projection.M24;
         projection.M31 += jitterNdc.X * projection.M34;
         projection.M32 += jitterNdc.Y * projection.M34;
+        projection.M41 += jitterNdc.X * projection.M44;
+        projection.M42 += jitterNdc.Y * projection.M44;
         return projection;
     }
 }

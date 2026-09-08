@@ -13,6 +13,8 @@ namespace SomeEngine.Assets.Schema;
 [global::SomeEngine.Assets.Asset(".material.asset")]
 public abstract partial class Material : IBinaryContract<Material>
 {
+    protected const uint MaterialPropertyCount = 0;
+
     private const uint WireVersion = 2;
     private const ulong WireFingerprint = 0x4D41544C76330002UL;
 
@@ -97,7 +99,7 @@ public abstract partial class Material : IBinaryContract<Material>
         MarkSlotChanged(index);
     }
 
-    protected abstract MaterialSlotDefinition[] CreateSlots();
+    protected virtual MaterialSlotDefinition[] CreateSlots() => [];
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     public static void RegisterGeneratedType<T>(string logicalName)

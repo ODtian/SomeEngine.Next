@@ -367,6 +367,7 @@ internal sealed class RenderInstanceChangeJournal
 
     private readonly RenderInstancePropertyLayout _layout;
     private readonly Queue<Entry> _records = new();
+    private ulong _discardedThrough;
 
     internal RenderInstanceChangeJournal(RenderInstancePropertyLayout layout)
     {
@@ -423,6 +424,7 @@ internal sealed class RenderInstanceChangeJournal
             return RenderInstanceChangeSet.None;
         if (previousRevision == 0ul
             || previousRevision > currentRevision
+            || previousRevision < _discardedThrough
             || _records.Count == 0
             || previousRevision < _records.Peek().Revision - 1ul)
         {
@@ -511,6 +513,8 @@ internal sealed class RenderInstanceChangeJournal
     {
         if (committedRevision <= previousRevision)
             throw new ArgumentOutOfRangeException(nameof(committedRevision));
+        if (_discardedThrough > previousRevision)
+            _discardedThrough = committedRevision;
         if (_records.Count == 0)
             return;
 
@@ -544,7 +548,7 @@ internal sealed class RenderInstanceChangeJournal
     {
         _records.Enqueue(entry);
         while (_records.Count > MaximumRecords)
-            _ = _records.Dequeue();
+            _discardedThrough = Math.Max(_discardedThrough, _records.Dequeue().Revision);
     }
 
     private static RenderInstanceRange Clamp(RenderInstanceRange range, int count)

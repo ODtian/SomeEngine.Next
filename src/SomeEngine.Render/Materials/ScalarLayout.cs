@@ -22,7 +22,6 @@ public sealed class ScalarLayout
         uint payloadByteSize,
         uint layoutHash)
     {
-        Array.Sort(fields, static (left, right) => left.Offset.CompareTo(right.Offset));
         Name = name;
         _fields = fields;
 
@@ -69,7 +68,7 @@ public sealed class ScalarLayout
                 continue;
             }
 
-            uint fieldEnd = field.Offset + field.Size;
+            ulong fieldEnd = (ulong)field.Offset + field.Size;
             if (field.Size == 0 || fieldEnd > payloadByteSize)
             {
                 continue;
@@ -77,6 +76,12 @@ public sealed class ScalarLayout
 
             materialFields.Add(field);
         }
+
+        materialFields.Sort(static (left, right) =>
+        {
+            int offset = left.Offset.CompareTo(right.Offset);
+            return offset != 0 ? offset : string.CompareOrdinal(left.Name, right.Name);
+        });
 
         return new ScalarLayout(
             name,

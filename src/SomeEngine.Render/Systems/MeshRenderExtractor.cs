@@ -130,7 +130,7 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
             bool materialsChanged =
                 materialChunkChanged &&
                 chunk.RowBufferChangedSinceLastSystemVersion<MeshMaterialBinding>(row);
-            if (meshChanged || materialsChanged)
+            if (hasMeshes && (meshChanged || materialsChanged))
             {
                 int materialOffset = _materials.Count;
                 int materialCount = 0;
