@@ -42,6 +42,56 @@ public sealed class RenderDeviceTextureTests
         _ = renderDevice.GetTextureSrv(asset);
     }
 
+    [Theory]
+    [InlineData(FrameSubmissionMode.RecordAllThenSubmit)]
+    [InlineData(FrameSubmissionMode.Pipelined)]
+    public async Task FailedConsumerDoesNotCommitTextureUpload(FrameSubmissionMode mode)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        using var assets = new TemporaryAssetProject();
+        AssetGuid guid = assets.Project.CreateAsset(
+            "assets/failed-consumer.texture.asset",
+            SingleMipTexture("failed-consumer", 2, 1, [8, 9]));
+        await using var loader = new AssetLoader(assets.Project.CreateStorage());
+        EngineTexture asset = await loader.LoadAsync(new AssetId<EngineTexture>(guid));
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "Texture recording failure test");
+        using var renderDevice = new RenderDevice(backend, device);
+        using var graph = CreateGraph(backend, device);
+        RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(SubmissionMode: mode));
+        bool failed = false;
+        try
+        {
+            GraphPassId consumer = frame.AddGeneralPass(
+                "Fail after Texture upload",
+                PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull,
+                    Recording: PassRecordingMode.CallingThread),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref GeneralPassCommandScope _, in int _) =>
+                    throw new InvalidOperationException("Texture consumer recording failed"));
+            _ = renderDevice.PrepareTexture(ref frame, consumer, asset);
+            try
+            {
+                frame.Execute(new QueueCompletion[graph.MaximumQueueCompletionCount]);
+            }
+            catch (InvalidOperationException exception) when (
+                exception.Message == "Texture consumer recording failed")
+            {
+                failed = true;
+            }
+        }
+        finally
+        {
+            frame.Dispose();
+        }
+        Assert.True(failed);
+        Assert.Throws<InvalidOperationException>(() => renderDevice.GetTextureSrv(asset));
+        _ = ExecuteTextureFrame(graph, renderDevice, asset);
+        _ = renderDevice.GetTextureSrv(asset);
+    }
+
     [Fact]
     public async Task BlockCompressedBootstrapUsesItsNativeCopyFootprint()
     {

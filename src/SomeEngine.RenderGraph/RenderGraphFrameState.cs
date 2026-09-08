@@ -1013,35 +1013,19 @@ internal sealed partial class RenderGraphFrameState
             _executor.Reset();
             Slot.TransientResources!.FlushUploads();
             _executorActive = true;
-            int result = _executor.Execute(destination);
-            _finished = true;
-            _executorActive = false;
-            Slot.SetCompletions(_executor.SubmittedCompletions);
-            NotifyExecutionObservers(executed: true);
-            ClearFrameData();
-            Graph.EndFrame(Identity);
-            return result;
+            return _executor.Execute(destination);
         }
         catch (GraphicsException exception) when (exception.Error == GraphicsError.DeviceLost)
         {
-            Slot.SetCompletions(_executor.SubmittedCompletions);
             Graph.MarkDeviceLost();
-            _finished = true;
-            _executorActive = false;
-            NotifyExecutionObservers(executed: true);
-            ClearFrameData();
-            Graph.EndFrame(Identity);
             throw;
         }
-        catch
+        finally
         {
-            Slot.SetCompletions(_executor.SubmittedCompletions);
             _finished = true;
             _executorActive = false;
-            NotifyExecutionObservers(executed: true);
-            ClearFrameData();
-            Graph.EndFrame(Identity);
-            throw;
+            Slot.SetCompletions(_executor.SubmittedCompletions);
+            FinishFrame(this);
         }
     }
 
@@ -1050,9 +1034,20 @@ internal sealed partial class RenderGraphFrameState
         if (_finished || Identity != identity) return;
         _finished = true;
         _executorActive = false;
-        NotifyExecutionObservers(executed: false);
-        ClearFrameData();
-        Graph.EndFrame(Identity);
+        FinishFrame(null);
+    }
+
+    private void FinishFrame(RenderGraphFrameState? frame)
+    {
+        try
+        {
+            NotifyExecutionObservers(frame);
+        }
+        finally
+        {
+            ClearFrameData();
+            Graph.EndFrame(Identity);
+        }
     }
 
     private GraphPassId AddDynamicPass<TState, TCallback>(
@@ -1359,12 +1354,29 @@ internal sealed partial class RenderGraphFrameState
         _executionObservers.Clear();
     }
 
-    private void NotifyExecutionObservers(bool executed)
+    internal ReadOnlySpan<QueueCompletion> SubmittedCompletions => _executor.SubmittedCompletions;
+
+    internal bool TryGetPassCompletion(GraphPassId pass, out QueueCompletion completion) =>
+        _executor.TryGetPassCompletion(pass, out completion);
+
+    private void NotifyExecutionObservers(RenderGraphFrameState? frame)
     {
         IRenderGraphFrameExecutionObserver[] observers = [.. _executionObservers];
         _executionObservers.Clear();
+        List<Exception>? errors = null;
         foreach (IRenderGraphFrameExecutionObserver observer in observers)
-            observer.OnRenderGraphFrameFinished(executed);
+        {
+            try
+            {
+                observer.OnRenderGraphFrameFinished(new RenderGraphFrameResult(frame));
+            }
+            catch (Exception exception)
+            {
+                (errors ??= []).Add(exception);
+            }
+        }
+        if (errors is not null)
+            throw new AggregateException("Render graph completion callbacks failed.", errors);
     }
 
     private sealed class FrameRetirement(RenderGraph graph, IDisposable value)
@@ -1372,7 +1384,7 @@ internal sealed partial class RenderGraphFrameState
     {
         private IDisposable? _value = value;
 
-        public void OnRenderGraphFrameFinished(bool executed)
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
         {
             IDisposable? retired = Interlocked.Exchange(ref _value, null);
             if (retired is not null)

@@ -132,7 +132,7 @@ public sealed partial class RenderDevice
                 throw;
             }
         }
-        else if (realization.Revision != asset.Revision)
+        else if (!realization.Initialized || realization.Revision != asset.Revision)
         {
             TextureShape nextShape = TextureShape.From(asset, _device);
             if (realization.Shape == nextShape)
@@ -718,14 +718,20 @@ public sealed partial class RenderDevice
     private static void AbortPendingUpload(TextureRealization realization)
     {
         if (realization.PendingFrameGraph is not null)
-            realization.FinishUpload(executed: false);
+            realization.FinishUpload(default);
     }
 
-    private void FinishUpload(TextureRealization realization, bool executed)
+    private void FinishUpload(TextureRealization realization, RenderGraphFrameResult result)
     {
         if (realization.PendingFrameGraph is null)
             return;
 
+        if (!result.SubmittedCompletions.IsEmpty)
+            TrackSubmission(result.SubmittedCompletions);
+        bool executed = result.TryGetPassCompletion(realization.FinalizationPass, out _);
+        bool wroteContents = false;
+        foreach (GraphPassId pass in realization.UploadPasses)
+            wroteContents |= result.TryGetPassCompletion(pass, out _);
         EngineTexture? asset = realization.PendingAsset;
         TextureRealization? replaced = realization.ReplacedRealization;
         EngineTexture? replacedAsset = realization.ReplacedAsset;
@@ -747,6 +753,13 @@ public sealed partial class RenderDevice
             }
         }
 
+        if (!executed && wroteContents)
+        {
+            realization.Initialized = false;
+            realization.Revision = 0;
+            realization.FirstResidentMip = realization.Shape.MipLevelCount;
+            realization.UploadedChunks.Clear();
+        }
         realization.ClearUploadTransaction();
         if (replaced is null || replacedAsset is null)
             return;
@@ -764,7 +777,7 @@ public sealed partial class RenderDevice
         {
             _textureRealizations[replacedAsset] = replaced;
         }
-        realization.Dispose();
+        Retire(realization);
     }
 
     private enum TextureViewKind : byte
@@ -819,7 +832,7 @@ public sealed partial class RenderDevice
         internal bool ContainsUploadedChunk(ulong chunk) =>
             UploadedChunks.Contains(chunk) || PendingUploadedChunks.Contains(chunk);
 
-        internal void FinishUpload(bool executed) => _owner.FinishUpload(this, executed);
+        internal void FinishUpload(RenderGraphFrameResult result) => _owner.FinishUpload(this, result);
 
         internal void ClearUploadTransaction()
         {
@@ -831,8 +844,8 @@ public sealed partial class RenderDevice
             RollbackUploadedChunks = null;
         }
 
-        void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(bool executed) =>
-            FinishUpload(executed);
+        void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result) =>
+            FinishUpload(result);
 
         public void Dispose()
         {

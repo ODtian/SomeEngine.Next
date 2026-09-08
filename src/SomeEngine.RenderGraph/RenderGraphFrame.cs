@@ -51,7 +51,7 @@ public ref partial struct RenderGraphFrame
         State.RetireAfterFrame(value);
     }
 
-    internal void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
+    public void ObserveExecution(IRenderGraphFrameExecutionObserver observer)
     {
         ArgumentNullException.ThrowIfNull(observer);
         State.ObserveExecution(observer);

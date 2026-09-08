@@ -9,7 +9,7 @@ namespace SomeEngine.Render;
 /// Optional per-material descriptor-value storage. Material slots remain material-local;
 /// this extension allocates a variable-length value span for each material it uses.
 /// </summary>
-public sealed class MaterialBindless : IDisposable
+public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionObserver
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -27,6 +27,7 @@ public sealed class MaterialBindless : IDisposable
     private readonly HashSet<GraphPassId> _frameConsumers = [];
     private readonly HashSet<GraphPassId> _frameBoundPasses = [];
     private readonly List<GraphPassId> _frameUploads = [];
+    private readonly List<ValueRange> _uploadRanges = [];
     private ulong _frameIdentity;
     private GraphBufferId _frameValues;
     private GraphBufferSrvId _frameValuesView;
@@ -692,7 +693,10 @@ public sealed class MaterialBindless : IDisposable
     {
         if (_frameIdentity == frame.FrameIdentity)
             return;
+        if (_uploadRanges.Count != 0)
+            throw new InvalidOperationException("Material uploads still belong to an unfinished frame.");
         _frameIdentity = frame.FrameIdentity;
+        frame.ObserveExecution(this);
         _frameConsumers.Clear();
         _frameBoundPasses.Clear();
         _frameUploads.Clear();
@@ -764,11 +768,29 @@ public sealed class MaterialBindless : IDisposable
                         value.Size));
                 });
             _frameUploads.Add(copy);
+            _uploadRanges.Add(dirty);
             foreach (GraphPassId consumer in _frameConsumers)
                 frame.OrderAfter(consumer, copy);
         }
         _dirty.Clear();
-        _valuesInitialized = true;
+    }
+
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+    {
+        if (!result.SubmittedCompletions.IsEmpty)
+            _renderDevice.TrackSubmission(result.SubmittedCompletions);
+        bool allSubmitted = true;
+        for (int i = 0; i < _uploadRanges.Count; i++)
+        {
+            if (result.TryGetPassCompletion(_frameUploads[i], out _))
+                continue;
+            ValueRange range = _uploadRanges[i];
+            AddDirty(range.Start, range.Count);
+            allSubmitted = false;
+        }
+        if (allSubmitted && _uploadRanges.Count != 0)
+            _valuesInitialized = true;
+        _uploadRanges.Clear();
     }
 
     private void WriteValue(uint slot, uint value)

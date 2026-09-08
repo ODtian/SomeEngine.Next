@@ -8,6 +8,7 @@ internal sealed partial class FrameExecutor
     private RecordedCommands[] _recorded = [];
     private bool[] _recordedValid = [];
     private QueueCompletion?[] _passCompletions = [];
+    private ulong[] _passSubmissionFrames = [];
     private bool[] _submittedQueues = [];
     private readonly List<QueueCompletion> _submittedCompletions = [];
     private List<int>[] _waves = [];
@@ -26,6 +27,22 @@ internal sealed partial class FrameExecutor
     internal ReadOnlySpan<QueueCompletion> SubmittedCompletions =>
         CollectionsMarshal.AsSpan(_submittedCompletions);
 
+    internal bool TryGetPassCompletion(GraphPassId pass, out QueueCompletion completion)
+    {
+        if (TryResolvePass(pass.Value, out int index) &&
+            (uint)index < (uint)_passes.Count &&
+            (uint)index < (uint)_passSubmissionFrames.Length &&
+            _passes[index].Identity == pass.Value &&
+            _passSubmissionFrames[index] == _frame.Identity &&
+            _passCompletions[index] is { } submitted)
+        {
+            completion = submitted;
+            return true;
+        }
+        completion = default;
+        return false;
+    }
+
     private int RecordAndSubmit(Span<QueueCompletion> destination)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RecordSubmit);
@@ -35,6 +52,7 @@ internal sealed partial class FrameExecutor
         PrepareArray(ref _recorded, _passes.Count);
         PrepareArray(ref _recordedValid, _passes.Count);
         PrepareArray(ref _passCompletions, _passes.Count);
+        PrepareArray(ref _passSubmissionFrames, _passes.Count);
         PrepareArray(ref _renderingColorDescriptions, _passes.Count);
         PrepareArray(ref _rasterRenderingCache, _passes.Count);
         PrepareArray(ref _submittedQueues, _frame.Graph.MaximumQueueCompletionCount);
@@ -810,7 +828,11 @@ internal sealed partial class FrameExecutor
             destination[queueSlot] = completion;
             _submittedQueues[queueSlot] = true;
             AddCompletion(_submittedCompletions, completion);
-            foreach (int pass in passes) _passCompletions[pass] = completion;
+            foreach (int pass in passes)
+            {
+                _passCompletions[pass] = completion;
+                _passSubmissionFrames[pass] = _frame.Identity;
+            }
             CommitSubmissionState(submission, completion);
         }
         finally
