@@ -38,16 +38,12 @@ internal sealed partial class FrameExecutor
     private readonly PriorityQueue<int, long> _criticalReady = new();
     private readonly Dictionary<Queue, int> _queueTime =
         new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<Queue, int> _queueLastPass =
-        new(ReferenceEqualityComparer.Instance);
     private readonly List<Queue> _queueCandidateScratch = [];
     private List<int>[] _valuePredecessors = [];
     private List<int>[] _predecessors = [];
     private List<int>[] _successors = [];
     private List<int>[] _passAccesses = [];
     private bool[] _live = [];
-    private int[] _schedule = [];
-    private int[] _scheduledPosition = [];
     private int[] _sameQueuePredecessor = [];
     private int[][] _startFrontiers = [];
     private int[][] _endFrontiers = [];

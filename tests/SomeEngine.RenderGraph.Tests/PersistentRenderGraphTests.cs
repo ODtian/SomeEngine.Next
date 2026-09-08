@@ -11,6 +11,66 @@ public sealed class PersistentRenderGraphTests
 {
     private const int ByteCount = 256;
 
+    [Fact]
+    public void ExecutionOrderSurvivesReorderingRemovingAndAddingPasses()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        var recorded = new List<int>();
+        GraphPassId first, middle, last;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            first = Add(edit, 1);
+            middle = Add(edit, 2);
+            last = Add(edit, 3);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(new[] { 1, 2, 3 }, recorded);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.OrderAfter(first, last);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(3, recorded.Count);
+        Assert.True(recorded.IndexOf(3) < recorded.IndexOf(1));
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.Remove(middle);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(new[] { 3, 1 }, recorded);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.RemoveOrder(first, last);
+            GraphPassId added = Add(edit, 4);
+            edit.OrderAfter(last, added);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(3, recorded.Count);
+        Assert.Contains(1, recorded);
+        Assert.True(recorded.IndexOf(4) < recorded.IndexOf(3));
+
+        GraphPassId Add(RenderGraphEdit edit, int value) => edit.AddCopyFramePass(
+            $"record {value}", PassQueueSelection.Exact(support.GraphicsQueue), value,
+            new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+            static (ref PassDefinition _, ref int _) => { },
+            (ref CopyPassCommandScope _, in int number) => recorded.Add(number));
+
+        void Execute()
+        {
+            recorded.Clear();
+            using RenderGraphFrame frame = graph.BeginFrame();
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            int count = frame.Execute(completions);
+            support.Wait(completions.AsSpan(0, count));
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -140,7 +140,7 @@ internal sealed partial class FrameExecutor
             indices.Sort((left, right) =>
             {
                 FrameResourceAccess a = _accesses[left], b = _accesses[right];
-                int order = _scheduledPosition[a.PassIndex].CompareTo(_scheduledPosition[b.PassIndex]);
+                int order = _executionOrder.Position(a.PassIndex).CompareTo(_executionOrder.Position(b.PassIndex));
                 return order != 0 ? order : a.PassAdjacencyIndex.CompareTo(b.PassAdjacencyIndex);
             });
             if (key.Kind == GraphAccessTargetKind.Buffer)

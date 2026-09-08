@@ -128,7 +128,7 @@ internal sealed partial class FrameExecutor
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
         _submissionCount = 0;
-        if (_schedule.Length == 0) return 0;
+        if (_executionOrder.Count == 0) return 0;
         PrepareArray(ref _submissionByPass, _passes.Count);
         PrepareArray(ref _submissionWaves, _passes.Count);
         PrepareArray(ref _dependencyVisited, _passes.Count);
@@ -138,7 +138,7 @@ internal sealed partial class FrameExecutor
         Array.Fill(_submissionWaves, -1);
         _lastSubmission.Clear();
         int count = 0;
-        foreach (int pass in _schedule)
+        foreach (int pass in _executionOrder.Nodes)
         {
             Queue queue = _passes[pass].Queue!;
             _incomingSubmissions.Clear();
@@ -205,7 +205,7 @@ internal sealed partial class FrameExecutor
 
         int waveCount = maximum + 1;
         PrepareLists(ref _waves, waveCount);
-        foreach (int pass in _schedule)
+        foreach (int pass in _executionOrder.Nodes)
         {
             int wave = _submissionWaves[_submissionByPass[pass]];
             _waves[wave].Add(pass);

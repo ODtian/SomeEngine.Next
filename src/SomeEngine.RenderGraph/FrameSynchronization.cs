@@ -93,7 +93,7 @@ internal sealed partial class FrameExecutor
             _pendingBarrierTransitions.Add(PendingBarrierTransition.ForAliasing(
                 previousPass,
                 currentPass,
-                _passes[currentPass].ScheduledOrdinal,
+                _executionOrder.Position(currentPass),
                 beforeResource,
                 afterResource));
             return;
@@ -108,7 +108,7 @@ internal sealed partial class FrameExecutor
     {
         if (!_resourceRows.TryGetValue(predecessor, out var key) || !ResourceExists(key)) return -1;
         int pass = key.Kind == GraphAccessTargetKind.Buffer ? _buffers[key.Index].LastPass : _textures[key.Index].LastPass;
-        return pass >= 0 && _scheduledPosition[pass] < _scheduledPosition[currentPass] &&
+        return pass >= 0 && _executionOrder.Position(pass) < _executionOrder.Position(currentPass) &&
             ReferenceEquals(_passes[pass].Queue, _passes[currentPass].Queue) ? pass : -1;
     }
 
@@ -573,7 +573,7 @@ internal sealed partial class FrameExecutor
             _pendingBarrierTransitions.Add(PendingBarrierTransition.ForBuffer(
                 previousPass,
                 currentPass,
-                _passes[currentPass].ScheduledOrdinal,
+                _executionOrder.Position(currentPass),
                 barrier));
             return;
         }
@@ -622,7 +622,7 @@ internal sealed partial class FrameExecutor
                 _pendingBarrierTransitions.Add(PendingBarrierTransition.ForTexture(
                     previousPass,
                     currentPass,
-                    _passes[currentPass].ScheduledOrdinal,
+                    _executionOrder.Position(currentPass),
                     barrier));
                 return;
             }
@@ -720,7 +720,7 @@ internal sealed partial class FrameExecutor
     private readonly record struct PendingBarrierTransition(
         int PreviousPass,
         int CurrentPass,
-        int CurrentScheduledOrdinal,
+        long CurrentScheduledOrdinal,
         PendingBarrierKind Kind,
         BufferBarrier Buffer,
         TextureBarrier Texture,
@@ -730,7 +730,7 @@ internal sealed partial class FrameExecutor
         internal static PendingBarrierTransition ForBuffer(
             int previousPass,
             int currentPass,
-            int currentScheduledOrdinal,
+            long currentScheduledOrdinal,
             in BufferBarrier barrier) => new(
                 previousPass,
                 currentPass,
@@ -744,7 +744,7 @@ internal sealed partial class FrameExecutor
         internal static PendingBarrierTransition ForTexture(
             int previousPass,
             int currentPass,
-            int currentScheduledOrdinal,
+            long currentScheduledOrdinal,
             in TextureBarrier barrier) => new(
                 previousPass,
                 currentPass,
@@ -758,7 +758,7 @@ internal sealed partial class FrameExecutor
         internal static PendingBarrierTransition ForAliasing(
             int previousPass,
             int currentPass,
-            int currentScheduledOrdinal,
+            long currentScheduledOrdinal,
             in AliasingResource before,
             in AliasingResource after) => new(
                 previousPass,

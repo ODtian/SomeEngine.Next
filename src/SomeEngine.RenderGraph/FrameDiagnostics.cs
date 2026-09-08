@@ -8,6 +8,10 @@ internal sealed partial class FrameExecutor
         RenderGraphDiagnosticsHandler? handler = _frame.Options.Diagnostics;
         if (handler is null) return;
 
+        var positions = new int[_passes.Count];
+        int position = 0;
+        foreach (int pass in _executionOrder.Nodes) positions[pass] = position++;
+
         var passes = new RenderGraphPassDiagnostic[_passes.Count];
         int liveCount = 0;
         for (int index = 0; index < _passes.Count; index++)
@@ -21,7 +25,7 @@ internal sealed partial class FrameExecutor
                 pass.Enabled,
                 _live[index],
                 pass.DeclarationOrdinal,
-                _live[index] ? pass.ScheduledOrdinal : -1,
+                _live[index] ? positions[index] : -1,
                 pass.Queue);
         }
 
@@ -44,8 +48,8 @@ internal sealed partial class FrameExecutor
                 buffer.Description.Size,
                 buffer.Placement.Offset,
                 buffer.Placement.Size,
-                buffer.FirstPass < 0 ? -1 : _scheduledPosition[buffer.FirstPass],
-                buffer.LastPass < 0 ? -1 : _scheduledPosition[buffer.LastPass]);
+                buffer.FirstPass < 0 ? -1 : positions[buffer.FirstPass],
+                buffer.LastPass < 0 ? -1 : positions[buffer.LastPass]);
         }
 
         var textures = new RenderGraphTextureDiagnostic[_textures.Count];
@@ -68,8 +72,8 @@ internal sealed partial class FrameExecutor
                 texture.Format,
                 texture.Placement.Offset,
                 texture.Placement.Size,
-                texture.FirstPass < 0 ? -1 : _scheduledPosition[texture.FirstPass],
-                texture.LastPass < 0 ? -1 : _scheduledPosition[texture.LastPass]);
+                texture.FirstPass < 0 ? -1 : positions[texture.FirstPass],
+                texture.LastPass < 0 ? -1 : positions[texture.LastPass]);
         }
 
         var accesses = new RenderGraphAccessDiagnostic[_accesses.Count];
@@ -128,13 +132,13 @@ internal sealed partial class FrameExecutor
         var statistics = new RenderGraphStatistics(
             _passes.Count,
             liveCount,
-            _schedule.Length,
+            _executionOrder.Count,
             _buffers.Count,
             _textures.Count,
             _accesses.Count,
             dependencies.Count,
             barriers.Count,
-            _queueLastPass.Count,
+            _queuePasses.Count,
             resourceBytes,
             _frame.Slot.TransientResources!.OccupiedBytes,
             _frame.Slot.TransientResources.CapacityBytes,

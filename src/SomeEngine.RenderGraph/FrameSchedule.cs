@@ -10,7 +10,10 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _scheduleComponent = [];
     private readonly List<int> _componentSchedule = [];
     private readonly Stack<int> _scheduleWork = [];
-    private readonly PriorityQueue<int, int> _frontierWork = new();
+    private readonly PriorityQueue<int, long> _frontierWork = new();
+    private readonly Dictionary<Queue, SortedSet<(long Position, int Pass)>> _queuePasses = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<int, (Queue Queue, long Position)> _passQueuePositions = [];
+    private readonly HashSet<int> _queueNeighborChanges = [];
     private int[] _componentFinish = [], _sameQueueSuccessor = [];
     private bool _scheduleInitialized;
 
@@ -23,19 +26,16 @@ internal sealed partial class FrameExecutor
         {
             if (IsLive(pass))
             {
-                if (!_scheduledMembers.Contains(pass))
+                if (!_executionOrder.Contains(pass))
                 {
                     _executionOrder.Add(pass, _passes[pass].DeclarationOrdinal);
-                    _scheduledMembers.Add(pass);
                     _frontierSeeds.Add(pass);
                 }
             }
-            else if (_scheduledMembers.Remove(pass))
+            else if (_executionOrder.Remove(pass))
             {
-                _executionOrder.Remove(pass);
                 if (pass < _sameQueueSuccessor.Length && _sameQueueSuccessor[pass] >= 0)
                     _frontierSeeds.Add(_sameQueueSuccessor[pass]);
-                if (pass < _scheduledPosition.Length) _scheduledPosition[pass] = -1;
             }
         }
         _scheduleVisited.Clear();
@@ -46,7 +46,7 @@ internal sealed partial class FrameExecutor
             _scheduleComponent.Add(seed);
             _scheduleWork.Push(seed);
             if (!_scheduleInitialized)
-                foreach (int pass in _scheduledMembers)
+                foreach (int pass in _executionOrder.Nodes)
                     if (_scheduleVisited.Add(pass))
                     {
                         _scheduleComponent.Add(pass);
@@ -75,33 +75,70 @@ internal sealed partial class FrameExecutor
             if (_synchronizationByPass.TryGetValue(pass, out var resources))
                 _changedSynchronizationResources.UnionWith(resources);
         }
-        if (_executionOrder.Changed.Count != 0 || _recordingChanged)
+        if (_executionOrder.Changed.Count != 0)
         {
-            PrepareArray(ref _schedule, _executionOrder.Count);
-            EnsureCapacity(ref _scheduledPosition, _passes.Count);
             EnsureCapacity(ref _sameQueuePredecessor, _passes.Count);
             EnsureCapacity(ref _sameQueueSuccessor, _passes.Count);
-            _queueLastPass.Clear();
-            int position = 0;
-            foreach (int pass in _executionOrder.Nodes)
+            _queueNeighborChanges.Clear();
+            foreach (int pass in _executionOrder.Changed)
             {
+                if (_passQueuePositions.Remove(pass, out var previous))
+                {
+                    SortedSet<(long Position, int Pass)> queuePasses = _queuePasses[previous.Queue];
+                    AddNeighbors(queuePasses, previous.Position, pass);
+                    queuePasses.Remove((previous.Position, pass));
+                    if (queuePasses.Count == 0) _queuePasses.Remove(previous.Queue);
+                }
+                if (pass < _sameQueuePredecessor.Length)
+                {
+                    _sameQueuePredecessor[pass] = -1;
+                    _sameQueueSuccessor[pass] = -1;
+                }
+            }
+            foreach (int pass in _executionOrder.Changed)
+            {
+                if (!IsLive(pass)) continue;
                 Queue queue = _passes[pass].Queue!;
-                int previous = _queueLastPass.GetValueOrDefault(queue, -1);
-                if (_sameQueuePredecessor[pass] != previous) _frontierSeeds.Add(pass);
-                _sameQueuePredecessor[pass] = previous;
-                _sameQueueSuccessor[pass] = -1;
-                if (previous >= 0) _sameQueueSuccessor[previous] = pass;
-                _queueLastPass[queue] = pass;
-                _scheduledPosition[pass] = position;
-                CollectionsMarshal.AsSpan(_passes)[pass].ScheduledOrdinal = position;
-                _schedule[position++] = pass;
+                long position = _executionOrder.Position(pass);
+                if (!_queuePasses.TryGetValue(queue, out var queuePasses))
+                    _queuePasses.Add(queue, queuePasses = []);
+                queuePasses.Add((position, pass));
+                _passQueuePositions.Add(pass, (queue, position));
+                _frontierSeeds.Add(pass);
+                _queueNeighborChanges.Add(pass);
+                AddNeighbors(queuePasses, position, pass);
+            }
+            foreach (int pass in _queueNeighborChanges)
+            {
+                if (!_passQueuePositions.TryGetValue(pass, out var current)) continue;
+                var queuePasses = _queuePasses[current.Queue];
+                int predecessor = Neighbor(queuePasses, current.Position, pass, before: true);
+                if (_sameQueuePredecessor[pass] != predecessor) _frontierSeeds.Add(pass);
+                _sameQueuePredecessor[pass] = predecessor;
+                _sameQueueSuccessor[pass] = Neighbor(queuePasses, current.Position, pass, before: false);
             }
             _recordingChanged = true;
         }
         _scheduleSeeds.Clear();
     }
 
-    private readonly HashSet<int> _scheduledMembers = [];
+    private void AddNeighbors(SortedSet<(long Position, int Pass)> passes, long position, int pass)
+    {
+        int predecessor = Neighbor(passes, position, pass, before: true);
+        int successor = Neighbor(passes, position, pass, before: false);
+        if (predecessor >= 0) _queueNeighborChanges.Add(predecessor);
+        if (successor >= 0) _queueNeighborChanges.Add(successor);
+    }
+
+    private static int Neighbor(SortedSet<(long Position, int Pass)> passes, long position, int pass, bool before)
+    {
+        IEnumerable<(long Position, int Pass)> candidates = before
+            ? passes.GetViewBetween((long.MinValue, int.MinValue), (position, pass)).Reverse()
+            : passes.GetViewBetween((position, pass), (long.MaxValue, int.MaxValue));
+        foreach (var candidate in candidates)
+            if (candidate.Pass != pass) return candidate.Pass;
+        return -1;
+    }
 
     private void ScheduleComponent(HashSet<int> component)
     {
@@ -175,6 +212,7 @@ internal sealed partial class FrameExecutor
             FramePass row = _passes[chosenPass];
             if (!ReferenceEquals(row.Queue, chosenQueue))
             {
+                _executionOrder.Changed.Add(chosenPass);
                 _frontierSeeds.Add(chosenPass);
                 MarkPassResources(chosenPass, _changedSynchronizationResources);
                 _recordingChanged = true;
@@ -289,8 +327,8 @@ internal sealed partial class FrameExecutor
             {
                 int pass = _accesses[index].PassIndex;
                 if (!IsLive(pass)) continue;
-                if (first < 0 || _scheduledPosition[pass] < _scheduledPosition[first]) first = pass;
-                if (last < 0 || _scheduledPosition[pass] > _scheduledPosition[last]) last = pass;
+                if (first < 0 || _executionOrder.Position(pass) < _executionOrder.Position(first)) first = pass;
+                if (last < 0 || _executionOrder.Position(pass) > _executionOrder.Position(last)) last = pass;
             }
             if (key.Kind == GraphAccessTargetKind.Buffer)
             {
@@ -308,7 +346,7 @@ internal sealed partial class FrameExecutor
 
         void Enqueue(int pass)
         {
-            if (IsLive(pass) && _frontierQueued.Add(pass)) _frontierWork.Enqueue(pass, _scheduledPosition[pass]);
+            if (IsLive(pass) && _frontierQueued.Add(pass)) _frontierWork.Enqueue(pass, _executionOrder.Position(pass));
         }
     }
 
@@ -366,7 +404,6 @@ internal sealed partial class FrameExecutor
         ObservePass(index, row);
         FramePass retained = row;
         retained.Queue = _passes[index].Queue;
-        retained.ScheduledOrdinal = _passes[index].ScheduledOrdinal;
         _passes[index] = retained;
         if (row.Definition is not null)
             _rowChanges.Accesses.UnionWith(row.Definition.Accesses);

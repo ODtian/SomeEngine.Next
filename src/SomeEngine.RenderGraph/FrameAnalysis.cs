@@ -564,10 +564,10 @@ internal sealed partial class FrameExecutor
         for (int index = 1; index < accesses.Count; index++)
         {
             int value = accesses[index];
-            int ordinal = _scheduledPosition[_accesses[value].PassIndex];
+            long ordinal = _executionOrder.Position(_accesses[value].PassIndex);
             int insertion = index;
             while (insertion > 0 &&
-                   _scheduledPosition[_accesses[accesses[insertion - 1]].PassIndex] > ordinal)
+                   _executionOrder.Position(_accesses[accesses[insertion - 1]].PassIndex) > ordinal)
             {
                 accesses[insertion] = accesses[insertion - 1];
                 insertion--;
