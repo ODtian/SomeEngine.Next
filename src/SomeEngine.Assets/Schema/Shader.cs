@@ -1,7 +1,7 @@
 namespace SomeEngine.Assets.Schema;
 
-[global::SomeEngine.Assets.Asset(".shader.asset")]
-public partial class Shader
+public partial class ShaderData
 {
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path) => [];
+    internal const uint Version = 8;
+    internal IReadOnlyList<Guid> GetDependencies(string path) => [];
 }

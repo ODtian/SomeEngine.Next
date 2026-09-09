@@ -48,7 +48,7 @@ public sealed class ClusterShaderAbiTests
         ];
         foreach ((string assetName, string entryPoint, string subject, ClusterConservativeBounds expectedBounds) in geometryEntries)
         {
-            Shader shader = await Shader.ReadAsync(Path.Combine(
+            Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(
                 repositoryRoot,
                 "assets",
                 "Shaders",
@@ -412,12 +412,12 @@ public sealed class ClusterShaderAbiTests
     {
         AssetManifest manifest = AssetManifest.Load(
             Path.Combine(repositoryRoot, "Library", "AssetManifest"));
-        AssetManifestRecord configurationRecord = Assert.Single(
-            manifest.List(AssetType<ClusterShaders>.Name));
+        AssetEntry configurationRecord = Assert.Single(
+            manifest.List(Asset<ClusterShaders>.FileType));
         await using var loader = new AssetLoader(
             new LooseAssetStorage(repositoryRoot, manifest));
-        ClusterShaders configuration = await loader.LoadAsync(
-            new AssetId<ClusterShaders>(configurationRecord.Guid));
+        await using Asset<ClusterShaders> file = await loader.OpenAsync(new AssetId<ClusterShaders>(configurationRecord.AssetGuid));
+        ClusterShaders configuration = await ClusterShaders.CreateAsync(file, loader);
         IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
             configuration.Operations);
         Assert.Equal(
@@ -432,11 +432,10 @@ public sealed class ClusterShaderAbiTests
             Assert.NotEmpty(entries);
             ShaderRef first = entries[0];
             Assert.True(
-                AssetGuid.TryParse(first.AssetGuid, out AssetGuid shaderGuid),
+                Guid.TryParse(first.AssetGuid, out Guid shaderGuid),
                 $"Operation {operation.Role} has no Shader asset identity.");
             Assert.All(entries, entry => Assert.Equal(first.AssetGuid, entry.AssetGuid));
-            Shader shader = first.Asset
-                ?? await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
+            Shader shader = configuration.GetShader(first);
             string source = Assert.IsType<string>(shader.ImportTrace?.SourcePath);
             string sourcePath = Path.GetFullPath(Path.Combine(
                 repositoryRoot,

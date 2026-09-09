@@ -138,7 +138,6 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
     public VirtualShadowFeature(
         IGraphicsBackend backend,
         Device device,
-        AssetLoader assets,
         VirtualShadowMapShaders shaders,
         VirtualShadowMapSettings settings,
         global::SomeEngine.RenderGraph.RenderGraph graph,
@@ -147,7 +146,6 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        ArgumentNullException.ThrowIfNull(assets);
         ArgumentNullException.ThrowIfNull(shaders);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(graph);
@@ -160,7 +158,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         IndirectCommandLayout? dispatchLayout = null;
         try
         {
-            shadowMap = new VirtualShadowMap(backend, device, assets, shaders, settings);
+            shadowMap = new VirtualShadowMap(backend, device, shaders, settings);
             dispatchLayout = backend.CreateIndirectCommandLayout(
                 device,
                 new IndirectCommandLayoutDesc(

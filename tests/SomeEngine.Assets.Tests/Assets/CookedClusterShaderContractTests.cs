@@ -275,9 +275,9 @@ public sealed class CookedClusterShaderContractTests
         string root = TestProjectPaths.ProjectRoot();
         string manifestDirectory = Path.Combine(root, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
-        AssetManifestRecord configurationRecord = Assert.Single(
-            manifest.List(AssetType<ClusterShaders>.Name));
-        ClusterShaders configuration = await AssetProject.ReadAsync<ClusterShaders>(
+        AssetEntry configurationRecord = Assert.Single(
+            manifest.List(Asset<ClusterShaders>.FileType));
+        ClusterShadersData configuration = await AssetTestFiles.ReadAsync<ClusterShaders, ClusterShadersData>(
             Path.Combine(root, configurationRecord.Path));
         ClusterShaderOperation operation = Assert.Single(
             configuration.Operations!,
@@ -285,9 +285,10 @@ public sealed class CookedClusterShaderContractTests
         ShaderRef shaderRef = Assert.Single(operation.Shaders!);
         Assert.Equal(ShaderStage.Compute, shaderRef.Stage);
         Assert.False(string.IsNullOrWhiteSpace(shaderRef.EntryPoint));
-        Assert.True(AssetGuid.TryParse(shaderRef.AssetGuid, out AssetGuid shaderGuid));
-        Assert.True(manifest.TryGetAsset(shaderGuid, out AssetManifestRecord shaderRecord));
-        Shader shader = await Shader.ReadAsync(Path.Combine(root, shaderRecord.Path));
+        Assert.True(Guid.TryParse(shaderRef.AssetGuid, out Guid shaderGuid));
+        Assert.True(manifest.TryGetAsset(shaderGuid, out AssetEntry shaderRecord));
+        using Asset<Shader> file = await AssetLoader.OpenFileAsync<Shader>(Path.Combine(root, shaderRecord.Path));
+        Shader shader = await Shader.CreateAsync(file);
         return (shader, shaderRef.EntryPoint!);
     }
 
@@ -303,12 +304,12 @@ public sealed class CookedClusterShaderContractTests
         return names;
     }
 
-    private static ValueTask<Shader> ReadCookedShader(string assetName) =>
-        Shader.ReadAsync(Path.Combine(
-            TestProjectPaths.ProjectRoot(),
-            "assets",
-            "Shaders",
-            assetName));
+    private static async ValueTask<Shader> ReadCookedShader(string assetName)
+    {
+        await using Asset<Shader> file = await AssetLoader.OpenFileAsync<Shader>(Path.Combine(
+            TestProjectPaths.ProjectRoot(), "assets", "Shaders", assetName));
+        return await Shader.CreateAsync(file);
+    }
 
     private static string[] Sorted(params string[] names)
     {

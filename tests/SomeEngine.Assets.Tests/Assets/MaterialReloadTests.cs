@@ -7,29 +7,20 @@ public sealed class MaterialReloadTests
     [Fact]
     public async Task ReloadChangesTheExistingObjectAtTheExplicitUpdateBoundary()
     {
-        var current = new StandardMaterial
-        {
-            AssetGuid = "00112233445566778899aabbccddeeff",
-            Name = "before",
-        };
-        var replacement = new StandardMaterial
-        {
-            AssetGuid = current.AssetGuid,
-            Name = "after",
-        };
-
-        _ = current.Slots;
-        _ = replacement.Slots;
+        using var directory = new AssetTestDirectory();
+        await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
+        using var current = new StandardMaterial { Name = "before" };
+        using Asset<Material> file = new StandardMaterialData { Name = "after", Roughness = 0.75f }.ToAsset();
         ulong revision = current.Revision;
         int notifications = 0;
         current.Changed += material =>
         {
             Assert.Same(current, material);
-            Assert.Equal(revision + 1, material.Revision);
             Assert.Equal("after", material.Name);
+            Assert.Equal(0.75f, current.Roughness);
             notifications++;
         };
-        await Material.ApplyReloadAsync(current, replacement, default);
+        await current.UpdateAsync(file, loader);
         Assert.Equal("after", current.Name);
         Assert.Equal(revision + 1, current.Revision);
         Assert.Equal(1, notifications);

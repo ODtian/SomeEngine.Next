@@ -4,13 +4,13 @@ namespace SomeEngine.Assets.Importers;
 
 internal static class GltfDeps
 {
-    public static AssetImportFingerprint? Fingerprint(
+    public static ImportInputs? ReadInputs(
         string projectRoot,
         string fullSourcePath,
         SourceMeta sourceMeta,
         GltfImporterSettings settings)
     {
-        List<DependencyEntryData> dependencies = [];
+        List<FileDependency> dependencies = [];
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!Add(projectRoot, fullSourcePath, dependencies, seen))
         {
@@ -30,33 +30,30 @@ internal static class GltfDeps
         }
 
         string settingsFingerprint = sourceMeta.ImporterSettings?.GetRawText() ?? string.Empty;
-        return AssetFingerprint.Create(dependencies, GltfSourceImporter.ImporterVersion, settingsFingerprint);
+        return ImportHash.Create(dependencies, GltfSourceImporter.ImporterVersion, settingsFingerprint);
     }
 
     public static void SaveMeta(
         string outputPath,
         string? assetGuid,
-        SourceGuid sourceGuid,
+        SourceMeta sourceMeta,
+        string sourcePath,
         string subAssetKey,
-        AssetImportFingerprint fingerprint)
+        ImportInputs fingerprint)
     {
-        if (!AssetGuid.TryParse(assetGuid, out AssetGuid parsedGuid) || parsedGuid.IsEmpty)
+        if (!Guid.TryParse(assetGuid, out Guid parsedGuid) || (parsedGuid == System.Guid.Empty))
         {
             return;
         }
 
-        AssetMetaFiles.Save(
-            outputPath,
-            new AssetMeta
-            {
-                AssetGuid = parsedGuid,
-                SourceGuid = sourceGuid,
-                SubAssetKey = subAssetKey,
-                ContentFingerprint = fingerprint.ContentFingerprint,
-                Dependencies = fingerprint.Dependencies,
-                ImporterVersion = fingerprint.ImporterVersion,
-                AssetPath = Path.GetFullPath(outputPath),
-            });
+        sourceMeta.Inputs = fingerprint.Dependencies;
+        sourceMeta.SetOutput(new SourceOutput
+        {
+            AssetGuid = parsedGuid, SubAssetKey = subAssetKey,
+            InputHash = fingerprint.InputHash, Dependencies = fingerprint.Dependencies,
+            AssetPath = Path.GetFullPath(outputPath),
+        });
+        SourceMeta.Save(sourcePath, sourceMeta);
     }
 
     public static string FullPath(string projectRoot, string path)
@@ -67,7 +64,7 @@ internal static class GltfDeps
     private static bool AddProject(
         string projectRoot,
         string projectRelativePath,
-        List<DependencyEntryData> dependencies,
+        List<FileDependency> dependencies,
         HashSet<string> seen)
     {
         if (string.IsNullOrWhiteSpace(projectRelativePath))
@@ -81,10 +78,10 @@ internal static class GltfDeps
     private static bool Add(
         string projectRoot,
         string fullPath,
-        List<DependencyEntryData> dependencies,
+        List<FileDependency> dependencies,
         HashSet<string> seen)
     {
-        DependencyEntryData? dependency = AssetFingerprint.TryFileDep(projectRoot, fullPath);
+        FileDependency? dependency = ImportHash.TryFileDep(projectRoot, fullPath);
         if (dependency == null)
         {
             return false;
@@ -101,7 +98,7 @@ internal static class GltfDeps
     private static bool AddUris(
         string projectRoot,
         string fullSourcePath,
-        List<DependencyEntryData> dependencies,
+        List<FileDependency> dependencies,
         HashSet<string> seen)
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(fullSourcePath));
@@ -117,7 +114,7 @@ internal static class GltfDeps
         string sourceDirectory,
         JsonElement root,
         string propertyName,
-        List<DependencyEntryData> dependencies,
+        List<FileDependency> dependencies,
         HashSet<string> seen)
     {
         if (!root.TryGetProperty(propertyName, out JsonElement array)

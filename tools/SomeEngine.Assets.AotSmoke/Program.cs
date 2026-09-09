@@ -2,66 +2,48 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization.Streaming;
 
-string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Assets-Aot-{Guid.NewGuid():N}");
+string directory = Path.Combine(Path.Combine(Directory.GetCurrentDirectory(), "obj"), $"SomeEngine-Assets-Aot-{Guid.NewGuid():N}");
 Directory.CreateDirectory(directory);
 const string relativePath = "native.texture.asset";
 string path = Path.Combine(directory, relativePath);
 try
 {
     var project = new AssetProject(directory, []);
-    AssetGuid expectedGuid = WriteTextureData(project, relativePath);
+    Guid expectedGuid = WriteTextureData(project, relativePath);
 
-    await using (var loader = new AssetLoader(project.CreateStorage()))
+    await using var loader = new AssetLoader(project.CreateStorage());
+    Asset<Texture>[] opened = await Task.WhenAll(
+        loader.OpenAsync(new AssetId<Texture>(expectedGuid)).AsTask(),
+        loader.OpenAsync(new AssetId<Texture>(expectedGuid)).AsTask());
+    await using Asset<Texture> first = opened[0];
+    await using Asset<Texture> second = opened[1];
+    if (ReferenceEquals(first, second) || first.Id != second.Id)
+        throw new InvalidOperationException("Disk opens must have independent close boundaries.");
+    await using Texture original = await Texture.CreateAsync(first);
+    await using Texture other = await Texture.CreateAsync(second);
+    if (ReferenceEquals(original, other))
+        throw new InvalidOperationException("Domain instances must be independent.");
+    await first.DisposeAsync();
+    await second.DisposeAsync();
+    await loader.DisposeAsync();
+    using ResidentChunkLease mip = await original.AcquireMipTileAsync(0, 0, 0);
+    if (mip.Memory.Length != 16 || mip.Memory.Span[0] != 255)
+        throw new InvalidOperationException("Texture streaming must survive asset and loader closure.");
+    await using Asset<Texture> replacement = await AssetLoader.OpenFileAsync<Texture>(path);
+    await original.UpdateAsync(replacement);
+    if (original.Revision != 2 || other.Revision != 1)
+        throw new InvalidOperationException("Updating one domain object changed another instance.");
+    using Asset<SmokePalette> paletteFile = new SmokePaletteFields
     {
-        Task<Texture> firstLoad = loader.LoadAsync(new AssetId<Texture>(expectedGuid)).AsTask();
-        Task<Texture> secondLoad = loader.LoadAsync(new AssetId<Texture>(expectedGuid)).AsTask();
-        Texture[] loaded = await Task.WhenAll(firstLoad, secondLoad);
-        Texture original = loaded[0];
-        Texture second = loaded[1];
-        if (!ReferenceEquals(original, second))
-            throw new InvalidOperationException("NativeAOT runtime requests did not remain single-flight.");
-        if (!AssetGuid.TryParse(original.AssetGuid, out AssetGuid loadedGuid)
-            || loadedGuid != expectedGuid
-            || original.Name != "native-aot"
-            || original.MipTiles?.Count != 2
-            || original.MipTiles.Any(static tile => tile.Payload.HasValue))
-        {
-            throw new InvalidOperationException("Texture mip/tile payloads must remain outside the binary-document root.");
-        }
-
-        using (ResidentChunkLease lease = await original.AcquireMipTileAsync(
-            mipLevel: 1,
-            arrayLayer: 0,
-            face: 0,
-            depthSlice: 0,
-            tileX: 0,
-            tileY: 0))
-        {
-            ReadOnlySpan<byte> acquired = lease.Memory.Span;
-            if (acquired.Length != 4
-                || acquired[0] != 127
-                || acquired[1] != 127
-                || acquired[2] != 127
-                || acquired[3] != 255)
-            {
-                throw new InvalidOperationException(
-                    "Texture mip/tile semantic chunk did not round-trip under NativeAOT.");
-            }
-        }
-
-        Texture reloaded = await loader.ReloadAsync(original);
-        if (!ReferenceEquals(reloaded, original)
-            || loader.GetRevision(reloaded) != 2)
-        {
-            throw new InvalidOperationException(
-                "NativeAOT reload did not update the canonical object in place.");
-        }
-    }
-
-    Console.WriteLine(
-        $"assets-nativeaot-smoke:ok rootType={Texture.TypeId:N} " +
-        $"fingerprint={Texture.SchemaFingerprint:X16} bytes={new FileInfo(path).Length} " +
-        "tiles=2 acquiredMip=1 payload=4 reloadRevision=2");
+        Name = "palette", Colors = [0xff123456u, 0xffabcdefu],
+    }.ToAsset();
+    Guid paletteId = project.CreateAsset("palette.palette.asset", paletteFile);
+    await using var paletteLoader = new AssetLoader(project.CreateStorage());
+    await using Asset<SmokePalette> paletteContent = await paletteLoader.OpenAsync(new AssetId<SmokePalette>(paletteId));
+    SmokePalette palette = SmokePalette.Create(paletteContent);
+    if (palette.Colors.Length != 2 || palette.Colors[1] != 0xffabcdefu)
+        throw new InvalidOperationException("Downstream generated asset format did not run under NativeAOT.");
+    Console.WriteLine($"assets-nativeaot-smoke:ok schema={Asset<Texture>.SchemaHash:X16} instances=2 independent-open=ok streaming-after-close=ok update=ok extension=ok");
 }
 finally
 {
@@ -69,7 +51,7 @@ finally
         Directory.Delete(directory, recursive: true);
 }
 
-static AssetGuid WriteTextureData(AssetProject project, string relativePath)
+static Guid WriteTextureData(AssetProject project, string relativePath)
 {
     byte[] mipZero =
     [
@@ -81,7 +63,7 @@ static AssetGuid WriteTextureData(AssetProject project, string relativePath)
     byte[] mipOne = [127, 127, 127, 255];
     return project.CreateAsset(
         relativePath,
-        new Texture
+        new TextureData
         {
             Name = "native-aot",
             Width = 2,
@@ -117,5 +99,22 @@ static AssetGuid WriteTextureData(AssetProject project, string relativePath)
                     Payload = mipZero,
                 },
             ],
-        });
+        }.ToAsset());
+}
+
+
+public sealed class SmokePalette(uint[] colors)
+{
+    public uint[] Colors { get; } = colors;
+    public static SmokePalette Create(Asset<SmokePalette> asset)
+        => new(asset.GetFieldsGenerated<SmokePaletteFields>().Colors);
+}
+
+[Asset(typeof(SmokePalette), ".palette.asset")]
+[SomeEngine.Serialization.BinaryContract]
+public sealed partial class SmokePaletteFields
+{
+    public string? AssetGuid { get; set; }
+    public string Name { get; set; } = "";
+    public uint[] Colors { get; set; } = [];
 }

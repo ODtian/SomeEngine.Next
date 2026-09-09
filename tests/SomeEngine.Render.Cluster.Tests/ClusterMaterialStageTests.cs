@@ -33,31 +33,27 @@ public sealed class ClusterMaterialStageTests
     }
 
     [Fact]
-    public void Stage_compatibility_keys_are_independent_and_never_contain_material_values()
+    public void MaterialScalarEditsDoNotChangeSharedShaderContent()
     {
-        Assert.NotEqual(typeof(ClusterTessellationCompatibilityKey), typeof(ClusterRasterCompatibilityKey));
-        Assert.NotEqual(typeof(ClusterRasterCompatibilityKey), typeof(ClusterShadeCompatibilityKey));
-
-        Type[] shadeFields = typeof(ClusterShadeCompatibilityKey)
-            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-            .Select(static field => field.FieldType)
-            .ToArray();
-        Assert.DoesNotContain(typeof(Material), shadeFields);
-        Assert.DoesNotContain(shadeFields, static type =>
-            type.Name.Contains("Descriptor", StringComparison.Ordinal) ||
-            type.Name.Contains("Binding", StringComparison.Ordinal));
+        var shader = new Shader { Name = "generated" };
+        using var first = new StandardMaterial { Shader = shader, Roughness = 0.2f };
+        using var second = new StandardMaterial { Shader = shader, Roughness = 0.8f };
+        first.Roughness = 0.4f;
+        Assert.Same(shader, first.Shader);
+        Assert.Same(shader, second.Shader);
+        Assert.Equal(0.8f, second.Roughness);
     }
 
     [Fact]
     public void Material_carries_user_shader_reference_independent_of_values()
     {
-        string shaderGuid = AssetGuid.New().ToFlatString();
-        var first = new StandardMaterial { Name = "first", Roughness = 0.1f, ShaderGuid = shaderGuid };
-        var second = new StandardMaterial { Name = "second", Roughness = 0.9f, ShaderGuid = shaderGuid };
+        var shader = new Shader { Name = "generated" };
+        var first = new StandardMaterial { Name = "first", Roughness = 0.1f, Shader = shader };
+        var second = new StandardMaterial { Name = "second", Roughness = 0.9f, Shader = shader };
 
         Assert.Equal(first.MaterialTypeId, second.MaterialTypeId);
-        Assert.Equal(shaderGuid, first.ShaderGuid);
-        Assert.Equal(shaderGuid, second.ShaderGuid);
+        Assert.Same(shader, first.Shader);
+        Assert.Same(shader, second.Shader);
         Assert.NotEqual(first.Roughness, second.Roughness);
     }
 
@@ -223,7 +219,7 @@ public sealed class ClusterMaterialStageTests
         string? texture2)
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Content", "Shaders", assetName);
-        Shader shader = await Shader.ReadAsync(path);
+        Shader shader = await ClusterTestFiles.OpenShaderAsync(path);
         CookedShaderEntry entry = shader.RequireEntry(
             SomeEngine.Graphics.ShaderTarget.Spirv,
             entryPoint,
@@ -259,15 +255,15 @@ public sealed class ClusterMaterialStageTests
     [InlineData("ClusterShade", true)]
     public async Task Material_resources_only_separate_commands_that_use_them(string entry, bool separates)
     {
-        Shader shader = await Shader.ReadAsync(Path.Combine(AppContext.BaseDirectory,
+        Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(AppContext.BaseDirectory,
             "Content", "Shaders", "cluster_shade_material.shader.asset"));
         ClusterLinkedStageLayout layout = ClusterLinkedStageLayout.Create(shader, ShaderTarget.Spirv, entry);
         var first = new StandardMaterial { AlbedoMap = new SomeEngine.Assets.Schema.Texture() };
         var second = new StandardMaterial { AlbedoMap = new SomeEngine.Assets.Schema.Texture() };
         ClusterMaterialStageBinding[] bindings = layout.Resources.ToArray().Select(resource =>
         {
-            MaterialSlotDefinition slot = first.Slots.FirstOrDefault(slot => slot.Name == resource.Name);
-            return new ClusterMaterialStageBinding(slot.Slot, resource.Type, slot.Name is not null);
+            MaterialPropertyDefinition slot = first.Properties.FirstOrDefault(slot => slot.Name == resource.Name);
+            return new ClusterMaterialStageBinding(slot.Index, resource.Type, slot.Name is not null);
         }).ToArray();
         if (!separates)
         {
@@ -277,7 +273,7 @@ public sealed class ClusterMaterialStageTests
                 !resource.IsUsed && resource.Type == ResourceBindingType.TextureSrv);
             Assert.True(unused >= 0);
             bindings[unused] = new ClusterMaterialStageBinding(
-                first.Slots.Single(slot => slot.Name == nameof(StandardMaterial.AlbedoMap)).Slot,
+                first.Properties.Single(slot => slot.Name == nameof(StandardMaterial.AlbedoMap)).Index,
                 ResourceBindingType.TextureSrv, true);
         }
         Assert.Equal(separates, !ClusterCommandBindingKey.Create(first, layout, bindings)

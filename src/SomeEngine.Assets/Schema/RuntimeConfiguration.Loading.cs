@@ -1,56 +1,8 @@
 namespace SomeEngine.Assets.Schema;
 
-public sealed partial class RuntimeConfiguration
+internal sealed partial class ApplicationData
 {
-    internal static async ValueTask<RuntimeConfiguration> LoadAssetAsync(
-        AssetLoadContext context,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        SomeEngine.Serialization.Containers.BinaryDocument<RuntimeConfiguration> document =
-            await context.OpenAsync<RuntimeConfiguration>().ConfigureAwait(false);
-        RuntimeConfiguration asset = document.Root;
-        AssetGuid scene = Require(asset.SceneGuid, nameof(SceneGuid));
-        AssetGuid pipeline = Require(asset.ClusterPipelineGuid, nameof(ClusterPipelineGuid));
-        AssetGuid virtualShadow = Require(
-            asset.VirtualShadowMapGuid,
-            nameof(VirtualShadowMapGuid));
-        AssetGuid uiShader = RequireRasterShaderPair(asset.UiShaders, nameof(UiShaders));
-        AssetGuid presentationShader = RequireRasterShaderPair(
-            asset.PresentationShaders,
-            nameof(PresentationShaders));
-        AssetGuid lightingShader = RequireComputeShader(
-            asset.LightingShader,
-            nameof(LightingShader));
-        AssetGuid temporalShader = RequireRasterShaderPair(asset.TemporalShaders, nameof(TemporalShaders));
-        AssetGuid translucencyShader = RequireRasterShaderPair(
-            asset.TranslucencyShaders,
-            nameof(TranslucencyShaders));
-        AssetGuid debugShader = RequireRasterShaderPair(asset.DebugShaders, nameof(DebugShaders));
-        if (asset.WindowWidth == 0 || asset.WindowHeight == 0)
-            throw new InvalidDataException("Runtime configuration requires a non-empty window.");
-
-        _ = await context.LoadDependencyAsync(new AssetId<RenderScene>(scene)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<ClusterShaders>(pipeline)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<VirtualShadowMapShaders>(virtualShadow)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(uiShader)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(presentationShader)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(lightingShader)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(temporalShader)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(translucencyShader)).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = await context.LoadDependencyAsync(new AssetId<Shader>(debugShader)).ConfigureAwait(false);
-        return asset;
-    }
-
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
+    internal IReadOnlyList<Guid> GetDependencies(string path)
     {
         if (WindowWidth == 0 || WindowHeight == 0)
             throw new InvalidDataException($"Runtime configuration '{path}' requires a non-empty window.");
@@ -68,14 +20,14 @@ public sealed partial class RuntimeConfiguration
         ];
     }
 
-    private static AssetGuid RequireComputeShader(ShaderRef? shader, string field) =>
+    private static Guid RequireComputeShader(ShaderRef? shader, string field) =>
         ShaderRef.Require(
             shader,
             "Runtime configuration",
             field,
             ShaderStage.Compute);
 
-    private static AssetGuid RequireRasterShaderPair(
+    private static Guid RequireRasterShaderPair(
         IList<ShaderRef>? shaders,
         string field)
     {
@@ -102,12 +54,12 @@ public sealed partial class RuntimeConfiguration
             }
         }
 
-        AssetGuid vertexGuid = ShaderRef.Require(
+        Guid vertexGuid = ShaderRef.Require(
             vertex,
             "Runtime configuration",
             $"{field}.Vertex",
             ShaderStage.Vertex);
-        AssetGuid pixelGuid = ShaderRef.Require(
+        Guid pixelGuid = ShaderRef.Require(
             pixel,
             "Runtime configuration",
             $"{field}.Pixel",
@@ -120,9 +72,9 @@ public sealed partial class RuntimeConfiguration
         return vertexGuid;
     }
 
-    private static AssetGuid Require(string? value, string field)
+    private static Guid Require(string? value, string field)
     {
-        if (!global::SomeEngine.Assets.AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
+        if (!global::System.Guid.TryParse(value, out Guid guid) || (guid == System.Guid.Empty))
             throw new InvalidDataException($"Runtime configuration field '{field}' has invalid asset GUID '{value}'.");
         return guid;
     }

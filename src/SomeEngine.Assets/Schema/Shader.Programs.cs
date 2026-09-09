@@ -4,14 +4,22 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Schema;
 
-public partial class Shader
+public partial class ShaderData
 {
-    internal static async ValueTask<Shader> ReadAsync(
+    private static async ValueTask<BinaryDocument<ShaderData>> OpenDocumentAsync(
+        string path, CancellationToken cancellationToken)
+    {
+        await using Asset<Shader> asset = await AssetLoader.OpenFileAsync<Shader>(
+            path, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return asset.OpenDocumentGenerated<ShaderData>()!;
+    }
+
+    internal static async ValueTask<ShaderData> ReadAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
-        await using BinaryDocument<Shader> document =
-            await AssetProject.OpenAsync<Shader>(path, cancellationToken)
+        await using BinaryDocument<ShaderData> document =
+            await OpenDocumentAsync(path, cancellationToken)
                 .ConfigureAwait(false);
         return await MaterializeAsync(document, cancellationToken).ConfigureAwait(false);
     }
@@ -24,7 +32,7 @@ public partial class Shader
             programIndex.ToString(CultureInfo.InvariantCulture));
     }
 
-    internal static BinaryDocumentWriter CreateWriter(Shader asset)
+    internal static BinaryDocumentWriter CreateWriter(ShaderData asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
         int programCount = asset.Programs?.Count ?? 0;
@@ -47,7 +55,7 @@ public partial class Shader
             builder.AddChunk(
                 asset.Programs![index].DataChunk.Key,
                 asset.Programs![index].Data!.Value,
-                AssetMetadata.RawBytesTypeFingerprint,
+                AssetWriter.RawBytesSchema,
                 ChunkCompression.Brotli,
                 alignment: 16,
                 ordinal: checked((uint)index));
@@ -57,16 +65,18 @@ public partial class Shader
     }
 
     /// <summary>Reads every bytecode variant into its final managed backing.</summary>
-    internal static async ValueTask<Shader> MaterializeAsync(
-        BinaryDocument<Shader> document,
-        CancellationToken cancellationToken)
+    internal static async ValueTask<ShaderData> MaterializeAsync(
+        BinaryDocument<ShaderData> document,
+        CancellationToken cancellationToken,
+        string? backend = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ValidateExternalizedRoot(document.Root);
-        Shader result = document.Root;
+        ShaderData result = document.Root.CopyFields();
         int programCount = result.Programs?.Count ?? 0;
         for (int index = 0; index < programCount; index++)
         {
+            if (backend is not null && result.Programs![index].Backend != backend) continue;
             Memory<byte>? payload = await document.TryReadChunkAsync(
                 result.Programs![index].DataChunk,
                 static length => GC.AllocateUninitializedArray<byte>(length),
@@ -74,7 +84,7 @@ public partial class Shader
             if (!payload.HasValue)
             {
                 throw new InvalidDataException(
-                    $"Shader document is missing required bytecode chunk {index}.");
+                    $"ShaderData document is missing required bytecode chunk {index}.");
             }
             CookedShaderProgram cooked = result.Programs![index];
             cooked.Data = payload;
@@ -90,7 +100,7 @@ public partial class Shader
         return result;
     }
 
-    private static void ValidateExternalizedRoot(Shader root)
+    private static void ValidateExternalizedRoot(ShaderData root)
     {
         IList<CookedShaderProgram>? programs = root.Programs;
         if (programs is null)

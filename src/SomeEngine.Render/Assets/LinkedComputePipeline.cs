@@ -29,25 +29,24 @@ public sealed class LinkedComputePipeline : IDisposable
     public static LinkedComputePipeline Create(
         IGraphicsBackend backend,
         Device device,
-        AssetLoader assets,
+        VirtualShadowMapShaders shaders,
         ShaderRef? shader,
         string label)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(assets);
+        ArgumentNullException.ThrowIfNull(shaders);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         if (shader is null ||
             shader.Stage != ShaderStage.Compute ||
             string.IsNullOrWhiteSpace(shader.EntryPoint) ||
-            !AssetGuid.TryParse(shader.AssetGuid, out AssetGuid shaderGuid) ||
-            shaderGuid.IsEmpty)
+            !Guid.TryParse(shader.AssetGuid, out Guid shaderGuid) ||
+            (shaderGuid == System.Guid.Empty))
         {
             throw new InvalidDataException(
                 $"Compute pipeline '{label}' has no valid shader entry.");
         }
-        Shader loaded = assets.LoadAsync(new AssetId<Shader>(shaderGuid))
-            .AsTask().GetAwaiter().GetResult();
+        Shader loaded = shaders.GetShader(shader);
         return Create(backend, device, loaded, shader.EntryPoint, label);
     }
 

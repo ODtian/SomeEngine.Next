@@ -1,387 +1,267 @@
+using SomeEngine.Serialization;
+using SomeEngine.Serialization.IO;
+
 namespace SomeEngine.Assets;
 
-/// <summary>
-/// Loads one canonical object for each asset ID. Loader state, single-flight coordination and
-/// reload attempts remain private; application and render code retain ordinary object references.
-/// </summary>
+/// <summary>Opens disk content. It does not create, cache, or release domain objects.</summary>
 public sealed class AssetLoader : IAsyncDisposable
 {
     private readonly IAssetStorage _storage;
-    private readonly ResidentAssetTable _assets = new();
     private readonly AssetLoaderOptions _options;
-    private readonly object _admissionGate = new();
-    private readonly Dictionary<AssetGuid, AssetAdmission> _admissions = [];
-    private readonly object _dependencyGate = new();
-    private readonly Dictionary<AssetGuid, Dictionary<AssetGuid, int>> _dependencies = [];
-    private int _disposed;
+    private readonly object _gate = new();
+    private readonly Dictionary<(Guid Id, Guid Version), FileRead> _files = [];
+    private readonly CancellationTokenSource _stop = new();
+    private readonly SemaphoreSlim _readConcurrency;
+    private readonly List<Exception> _closeErrors = [];
+    private Task _cleanup = Task.CompletedTask;
+    private Task? _close;
+    private long _access;
+    private long _cachedRootBytes;
+    private int _activeReads;
+    private bool _closed;
 
     public AssetLoader(IAssetStorage storage, AssetLoaderOptions? options = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
-        _options = options ?? AssetLoaderOptions.Empty;
+        _options = options ?? new();
+        ArgumentNullException.ThrowIfNull(_options.ReadLimits);
+        ArgumentOutOfRangeException.ThrowIfNegative(_options.MaxCachedFiles);
+        ArgumentOutOfRangeException.ThrowIfNegative(_options.MaxCachedRootBytes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxConcurrentReads);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.MaxQueuedReads);
+        _readConcurrency = new(_options.MaxConcurrentReads, _options.MaxConcurrentReads);
     }
 
-    public ValueTask<T> LoadAsync<T>(
-        AssetId<T> asset,
-        CancellationToken cancellationToken = default)
+    public async ValueTask<Asset<T>> OpenAsync<T>(AssetId<T> id, CancellationToken cancellationToken = default)
         where T : class
     {
-        ThrowIfDisposed();
-        ValidateAssetId(asset);
-        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        AssetGuid guid = asset.Value;
-        AssetEntry entry = Admit(guid, descriptor);
-        return _assets.LoadAsync(
-            guid,
-            (_, operationCancellation) =>
-                LoadValueAsync(guid, entry, descriptor, operationCancellation),
-            cancellationToken);
-    }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (id.IsEmpty)
+            throw new ArgumentException("An asset ID cannot be empty when opening a file.", nameof(id));
+        lock (_gate)
+            ObjectDisposedException.ThrowIf(_closed, this);
 
-    public ValueTask<T> ReloadAsync<T>(
-        T asset,
-        CancellationToken cancellationToken = default)
-        where T : class
-    {
-        ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(asset);
-        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        Func<T, T, CancellationToken, ValueTask> apply = descriptor.ApplyReload
-            ?? throw new NotSupportedException(
-                $"Asset type '{typeof(T).FullName}' does not support in-place reload.");
-        if (!_assets.TryGetAssetGuid(asset, out AssetGuid guid))
-            throw new InvalidOperationException("The asset does not belong to this loader.");
-        return _assets.ReloadAsync(
-            asset,
-            (_, operationCancellation) =>
-                ReloadValueAsync(guid, descriptor, operationCancellation),
-            apply,
-            cancellationToken);
-    }
+        // Storage may inspect a file header. Never hold the cache lock across external I/O.
+        AssetFormat<T> format = AssetFormat<T>.Current;
+        if (!_storage.TryFind(id.Value, out AssetEntry entry))
+            throw new KeyNotFoundException($"Asset {id} was not found in storage.");
+        if (entry.AssetGuid != id.Value)
+            throw new InvalidDataException("Storage returned a different asset number.");
+        format.Validate(entry);
 
-    public ValueTask<T> ReloadAsync<T>(
-        AssetId<T> asset,
-        CancellationToken cancellationToken = default)
-        where T : class
-    {
-        ThrowIfDisposed();
-        ValidateAssetId(asset);
-        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        Func<T, T, CancellationToken, ValueTask> apply = descriptor.ApplyReload
-            ?? throw new NotSupportedException(
-                $"Asset type '{typeof(T).FullName}' does not support in-place reload.");
-        AssetGuid guid = asset.Value;
-        return _assets.ReloadAsync(
-            guid,
-            (_, operationCancellation) =>
-                ReloadValueAsync(guid, descriptor, operationCancellation),
-            apply,
-            cancellationToken);
-    }
-
-    public ulong GetRevision<T>(T asset)
-        where T : class
-    {
-        ThrowIfDisposed();
-        return _assets.GetRevision(asset);
-    }
-
-    /// <summary>
-    /// Applies every fully loaded and validated replacement to its canonical asset object. Call
-    /// this only at an ownership boundary where extraction and render preparation are not reading
-    /// mutable asset fields.
-    /// </summary>
-    public ValueTask ApplyUpdatesAsync()
-    {
-        ThrowIfDisposed();
-        return _assets.ApplyUpdatesAsync();
-    }
-
-    public bool TryGetAssetId<T>(T asset, out AssetId<T> assetId)
-        where T : class
-    {
-        ThrowIfDisposed();
-        if (_assets.TryGetAssetGuid(asset, out AssetGuid guid))
+        var key = (id.Value, entry.Version);
+        FileRead read;
+        bool start = false;
+        lock (_gate)
         {
-            assetId = new AssetId<T>(guid);
-            return true;
+            ObjectDisposedException.ThrowIf(_closed, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_files.TryGetValue(key, out read!))
+            {
+                if (_activeReads >= _options.MaxQueuedReads)
+                    throw new InvalidOperationException("The asset file read queue is full.");
+                read = new();
+                _files.Add(key, read);
+                _activeReads++;
+                start = true;
+            }
+            read.Waiters++;
+            read.LastAccess = ++_access;
         }
-        assetId = default;
-        return false;
-    }
-
-    internal IAssetStorage Storage => _storage;
-
-    internal TOptions GetOptions<TOptions>(TOptions fallback)
-        where TOptions : notnull
-        => _options.Get(fallback);
-
-    internal bool TryFind<T>(AssetGuid guid, out T? value)
-        where T : class
-        => _assets.TryFind(guid, out value);
-
-    internal async ValueTask<T> LoadDependencyAsync<T>(
-        AssetGuid owner,
-        AssetId<T> asset,
-        CancellationToken operationCancellation)
-        where T : class
-    {
-        ValidateAssetId(asset);
-        AssetGuid guid = asset.Value;
-        AddDependency(owner, guid);
-        try
-        {
-            return await LoadAsync(asset, operationCancellation).ConfigureAwait(false);
-        }
-        finally
-        {
-            RemoveDependency(owner, guid);
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        if (start)
+            _ = ReadFileAsync(format, entry, key, read);
 
         try
         {
-            await _assets.DisposeAsync().ConfigureAwait(false);
+            AssetFile file = await read.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_closed, this);
+                cancellationToken.ThrowIfCancellationRequested();
+                return new Asset<T>(file.Duplicate());
+            }
         }
         finally
         {
-            lock (_dependencyGate)
-                _dependencies.Clear();
-            lock (_admissionGate)
-                _admissions.Clear();
-
-            if (_storage is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-            else if (_storage is IDisposable disposable)
-                disposable.Dispose();
+            Task cleanup;
+            lock (_gate)
+            {
+                read.Waiters--;
+                cleanup = TrimCache();
+            }
+            await cleanup.ConfigureAwait(false);
         }
     }
 
-    private async Task<AssetPublication<T>> LoadValueAsync<T>(
-        AssetGuid guid,
-        AssetEntry entry,
-        AssetTypeDescriptor<T> descriptor,
-        CancellationToken operationCancellation)
-        where T : class
+    /// <summary>Opens a file without a project or a loader-owned cache.</summary>
+    public static async ValueTask<Asset<T>> OpenFileAsync<T>(string path,
+        BinaryReadLimits? limits = null, CancellationToken cancellationToken = default) where T : class
     {
-        var context = new AssetLoadContext(this, guid, entry, operationCancellation);
-        T? result = null;
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        AssetFormat<T> format = AssetFormat<T>.Current;
+        if (!format.MatchesPath(path))
+            throw new InvalidDataException($"Asset type '{format.AssetType}' does not accept path '{path}'.");
+        cancellationToken.ThrowIfCancellationRequested();
+        IRangeSource source = FileRangeSource.Open(path);
+        var entry = new AssetEntry
+        {
+            AssetType = format.AssetType,
+            SchemaFingerprint = format.WireType.SchemaFingerprint,
+            Path = Path.GetFullPath(path),
+        };
+        return new Asset<T>(await format.ReadAsync(source, entry, limits ?? BinaryReadLimits.Default,
+            cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task ReadFileAsync<T>(AssetFormat<T> format, AssetEntry entry,
+        (Guid Id, Guid Version) key, FileRead read) where T : class
+    {
+        AssetFile? file = null;
+        Exception? failure = null;
+        bool entered = false;
         try
         {
-            result = await descriptor.Load(context, operationCancellation).ConfigureAwait(false)
-                ?? throw new InvalidDataException(
-                    $"Asset loader for '{typeof(T).FullName}' returned null.");
-            context.Commit(result);
-            await context.DisposeAsync().ConfigureAwait(false);
-            return new AssetPublication<T>(result);
+            await _readConcurrency.WaitAsync(_stop.Token).ConfigureAwait(false);
+            entered = true;
+            IRangeSource source = await _storage.OpenAsync(entry, _stop.Token).ConfigureAwait(false);
+            file = await format.ReadAsync(source, entry, _options.ReadLimits, _stop.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception error)
         {
-            bool contextOwnsResult = result is not null && context.Owns(result);
-            try
-            {
-                await context.DisposeAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                if (result is not null && !contextOwnsResult)
-                    await DisposeUnpublishedAsync(result).ConfigureAwait(false);
-            }
-            throw;
+            failure = error;
         }
         finally
         {
-            context.Seal();
-        }
-    }
-
-    private Task<AssetPublication<T>> ReloadValueAsync<T>(
-        AssetGuid guid,
-        AssetTypeDescriptor<T> descriptor,
-        CancellationToken operationCancellation)
-        where T : class
-    {
-        AssetEntry entry = RefreshAdmission(guid, descriptor);
-        return LoadValueAsync(guid, entry, descriptor, operationCancellation);
-    }
-
-    private AssetEntry Admit<T>(AssetGuid guid, AssetTypeDescriptor<T> descriptor)
-        where T : class
-    {
-        lock (_admissionGate)
-        {
-            if (_admissions.TryGetValue(guid, out AssetAdmission existing))
-                return ValidateAdmission<T>(guid, existing);
+            if (entered)
+                _readConcurrency.Release();
         }
 
-        AssetEntry entry = FindAndValidate(guid, descriptor);
-        lock (_admissionGate)
+        Task cleanup;
+        lock (_gate)
         {
-            if (_admissions.TryGetValue(guid, out AssetAdmission existing))
-                return ValidateAdmission<T>(guid, existing);
-            _admissions.Add(guid, new AssetAdmission(typeof(T), entry));
-            return entry;
-        }
-    }
-
-    private AssetEntry RefreshAdmission<T>(AssetGuid guid, AssetTypeDescriptor<T> descriptor)
-        where T : class
-    {
-        lock (_admissionGate)
-        {
-            if (_admissions.TryGetValue(guid, out AssetAdmission existing)
-                && existing.RuntimeType != typeof(T))
-                _ = ValidateAdmission<T>(guid, existing);
-        }
-
-        AssetEntry entry = FindAndValidate(guid, descriptor);
-        lock (_admissionGate)
-        {
-            _admissions[guid] = new AssetAdmission(typeof(T), entry);
-            return entry;
-        }
-    }
-
-    private AssetEntry FindAndValidate<T>(AssetGuid guid, AssetTypeDescriptor<T> descriptor)
-        where T : class
-    {
-        if (!_storage.TryFind(guid, out AssetEntry entry))
-            throw new KeyNotFoundException($"Asset {guid} was not found in storage.");
-        if (!descriptor.Accepts(entry))
-        {
-            throw new InvalidDataException(
-                $"Asset '{typeof(T).FullName}' does not accept stored type " +
-                $"'{entry.AssetType}' with fingerprint 0x{entry.SchemaFingerprint:X16}.");
-        }
-        return entry;
-    }
-
-    private static AssetEntry ValidateAdmission<T>(AssetGuid guid, AssetAdmission admission)
-        where T : class
-    {
-        if (admission.RuntimeType != typeof(T))
-        {
-            throw new InvalidOperationException(
-                $"Asset GUID '{guid}' is already loaded as '{admission.RuntimeType.FullName}', not " +
-                $"'{typeof(T).FullName}'. One GUID may have only one asset instance and backing.");
-        }
-        return admission.Entry;
-    }
-
-    private void AddDependency(AssetGuid owner, AssetGuid dependency)
-    {
-        lock (_dependencyGate)
-        {
-            if (owner == dependency)
-                throw Cycle(owner, dependency);
-            if (!_dependencies.TryGetValue(owner, out Dictionary<AssetGuid, int>? outgoing))
+            _activeReads--;
+            if (failure is null)
             {
-                outgoing = [];
-                _dependencies.Add(owner, outgoing);
+                read.File = file!;
+                if (!_closed)
+                    _cachedRootBytes += file!.RootByteLength;
+                read.Completion.TrySetResult(file!);
             }
-            outgoing.TryGetValue(dependency, out int count);
-            outgoing[dependency] = checked(count + 1);
-            if (CanReach(dependency, owner))
+            else
             {
-                RemoveDependencyCore(owner, dependency);
-                throw Cycle(owner, dependency);
+                _files.Remove(key);
+                if (failure is OperationCanceledException canceled)
+                    read.Completion.TrySetCanceled(canceled.CancellationToken);
+                else
+                {
+                    read.Completion.TrySetException(failure);
+                    _ = read.Completion.Task.Exception;
+                }
             }
+            cleanup = TrimCache();
         }
+        // Cleanup records each failure and is joined by DisposeAsync, including after all
+        // callers cancel an open. There are no unobserved cleanup exceptions.
+        await cleanup.ConfigureAwait(false);
     }
 
-    private void RemoveDependency(AssetGuid owner, AssetGuid dependency)
+    // Called under _gate. Only the loader's document access is evicted. Returned assets and
+    // streaming objects keep their independent access to the same file bytes.
+    private Task TrimCache()
     {
-        lock (_dependencyGate)
-            RemoveDependencyCore(owner, dependency);
-    }
-
-    private void RemoveDependencyCore(AssetGuid owner, AssetGuid dependency)
-    {
-        if (!_dependencies.TryGetValue(owner, out Dictionary<AssetGuid, int>? outgoing)
-            || !outgoing.TryGetValue(dependency, out int count))
-            return;
-        if (count > 1)
-            outgoing[dependency] = count - 1;
-        else
-            outgoing.Remove(dependency);
-        if (outgoing.Count == 0)
-            _dependencies.Remove(owner);
-    }
-
-    private bool CanReach(AssetGuid start, AssetGuid target)
-    {
-        var pending = new Stack<AssetGuid>();
-        var visited = new HashSet<AssetGuid>();
-        pending.Push(start);
-        while (pending.TryPop(out AssetGuid current))
+        if (_closed)
+            return _cleanup;
+        List<AssetFile>? removed = null;
+        while (true)
         {
-            if (current == target)
-                return true;
-            if (!visited.Add(current)
-                || !_dependencies.TryGetValue(current, out Dictionary<AssetGuid, int>? outgoing))
-                continue;
-            foreach (AssetGuid next in outgoing.Keys)
-                pending.Push(next);
+            var candidates = _files.Where(static pair => pair.Value.File is not null && pair.Value.Waiters == 0);
+            var obsolete = candidates.Where(pair => pair.Key.Version == Guid.Empty ||
+                _files.Any(other => other.Key.Id == pair.Key.Id && other.Value.LastAccess > pair.Value.LastAccess));
+            var selected = obsolete.OrderBy(static pair => pair.Value.LastAccess).FirstOrDefault();
+            if (selected.Value is null)
+            {
+                int cachedCount = _files.Count(static pair => pair.Value.File is not null);
+                if (cachedCount <= _options.MaxCachedFiles && _cachedRootBytes <= _options.MaxCachedRootBytes)
+                    break;
+                selected = candidates.OrderBy(static pair => pair.Value.LastAccess).FirstOrDefault();
+                if (selected.Value is null)
+                    break;
+            }
+            _files.Remove(selected.Key);
+            AssetFile file = selected.Value.File!;
+            _cachedRootBytes -= file.RootByteLength;
+            (removed ??= []).Add(file);
         }
-        return false;
+        if (removed is not null)
+            _cleanup = CloseFilesAsync(_cleanup, removed);
+        return _cleanup;
     }
 
-    private static InvalidDataException Cycle(AssetGuid owner, AssetGuid dependency)
-        => new($"Asset dependency cycle detected while asset '{owner}' loaded asset '{dependency}'.");
-
-    private static void ValidateAssetId<T>(AssetId<T> asset)
-        where T : class
+    private async Task CloseFilesAsync(Task previous, IReadOnlyList<AssetFile> files)
     {
-        if (!asset.IsValid)
-            throw new ArgumentException("An asset ID must be valid.", nameof(asset));
+        // Disposal can call user storage code. It must never execute under _gate.
+        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+        await previous.ConfigureAwait(false);
+        foreach (AssetFile file in files)
+        {
+            try { await file.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
+        }
     }
 
-    private static async ValueTask DisposeUnpublishedAsync(object value)
+    public ValueTask DisposeAsync()
     {
-        if (value is IAsyncDisposable asyncDisposable)
-            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-        else if (value is IDisposable disposable)
-            disposable.Dispose();
+        lock (_gate)
+        {
+            if (_close is not null)
+                return new(_close);
+            _closed = true;
+            FileRead[] reads = [.. _files.Values];
+            _files.Clear();
+            _cachedRootBytes = 0;
+            _close = CloseAsync(reads, _cleanup);
+            return new(_close);
+        }
     }
 
-    private void ThrowIfDisposed()
-        => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+    private async Task CloseAsync(FileRead[] reads, Task cleanup)
+    {
+        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+        try { await _stop.CancelAsync().ConfigureAwait(false); }
+        catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
+        await cleanup.ConfigureAwait(false);
+        foreach (FileRead read in reads)
+        {
+            AssetFile file;
+            try { file = await read.Completion.Task.ConfigureAwait(false); }
+            catch { continue; } // OpenAsync reports read failures to its caller.
+            try { await file.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception error) { lock (_gate) _closeErrors.Add(error); }
+        }
+        _readConcurrency.Dispose();
+        _stop.Dispose();
+        Exception[] errors;
+        lock (_gate) errors = [.. _closeErrors];
+        if (errors.Length != 0)
+            throw new AggregateException("One or more asset byte sources could not be closed.", errors);
+    }
 
-    private readonly record struct AssetAdmission(Type RuntimeType, AssetEntry Entry);
+    private sealed class FileRead
+    {
+        internal TaskCompletionSource<AssetFile> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal AssetFile? File;
+        internal int Waiters;
+        internal long LastAccess;
+    }
 }
 
 public sealed class AssetLoaderOptions
 {
-    private readonly IReadOnlyDictionary<Type, object> _values;
-
-    public AssetLoaderOptions()
-        : this(new Dictionary<Type, object>())
-    {
-    }
-
-    private AssetLoaderOptions(IReadOnlyDictionary<Type, object> values)
-        => _values = values;
-
-    public static AssetLoaderOptions Empty { get; } = new();
-
-    public AssetLoaderOptions With<TOptions>(TOptions value)
-        where TOptions : notnull
-    {
-        var values = new Dictionary<Type, object>(_values)
-        {
-            [typeof(TOptions)] = value,
-        };
-        return new AssetLoaderOptions(values);
-    }
-
-    internal TOptions Get<TOptions>(TOptions fallback)
-        where TOptions : notnull
-        => _values.TryGetValue(typeof(TOptions), out object? value)
-            ? (TOptions)value
-            : fallback;
+    public BinaryReadLimits ReadLimits { get; init; } = BinaryReadLimits.Default;
+    public int MaxConcurrentReads { get; init; } = 8;
+    /// <summary>Maximum number of queued and executing file reads combined.</summary>
+    public int MaxQueuedReads { get; init; } = 1024;
+    public int MaxCachedFiles { get; init; } = 128;
+    /// <summary>Budget for encoded root fields retained by the file cache, not decoded chunks or GPU memory.</summary>
+    public long MaxCachedRootBytes { get; init; } = 16L * 1024 * 1024;
 }

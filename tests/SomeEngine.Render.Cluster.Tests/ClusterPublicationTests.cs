@@ -791,7 +791,6 @@ public sealed class ClusterPublicationTests
         MemoryMarshal.AsBytes(nodes.AsSpan()).CopyTo(payload.AsSpan(pageBytes));
         return new Mesh
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
             Payload = payload,

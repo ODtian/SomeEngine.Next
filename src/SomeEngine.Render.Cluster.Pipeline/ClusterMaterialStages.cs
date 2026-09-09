@@ -55,14 +55,8 @@ internal static class ClusterMaterialEntries
     };
 
     internal static Shader RequireShader(Material material)
-        => material.ShaderAsset ?? throw new InvalidDataException(
+        => material.Shader ?? throw new InvalidDataException(
             $"Material '{material.Name}' has no loaded user shader.");
-
-    internal static AssetGuid RequireShaderGuid(Material material)
-        => AssetGuid.TryParse(material.ShaderGuid, out AssetGuid guid) && !guid.IsEmpty
-            ? guid
-            : throw new InvalidDataException(
-                $"Material '{material.Name}' has no valid user shader GUID.");
 
     internal static bool HasEntry(
         Shader shader,
@@ -224,38 +218,17 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
         in ClusterMaterialStageBinding binding,
         string name)
     {
-        object? value = material.GetSlotValue(binding.MaterialSlot);
+        uint index = binding.MaterialSlot;
         return binding.Type switch
         {
-            ResourceBindingType.TextureSrv => value switch
-            {
-                null => null,
-                SomeEngine.Assets.Schema.Texture texture => new TextureValue(texture),
-                _ => throw InvalidValue(material, name, "Texture"),
-            },
-            ResourceBindingType.TextureUav => value is SomeEngine.Assets.Schema.Texture texture
-                ? new TextureValue(texture)
-                : throw InvalidValue(material, name, "Texture"),
-            ResourceBindingType.Sampler => value switch
-            {
-                null => ClusterMaterialBindingDefaults.Sampler,
-                SamplerDesc sampler => sampler with { Label = null },
-                _ => throw InvalidValue(material, name, nameof(SamplerDesc)),
-            },
-            ResourceBindingType.BufferSrv => value is BufferSrv srv
-                ? BufferSrvValue.From(srv.Description)
-                : throw InvalidValue(material, name, nameof(BufferSrv)),
-            ResourceBindingType.BufferUav => value is BufferUav uav
-                ? BufferUavValue.From(uav.Description)
-                : throw InvalidValue(material, name, nameof(BufferUav)),
-            ResourceBindingType.ConstantBuffer => value is BufferCbv cbv
-                ? BufferCbvValue.From(cbv.Description)
-                : throw InvalidValue(material, name, nameof(BufferCbv)),
-            ResourceBindingType.AccelerationStructure => value is AccelerationStructureSrv acceleration
-                ? new AccelerationValue(acceleration.Resource)
-                : throw InvalidValue(material, name, nameof(AccelerationStructureSrv)),
-            _ => throw new InvalidDataException(
-                $"Cluster material resource '{name}' has unsupported binding type {binding.Type}."),
+            ResourceBindingType.TextureSrv => material.GetTexture(index) is { } texture ? new TextureValue(texture) : null,
+            ResourceBindingType.TextureUav => material.GetTexture(index) is { } texture ? new TextureValue(texture) : throw InvalidValue(material, name, "Texture"),
+            ResourceBindingType.Sampler => material.GetSampler(index) with { Label = null },
+            ResourceBindingType.BufferSrv => material.GetDeviceResource(index) is BufferSrv srv ? BufferSrvValue.From(srv.Description) : throw InvalidValue(material, name, nameof(BufferSrv)),
+            ResourceBindingType.BufferUav => material.GetDeviceResource(index) is BufferUav uav ? BufferUavValue.From(uav.Description) : throw InvalidValue(material, name, nameof(BufferUav)),
+            ResourceBindingType.ConstantBuffer => material.GetDeviceResource(index) is BufferCbv cbv ? BufferCbvValue.From(cbv.Description) : throw InvalidValue(material, name, nameof(BufferCbv)),
+            ResourceBindingType.AccelerationStructure => material.GetDeviceResource(index) is AccelerationStructureSrv acceleration ? new AccelerationValue(acceleration.Resource) : throw InvalidValue(material, name, nameof(AccelerationStructureSrv)),
+            _ => throw new InvalidDataException($"Unsupported material binding type {binding.Type}."),
         };
     }
 
@@ -743,7 +716,7 @@ internal sealed class ClusterRasterStages : IDisposable
     {
         ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
         var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialSlotDefinition> slots = material.Slots;
+        IReadOnlyList<MaterialPropertyDefinition> slots = material.Properties;
         for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
         {
             if (featureBinders[resourceIndex] is not null)
@@ -762,7 +735,7 @@ internal sealed class ClusterRasterStages : IDisposable
 
     private static uint FindMaterialSlot(
         Material material,
-        IReadOnlyList<MaterialSlotDefinition> slots,
+        IReadOnlyList<MaterialPropertyDefinition> slots,
         string name)
     {
         for (uint slot = 0; slot < slots.Count; slot++)
@@ -1179,7 +1152,7 @@ internal sealed class ClusterShadeStages : IDisposable
     {
         ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
         var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialSlotDefinition> slots = material.Slots;
+        IReadOnlyList<MaterialPropertyDefinition> slots = material.Properties;
         for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
         {
             if (featureResourceBinders[resourceIndex] is not null)

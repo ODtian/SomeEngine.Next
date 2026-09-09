@@ -113,7 +113,7 @@ public sealed class MaterialBindless : IDisposable
             throw new InvalidOperationException(
                 "MaterialBindless texture bindings must be fixed before the material is first used.");
         }
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Slots;
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         if (materialSlot >= definitions.Count)
             throw new ArgumentOutOfRangeException(nameof(materialSlot));
         if (!typeof(EngineTexture).IsAssignableFrom(definitions[checked((int)materialSlot)].ValueType))
@@ -195,18 +195,11 @@ public sealed class MaterialBindless : IDisposable
         {
             ref readonly MaterialResourceBinding binding = ref state.Bindings[valueIndex];
             uint materialSlot = binding.MaterialSlot;
-            object? raw = material.GetSlotValue(materialSlot);
             switch (binding.Kind)
             {
                 case MaterialResourceKind.TextureSrv:
                 {
-                    EngineTexture? texture = raw switch
-                    {
-                        null => null,
-                        EngineTexture value => value,
-                        _ => throw new InvalidOperationException(
-                            $"Material slot {materialSlot} declares Texture but contains {raw.GetType().FullName}."),
-                    };
+                    EngineTexture? texture = material.GetTexture(materialSlot);
                     TextureUse use = PrepareTextureSrv(
                         ref frame,
                         ref pass,
@@ -225,7 +218,7 @@ public sealed class MaterialBindless : IDisposable
                 }
                 case MaterialResourceKind.TextureUav:
                 {
-                    EngineTexture texture = raw as EngineTexture ?? throw new InvalidOperationException(
+                    EngineTexture texture = material.GetTexture(materialSlot) ?? throw new InvalidOperationException(
                         $"Material slot {materialSlot} must contain a Texture for writable A access.");
                     TextureUse use = PrepareTextureUav(
                         ref frame,
@@ -244,11 +237,7 @@ public sealed class MaterialBindless : IDisposable
                     break;
                 }
                 case MaterialResourceKind.Sampler:
-                    if (raw is not SamplerDesc sampler)
-                    {
-                        throw new InvalidOperationException(
-                            $"Material slot {materialSlot} declares SamplerDesc but has no sampler value.");
-                    }
+                    SamplerDesc sampler = material.GetSampler(materialSlot);
                     UpdateSamplerSlot(
                         ref frame,
                         material,
@@ -265,7 +254,7 @@ public sealed class MaterialBindless : IDisposable
                         state,
                         valueIndex,
                         materialSlot,
-                        raw as BufferSrv ?? throw InvalidResourceValue(materialSlot, raw, nameof(BufferSrv)),
+                        material.GetDeviceResource(materialSlot) as BufferSrv ?? throw InvalidResourceValue(materialSlot, material.GetDeviceResource(materialSlot), nameof(BufferSrv)),
                         sync);
                     break;
                 case MaterialResourceKind.BufferUav:
@@ -276,7 +265,7 @@ public sealed class MaterialBindless : IDisposable
                         state,
                         valueIndex,
                         materialSlot,
-                        raw as BufferUav ?? throw InvalidResourceValue(materialSlot, raw, nameof(BufferUav)),
+                        material.GetDeviceResource(materialSlot) as BufferUav ?? throw InvalidResourceValue(materialSlot, material.GetDeviceResource(materialSlot), nameof(BufferUav)),
                         sync);
                     break;
                 case MaterialResourceKind.ConstantBuffer:
@@ -287,7 +276,7 @@ public sealed class MaterialBindless : IDisposable
                         state,
                         valueIndex,
                         materialSlot,
-                        raw as BufferCbv ?? throw InvalidResourceValue(materialSlot, raw, nameof(BufferCbv)),
+                        material.GetDeviceResource(materialSlot) as BufferCbv ?? throw InvalidResourceValue(materialSlot, material.GetDeviceResource(materialSlot), nameof(BufferCbv)),
                         sync);
                     break;
                 case MaterialResourceKind.AccelerationStructure:
@@ -298,9 +287,9 @@ public sealed class MaterialBindless : IDisposable
                         state,
                         valueIndex,
                         materialSlot,
-                        raw as AccelerationStructureSrv ?? throw InvalidResourceValue(
+                        material.GetDeviceResource(materialSlot) as AccelerationStructureSrv ?? throw InvalidResourceValue(
                             materialSlot,
-                            raw,
+                            material.GetDeviceResource(materialSlot),
                             nameof(AccelerationStructureSrv)),
                         sync);
                     break;
@@ -333,7 +322,7 @@ public sealed class MaterialBindless : IDisposable
             allocation = existing;
         }
 
-        ulong slotRevision = material.GetSlotRevision(materialSlot);
+        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is null
             || !ReferenceEquals(current.Texture, texture)
             || current.TextureRevision != (texture?.Revision ?? 0)
@@ -368,7 +357,7 @@ public sealed class MaterialBindless : IDisposable
         in SamplerDesc description)
     {
         SlotState? current = state.Slots[valueIndex];
-        ulong slotRevision = material.GetSlotRevision(materialSlot);
+        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is not null
             && current.SlotRevision == slotRevision
             && current.SamplerDescription == description)
@@ -519,7 +508,7 @@ public sealed class MaterialBindless : IDisposable
             allocation = existing;
         }
 
-        ulong slotRevision = material.GetSlotRevision(materialSlot);
+        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is not null &&
             current.SlotRevision == slotRevision &&
             ReferenceEquals(current.ResourceView, resource) &&
@@ -554,7 +543,7 @@ public sealed class MaterialBindless : IDisposable
 
     private MaterialResourceBinding[] ResolveMaterialBindings(Material material)
     {
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Slots;
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         var result = new List<MaterialResourceBinding>(definitions.Count);
         _textureRequests.TryGetValue(material, out Dictionary<uint, TextureRequest>? textureRequests);
         for (uint slot = 0; slot < definitions.Count; slot++)

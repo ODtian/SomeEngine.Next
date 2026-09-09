@@ -31,7 +31,7 @@ static async Task<int> RunAsync(string[] args)
         }
 
         SlangShaderCookProfile profile = SlangShaderCookProfiles.Resolve(profileName);
-        SourceMeta originalMeta = SourceMetaFiles.GetOrCreate(
+        SourceMeta originalMeta = SourceMeta.GetOrCreate(
             sourcePath,
             nameof(SlangShaderImporter));
         if (!string.Equals(
@@ -55,26 +55,26 @@ static async Task<int> RunAsync(string[] args)
                     PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
                 }),
         };
-        SourceMetaFiles.Save(sourcePath, updatedMeta);
+        SourceMeta.Save(sourcePath, updatedMeta);
 
-        AssetProject project = AssetAuthoring.CreateProject(projectRoot);
-        IReadOnlyList<AssetGuid> imported = await project.ImportAsync(sourcePath);
+        AssetProject project = new AssetProject(projectRoot, [new GltfSourceImporter(), new SlangSourceImporter()]);
+        IReadOnlyList<Guid> imported = await project.ImportAsync(sourcePath);
         if (imported.Count != 1)
         {
             throw new InvalidOperationException(
                 $"Expected one shader asset from '{sourcePath}', but importer returned {imported.Count}.");
         }
 
-        AssetGuid assetGuid = imported[0];
+        Guid assetGuid = imported[0];
         IAssetStorage storage = project.CreateStorage();
         if (!storage.TryFind(assetGuid, out AssetEntry entry))
             throw new InvalidOperationException($"Cooked shader '{assetGuid}' was not published.");
-        await using BinaryDocument<Shader> document =
-            await AssetProject.OpenAsync<Shader>(storage, entry);
-        Shader asset = document.Root;
+        await using var loader = new AssetLoader(storage);
+        await using Asset<Shader> file = await loader.OpenAsync(new AssetId<Shader>(assetGuid));
+        Shader asset = await Shader.CreateAsync(file);
         string assetPath = Path.ChangeExtension(sourcePath, ".shader.asset");
-        AssetMeta assetMeta = AssetMetaFiles.TryLoad(assetPath)
-            ?? throw new InvalidOperationException($"Cooked shader meta '{assetPath}.meta' is missing.");
+        SourceOutput assetMeta = SourceMeta.Load(sourcePath).FindOutput(assetPath)
+            ?? throw new InvalidOperationException($"Source metadata has no output '{assetPath}'.");
 
         int dxilCount = asset.Programs?.Count(static program =>
             string.Equals(program.Backend, "dxil", StringComparison.Ordinal)) ?? 0;
@@ -94,7 +94,7 @@ static async Task<int> RunAsync(string[] args)
         Console.WriteLine($"cook-profile={profile.Name}");
         Console.WriteLine($"dxil-profile={profile.DxilProfile}");
         Console.WriteLine($"spirv-profile={profile.SpirvProfile}");
-        Console.WriteLine($"content-fingerprint={assetMeta.ContentFingerprint}");
+        Console.WriteLine($"content-fingerprint={assetMeta.InputHash}");
         Console.WriteLine($"programs=dxil:{dxilCount},spirv:{spirvCount}");
         Console.WriteLine($"entry-reflections={reflectionCount}");
         Console.WriteLine("storage-open=ok");

@@ -428,7 +428,6 @@ public sealed class ResidencyBudgetTests
 
         return new Mesh
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
             Name = "BudgetedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
             VertexEncoding = ClusterTestAssets.StandardVertexEncoding,

@@ -2,7 +2,7 @@
 
 默认入口为 `SomeEngine.slnx`。测试以公开操作、返回数据、错误和资源生命周期为判据。源码字符串、类型或成员名单、私有存储身份、缓存命中与内部扫描次数、分配和耗时阈值不作为功能验收条件。
 
-本次清理没有运行测试、构建或门禁。下面列的是源码中的覆盖目标，不是执行成功报告。先前已重写部分现有测试；本轮按要求只继续清理，不补新测试、不增加结果断言或测试工程。
+下表记录各项目的行为覆盖范围。资产系统的类型职责、格式版本和验证命令见 [AssetSystem.md](../docs/AssetSystem.md)；覆盖范围本身不等同于一次测试执行的成功报告。
 
 | 功能 | 现有回归入口与观察结果 |
 | --- | --- |
@@ -10,7 +10,7 @@
 | 批次与失败 | `DetachedIndexCloneTests`、`DetachedTableCloneTests`、`StructuralCandidateContextTests`、`TypedRelationshipCommandBufferTests`；失败保持原数据，成功整批生效，之后可以继续合法操作 |
 | 并发与调度 | `SchedulerQueuePrimitiveTests` 经公开调度入口核对每个工作项执行一次；调度器、组件访问和拓扑测试保留依赖、异常、冲突访问与关闭回归 |
 | 序列化与存储 | `SomeEngine.Serialization.Tests`、`SomeEngine.ECS.Serialization.Tests` 保留读回、损坏与截断输入、校验、容量上限、取消和失败恢复；流式写入通过实际输出与公开世界状态比较 |
-| 资源加载 | `ResidentAssetTableTests` 已经改用公开 `AssetLoader`，覆盖重复请求、单个请求取消、重载、失败重试和关闭；资产类型扩展测试继续检查依赖释放 |
+| 资源加载 | `AssetOpeningTests` 和独立 Consumer 项目覆盖共享文件读取、关闭/取消隔离、版本并存和下游格式扩展；运行对象通过明确的创建和更新操作验证 |
 | 图形后端 | D3D12、Vulkan 测试保留上传、执行、读回、非法对象和资源生命周期；Vulkan 使用公共工厂和正常产品构建，D3D12 私有反射辅助层已移除 |
 | 渲染图与提取 | `StableFrameAllocationTests` 保留跨帧执行与图编辑，移除分配预算；提取测试保留结果、失败回滚和恢复 |
 | 代码生成 | 部分既有消费者用例编译并执行生成 API；其余用例仅验证输入声明的编译诊断，不算作生成 API 执行覆盖；源码写法及文件名断言已移除 |

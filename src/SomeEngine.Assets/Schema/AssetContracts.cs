@@ -10,10 +10,11 @@ using SomeEngine.Graphics;
 
 namespace SomeEngine.Assets.Schema;
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class Texture
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.Texture")]
+[global::SomeEngine.Assets.Asset(typeof(Texture), ".texture.asset")]
+public sealed partial class TextureData
 {
-    public Texture()
+    public TextureData()
     {
     }
 
@@ -29,6 +30,21 @@ public sealed partial class Texture
     public Format SampledFormat { get; set; }
     public SomeEngine.Graphics.TextureViewDimension SampledDimension { get; set; }
     public IList<TextureMipTile>? MipTiles { get; set; }
+    internal TextureData CopyFields() => new()
+    {
+        AssetGuid = AssetGuid,
+        Name = Name,
+        Dimension = Dimension,
+        Width = Width,
+        Height = Height,
+        Depth = Depth,
+        MipLevelCount = MipLevelCount,
+        ArrayLayerCount = ArrayLayerCount,
+        Format = Format,
+        SampledFormat = SampledFormat,
+        SampledDimension = SampledDimension,
+        MipTiles = MipTiles?.Select(static tile => tile.CopyFields()).ToList(),
+    };
 }
 
 /// <summary>
@@ -58,6 +74,23 @@ public partial class TextureMipTile
     [BinaryChunk(nameof(ChunkKey), nameof(DecodedLength))]
     [BinaryIgnore]
     public Memory<byte>? Payload { get; set; }
+    internal TextureMipTile CopyFields() => new()
+    {
+        MipLevel = MipLevel,
+        TileX = TileX,
+        TileY = TileY,
+        ArrayLayer = ArrayLayer,
+        Face = Face,
+        DepthSlice = DepthSlice,
+        Width = Width,
+        Height = Height,
+        RowPitch = RowPitch,
+        SlicePitch = SlicePitch,
+        ChunkKey = ChunkKey,
+        DecodedLength = DecodedLength,
+        Payload = Payload.HasValue ? new Memory<byte>(Payload.Value.ToArray()) : (Memory<byte>?)null,
+    };
+
 }
 
 public enum ValueType : byte
@@ -86,10 +119,11 @@ public partial class Bounds
     public float Radius { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class Mesh
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.Mesh")]
+[global::SomeEngine.Assets.Asset(typeof(Mesh), ".mesh.asset")]
+public sealed partial class MeshData
 {
-    public Mesh()
+    public MeshData()
     {
     }
 
@@ -108,6 +142,12 @@ public sealed partial class Mesh
     public Memory<byte>? BvhSha256 { get; set; }
     public IList<MeshRegion>? Regions { get; set; }
     public IList<string>? MaterialGuids { get; set; }
+    internal MeshData CopyFields()
+    {
+        MeshData copy = BinaryContractSerializer.Copy(this);
+        copy.Payload = Payload.HasValue ? new Memory<byte>(Payload.Value.ToArray()) : (Memory<byte>?)null;
+        return copy;
+    }
 }
 
 /// <summary>
@@ -285,10 +325,11 @@ public partial class ImportTrace
     public uint ImporterVersion { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class Shader
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.Shader")]
+[global::SomeEngine.Assets.Asset(typeof(Shader), ".shader.asset")]
+public sealed partial class ShaderData
 {
-    public Shader()
+    public ShaderData()
     {
     }
 
@@ -302,6 +343,14 @@ public sealed partial class Shader
     public ShaderMetadata? Metadata { get; set; }
     public IList<ShaderEntryPointMetadata>? EntryPointMetadata { get; set; }
     public uint SchemaVersion { get; set; }
+    internal ShaderData CopyFields()
+    {
+        ShaderData copy = BinaryContractSerializer.Copy(this);
+        if (Programs is not null)
+            for (int index = 0; index < Programs.Count; index++)
+                copy.Programs![index] = Programs[index].CopyFields();
+        return copy;
+    }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
@@ -322,6 +371,15 @@ public partial class CookedShaderProgram
 
     [BinaryIgnore]
     public SlangShaderSharp.ShaderProgram? Program { get; internal set; }
+    internal CookedShaderProgram CopyFields()
+    {
+        CookedShaderProgram copy = BinaryContractSerializer.Copy(this);
+        copy.Data = Data.HasValue ? new Memory<byte>(Data.Value.ToArray()) : (Memory<byte>?)null;
+        if (Program is not null && copy.Data.HasValue)
+            copy.Program = SlangShaderSharp.ShaderProgram.Read(copy.Data.Value.Span);
+        return copy;
+    }
+
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
@@ -475,10 +533,11 @@ public partial class ShaderResourceReflection
     public uint SlangImageFormat { get; set; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class ClusterShaders
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.ClusterShaders")]
+[global::SomeEngine.Assets.Asset(typeof(ClusterShaders), ".clusterrender.asset")]
+internal sealed partial class ClusterShadersData
 {
-    public ClusterShaders()
+    public ClusterShadersData()
     {
     }
 

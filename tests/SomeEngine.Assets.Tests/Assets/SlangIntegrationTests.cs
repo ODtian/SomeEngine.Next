@@ -8,7 +8,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 public class SlangIntegrationTests
 {
     [Fact]
-    public void TestSlangCompilation()
+    public async Task TestSlangCompilation()
     {
         string source = @"
             [shader(""vertex"")]
@@ -24,20 +24,14 @@ public class SlangIntegrationTests
             }
         ";
 
-        string tempFile = Path.GetTempFileName();
-        string slangFile = Path.ChangeExtension(tempFile, ".slang");
-        // Ensure unique name to avoid module conflicts if run multiple times in same session?
-        // But we create new session each time (except global session).
-        // Slang module names must be unique within a session? Yes.
-        // But Import creates a new session every time.
-
+        using var directory = new AssetTestDirectory();
+        string slangFile = directory.File("compiled.slang");
         File.WriteAllText(slangFile, source);
-        // Clean up tempFile if it still exists (GetTempFileName creates it)
-        if (File.Exists(tempFile)) File.Delete(tempFile);
 
         try
         {
-            var asset = SlangShaderImporter.Import(slangFile);
+            using var assetFile = SlangShaderImporter.Import(slangFile).ToAsset();
+            Shader asset = await Shader.CreateAsync(assetFile);
 
             Assert.NotNull(asset);
             Assert.Equal(Path.GetFileNameWithoutExtension(slangFile), asset.Name);
@@ -67,7 +61,7 @@ public class SlangIntegrationTests
         }
     }
     [Fact]
-    public void TestSlangReflection()
+    public async Task TestSlangReflection()
     {
         string source = @"
             struct Params {
@@ -87,12 +81,14 @@ public class SlangIntegrationTests
             }
         ";
 
-        string tempFile = Path.Combine(Path.GetTempPath(), "test_reflection.slang");
+        using var directory = new AssetTestDirectory();
+        string tempFile = directory.File("test_reflection.slang");
         File.WriteAllText(tempFile, source);
 
         try
         {
-            var asset = SlangShaderImporter.Import(tempFile);
+            using var assetFile = SlangShaderImporter.Import(tempFile).ToAsset();
+            Shader asset = await Shader.CreateAsync(assetFile);
 
             var reflection = asset.Reflections?.FirstOrDefault()?.Reflection;
             Assert.NotNull(reflection);
@@ -122,7 +118,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void TestSlangImport_GeneratesStableAssetGuidAndMeta()
+    public async Task TestSlangImport_GeneratesStableAssetGuidAndMeta()
     {
         string source = @"
             [shader(""compute"")]
@@ -137,15 +133,17 @@ public class SlangIntegrationTests
 
         try
         {
-            var asset1 = SlangShaderImporter.Import(slangFile);
-            var asset2 = SlangShaderImporter.Import(slangFile);
+            using var asset1File = SlangShaderImporter.Import(slangFile).ToAsset();
+            Shader asset1 = await Shader.CreateAsync(asset1File);
+            using var asset2File = SlangShaderImporter.Import(slangFile).ToAsset();
+            Shader asset2 = await Shader.CreateAsync(asset2File);
 
-            Assert.True(AssetGuid.TryParse(asset1.AssetGuid, out var guid1));
-            Assert.True(AssetGuid.TryParse(asset2.AssetGuid, out var guid2));
+            Guid guid1 = asset1File.Id.Value;
+            Guid guid2 = asset2File.Id.Value;
             Assert.Equal(guid2, guid1);
-            Assert.True(File.Exists(SourceMetaFiles.GetMetaPath(slangFile)));
+            Assert.True(File.Exists(SourceMeta.GetMetaPath(slangFile)));
             string assetPath = Path.ChangeExtension(Path.GetFullPath(slangFile), ".shader.asset");
-            Assert.True(File.Exists(AssetMetaFiles.GetMetaPath(assetPath)));
+            Assert.NotNull(SourceMeta.Load(slangFile).FindOutput(assetPath));
             Assert.NotNull(asset1.ImportTrace);
             Assert.False(string.IsNullOrEmpty(asset1.ImportTrace!.SourceGuid));
         }
@@ -159,7 +157,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void TestSlangImport_TracksIncludeDependencies_AndKeepsAssetGuidStable()
+    public async Task TestSlangImport_TracksIncludeDependencies_AndKeepsAssetGuidStable()
     {
         string dir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(dir);
@@ -172,8 +170,9 @@ public class SlangIntegrationTests
 
         try
         {
-            var asset1 = SlangShaderImporter.Import(sourceFile);
-            Assert.True(AssetGuid.TryParse(asset1.AssetGuid, out var guid1));
+            using var asset1File = SlangShaderImporter.Import(sourceFile).ToAsset();
+            Shader asset1 = await Shader.CreateAsync(asset1File);
+            Guid guid1 = asset1File.Id.Value;
             Assert.NotNull(asset1.ImportTrace);
             Assert.NotNull(asset1.ImportTrace!.Dependencies);
             IList<DependencyEntry> dependencies1 = asset1.ImportTrace.Dependencies!;
@@ -184,8 +183,10 @@ public class SlangIntegrationTests
 
             File.WriteAllText(includeFile, "float4 GetColor() { return float4(0, 1, 0, 1); }");
 
-            var asset2 = SlangShaderImporter.Import(sourceFile);
-            Assert.True(AssetGuid.TryParse(asset2.AssetGuid, out var guid2));
+            using var asset2File = SlangShaderImporter.Import(sourceFile).ToAsset();
+
+            Shader asset2 = await Shader.CreateAsync(asset2File);
+            Guid guid2 = asset2File.Id.Value;
             Assert.Equal(guid1, guid2);
             Assert.NotNull(asset2.ImportTrace);
             Assert.NotEqual(fingerprint1, asset2.ImportTrace!.ContentFingerprint);
@@ -203,7 +204,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void ContentHash_IdenticalLogicInDifferentFiles_ProducesSameHash()
+    public async Task ContentHash_IdenticalLogicInDifferentFiles_ProducesSameHash()
     {
         // 两个不同文件，相同的 compute shader 逻辑 → content hash 应该一致
         string source = @"
@@ -226,8 +227,10 @@ public class SlangIntegrationTests
 
         try
         {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
+            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            Shader assetA = await Shader.CreateAsync(assetAFile);
+            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            Shader assetB = await Shader.CreateAsync(assetBFile);
 
             Assert.NotNull(assetA.Programs);
             Assert.NotNull(assetB.Programs);
@@ -261,7 +264,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void ContentHash_DifferentLogic_ProducesDifferentHash()
+    public async Task ContentHash_DifferentLogic_ProducesDifferentHash()
     {
         string sourceA = @"
             RWStructuredBuffer<float> outputBuffer;
@@ -294,8 +297,10 @@ public class SlangIntegrationTests
 
         try
         {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
+            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            Shader assetA = await Shader.CreateAsync(assetAFile);
+            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            Shader assetB = await Shader.CreateAsync(assetBFile);
 
             string spirvA = EntryHash(assetA, "spirv", "CSMain", ShaderStage.Compute);
             string spirvB = EntryHash(assetB, "spirv", "CSMain", ShaderStage.Compute);
@@ -312,7 +317,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void CookedProgramHash_CoversEachDetachedBackendPayload()
+    public async Task CookedProgramHash_CoversEachDetachedBackendPayload()
     {
         // Backend compilers may preserve or erase local names independently. The asset hash
         // always covers the exact detached payload that runtime pipeline creation consumes.
@@ -349,8 +354,10 @@ public class SlangIntegrationTests
 
         try
         {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
+            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            Shader assetA = await Shader.CreateAsync(assetAFile);
+            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            Shader assetB = await Shader.CreateAsync(assetBFile);
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
@@ -376,7 +383,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void ContentHash_UnusedExtraBuffer_SameHash()
+    public async Task ContentHash_UnusedExtraBuffer_SameHash()
     {
         // 一个文件多了一个未使用的 buffer 声明 → DCE 应剥离 → hash 相同
         string sourceA = @"
@@ -411,8 +418,10 @@ public class SlangIntegrationTests
 
         try
         {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
+            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            Shader assetA = await Shader.CreateAsync(assetAFile);
+            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            Shader assetB = await Shader.CreateAsync(assetBFile);
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
@@ -431,7 +440,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public void ContentHash_DifferentUnusedBufferLayout_SameHash()
+    public async Task ContentHash_DifferentUnusedBufferLayout_SameHash()
     {
         // 两个文件都有一个未使用的 buffer，但布局不同 → DCE 剥离后 hash 应相同
         string sourceA = @"
@@ -471,8 +480,10 @@ public class SlangIntegrationTests
 
         try
         {
-            var assetA = SlangShaderImporter.Import(fileA);
-            var assetB = SlangShaderImporter.Import(fileB);
+            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            Shader assetA = await Shader.CreateAsync(assetAFile);
+            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            Shader assetB = await Shader.CreateAsync(assetBFile);
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {

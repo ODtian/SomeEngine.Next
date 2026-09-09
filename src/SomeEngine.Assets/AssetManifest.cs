@@ -9,15 +9,6 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace SomeEngine.Assets;
 
-public readonly record struct AssetManifestRecord(
-    AssetGuid Guid,
-    string Name,
-    string Path,
-    string AssetType,
-    ulong SchemaFingerprint,
-    SourceGuid SourceGuid,
-    string SubAssetKey);
-
 public sealed partial class AssetManifest
 {
     public const string SourceIndexFileName = "source_index.json";
@@ -26,15 +17,14 @@ public sealed partial class AssetManifest
 
     private readonly Dictionary<SourceGuid, string> _sources = [];
     private readonly Dictionary<string, SourceGuid> _sourceGuidsByPath = new(StringComparer.Ordinal);
-    private readonly Dictionary<AssetGuid, AssetManifestRecord> _assets = [];
-    private readonly Dictionary<string, AssetGuid> _assetGuidsByPath = new(StringComparer.Ordinal);
-    private readonly Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> _dependencies = [];
-    private IReadOnlyDictionary<SourceGuid, IReadOnlyList<AssetGuid>>? _assetsBySource;
-    private IReadOnlyDictionary<AssetGuid, IReadOnlyList<AssetGuid>>? _referencers;
+    private readonly Dictionary<Guid, AssetEntry> _assets = [];
+    private readonly Dictionary<string, Guid> _assetGuidsByPath = new(StringComparer.Ordinal);
+    private IReadOnlyDictionary<SourceGuid, IReadOnlyList<Guid>>? _assetsBySource;
+    private IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>? _referencers;
 
     public IReadOnlyDictionary<SourceGuid, string> Sources => _sources;
-    public IReadOnlyDictionary<AssetGuid, AssetManifestRecord> Assets => _assets;
-    public IReadOnlyDictionary<AssetGuid, IReadOnlyList<AssetGuid>> Dependencies => _dependencies;
+    public IReadOnlyDictionary<Guid, AssetEntry> Assets => _assets;
+    public IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> Dependencies => _assets.ToDictionary(static pair => pair.Key, static pair => pair.Value.Dependencies);
 
     public void AddSource(SourceGuid guid, string path)
     {
@@ -64,16 +54,16 @@ public sealed partial class AssetManifest
     }
 
     public void AddAsset(
-        AssetGuid guid,
+        Guid guid,
         string name,
         string path,
         string assetType,
         ulong schemaFingerprint,
         SourceGuid sourceGuid = default,
         string subAssetKey = "",
-        IEnumerable<AssetGuid>? dependencies = null)
+        IEnumerable<Guid>? dependencies = null)
     {
-        if (guid.IsEmpty)
+        if ((guid == System.Guid.Empty))
         {
             throw new ArgumentException("Asset guid cannot be empty.", nameof(guid));
         }
@@ -85,50 +75,47 @@ public sealed partial class AssetManifest
         }
 
         string normalizedPath = AssetIoHelpers.NormalizePath(path);
-        if (_assetGuidsByPath.TryGetValue(normalizedPath, out AssetGuid existingGuidForPath)
+        if (_assetGuidsByPath.TryGetValue(normalizedPath, out Guid existingGuidForPath)
             && existingGuidForPath != guid)
         {
             _assets.Remove(existingGuidForPath);
-            _dependencies.Remove(existingGuidForPath);
         }
 
-        if (_assets.TryGetValue(guid, out AssetManifestRecord existing))
+        if (_assets.TryGetValue(guid, out AssetEntry existing))
         {
             _assetGuidsByPath.Remove(existing.Path);
         }
 
-        _assets[guid] = new AssetManifestRecord(
+        _assets[guid] = new AssetEntry(
             guid,
             name ?? string.Empty,
             normalizedPath,
             assetType ?? string.Empty,
             schemaFingerprint,
             sourceGuid,
-            subAssetKey ?? string.Empty);
+            subAssetKey ?? string.Empty) { Dependencies = NormalizeDependencies(guid, dependencies) };
         _assetGuidsByPath[normalizedPath] = guid;
-        _dependencies[guid] = NormalizeDependencies(guid, dependencies);
         _assetsBySource = null;
         _referencers = null;
     }
 
-    public bool RemoveAsset(AssetGuid guid)
+    public bool RemoveAsset(Guid guid)
     {
-        if (!_assets.Remove(guid, out AssetManifestRecord record))
+        if (!_assets.Remove(guid, out AssetEntry record))
             return false;
         _assetGuidsByPath.Remove(record.Path);
-        _dependencies.Remove(guid);
         _assetsBySource = null;
         _referencers = null;
         return true;
     }
 
     public bool TrySourcePath(SourceGuid guid, out string path) => _sources.TryGetValue(guid, out path!);
-    public bool TryGetAsset(AssetGuid guid, out AssetManifestRecord record) => _assets.TryGetValue(guid, out record);
+    public bool TryGetAsset(Guid guid, out AssetEntry record) => _assets.TryGetValue(guid, out record);
     public bool TrySourceGuid(string path, out SourceGuid guid) => _sourceGuidsByPath.TryGetValue(AssetIoHelpers.NormalizePath(path), out guid);
 
-    public bool TryAssetPath(string path, out AssetManifestRecord record)
+    public bool TryAssetPath(string path, out AssetEntry record)
     {
-        if (_assetGuidsByPath.TryGetValue(AssetIoHelpers.NormalizePath(path), out AssetGuid guid) && _assets.TryGetValue(guid, out record))
+        if (_assetGuidsByPath.TryGetValue(AssetIoHelpers.NormalizePath(path), out Guid guid) && _assets.TryGetValue(guid, out record))
         {
             return true;
         }
@@ -137,18 +124,18 @@ public sealed partial class AssetManifest
         return false;
     }
 
-    public bool TrySourceAsset(SourceGuid sourceGuid, string subAssetKey, out AssetManifestRecord record)
+    public bool TrySourceAsset(SourceGuid sourceGuid, string subAssetKey, out AssetEntry record)
     {
         EnsureIndexes();
         record = default;
-        if (sourceGuid.IsEmpty || string.IsNullOrWhiteSpace(subAssetKey) || !_assetsBySource!.TryGetValue(sourceGuid, out IReadOnlyList<AssetGuid>? assetGuids))
+        if (sourceGuid.IsEmpty || string.IsNullOrWhiteSpace(subAssetKey) || !_assetsBySource!.TryGetValue(sourceGuid, out IReadOnlyList<Guid>? assetGuids))
         {
             return false;
         }
 
-        foreach (AssetGuid guid in assetGuids)
+        foreach (Guid guid in assetGuids)
         {
-            if (_assets.TryGetValue(guid, out AssetManifestRecord asset) && string.Equals(asset.SubAssetKey, subAssetKey, StringComparison.Ordinal))
+            if (_assets.TryGetValue(guid, out AssetEntry asset) && string.Equals(asset.SubAssetKey, subAssetKey, StringComparison.Ordinal))
             {
                 record = asset;
                 return true;
@@ -158,25 +145,25 @@ public sealed partial class AssetManifest
         return false;
     }
 
-    public IReadOnlyList<AssetGuid> AssetsBySource(SourceGuid sourceGuid)
+    public IReadOnlyList<Guid> AssetsBySource(SourceGuid sourceGuid)
     {
         EnsureIndexes();
-        return _assetsBySource!.TryGetValue(sourceGuid, out IReadOnlyList<AssetGuid>? values) ? values : [];
+        return _assetsBySource!.TryGetValue(sourceGuid, out IReadOnlyList<Guid>? values) ? values : [];
     }
 
-    public IReadOnlyList<AssetGuid> GetDependencies(AssetGuid guid) => _dependencies.TryGetValue(guid, out IReadOnlyList<AssetGuid>? values) ? values : [];
+    public IReadOnlyList<Guid> GetDependencies(Guid guid) => _assets.TryGetValue(guid, out AssetEntry entry) ? entry.Dependencies : [];
 
-    public IReadOnlyList<AssetGuid> GetReferencers(AssetGuid guid)
+    public IReadOnlyList<Guid> GetReferencers(Guid guid)
     {
         EnsureIndexes();
-        return _referencers!.TryGetValue(guid, out IReadOnlyList<AssetGuid>? values) ? values : [];
+        return _referencers!.TryGetValue(guid, out IReadOnlyList<Guid>? values) ? values : [];
     }
 
-    public IReadOnlyList<AssetManifestRecord> List(string? assetType = null)
+    public IReadOnlyList<AssetEntry> List(string? assetType = null)
         => _assets.Values
             .Where(record => string.IsNullOrWhiteSpace(assetType) || string.Equals(record.AssetType, assetType, StringComparison.Ordinal))
             .OrderBy(static record => record.Path, StringComparer.Ordinal)
-            .ThenBy(static record => record.Guid.ToString(), StringComparer.Ordinal)
+            .ThenBy(static record => record.AssetGuid.ToString(), StringComparer.Ordinal)
             .ToArray();
 
     public void Save(string manifestDirectory)
@@ -212,14 +199,14 @@ public sealed partial class AssetManifest
             }
         }
 
-        Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> dependencies = ReadDependencies(manifestDirectory);
+        Dictionary<Guid, IReadOnlyList<Guid>> dependencies = ReadDependencies(manifestDirectory);
 
         AssetIndexDocument assetIndex = ReadDocument(
             Path.Combine(manifestDirectory, AssetIndexFileName),
             AssetManifestJsonContext.Default.AssetIndexDocument);
         foreach (AssetEntryDoc entry in assetIndex.Assets)
         {
-            if (!AssetGuid.TryParse(entry.AssetGuid, out AssetGuid guid))
+            if (!Guid.TryParse(entry.AssetGuid, out Guid guid))
             {
                 continue;
             }
@@ -233,7 +220,7 @@ public sealed partial class AssetManifest
                 ParseSchemaFingerprint(entry),
                 sourceGuid,
                 entry.SubAssetKey,
-                dependencies.TryGetValue(guid, out IReadOnlyList<AssetGuid>? values) ? values : []);
+                dependencies.TryGetValue(guid, out IReadOnlyList<Guid>? values) ? values : []);
         }
 
         return manifest;
@@ -246,7 +233,7 @@ public sealed partial class AssetManifest
                 .OrderBy(static pair => pair.Key.ToString(), StringComparer.Ordinal)
                 .Select(static pair => new SourceEntryDoc
                 {
-                    SourceGuid = pair.Key.ToFlatString(),
+                    SourceGuid = pair.Key.ToString(),
                     Path = pair.Value,
                 })
                 .ToList(),
@@ -256,7 +243,7 @@ public sealed partial class AssetManifest
         => new()
         {
             Assets = _assets.Values
-                .OrderBy(static record => record.Guid.ToString(), StringComparer.Ordinal)
+                .OrderBy(static record => record.AssetGuid.ToString(), StringComparer.Ordinal)
                 .Select(CreateAssetEntry)
                 .ToList(),
         };
@@ -264,37 +251,37 @@ public sealed partial class AssetManifest
     private DependencyGraphDocument CreateDependencyGraph()
         => new()
         {
-            Assets = _dependencies
+            Assets = Dependencies
                 .OrderBy(static pair => pair.Key.ToString(), StringComparer.Ordinal)
                 .Select(static pair => new DepEntryDoc
                 {
-                    AssetGuid = pair.Key.ToFlatString(),
-                    Dependencies = pair.Value.Select(static guid => guid.ToFlatString()).ToList(),
+                    AssetGuid = pair.Key.ToString(),
+                    Dependencies = pair.Value.Select(static guid => guid.ToString()).ToList(),
                 })
                 .ToList(),
         };
 
-    private static AssetEntryDoc CreateAssetEntry(AssetManifestRecord record)
+    private static AssetEntryDoc CreateAssetEntry(AssetEntry record)
         => new()
         {
-            AssetGuid = record.Guid.ToFlatString(),
+            AssetGuid = record.AssetGuid.ToString(),
             Name = record.Name,
             Path = record.Path,
             AssetType = record.AssetType,
             SchemaFingerprint = record.SchemaFingerprint.ToString("X16", CultureInfo.InvariantCulture),
-            SourceGuid = record.SourceGuid.IsEmpty ? string.Empty : record.SourceGuid.ToFlatString(),
+            SourceGuid = record.SourceGuid.IsEmpty ? string.Empty : record.SourceGuid.ToString(),
             SubAssetKey = record.SubAssetKey,
         };
 
-    private static Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> ReadDependencies(string manifestDirectory)
+    private static Dictionary<Guid, IReadOnlyList<Guid>> ReadDependencies(string manifestDirectory)
     {
-        Dictionary<AssetGuid, IReadOnlyList<AssetGuid>> dependencies = [];
+        Dictionary<Guid, IReadOnlyList<Guid>> dependencies = [];
         DependencyGraphDocument graph = ReadDocument(
             Path.Combine(manifestDirectory, DependencyGraphFileName),
             AssetManifestJsonContext.Default.DependencyGraphDocument);
         foreach (DepEntryDoc entry in graph.Assets)
         {
-            if (AssetGuid.TryParse(entry.AssetGuid, out AssetGuid guid))
+            if (Guid.TryParse(entry.AssetGuid, out Guid guid))
             {
                 dependencies[guid] = ParseDependencies(entry);
             }
@@ -318,10 +305,10 @@ public sealed partial class AssetManifest
         return value;
     }
 
-    private static IReadOnlyList<AssetGuid> ParseDependencies(DepEntryDoc entry)
+    private static IReadOnlyList<Guid> ParseDependencies(DepEntryDoc entry)
         => entry.Dependencies
-            .Select(static value => AssetGuid.TryParse(value, out AssetGuid dependency) ? dependency : AssetGuid.Empty)
-            .Where(static dependency => !dependency.IsEmpty)
+            .Select(static value => Guid.TryParse(value, out Guid dependency) ? dependency : Guid.Empty)
+            .Where(static dependency => (dependency != System.Guid.Empty))
             .Distinct()
             .OrderBy(static dependency => dependency.ToString(), StringComparer.Ordinal)
             .ToArray();
@@ -333,29 +320,29 @@ public sealed partial class AssetManifest
             return;
         }
 
-        Dictionary<SourceGuid, List<AssetGuid>> assetsBySource = [];
-        foreach (AssetManifestRecord record in _assets.Values)
+        Dictionary<SourceGuid, List<Guid>> assetsBySource = [];
+        foreach (AssetEntry record in _assets.Values)
         {
             if (record.SourceGuid.IsEmpty)
             {
                 continue;
             }
 
-            if (!assetsBySource.TryGetValue(record.SourceGuid, out List<AssetGuid>? values))
+            if (!assetsBySource.TryGetValue(record.SourceGuid, out List<Guid>? values))
             {
                 values = [];
                 assetsBySource[record.SourceGuid] = values;
             }
 
-            values.Add(record.Guid);
+            values.Add(record.AssetGuid);
         }
 
-        Dictionary<AssetGuid, HashSet<AssetGuid>> referencers = _assets.Keys.ToDictionary(static guid => guid, static _ => new HashSet<AssetGuid>());
-        foreach ((AssetGuid owner, IReadOnlyList<AssetGuid> dependencies) in _dependencies)
+        Dictionary<Guid, HashSet<Guid>> referencers = _assets.Keys.ToDictionary(static guid => guid, static _ => new HashSet<Guid>());
+        foreach ((Guid owner, IReadOnlyList<Guid> dependencies) in Dependencies)
         {
-            foreach (AssetGuid dependency in dependencies)
+            foreach (Guid dependency in dependencies)
             {
-                if (!referencers.TryGetValue(dependency, out HashSet<AssetGuid>? values))
+                if (!referencers.TryGetValue(dependency, out HashSet<Guid>? values))
                 {
                     values = [];
                     referencers[dependency] = values;
@@ -367,15 +354,15 @@ public sealed partial class AssetManifest
 
         _assetsBySource = assetsBySource.ToDictionary(
             static pair => pair.Key,
-            static pair => (IReadOnlyList<AssetGuid>)pair.Value.OrderBy(static guid => guid.ToString(), StringComparer.Ordinal).ToArray());
+            static pair => (IReadOnlyList<Guid>)pair.Value.OrderBy(static guid => guid.ToString(), StringComparer.Ordinal).ToArray());
         _referencers = referencers.ToDictionary(
             static pair => pair.Key,
-            static pair => (IReadOnlyList<AssetGuid>)pair.Value.OrderBy(static guid => guid.ToString(), StringComparer.Ordinal).ToArray());
+            static pair => (IReadOnlyList<Guid>)pair.Value.OrderBy(static guid => guid.ToString(), StringComparer.Ordinal).ToArray());
     }
 
-    private static IReadOnlyList<AssetGuid> NormalizeDependencies(AssetGuid owner, IEnumerable<AssetGuid>? dependencies)
+    private static IReadOnlyList<Guid> NormalizeDependencies(Guid owner, IEnumerable<Guid>? dependencies)
         => dependencies?
-            .Where(dependency => !dependency.IsEmpty && dependency != owner)
+            .Where(dependency => (dependency != System.Guid.Empty) && dependency != owner)
             .Distinct()
             .OrderBy(static dependency => dependency.ToString(), StringComparer.Ordinal)
             .ToArray() ?? [];

@@ -2,9 +2,9 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-[global::SomeEngine.Assets.Asset(".virtualshadow.asset")]
-public sealed partial class VirtualShadowMapShaders
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.VirtualShadowMapShaders")]
+[global::SomeEngine.Assets.Asset(typeof(VirtualShadowMapShaders), ".virtualshadow.asset")]
+internal sealed partial class VirtualShadowMapShadersData
 {
     public string? AssetGuid { get; set; }
 
@@ -30,7 +30,7 @@ public sealed partial class VirtualShadowMapShaders
 
     public ShaderRef? ReducePageHiZ { get; set; }
 
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
+    internal IReadOnlyList<Guid> GetDependencies(string path)
     {
         string subject = $"Virtual shadow map shader asset '{path}'";
         ShaderRef?[] entries =
@@ -59,10 +59,10 @@ public sealed partial class VirtualShadowMapShaders
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
         ];
-        var result = new List<AssetGuid>(entries.Length);
+        var result = new List<Guid>(entries.Length);
         for (int index = 0; index < entries.Length; index++)
         {
-            AssetGuid shader = ShaderRef.Require(
+            Guid shader = ShaderRef.Require(
                 entries[index],
                 subject,
                 names[index],
@@ -70,7 +70,7 @@ public sealed partial class VirtualShadowMapShaders
             if (!result.Contains(shader))
                 result.Add(shader);
         }
-        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+        result.Sort(static (left, right) => left.CompareTo(right));
         return result;
     }
 }

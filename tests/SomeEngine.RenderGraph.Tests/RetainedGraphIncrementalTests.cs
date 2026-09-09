@@ -346,9 +346,11 @@ public sealed class RetainedGraphIncrementalTests
         Assert.Equal(version, graph.StructureVersion);
 
         var completions = new QueueCompletion[3];
+        int completionCount;
         using (RenderGraphFrame frame = graph.BeginFrame())
-            Assert.Equal(1, frame.Execute(completions));
-        support.Wait(completions);
+            completionCount = frame.Execute(completions);
+        Assert.Equal(1, completionCount);
+        support.Wait(completions.AsSpan(0, completionCount));
 
     }
 

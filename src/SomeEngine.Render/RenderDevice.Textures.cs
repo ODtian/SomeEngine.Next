@@ -11,7 +11,7 @@ namespace SomeEngine.Render;
 
 public sealed partial class RenderDevice
 {
-    private readonly Dictionary<EngineTexture, TextureRealization> _textureRealizations =
+    private readonly HashSet<EngineTexture> _textures =
         new(ReferenceEqualityComparer.Instance);
     private TextureRealization? _missingTexture;
 
@@ -111,19 +111,22 @@ public sealed partial class RenderDevice
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
-        if (!asset.HasBootstrap)
+        EngineTexture content = asset.GetUploadContent();
+        if (!content.HasBootstrap)
             throw new InvalidOperationException("A Texture must have a resident Bootstrap before rendering.");
 
-        TextureRealization realization;
-        if (!_textureRealizations.TryGetValue(asset, out realization!))
+        TextureRealization? realization;
+        if (!asset.TryGetDeviceData(_device, out realization))
         {
-            realization = CreateTexture(TextureShape.From(asset, _device), asset.Name);
+            realization = CreateTexture(TextureShape.From(content, _device), content.Name);
             try
             {
-                UploadCurrentResident(ref frame, consumer, asset, realization, replaceContents: true);
-                realization.Revision = asset.Revision;
+                UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: true);
+                realization.Revision = content.Revision;
                 realization.Initialized = true;
-                _textureRealizations.Add(asset, realization);
+                asset.SetDeviceData(_device, realization);
+                _textures.Add(asset);
+                realization.TextureObject = asset;
             }
             catch
             {
@@ -132,39 +135,40 @@ public sealed partial class RenderDevice
                 throw;
             }
         }
-        else if (realization.Revision != asset.Revision)
+        else if (!realization.Initialized && ReferenceEquals(content, asset))
         {
-            TextureShape nextShape = TextureShape.From(asset, _device);
-            if (realization.Shape == nextShape)
+            UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: true);
+            realization.Revision = content.Revision;
+            realization.Initialized = true;
+        }
+        else if (realization.Revision != content.Revision)
+        {
+            TextureShape nextShape = TextureShape.From(content, _device);
             {
-                UploadCurrentResident(ref frame, consumer, asset, realization, replaceContents: true);
-                realization.Revision = asset.Revision;
-                realization.Initialized = true;
-            }
-            else
-            {
-                TextureRealization replacement = CreateTexture(nextShape, asset.Name);
+                TextureRealization replacement = CreateTexture(nextShape, content.Name);
                 try
                 {
-                    UploadCurrentResident(ref frame, consumer, asset, replacement, replaceContents: true);
-                    replacement.Revision = asset.Revision;
+                    UploadCurrentResident(ref frame, consumer, content, replacement, replaceContents: true);
+                    replacement.Revision = content.Revision;
                     replacement.Initialized = true;
                 }
-                catch
+                catch (Exception error)
                 {
                     AbortPendingUpload(replacement);
                     replacement.Dispose();
+                    asset.FailDeviceUpdate(content, error);
                     throw;
                 }
                 replacement.ReplacedAsset = asset;
                 replacement.ReplacedRealization = realization;
-                _textureRealizations[asset] = replacement;
+                asset.SetDeviceData(_device, replacement);
+                replacement.TextureObject = asset;
                 realization = replacement;
             }
         }
         else
         {
-            UploadCurrentResident(ref frame, consumer, asset, realization, replaceContents: false);
+            UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: false);
         }
 
         EnsureImported(ref frame, realization);
@@ -240,10 +244,12 @@ public sealed partial class RenderDevice
 
     private TextureRealization GetOrCreateTexture(EngineTexture asset)
     {
-        if (_textureRealizations.TryGetValue(asset, out TextureRealization? realization))
+        if (asset.TryGetDeviceData(_device, out TextureRealization? realization))
             return realization;
         realization = CreateTexture(TextureShape.From(asset, _device), asset.Name);
-        _textureRealizations.Add(asset, realization);
+        asset.SetDeviceData(_device, realization);
+                _textures.Add(asset);
+                realization.TextureObject = asset;
         return realization;
     }
 
@@ -326,6 +332,11 @@ public sealed partial class RenderDevice
         {
             if (!includeUploaded && realization.ContainsUploadedChunk(tile.ChunkKey))
                 continue;
+            if (!asset.IsStreamed && tile.Payload is { } bytes)
+            {
+                result.Add(PrepareTile(realization.Resource, realization.Shape, tile, bytes.Span));
+                continue;
+            }
             if (!asset.TryAcquireResidentMipTile(
                     tile.MipLevel,
                     tile.ArrayLayer,
@@ -440,6 +451,8 @@ public sealed partial class RenderDevice
         if (ReferenceEquals(realization.FrameGraph, frame.Owner) &&
             realization.FrameIdentity == frame.FrameIdentity)
             return;
+        realization.AddFrame();
+        frame.RetireAfterFrame(new TextureFrameCompletion(realization));
         realization.FrameGraph = frame.Owner;
         realization.FrameIdentity = frame.FrameIdentity;
         realization.UploadPasses.Clear();
@@ -653,11 +666,38 @@ public sealed partial class RenderDevice
         DecodedLength = 4,
     };
 
+    /// <summary>Releases only this texture's allocation on this device after submitted work completes.</summary>
+    public void ReleaseTexture(EngineTexture texture)
+    {
+        if (texture.RemoveDeviceData(_device) is TextureRealization data)
+        {
+            ConfirmTextureUpdate(data);
+            ReleaseTexture(data);
+        }
+    }
+
+    private void ReleaseTexture(TextureRealization data)
+    {
+        ConfirmTextureUpdate(data);
+        if (data.TextureObject is { } texture)
+            _textures.Remove(texture);
+        if (data.PendingFrameGraph is not null)
+        {
+            data.ReleaseAfterUpload = true;
+            return;
+        }
+        data.RequestRelease();
+    }
+
     private void DisposeTextures()
     {
-        foreach (TextureRealization realization in _textureRealizations.Values)
-            realization.Dispose();
-        _textureRealizations.Clear();
+        foreach (EngineTexture texture in _textures.ToArray())
+            if (texture.RemoveDeviceData(_device) is TextureRealization data)
+            {
+                ConfirmTextureUpdate(data);
+                data.Dispose();
+            }
+        _textures.Clear();
         _missingTexture?.Dispose();
         _missingTexture = null;
     }
@@ -748,23 +788,55 @@ public sealed partial class RenderDevice
         }
 
         realization.ClearUploadTransaction();
+        if (realization.ReleaseAfterUpload)
+        {
+            if (replaced is not null) replaced.RequestRelease();
+            realization.RequestRelease();
+            return;
+        }
         if (replaced is null || replacedAsset is null)
             return;
 
-        realization.ReplacedAsset = null;
-        realization.ReplacedRealization = null;
-        if (executed)
+        if (executed && asset is not null && !ReferenceEquals(asset, replacedAsset))
         {
-            Retire(replaced);
+            replacedAsset.CompleteDeviceUpdate(_device, asset);
             return;
         }
-
-        if (_textureRealizations.TryGetValue(replacedAsset, out TextureRealization? current) &&
-            ReferenceEquals(current, realization))
+        if (executed)
         {
-            _textureRealizations[replacedAsset] = replaced;
+            ConfirmTextureUpdate(realization);
+            return;
         }
-        realization.Dispose();
+        CancelTextureUpdate(realization);
+        if (asset is not null)
+            replacedAsset.FailDeviceUpdate(asset, new OperationCanceledException("Texture upload frame did not complete."));
+    }
+
+    private void ConfirmTextureUpdate(TextureRealization data)
+    {
+        TextureRealization? previous = data.ReplacedRealization;
+        data.ReplacedRealization = null;
+        data.ReplacedAsset = null;
+        if (previous is not null) previous.RequestRelease();
+    }
+
+    private void CancelTextureUpdate(TextureRealization data)
+    {
+        EngineTexture? texture = data.ReplacedAsset;
+        TextureRealization? previous = data.ReplacedRealization;
+        if (texture is null || previous is null) return;
+        if (!texture.IsDisposed) texture.SetDeviceData(_device, previous);
+        else previous.RequestRelease();
+        data.ReplacedRealization = null;
+        data.ReplacedAsset = null;
+        if (data.PendingFrameGraph is not null) data.ReleaseAfterUpload = true;
+        else data.RequestRelease();
+    }
+
+    private sealed class TextureFrameCompletion(TextureRealization texture) : IDisposable
+    {
+        private TextureRealization? _texture = texture;
+        public void Dispose() => Interlocked.Exchange(ref _texture, null)?.CompleteFrame();
     }
 
     private enum TextureViewKind : byte
@@ -779,7 +851,7 @@ public sealed partial class RenderDevice
         Format Format,
         TextureViewDimension Dimension);
 
-    private sealed class TextureRealization : IDisposable, IRenderGraphFrameExecutionObserver
+    private sealed class TextureRealization : IDisposable, IRenderGraphFrameExecutionObserver, ITextureDeviceData
     {
         private readonly RenderDevice _owner;
 
@@ -791,11 +863,47 @@ public sealed partial class RenderDevice
             FirstResidentMip = shape.MipLevelCount;
         }
 
+        internal EngineTexture? TextureObject { get; set; }
+        SomeEngine.Graphics.Texture ITextureDeviceData.Texture => Resource;
+        uint ITextureDeviceData.FirstAvailableMip => FirstResidentMip;
+        void ITextureDeviceData.Release() => _owner.ReleaseTexture(this);
+        void ITextureDeviceData.ConfirmUpdate() => _owner.ConfirmTextureUpdate(this);
+        void ITextureDeviceData.CancelUpdate() => _owner.CancelTextureUpdate(this);
+        private readonly object _framesGate = new();
+        private int _activeFrames;
+        private bool _releaseRequested;
+        private bool _retirementQueued;
+        internal void AddFrame() { lock (_framesGate) _activeFrames++; }
+        internal void CompleteFrame()
+        {
+            lock (_framesGate)
+            {
+                _activeFrames--;
+                QueueRelease();
+            }
+        }
+        internal void RequestRelease()
+        {
+            lock (_framesGate)
+            {
+                _releaseRequested = true;
+                QueueRelease();
+            }
+        }
+        private void QueueRelease()
+        {
+            if (!_releaseRequested || _activeFrames != 0 || _retirementQueued) return;
+            _retirementQueued = true;
+            _owner.Retire(this);
+        }
+        private bool _released;
+
         internal TextureShape Shape { get; }
         internal RhiTexture Resource { get; }
         internal Dictionary<TextureViewKey, DeviceResource> Views { get; } = [];
         internal ulong Revision { get; set; }
         internal bool Initialized { get; set; }
+        internal bool ReleaseAfterUpload { get; set; }
         internal uint FirstResidentMip { get; set; }
         internal ulong FrameIdentity { get; set; }
         internal SomeEngine.RenderGraph.RenderGraph? FrameGraph { get; set; }
@@ -836,6 +944,8 @@ public sealed partial class RenderDevice
 
         public void Dispose()
         {
+            if (_released) return;
+            _released = true;
             foreach (DeviceResource view in Views.Values)
                 view.Dispose();
             Views.Clear();

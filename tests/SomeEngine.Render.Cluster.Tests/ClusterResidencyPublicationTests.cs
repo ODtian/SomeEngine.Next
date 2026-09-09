@@ -209,7 +209,6 @@ public sealed class ClusterResidencyPublicationTests
         MemoryMarshal.Write(payload.AsSpan(page.Length, bvhBytes), in leaf);
         return new Mesh
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1 },
             Payload = payload,

@@ -17,29 +17,29 @@ public sealed class AssetArchitectureAcceptanceTests
     public async Task RootAssetsRoundTripClusterShadersAndStrongMaterialAsync()
     {
         using var directory = new TemporaryDirectory();
-        AssetGuid shaderGuid = AssetGuid.New();
-        AssetGuid clusterGuid = AssetGuid.New();
+        Guid shaderGuid = Guid.NewGuid();
+        Guid clusterGuid = Guid.NewGuid();
         string clusterPath = directory.File("root.clusterrender.asset");
-        ClusterShaders cluster = CreateClusterRenderAsset(
+        ClusterShadersData cluster = CreateClusterRenderAsset(
             clusterGuid,
             "cluster-root",
             shaderGuid);
-        AssetWriter.Write(cluster, clusterPath);
+        AssetWriter.Write((cluster).ToAsset(), clusterPath);
 
-        AssetGuid materialGuid = AssetGuid.New();
+        Guid materialGuid = Guid.NewGuid();
         string materialPath = directory.File("root.material.asset");
-        Material material = new StandardMaterial
+        MaterialData material = new StandardMaterialData
         {
-            AssetGuid = materialGuid.ToFlatString(),
+            AssetGuid = materialGuid.ToString(),
             Name = "strong material",
             Roughness = 0.37f,
         };
-        AssetWriter.Write(material, materialPath);
+        AssetWriter.Write((material).ToAsset(), materialPath);
 
-        await using var clusterDocument = await AssetProject.OpenAsync<ClusterShaders>(clusterPath);
-        await using var materialDocument = await AssetProject.OpenAsync<Material>(materialPath);
-        ClusterShaders loadedCluster = clusterDocument.Root;
-        Material loadedMaterial = materialDocument.Root;
+        await using var clusterDocument = await AssetTestFiles.OpenAsync<ClusterShaders, ClusterShadersData>(clusterPath);
+        await using var materialDocument = await AssetTestFiles.OpenAsync<Material, MaterialData>(materialPath);
+        ClusterShadersData loadedCluster = clusterDocument.Root;
+        MaterialData loadedMaterial = materialDocument.Root;
 
         Assert.Equal(cluster.AssetGuid, loadedCluster.AssetGuid);
         Assert.Equal(cluster.Name, loadedCluster.Name);
@@ -48,9 +48,12 @@ public sealed class AssetArchitectureAcceptanceTests
             loadedCluster.Operations!,
             operation => Assert.All(
                 operation.Shaders!,
-                shader => Assert.Equal(shaderGuid.ToFlatString(), shader.AssetGuid)));
-        StandardMaterial standard = Assert.IsType<StandardMaterial>(loadedMaterial);
-        Assert.Equal(material.AssetGuid, standard.AssetGuid);
+                shader => Assert.Equal(shaderGuid.ToString(), shader.AssetGuid)));
+        await using Asset<Material> materialFile = await AssetLoader.OpenFileAsync<Material>(materialPath);
+        await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
+        using Material instance = await Material.CreateAsync(materialFile, loader);
+        StandardMaterial standard = Assert.IsType<StandardMaterial>(instance);
+        Assert.Equal(materialGuid, materialFile.Id.Value);
         Assert.Equal("strong material", standard.Name);
         Assert.Equal(0.37f, standard.Roughness);
     }
@@ -61,9 +64,9 @@ public sealed class AssetArchitectureAcceptanceTests
         using var directory = new TemporaryDirectory();
         string path = directory.File("lease.texture.asset");
         byte[] expected = [3, 1, 4, 1, 5, 9, 2, 6];
-        AssetWriter.Write(new Texture
+        AssetWriter.Write((new TextureData
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
+            AssetGuid = Guid.NewGuid().ToString(),
             Name = "lease-texture",
             Width = 2,
             Height = 1,
@@ -83,10 +86,10 @@ public sealed class AssetArchitectureAcceptanceTests
                     Payload = expected,
                 },
             ],
-        }, path);
+        }).ToAsset(), path);
 
-        await using BinaryDocument<Texture> document =
-            await AssetProject.OpenAsync<Texture>(path);
+        await using BinaryDocument<TextureData> document =
+            await AssetTestFiles.OpenAsync<Texture, TextureData>(path);
         TextureMipTile tile = Assert.Single(document.Root.MipTiles!);
         Assert.Null(tile.Payload);
         using ChunkLease lease = await document.AcquireChunkAsync(tile.PayloadChunk);
@@ -100,9 +103,9 @@ public sealed class AssetArchitectureAcceptanceTests
         using var directory = new TemporaryDirectory();
         string path = directory.File("lease.shader.asset");
         byte[] expected = Enumerable.Range(0, 257).Select(static value => (byte)value).ToArray();
-        AssetWriter.Write(new Shader
+        AssetWriter.Write((new ShaderData
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
+            AssetGuid = Guid.NewGuid().ToString(),
             Name = "lease-shader",
             Programs =
             [
@@ -113,10 +116,10 @@ public sealed class AssetArchitectureAcceptanceTests
                 },
             ],
             EntryPointReflections = [new ShaderEntryPointReflection { EntryPoint = "main" }],
-        }, path);
+        }).ToAsset(), path);
 
-        await using BinaryDocument<Shader> document =
-            await AssetProject.OpenAsync<Shader>(path);
+        await using BinaryDocument<ShaderData> document =
+            await AssetTestFiles.OpenAsync<Shader, ShaderData>(path);
         CookedShaderProgram program = Assert.Single(document.Root.Programs!);
         Assert.Null(program.Data);
         using ChunkLease lease = await document.AcquireChunkAsync(program.DataChunk);
@@ -130,18 +133,18 @@ public sealed class AssetArchitectureAcceptanceTests
         using var directory = new TemporaryDirectory();
         string path = directory.File("range.mesh.asset");
         byte[] payload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
-        AssetWriter.Write(new Mesh
+        AssetWriter.Write((new MeshData
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
+            AssetGuid = Guid.NewGuid().ToString(),
             Name = "range-mesh",
             Payload = payload,
             BvhOffset = bvhOffset,
             VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility,
             Regions = [],
-        }, path);
+        }).ToAsset(), path);
 
-        await using BinaryDocument<Mesh> document =
-            await AssetProject.OpenAsync<Mesh>(path);
+        await using BinaryDocument<MeshData> document =
+            await AssetTestFiles.OpenAsync<Mesh, MeshData>(path);
         await using IRangeSource rangeSource =
             await document.OpenChunkRangeSourceAsync(document.Root.PayloadChunk);
         using RangeLease lease = await rangeSource.AcquireAsync(offset: 17, length: 23);
@@ -154,11 +157,11 @@ public sealed class AssetArchitectureAcceptanceTests
     public async Task LooseStorageOpensEveryBuiltInAssetTypeThroughOneReader()
     {
         using var directory = new TemporaryDirectory();
-        AssetGuid textureGuid = AssetGuid.New();
-        AssetGuid meshGuid = AssetGuid.New();
-        AssetGuid shaderGuid = AssetGuid.New();
-        AssetGuid materialGuid = AssetGuid.New();
-        AssetGuid clusterGuid = AssetGuid.New();
+        Guid textureGuid = Guid.NewGuid();
+        Guid meshGuid = Guid.NewGuid();
+        Guid shaderGuid = Guid.NewGuid();
+        Guid materialGuid = Guid.NewGuid();
+        Guid clusterGuid = Guid.NewGuid();
 
         string texturePath = directory.File("stored.texture.asset");
         string meshPath = directory.File("stored.mesh.asset");
@@ -166,9 +169,9 @@ public sealed class AssetArchitectureAcceptanceTests
         string materialPath = directory.File("stored.material.asset");
         string clusterPath = directory.File("stored.clusterrender.asset");
 
-        AssetWriter.Write(new Texture
+        AssetWriter.Write((new TextureData
         {
-            AssetGuid = textureGuid.ToFlatString(),
+            AssetGuid = textureGuid.ToString(),
             Name = "texture",
             Width = 1,
             Height = 1,
@@ -180,56 +183,56 @@ public sealed class AssetArchitectureAcceptanceTests
             SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
             SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, Payload = new byte[] { 1 } }],
-        }, texturePath);
+        }).ToAsset(), texturePath);
         byte[] streamedMeshPayload = CreateMinimalStreamedMeshPayload(out ulong bvhOffset);
-        AssetWriter.Write(new Mesh
+        AssetWriter.Write((new MeshData
         {
-            AssetGuid = meshGuid.ToFlatString(), Name = "mesh", Payload = streamedMeshPayload,
+            AssetGuid = meshGuid.ToString(), Name = "mesh", Payload = streamedMeshPayload,
             BvhOffset = bvhOffset,
             VertexEncoding = StandardClusterVertexEncoder.EncodingCompatibility,
             Regions = [],
-        }, meshPath);
-        AssetWriter.Write(new Shader
+        }).ToAsset(), meshPath);
+        AssetWriter.Write((new ShaderData
         {
-            AssetGuid = shaderGuid.ToFlatString(),
+            AssetGuid = shaderGuid.ToString(),
             Name = "shader",
             Programs = [new CookedShaderProgram { Backend = "test", Data = new byte[] { 3 } }],
             EntryPointReflections = [new ShaderEntryPointReflection { EntryPoint = "main" }],
-        }, shaderPath);
-        Material material = new StandardMaterial
+        }).ToAsset(), shaderPath);
+        MaterialData material = new StandardMaterialData
         {
-            AssetGuid = materialGuid.ToFlatString(),
+            AssetGuid = materialGuid.ToString(),
             Name = "material",
         };
-        AssetWriter.Write(material, materialPath);
-        AssetWriter.Write(
-            CreateClusterRenderAsset(clusterGuid, "cluster", shaderGuid),
+        AssetWriter.Write((material).ToAsset(), materialPath);
+        AssetWriter.Write((
+            CreateClusterRenderAsset(clusterGuid, "cluster", shaderGuid)).ToAsset(),
             clusterPath);
 
         AssetManifest manifest = new();
-        manifest.AddAsset(textureGuid, "texture", Path.GetFileName(texturePath), AssetType<Texture>.Name, Texture.SchemaFingerprint);
-        manifest.AddAsset(meshGuid, "mesh", Path.GetFileName(meshPath), AssetType<Mesh>.Name, Mesh.SchemaFingerprint);
-        manifest.AddAsset(shaderGuid, "shader", Path.GetFileName(shaderPath), AssetType<Shader>.Name, Shader.SchemaFingerprint);
-        manifest.AddAsset(materialGuid, "material", Path.GetFileName(materialPath), AssetType<Material>.Name, Material.SchemaFingerprint);
-        manifest.AddAsset(clusterGuid, "cluster", Path.GetFileName(clusterPath), AssetType<ClusterShaders>.Name, ClusterShaders.SchemaFingerprint);
+        manifest.AddAsset(textureGuid, "texture", Path.GetFileName(texturePath), Asset<Texture>.FileType, TextureData.SchemaFingerprint);
+        manifest.AddAsset(meshGuid, "mesh", Path.GetFileName(meshPath), Asset<Mesh>.FileType, MeshData.SchemaFingerprint);
+        manifest.AddAsset(shaderGuid, "shader", Path.GetFileName(shaderPath), Asset<Shader>.FileType, ShaderData.SchemaFingerprint);
+        manifest.AddAsset(materialGuid, "material", Path.GetFileName(materialPath), Asset<Material>.FileType, MaterialData.SchemaFingerprint);
+        manifest.AddAsset(clusterGuid, "cluster", Path.GetFileName(clusterPath), Asset<ClusterShaders>.FileType, ClusterShadersData.SchemaFingerprint);
         IAssetStorage storage = new LooseAssetStorage(directory.Path, manifest);
 
-        await AssertStorageOpenAsync<Texture>(storage, textureGuid);
-        await AssertStorageOpenAsync<Mesh>(storage, meshGuid);
-        await AssertStorageOpenAsync<Shader>(storage, shaderGuid);
-        await AssertStorageOpenAsync<Material>(storage, materialGuid);
-        await AssertStorageOpenAsync<ClusterShaders>(storage, clusterGuid);
+        await AssertStorageOpenAsync<Texture, TextureData>(storage, textureGuid);
+        await AssertStorageOpenAsync<Mesh, MeshData>(storage, meshGuid);
+        await AssertStorageOpenAsync<Shader, ShaderData>(storage, shaderGuid);
+        await AssertStorageOpenAsync<Material, MaterialData>(storage, materialGuid);
+        await AssertStorageOpenAsync<ClusterShaders, ClusterShadersData>(storage, clusterGuid);
     }
 
-    private static ClusterShaders CreateClusterRenderAsset(
-        AssetGuid assetGuid,
+    private static ClusterShadersData CreateClusterRenderAsset(
+        Guid assetGuid,
         string name,
-        AssetGuid shaderGuid)
+        Guid shaderGuid)
     {
-        string shader = shaderGuid.ToFlatString();
-        return new ClusterShaders
+        string shader = shaderGuid.ToString();
+        return new ClusterShadersData
         {
-            AssetGuid = assetGuid.ToFlatString(),
+            AssetGuid = assetGuid.ToString(),
             Name = name,
             Operations = Enum.GetValues<ClusterShaderOperationRole>()
                 .Where(static role => role != ClusterShaderOperationRole.None)
@@ -281,15 +284,12 @@ public sealed class AssetArchitectureAcceptanceTests
         return result;
     }
 
-    private static async Task AssertStorageOpenAsync<TContract>(
-        IAssetStorage storage,
-        AssetGuid guid)
-        where TContract : class, IBinaryContract<TContract>
+    private static async Task AssertStorageOpenAsync<T, TFields>(IAssetStorage storage, Guid id)
+        where T : class where TFields : class, IBinaryContract<TFields>
     {
-        Assert.True(storage.TryFind(guid, out AssetEntry entry));
-        await using BinaryDocument<TContract> document =
-            await AssetProject.OpenAsync<TContract>(storage, entry);
-        Assert.Equal(guid, AssetType<TContract>.Descriptor.GetAssetGuid(document.Root));
+        await using var loader = new AssetLoader(storage);
+        await using Asset<T> file = await loader.OpenAsync(new AssetId<T>(id));
+        Assert.Equal(id, file.Id.Value);
     }
 
     private static byte[] CreateMinimalStreamedMeshPayload(out ulong bvhOffset)

@@ -3,5 +3,26 @@
   "importer": "SlangShaderImporter",
   "importer_settings": {
     "cook_profile": "d3d12-sm6.2"
-  }
+  },
+  "importer_version": 26,
+  "input_hash": "22c8eff6dc3af664b9270c9af38b0782ccb9d35152cf1ad13894bc61b31ae3eb",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/vsm_allocate_pages.slang",
+      "content_hash": "19feb5d49fa3ee3b97a00de7eaefe176efec327910acdf5f4f51cfef81bca58a"
+    },
+    {
+      "relative_path": "assets/Shaders/vsm_sampling.slang",
+      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "cdb38623-09dd-5e2f-a3fb-cf0b111eddd5",
+      "sub_asset_key": "shader:main",
+      "input_hash": "22c8eff6dc3af664b9270c9af38b0782ccb9d35152cf1ad13894bc61b31ae3eb",
+      "dependencies": [],
+      "asset_path": "vsm_allocate_pages.shader.asset"
+    }
+  ]
 }

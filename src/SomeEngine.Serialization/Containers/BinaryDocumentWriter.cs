@@ -62,8 +62,14 @@ public sealed class BinaryDocumentWriter
     public BinaryDocumentWriter AddContract<T>()
         where T : IBinaryContract<T>
     {
-        var descriptor = new BinaryWireTypeDescriptor(
-            T.TypeId, T.SchemaFingerprint, T.Compatibility, T.SchemaEpoch);
+        return AddContract(new BinaryWireTypeDescriptor(
+            T.TypeId, T.SchemaFingerprint, T.Compatibility, T.SchemaEpoch));
+    }
+
+    public BinaryDocumentWriter AddContract(BinaryWireTypeDescriptor descriptor)
+    {
+        if (descriptor.TypeId == Guid.Empty || descriptor.SchemaFingerprint == 0 || descriptor.SchemaEpoch == 0)
+            throw new ArgumentException("A wire type requires a type ID, schema digest and epoch.", nameof(descriptor));
         if (_contracts.TryGetValue(descriptor.TypeId, out BinaryWireTypeDescriptor existing)
             && existing != descriptor)
         {

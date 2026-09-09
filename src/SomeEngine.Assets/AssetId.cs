@@ -1,23 +1,17 @@
 namespace SomeEngine.Assets;
 
-/// <summary>
-/// Stable, type-safe identity used to request one concrete asset. The GUID remains the storage
-/// identity; <typeparamref name="T"/> prevents a caller from requesting it as the wrong asset
-/// type before I/O starts.
-/// </summary>
+/// <summary>A typed disk asset number. The default value denotes no asset.</summary>
 public readonly struct AssetId<T> : IEquatable<AssetId<T>>
     where T : class
 {
-    public AssetId(AssetGuid value)
-    {
-        if (value.IsEmpty)
-            throw new ArgumentException("An asset ID cannot contain an empty GUID.", nameof(value));
-        Value = value;
-    }
+    public AssetId(Guid value) => Value = value;
 
-    public AssetGuid Value { get; }
+    public static AssetId<T> Empty => default;
+    public bool IsEmpty => Value == Guid.Empty;
 
-    public bool IsValid => !Value.IsEmpty;
+    public Guid Value { get; }
+
+    public bool IsValid => !IsEmpty;
 
     public bool Equals(AssetId<T> other) => Value == other.Value;
 

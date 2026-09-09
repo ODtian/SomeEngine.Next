@@ -10,7 +10,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 public class WaveQueueCompilationTest
 {
     [Fact]
-    public void WaveQueue_CompilesWithTrivialTask()
+    public async Task WaveQueue_CompilesWithTrivialTask()
     {
         // Inline Slang source that includes wave_queue.slang and implements a trivial IWaveTask.
         // Each lane "produces" 1 task that writes lane index to a UAV buffer.
@@ -52,7 +52,8 @@ public class WaveQueueCompilationTest
 
         try
         {
-            var asset = SlangShaderImporter.Import(slangFile, source);
+            using var assetFile = SlangShaderImporter.Import(slangFile, source).ToAsset();
+            Shader asset = await Shader.CreateAsync(assetFile);
 
             Assert.NotNull(asset);
             Assert.NotNull(asset.Programs);

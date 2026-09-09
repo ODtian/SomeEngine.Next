@@ -3,5 +3,26 @@
   "importer": "SlangShaderImporter",
   "importer_settings": {
     "cook_profile": "default"
-  }
+  },
+  "importer_version": 26,
+  "input_hash": "ee988113492dc38a58a3c555019521863941db9fb9204147f48ede14c465fe73",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/cluster_resolve.slang",
+      "content_hash": "9be0ed30a10e84413f3753ce7b31469f95d9460acc2992aafb8cee3378ec73da"
+    },
+    {
+      "relative_path": "assets/Shaders/visbuffer_encoding.slang",
+      "content_hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "842453b7-81b6-54d6-8be0-352acbba2c73",
+      "sub_asset_key": "shader:main",
+      "input_hash": "ee988113492dc38a58a3c555019521863941db9fb9204147f48ede14c465fe73",
+      "dependencies": [],
+      "asset_path": "cluster_resolve.shader.asset"
+    }
+  ]
 }

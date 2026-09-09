@@ -5,28 +5,25 @@ namespace SomeEngine.Assets.Importers;
 
 internal static class SlangDeps
 {
-    public static AssetGuid GuidFor(SourceGuid sourceGuid, string subAssetKey)
-        => AssetGuid.FromSource(sourceGuid, subAssetKey);
-
-    public static bool Matches(Schema.Shader asset, AssetMeta existingAsset)
+    public static bool Matches(Schema.ShaderData asset, SourceOutput existingAsset)
     {
         if (string.IsNullOrWhiteSpace(asset.AssetGuid))
         {
             return false;
         }
 
-        return AssetGuid.TryParse(asset.AssetGuid, out var assetGuid)
+        return Guid.TryParse(asset.AssetGuid, out var assetGuid)
             && assetGuid == existingAsset.AssetGuid
-            && asset.ImportTrace?.ContentFingerprint == existingAsset.ContentFingerprint
-            && asset.ImportTrace.ImporterVersion == existingAsset.ImporterVersion;
+            && asset.ImportTrace?.ContentFingerprint == existingAsset.InputHash
+;
     }
 
-    public static DependencyEntryData[] Collect(
+    public static FileDependency[] Collect(
         IModule module,
         string sourcePath,
         string projectRoot)
     {
-        var dependencies = new Dictionary<string, DependencyEntryData>(
+        var dependencies = new Dictionary<string, FileDependency>(
             StringComparer.OrdinalIgnoreCase);
 
         void Add(string dependencyPath)
@@ -38,10 +35,10 @@ internal static class SlangDeps
             }
 
             string relativePath = RelPath(projectRoot, fullPath);
-            dependencies[relativePath] = new DependencyEntryData
+            dependencies[relativePath] = new FileDependency
             {
                 RelativePath = relativePath,
-                ContentHash = AssetFingerprint.FileSha256(fullPath),
+                ContentHash = ImportHash.FileSha256(fullPath),
             };
         }
 
@@ -57,8 +54,8 @@ internal static class SlangDeps
             .ToArray();
     }
 
-    public static AssetImportFingerprint? Refresh(
-        IReadOnlyList<DependencyEntryData> dependencies,
+    public static ImportInputs? Refresh(
+        IReadOnlyList<FileDependency> dependencies,
         string projectRoot,
         uint importerVersion,
         params string[] extraParts)
@@ -68,7 +65,7 @@ internal static class SlangDeps
             return null;
         }
 
-        DependencyEntryData[] currentDependencies = new DependencyEntryData[dependencies.Count];
+        FileDependency[] currentDependencies = new FileDependency[dependencies.Count];
         for (int i = 0; i < dependencies.Count; i++)
         {
             string fullPath = AbsPath(projectRoot, dependencies[i].RelativePath);
@@ -77,21 +74,15 @@ internal static class SlangDeps
                 return null;
             }
 
-            currentDependencies[i] = new DependencyEntryData
+            currentDependencies[i] = new FileDependency
             {
                 RelativePath = RelPath(projectRoot, fullPath),
-                ContentHash = AssetFingerprint.FileSha256(fullPath),
+                ContentHash = ImportHash.FileSha256(fullPath),
             };
         }
 
-        return AssetFingerprint.Create(currentDependencies, importerVersion, extraParts);
+        return ImportHash.Create(currentDependencies, importerVersion, extraParts);
     }
-
-    public static string Fingerprint(
-        IReadOnlyList<DependencyEntryData> dependencies,
-        uint importerVersion,
-        params string[] extraParts)
-        => AssetFingerprint.ComputeContentFingerprint(dependencies, importerVersion, extraParts);
 
     public static string ProjectRoot(string sourcePath)
     {

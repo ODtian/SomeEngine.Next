@@ -5,7 +5,7 @@ using SomeEngine.Assets.Pipeline;
 using System.Runtime.InteropServices;
 using System.Numerics;
 using SomeEngine.Graphics;
-using Texture = SomeEngine.Assets.Schema.Texture;
+using Texture = SomeEngine.Assets.Schema.TextureData;
 
 if (args.Length != 3)
     throw new ArgumentException("Usage: SomeEngine.RenderScenarios <built-runtime-directory> <new-output-directory> <phong|factors|materials|wpo-alpha|displacement|sparse-motion>");
@@ -89,13 +89,14 @@ struct MaskPixel : IPixelEvaluate
     shader = shader.Replace("typedef OpaquePixelEvaluate PixelEvaluate;", pixel + "\ntypedef MaskPixel PixelEvaluate;");
 }
 File.WriteAllText(shaderPath, shader);
-AssetProject project = AssetAuthoring.CreateProject(destination);
+AssetProject project = new AssetProject(destination, [new GltfSourceImporter(), new SlangSourceImporter()]);
 await project.ImportAsync(shaderPath);
 IAssetStorage storage = project.CreateStorage();
-AssetGuid sceneId = project.Resolve("assets/Scenes/default.scene.asset")!.Value;
+Guid sceneId = project.Resolve("assets/Scenes/default.scene.asset")!.Value;
 if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationException();
-await using var sceneDocument = await AssetProject.OpenAsync<RenderScene>(storage, entry);
-RenderScene scene = sceneDocument.Root;
+await using var loader = new AssetLoader(storage);
+await using Asset<SomeEngine.ECS.World> sceneFile = await loader.OpenAsync(new AssetId<SomeEngine.ECS.World>(sceneId));
+SceneData scene = sceneFile.GetFieldsGenerated<SceneData>();
 scene.Name = mode + " rendering scenario";
 scene.MeshInstances = scene.MeshInstances!.Take(mode == "phong" ? 1 : mode == "wpo-alpha" ? 8 : mode == "sparse-motion" ? 128 : 4).ToArray();
 for (int index = 0; index < scene.MeshInstances.Count; index++)
@@ -111,9 +112,9 @@ if (mode is not ("phong" or "sparse-motion"))
     {
         SceneMeshInstance instance = scene.MeshInstances[index];
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(mode == "factors" ? (index == 3 ? 4 : index) : 2);
-        Mesh mesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
-            [new MeshMaterialSlot(AssetGuid.Parse(instance.MaterialGuids![0]))], $"Tessellation factor geometry {index}");
-        instance.MeshGuid = project.CreateAsset($"assets/Meshes/factor-{index}.mesh.asset", mesh).ToFlatString();
+        MeshData mesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
+            [new MeshMaterialSlot(Guid.Parse(instance.MaterialGuids![0]))], $"Tessellation factor geometry {index}");
+        instance.MeshGuid = project.CreateAsset($"assets/Meshes/factor-{index}.mesh.asset", mesh.ToAsset()).ToString();
         instance.Position = new SceneVector3 { X = index % 2 == 0 ? -1.5f : 1.5f, Y = index / 2 == 0 ? -1.5f : 1.5f, Z = 12 };
         if (mode == "wpo-alpha" && index >= 4) instance.Position = new SceneVector3 { X = index % 2 == 0 ? -8 : 8, Y = (index - 4) / 2 == 0 ? -4 : 4, Z = 65 };
     }
@@ -131,26 +132,26 @@ if (mode is "wpo-alpha" or "displacement" or "materials")
 if (mode == "displacement")
 {
     float[] heights = Enumerable.Range(0, 64).Select(i => .5f + .5f * MathF.Sin((i % 8) * MathF.PI / 4) * MathF.Sin((i / 8) * MathF.PI / 4)).ToArray();
-    Texture bounds = DisplacementBoundsTexture.Create(AssetGuid.New(), "height bounds", 8, 8, heights, out _);
-    project.CreateAsset("assets/Textures/scenario-bounds.texture.asset", bounds);
-    Texture height = new() { AssetGuid = AssetGuid.New().ToFlatString(), Name = "heights", Dimension = TextureDimension.Texture2D,
+    Texture bounds = DisplacementBoundsTexture.Create(Guid.NewGuid(), "height bounds", 8, 8, heights, out _);
+    project.CreateAsset("assets/Textures/scenario-bounds.texture.asset", bounds.ToAsset());
+    Texture height = new() { AssetGuid = Guid.NewGuid().ToString(), Name = "heights", Dimension = TextureDimension.Texture2D,
         Width = 8, Height = 8, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
         Format = Format.R32Float, SampledFormat = Format.R32Float, SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
         MipTiles = [new TextureMipTile { Width = 8, Height = 8, RowPitch = 32, SlicePitch = 256,
             Payload = MemoryMarshal.AsBytes(heights.AsSpan()).ToArray() }] };
-    project.CreateAsset("assets/Textures/scenario-height.texture.asset", height);
-    if (!storage.TryFind(AssetGuid.Parse(scene.MeshInstances[0].MaterialGuids![0]), out AssetEntry materialEntry)) throw new InvalidOperationException();
-    await using var materialDocument = await AssetProject.OpenAsync<Material>(storage, materialEntry);
-    StandardMaterial material = (StandardMaterial)materialDocument.Root;
-    material.AlbedoMap = height;
-    material.NormalMap = bounds;
-    project.CreateAsset<Material>("assets/Materials/scenario.material.asset", material);
+    project.CreateAsset("assets/Textures/scenario-height.texture.asset", height.ToAsset());
+    if (!storage.TryFind(Guid.Parse(scene.MeshInstances[0].MaterialGuids![0]), out AssetEntry materialEntry)) throw new InvalidOperationException();
+    await using Asset<Material> materialFile = await loader.OpenAsync(new AssetId<Material>(materialEntry.AssetGuid));
+    MaterialData material = materialFile.GetFieldsGenerated<MaterialData>();
+    material.Set(new("AlbedoMap", MaterialParameterKind.Texture) { Texture = new(Guid.Parse(height.AssetGuid!)) });
+    material.Set(new("NormalMap", MaterialParameterKind.Texture) { Texture = new(Guid.Parse(bounds.AssetGuid!)) });
+    project.CreateAsset<Material>("assets/Materials/scenario.material.asset", material.ToAsset());
 }
 if (mode == "materials")
 {
-    if (!storage.TryFind(AssetGuid.Parse(scene.MeshInstances[0].MaterialGuids![0]), out AssetEntry materialEntry)) throw new InvalidOperationException();
-    await using var materialDocument = await AssetProject.OpenAsync<Material>(storage, materialEntry);
-    StandardMaterial material = (StandardMaterial)materialDocument.Root;
+    if (!storage.TryFind(Guid.Parse(scene.MeshInstances[0].MaterialGuids![0]), out AssetEntry materialEntry)) throw new InvalidOperationException();
+    await using Asset<Material> materialFile = await loader.OpenAsync(new AssetId<Material>(materialEntry.AssetGuid));
+    MaterialData material = materialFile.GetFieldsGenerated<MaterialData>();
     for (int index = 0; index < scene.MeshInstances.Count; index++)
     {
         byte[] pixels = new byte[8 * 8 * 4];
@@ -160,15 +161,15 @@ if (mode == "materials")
             byte value = (x + y + index) % (index + 2) == 0 ? (byte)0 : (byte)255;
             for (int channel = 0; channel < 4; channel++) pixels[(y * 8 + x) * 4 + channel] = value;
         }
-        Texture mask = new() { AssetGuid = AssetGuid.New().ToFlatString(), Name = "mask " + index, Dimension = TextureDimension.Texture2D,
+        Texture mask = new() { AssetGuid = Guid.NewGuid().ToString(), Name = "mask " + index, Dimension = TextureDimension.Texture2D,
             Width = 8, Height = 8, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
             Format = Format.R8G8B8A8UNorm, SampledFormat = Format.R8G8B8A8UNorm, SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 8, Height = 8, RowPitch = 32, SlicePitch = 256, Payload = pixels }] };
-        project.CreateAsset($"assets/Textures/scenario-mask-{index}.texture.asset", mask);
-        material.AssetGuid = AssetGuid.New().ToFlatString();
+        project.CreateAsset($"assets/Textures/scenario-mask-{index}.texture.asset", mask.ToAsset());
+        material.AssetGuid = Guid.NewGuid().ToString();
         material.Name = "Phong masked " + index;
-        material.AlbedoMap = mask;
-        project.CreateAsset<Material>($"assets/Materials/scenario-{index}.material.asset", material);
+        material.Set(new("AlbedoMap", MaterialParameterKind.Texture) { Texture = new(Guid.Parse(mask.AssetGuid!)) });
+        project.CreateAsset<Material>($"assets/Materials/scenario-{index}.material.asset", material.ToAsset());
         scene.MeshInstances[index].MaterialGuids = [material.AssetGuid];
     }
 }
@@ -184,5 +185,5 @@ if (mode == "sparse-motion")
         instance.BoundsExpansion = 0;
     }
 }
-project.CreateAsset("assets/Scenes/scenario.scene.asset", scene);
+project.CreateAsset("assets/Scenes/scenario.scene.asset", scene.ToAsset());
 Console.WriteLine(destination);

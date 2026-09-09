@@ -5,6 +5,30 @@ using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Serialization.Containers;
 
+/// <summary>Header inspection that does not require a root field type.</summary>
+public static class BinaryDocument
+{
+    public static async ValueTask<Guid> ReadVersionAsync(IRangeSource source,
+        CancellationToken cancellationToken = default)
+    {
+        using RangeLease bytes = await source.AcquireAsync(0, BinaryDocumentFormat.HeaderSize,
+            cancellationToken).ConfigureAwait(false);
+        BinaryDocumentHeader header = BinaryDocumentFormat.ReadHeader(bytes.Memory.Span);
+        if (header.TotalLength != source.Length)
+            throw new InvalidDataException("The binary document length does not match its source.");
+        return header.Generation;
+    }
+}
+
+internal sealed class DocumentBytes(IRangeSource source, bool ownsSource)
+{
+    private int _references = 1;
+    internal void AddReference() => Interlocked.Increment(ref _references);
+    internal ValueTask ReleaseAsync() => Interlocked.Decrement(ref _references) == 0 && ownsSource
+        ? source.DisposeAsync()
+        : ValueTask.CompletedTask;
+}
+
 internal sealed class DocumentLifetime
 {
     private int _disposed;
@@ -62,13 +86,15 @@ public sealed class BinaryDocument<T> : IAsyncDisposable
     where T : IBinaryContract<T>
 {
     private readonly IRangeSource _source;
-    private readonly bool _ownsSource;
+    private readonly DocumentBytes _bytes;
+    private readonly object _closeGate = new();
     private readonly BinaryDocumentHeader _header;
     private readonly BinaryReadLimits _limits;
     private readonly string _sourceGeneration;
     private readonly BinaryWireTypeDescriptor[] _typeCatalog;
     private readonly Digest256 _headerHash;
     private readonly Digest256 _catalogHash;
+    private readonly byte[] _rootBytes;
     private readonly DocumentLifetime _lifetime = new();
 
     private BinaryDocument(
@@ -78,11 +104,12 @@ public sealed class BinaryDocument<T> : IAsyncDisposable
         BinaryWireTypeDescriptor[] typeCatalog,
         BinaryReadLimits limits,
         T root,
+        byte[] rootBytes,
         Digest256 headerHash,
         Digest256 catalogHash)
     {
         _source = source;
-        _ownsSource = ownsSource;
+        _bytes = new DocumentBytes(source, ownsSource);
         _header = header;
         _typeCatalog = typeCatalog;
         _limits = limits;
@@ -90,6 +117,32 @@ public sealed class BinaryDocument<T> : IAsyncDisposable
         _headerHash = headerHash;
         _catalogHash = catalogHash;
         Root = root;
+        _rootBytes = rootBytes;
+    }
+
+    private BinaryDocument(BinaryDocument<T> source)
+    {
+        _source = source._source;
+        _bytes = source._bytes;
+        _header = source._header;
+        _limits = source._limits;
+        _sourceGeneration = source._sourceGeneration;
+        _typeCatalog = source._typeCatalog;
+        _headerHash = source._headerHash;
+        _catalogHash = source._catalogHash;
+        _rootBytes = source._rootBytes;
+        Root = BinaryContractSerializer.Deserialize<T>(_rootBytes, _limits);
+        _bytes.AddReference();
+    }
+
+    /// <summary>Opens independent access to validated bytes and independently decoded fields without I/O.</summary>
+    public BinaryDocument<T> Duplicate()
+    {
+        lock (_closeGate)
+        {
+            _lifetime.ThrowIfDisposed(this);
+            return new BinaryDocument<T>(this);
+        }
     }
 
     public T Root { get; }
@@ -97,6 +150,7 @@ public sealed class BinaryDocument<T> : IAsyncDisposable
     public uint ChunkCount => _header.ChunkCount;
     public ulong SchemaFingerprint => _header.SchemaFingerprint;
     public long TotalLength => _header.TotalLength;
+    public long RootByteLength => _header.RootLength;
     public string SourceGeneration => _sourceGeneration;
     public bool RetainsResidentBacking => _source.RetainsResidentBacking;
     public bool SourceLeasesAreImmutable => _source.LeasesAreImmutable;
@@ -187,6 +241,7 @@ public sealed class BinaryDocument<T> : IAsyncDisposable
                 typeCatalog,
                 effectiveLimits,
                 root,
+                rootLease.Memory.ToArray(),
                 Digest256.ComputeSha256(headerLease.Memory.Span),
                 Digest256.ComputeSha256(catalogLease.Memory.Span));
             if (source is IBinaryDocumentReceipt receipt)
@@ -616,13 +671,57 @@ public sealed class BinaryDocument<T> : IAsyncDisposable
             directoryHash);
     }
 
-    public async ValueTask DisposeAsync()
+    /// <summary>Copies the original file using bounded buffers and verifies every chunk before succeeding.</summary>
+    public async ValueTask CopyToAsync(FileStream destination, CancellationToken cancellationToken = default)
     {
-        if (_lifetime.IsDisposed)
-            return;
-        _lifetime.Dispose();
-        if (_ownsSource)
-            await _source.DisposeAsync().ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(destination);
+        _lifetime.ThrowIfDisposed(this);
+        if (!destination.CanWrite || !destination.CanSeek || destination.Position != 0)
+            throw new ArgumentException("A document copy needs a writable stream at position zero.", nameof(destination));
+        EnsureSourceGeneration();
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        try
+        {
+            long offset = 0;
+            while (offset < _header.TotalLength)
+            {
+                int length = (int)Math.Min(buffer.Length, _header.TotalLength - offset);
+                await _source.ReadExactlyAsync(offset, buffer.AsMemory(0, length), cancellationToken).ConfigureAwait(false);
+                await destination.WriteAsync(buffer.AsMemory(0, length), cancellationToken).ConfigureAwait(false);
+                offset += length;
+            }
+            destination.SetLength(_header.TotalLength);
+            await foreach (BinaryChunkEntry chunk in EnumerateChunksAsync(cancellationToken).ConfigureAwait(false))
+                if (!await VerifyChunkContentAsync(chunk, cancellationToken).ConfigureAwait(false))
+                    throw new InvalidDataException($"Cannot copy corrupted binary chunk 0x{chunk.Key:X16}.");
+            EnsureSourceGeneration();
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        lock (_closeGate)
+        {
+            if (_lifetime.IsDisposed)
+                return ValueTask.CompletedTask;
+            _lifetime.Dispose();
+        }
+        return _bytes.ReleaseAsync();
+    }
+
+    /// <summary>Enumerates and validates the on-disk chunk directory without reading payloads.</summary>
+    public async IAsyncEnumerable<BinaryChunkEntry> EnumerateChunksAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        _lifetime.ThrowIfDisposed(this);
+        for (uint index = 0; index < _header.ChunkCount; index++)
+        {
+            BinaryChunkEntry entry = await ReadEntryAsync(index, cancellationToken).ConfigureAwait(false);
+            ValidateEntryBounds(entry);
+            yield return await FindChunkAsync(entry.Key, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidDataException("Chunk directory changed during enumeration.");
+        }
     }
 
     internal static void ValidateHeader<TContract>(

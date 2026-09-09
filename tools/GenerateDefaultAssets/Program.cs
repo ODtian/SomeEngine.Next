@@ -26,7 +26,7 @@ WriteGeneratedFile(
     Path.Combine(shadersDir, "generated", "render_instance_layout.slang"),
     BuildRenderInstanceLayoutSource(instanceProperties));
 
-AssetProject project = AssetAuthoring.CreateProject(projectRoot);
+AssetProject project = new AssetProject(projectRoot, [new GltfSourceImporter(), new SlangSourceImporter()]);
 if (args.Contains("--cluster-pipeline-only", StringComparer.Ordinal))
 {
     GenerateClusterPipeline(project);
@@ -101,7 +101,7 @@ RemoveGeneratedTestPublications(project);
 
 if (args.Contains("--stamp-vertex-layout-abi", StringComparer.Ordinal))
 {
-    Console.WriteLine("Shader vertex layout protocol metadata is authored on shader entries.");
+    Console.WriteLine("ShaderData vertex layout protocol metadata is authored on shader entries.");
     return;
 }
 
@@ -112,22 +112,22 @@ if (args.Contains("--reimport-icosphere", StringComparer.Ordinal))
     return;
 }
 
-AssetGuid defaultWhiteTextureGuid = GenerateDefault1x1Texture(
+Guid defaultWhiteTextureGuid = GenerateDefault1x1Texture(
     project,
     "default_white",
     PackRgba(255, 255, 255, 255),
-    out Texture defaultWhiteTexture);
-AssetGuid defaultNormalTextureGuid = GenerateDefault1x1Texture(
+    out TextureData defaultWhiteTexture);
+Guid defaultNormalTextureGuid = GenerateDefault1x1Texture(
     project,
     "default_normal",
     PackRgba(128, 128, 255, 255),
-    out Texture defaultNormalTexture
+    out TextureData defaultNormalTexture
 );
-AssetGuid defaultArmTextureGuid = GenerateDefault1x1Texture(
+Guid defaultArmTextureGuid = GenerateDefault1x1Texture(
     project,
     "default_arm",
     PackRgba(255, 255, 255, 255),
-    out Texture defaultArmTexture);
+    out TextureData defaultArmTexture);
 
 string[] shaderSources =
 [
@@ -179,8 +179,10 @@ string[] shaderSources =
     "vsm_mark_coarse_pages.slang",
     "vsm_mark_pages.slang",
     "vsm_page_pool.slang",
+    "vsm_page_hiz.slang",
     "vsm_state_init.slang",
     "vsm_view_compact.slang",
+    "vsm_page_hiz_reduce.slang",
 ];
 
 foreach (string shaderName in shaderSources)
@@ -192,9 +194,9 @@ foreach (string shaderName in shaderSources)
     }
 }
 
-AssetGuid clusterPipelineGuid = GenerateClusterPipeline(project);
-AssetGuid virtualShadowMapGuid = GenerateVirtualShadowMapShaders(project);
-AssetGuid standardMaterialGuid = GenerateMaterialTemplate(
+Guid clusterPipelineGuid = GenerateClusterPipeline(project);
+Guid virtualShadowMapGuid = GenerateVirtualShadowMapShaders(project);
+Guid standardMaterialGuid = GenerateMaterialTemplate(
     project,
     "Standard",
     ResolveRequired(project, "assets/Shaders/cluster_shade_material.slang"),
@@ -216,11 +218,11 @@ _ = GenerateMaterialTemplate(
 string icoSpherePath = Path.Combine(projectRoot, "samples", "IcoSphere.glb");
 if (File.Exists(icoSpherePath))
 {
-    IReadOnlyList<AssetGuid> imported = await project.ImportAsync(icoSpherePath);
-    AssetGuid meshGuid = imported.Single(guid =>
-        project.Manifest.TryGetAsset(guid, out AssetManifestRecord record)
-        && string.Equals(record.AssetType, AssetType<Mesh>.Name, StringComparison.Ordinal));
-    AssetGuid sceneGuid = GenerateDefaultScene(project, meshGuid, standardMaterialGuid);
+    IReadOnlyList<Guid> imported = await project.ImportAsync(icoSpherePath);
+    Guid meshGuid = imported.Single(guid =>
+        project.Manifest.TryGetAsset(guid, out AssetEntry record)
+        && string.Equals(record.AssetType, Asset<Mesh>.FileType, StringComparison.Ordinal));
+    Guid sceneGuid = GenerateDefaultScene(project, meshGuid, standardMaterialGuid);
     GenerateRuntimeConfiguration(
         project,
         sceneGuid,
@@ -245,6 +247,14 @@ if (diagnostics.Any(static d => d.Severity == AssetDiagnosticSeverity.Error))
     Console.Error.WriteLine("Asset validation failed with errors.");
     Environment.ExitCode = 1;
     return;
+}
+
+foreach (string sourcePath in project.Manifest.Sources.Values)
+{
+    string fullSourcePath = Path.GetFullPath(Path.Combine(projectRoot, sourcePath));
+    SourceMeta meta = SourceMeta.Load(fullSourcePath);
+    foreach (SourceOutput output in meta.Outputs.ToArray()) meta.SetOutput(output);
+    SourceMeta.Save(fullSourcePath, meta);
 }
 
 Console.WriteLine($"Generated default texture assets in: {texturesDir}");
@@ -287,8 +297,8 @@ static void RemoveObsoleteAsset(
     string sourcePath,
     string assetPath)
 {
-    if (project.Manifest.TryAssetPath(assetPath, out AssetManifestRecord asset))
-        project.Manifest.RemoveAsset(asset.Guid);
+    if (project.Manifest.TryAssetPath(assetPath, out AssetEntry asset))
+        project.Manifest.RemoveAsset(asset.AssetGuid);
     if (project.Manifest.TrySourceGuid(sourcePath, out SourceGuid source))
         project.Manifest.RemoveSource(source);
 
@@ -319,13 +329,13 @@ static void DeleteObsoleteProjectFile(string projectRoot, string relativePath)
 
 static void RemoveGeneratedTestPublications(AssetProject project)
 {
-    AssetGuid[] generated = project.Manifest.Assets.Values
+    Guid[] generated = project.Manifest.Assets.Values
         .Where(static asset => asset.Path.StartsWith(
             "Library/GeneratedTestAssets/",
             StringComparison.Ordinal))
-        .Select(static asset => asset.Guid)
+        .Select(static asset => asset.AssetGuid)
         .ToArray();
-    foreach (AssetGuid guid in generated)
+    foreach (Guid guid in generated)
         project.Manifest.RemoveAsset(guid);
 }
 
@@ -360,7 +370,7 @@ static string BuildRenderInstanceLayoutSource(RenderInstancePropertyLayout layou
         #ifndef SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
         #define SOMEENGINE_RENDER_INSTANCE_LAYOUT_INCLUDED
 
-        // Exact dense metadata layout for the currently cooked Cluster shader variant. Shader-cook
+        // Exact dense metadata layout for the currently cooked Cluster shader variant. ShaderData-cook
         // integration must emit one such document for each pipeline/material composition.
         static const uint RENDER_INSTANCE_METADATA_WORD_COUNT = {{layout.MetadataWordCount}}u;
         static const uint RENDER_INSTANCE_METADATA_VECTOR_COUNT =
@@ -403,11 +413,11 @@ static int FindMetadataWordOffset(
     throw new InvalidOperationException($"Render-instance property '{key}' is missing from the layout.");
 }
 
-static AssetGuid GenerateDefault1x1Texture(
+static Guid GenerateDefault1x1Texture(
     AssetProject project,
     string name,
     uint rgba,
-    out Texture textureAsset)
+    out TextureData textureAsset)
 {
     byte[] pixels =
     [
@@ -418,7 +428,7 @@ static AssetGuid GenerateDefault1x1Texture(
     ];
 
     string outputPath = $"assets/Textures/{name}.texture.asset";
-    textureAsset = new Texture
+    textureAsset = new TextureData
     {
         Name = name,
         Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
@@ -444,54 +454,54 @@ static AssetGuid GenerateDefault1x1Texture(
         ],
     };
 
-    AssetGuid guid = project.CreateAsset(outputPath, textureAsset);
-    Console.WriteLine($"  Texture: {outputPath}");
+    Guid guid = project.CreateAsset(outputPath,( textureAsset).ToAsset(project.Resolve(outputPath) ?? default));
+    Console.WriteLine($"  TextureData: {outputPath}");
     return guid;
 }
 
 static uint PackRgba(byte r, byte g, byte b, byte a)
     => (uint)r | ((uint)g << 8) | ((uint)b << 16) | ((uint)a << 24);
 
-static AssetGuid GenerateMaterialTemplate(
+static Guid GenerateMaterialTemplate(
     AssetProject project,
     string name,
-    AssetGuid shaderGuid,
-    Texture defaultWhiteTexture,
-    Texture defaultNormalTexture,
-    Texture defaultArmTexture,
+    Guid shaderGuid,
+    TextureData defaultWhiteTexture,
+    TextureData defaultNormalTexture,
+    TextureData defaultArmTexture,
     bool standardScalars
 )
 {
     string outputPath = $"assets/Materials/{name}.material.asset";
-    Material material = standardScalars
-        ? new StandardMaterial
+    MaterialData material = standardScalars
+        ? new StandardMaterialData
         {
             Name = name,
-            ShaderGuid = shaderGuid.ToFlatString(),
-            AlbedoMap = defaultWhiteTexture,
-            NormalMap = defaultNormalTexture,
-            ARMMap = defaultArmTexture,
+            Shader = new(shaderGuid),
+            AlbedoMap = new(Guid.Parse(defaultWhiteTexture.AssetGuid!)),
+            NormalMap = new(Guid.Parse(defaultNormalTexture.AssetGuid!)),
+            ARMMap = new(Guid.Parse(defaultArmTexture.AssetGuid!)),
             BaseColorTint = System.Numerics.Vector4.One,
             MetallicFactor = 0.0f,
             Roughness = 0.5f,
             EmissiveFactor = System.Numerics.Vector3.Zero,
         }
-        : new UnlitMaterial
+        : new UnlitMaterialData
         {
             Name = name,
-            ShaderGuid = shaderGuid.ToFlatString(),
-            AlbedoMap = defaultWhiteTexture,
+            Shader = new(shaderGuid),
+            AlbedoMap = new(Guid.Parse(defaultWhiteTexture.AssetGuid!)),
             BaseColorTint = System.Numerics.Vector4.One,
         };
-    AssetGuid guid = project.CreateAsset(outputPath, material);
-    Console.WriteLine($"  Material: {outputPath}");
+    Guid guid = project.CreateAsset(outputPath,( material).ToAsset(project.Resolve(outputPath) ?? default));
+    Console.WriteLine($"  MaterialData: {outputPath}");
     return guid;
 }
 
-static AssetGuid GenerateClusterPipeline(AssetProject project)
+static Guid GenerateClusterPipeline(AssetProject project)
 {
     const string outputPath = "assets/Pipelines/default_cluster.clusterrender.asset";
-    ClusterShaders asset = new()
+    ClusterShadersData asset = new()
     {
         Name = "DefaultCluster",
         Operations =
@@ -618,15 +628,15 @@ static AssetGuid GenerateClusterPipeline(AssetProject project)
         ],
     };
 
-    AssetGuid guid = project.CreateAsset(outputPath, asset);
+    Guid guid = project.CreateAsset(outputPath,( asset).ToAsset(project.Resolve(outputPath) ?? default));
     Console.WriteLine($"  ClusterPipeline: {outputPath}");
     return guid;
 }
 
-static AssetGuid GenerateDefaultScene(
+static Guid GenerateDefaultScene(
     AssetProject project,
-    AssetGuid meshGuid,
-    AssetGuid materialGuid)
+    Guid meshGuid,
+    Guid materialGuid)
 {
     const string outputPath = "assets/Scenes/default.scene.asset";
     const int instanceCount = 1024;
@@ -643,8 +653,8 @@ static AssetGuid GenerateDefaultScene(
         int y = index / columns;
         instances.Add(new SceneMeshInstance
         {
-            MeshGuid = meshGuid.ToFlatString(),
-            MaterialGuids = [materialGuid.ToFlatString()],
+            MeshGuid = meshGuid.ToString(),
+            MaterialGuids = [materialGuid.ToString()],
             Position = Vector(
                 originX + x * spacing,
                 originY + y * spacing,
@@ -660,7 +670,7 @@ static AssetGuid GenerateDefaultScene(
         });
     }
 
-    var scene = new RenderScene
+    var scene = new SceneData
     {
         Name = "Default",
         Camera = new SceneCamera
@@ -708,167 +718,167 @@ static AssetGuid GenerateDefaultScene(
         ],
     };
 
-    AssetGuid guid = project.CreateAsset(outputPath, scene);
+    Guid guid = project.CreateAsset(outputPath,( scene).ToAsset(project.Resolve(outputPath) ?? default));
     Console.WriteLine($"  Scene: {outputPath}");
     return guid;
 }
 
 static void GenerateRuntimeConfiguration(
     AssetProject project,
-    AssetGuid sceneGuid,
-    AssetGuid clusterPipelineGuid,
-    AssetGuid virtualShadowMapGuid)
+    Guid sceneGuid,
+    Guid clusterPipelineGuid,
+    Guid virtualShadowMapGuid)
 {
     const string outputPath = "assets/Runtime/default.runtime.asset";
     project.CreateAsset(
-        outputPath,
-        new RuntimeConfiguration
+        outputPath,(
+        new ApplicationData
         {
             Name = "Default Runtime",
-            SceneGuid = sceneGuid.ToFlatString(),
-            ClusterPipelineGuid = clusterPipelineGuid.ToFlatString(),
-            VirtualShadowMapGuid = virtualShadowMapGuid.ToFlatString(),
+            SceneGuid = sceneGuid.ToString(),
+            ClusterPipelineGuid = clusterPipelineGuid.ToString(),
+            VirtualShadowMapGuid = virtualShadowMapGuid.ToString(),
             UiShaders =
             [
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/imgui.slang"),
                     "VSMain",
                     ShaderStage.Vertex),
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/imgui.slang"),
                     "PSMain",
                     ShaderStage.Pixel),
             ],
             PresentationShaders =
             [
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/post_tonemap.slang"),
                     "VSMain",
                     ShaderStage.Vertex),
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/post_tonemap.slang"),
                     "PSMain",
                     ShaderStage.Pixel),
             ],
-            LightingShader = Shader(
+            LightingShader = ShaderData(
                 ResolveRequired(project, "assets/Shaders/clustered_light_grid.slang"),
                 "BuildClusteredLightGrid",
                 ShaderStage.Compute),
             TemporalShaders =
             [
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/temporal_resolve.slang"),
                     "VSMain",
                     ShaderStage.Vertex),
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/temporal_resolve.slang"),
                     "PSMain",
                     ShaderStage.Pixel),
             ],
             TranslucencyShaders =
             [
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/translucency_composite.slang"),
                     "VSMain",
                     ShaderStage.Vertex),
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/translucency_composite.slang"),
                     "PSMain",
                     ShaderStage.Pixel),
             ],
             DebugShaders =
             [
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/render_debug_overlay.slang"),
                     "VSMain",
                     ShaderStage.Vertex),
-                Shader(
+                ShaderData(
                     ResolveRequired(project, "assets/Shaders/render_debug_overlay.slang"),
                     "PSMain",
                     ShaderStage.Pixel),
             ],
             WindowWidth = 1280,
             WindowHeight = 720,
-        });
+        }).ToAsset(project.Resolve(outputPath) ?? default));
     Console.WriteLine($"  Runtime: {outputPath}");
 }
 
 static SceneVector3 Vector(float x, float y, float z) => new() { X = x, Y = y, Z = z };
 
-static ShaderRef Shader(AssetGuid shaderGuid, string entryPoint, ShaderStage stage)
+static ShaderRef ShaderData(Guid shaderGuid, string entryPoint, ShaderStage stage)
     => new()
     {
-        AssetGuid = shaderGuid.ToFlatString(),
+        AssetGuid = shaderGuid.ToString(),
         EntryPoint = entryPoint,
         Stage = stage,
     };
 
-static AssetGuid GenerateVirtualShadowMapShaders(AssetProject project)
+static Guid GenerateVirtualShadowMapShaders(AssetProject project)
 {
     const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
-    AssetGuid guid = project.CreateAsset(
-        outputPath,
-        new VirtualShadowMapShaders
+    Guid guid = project.CreateAsset(
+        outputPath,(
+        new VirtualShadowMapShadersData
         {
             Name = "Default Virtual Shadow",
-            MarkPages = Shader(
+            MarkPages = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_mark_pages.slang"),
                 "MarkVirtualShadowPages",
                 ShaderStage.Compute),
-            MarkCoarsePages = Shader(
+            MarkCoarsePages = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_mark_coarse_pages.slang"),
                 "MarkVirtualShadowCoarsePages",
                 ShaderStage.Compute),
-            AllocatePages = Shader(
+            AllocatePages = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_allocate_pages.slang"),
                 "AllocateVirtualShadowPages",
                 ShaderStage.Compute),
-            ClearPages = Shader(
+            ClearPages = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_clear_pages.slang"),
                 "ClearVirtualShadowPages",
                 ShaderStage.Compute),
-            InitializeState = Shader(
+            InitializeState = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_state_init.slang"),
                 "InitializeVirtualShadowState",
                 ShaderStage.Compute),
-            InvalidateCasters = Shader(
+            InvalidateCasters = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_caster_invalidation.slang"),
                 "InvalidateMovedVirtualShadowCasters",
                 ShaderStage.Compute),
-            BuildPagePool = Shader(
+            BuildPagePool = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_page_pool.slang"),
                 "BuildVirtualShadowPagePool",
                 ShaderStage.Compute),
-            CompactViews = Shader(
+            CompactViews = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_view_compact.slang"),
                 "CompactVirtualShadowViews",
                 ShaderStage.Compute),
-            InitializePageHiZ = Shader(
+            InitializePageHiZ = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_page_hiz.slang"),
                 "InitializeVirtualShadowPageHiZ",
                 ShaderStage.Compute),
-            ReducePageHiZ = Shader(
+            ReducePageHiZ = ShaderData(
                 ResolveRequired(project, "assets/Shaders/vsm_page_hiz_reduce.slang"),
                 "ReduceVirtualShadowPageHiZ",
                 ShaderStage.Compute),
-        });
+        }).ToAsset(project.Resolve(outputPath) ?? default));
     Console.WriteLine($"  VirtualShadowMap: {outputPath}");
     return guid;
 }
 
 static ClusterShaderOperation ComputeOperation(
     ClusterShaderOperationRole role,
-    AssetGuid shaderGuid,
+    Guid shaderGuid,
     string entryPoint)
     => new()
     {
         Role = role,
-        Shaders = [Shader(shaderGuid, entryPoint, ShaderStage.Compute)],
+        Shaders = [ShaderData(shaderGuid, entryPoint, ShaderStage.Compute)],
     };
 
 static ClusterShaderOperation RasterOperation(
     ClusterShaderOperationRole role,
-    AssetGuid shaderGuid,
+    Guid shaderGuid,
     string vertexEntryPoint,
     string pixelEntryPoint)
     => new()
@@ -876,11 +886,11 @@ static ClusterShaderOperation RasterOperation(
         Role = role,
         Shaders =
         [
-            Shader(shaderGuid, vertexEntryPoint, ShaderStage.Vertex),
-            Shader(shaderGuid, pixelEntryPoint, ShaderStage.Pixel),
+            ShaderData(shaderGuid, vertexEntryPoint, ShaderStage.Vertex),
+            ShaderData(shaderGuid, pixelEntryPoint, ShaderStage.Pixel),
         ],
     };
 
-static AssetGuid ResolveRequired(AssetProject project, string sourcePath) =>
+static Guid ResolveRequired(AssetProject project, string sourcePath) =>
     project.Resolve(sourcePath)
     ?? throw new InvalidOperationException($"Required asset '{sourcePath}' was not imported.");

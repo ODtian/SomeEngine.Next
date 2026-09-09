@@ -1,16 +1,15 @@
 namespace SomeEngine.Assets.Schema;
 
-[global::SomeEngine.Assets.Asset(".clusterrender.asset")]
-public partial class ClusterShaders
+internal partial class ClusterShadersData
 {
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
+    internal IReadOnlyList<Guid> GetDependencies(string path)
     {
         IList<ClusterShaderOperation> operations = Operations
             ?? throw Invalid(path, "Operations is missing.");
         if (operations.Count == 0)
             throw Invalid(path, "Operations is empty.");
 
-        var result = new List<AssetGuid>();
+        var result = new List<Guid>();
         var roles = new HashSet<ClusterShaderOperationRole>();
         for (int index = 0; index < operations.Count; index++)
         {
@@ -42,10 +41,10 @@ public partial class ClusterShaders
                     $"{field}.Shaders must contain either one compute entry or one vertex/pixel pair.");
             }
 
-            AssetGuid? operationShader = null;
+            Guid? operationShader = null;
             for (int shaderIndex = 0; shaderIndex < shaders.Count; shaderIndex++)
             {
-                AssetGuid shader = ShaderRef.Require(
+                Guid shader = ShaderRef.Require(
                     shaders[shaderIndex],
                     $"Cluster render asset '{path}'",
                     $"{field}.Shaders[{shaderIndex}]");
@@ -67,14 +66,11 @@ public partial class ClusterShaders
                 throw Invalid(path, $"Operations has no '{role}' role.");
         }
 
-        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+        result.Sort(static (left, right) => left.CompareTo(right));
         return result;
     }
 
     private static InvalidDataException Invalid(string path, string message)
         => new($"Cluster render asset '{path}' {message}");
 
-    public static bool IsPositionOperation(ClusterShaderOperationRole role) => role is
-        ClusterShaderOperationRole.SoftwareVisibilityRaster or
-        ClusterShaderOperationRole.HardwareVisibilityRaster;
 }

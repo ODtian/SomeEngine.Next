@@ -11,7 +11,7 @@ using SharpGLTF.Schema2;
 using SomeEngine.Assets.Data;
 using SomeEngine.Assets.Schema;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
-using Mesh = SomeEngine.Assets.Schema.Mesh;
+using MeshData = SomeEngine.Assets.Schema.MeshData;
 using ValueType = SomeEngine.Assets.Data.ValueType;
 
 namespace SomeEngine.Assets.Importers;
@@ -355,7 +355,7 @@ public static partial class ClusterBuilder
 {
 
 
-    public static Mesh Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
+    public static MeshData Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
     {
         ArgumentNullException.ThrowIfNull(materialResolver);
         var model = ModelRoot.Load(filePath);
@@ -366,7 +366,7 @@ public static partial class ClusterBuilder
         return ProcessMesh(mesh, materialSlots, mesh.Name ?? "Unnamed");
     }
 
-    public static Mesh ProcessMesh(
+    public static MeshData ProcessMesh(
         GltfMesh mesh,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
         string name,
@@ -507,7 +507,7 @@ public static partial class ClusterBuilder
             primitiveIndex < materialSlots.Count
                 ? materialSlots[primitiveIndex]
                 : throw new InvalidDataException(
-                    $"Mesh primitive {primitiveIndex} has no material/deform cook slot."));
+                    $"MeshData primitive {primitiveIndex} has no material/deform cook slot."));
         AddMaterialIndices(state.MaterialIndices, primitiveIndex, positions.Length);
         return vertexOffset + (uint)positions.Length;
     }
@@ -886,7 +886,7 @@ public static partial class ClusterBuilder
 {
 
 
-    public static Mesh ProcessRaw(
+    public static MeshData ProcessRaw(
         Vector3[] rawPos,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,

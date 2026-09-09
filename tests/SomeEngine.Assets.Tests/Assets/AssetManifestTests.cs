@@ -19,23 +19,23 @@ public class AssetManifestTests
         try
         {
             SourceGuid sourceGuid = SourceGuid.New();
-            AssetGuid shaderGuid = AssetGuid.New();
-            AssetGuid materialGuid = AssetGuid.New();
+            Guid shaderGuid = Guid.NewGuid();
+            Guid materialGuid = Guid.NewGuid();
 
             AssetManifest manifest = new();
             manifest.AddSource(sourceGuid, "assets/Shaders/test.slang");
-            manifest.AddAsset(shaderGuid, "TestShader", "assets/Shaders/test.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint, sourceGuid, "shader:main");
-            manifest.AddAsset(materialGuid, "TestMaterial", "assets/Materials/test.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [shaderGuid]);
+            manifest.AddAsset(shaderGuid, "TestShader", "assets/Shaders/test.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, sourceGuid, "shader:main");
+            manifest.AddAsset(materialGuid, "TestMaterial", "assets/Materials/test.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [shaderGuid]);
             manifest.Save(dir);
 
             AssetManifest loaded = AssetManifest.Load(dir);
 
             Assert.True(loaded.TrySourcePath(sourceGuid, out string? sourcePath));
             Assert.Equal("assets/Shaders/test.slang", sourcePath);
-            Assert.True(loaded.TryGetAsset(shaderGuid, out AssetManifestRecord shaderRecord));
+            Assert.True(loaded.TryGetAsset(shaderGuid, out AssetEntry shaderRecord));
             Assert.Equal("TestShader", shaderRecord.Name);
             Assert.Equal(sourceGuid, shaderRecord.SourceGuid);
-            Assert.Equal(Shader.SchemaFingerprint, shaderRecord.SchemaFingerprint);
+            Assert.Equal(ShaderData.SchemaFingerprint, shaderRecord.SchemaFingerprint);
             Assert.Equal(new[] { shaderGuid }, loaded.GetDependencies(materialGuid));
         }
         finally
@@ -51,7 +51,7 @@ public class AssetManifestTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             manifest.AddAsset(
-                AssetGuid.New(),
+                Guid.NewGuid(),
                 "Probe",
                 "assets/probes/value.probe.asset",
                 "ProbeAsset",
@@ -62,15 +62,15 @@ public class AssetManifestTests
     public void RemoveSourceAndAssetInvalidateEveryDirectIndex()
     {
         SourceGuid sourceGuid = SourceGuid.New();
-        AssetGuid assetGuid = AssetGuid.New();
+        Guid assetGuid = Guid.NewGuid();
         var manifest = new AssetManifest();
         manifest.AddSource(sourceGuid, "assets/Shaders/obsolete.slang");
         manifest.AddAsset(
             assetGuid,
             "Obsolete",
             "assets/Shaders/obsolete.shader.asset",
-            AssetType<Shader>.Name,
-            Shader.SchemaFingerprint,
+            Asset<Shader>.FileType,
+            ShaderData.SchemaFingerprint,
             sourceGuid,
             "shader:main");
 
@@ -95,10 +95,10 @@ public class AssetManifestTests
 
         try
         {
-            AssetGuid guid = AssetGuid.New();
+            Guid guid = Guid.NewGuid();
             var entry = new JsonObject
             {
-                ["asset_guid"] = guid.ToFlatString(),
+                ["asset_guid"] = guid.ToString(),
                 ["name"] = "Probe",
                 ["path"] = "assets/probes/value.probe.asset",
                 ["asset_type"] = "ProbeAsset",
@@ -128,34 +128,34 @@ public class AssetManifestTests
     public void Queries_ByPathSourceAndSubAssetKey_Work()
     {
         SourceGuid sourceGuid = SourceGuid.New();
-        AssetGuid mainGuid = AssetGuid.New();
-        AssetGuid shadowGuid = AssetGuid.New();
+        Guid mainGuid = Guid.NewGuid();
+        Guid shadowGuid = Guid.NewGuid();
 
         AssetManifest manifest = new();
         manifest.AddSource(sourceGuid, "assets/Shaders/shared.slang");
-        manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint, sourceGuid, "shader:main");
-        manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint, sourceGuid, "shader:shadow");
+        manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, sourceGuid, "shader:main");
+        manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, sourceGuid, "shader:shadow");
 
         Assert.True(manifest.TrySourceGuid("assets/Shaders/shared.slang", out SourceGuid resolvedSourceGuid));
         Assert.Equal(sourceGuid, resolvedSourceGuid);
-        Assert.True(manifest.TryAssetPath("assets/Shaders/shared.shader.asset", out AssetManifestRecord assetRecord));
-        Assert.Equal(mainGuid, assetRecord.Guid);
-        Assert.True(manifest.TrySourceAsset(sourceGuid, "shader:shadow", out AssetManifestRecord subAssetRecord));
-        Assert.Equal(shadowGuid, subAssetRecord.Guid);
+        Assert.True(manifest.TryAssetPath("assets/Shaders/shared.shader.asset", out AssetEntry assetRecord));
+        Assert.Equal(mainGuid, assetRecord.AssetGuid);
+        Assert.True(manifest.TrySourceAsset(sourceGuid, "shader:shadow", out AssetEntry subAssetRecord));
+        Assert.Equal(shadowGuid, subAssetRecord.AssetGuid);
         AssertEquivalent(manifest.AssetsBySource(sourceGuid), new[] { mainGuid, shadowGuid });
     }
 
     [Fact]
     public void GetReferencers_TracksIncomingDependencies()
     {
-        AssetGuid textureGuid = AssetGuid.New();
-        AssetGuid materialGuid = AssetGuid.New();
-        AssetGuid meshGuid = AssetGuid.New();
+        Guid textureGuid = Guid.NewGuid();
+        Guid materialGuid = Guid.NewGuid();
+        Guid meshGuid = Guid.NewGuid();
 
         AssetManifest manifest = new();
-        manifest.AddAsset(textureGuid, "Texture", "assets/Textures/test.texture.asset", AssetType<Texture>.Name, Texture.SchemaFingerprint);
-        manifest.AddAsset(materialGuid, "Material", "assets/Materials/test.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [textureGuid]);
-        manifest.AddAsset(meshGuid, "Mesh", "assets/Meshes/test.mesh.asset", AssetType<Mesh>.Name, Mesh.SchemaFingerprint, dependencies: [materialGuid]);
+        manifest.AddAsset(textureGuid, "TextureData", "assets/Textures/test.texture.asset", Asset<Texture>.FileType, TextureData.SchemaFingerprint);
+        manifest.AddAsset(materialGuid, "MaterialData", "assets/Materials/test.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [textureGuid]);
+        manifest.AddAsset(meshGuid, "MeshData", "assets/Meshes/test.mesh.asset", Asset<Mesh>.FileType, MeshData.SchemaFingerprint, dependencies: [materialGuid]);
 
         Assert.Equal(new[] { materialGuid }, manifest.GetReferencers(textureGuid));
         Assert.Equal(new[] { meshGuid }, manifest.GetReferencers(materialGuid));
@@ -165,21 +165,21 @@ public class AssetManifestTests
     [Fact]
     public void List_CanFilterByAssetType()
     {
-        AssetGuid shaderGuid = AssetGuid.New();
-        AssetGuid materialGuid = AssetGuid.New();
+        Guid shaderGuid = Guid.NewGuid();
+        Guid materialGuid = Guid.NewGuid();
 
         AssetManifest manifest = new();
-        manifest.AddAsset(shaderGuid, "Shader", "assets/Shaders/test.shader.asset", AssetType<Shader>.Name, Shader.SchemaFingerprint);
-        manifest.AddAsset(materialGuid, "Material", "assets/Materials/test.material.asset", AssetType<Material>.Name, Material.SchemaFingerprint, dependencies: [shaderGuid]);
+        manifest.AddAsset(shaderGuid, "ShaderData", "assets/Shaders/test.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint);
+        manifest.AddAsset(materialGuid, "MaterialData", "assets/Materials/test.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [shaderGuid]);
 
-        IReadOnlyList<AssetManifestRecord> materials = manifest.List(AssetType<Material>.Name);
+        IReadOnlyList<AssetEntry> materials = manifest.List(Asset<Material>.FileType);
 
         Assert.Single(materials);
-        Assert.Equal(materialGuid, materials[0].Guid);
-        Assert.Equal("Material", materials[0].Name);
+        Assert.Equal(materialGuid, materials[0].AssetGuid);
+        Assert.Equal("MaterialData", materials[0].Name);
     }
 
-    private static void AssertEquivalent(IEnumerable<AssetGuid> actual, IEnumerable<AssetGuid> expected)
+    private static void AssertEquivalent(IEnumerable<Guid> actual, IEnumerable<Guid> expected)
     {
         Assert.Equal(
             expected.OrderBy(static value => value.ToString(), StringComparer.Ordinal),

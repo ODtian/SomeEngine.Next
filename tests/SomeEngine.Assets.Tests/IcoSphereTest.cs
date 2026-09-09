@@ -63,12 +63,11 @@ public class IcoSphereTest
         }
         Assert.True(sawPartialWord);
 
-        // Save to test output, not the excluded samples workspace.
-        string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh.asset");
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        using var directory = new SomeEngine.Assets.Tests.Assets.AssetTestDirectory();
+        string outputPath = directory.File("icosphere.mesh.asset");
 
-        AssetWriter.Write(meshAsset, outputPath);
-        Mesh roundTrip = await Mesh.ReadAsync(outputPath);
+        AssetWriter.Write(meshAsset.ToAsset(), outputPath);
+        MeshData roundTrip = await MeshData.ReadAsync(outputPath);
         Assert.Equal(meshAsset.Payload.Value.ToArray(), roundTrip.Payload!.Value.ToArray());
     }
 

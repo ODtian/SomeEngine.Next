@@ -17,6 +17,7 @@ internal sealed class ClusterPipelineSet : IDisposable
 
     private readonly List<ClusterPipeline> _pipelines = [];
     private bool _disposed;
+    private readonly ClusterShaders _shaders;
 
     internal ClusterPipelineSet(
         IGraphicsBackend backend,
@@ -27,6 +28,7 @@ internal sealed class ClusterPipelineSet : IDisposable
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(configuration);
+        _shaders = configuration;
         _pipelines.EnsureCapacity(RequiredPipelineCount);
         try
         {
@@ -217,7 +219,7 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline ShadeBinScatter { get; }
     internal ClusterComputePipeline Resolve { get; }
 
-    private static ClusterComputePipeline CreateCompute(
+    private ClusterComputePipeline CreateCompute(
         IGraphicsBackend backend,
         Device device,
         IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations,
@@ -233,8 +235,7 @@ internal sealed class ClusterPipelineSet : IDisposable
         ClusterComputePipeline? created = null;
         try
         {
-            Shader shader = compute.Asset ?? throw new InvalidDataException(
-                $"Cluster shader operation '{role}' has no resolved shader asset.");
+            Shader shader = _shaders.GetShader(compute);
             created = ClusterComputePipeline.Create(
                 backend,
                 device,
@@ -259,7 +260,7 @@ internal sealed class ClusterPipelineSet : IDisposable
         }
     }
 
-    private static ClusterRasterPipeline CreateRaster(
+    private ClusterRasterPipeline CreateRaster(
         IGraphicsBackend backend,
         Device device,
         IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations,
@@ -280,8 +281,8 @@ internal sealed class ClusterPipelineSet : IDisposable
         ClusterShaderOperation operation = GetOperation(operations, role);
         ShaderRef vertex = GetShader(operation, role, ShaderStage.Vertex);
         ShaderRef pixel = GetShader(operation, role, ShaderStage.Pixel);
-        AssetGuid vertexGuid = GetShaderGuid(vertex, role);
-        AssetGuid pixelGuid = GetShaderGuid(pixel, role);
+        Guid vertexGuid = GetShaderGuid(vertex, role);
+        Guid pixelGuid = GetShaderGuid(pixel, role);
         if (vertexGuid != pixelGuid)
             throw new InvalidDataException($"Cluster shader operation '{role}' spans shader assets.");
 
@@ -289,9 +290,8 @@ internal sealed class ClusterPipelineSet : IDisposable
         ClusterRasterPipeline? created = null;
         try
         {
-            Shader shader = vertex.Asset ?? throw new InvalidDataException(
-                $"Cluster shader operation '{role}' has no resolved shader asset.");
-            if (!ReferenceEquals(shader, pixel.Asset))
+            Shader shader = _shaders.GetShader(vertex);
+            if (!ReferenceEquals(shader, _shaders.GetShader(pixel)))
                 throw new InvalidDataException($"Cluster shader operation '{role}' has inconsistent resolved shader assets.");
             bool usesMesh = role == ClusterShaderOperationRole.HardwareVisibilityRaster &&
                 ClusterRasterPipeline.SupportsMesh(backend, device);
@@ -337,7 +337,7 @@ internal sealed class ClusterPipelineSet : IDisposable
             : throw new InvalidDataException(
                 $"Cluster render asset has no '{role}' shader operation.");
 
-    private static ClusterDefaultGeometryContract ResolveDefaultGeometryContract(
+    private ClusterDefaultGeometryContract ResolveDefaultGeometryContract(
         IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations)
     {
         string? vertexEncoding = null;
@@ -350,8 +350,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                 ? ShaderStage.Vertex
                 : ShaderStage.Compute;
             ShaderRef shaderReference = GetShader(operation, operation.Role, stage);
-            Shader shader = shaderReference.Asset ?? throw new InvalidDataException(
-                $"Cluster shader operation '{operation.Role}' has no resolved shader asset.");
+            Shader shader = _shaders.GetShader(shaderReference);
             string entryPoint = shaderReference.EntryPoint!;
             string subject = $"Cluster shader operation '{operation.Role}'";
             string currentEncoding = ClusterGeometryContracts.RequireVertexEncoding(
@@ -406,11 +405,11 @@ internal sealed class ClusterPipelineSet : IDisposable
         return result;
     }
 
-    private static AssetGuid GetShaderGuid(
+    private static Guid GetShaderGuid(
         ShaderRef shader,
         ClusterShaderOperationRole role)
     {
-        if (!AssetGuid.TryParse(shader.AssetGuid, out AssetGuid guid) || guid.IsEmpty)
+        if (!Guid.TryParse(shader.AssetGuid, out Guid guid) || (guid == System.Guid.Empty))
             throw new InvalidDataException($"Cluster shader operation '{role}' has no shader asset.");
         return guid;
     }
@@ -451,10 +450,10 @@ internal sealed class ClusterPipelineSet : IDisposable
                 throw new InvalidDataException(
                     $"Cluster shader operation '{operation.Role}' has an invalid shader-stage set.");
             }
-            AssetGuid? shaderGuid = null;
+            Guid? shaderGuid = null;
             foreach (ShaderRef shader in shaders!)
             {
-                AssetGuid current = GetShaderGuid(shader, operation.Role);
+                Guid current = GetShaderGuid(shader, operation.Role);
                 if (string.IsNullOrWhiteSpace(shader.EntryPoint))
                 {
                     throw new InvalidDataException(

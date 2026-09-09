@@ -38,78 +38,48 @@ internal static class RuntimeApplication
         string contentRoot = FindContentRoot();
         string manifestDirectory = Path.Combine(contentRoot, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
-        IReadOnlyList<AssetManifestRecord> runtimeRecords =
-            manifest.List(AssetType<RuntimeConfiguration>.Name);
+        IReadOnlyList<AssetEntry> runtimeRecords =
+            manifest.List(Asset<ApplicationSettings>.FileType);
         if (runtimeRecords.Count != 1)
         {
             throw new InvalidDataException(
-                $"The runtime publication must contain exactly one {AssetType<RuntimeConfiguration>.Name} " +
+                $"The runtime publication must contain exactly one {Asset<ApplicationSettings>.FileType} " +
                 $"asset; found {runtimeRecords.Count}.");
         }
 
         await using var assets = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
-        RuntimeConfiguration value = await assets
-            .LoadAsync(new AssetId<RuntimeConfiguration>(runtimeRecords[0].Guid))
-            .ConfigureAwait(false);
-        (AssetGuid uiShader, string uiVertexEntry, string uiPixelEntry) =
-            ParseRasterShaders(value.UiShaders, nameof(value.UiShaders));
-        (AssetGuid presentationShader, string presentationVertexEntry, string presentationPixelEntry) =
-            ParseRasterShaders(value.PresentationShaders, nameof(value.PresentationShaders));
-        (AssetGuid lightingShader, string lightingEntryPoint) =
-            ParseComputeShader(value.LightingShader, nameof(value.LightingShader));
-        (AssetGuid temporalShader, string temporalVertexEntry, string temporalPixelEntry) =
-            ParseRasterShaders(value.TemporalShaders, nameof(value.TemporalShaders));
-        (AssetGuid translucencyShader, string translucencyVertexEntry, string translucencyPixelEntry) =
-            ParseRasterShaders(value.TranslucencyShaders, nameof(value.TranslucencyShaders));
-        (AssetGuid debugShader, string debugVertexEntry, string debugPixelEntry) =
-            ParseRasterShaders(value.DebugShaders, nameof(value.DebugShaders));
-        var boot = new BootConfiguration(
-            ParseGuid(value.SceneGuid, nameof(value.SceneGuid)),
-            ParseGuid(value.ClusterPipelineGuid, nameof(value.ClusterPipelineGuid)),
-            ParseGuid(value.VirtualShadowMapGuid, nameof(value.VirtualShadowMapGuid)),
-            uiShader,
-            uiVertexEntry,
-            uiPixelEntry,
-            presentationShader,
-            presentationVertexEntry,
-            presentationPixelEntry,
-            lightingShader,
-            lightingEntryPoint,
-            temporalShader,
-            temporalVertexEntry,
-            temporalPixelEntry,
-            translucencyShader,
-            translucencyVertexEntry,
-            translucencyPixelEntry,
-            debugShader,
-            debugVertexEntry,
-            debugPixelEntry,
-            checked((int)value.WindowWidth),
-            checked((int)value.WindowHeight),
-            string.IsNullOrWhiteSpace(value.Name) ? "SomeEngine" : value.Name);
+        await using Asset<ApplicationSettings> settings = await assets.OpenAsync(
+            new AssetId<ApplicationSettings>(runtimeRecords[0].AssetGuid)).ConfigureAwait(false);
+        ApplicationSettings boot = ApplicationSettings.Create(settings);
 
-        Task<RenderScene> sceneTask = assets.LoadAsync(new AssetId<RenderScene>(boot.Scene)).AsTask();
-        Task<ClusterShaders> pipelineTask = assets.LoadAsync(new AssetId<ClusterShaders>(boot.Pipeline)).AsTask();
-        Task<VirtualShadowMapShaders> virtualShadowTask = assets
-            .LoadAsync(new AssetId<VirtualShadowMapShaders>(boot.VirtualShadowMap))
-            .AsTask();
-        Task<Shader> uiShaderTask = assets.LoadAsync(new AssetId<Shader>(boot.UiShader)).AsTask();
-        Task<Shader> presentationShaderTask = assets
-            .LoadAsync(new AssetId<Shader>(boot.PresentationShader))
-            .AsTask();
-        Task<Shader> lightingShaderTask = assets
-            .LoadAsync(new AssetId<Shader>(boot.LightingShader))
-            .AsTask();
-        Task<Shader> temporalShaderTask = assets
-            .LoadAsync(new AssetId<Shader>(boot.TemporalShader))
-            .AsTask();
-        Task<Shader> translucencyShaderTask = assets
-            .LoadAsync(new AssetId<Shader>(boot.TranslucencyShader))
-            .AsTask();
-        Task<Shader> debugShaderTask = assets
-            .LoadAsync(new AssetId<Shader>(boot.DebugShader))
-            .AsTask();
-        await Task.WhenAll(
+        Task<Asset<World>> sceneTask = assets.OpenAsync(new AssetId<World>(boot.Scene)).AsTask();
+        Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync();
+        Task<VirtualShadowMapShaders> virtualShadowTask = CreateShadowShadersAsync();
+        Task<Shader> uiShaderTask = CreateShaderAsync(boot.UiShader);
+        Task<Shader> presentationShaderTask = CreateShaderAsync(boot.PresentationShader);
+        Task<Shader> lightingShaderTask = CreateShaderAsync(boot.LightingShader);
+        Task<Shader> temporalShaderTask = CreateShaderAsync(boot.TemporalShader);
+        Task<Shader> translucencyShaderTask = CreateShaderAsync(boot.TranslucencyShader);
+        Task<Shader> debugShaderTask = CreateShaderAsync(boot.DebugShader);
+
+        async Task<Shader> CreateShaderAsync(Guid id)
+        {
+            await using Asset<Shader> file = await assets.OpenAsync(new AssetId<Shader>(id)).ConfigureAwait(false);
+            return await Shader.CreateAsync(file).ConfigureAwait(false);
+        }
+        async Task<ClusterShaders> CreateClusterShadersAsync()
+        {
+            await using Asset<ClusterShaders> file = await assets.OpenAsync(new AssetId<ClusterShaders>(boot.Pipeline)).ConfigureAwait(false);
+            return await ClusterShaders.CreateAsync(file, assets).ConfigureAwait(false);
+        }
+        async Task<VirtualShadowMapShaders> CreateShadowShadersAsync()
+        {
+            await using Asset<VirtualShadowMapShaders> file = await assets.OpenAsync(new AssetId<VirtualShadowMapShaders>(boot.VirtualShadowMap)).ConfigureAwait(false);
+            return await VirtualShadowMapShaders.CreateAsync(file, assets).ConfigureAwait(false);
+        }
+        try
+        {
+            await Task.WhenAll(
                 sceneTask,
                 pipelineTask,
                 virtualShadowTask,
@@ -119,7 +89,41 @@ internal static class RuntimeApplication
                 temporalShaderTask,
                 translucencyShaderTask,
                 debugShaderTask)
-            .ConfigureAwait(false);
+                .ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            var errors = new List<Exception> { failure };
+            CloseCompleted(sceneTask, errors);
+            CloseCompleted(pipelineTask, errors);
+            CloseCompleted(virtualShadowTask, errors);
+            CloseCompleted(uiShaderTask, errors);
+            CloseCompleted(presentationShaderTask, errors);
+            CloseCompleted(lightingShaderTask, errors);
+            CloseCompleted(temporalShaderTask, errors);
+            CloseCompleted(translucencyShaderTask, errors);
+            CloseCompleted(debugShaderTask, errors);
+            if (errors.Count != 1)
+                throw new AggregateException("Application content creation and cleanup failed.", errors);
+            throw;
+        }
+
+        static void CloseCompleted<T>(Task<T> task, List<Exception> errors) where T : IDisposable
+        {
+            if (!task.IsCompletedSuccessfully) return;
+            try { task.Result.Dispose(); }
+            catch (Exception cleanup) { errors.Add(cleanup); }
+        }
+
+        using ClusterShaders clusterShaders = pipelineTask.Result;
+        using VirtualShadowMapShaders shadowShaders = virtualShadowTask.Result;
+        using Shader uiCode = uiShaderTask.Result;
+        using Shader presentationCode = presentationShaderTask.Result;
+        using Shader lightingCode = lightingShaderTask.Result;
+        using Shader temporalCode = temporalShaderTask.Result;
+        using Shader translucencyCode = translucencyShaderTask.Result;
+        using Shader debugCode = debugShaderTask.Result;
+        await using Asset<World> sceneFile = sceneTask.Result;
 
         using var window = new NativeWindow(boot.Title, boot.Width, boot.Height, visible: !options.HideWindow);
         if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
@@ -297,7 +301,7 @@ internal static class RuntimeApplication
         Swapchain swapchain,
         NativeWindow window,
         AssetLoader assets,
-        RenderScene sceneAsset,
+        Asset<World> sceneAsset,
         ClusterShaders pipelineConfiguration,
         VirtualShadowMapShaders virtualShadowConfiguration,
         Shader uiShader,
@@ -306,7 +310,7 @@ internal static class RuntimeApplication
         Shader temporalShader,
         Shader translucencyShader,
         Shader debugShader,
-        BootConfiguration boot,
+        ApplicationSettings boot,
         bool forceHardwareRaster)
     {
         using var mainWorld = new World(initialEntityCapacity: 2048);
@@ -390,7 +394,6 @@ internal static class RuntimeApplication
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
-            assets,
             virtualShadowConfiguration,
             shadowSettings,
             renderGraph,
@@ -483,7 +486,7 @@ internal static class RuntimeApplication
                 $"Runtime configuration '{boot.Title}' loaded from {contentRootLabel(FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
-                $"clusterPipeline={pipelineConfiguration.AssetGuid}.");
+                $"clusterPipeline={boot.Pipeline}.");
             long runtimeStarted = Stopwatch.GetTimestamp();
             long previousFrameTimestamp = Stopwatch.GetTimestamp();
             int frameIndex = 0;
@@ -549,10 +552,6 @@ internal static class RuntimeApplication
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
-                RuntimeWait.Task(
-                    assets.ApplyUpdatesAsync().AsTask(),
-                    window,
-                    FrameTimeout);
                 input.BeginFrame();
                 if (!window.PumpMessages())
                     break;
@@ -1214,14 +1213,14 @@ internal static class RuntimeApplication
             "Could not locate a runtime publication containing Library/AssetManifest/asset_index.json.");
     }
 
-    private static AssetGuid ParseGuid(string? value, string field)
+    private static Guid ParseGuid(string? value, string field)
     {
-        if (!AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
+        if (!Guid.TryParse(value, out Guid guid) || (guid == System.Guid.Empty))
             throw new InvalidDataException($"Runtime configuration field '{field}' is invalid.");
         return guid;
     }
 
-    private static (AssetGuid Shader, string VertexEntry, string PixelEntry) ParseRasterShaders(
+    private static (Guid Shader, string VertexEntry, string PixelEntry) ParseRasterShaders(
         IList<ShaderRef>? shaders,
         string field)
     {
@@ -1242,8 +1241,8 @@ internal static class RuntimeApplication
                 throw new InvalidDataException($"Runtime field '{field}' requires one vertex and one pixel shader entry.");
         }
 
-        AssetGuid vertexGuid = ParseGuid(vertex!.AssetGuid, $"{field}.Vertex.AssetGuid");
-        AssetGuid pixelGuid = ParseGuid(pixel!.AssetGuid, $"{field}.Pixel.AssetGuid");
+        Guid vertexGuid = ParseGuid(vertex!.AssetGuid, $"{field}.Vertex.AssetGuid");
+        Guid pixelGuid = ParseGuid(pixel!.AssetGuid, $"{field}.Pixel.AssetGuid");
         if (vertexGuid != pixelGuid)
             throw new InvalidDataException($"Runtime field '{field}' entries must use one shader asset.");
         if (string.IsNullOrWhiteSpace(vertex.EntryPoint) || string.IsNullOrWhiteSpace(pixel.EntryPoint))
@@ -1251,13 +1250,13 @@ internal static class RuntimeApplication
         return (vertexGuid, vertex.EntryPoint, pixel.EntryPoint);
     }
 
-    private static (AssetGuid Shader, string EntryPoint) ParseComputeShader(
+    private static (Guid Shader, string EntryPoint) ParseComputeShader(
         ShaderRef? shader,
         string field)
     {
         if (shader is null || shader.Stage != ShaderStage.Compute)
             throw new InvalidDataException($"Runtime field '{field}' must contain one compute shader.");
-        AssetGuid guid = ParseGuid(shader.AssetGuid, $"{field}.AssetGuid");
+        Guid guid = ParseGuid(shader.AssetGuid, $"{field}.AssetGuid");
         if (string.IsNullOrWhiteSpace(shader.EntryPoint))
             throw new InvalidDataException($"Runtime field '{field}' shader entry point is missing.");
         return (guid, shader.EntryPoint);
@@ -1265,28 +1264,4 @@ internal static class RuntimeApplication
 
     private static string contentRootLabel(string value) => Path.GetFullPath(value);
 
-    private readonly record struct BootConfiguration(
-        AssetGuid Scene,
-        AssetGuid Pipeline,
-        AssetGuid VirtualShadowMap,
-        AssetGuid UiShader,
-        string UiVertexEntry,
-        string UiPixelEntry,
-        AssetGuid PresentationShader,
-        string PresentationVertexEntry,
-        string PresentationPixelEntry,
-        AssetGuid LightingShader,
-        string LightingEntryPoint,
-        AssetGuid TemporalShader,
-        string TemporalVertexEntry,
-        string TemporalPixelEntry,
-        AssetGuid TranslucencyShader,
-        string TranslucencyVertexEntry,
-        string TranslucencyPixelEntry,
-        AssetGuid DebugShader,
-        string DebugVertexEntry,
-        string DebugPixelEntry,
-        int Width,
-        int Height,
-        string Title);
 }

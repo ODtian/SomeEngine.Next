@@ -11,3 +11,8 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("SomeEngine.RenderGraph.Tests")]
 [assembly: InternalsVisibleTo("SomeEngine.Assets.Tests")]
 [assembly: InternalsVisibleTo("SomeEngine.DagVisualizer")]
+
+[assembly: InternalsVisibleTo("SomeEngine.Runtime")]
+[assembly: InternalsVisibleTo("SomeEngine.GenerateDefaultAssets")]
+
+[assembly: InternalsVisibleTo("SomeEngine.RenderScenarios")]

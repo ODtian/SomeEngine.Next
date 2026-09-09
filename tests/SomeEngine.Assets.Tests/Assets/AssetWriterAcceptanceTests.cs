@@ -1,4 +1,3 @@
-using SomeEngine.Assets.Schema;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 
@@ -7,130 +6,97 @@ namespace SomeEngine.Assets.Tests.Assets;
 public sealed class AssetWriterAcceptanceTests
 {
     [Fact]
-    public void AssetProjectCreatesAndEncodesTheAssetExactlyOnce()
+    public void ProjectEncodesDiskFieldsOnce()
     {
-        using var directory = new TemporaryDirectory();
+        using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
-        var asset = new CountingAsset { Name = "one encode" };
-
-        AssetGuid guid = project.CreateAsset(
-            "assets/one.counting.asset",
-            asset);
-
-        Assert.False(guid.IsEmpty);
-        Assert.Equal(1, asset.WriterCreations);
-        Assert.Equal(1, asset.WriteCalls);
+        CountingFields.ResetCounts();
+        var fields = new CountingFields { Name = "one encode" };
+        using Asset<CountedObject> asset = fields.ToAsset();
+        Guid id = project.CreateAsset("one.counting.asset", asset);
+        Assert.NotEqual(Guid.Empty, id);
+        Assert.Equal(1, fields.WriterCreations);
+        Assert.Equal(1, fields.WriteCalls);
     }
 
     [Fact]
-    public void InvalidDependenciesFailBeforeReplacingTheAssetFile()
+    public void InvalidDependenciesLeaveExistingFileAndIndexUntouched()
     {
-        using var directory = new TemporaryDirectory();
-        const string relativePath = "assets/invalid.material.asset";
-        string fullPath = Path.Combine(
-            directory.Path,
-            relativePath.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        byte[] original = [0x41, 0x53, 0x53, 0x45, 0x54];
-        File.WriteAllBytes(fullPath, original);
+        using var directory = new AssetTestDirectory();
+        string path = directory.File("invalid.counting.asset");
+        byte[] original = [1, 2, 3, 4];
+        File.WriteAllBytes(path, original);
         var project = new AssetProject(directory.Path, []);
-        Material asset = new StandardMaterial
-        {
-            Name = "invalid",
-            AlbedoMap = new Texture { AssetGuid = "not-a-guid", Name = "invalid reference" },
-        };
-
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            project.CreateAsset<Material>(relativePath, asset));
-
-        Assert.Contains("AlbedoMap", error.Message, StringComparison.Ordinal);
-        Assert.Equal(original, File.ReadAllBytes(fullPath));
+        CountingFields.ResetCounts();
+        var fields = new CountingFields { InvalidDependencies = true };
+        Assert.Throws<InvalidDataException>(() => project.CreateAsset(path, fields.ToAsset()));
+        Assert.Equal(original, File.ReadAllBytes(path));
         Assert.Empty(project.Manifest.Assets);
-
-        Assert.Throws<InvalidDataException>(() => AssetWriter.Write<Material>(asset, fullPath));
-        Assert.Equal(original, File.ReadAllBytes(fullPath));
     }
 
     [Fact]
-    public void WriterWithAnotherRootContractFailsBeforeEncodingOrWriting()
+    public void WrongWriterRootIsRejectedBeforeEncodingAndReplacingFile()
     {
-        using var directory = new TemporaryDirectory();
-        var project = new AssetProject(directory.Path, []);
-        var asset = new CountingAsset { Name = "wrong writer root", UseWrongRoot = true };
-        const string relativePath = "assets/wrong.counting.asset";
-        string fullPath = Path.Combine(
-            directory.Path,
-            relativePath.Replace('/', Path.DirectorySeparatorChar));
-
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-            project.CreateAsset(relativePath, asset));
-
-        Assert.Contains("instead of exact contract", error.Message, StringComparison.Ordinal);
-        Assert.Equal(1, asset.WriterCreations);
-        Assert.Equal(0, asset.WriteCalls);
-        Assert.False(File.Exists(fullPath));
-        Assert.Empty(project.Manifest.Assets);
+        using var directory = new AssetTestDirectory();
+        string path = directory.File("wrong.counting.asset");
+        byte[] original = [8, 9];
+        File.WriteAllBytes(path, original);
+        CountingFields.ResetCounts();
+        var fields = new CountingFields { Name = "wrong root", UseWrongRoot = true };
+        using Asset<CountedObject> asset = fields.ToAsset();
+        Assert.Throws<InvalidDataException>(() => AssetWriter.Write(asset, path));
+        Assert.Equal(1, fields.WriterCreations);
+        Assert.Equal(0, fields.WriteCalls);
+        Assert.Equal(original, File.ReadAllBytes(path));
     }
+}
 
-    [Asset(".counting.asset")]
-    internal sealed class CountingAsset : IBinaryContract<CountingAsset>
+public sealed class CountedObject;
+
+[Asset(typeof(CountedObject), ".counting.asset")]
+public sealed partial class CountingFields : IBinaryContract<CountingFields>
+{
+    private static int _writerCreations;
+    private static int _writeCalls;
+
+    internal CountingFields CopyFields() => (CountingFields)MemberwiseClone();
+    public static void ResetCounts() { _writerCreations = 0; _writeCalls = 0; }
+    public static Guid TypeId { get; } = Guid.Parse("e21114ba-02b5-44c5-9828-635c4890a28c");
+    public static ulong SchemaFingerprint => 0x80DFE1B436B98B11UL;
+    public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
+    public static uint SchemaEpoch => 1;
+    public string? AssetGuid { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool UseWrongRoot { get; set; }
+    public bool InvalidDependencies { get; set; }
+    internal IReadOnlyList<Guid> GetDependencies(string path) => InvalidDependencies
+        ? throw new InvalidDataException("Invalid dependency declaration.") : [];
+    public int WriterCreations => Volatile.Read(ref _writerCreations);
+    public int WriteCalls => Volatile.Read(ref _writeCalls);
+
+    public static BinaryDocumentWriter CreateWriter(CountingFields asset)
     {
-        private int _writerCreations;
-        private int _writeCalls;
-
-        public static Guid TypeId { get; } = Guid.Parse("e21114ba-02b5-44c5-9828-635c4890a28c");
-        public static ulong SchemaFingerprint => 0x80DFE1B436B98B11UL;
-        public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
-        public static uint SchemaEpoch => 1;
-        public string? AssetGuid { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public bool UseWrongRoot { get; set; }
-        public int WriterCreations => Volatile.Read(ref _writerCreations);
-        public int WriteCalls => Volatile.Read(ref _writeCalls);
-
-        public static BinaryDocumentWriter CreateWriter(CountingAsset asset)
-        {
-            Interlocked.Increment(ref asset._writerCreations);
-            return asset.UseWrongRoot
-                ? BinaryDocumentWriter.Create<Material>(new StandardMaterial
-                {
-                    AssetGuid = asset.AssetGuid,
-                    Name = "wrong contract",
-                })
-                : BinaryDocumentWriter.Create(asset);
-        }
-
-        public static void Write(ref BinaryDataWriter writer, CountingAsset value)
-        {
-            Interlocked.Increment(ref value._writeCalls);
-            writer.WriteString(value.AssetGuid);
-            writer.WriteString(value.Name);
-        }
-
-        public static CountingAsset Read(ref BinaryDataReader reader)
-            => new()
+        Interlocked.Increment(ref _writerCreations);
+        return asset.UseWrongRoot
+            ? BinaryDocumentWriter.Create(new ReadingSampleData
             {
-                AssetGuid = reader.ReadString(),
-                Name = reader.ReadString() ?? string.Empty,
-            };
+                AssetGuid = asset.AssetGuid,
+                Name = "wrong contract",
+            })
+            : BinaryDocumentWriter.Create(asset);
     }
 
-    private sealed class TemporaryDirectory : IDisposable
+    public static void Write(ref BinaryDataWriter writer, CountingFields value)
     {
-        internal TemporaryDirectory()
-        {
-            Path = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
-                $"SomeEngine-AssetWriter-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(Path);
-        }
-
-        internal string Path { get; }
-
-        public void Dispose()
-        {
-            if (Directory.Exists(Path))
-                Directory.Delete(Path, recursive: true);
-        }
+        Interlocked.Increment(ref _writeCalls);
+        writer.WriteString(value.AssetGuid);
+        writer.WriteString(value.Name);
     }
+
+    public static CountingFields Read(ref BinaryDataReader reader)
+        => new()
+        {
+            AssetGuid = reader.ReadString(),
+            Name = reader.ReadString() ?? string.Empty,
+        };
 }

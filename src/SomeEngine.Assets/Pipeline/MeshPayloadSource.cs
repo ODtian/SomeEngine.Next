@@ -15,7 +15,7 @@ internal sealed class MeshPayloadSource : IDisposable
     private SharedState? _state;
 
     internal MeshPayloadSource(
-        BinaryDocument<Mesh> document,
+        BinaryDocument<MeshData> document,
         IRangeSource payload,
         long bvhOffset,
         int bvhLength,
@@ -119,12 +119,12 @@ internal sealed class MeshPayloadSource : IDisposable
     private sealed class SharedState
     {
         private readonly object _gate = new();
-        private readonly BinaryDocument<Mesh> _document;
+        private readonly BinaryDocument<MeshData> _document;
         private ReadOnlyMemory<byte> _bvhSha256;
         private int _references = 1;
 
         internal SharedState(
-            BinaryDocument<Mesh> document,
+            BinaryDocument<MeshData> document,
             IRangeSource payload,
             long bvhOffset,
             int bvhLength,
@@ -178,8 +178,8 @@ internal sealed class MeshPayloadSource : IDisposable
                 return;
 
             _bvhSha256 = default;
-            Payload.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            _document.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            try { Payload.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            finally { _document.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }
     }
 

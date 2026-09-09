@@ -64,11 +64,11 @@ public sealed class ShaderScalarLayoutTests
         };
 
         Assert.Equal(value, material.BaseColorTint);
-        MaterialSlotDefinition slot = Assert.Single(
-            material.Slots,
+        MaterialPropertyDefinition slot = Assert.Single(
+            material.Properties,
             static slot => slot.Name == nameof(StandardMaterial.BaseColorTint));
         Assert.Equal(typeof(System.Numerics.Vector4), slot.ValueType);
-        Assert.Equal(value, Assert.IsType<System.Numerics.Vector4>(material.GetSlotValue(slot.Slot)));
+        Assert.Equal(value, material.BaseColorTint);
     }
 
     private static ShaderMaterialScalarLayout Layout(

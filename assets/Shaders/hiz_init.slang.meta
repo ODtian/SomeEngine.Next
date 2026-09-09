@@ -3,5 +3,30 @@
   "importer": "SlangShaderImporter",
   "importer_settings": {
     "cook_profile": "default"
-  }
+  },
+  "importer_version": 26,
+  "input_hash": "0a317c8ba658a785c91c9bf61e6fc7588b7c5516b2c6512e57f256773f79c4be",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/hiz_common.slang",
+      "content_hash": "e5137ac4f4aef066af08a822ff18cc251fd4186c3752bbef5f2836fc8b531551"
+    },
+    {
+      "relative_path": "assets/Shaders/hiz_init.slang",
+      "content_hash": "6771a10b99a145ff9b23217ed2ef284b3ca2a1c01ef39a4fd0933e975df0d615"
+    },
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "ad727890-e164-5627-ba6a-17b99e9a9f62",
+      "sub_asset_key": "shader:main",
+      "input_hash": "0a317c8ba658a785c91c9bf61e6fc7588b7c5516b2c6512e57f256773f79c4be",
+      "dependencies": [],
+      "asset_path": "hiz_init.shader.asset"
+    }
+  ]
 }

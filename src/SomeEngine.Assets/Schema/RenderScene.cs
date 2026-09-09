@@ -7,9 +7,9 @@ namespace SomeEngine.Assets.Schema;
 /// just like meshes, materials, and shaders; the executable contains no default-scene geometry or
 /// material identities.
 /// </summary>
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-[global::SomeEngine.Assets.Asset(".scene.asset")]
-public sealed partial class RenderScene
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.RenderScene")]
+[global::SomeEngine.Assets.Asset(typeof(SomeEngine.ECS.World), ".scene.asset")]
+internal sealed partial class SceneData
 {
     public string? AssetGuid { get; set; }
 

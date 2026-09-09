@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
-using Texture = SomeEngine.Assets.Schema.Texture;
+using TextureData = SomeEngine.Assets.Schema.TextureData;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -13,8 +13,8 @@ namespace SomeEngine.Assets.Importers;
 /// </summary>
 public static class DisplacementBoundsTexture
 {
-    public static Texture Create(
-        AssetGuid assetGuid,
+    public static TextureData Create(
+        Guid assetGuid,
         string name,
         uint width,
         uint height,
@@ -86,9 +86,9 @@ public static class DisplacementBoundsTexture
             level++;
         }
 
-        return new Texture
+        return new TextureData
         {
-            AssetGuid = assetGuid.ToFlatString(),
+            AssetGuid = assetGuid.ToString(),
             Name = name,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
             Width = width,

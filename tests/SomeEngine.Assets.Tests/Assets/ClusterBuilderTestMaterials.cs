@@ -13,5 +13,5 @@ internal static class ClusterBuilderTestMaterials
         return result;
     }
 
-    internal static MeshMaterialSlot Slot() => new(AssetGuid.Empty);
+    internal static MeshMaterialSlot Slot() => new(Guid.Empty);
 }

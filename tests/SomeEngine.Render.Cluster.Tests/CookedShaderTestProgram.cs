@@ -25,7 +25,7 @@ internal static class CookedShaderTestProgram
             "Content",
             "Shaders",
             "hello_triangle.shader.asset");
-        Shader shader = Shader.ReadAsync(path).AsTask().GetAwaiter().GetResult();
+        ShaderData shader = ShaderData.ReadAsync(path).AsTask().GetAwaiter().GetResult();
         return shader.Programs!.Single(program =>
             string.Equals(program.Backend, "spirv", StringComparison.Ordinal));
     }

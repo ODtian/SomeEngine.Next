@@ -178,7 +178,7 @@ public sealed class ScalarLayout
     internal ScalarMaterialLayout Resolve(Material material)
     {
         ArgumentNullException.ThrowIfNull(material);
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Slots;
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         var bindings = new List<ScalarMaterialBinding>(_fields.Count);
         for (int fieldIndex = 0; fieldIndex < _fields.Count; fieldIndex++)
         {
@@ -197,7 +197,10 @@ public sealed class ScalarLayout
                 break;
             }
             if (materialSlot is { } resolved)
-                bindings.Add(new ScalarMaterialBinding(resolved, field));
+                bindings.Add(new ScalarMaterialBinding(resolved, field,
+                    definitions[(int)resolved].ValueType == typeof(int) ||
+                    definitions[(int)resolved].ValueType == typeof(uint) ||
+                    definitions[(int)resolved].ValueType == typeof(bool)));
         }
         return new ScalarMaterialLayout(this, [.. bindings]);
     }
@@ -211,33 +214,10 @@ public sealed class ScalarLayout
         {
             ScalarFieldLayout field = binding.Field;
             Span<byte> fieldBytes = payload.Slice((int)field.Offset, (int)field.Size);
-            object? value = material.GetSlotValue(binding.MaterialSlot);
-            switch (value)
-            {
-                case null:
-                    break;
-                case float scalar:
-                    WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(scalar));
-                    break;
-                case int scalar:
-                    WriteIntegerField(fieldBytes, field, unchecked((uint)scalar));
-                    break;
-                case bool scalar:
-                    WriteIntegerField(fieldBytes, field, scalar ? 1u : 0u);
-                    break;
-                case Vector2 vector:
-                    WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(vector, 0f, 0f));
-                    break;
-                case Vector3 vector:
-                    WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(vector, 0f));
-                    break;
-                case Vector4 vector:
-                    WriteFloatField(fieldBytes, field.ComponentCount, vector);
-                    break;
-                default:
-                    throw new InvalidDataException(
-                        $"Material slot {binding.MaterialSlot} cannot be encoded as scalar data.");
-            }
+            if (binding.IsInteger)
+                WriteIntegerField(fieldBytes, field, material.GetInteger(binding.MaterialSlot));
+            else
+                WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialSlot));
         }
         return result;
     }
@@ -262,7 +242,8 @@ public sealed class ScalarLayout
 
     internal readonly record struct ScalarMaterialBinding(
         uint MaterialSlot,
-        ScalarFieldLayout Field);
+        ScalarFieldLayout Field,
+        bool IsInteger);
 
     private bool TryField(
         string name,

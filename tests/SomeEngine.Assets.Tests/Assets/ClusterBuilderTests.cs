@@ -307,7 +307,7 @@ public class ClusterBuilderTests
             new(0, 1, 0),
         };
         var indices = new uint[] { 0, 1, 2 };
-        var materialGuid = SomeEngine.Assets.AssetGuid.New();
+        var materialGuid = System.Guid.NewGuid();
         var materialSlot = new MeshMaterialSlot(materialGuid);
 
         var asset = ClusterBuilder.ProcessRaw(

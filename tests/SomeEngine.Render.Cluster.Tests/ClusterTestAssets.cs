@@ -35,13 +35,12 @@ internal static class ClusterTestAssets
         Mesh streamed;
         try
         {
-            AssetWriter.Write(asset, path);
-            streamed = await Mesh.OpenStreamedAsync(path);
+            ClusterTestFiles.WriteMesh(asset, path);
+            streamed = await ClusterTestFiles.OpenMeshAsync(path);
         }
         finally
         {
             File.Delete(path);
-            File.Delete(AssetMetaFiles.GetMetaPath(path));
         }
 
         return streamed;
@@ -58,9 +57,9 @@ internal static class ClusterTestAssets
         ControlledRangeSource? controlled = null;
         try
         {
-            AssetWriter.Write(asset, path);
+            ClusterTestFiles.WriteMesh(asset, path);
             controlled = new ControlledRangeSource(FileRangeSource.Open(path), targetReadLength);
-            Mesh streamed = await Mesh.OpenStreamedAsync(
+            Mesh streamed = await ClusterTestFiles.OpenMeshAsync(
                 controlled,
                 ownsSource: true);
             controlled.Arm();
@@ -75,7 +74,6 @@ internal static class ClusterTestAssets
         finally
         {
             File.Delete(path);
-            File.Delete(AssetMetaFiles.GetMetaPath(path));
         }
     }
 
@@ -126,7 +124,6 @@ internal static class ClusterTestAssets
 
         return new Mesh
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1 },
             Payload = payload,

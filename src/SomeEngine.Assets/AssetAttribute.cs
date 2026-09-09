@@ -1,20 +1,9 @@
 namespace SomeEngine.Assets;
 
-/// <summary>
-/// Marks one concrete, current-schema asset type stored in <see cref="AssetLoader"/> and
-/// loaded as one canonical object. The suffix is the exact authored file suffix for
-/// that same type.
-/// </summary>
+/// <summary>Associates disk fields with their domain type at compile time.</summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class AssetAttribute : Attribute
+public sealed class AssetAttribute(Type type, string pathSuffix) : Attribute
 {
-    public AssetAttribute(string pathSuffix)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pathSuffix);
-        if (!pathSuffix.StartsWith('.'))
-            throw new ArgumentException("An asset path suffix must start with '.'.", nameof(pathSuffix));
-        PathSuffix = pathSuffix;
-    }
-
-    public string PathSuffix { get; }
+    public Type Type { get; } = type;
+    public string PathSuffix { get; } = pathSuffix;
 }

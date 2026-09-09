@@ -3,5 +3,26 @@
   "importer": "SlangShaderImporter",
   "importer_settings": {
     "cook_profile": "default"
-  }
+  },
+  "importer_version": 26,
+  "input_hash": "b52e78c74b0cc48c0276933de9129a8d0b72ecb0ace7b68358db6eaa21407605",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/fullscreen_triangle.slang",
+      "content_hash": "e169a7c879d8de35ba80401c35c223b8371bf9f428b3050ad488b2545891e202"
+    },
+    {
+      "relative_path": "assets/Shaders/translucency_composite.slang",
+      "content_hash": "b763481d7a6b38baef5fda4c87cd31c1bd86da359330d3112edd4b68eb0b1e96"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "d1a4dd79-a52d-5819-b62c-65200b625726",
+      "sub_asset_key": "shader:main",
+      "input_hash": "b52e78c74b0cc48c0276933de9129a8d0b72ecb0ace7b68358db6eaa21407605",
+      "dependencies": [],
+      "asset_path": "translucency_composite.shader.asset"
+    }
+  ]
 }

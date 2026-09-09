@@ -4,23 +4,137 @@ using SomeEngine.Graphics;
 
 namespace SomeEngine.Assets.Schema;
 
-public partial class Shader
+public partial class Shader : IDisposable
 {
-    internal static async ValueTask<Shader> LoadAssetAsync(
-        AssetLoadContext context,
+    private BinaryDocument<ShaderData>? _document;
+    private readonly SemaphoreSlim _readGate = new(1, 1);
+    private int _disposed;
+    public ulong Revision { get; private set; } = 1;
+    public event Action<Shader>? Changed;
+
+    public static Shader Create(string name, IEnumerable<ShaderProgram> code,
+        IReadOnlyList<ShaderEntryPointReflection> reflections, ShaderMetadata? metadata = null)
+    {
+        var shader = new Shader
+        {
+            Name = name, Metadata = metadata, EntryPointReflections = reflections.ToList(),
+            Programs = code.Select(static value => new CookedShaderProgram
+            {
+                Backend = value.Backend, Program = value,
+            }).ToList(),
+        };
+        Validate(shader);
+        return shader;
+    }
+
+    public static ValueTask<Shader> CreateAsync(Asset<Shader> asset,
+        CancellationToken cancellationToken = default) => CreateCoreAsync(asset, null, cancellationToken);
+
+    public static ValueTask<Shader> CreateAsync(Asset<Shader> asset, ShaderTarget target,
+        CancellationToken cancellationToken = default)
+        => CreateCoreAsync(asset, target == ShaderTarget.Spirv ? "spirv" : "dxil", cancellationToken);
+
+    private static async ValueTask<Shader> CreateCoreAsync(Asset<Shader> asset, string? backend,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(asset);
         cancellationToken.ThrowIfCancellationRequested();
-        BinaryDocument<Shader> document = await context
-            .OpenAsync<Shader>()
-            .ConfigureAwait(false);
-        Shader asset = await MaterializeAsync(document, cancellationToken).ConfigureAwait(false);
-        Validate(asset);
-        return asset;
+        BinaryDocument<ShaderData>? document = asset.OpenDocumentGenerated<ShaderData>();
+        try
+        {
+            ShaderData fields = document is null ? asset.GetFieldsGenerated<ShaderData>()
+                : await ShaderData.MaterializeAsync(document, cancellationToken, backend).ConfigureAwait(false);
+            if (document is null)
+            {
+                foreach (CookedShaderProgram code in fields.Programs ?? [])
+                {
+                    code.Program = null;
+                    if (backend is not null && code.Backend != backend) continue;
+                    Memory<byte> bytes = code.Data
+                        ?? throw new InvalidDataException("Shader file content has no bytecode.");
+                    code.Program = ShaderProgram.Read(bytes.Span);
+                    if (code.Backend != code.Program.Backend)
+                        throw new InvalidDataException("Shader bytecode backend does not match the file fields.");
+                }
+            }
+            fields.AssetGuid = null;
+            var shader = new Shader { _content = fields, _document = document };
+            Validate(shader);
+            return shader;
+        }
+        catch
+        {
+            if (document is not null) await document.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public async ValueTask LoadBackendAsync(ShaderTarget target, CancellationToken cancellationToken = default)
+    {
+        string backend = target == ShaderTarget.Spirv ? "spirv" : "dxil";
+        await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            if (TryProgram(backend, out _)) return;
+            await using BinaryDocument<ShaderData> document = _document?.Duplicate()
+                ?? throw new InvalidOperationException("This shader has no file containing additional bytecode.");
+            ShaderData fields = await ShaderData.MaterializeAsync(document, cancellationToken, backend).ConfigureAwait(false);
+            var decoded = new Shader { _content = fields };
+            Validate(decoded);
+            ShaderData replacement = _content.CopyFields();
+            for (int index = 0; index < fields.Programs!.Count; index++)
+                if (fields.Programs[index].Backend == backend)
+                    replacement.Programs![index] = fields.Programs[index];
+            cancellationToken.ThrowIfCancellationRequested();
+            _content = replacement;
+        }
+        finally { _readGate.Release(); }
+    }
+
+    public async ValueTask UpdateAsync(Asset<Shader> asset, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        using Shader replacement = await CreateAsync(asset, cancellationToken).ConfigureAwait(false);
+        await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        BinaryDocument<ShaderData>? previous;
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            ulong revision = checked(Revision + 1);
+            _content = replacement._content;
+            previous = Interlocked.Exchange(ref _document, Interlocked.Exchange(ref replacement._document, null));
+            Revision = revision;
+        }
+        finally { _readGate.Release(); }
+        var errors = new List<Exception>();
+        if (Changed is { } changed)
+            foreach (Action<Shader> notify in changed.GetInvocationList())
+                try { notify(this); }
+                catch (Exception error) { errors.Add(error); }
+        try { if (previous is not null) await previous.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception error) { errors.Add(error); }
+        if (errors.Count != 0)
+            throw new AggregateException("Shader content was updated, but notification or old-content cleanup failed.", errors);
+    }
+
+    public void Dispose()
+    {
+        BinaryDocument<ShaderData>? document;
+        _readGate.Wait();
+        try
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            document = Interlocked.Exchange(ref _document, null);
+        }
+        finally { _readGate.Release(); }
+        document?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     public bool TryProgram(string backend, out ShaderProgram program)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         IList<CookedShaderProgram>? programs = Programs;
         if (programs is not null)
         {
@@ -141,11 +255,12 @@ public partial class Shader
         var backends = new HashSet<string>(StringComparer.Ordinal);
         foreach (CookedShaderProgram cooked in asset.Programs!)
         {
-            if (!cooked.Data.HasValue || cooked.Program is null)
-                throw new InvalidDataException($"Shader '{asset.Name}' has an undecoded cooked program.");
             if (string.IsNullOrWhiteSpace(cooked.Backend) || !backends.Add(cooked.Backend))
                 throw new InvalidDataException($"Shader '{asset.Name}' has a missing or duplicate cooked backend.");
         }
+
+        if (!asset.Programs!.Any(static code => code.Program is not null))
+            throw new InvalidDataException($"Shader '{asset.Name}' has no bytecode for the requested backend.");
 
         if (asset.EntryPointAttributes is { Count: > 0 })
         {
@@ -153,7 +268,7 @@ public partial class Shader
             {
                 if (attribute.ProgramIndex < 0 || attribute.ProgramIndex >= programCount ||
                     attribute.EntryPointIndex < 0 ||
-                    attribute.EntryPointIndex >= asset.Programs![attribute.ProgramIndex].Program!.EntryPoints.Count)
+                    (asset.Programs![attribute.ProgramIndex].Program is { } code && attribute.EntryPointIndex >= code.EntryPoints.Count))
                 {
                     throw new InvalidDataException(
                         "Shader entry-point attribute references an invalid cooked entry point.");

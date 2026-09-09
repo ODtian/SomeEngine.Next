@@ -6,9 +6,9 @@ namespace SomeEngine.Assets.Schema;
 /// Selects the ordinary runtime boot scene and renderer.  The executable discovers this asset by
 /// type from the manifest; it does not embed scene, mesh, material, shader, or pipeline identities.
 /// </summary>
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-[global::SomeEngine.Assets.Asset(".runtime.asset")]
-public sealed partial class RuntimeConfiguration
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.RuntimeConfiguration")]
+[global::SomeEngine.Assets.Asset(typeof(ApplicationSettings), ".runtime.asset")]
+internal sealed partial class ApplicationData
 {
     public string? AssetGuid { get; set; }
 

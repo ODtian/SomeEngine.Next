@@ -1,3 +1,4 @@
+using Material = SomeEngine.Assets.Schema.Material;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using SharpGLTF.Schema2;
@@ -7,16 +8,16 @@ using SomeEngine.Assets.Schema;
 using GltfMaterial = SharpGLTF.Schema2.Material;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
 using GltfTexture = SharpGLTF.Schema2.Texture;
-using Material = SomeEngine.Assets.Schema.Material;
-using Mesh = SomeEngine.Assets.Schema.Mesh;
-using Texture = SomeEngine.Assets.Schema.Texture;
+using MaterialData = SomeEngine.Assets.Schema.MaterialData;
+using MeshData = SomeEngine.Assets.Schema.MeshData;
+using TextureData = SomeEngine.Assets.Schema.TextureData;
 
 namespace SomeEngine.Assets.Importers;
 
 public sealed partial class GltfSourceImporter : IAssetImporter
 {
     private static readonly string[] Extensions = [".gltf", ".glb"];
-    public const uint ImporterVersion = 4;
+    public const uint ImporterVersion = 5;
 
     public string ImporterName => nameof(GltfSourceImporter);
     public IReadOnlyList<string> SourceExtensions => Extensions;
@@ -26,7 +27,7 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             sourcePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
         );
 
-    public AssetImportFingerprint? GetFingerprint(
+    public ImportInputs? GetInputs(
         string projectRoot,
         string sourcePath,
         SourceMeta sourceMeta
@@ -34,7 +35,7 @@ public sealed partial class GltfSourceImporter : IAssetImporter
     {
         string fullPath = GltfDeps.FullPath(projectRoot, sourcePath);
         GltfImporterSettings settings = LoadSettings(sourceMeta, fullPath);
-        return GltfDeps.Fingerprint(projectRoot, fullPath, sourceMeta, settings);
+        return GltfDeps.ReadInputs(projectRoot, fullPath, sourceMeta, settings);
     }
 
     public async ValueTask<IReadOnlyList<ImportedAsset>> ImportAsync(
@@ -44,10 +45,10 @@ public sealed partial class GltfSourceImporter : IAssetImporter
     {
         cancellationToken.ThrowIfCancellationRequested();
         string fullPath = GltfDeps.FullPath(projectRoot, sourcePath);
-        SourceMeta sourceMeta = SourceMetaFiles.GetOrCreate(fullPath, ImporterName);
+        SourceMeta sourceMeta = SourceMeta.GetOrCreate(fullPath, ImporterName);
         GltfImporterSettings settings = LoadSettings(sourceMeta, fullPath);
-        AssetImportFingerprint fingerprint =
-            GltfDeps.Fingerprint(projectRoot, fullPath, sourceMeta, settings)
+        ImportInputs fingerprint =
+            GltfDeps.ReadInputs(projectRoot, fullPath, sourceMeta, settings)
             ?? throw new FileNotFoundException(
                 $"One or more GLTF dependencies for '{fullPath}' could not be found."
             );
@@ -65,6 +66,7 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             model,
             importedTextures
         );
+        cancellationToken.ThrowIfCancellationRequested();
         List<ImportedAsset> importedMeshes = ImportMeshes(
             context,
             settings,
@@ -72,11 +74,18 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             importedMaterials
         );
 
-        return importedTextures
+        ImportedAsset[] result = importedTextures
             .Concat(importedMaterials.Select(static info => info.ImportedAsset))
             .Concat(importedMeshes)
             .OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal)
             .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        var outputIds = result.Select(static output => output.AssetGuid).ToHashSet();
+        sourceMeta.Outputs.RemoveAll(output => !outputIds.Contains(output.AssetGuid));
+        sourceMeta.ImporterVersion = fingerprint.ImporterVersion;
+        sourceMeta.InputHash = fingerprint.InputHash;
+        SourceMeta.Save(fullPath, sourceMeta);
+        return result;
     }
 
     private static GltfImporterSettings LoadSettings(SourceMeta sourceMeta, string fullPath)
@@ -125,16 +134,11 @@ public sealed partial class GltfSourceImporter : IAssetImporter
         GltfImporterSettings settings,
         CancellationToken cancellationToken)
     {
-        Task<Material> lit = AssetProject.ReadAsync<Material>(
-            GltfDeps.FullPath(projectRoot, settings.LitMaterialTemplate),
-            cancellationToken).AsTask();
-        Task<Material> unlit = AssetProject.ReadAsync<Material>(
-            GltfDeps.FullPath(projectRoot, settings.UnlitMaterialTemplate),
-            cancellationToken).AsTask();
-        await Task.WhenAll(lit, unlit).ConfigureAwait(false);
-        return new MaterialTemplates(
-            await lit.ConfigureAwait(false),
-            await unlit.ConfigureAwait(false));
+        await using Asset<Material> lit = await AssetLoader.OpenFileAsync<Material>(
+            GltfDeps.FullPath(projectRoot, settings.LitMaterialTemplate), cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using Asset<Material> unlit = await AssetLoader.OpenFileAsync<Material>(
+            GltfDeps.FullPath(projectRoot, settings.UnlitMaterialTemplate), cancellationToken: cancellationToken).ConfigureAwait(false);
+        return new MaterialTemplates(lit.GetFieldsGenerated<MaterialData>(), unlit.GetFieldsGenerated<MaterialData>());
     }
 
     private static ImportedMaterialInfo ImportMaterial(
@@ -148,48 +152,49 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             ? $"Material_{index}"
             : material.Name;
         ExportPath exportPath = MaterialExportPath(context, index, materialName);
-        Material asset = CreateMaterialAsset(context, templates, material, materialName, exportPath);
+        MaterialData asset = CreateMaterialAsset(context, templates, material, materialName, exportPath);
 
         ApplyMaterialSemantics(asset, material, context, importedTextures);
         SaveMaterialAsset(context, asset, exportPath);
         return CreateImportedMaterialInfo(index, asset, exportPath);
     }
 
-    private static Material CreateMaterialAsset(
+    private static MaterialData CreateMaterialAsset(
         GltfImportContext context,
         MaterialTemplates templates,
         GltfMaterial material,
         string materialName,
         ExportPath exportPath)
     {
-        Material template = material.Unlit ? templates.Unlit : templates.Lit;
-        AssetGuid assetGuid = AssetGuid.FromSource(context.SourceMeta.SourceGuid, exportPath.SubAssetKey);
+        MaterialData template = material.Unlit ? templates.Unlit : templates.Lit;
+        Guid assetGuid = ImportedAssetIds.Create(context.SourceMeta.SourceGuid, exportPath.SubAssetKey);
         return CloneMaterial(template, materialName, assetGuid);
     }
 
     private static void SaveMaterialAsset(
         GltfImportContext context,
-        Material asset,
+        MaterialData asset,
         ExportPath exportPath)
     {
-        AssetWriter.Write(asset, exportPath.OutputPath);
+        AssetWriter.Write(asset.ToAsset(), exportPath.OutputPath);
         GltfDeps.SaveMeta(
             exportPath.OutputPath,
             asset.AssetGuid,
-            context.SourceMeta.SourceGuid,
+            context.SourceMeta,
+            context.FullSourcePath,
             exportPath.SubAssetKey,
             context.Fingerprint);
     }
 
     private static ImportedMaterialInfo CreateImportedMaterialInfo(
         int index,
-        Material asset,
+        MaterialData asset,
         ExportPath exportPath)
     {
         return new ImportedMaterialInfo(
             index,
-            new MeshMaterialSlot(AssetGuid.Parse(asset.AssetGuid!)),
-            ImportedAsset.Create(asset, exportPath.SubAssetKey, exportPath.OutputPath));
+            new MeshMaterialSlot(Guid.Parse(asset.AssetGuid!)),
+            ImportedAsset.Create(asset.ToAsset(), exportPath.SubAssetKey, exportPath.OutputPath));
     }
 
     private static ExportPath MaterialExportPath(
@@ -234,19 +239,19 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             : mesh.Name;
         ExportPath exportPath = MeshExportPath(context, meshIndex, meshName);
         var request = new MeshImportRequest(context, settings, mesh, importedMaterials, meshName, exportPath);
-        Mesh meshAsset = CreateMeshAsset(request);
+        MeshData meshAsset = CreateMeshAsset(request);
         SaveMeshAsset(context, meshAsset, exportPath);
         return CreateImportedMeshAsset(meshAsset, exportPath);
     }
 
-    private static Mesh CreateMeshAsset(MeshImportRequest request)
+    private static MeshData CreateMeshAsset(MeshImportRequest request)
     {
-        Mesh meshAsset = BuildClusterMeshAsset(request);
+        MeshData meshAsset = BuildClusterMeshAsset(request);
         AssignMeshGuid(request, meshAsset);
         return meshAsset;
     }
 
-    private static Mesh BuildClusterMeshAsset(MeshImportRequest request)
+    private static MeshData BuildClusterMeshAsset(MeshImportRequest request)
     {
         return ClusterBuilder.ProcessMesh(
             request.Mesh,
@@ -263,12 +268,12 @@ public sealed partial class GltfSourceImporter : IAssetImporter
         };
     }
 
-    private static void AssignMeshGuid(MeshImportRequest request, Mesh meshAsset)
+    private static void AssignMeshGuid(MeshImportRequest request, MeshData meshAsset)
     {
-        AssetGuid assetGuid = AssetGuid.FromSource(
+        Guid assetGuid = ImportedAssetIds.Create(
             request.Context.SourceMeta.SourceGuid,
             request.ExportPath.SubAssetKey);
-        meshAsset.AssetGuid = assetGuid.ToFlatString();
+        meshAsset.AssetGuid = assetGuid.ToString();
     }
 }
 
@@ -278,23 +283,24 @@ public sealed partial class GltfSourceImporter
 
     private static void SaveMeshAsset(
         GltfImportContext context,
-        Mesh meshAsset,
+        MeshData meshAsset,
         ExportPath exportPath)
     {
-        AssetWriter.Write(meshAsset, exportPath.OutputPath);
+        AssetWriter.Write(meshAsset.ToAsset(), exportPath.OutputPath);
         GltfDeps.SaveMeta(
             exportPath.OutputPath,
             meshAsset.AssetGuid,
-            context.SourceMeta.SourceGuid,
+            context.SourceMeta,
+            context.FullSourcePath,
             exportPath.SubAssetKey,
             context.Fingerprint);
     }
 
     private static ImportedAsset CreateImportedMeshAsset(
-        Mesh meshAsset,
+        MeshData meshAsset,
         ExportPath exportPath)
     {
-        return ImportedAsset.Create(meshAsset, exportPath.SubAssetKey, exportPath.OutputPath);
+        return ImportedAsset.Create(meshAsset.ToAsset(), exportPath.SubAssetKey, exportPath.OutputPath);
     }
 
     private static IReadOnlyList<MeshMaterialSlot> MeshMaterialSlots(
@@ -325,36 +331,30 @@ public sealed partial class GltfSourceImporter
             safeName);
     }
 
-    private static Material CloneMaterial(
-        Material template,
+    private static MaterialData CloneMaterial(
+        MaterialData template,
         string materialName,
-        AssetGuid assetGuid
-    ) => template.CloneForAuthoring(
+        Guid assetGuid
+    ) => template.Copy(
         materialName,
-        assetGuid.IsEmpty ? AssetGuid.New() : assetGuid);
+        (assetGuid == System.Guid.Empty) ? Guid.NewGuid() : assetGuid);
 
     private static void ApplyMaterialSemantics(
-        Material asset,
+        MaterialData asset,
         GltfMaterial material,
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
     {
-        switch (asset)
-        {
-            case StandardMaterial standard:
-                ApplyStandardMaterial(standard, material, context, importedTextures);
-                break;
-            case UnlitMaterial unlit:
-                ApplyUnlitMaterial(unlit, material, context, importedTextures);
-                break;
-            default:
-                throw new InvalidDataException(
-                    $"GLTF material templates must be concrete supported material types; got '{asset.GetType().FullName}'.");
-        }
+        if (asset.MaterialType == SomeEngine.Serialization.BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.StandardMaterial"))
+            ApplyStandardMaterial(asset, material, context, importedTextures);
+        else if (asset.MaterialType == SomeEngine.Serialization.BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.UnlitMaterial"))
+            ApplyUnlitMaterial(asset, material, context, importedTextures);
+        else
+            throw new InvalidDataException($"Unsupported GLTF material type '{asset.MaterialType}'.");
     }
 
     private static void ApplyStandardMaterial(
-        StandardMaterial asset,
+        MaterialData asset,
         GltfMaterial material,
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
@@ -362,39 +362,39 @@ public sealed partial class GltfSourceImporter
         var baseColor = material.FindChannel("BaseColor");
         var metallicRoughness = material.FindChannel("MetallicRoughness");
         var emissive = material.FindChannel("Emissive");
-        asset.BaseColorTint = new System.Numerics.Vector4(
+        asset.Set(new("BaseColorTint", MaterialParameterKind.Vector4) { Vector4 = new System.Numerics.Vector4(
             baseColor?.Parameter.X ?? 1.0f,
             baseColor?.Parameter.Y ?? 1.0f,
             baseColor?.Parameter.Z ?? 1.0f,
-            baseColor?.Parameter.W ?? 1.0f);
-        asset.MetallicFactor = metallicRoughness?.Parameter.X ?? 1.0f;
-        asset.Roughness = metallicRoughness?.Parameter.Y ?? 1.0f;
-        asset.EmissiveFactor = new System.Numerics.Vector3(
+            baseColor?.Parameter.W ?? 1.0f) });
+        asset.Set(new("MetallicFactor", MaterialParameterKind.Float) { Float = metallicRoughness?.Parameter.X ?? 1.0f });
+        asset.Set(new("Roughness", MaterialParameterKind.Float) { Float = metallicRoughness?.Parameter.Y ?? 1.0f });
+        asset.Set(new("EmissiveFactor", MaterialParameterKind.Vector3) { Vector3 = new System.Numerics.Vector3(
             emissive?.Parameter.X ?? 0.0f,
             emissive?.Parameter.Y ?? 0.0f,
-            emissive?.Parameter.Z ?? 0.0f);
+            emissive?.Parameter.Z ?? 0.0f) });
         ApplyTextureBinding(asset, "AlbedoMap", material.FindChannel("BaseColor")?.Texture, context, importedTextures);
         ApplyTextureBinding(asset, "NormalMap", material.FindChannel("Normal")?.Texture, context, importedTextures);
         ApplyArmTextureBinding(asset, material, context, importedTextures);
     }
 
     private static void ApplyUnlitMaterial(
-        UnlitMaterial asset,
+        MaterialData asset,
         GltfMaterial material,
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
     {
         var baseColor = material.FindChannel("BaseColor");
-        asset.BaseColorTint = new System.Numerics.Vector4(
+        asset.Set(new("BaseColorTint", MaterialParameterKind.Vector4) { Vector4 = new System.Numerics.Vector4(
             baseColor?.Parameter.X ?? 1.0f,
             baseColor?.Parameter.Y ?? 1.0f,
             baseColor?.Parameter.Z ?? 1.0f,
-            baseColor?.Parameter.W ?? 1.0f);
+            baseColor?.Parameter.W ?? 1.0f) });
         ApplyTextureBinding(asset, "AlbedoMap", baseColor?.Texture, context, importedTextures);
     }
 
     private static void ApplyArmTextureBinding(
-        Material asset,
+        MaterialData asset,
         GltfMaterial material,
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
@@ -414,7 +414,7 @@ public sealed partial class GltfSourceImporter
     }
 
     private static void ApplyTextureBinding(
-        Material asset,
+        MaterialData asset,
         string name,
         GltfTexture? texture,
         GltfImportContext context,
@@ -428,7 +428,7 @@ public sealed partial class GltfSourceImporter
     }
 
     /// <summary>
-    /// Extract texture from GLTF, produce a .texture.asset file, return the AssetGuid string.
+    /// Extract texture from GLTF, produce a .texture.asset file, return the Guid string.
     /// </summary>
     private static string? ResolveTextureAsset(
         GltfTexture? texture,
@@ -442,7 +442,7 @@ public sealed partial class GltfSourceImporter
 
         Image image = texture.PrimaryImage;
         ExportPath exportPath = TextureExportPath(context, texture, image);
-        Texture textureAsset = CreateTextureAsset(context, exportPath, image);
+        TextureData textureAsset = CreateTextureAsset(context, exportPath, image);
         SaveTextureAsset(context, textureAsset, exportPath);
         importedTextures.Add(CreateImportedTextureAsset(textureAsset, exportPath));
         return textureAsset.AssetGuid;
@@ -462,21 +462,21 @@ public sealed partial class GltfSourceImporter
             imageName);
     }
 
-    private static Texture CreateTextureAsset(
+    private static TextureData CreateTextureAsset(
         GltfImportContext context,
         ExportPath exportPath,
         Image image)
     {
-        AssetGuid assetGuid = AssetGuid.FromSource(context.SourceMeta.SourceGuid, exportPath.SubAssetKey);
+        Guid assetGuid = ImportedAssetIds.Create(context.SourceMeta.SourceGuid, exportPath.SubAssetKey);
         ImageResult decoded = ImageResult.FromMemory(
             ReadImageBytes(image).ToArray(),
             ColorComponents.RedGreenBlueAlpha);
         byte[] pixels = decoded.Data;
         uint width = checked((uint)decoded.Width);
         uint height = checked((uint)decoded.Height);
-        return new Texture
+        return new TextureData
         {
-            AssetGuid = assetGuid.ToFlatString(),
+            AssetGuid = assetGuid.ToString(),
             Name = exportPath.SafeName,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
             Width = width,
@@ -506,23 +506,24 @@ public sealed partial class GltfSourceImporter
 
     private static void SaveTextureAsset(
         GltfImportContext context,
-        Texture textureAsset,
+        TextureData textureAsset,
         ExportPath exportPath)
     {
-        AssetWriter.Write(textureAsset, exportPath.OutputPath);
+        AssetWriter.Write(textureAsset.ToAsset(), exportPath.OutputPath);
         GltfDeps.SaveMeta(
             exportPath.OutputPath,
             textureAsset.AssetGuid,
-            context.SourceMeta.SourceGuid,
+            context.SourceMeta,
+            context.FullSourcePath,
             exportPath.SubAssetKey,
             context.Fingerprint);
     }
 
     private static ImportedAsset CreateImportedTextureAsset(
-        Texture textureAsset,
+        TextureData textureAsset,
         ExportPath exportPath)
     {
-        return ImportedAsset.Create(textureAsset, exportPath.SubAssetKey, exportPath.OutputPath);
+        return ImportedAsset.Create(textureAsset.ToAsset(), exportPath.SubAssetKey, exportPath.OutputPath);
     }
 
     private static Memory<byte> ReadImageBytes(Image image)
@@ -542,12 +543,11 @@ public sealed partial class GltfSourceImporter
         return bytes.Array.AsMemory(bytes.Offset, bytes.Count);
     }
 
-    private static void SetTexture(Material asset, string name, string textureGuid)
+    private static void SetTexture(MaterialData asset, string name, string textureGuid)
     {
-        uint slot = asset.RequireSlot(name, typeof(Texture));
-        if (!AssetGuid.TryParse(textureGuid, out AssetGuid guid) || guid.IsEmpty)
-            throw new InvalidDataException($"Texture slot '{name}' contains invalid GUID '{textureGuid}'.");
-        asset.SetTextureReference(slot, guid);
+        if (!Guid.TryParse(textureGuid, out Guid guid) || (guid == System.Guid.Empty))
+            throw new InvalidDataException($"TextureData slot '{name}' contains invalid GUID '{textureGuid}'.");
+        asset.Set(new(name, MaterialParameterKind.Texture) { Texture = new(guid) });
     }
 
     private static string SanitizeSegment(string? value, string fallback)
@@ -577,15 +577,15 @@ public sealed partial class GltfSourceImporter
         string ProjectRoot,
         string FullSourcePath,
         SourceMeta SourceMeta,
-        AssetImportFingerprint Fingerprint)
+        ImportInputs Fingerprint)
     {
         public string SourceStem => Path.GetFileNameWithoutExtension(FullSourcePath);
         public string SourceDirectory => Path.GetDirectoryName(FullSourcePath)!;
     }
 
     private readonly record struct MaterialTemplates(
-        Material Lit,
-        Material Unlit);
+        MaterialData Lit,
+        MaterialData Unlit);
 
     private readonly record struct ExportPath(
         string OutputPath,

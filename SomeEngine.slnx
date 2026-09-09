@@ -53,5 +53,9 @@
   <Project Path="tests\SomeEngine.Graphics.Vulkan.Tests\SomeEngine.Graphics.Vulkan.Tests.csproj" />
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
+  </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
 </Solution>
