@@ -41,195 +41,22 @@ public sealed class AssetProject
             return new LooseAssetStorage(_projectRoot, Manifest);
     }
 
-    /// <summary>
-    /// Authoring-only typed access to one exact current asset document from a storage backend.
-    /// Storage remains a GUID-to-range provider; the shared internal document path performs all
-    /// type, schema, publication, and root-identity validation.
-    /// </summary>
-    public static async ValueTask<BinaryDocument<TAsset>> OpenAsync<TAsset>(
-        IAssetStorage storage,
-        AssetEntry entry,
-        BinaryReadLimits? limits = null,
-        CancellationToken cancellationToken = default)
-        where TAsset : class, IBinaryContract<TAsset>
-    {
-        ArgumentNullException.ThrowIfNull(storage);
-        AssetTypeDescriptor<TAsset> descriptor = AssetType<TAsset>.Descriptor;
-        ValidateEntry<TAsset>(entry);
-
-        IRangeSource? source = await storage.OpenAsync(entry, cancellationToken)
-            .ConfigureAwait(false);
-        BinaryDocument<TAsset>? document = null;
-        try
-        {
-            IRangeSource ownedSource = source;
-            source = null;
-            document = await BinaryDocument<TAsset>.OpenAsync(
-                ownedSource,
-                ownsSource: true,
-                limits,
-                cancellationToken).ConfigureAwait(false);
-
-            if (document.SchemaFingerprint != entry.SchemaFingerprint)
-            {
-                throw new InvalidDataException(
-                    $"Asset {entry.AssetGuid} document fingerprint does not match its storage entry.");
-            }
-            AssetGuid rootGuid = descriptor.GetAssetGuid(document.Root);
-            if (rootGuid != entry.AssetGuid)
-            {
-                throw new InvalidDataException(
-                    $"Asset {entry.AssetGuid} root declares GUID {rootGuid}.");
-            }
-
-            BinaryDocument<TAsset> result = document;
-            document = null;
-            return result;
-        }
-        finally
-        {
-            if (document is not null)
-                await document.DisposeAsync().ConfigureAwait(false);
-            else if (source is not null)
-                await source.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    public static ValueTask<BinaryDocument<TAsset>> OpenAsync<TAsset>(
-        IAssetStorage storage,
-        AssetEntry entry,
-        CancellationToken cancellationToken)
-        where TAsset : class, IBinaryContract<TAsset>
-        => OpenAsync<TAsset>(storage, entry, limits: null, cancellationToken);
-
-    /// <summary>Authoring-only typed access to one exact current asset file.</summary>
-    public static ValueTask<BinaryDocument<TAsset>> OpenAsync<TAsset>(
-        string path,
-        BinaryReadLimits? limits = null,
-        CancellationToken cancellationToken = default)
-        where TAsset : class, IBinaryContract<TAsset>
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        string fullPath = Path.GetFullPath(path);
-        AssetTypeDescriptor<TAsset> descriptor = AssetType<TAsset>.Descriptor;
-        if (!descriptor.MatchesPath(fullPath))
-        {
-            throw new InvalidDataException(
-                $"Asset type '{descriptor.AssetType}' does not accept path '{fullPath}'.");
-        }
-
-        FileRangeSource source = FileRangeSource.Open(fullPath);
-        return BinaryDocument<TAsset>.OpenAsync(
-            source,
-            ownsSource: true,
-            limits,
-            cancellationToken);
-    }
-
-    public static ValueTask<BinaryDocument<TAsset>> OpenAsync<TAsset>(
-        string path,
-        CancellationToken cancellationToken)
-        where TAsset : class, IBinaryContract<TAsset>
-        => OpenAsync<TAsset>(path, limits: null, cancellationToken);
-
-    /// <summary>
-    /// Reads root-only authoring data and closes its document before returning. Data with external
-    /// chunks must use <see cref="OpenAsync{TAsset}(string, BinaryReadLimits?, CancellationToken)"/>
-    /// so the caller explicitly owns the document and its ranges.
-    /// </summary>
-    internal static async ValueTask<TAsset> ReadAsync<TAsset>(
-        string path,
-        BinaryReadLimits? limits = null,
-        CancellationToken cancellationToken = default)
-        where TAsset : class, IBinaryContract<TAsset>
-    {
-        await using BinaryDocument<TAsset> document = await OpenAsync<TAsset>(
-            path,
-            limits,
-            cancellationToken).ConfigureAwait(false);
-        if (document.ChunkCount != 0)
-        {
-            throw new InvalidOperationException(
-                $"Asset '{AssetType<TAsset>.Descriptor.AssetType}' contains external chunks; open its document explicitly.");
-        }
-
-        return document.Root;
-    }
-
-    internal static ValueTask<TAsset> ReadAsync<TAsset>(
-        string path,
-        CancellationToken cancellationToken)
-        where TAsset : class, IBinaryContract<TAsset>
-        => ReadAsync<TAsset>(path, limits: null, cancellationToken);
-
-    private static void ValidateEntry<TAsset>(AssetEntry entry)
-        where TAsset : class, IBinaryContract<TAsset>
-    {
-        AssetTypeDescriptor<TAsset> descriptor = AssetType<TAsset>.Descriptor;
-        if (!StringComparer.Ordinal.Equals(entry.AssetType, descriptor.AssetType))
-        {
-            throw new InvalidDataException(
-                $"Asset {entry.AssetGuid} contains '{entry.AssetType}', not '{descriptor.AssetType}'.");
-        }
-        if (entry.SchemaFingerprint == descriptor.SchemaFingerprint)
-            return;
-
-        BinaryWireTypeDescriptor expected = descriptor.WireType;
-
-        throw new BinarySchemaMismatchException(
-            typeof(TAsset),
-            entry.SchemaFingerprint,
-            expected.SchemaFingerprint,
-            expected.SchemaEpoch,
-            expected.SchemaEpoch,
-            expected.Compatibility);
-    }
-
-    public AssetGuid CreateAsset<TAsset>(
-        string assetPath,
-        TAsset asset)
-        where TAsset : class
+    public Guid CreateAsset<T>(string assetPath, Asset<T> asset) where T : class
     {
         lock (_gate)
         {
-            ArgumentNullException.ThrowIfNull(asset);
-            AssetTypeDescriptor<TAsset> descriptor = AssetType<TAsset>.Descriptor;
-
             string fullPath = FullPath(assetPath);
-            if (!descriptor.MatchesPath(fullPath))
-            {
-                throw new InvalidDataException(
-                    $"Asset type '{descriptor.AssetType}' does not accept path '{fullPath}'.");
-            }
-
-            AssetGuid? registeredGuid = Resolve(assetPath);
-            AssetGuid guid = descriptor.GetAssetGuid(asset);
-            if (!guid.IsEmpty && registeredGuid is AssetGuid existingGuid && existingGuid != guid)
-            {
-                throw new InvalidOperationException(
-                    $"Asset '{assetPath}' is already registered as '{existingGuid}', but its data declares '{guid}'.");
-            }
-
-            if (guid.IsEmpty)
-            {
-                guid = registeredGuid ?? AssetGuid.New();
-                descriptor.SetAssetGuid(asset, guid);
-            }
-
-            string? directory = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            AssetDescription info = AssetWriter.WriteAndDescribe(asset, fullPath);
-            RegisterAssetFile(fullPath, info);
-            return guid;
+            Guid id = asset.Id.Value;
+            if (Resolve(assetPath) is Guid registered && registered != id)
+                throw new InvalidOperationException($"Asset '{assetPath}' is registered as '{registered}', not '{id}'.");
+            AssetWriter.Write(asset, fullPath);
+            RegisterAssetFile(fullPath, asset.File.Entry);
+            return id;
         }
     }
 
     // ── Import: 源文件 → .asset 文件 → manifest 注册 ──
-    public async ValueTask<IReadOnlyList<AssetGuid>> ImportAsync(
+    public async ValueTask<IReadOnlyList<Guid>> ImportAsync(
         string sourcePath,
         CancellationToken cancellationToken = default)
     {
@@ -254,41 +81,26 @@ public sealed class AssetProject
     /// Explicitly registers an already encoded asset. The generic contract selects the
     /// one data reader; no extension scan, format probing, fallback, or second encoding is performed.
     /// </summary>
-    public async ValueTask<AssetGuid> RegisterAssetAsync<TAsset>(
-        string assetPath,
-        CancellationToken cancellationToken = default)
-        where TAsset : class, SomeEngine.Serialization.IBinaryContract<TAsset>
+    public async ValueTask<Guid> RegisterAssetAsync<T>(string assetPath,
+        CancellationToken cancellationToken = default) where T : class
     {
         string fullPath = FullPath(assetPath);
-        AssetTypeDescriptor<TAsset> descriptor = AssetType<TAsset>.Descriptor;
-        if (!descriptor.MatchesPath(fullPath))
-        {
-            throw new InvalidDataException(
-                $"Asset type '{descriptor.AssetType}' does not accept path '{fullPath}'.");
-        }
-
-        await using BinaryDocument<TAsset> document = await OpenAsync<TAsset>(
-            fullPath,
-            limits: null,
-            cancellationToken).ConfigureAwait(false);
-        AssetDescription info = AssetMetadata.Describe(document.Root, fullPath);
-        if (info.AssetGuid.IsEmpty)
-            throw new InvalidDataException($"Asset '{fullPath}' has no asset GUID.");
-
+        await using Asset<T> asset = await AssetLoader.OpenFileAsync<T>(fullPath,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         lock (_gate)
-            RegisterDirectAsset(fullPath, info);
-        return info.AssetGuid;
+            RegisterAssetFile(fullPath, asset.File.Entry);
+        return asset.Id.Value;
     }
 
     // ── Resolve / Query ──
-    public AssetGuid? Resolve(string sourcePath, string? subAssetKey = null)
+    public Guid? Resolve(string sourcePath, string? subAssetKey = null)
     {
         lock (_gate)
         {
             string manifestPath = ToManifestPath(sourcePath);
-            if (Manifest.TryAssetPath(manifestPath, out AssetManifestRecord assetRecord))
+            if (Manifest.TryAssetPath(manifestPath, out AssetEntry assetRecord))
             {
-                return assetRecord.Guid;
+                return assetRecord.AssetGuid;
             }
 
             if (!Manifest.TrySourceGuid(manifestPath, out SourceGuid sourceGuid))
@@ -298,29 +110,29 @@ public sealed class AssetProject
 
             if (!string.IsNullOrWhiteSpace(subAssetKey))
             {
-                return Manifest.TrySourceAsset(sourceGuid, subAssetKey, out AssetManifestRecord record)
-                    ? record.Guid
+                return Manifest.TrySourceAsset(sourceGuid, subAssetKey, out AssetEntry record)
+                    ? record.AssetGuid
                     : null;
             }
 
-            IReadOnlyList<AssetGuid> assets = Manifest.AssetsBySource(sourceGuid);
+            IReadOnlyList<Guid> assets = Manifest.AssetsBySource(sourceGuid);
             return assets.Count == 1 ? assets[0] : null;
         }
     }
 
-    public IReadOnlyList<AssetManifestRecord> List(string? assetType = null)
+    public IReadOnlyList<AssetEntry> List(string? assetType = null)
     {
         lock (_gate)
             return Manifest.List(assetType);
     }
 
-    public IReadOnlyList<AssetGuid> GetDependencies(AssetGuid guid)
+    public IReadOnlyList<Guid> GetDependencies(Guid guid)
     {
         lock (_gate)
             return Manifest.GetDependencies(guid);
     }
 
-    public IReadOnlyList<AssetGuid> GetReferencers(AssetGuid guid)
+    public IReadOnlyList<Guid> GetReferencers(Guid guid)
     {
         lock (_gate)
             return Manifest.GetReferencers(guid);
@@ -351,12 +163,17 @@ public sealed class AssetProject
         return _importers.FirstOrDefault(importer => importer.MatchesSourcePath(normalized));
     }
 
-    private async ValueTask<IReadOnlyList<AssetGuid>> ImportWithImporterAsync(
+    private async ValueTask<IReadOnlyList<Guid>> ImportWithImporterAsync(
         string fullPath,
         IAssetImporter importer,
         CancellationToken cancellationToken)
     {
-        SourceMeta sourceMeta = SourceMetaFiles.GetOrCreate(fullPath, importer.ImporterName);
+        SourceMeta sourceMeta = SourceMeta.GetOrCreate(fullPath, importer.ImporterName);
+        ImportInputs? inputs = importer.GetInputs(_projectRoot, fullPath, sourceMeta);
+        if (inputs is not null && sourceMeta.ImporterVersion == inputs.ImporterVersion &&
+            sourceMeta.InputHash == inputs.InputHash && sourceMeta.Outputs.Count != 0 &&
+            sourceMeta.Outputs.All(output => File.Exists(output.AssetPath) && Manifest.Assets.ContainsKey(output.AssetGuid)))
+            return sourceMeta.Outputs.Select(static output => output.AssetGuid).ToArray();
         IReadOnlyList<ImportedAsset> importedAssets = await importer
             .ImportAsync(_projectRoot, fullPath, cancellationToken)
             .ConfigureAwait(false);
@@ -365,10 +182,13 @@ public sealed class AssetProject
         {
             // 直接注册进 manifest，不扫描
             Manifest.AddSource(sourceMeta.SourceGuid, ToManifestPath(fullPath));
-            List<AssetGuid> result = [];
+            var outputIds = importedAssets.Select(static output => output.AssetGuid).ToHashSet();
+            foreach (Guid previous in Manifest.AssetsBySource(sourceMeta.SourceGuid).ToArray())
+                if (!outputIds.Contains(previous)) Manifest.RemoveAsset(previous);
+            List<Guid> result = [];
             foreach (ImportedAsset imported in importedAssets)
             {
-                if (imported.AssetGuid.IsEmpty)
+                if ((imported.AssetGuid == System.Guid.Empty))
                     continue;
 
                 RegisterImportedData(imported, sourceMeta.SourceGuid);
@@ -388,16 +208,6 @@ public sealed class AssetProject
             sourceGuid,
             imported.SubAssetKey,
             saveManifest: false);
-    }
-
-    private void RegisterDirectAsset(string fullPath, AssetDescription info)
-    {
-        AssetMeta? meta = AssetMetaFiles.TryLoad(fullPath);
-        RegisterAssetFile(
-            fullPath,
-            info,
-            meta?.SourceGuid ?? SourceGuid.Empty,
-            meta?.SubAssetKey ?? string.Empty);
     }
 
     private void AddMissingSourceDiagnostics(List<AssetDiagnostic> diagnostics)
@@ -423,7 +233,7 @@ public sealed class AssetProject
 
     private void AddMissingAssetDiagnostics(List<AssetDiagnostic> diagnostics)
     {
-        foreach ((AssetGuid assetGuid, AssetManifestRecord record) in Manifest.Assets)
+        foreach ((Guid assetGuid, AssetEntry record) in Manifest.Assets)
         {
             string fullPath = FullPath(record.Path);
             if (File.Exists(fullPath))
@@ -445,9 +255,9 @@ public sealed class AssetProject
 
     private void AddDanglingReferenceDiagnostics(List<AssetDiagnostic> diagnostics)
     {
-        foreach ((AssetGuid ownerGuid, IReadOnlyList<AssetGuid> dependencies) in Manifest.Dependencies)
+        foreach ((Guid ownerGuid, IReadOnlyList<Guid> dependencies) in Manifest.Dependencies)
         {
-            if (!Manifest.TryGetAsset(ownerGuid, out AssetManifestRecord owner))
+            if (!Manifest.TryGetAsset(ownerGuid, out AssetEntry owner))
             {
                 continue;
             }
@@ -458,11 +268,11 @@ public sealed class AssetProject
 
     private void AddMissingDependencyDiagnostics(
         List<AssetDiagnostic> diagnostics,
-        AssetGuid ownerGuid,
-        AssetManifestRecord owner,
-        IReadOnlyList<AssetGuid> dependencies)
+        Guid ownerGuid,
+        AssetEntry owner,
+        IReadOnlyList<Guid> dependencies)
     {
-        foreach (AssetGuid dependency in dependencies)
+        foreach (Guid dependency in dependencies)
         {
             if (Manifest.Assets.ContainsKey(dependency))
             {
@@ -492,24 +302,11 @@ public sealed class AssetProject
 
     private void RegisterAssetFile(
         string fullPath,
-        AssetDescription info,
+        AssetEntry info,
         SourceGuid sourceGuid = default,
         string subAssetKey = "",
         bool saveManifest = true)
     {
-        AssetMeta? meta = AssetMetaFiles.TryLoad(fullPath);
-        if (meta != null && meta.AssetGuid != info.AssetGuid)
-        {
-            throw new InvalidOperationException(
-                $"Asset meta guid '{meta.AssetGuid}' does not match data guid '{info.AssetGuid}' for '{fullPath}'.");
-        }
-
-        if (meta != null && !sourceGuid.IsEmpty && meta.SourceGuid != sourceGuid)
-        {
-            throw new InvalidOperationException(
-                $"Asset meta source guid '{meta.SourceGuid}' does not match registration source guid '{sourceGuid}' for '{fullPath}'.");
-        }
-
         Manifest.AddAsset(
             info.AssetGuid,
             info.Name,

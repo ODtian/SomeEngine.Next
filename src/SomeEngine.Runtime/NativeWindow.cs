@@ -75,7 +75,7 @@ internal sealed class NativeWindow : IDisposable
     private bool _closeRequested;
     private bool _disposed;
 
-    internal NativeWindow(string title, int clientWidth, int clientHeight)
+    internal NativeWindow(string title, int clientWidth, int clientHeight, bool visible = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(clientWidth);
@@ -85,7 +85,7 @@ internal sealed class NativeWindow : IDisposable
         _selfHandle = GCHandle.Alloc(this, GCHandleType.Normal);
         try
         {
-            uint style = WindowStyleOverlapped | WindowStyleVisible;
+            uint style = WindowStyleOverlapped | (visible ? WindowStyleVisible : 0u);
             var outer = new NativeRect(0, 0, clientWidth, clientHeight);
             if (!AdjustWindowRectEx(ref outer, style, false, 0))
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "AdjustWindowRectEx failed.");
@@ -111,7 +111,8 @@ internal sealed class NativeWindow : IDisposable
             uint dpi = GetDpiForWindow(Handle);
             DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
             HasFocus = GetFocus() == Handle;
-            _ = ShowWindow(Handle, ShowNormal);
+            if (visible)
+                _ = ShowWindow(Handle, ShowNormal);
             if (!UpdateWindow(Handle))
             {
                 int error = Marshal.GetLastWin32Error();

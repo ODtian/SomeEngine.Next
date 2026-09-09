@@ -12,8 +12,8 @@ public sealed class ShaderMaterialPropertyTests
         Shader shader = CreateShader(sourceDefault);
 
         Shader.Validate(shader);
-        ShaderMaterialInstanceProperty property = Assert.Single(
-            shader.Metadata!.MaterialInstanceProperties!);
+        ShaderInstanceProperty property = Assert.Single(
+            shader.Metadata!.InstanceProperties!);
 
         Assert.Equal("test.material.tint", property.CanonicalId);
         Assert.Equal("TestScalars", property.MaterialScalarLayoutName);
@@ -46,30 +46,21 @@ public sealed class ShaderMaterialPropertyTests
         => new()
         {
             Name = "property-test",
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "Main",
-                    Stage = ShaderStage.Compute,
-                    Data = new byte[] { 1 },
-                },
-            ],
+            Programs = [CookedShaderTestProgram.Create()],
             EntryPointReflections =
             [
                 new ShaderEntryPointReflection
                 {
-                    Backend = "test",
-                    EntryPoint = "Main",
-                    Stage = ShaderStage.Compute,
+                    Backend = "spirv",
+                    EntryPoint = "VSMain",
+                    Stage = ShaderStage.Vertex,
                 },
             ],
             Metadata = new ShaderMetadata
             {
-                MaterialInstanceProperties =
+                InstanceProperties =
                 [
-                    new ShaderMaterialInstanceProperty
+                    new ShaderInstanceProperty
                     {
                         CanonicalId = "test.material.tint",
                         MaterialScalarLayoutName = "TestScalars",

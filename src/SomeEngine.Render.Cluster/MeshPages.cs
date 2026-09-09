@@ -11,6 +11,7 @@ namespace SomeEngine.Render.Cluster;
 internal readonly record struct PageRetirement(uint PageID, uint Offset, uint Size);
 
 internal readonly record struct RegisteredMeshPages(
+    Mesh Mesh,
     uint FirstPageId,
     int PageCount,
     ulong AssetRevision,
@@ -70,9 +71,7 @@ internal readonly struct MeshPageReadSource
         MeshPayloadPage expected = Descriptor;
         return page.Size == expected.Size &&
                page.ClusterCount == expected.ClusterCount &&
-               page.VertexStride == expected.VertexStride &&
-               page.QuantOrigin == expected.QuantOrigin &&
-               page.QuantStep == expected.QuantStep;
+               page.VertexEncodingHash == expected.VertexEncodingHash;
     }
 
     internal async ValueTask ReadIntoAsync(
@@ -123,11 +122,7 @@ internal sealed class MeshPages
                 payloadPage.Offset != expectedOffset ||
                 checked(payloadPage.Offset + payloadPage.Size) > pageRegionLength ||
                 payloadPage.ClusterCount == 0 ||
-                !float.IsFinite(payloadPage.QuantOrigin.X) ||
-                !float.IsFinite(payloadPage.QuantOrigin.Y) ||
-                !float.IsFinite(payloadPage.QuantOrigin.Z) ||
-                !float.IsFinite(payloadPage.QuantStep) ||
-                payloadPage.QuantStep <= 0)
+                payloadPage.VertexEncodingHash == 0)
             {
                 throw new InvalidDataException($"Streamed mesh page {index} has invalid registration metadata.");
             }
@@ -167,6 +162,7 @@ internal sealed class MeshPages
     {
         _registrationByMesh.Add(registration.Mesh, registration.RegistrationIndex);
         _registrations.Add(new RegisteredMeshPages(
+            registration.Mesh,
             registration.FirstPageId,
             registration.PageCount,
             registration.AssetRevision,
@@ -428,13 +424,6 @@ internal sealed class MeshPages
         ReadOnlySpan<uint> residentPages,
         ReadOnlySpan<PageRetirement> retirements)
     {
-        if (residentPages.Length != _pendingLoads.Count ||
-            retirements.Length != _pendingEvictions.Count)
-        {
-            throw new InvalidOperationException(
-                "Prepared page state does not cover the pending residency publication.");
-        }
-
         foreach (uint pageId in residentPages)
         {
             if (!_pendingLoads.Contains(pageId) ||

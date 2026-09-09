@@ -27,6 +27,17 @@ public sealed record RuntimeStartupOptions(
     bool AsyncCompute,
     ProfilerOptions Profiler)
 {
+    public bool HideWindow { get; init; }
+    public bool ForceHardwareRaster { get; init; }
+    public bool DisableMeshShaders { get; init; }
+    public string? TraceOutput { get; init; }
+    public bool TraceDetail { get; init; }
+    public bool TraceAllocations { get; init; }
+    public bool TraceFramesOnly { get; init; }
+    public bool SynchronousFrames { get; init; }
+    public string? ScenePlayback { get; init; }
+    public float FixedFrameSeconds { get; init; }
+
     public static RuntimeStartupOptions Parse(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -37,6 +48,17 @@ public sealed record RuntimeStartupOptions(
             disableSwitches: ["--no-vsync"],
             defaultValue: true);
         int frameLimit = ReadPositive(args, "--frames", defaultValue: 0);
+        string? playback = ReadOptionalValue(args, "--scene-playback");
+        if (playback is not null and not "motion" and not "materials")
+            throw new ArgumentException("--scene-playback requires 'motion' or 'materials'.");
+        bool synchronousFrames = args.Contains("--synchronous-frames", StringComparer.OrdinalIgnoreCase);
+        if (playback is not null && !synchronousFrames)
+            throw new ArgumentException("Scene playback requires --synchronous-frames so scene mutations finish in their frame.");
+        float fixedStep = 0;
+        string? stepText = ReadOptionalValue(args, "--fixed-step");
+        if (stepText is not null && (!float.TryParse(stepText, System.Globalization.CultureInfo.InvariantCulture, out fixedStep)
+            || !float.IsFinite(fixedStep) || fixedStep <= 0))
+            throw new ArgumentException("--fixed-step requires a finite positive number of seconds.");
 
         return new RuntimeStartupOptions(
             FrameLimit: frameLimit,
@@ -81,7 +103,19 @@ public sealed record RuntimeStartupOptions(
                 enableSwitches: ["--async-compute"],
                 disableSwitches: ["--no-async-compute"],
                 defaultValue: true),
-            Profiler: SomeEngine.Core.Diagnostics.Profiler.ParseOptions(args));
+            Profiler: SomeEngine.Core.Diagnostics.Profiler.ParseOptions(args))
+        {
+            HideWindow = args.Contains("--hidden-window", StringComparer.OrdinalIgnoreCase),
+            ForceHardwareRaster = args.Contains("--hardware-raster", StringComparer.OrdinalIgnoreCase),
+            DisableMeshShaders = args.Contains("--no-mesh-shaders", StringComparer.OrdinalIgnoreCase),
+            TraceOutput = ReadOptionalValue(args, "--trace"),
+            TraceDetail = args.Contains("--trace-detail", StringComparer.OrdinalIgnoreCase),
+            TraceAllocations = args.Contains("--trace-allocations", StringComparer.OrdinalIgnoreCase),
+            TraceFramesOnly = args.Contains("--trace-frames-only", StringComparer.OrdinalIgnoreCase),
+            SynchronousFrames = synchronousFrames,
+            ScenePlayback = playback,
+            FixedFrameSeconds = fixedStep,
+        };
     }
 
     private static RuntimeGraphicsBackend ParseGraphicsBackend(string value) =>

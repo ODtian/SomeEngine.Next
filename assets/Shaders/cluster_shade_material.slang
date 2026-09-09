@@ -1,24 +1,10 @@
 #include "cluster_shade_pipeline.slang"
-#include "standard_pbr.slang"
+#include "triangle_surface.slang"
+#include "standard.slang"
 
-StandardPBRMaterial Material;
+typedef StaticVertexEval VertexEvaluate;
+typedef LinearSurface DomainEvaluate;
+typedef OpaquePixelEvaluate PixelEvaluate;
+typedef StandardMaterial SurfaceEvaluate;
 
-[MaterialTarget("cluster.shade")]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CSMaterialShade(uint3 tid : SV_DispatchThreadID)
-{
-    StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
-    CSShade(vertexEval, surface, Material, tid);
-}
-
-[MaterialTarget("cluster.shade.cached")]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CSMaterialShadeCached(uint3 tid : SV_DispatchThreadID)
-{
-    StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
-    CSShadeFromCache(vertexEval, surface, Material, tid);
-}
+#include "cluster_material_entries.slang"

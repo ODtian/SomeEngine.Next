@@ -52,9 +52,9 @@ public sealed class WarpRayTracingTests
         ];
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "dxr_local_callable_bindings", source, entries, "lib_6_5");
-        EntryPointReflection rayGeneration = shader.GetEntryPoint(0);
-        EntryPointReflection callableA = shader.GetEntryPoint(1);
-        EntryPointReflection callableB = shader.GetEntryPoint(2);
+        ShaderEntryPoint rayGeneration = shader.GetEntryPoint(0);
+        ShaderEntryPoint callableA = shader.GetEntryPoint(1);
+        ShaderEntryPoint callableB = shader.GetEntryPoint(2);
         Assert.Equal((nuint)0,
             callableA.VarLayout.GetOffset(SlangParameterCategory.UnorderedAccess));
         Assert.Equal((nuint)1,
@@ -190,9 +190,9 @@ public sealed class WarpRayTracingTests
         ];
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "dxr_local_ordinary_records", source, entries, "sm_6_5");
-        EntryPointReflection rayGenerationA = shader.GetEntryPoint(0);
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderEntryPoint rayGenerationA = shader.GetEntryPoint(0);
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
@@ -223,7 +223,7 @@ public sealed class WarpRayTracingTests
             new RayTracingShaderTableUpdate(
                 [RayTracingShaderRecord.Entry(rayGenerationA, 0, 1)],
                 [], [], [],
-                [new RayTracingLocalParameterBlock(VariableLayoutReflection.Null, 0, 0, 0, 0)],
+                [new RayTracingLocalParameterBlock(ShaderVariableLayout.Null, 0, 0, 0, 0)],
                 [], [])));
         Assert.Throws<ArgumentException>(() => backend.UpdateRayTracingShaderTable(context, table,
             new RayTracingShaderTableUpdate(
@@ -285,7 +285,7 @@ public sealed class WarpRayTracingTests
         RayTracingHitGroup[] hitGroups =
         [
             new("hitGroup", shader.GetEntryPoint(1), shader.GetEntryPoint(2),
-                EntryPointReflection.Null),
+                ShaderEntryPoint.Null),
         ];
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
             new RayTracingPipelineDesc(shader.Program, [shader.GetEntryPoint(0)], [], [],
@@ -681,7 +681,7 @@ public sealed class WarpRayTracingTests
             "dxr_pipeline_ownership_failure",
             source,
             [new D3D12TestShaderEntry("rayGenerationMain", SlangStage.RayGeneration)]);
-        EntryPointReflection rayGeneration = shader.GetEntryPoint(0);
+        ShaderEntryPoint rayGeneration = shader.GetEntryPoint(0);
         using IGraphicsBackend backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 

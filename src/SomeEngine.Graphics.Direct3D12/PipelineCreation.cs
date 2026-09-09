@@ -39,6 +39,7 @@ internal sealed unsafe partial class D3D12Backend
         in GraphicsPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -52,6 +53,7 @@ internal sealed unsafe partial class D3D12Backend
         in ComputePipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
@@ -65,6 +67,7 @@ internal sealed unsafe partial class D3D12Backend
         in MeshPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         _ = nativeDevice.RequireCapability<MeshShaders>(nameof(CreateMeshPipelineAsync));
@@ -79,6 +82,7 @@ internal sealed unsafe partial class D3D12Backend
         in RayTracingPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         RayTracing capability =
@@ -96,6 +100,7 @@ internal sealed unsafe partial class D3D12Backend
         in WorkGraphPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         _ = nativeDevice.RequireCapability<WorkGraphs>(nameof(CreateWorkGraphPipelineAsync));
@@ -131,14 +136,14 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly TaskCompletionSource<Pipeline> _completion = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        private RetainedSlangProgram? _program;
+        private RetainedShaderProgram? _program;
         private D3D12PipelineCache? _cache;
         private int _capturedStateReleased;
 
         protected PipelineCreationRequest(
             D3D12Device device,
             PipelineType type,
-            RetainedSlangProgram program,
+            RetainedShaderProgram program,
             D3D12PipelineCache? cache)
         {
             Device = device;
@@ -153,7 +158,7 @@ internal sealed unsafe partial class D3D12Backend
         internal PipelineType Type { get; }
         internal D3D12PipelineCache? Cache => Volatile.Read(ref _cache);
         internal Task<Pipeline> Task => _completion.Task;
-        protected IComponentType Program => Volatile.Read(ref _program)?.Program
+        protected ShaderProgram Program => Volatile.Read(ref _program)?.Program
             ?? throw new ObjectDisposedException(nameof(PipelineCreationRequest));
 
         internal abstract Pipeline Create();
@@ -170,14 +175,14 @@ internal sealed unsafe partial class D3D12Backend
             Interlocked.Exchange(ref _cache, null)?.ReleasePipelineCreationUse();
         }
 
-        protected static RetainedSlangProgram CaptureProgram(IComponentType program)
+        protected static RetainedShaderProgram CaptureProgram(ShaderProgram program)
         {
             ArgumentNullException.ThrowIfNull(program);
             return RetainProgram(program);
         }
 
         protected static void ReleaseCaptureOnFailure(
-            RetainedSlangProgram? retainedProgram,
+            RetainedShaderProgram? retainedProgram,
             D3D12PipelineCache? cache,
             bool cacheRetained)
         {
@@ -189,8 +194,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class GraphicsPipelineCreationRequest : PipelineCreationRequest
     {
-        private readonly EntryPointReflection _vertex;
-        private readonly EntryPointReflection _pixel;
+        private readonly ShaderEntryPoint _vertex;
+        private readonly ShaderEntryPoint _pixel;
         private readonly VertexBufferLayout[] _vertexBuffers;
         private readonly VertexAttribute[] _vertexAttributes;
         private readonly PrimitiveTopology _topology;
@@ -215,9 +220,9 @@ internal sealed unsafe partial class D3D12Backend
         private GraphicsPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            RetainedSlangProgram program,
-            EntryPointReflection vertex,
-            EntryPointReflection pixel,
+            RetainedShaderProgram program,
+            ShaderEntryPoint vertex,
+            ShaderEntryPoint pixel,
             VertexBufferLayout[] vertexBuffers,
             VertexAttribute[] vertexAttributes,
             PrimitiveTopology topology,
@@ -269,7 +274,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in GraphicsPipelineDesc desc)
         {
-            RetainedSlangProgram retainedProgram = CaptureProgram(desc.Program);
+            RetainedShaderProgram retainedProgram = CaptureProgram(desc.Program);
             bool cacheRetained = false;
             try
             {
@@ -376,15 +381,15 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class ComputePipelineCreationRequest : PipelineCreationRequest
     {
-        private readonly EntryPointReflection _compute;
+        private readonly ShaderEntryPoint _compute;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
 
         private ComputePipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            RetainedSlangProgram program,
-            EntryPointReflection compute,
+            RetainedShaderProgram program,
+            ShaderEntryPoint compute,
             string? label,
             StaticSamplerBinding[] staticSamplers)
             : base(device, PipelineType.Compute, program, cache)
@@ -399,7 +404,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in ComputePipelineDesc desc)
         {
-            RetainedSlangProgram retainedProgram = CaptureProgram(desc.Program);
+            RetainedShaderProgram retainedProgram = CaptureProgram(desc.Program);
             bool cacheRetained = false;
             try
             {
@@ -430,9 +435,9 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class MeshPipelineCreationRequest : PipelineCreationRequest
     {
-        private readonly EntryPointReflection _mesh;
-        private readonly EntryPointReflection _amplification;
-        private readonly EntryPointReflection _pixel;
+        private readonly ShaderEntryPoint _mesh;
+        private readonly ShaderEntryPoint _amplification;
+        private readonly ShaderEntryPoint _pixel;
         private readonly RasterizerState _rasterizer;
         private readonly MultisampleState _multisample;
         private readonly DepthStencilState _depthStencil;
@@ -449,10 +454,10 @@ internal sealed unsafe partial class D3D12Backend
         private MeshPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            RetainedSlangProgram program,
-            EntryPointReflection mesh,
-            EntryPointReflection amplification,
-            EntryPointReflection pixel,
+            RetainedShaderProgram program,
+            ShaderEntryPoint mesh,
+            ShaderEntryPoint amplification,
+            ShaderEntryPoint pixel,
             RasterizerState rasterizer,
             MultisampleState multisample,
             DepthStencilState depthStencil,
@@ -489,7 +494,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in MeshPipelineDesc desc)
         {
-            RetainedSlangProgram retainedProgram = CaptureProgram(desc.Program);
+            RetainedShaderProgram retainedProgram = CaptureProgram(desc.Program);
             bool cacheRetained = false;
             try
             {
@@ -551,9 +556,9 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed class RayTracingPipelineCreationRequest : PipelineCreationRequest
     {
-        private readonly EntryPointReflection[] _rayGeneration;
-        private readonly EntryPointReflection[] _miss;
-        private readonly EntryPointReflection[] _callable;
+        private readonly ShaderEntryPoint[] _rayGeneration;
+        private readonly ShaderEntryPoint[] _miss;
+        private readonly ShaderEntryPoint[] _callable;
         private readonly RayTracingHitGroup[] _hitGroups;
         private readonly uint _maximumRecursionDepth;
         private readonly uint _maximumPayloadSize;
@@ -566,10 +571,10 @@ internal sealed unsafe partial class D3D12Backend
         private RayTracingPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            RetainedSlangProgram program,
-            EntryPointReflection[] rayGeneration,
-            EntryPointReflection[] miss,
-            EntryPointReflection[] callable,
+            RetainedShaderProgram program,
+            ShaderEntryPoint[] rayGeneration,
+            ShaderEntryPoint[] miss,
+            ShaderEntryPoint[] callable,
             RayTracingHitGroup[] hitGroups,
             uint maximumRecursionDepth,
             uint maximumPayloadSize,
@@ -598,13 +603,13 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in RayTracingPipelineDesc desc)
         {
-            RetainedSlangProgram retainedProgram = CaptureProgram(desc.Program);
+            RetainedShaderProgram retainedProgram = CaptureProgram(desc.Program);
             bool cacheRetained = false;
             try
             {
-                EntryPointReflection[] rayGeneration = desc.RayGeneration.ToArray();
-                EntryPointReflection[] miss = desc.Miss.ToArray();
-                EntryPointReflection[] callable = desc.Callable.ToArray();
+                ShaderEntryPoint[] rayGeneration = desc.RayGeneration.ToArray();
+                ShaderEntryPoint[] miss = desc.Miss.ToArray();
+                ShaderEntryPoint[] callable = desc.Callable.ToArray();
                 RayTracingHitGroup[] hitGroups = desc.HitGroups.ToArray();
                 StaticSamplerBinding[] staticSamplers = desc.StaticSamplers.ToArray();
                 cache?.RetainForPipelineCreation();
@@ -660,7 +665,7 @@ internal sealed unsafe partial class D3D12Backend
         private WorkGraphPipelineCreationRequest(
             D3D12Device device,
             D3D12PipelineCache? cache,
-            RetainedSlangProgram program,
+            RetainedShaderProgram program,
             uint nodeMask,
             string? label,
             StaticSamplerBinding[] staticSamplers)
@@ -676,7 +681,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12PipelineCache? cache,
             in WorkGraphPipelineDesc desc)
         {
-            RetainedSlangProgram retainedProgram = CaptureProgram(desc.Program);
+            RetainedShaderProgram retainedProgram = CaptureProgram(desc.Program);
             bool cacheRetained = false;
             try
             {

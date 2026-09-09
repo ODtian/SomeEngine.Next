@@ -2,7 +2,7 @@
 #define BRDF_SLANG
 
 // ── Cook-Torrance Microfacet BRDF ──
-// Standard PBR direct lighting model:
+// Cook-Torrance direct lighting model:
 //   f(l,v) = D(h) * G(l,v) * F(v,h) / (4 * NdotL * NdotV) + (1-F) * diffuse/PI
 
 static const float PI = 3.14159265358979323846;

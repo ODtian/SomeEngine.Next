@@ -71,6 +71,10 @@ public abstract class DescriptorTable : DeviceResource
 
     private readonly DescriptorSlotDesc[] _slots;
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Safety",
+        "SE032:Hot-path validation is forbidden",
+        Justification = "Validates caller-provided descriptor schema at the resource-creation boundary.")]
     internal DescriptorTable(
         Device device,
         DescriptorTableType type,
@@ -227,12 +231,14 @@ public readonly struct ResourceBinding : IEquatable<ResourceBinding>
 {
     private readonly GraphicsObject? _value;
 
-    private ResourceBinding(ResourceBindingType type, GraphicsObject? value)
+    internal ResourceBinding(ResourceBindingType type, GraphicsObject? value, BufferRange bufferRange = default)
     {
         Type = type;
         _value = value;
+        BufferRange = bufferRange;
     }
 
+    public BufferRange BufferRange { get; }
     public ResourceBindingType Type { get; }
     public GraphicsObject? Value => _value;
     public bool IsNull => _value is null;
@@ -245,6 +251,11 @@ public readonly struct ResourceBinding : IEquatable<ResourceBinding>
             throw new ArgumentOutOfRangeException(nameof(type));
         return new ResourceBinding(type, null);
     }
+
+    /// <summary>Binds a buffer range directly, without allocating a BufferCbv object.</summary>
+    public static ResourceBinding ConstantBuffer(Buffer buffer, in BufferRange range)
+        => new(ResourceBindingType.ConstantBuffer, buffer,
+            range.IsWhole ? new BufferRange(0, buffer.Info.Size) : range);
 
     public static ResourceBinding ConstantBuffer(BufferCbv value) =>
         new(ResourceBindingType.ConstantBuffer, value ?? throw new ArgumentNullException(nameof(value)));
@@ -269,12 +280,12 @@ public readonly struct ResourceBinding : IEquatable<ResourceBinding>
         new(ResourceBindingType.AccelerationStructure, value ?? throw new ArgumentNullException(nameof(value)));
 
     public bool Equals(ResourceBinding other) =>
-        Type == other.Type && ReferenceEquals(_value, other._value);
+        Type == other.Type && ReferenceEquals(_value, other._value) && BufferRange == other.BufferRange;
 
     public override bool Equals(object? obj) => obj is ResourceBinding other && Equals(other);
     public override int GetHashCode() => HashCode.Combine(
         Type,
-        _value is null ? 0 : RuntimeHelpers.GetHashCode(_value));
+        _value is null ? 0 : RuntimeHelpers.GetHashCode(_value), BufferRange);
     public static bool operator ==(ResourceBinding left, ResourceBinding right) => left.Equals(right);
     public static bool operator !=(ResourceBinding left, ResourceBinding right) => !left.Equals(right);
 }
@@ -288,7 +299,7 @@ public readonly struct ResourceBinding : IEquatable<ResourceBinding>
 public readonly ref struct ParameterBlockBindings
 {
     public ParameterBlockBindings(
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         ReadOnlySpan<ResourceBinding> resources,
         ReadOnlySpan<byte> ordinaryData)
     {
@@ -297,7 +308,7 @@ public readonly ref struct ParameterBlockBindings
         OrdinaryData = ordinaryData;
     }
 
-    public VariableLayoutReflection Layout { get; }
+    public ShaderVariableLayout Layout { get; }
     public ReadOnlySpan<ResourceBinding> Resources { get; }
     public ReadOnlySpan<byte> OrdinaryData { get; }
 }
@@ -312,12 +323,12 @@ public abstract class PersistentParameterBindings : DeviceResource
 {
     internal PersistentParameterBindings(
         Device device,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         string? label)
         : base(device, label)
     {
         Layout = layout;
     }
 
-    public VariableLayoutReflection Layout { get; }
+    public ShaderVariableLayout Layout { get; }
 }

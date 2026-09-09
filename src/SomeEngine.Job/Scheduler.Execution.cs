@@ -20,6 +20,9 @@ public sealed partial class Scheduler
 
         Scheduler? previousScheduler = s_executing;
         s_executing = this;
+        using var association = SomeEngine.Diagnostics.EngineTrace.IsEnabled
+            ? SomeEngine.Diagnostics.EngineTrace.Associate(_execution.GetTraceContext(handle)) : default;
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Execute);
         ScopeToken previousScope = s_currentScope;
         ScopeToken nextScope = ScopeToken.FromHandle(handle);
         JobExecutionContext.Enter();

@@ -1,10 +1,10 @@
 #include "fullscreen_triangle.slang"
 
-Texture2D<float4> SceneColor;
+Texture2DArray<float4> SceneColor;
 Texture2D<float4> PreviousSceneColor;
-Texture2D<float2> MotionVectors;
+Texture2DArray<float2> MotionVectors;
 Texture2D<float2> PreviousMotionVectors;
-Texture2D<float> SceneDepth;
+Texture2DArray<float> SceneDepth;
 Texture2D<float> PreviousSceneDepth;
 
 struct TemporalResolveUniformData
@@ -19,7 +19,7 @@ ConstantBuffer<TemporalResolveUniformData> TemporalResolveUniforms;
 
 float3 LoadCurrentClamped(int2 pixel, int2 maxPixel)
 {
-    return SceneColor.Load(int3(clamp(pixel, int2(0, 0), maxPixel), 0)).rgb;
+    return SceneColor.Load(int4(clamp(pixel, int2(0, 0), maxPixel), 0, 0)).rgb;
 }
 
 float3 RgbToYCoCg(float3 color)
@@ -42,6 +42,11 @@ float3 YCoCgToRgb(float3 color)
 float LoadDepthClamped(Texture2D<float> depthTexture, int2 pixel, int2 maxPixel)
 {
     return depthTexture.Load(int3(clamp(pixel, int2(0, 0), maxPixel), 0));
+}
+
+float LoadCurrentDepthClamped(int2 pixel, int2 maxPixel)
+{
+    return SceneDepth.Load(int4(clamp(pixel, int2(0, 0), maxPixel), 0, 0));
 }
 
 float Max3(float3 value)
@@ -196,19 +201,19 @@ float2 LoadPreviousMotionBilinear(float2 uv, float2 size, int2 maxPixel)
 
 float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel)
 {
-    float closestDepth = LoadDepthClamped(SceneDepth, pixel, maxPixel);
-    float2 closestMotion = MotionVectors.Load(int3(clamp(pixel, int2(0, 0), maxPixel), 0));
+    float closestDepth = LoadCurrentDepthClamped(pixel, maxPixel);
+    float2 closestMotion = MotionVectors.Load(int4(clamp(pixel, int2(0, 0), maxPixel), 0, 0));
 
     for (int y = -1; y <= 1; y++)
     {
         for (int x = -1; x <= 1; x++)
         {
             int2 samplePixel = pixel + int2(x, y);
-            float sampleDepth = LoadDepthClamped(SceneDepth, samplePixel, maxPixel);
+            float sampleDepth = LoadCurrentDepthClamped(samplePixel, maxPixel);
             if (sampleDepth < closestDepth)
             {
                 closestDepth = sampleDepth;
-                closestMotion = MotionVectors.Load(int3(clamp(samplePixel, int2(0, 0), maxPixel), 0));
+                closestMotion = MotionVectors.Load(int4(clamp(samplePixel, int2(0, 0), maxPixel), 0, 0));
             }
         }
     }
@@ -234,11 +239,12 @@ float DepthDisocclusionRejection(float currentDepth, float previousDepth)
 float4 PSMain(FullscreenVSOut input) : SV_Target
 {
     int2 pixel = int2(input.Position.xy);
-    float4 current = SceneColor.Load(int3(pixel, 0));
+    float4 current = SceneColor.Load(int4(pixel, 0, 0));
 
     uint width;
     uint height;
-    SceneColor.GetDimensions(width, height);
+    uint layers;
+    SceneColor.GetDimensions(width, height, layers);
     width = max(width, 1u);
     height = max(height, 1u);
     int2 maxPixel = int2((int)width - 1, (int)height - 1);
@@ -256,7 +262,7 @@ float4 PSMain(FullscreenVSOut input) : SV_Target
 
     float4 previous = LoadPreviousSceneColorBilinear(previousUv, size, maxPixel);
     float3 boundedPrevious = ClipHistoryToCurrentNeighborhood(pixel, maxPixel, current.rgb, previous.rgb);
-    float currentDepth = LoadDepthClamped(SceneDepth, pixel, maxPixel);
+    float currentDepth = LoadCurrentDepthClamped(pixel, maxPixel);
     float previousDepth = LoadPreviousDepthBilinear(previousUv, size, maxPixel);
     float depthRejection = DepthDisocclusionRejection(currentDepth, previousDepth);
     float velocityRejection = VelocityDisocclusionRejection(previousUv, motion, size, maxPixel);

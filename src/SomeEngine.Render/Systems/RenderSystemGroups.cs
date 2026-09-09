@@ -173,22 +173,32 @@ public ref struct RenderFrameSystemContext
 /// </summary>
 public sealed class RenderPrepareSystems : IDisposable
 {
+    private readonly RenderExtractionSystems _extraction;
     private readonly RenderPrepareDriver _driver;
     private readonly SystemGroup<RenderPrepareSystemContext> _systems;
     private bool _shutdown;
 
     public RenderPrepareSystems(
         RenderWorld world,
-        RenderInstanceStorageSystem instances)
+        RenderInstanceStorageSystem instances,
+        RenderExtractionSystems extraction)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(instances);
+        ArgumentNullException.ThrowIfNull(extraction);
         if (!ReferenceEquals(world, instances.World))
         {
             throw new ArgumentException(
                 "Prepare systems and instance storage must use the same RenderWorld.",
                 nameof(instances));
         }
+        if (!ReferenceEquals(world, extraction.World))
+        {
+            throw new ArgumentException(
+                "Prepare systems and extraction must use the same RenderWorld.",
+                nameof(extraction));
+        }
+        _extraction = extraction;
         _driver = new RenderPrepareDriver(world, instances);
         _systems = new SystemGroup<RenderPrepareSystemContext>(_driver);
     }
@@ -202,6 +212,26 @@ public sealed class RenderPrepareSystems : IDisposable
     public void Enable(int index) => _systems.Enable(index);
 
     public void Disable(int index) => _systems.Disable(index);
+
+    /// <summary>
+    /// Applies the detached extraction candidate without running pipeline preparation. This is
+    /// useful when a pipeline must discover newly published RenderWorld assets asynchronously
+    /// before the remaining systems update in the same prepare scope.
+    /// </summary>
+    public bool ApplyExtraction(RenderPrepareScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ObjectDisposedException.ThrowIf(_shutdown, this);
+        _driver.Enter(scope);
+        try
+        {
+            return _extraction.ApplyPendingCandidate();
+        }
+        finally
+        {
+            _driver.Exit(scope);
+        }
+    }
 
     /// <summary>
     /// Removes a system while its destruction callback still has the exclusive prepare
@@ -229,6 +259,7 @@ public sealed class RenderPrepareSystems : IDisposable
         _driver.Enter(scope);
         try
         {
+            _extraction.ApplyPendingCandidate();
             _systems.Update();
         }
         finally
@@ -342,6 +373,9 @@ public sealed class RenderFrameSystems : IDisposable
     public void Enable(int index) => _systems.Enable(index);
 
     public void Disable(int index) => _systems.Disable(index);
+
+    /// <summary>Creates enabled frame systems before retained graph installation.</summary>
+    public void Initialize() => _systems.Initialize();
 
     public void Update(RenderFrame frame, RenderGraphFrame graph)
     {

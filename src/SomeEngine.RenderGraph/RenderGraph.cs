@@ -2,6 +2,16 @@ namespace SomeEngine.RenderGraph;
 
 public sealed partial class RenderGraph : IDisposable
 {
+    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind)
+    {
+        foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind);
+    }
+
+    internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind)
+    {
+        foreach (FrameSlot frame in _frameSlots) frame.BoundaryChanged(identity, kind);
+    }
+
     private static long s_nextOwnerIdentity;
 
     private readonly IGraphicsBackend _backend;
@@ -66,8 +76,14 @@ public sealed partial class RenderGraph : IDisposable
 
     internal ulong Identity { get; }
     internal IGraphicsBackend Backend => _backend;
-    internal Device Device => _device;
+    public Device Device => _device;
     internal GraphStructureIndex StructureIndex => _structureIndex;
+    public bool TryGetBufferId(Buffer buffer, out GraphBufferId id)
+    {
+        bool found = _structureIndex.ResourceIdentities.TryGetValue(buffer, out GraphIdentity identity);
+        id = found ? new GraphBufferId(identity) : default;
+        return found;
+    }
     internal ReadOnlySpan<Queue> Queues => _queues;
     internal CommandContextPool CommandContexts => _commandContexts;
     internal PersistentResourceAllocator PersistentResources => _persistentResources;
@@ -87,6 +103,9 @@ public sealed partial class RenderGraph : IDisposable
     public ulong StructureVersion { get; private set; }
     public string? Label => Description.Label;
     public int MaximumQueueCompletionCount => _queues.Length;
+#if DEBUG
+    public RenderGraphEditStatistics LastEditStatistics { get; private set; }
+#endif
 
     public RenderGraphEdit BeginEdit()
     {
@@ -99,7 +118,11 @@ public sealed partial class RenderGraph : IDisposable
         try
         {
             lock (_structureGate)
-                return new RenderGraphEdit(this, token, _structure.Clone());
+                return new RenderGraphEdit(
+                    this,
+                    token,
+                    _structure.Fork(),
+                    new GraphEditChanges());
         }
         catch
         {
@@ -180,6 +203,87 @@ public sealed partial class RenderGraph : IDisposable
             slot.CollectCompleted(_backend);
     }
 
+    internal bool TryGetTransientPlacement(
+        GraphBufferId buffer,
+        out Heap? heap,
+        out ulong offset)
+    {
+        if (!buffer.Value.IsValid || buffer.Value.Owner != Identity)
+            throw new ArgumentException("The Buffer identity belongs to another RenderGraph.", nameof(buffer));
+        foreach (FrameSlot slot in _frameSlots)
+            if (slot.TransientResources is not null &&
+                slot.TransientResources.TryGetPlacement(buffer.Value, out heap, out offset))
+                return true;
+        heap = null;
+        offset = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns the number of Queue completions that can still access the requested Buffer range.
+    /// At most one (the maximum known value) is returned for each registered Queue.
+    /// </summary>
+    public int GetRangeCompletionCount(Buffer buffer, in BufferRange range)
+    {
+        var completions = new List<QueueCompletion>(_queues.Length);
+        CollectRangeCompletions(buffer, range, completions);
+        return completions.Count;
+    }
+
+    /// <summary>
+    /// Copies the Queue completions that can still access the requested Buffer range.
+    /// At most one (the maximum known value) is copied for each registered Queue.
+    /// The caller must prevent future frames from declaring access to the range before using the
+    /// copied completions as its complete retirement dependency set.
+    /// </summary>
+    public int CopyRangeCompletions(
+        Buffer buffer,
+        in BufferRange range,
+        Span<QueueCompletion> destination)
+    {
+        var completions = new List<QueueCompletion>(_queues.Length);
+        CollectRangeCompletions(buffer, range, completions);
+        if (destination.Length < completions.Count)
+            throw new ArgumentException(
+                "The destination cannot hold every Queue completion.",
+                nameof(destination));
+        for (int i = 0; i < completions.Count; i++) destination[i] = completions[i];
+        return completions.Count;
+    }
+
+    /// <summary>
+    /// Discards retained transient placement history so the next frame can repack it. The graph
+    /// and all submitted frames must be idle; ordinary structural commits never compact implicitly.
+    /// </summary>
+    public void CompactTransientResources()
+    {
+        EnsureAvailable();
+        lock (_structureGate)
+        {
+            if (_editToken != 0 || _frameToken != 0)
+                throw new InvalidOperationException(
+                    "Transient compaction requires an idle RenderGraph with no edit or CPU frame.");
+            foreach (FrameSlot slot in _frameSlots)
+                if (!slot.IsReady(_backend))
+                    throw new InvalidOperationException(
+                        "Transient compaction requires every submitted frame to complete.");
+
+            var changes = new GraphEditChanges { CompactTransientPlacements = true };
+            foreach (GraphIdentity resource in _structureIndex.TransientResources)
+            {
+                if (resource.Domain == GraphIdentityDomain.Buffer) changes.Buffers.Add(resource);
+                else if (resource.Domain == GraphIdentityDomain.Texture) changes.Textures.Add(resource);
+                changes.Views.UnionWith(_structureIndex.ResourceViews.GetValueOrDefault(resource, []));
+            }
+            foreach (FrameSlot slot in _frameSlots)
+            {
+                slot.TransientResources?.Compact();
+                slot.ApplyEdit(changes);
+            }
+
+        }
+    }
+
     internal Queue[] ResolveQueueCandidates(in PassQueueSelection policy, GraphPassKind kind)
     {
         var result = new List<Queue>(_queues.Length);
@@ -245,21 +349,65 @@ public sealed partial class RenderGraph : IDisposable
             throw new NotSupportedException($"A {kind} pass cannot execute on a {type} Queue.");
     }
 
-    internal void CommitEdit(long token, GraphStructure staging)
+    internal void CommitEdit(
+        long token,
+        GraphStructure staging,
+        GraphEditChanges changes)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.EditCommit);
         EnsureEdit(token);
         lock (_structureGate)
         {
             GraphStructure previous = _structure;
-            CarryBoundaryStates(previous, staging);
-            GraphStructureIndex index = GraphStructureIndex.Build(this, staging);
+            if (changes.IsEmpty)
+            {
+#if DEBUG
+                LastEditStatistics = default;
+#endif
+                EndEdit(token);
+                return;
+            }
+            if (changes.LabelsOnly)
+            {
+                CarryFrameValues(previous, staging, changes);
+                if (_frameToken != 0) _deferredRetirements.Add(new StructureTransition(previous, staging, changes));
+                _structure = staging;
+                _structureIndex = _structureIndex.WithStructure(staging);
+                foreach (FrameSlot slot in _frameSlots) slot.ApplyEdit(changes);
+#if DEBUG
+                LastEditStatistics = new RenderGraphEditStatistics(changes.Labels.Count, 0, 1, 9, 0, 0, 0, 0);
+#endif
+                EndEdit(token);
+                return;
+            }
+            CarryFrameValues(previous, staging, changes);
+            GraphStructureIndex index = GraphStructureIndex.Update(
+                this,
+                _structureIndex,
+                staging,
+                changes,
+                out GraphIndexUpdateStatistics updateStatistics);
             bool frameActive = _frameToken != 0;
-            _persistentResources.ApplyStructure(previous, staging, !frameActive);
+            _persistentResources.ApplyStructure(previous, staging, changes, !frameActive);
+            index.UpdateResourceIdentities(_structureIndex, changes);
             if (frameActive)
-                _deferredRetirements.Add(new StructureTransition(previous, staging));
+                _deferredRetirements.Add(new StructureTransition(previous, staging, changes));
             _structure = staging;
             _structureIndex = index;
             StructureVersion++;
+            foreach (FrameSlot slot in _frameSlots) slot.ApplyEdit(changes);
+#if DEBUG
+            int sharedBlocks = staging.CountSharedBlocks(previous);
+            LastEditStatistics = new RenderGraphEditStatistics(
+                changes.Passes.Count,
+                changes.EditedResourceCount,
+                10 - sharedBlocks,
+                sharedBlocks,
+                updateStatistics.ResourcesReanalyzed,
+                updateStatistics.HazardEdgesRebuilt,
+                updateStatistics.ScheduleNodesRevisited,
+                updateStatistics.TransientAllocationsMoved);
+#endif
             EndEdit(token);
         }
     }
@@ -291,14 +439,14 @@ public sealed partial class RenderGraph : IDisposable
                 throw new InvalidOperationException("The render graph frame token is no longer active.");
             foreach (StructureTransition transition in _deferredRetirements)
             {
-                CarryBoundaryStates(transition.Previous, transition.Next);
-                _persistentResources.RetireRemoved(transition.Previous, transition.Next);
+                CarryFrameValues(transition.Previous, transition.Next, transition.Changes);
+                _persistentResources.RetireRemoved(transition.Previous, transition.Next, transition.Changes);
             }
             _deferredRetirements.Clear();
         }
     }
 
-    internal void RetireAfterSubmittedFrames(IDisposable value)
+    public void RetireAfterSubmittedFrames(IDisposable value)
     {
         ArgumentNullException.ThrowIfNull(value);
         var completions = new List<QueueCompletion>();
@@ -311,41 +459,58 @@ public sealed partial class RenderGraph : IDisposable
         }
     }
 
-    private void CarryBoundaryStates(GraphStructure previous, GraphStructure next)
+    private void CarryFrameValues(GraphStructure previous, GraphStructure next, GraphEditChanges changes)
     {
-        for (int index = 0; index < next.Buffers.Count; index++)
+        foreach (GraphIdentity identity in changes.Passes.Concat(changes.Labels))
+            if (previous.Passes.Contains(identity) && next.Passes.Contains(identity))
+                next.Passes.Get(identity).Enabled = previous.Passes.Get(identity).Enabled;
+        foreach (GraphIdentity identity in changes.Views)
+            if (previous.Views.Contains(identity) && next.Views.Contains(identity))
+                next.Views.Get(identity).CurrentBufferRange = previous.Views.Get(identity).CurrentBufferRange;
+        foreach (GraphIdentity identity in changes.Accesses)
+            if (previous.Accesses.Contains(identity) && next.Accesses.Contains(identity))
+            {
+                PassResourceAccess source = previous.Accesses.Get(identity);
+                PassResourceAccess destination = next.Accesses.Get(identity);
+                destination.CurrentBufferRange = source.CurrentBufferRange;
+                destination.CurrentTextureRange = source.CurrentTextureRange;
+            }
+        foreach (GraphIdentity identity in changes.Buffers)
         {
-            GraphIdentity identity = next.Buffers.IdentityAt(Identity, index);
-            if (!previous.Buffers.Contains(identity)) continue;
+            if (!previous.Buffers.Contains(identity) || !next.Buffers.Contains(identity)) continue;
             GraphBuffer source = previous.Buffers.Get(identity);
             GraphBuffer destination = next.Buffers.Get(identity);
+            destination.CurrentViewRange = source.CurrentViewRange;
+            if (destination.RegisteredResource is null && destination.Ownership == RenderGraphResourceOwnership.CallerOwned)
+                destination.BoundResource = source.BoundResource;
             if (ReferenceEquals(source.PersistentResource, destination.PersistentResource) &&
-                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource))
+                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource) &&
+                ReferenceEquals(source.BoundResource, destination.BoundResource))
                 destination.BoundaryStates = source.BoundaryStates;
         }
-        for (int index = 0; index < next.Textures.Count; index++)
+        foreach (GraphIdentity identity in changes.Textures)
         {
-            GraphIdentity identity = next.Textures.IdentityAt(Identity, index);
-            if (!previous.Textures.Contains(identity)) continue;
+            if (!previous.Textures.Contains(identity) || !next.Textures.Contains(identity)) continue;
             GraphTexture source = previous.Textures.Get(identity);
             GraphTexture destination = next.Textures.Get(identity);
+            if (destination.RegisteredResource is null && destination.Ownership == RenderGraphResourceOwnership.CallerOwned)
+                destination.BoundResource = source.BoundResource;
             if (ReferenceEquals(source.PersistentResource, destination.PersistentResource) &&
-                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource))
+                ReferenceEquals(source.RegisteredResource, destination.RegisteredResource) &&
+                ReferenceEquals(source.BoundResource, destination.BoundResource))
                 destination.BoundaryStates = source.BoundaryStates;
         }
-        for (int index = 0; index < next.QueryPools.Count; index++)
+        foreach (GraphIdentity identity in changes.QueryPools)
         {
-            GraphIdentity identity = next.QueryPools.IdentityAt(Identity, index);
-            if (!previous.QueryPools.Contains(identity)) continue;
+            if (!previous.QueryPools.Contains(identity) || !next.QueryPools.Contains(identity)) continue;
             GraphQueryPool source = previous.QueryPools.Get(identity);
             GraphQueryPool destination = next.QueryPools.Get(identity);
             if (ReferenceEquals(source.Resource, destination.Resource))
                 destination.BoundaryStates = source.BoundaryStates;
         }
-        for (int index = 0; index < next.ShaderTables.Count; index++)
+        foreach (GraphIdentity identity in changes.ShaderTables)
         {
-            GraphIdentity identity = next.ShaderTables.IdentityAt(Identity, index);
-            if (!previous.ShaderTables.Contains(identity)) continue;
+            if (!previous.ShaderTables.Contains(identity) || !next.ShaderTables.Contains(identity)) continue;
             GraphRayTracingShaderTable source = previous.ShaderTables.Get(identity);
             GraphRayTracingShaderTable destination = next.ShaderTables.Get(identity);
             if (ReferenceEquals(source.Resource, destination.Resource))
@@ -353,7 +518,7 @@ public sealed partial class RenderGraph : IDisposable
         }
     }
 
-    private readonly record struct StructureTransition(GraphStructure Previous, GraphStructure Next);
+    private readonly record struct StructureTransition(GraphStructure Previous, GraphStructure Next, GraphEditChanges Changes);
 
     internal void EnsureFrame(ulong identity)
     {
@@ -405,9 +570,7 @@ public sealed partial class RenderGraph : IDisposable
             texture.PersistentResource = null;
         }
         _persistentResources.Dispose();
-        foreach (GraphPass pass in _structure.Passes.Rows)
-            for (int slot = 0; slot < _frameSlots.Length; slot++)
-                pass.CallbackStorage.ClearFrameData(slot);
+        foreach (GraphPass pass in _structure.Passes.Rows) pass.CallbackStorage.ClearData();
     }
 
     private void WaitForSubmittedWork()
@@ -426,6 +589,48 @@ public sealed partial class RenderGraph : IDisposable
                     AddCompletion(completions, endpoint.ReadyAfter.Value);
         foreach (QueueCompletion completion in completions)
             _ = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
+    }
+
+    private void CollectRangeCompletions(
+        Buffer buffer,
+        in BufferRange requested,
+        List<QueueCompletion> destination)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        if (!ReferenceEquals(buffer.Device, _device))
+            throw new ArgumentException("The Buffer belongs to another Device.", nameof(buffer));
+        BufferRange range = GraphStructureIndex.ResolveRange(requested, buffer.Info.Size);
+        lock (_structureGate)
+        {
+            CollectFrom(_structure);
+            foreach (StructureTransition transition in _deferredRetirements)
+            {
+                CollectFrom(transition.Previous);
+                CollectFrom(transition.Next);
+            }
+        }
+        return;
+
+        void CollectFrom(GraphStructure structure)
+        {
+            foreach (GraphBuffer graphBuffer in structure.Buffers.Rows)
+            {
+                if (!ReferenceEquals(graphBuffer.PersistentResource, buffer) &&
+                    !ReferenceEquals(graphBuffer.RegisteredResource, buffer))
+                    continue;
+                foreach (BufferBoundaryState boundary in graphBuffer.BoundaryStates)
+                {
+                    if (!boundary.ReadyAfter.HasValue) continue;
+                    BufferRange endpoint = GraphStructureIndex.ResolveRange(
+                        boundary.Range,
+                        buffer.Info.Size);
+                    if (endpoint.Offset >= range.Offset + range.Size ||
+                        range.Offset >= endpoint.Offset + endpoint.Size)
+                        continue;
+                    AddCompletion(destination, boundary.ReadyAfter.Value);
+                }
+            }
+        }
     }
 
     private static void AddCompletion(List<QueueCompletion> values, QueueCompletion completion)

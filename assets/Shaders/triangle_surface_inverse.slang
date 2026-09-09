@@ -3,15 +3,6 @@
 
 #include "triangle_surface.slang"
 
-struct SurfaceBarycentrics
-{
-    float3 Value;
-    float3 Dx;
-    float3 Dy;
-    float Residual;
-    uint Valid;
-};
-
 float2 SolveSurfaceNormalEquations(
     float a,
     float b,
@@ -25,74 +16,164 @@ float2 SolveSurfaceNormalEquations(
         a * rightHandSide.y - b * rightHandSide.x) * inverse;
 }
 
-// Fixed-cost, surface-type-independent inverse used by deferred visibility shading. The user
-// surface supplies only eval(); the pipeline owns reconstruction policy. No surface discriminator,
-// permutation, or auxiliary visibility payload is required.
-SurfaceBarycentrics ResolveTriangleSurface<TSurface : ITriangleSurface>(
-    uniform TSurface surface,
-    Triangle triangle,
-    float3 targetPosition,
-    float3 parentTriangleSeed,
-    float4x4 viewProjection,
-    uint2 screenSize)
+float SurfaceBarycentricViolation(float3 value)
 {
-    float2 parameters = parentTriangleSeed.yz;
+    return max(
+        max(-value.x, -value.y),
+        max(-value.z, abs(value.x + value.y + value.z - 1.0)));
+}
+
+float3 RayTriangleBarycentrics(
+    float3 origin,
+    float3 direction,
+    float3 p0,
+    float3 p1,
+    float3 p2,
+    out float determinant)
+{
+    float3 edge01 = p1 - p0;
+    float3 edge02 = p2 - p0;
+    float3 origin0 = origin - p0;
+    float3 directionCross02 = cross(direction, edge02);
+    determinant = dot(edge01, directionCross02);
+    float inverse = abs(determinant) > 1e-12 ? rcp(determinant) : 0.0;
+
+    float3 result;
+    result.y = inverse * dot(origin0, directionCross02);
+    result.z = inverse * dot(direction, cross(origin0, edge01));
+    result.x = 1.0 - result.y - result.z;
+    return result;
+}
+
+float3 ClosestPlaneBarycentrics(
+    float3 point,
+    float3 p0,
+    float3 p1,
+    float3 p2,
+    out float determinant)
+{
+    float3 triangleNormal = cross(p2 - p0, p1 - p0);
+    return RayTriangleBarycentrics(
+        point,
+        triangleNormal,
+        p0,
+        p1,
+        p2,
+        determinant);
+}
+
+SurfaceBarycentrics ReconstructNormalDisplacementSurface(
+    Triangle triangle,
+    SurfaceReconstructionInput input)
+{
+    float3 p0 = triangle.Position0;
+    float3 p1 = triangle.Position1;
+    float3 p2 = triangle.Position2;
+    float closestDeterminant = 0.0;
+
     [unroll]
     for (uint iteration = 0u; iteration < 2u; iteration++)
     {
-        SurfaceEval evaluation = surface.eval(triangle, Barycentric(parameters));
-        float3 residual = evaluation.Position - targetPosition;
-        float a = dot(evaluation.DpDu, evaluation.DpDu);
-        float b = dot(evaluation.DpDu, evaluation.DpDv);
-        float c = dot(evaluation.DpDv, evaluation.DpDv);
-        float damping = max(1e-10, (a + c) * 1e-7);
-        float2 delta = SolveSurfaceNormalEquations(
-            a + damping,
-            b,
-            c + damping,
-            float2(
-                dot(evaluation.DpDu, residual),
-                dot(evaluation.DpDv, residual)));
-        float maximumStep = max(abs(delta.x), abs(delta.y));
-        delta *= min(1.0, 0.25 / max(maximumStep, 1e-12));
-        parameters -= delta;
+        float3 bary = ClosestPlaneBarycentrics(
+            input.TargetPosition,
+            p0,
+            p1,
+            p2,
+            closestDeterminant);
+        bary = ClampBarycentric(bary);
+
+        float3 closestPoint =
+            p0 * bary.x +
+            p1 * bary.y +
+            p2 * bary.z;
+        float3 closestNormal =
+            triangle.Normal0 * bary.x +
+            triangle.Normal1 * bary.y +
+            triangle.Normal2 * bary.z;
+        float normalLengthSquared = dot(closestNormal, closestNormal);
+        float displacement = normalLengthSquared > 1e-12
+            ? dot(input.TargetPosition - closestPoint, closestNormal) / normalLengthSquared
+            : 0.0;
+
+        p0 += triangle.Normal0 * displacement;
+        p1 += triangle.Normal1 * displacement;
+        p2 += triangle.Normal2 * displacement;
     }
 
-    float3 unresolved = Barycentric(parameters);
+    float3 unresolved = ClosestPlaneBarycentrics(
+        input.TargetPosition,
+        p0,
+        p1,
+        p2,
+        closestDeterminant);
     float3 value = ClampBarycentric(unresolved);
-    SurfaceEval evaluation = surface.eval(triangle, value);
-    float3 finalResidual = evaluation.Position - targetPosition;
+    float3 reconstructed = p0 * value.x + p1 * value.y + p2 * value.z;
 
-    float4 clip = mul(float4(evaluation.Position, 1.0), viewProjection);
-    float4 clipDu = mul(float4(evaluation.DpDu, 0.0), viewProjection);
-    float4 clipDv = mul(float4(evaluation.DpDv, 0.0), viewProjection);
+    float determinantDx;
+    float3 valueDx = RayTriangleBarycentrics(
+        input.CameraPosition,
+        input.TargetPositionDx - input.CameraPosition,
+        p0,
+        p1,
+        p2,
+        determinantDx);
+    float determinantDy;
+    float3 valueDy = RayTriangleBarycentrics(
+        input.CameraPosition,
+        input.TargetPositionDy - input.CameraPosition,
+        p0,
+        p1,
+        p2,
+        determinantDy);
+
+    SurfaceBarycentrics result;
+    result.Value = value;
+    result.Dx = valueDx - value;
+    result.Dy = valueDy - value;
+    result.Residual = length(reconstructed - input.TargetPosition);
+    result.Valid =
+        abs(closestDeterminant) > 1e-12 &&
+        abs(determinantDx) > 1e-12 &&
+        abs(determinantDy) > 1e-12 &&
+        SurfaceBarycentricViolation(unresolved) <= 1e-3 &&
+        all(isfinite(value)) &&
+        all(isfinite(result.Dx)) &&
+        all(isfinite(result.Dy))
+            ? 1u
+            : 0u;
+    return result;
+}
+
+bool ResolveParametricScreenDerivatives(
+    SurfaceEval evaluation,
+    SurfaceReconstructionInput input,
+    out float3 barycentricDx,
+    out float3 barycentricDy)
+{
+    float4 clip = mul(float4(evaluation.Position, 1.0), input.ViewProjection);
+    float4 clipDu = mul(float4(evaluation.DpDu, 0.0), input.ViewProjection);
+    float4 clipDv = mul(float4(evaluation.DpDv, 0.0), input.ViewProjection);
     float inverseW2 = abs(clip.w) > 1e-8 ? rcp(clip.w * clip.w) : 0.0;
     float2 ndcDu = (clipDu.xy * clip.w - clip.xy * clipDu.w) * inverseW2;
     float2 ndcDv = (clipDv.xy * clip.w - clip.xy * clipDv.w) * inverseW2;
-    float2 screenScale = float2(0.5 * float(screenSize.x), -0.5 * float(screenSize.y));
+    float2 screenScale = float2(
+        0.5 * float(input.ScreenSize.x),
+        -0.5 * float(input.ScreenSize.y));
     float2 pixelDu = ndcDu * screenScale;
     float2 pixelDv = ndcDv * screenScale;
     float determinant = pixelDu.x * pixelDv.y - pixelDv.x * pixelDu.y;
     float inverseDeterminant = abs(determinant) > 1e-10 ? rcp(determinant) : 0.0;
     float2 parameterDx = float2(pixelDv.y, -pixelDu.y) * inverseDeterminant;
     float2 parameterDy = float2(-pixelDv.x, pixelDu.x) * inverseDeterminant;
-
-    float barycentricViolation = max(
-        max(-unresolved.x, -unresolved.y),
-        max(-unresolved.z, abs(unresolved.x + unresolved.y + unresolved.z - 1.0)));
-
-    SurfaceBarycentrics result;
-    result.Value = value;
-    result.Dx = float3(-parameterDx.x - parameterDx.y, parameterDx.x, parameterDx.y);
-    result.Dy = float3(-parameterDy.x - parameterDy.y, parameterDy.x, parameterDy.y);
-    result.Residual = length(finalResidual);
-    result.Valid =
-        abs(determinant) > 1e-10 &&
-        barycentricViolation <= 1e-3 &&
-        all(isfinite(evaluation.Position)) &&
-        all(isfinite(evaluation.DpDu)) &&
-        all(isfinite(evaluation.DpDv));
-    return result;
+    barycentricDx = float3(
+        -parameterDx.x - parameterDx.y,
+        parameterDx.x,
+        parameterDx.y);
+    barycentricDy = float3(
+        -parameterDy.x - parameterDy.y,
+        parameterDy.x,
+        parameterDy.y);
+    return abs(determinant) > 1e-10;
 }
 
 #endif

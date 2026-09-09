@@ -71,6 +71,9 @@ public sealed partial class Scheduler
 
     private sealed partial class CompletionStore
     {
+        public SomeEngine.Diagnostics.TraceContext GetTraceContext(JobHandle handle)
+            => GetState(handle)?.TraceContext ?? default;
+
         public bool CanExecute(JobHandle handle)
         {
             CompletionState? state = GetState(handle);

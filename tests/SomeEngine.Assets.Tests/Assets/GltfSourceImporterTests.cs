@@ -36,7 +36,7 @@ public class GltfSourceImporterTests
     }
 
     [Fact]
-    public async Task Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndMeshRegionsWithoutMaterialDependencies()
+    public async Task Import_ProducesMaterialAndMeshSubAssets_WithStableKeys_AndDeformDependencies()
     {
         string dir = CreateTempDir();
 
@@ -48,7 +48,7 @@ public class GltfSourceImporterTests
             IReadOnlyList<ImportedAsset> first = await importer.ImportAsync(dir, gltfPath);
             IReadOnlyList<ImportedAsset> second = await importer.ImportAsync(dir, gltfPath);
 
-            Assert.Equal(9, first.Count); // 5 textures + 2 materials + 2 meshes
+            Assert.Equal(8, first.Count); // 4 texture outputs + 2 materials + 2 meshes
             Assert.Equal(
                 first.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.SubAssetKey),
                 second.OrderBy(static asset => asset.SubAssetKey, StringComparer.Ordinal).Select(static asset => asset.SubAssetKey));
@@ -61,54 +61,57 @@ public class GltfSourceImporterTests
             ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:0:Body");
             ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:1:Eyes");
 
-            Material maskedAsset =
-                await AssetProject.ReadAsync<Material>(maskedMaterial.OutputPath);
-            Material transparentAsset =
-                await AssetProject.ReadAsync<Material>(transparentMaterial.OutputPath);
-            Mesh bodyAsset = await Mesh.ReadAsync(bodyMesh.OutputPath);
-            Mesh eyesAsset = await Mesh.ReadAsync(eyesMesh.OutputPath);
-            AssetMeta? bodyMeshMeta = AssetMetaFiles.TryLoad(bodyMesh.OutputPath);
+            MaterialData maskedAsset = await AssetTestFiles.ReadAsync<Material, MaterialData>(maskedMaterial.OutputPath);
+            MaterialData transparentAsset = await AssetTestFiles.ReadAsync<Material, MaterialData>(transparentMaterial.OutputPath);
+            MeshData bodyAsset = await MeshData.ReadAsync(bodyMesh.OutputPath);
+            MeshData eyesAsset = await MeshData.ReadAsync(eyesMesh.OutputPath);
+            SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
+            SourceOutput? bodyMeshMeta = sourceMeta.FindOutput(bodyMesh.OutputPath);
 
-            Assert.Equal(LitShaderGuid, maskedAsset.Passes![0].Shader?.AssetGuid);
-            Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "masked");
-            Assert.Contains(maskedAsset.Passes[0].Tags!, tag => tag.Name == "two_sided");
-            Assert.DoesNotContain(maskedAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
-            Assert.Contains(maskedAsset.Passes[0].Components!, component =>
-                component.TypeName == "OverlayShade"
-                && component.Json == "{\"Layer\":5}");
-            Assert.Contains(maskedAsset.Textures!, binding => binding.Name == "AlbedoMap");
-            Assert.Contains(maskedAsset.Textures!, binding => binding.Name == "NormalMap");
-            Assert.Contains(maskedAsset.Textures!, binding => binding.Name == "ARMMap");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "BaseColorTint");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "MetallicFactor");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "Roughness");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "AlphaCutoff");
-            Assert.Contains(maskedAsset.Scalars!, scalar => scalar.Name == "EmissiveFactor");
+            Assert.Equal(
+                new System.Numerics.Vector4(0.5f, 0.25f, 1.0f, 1.0f),
+                maskedAsset.Parameters.Single(p => p.Name == "BaseColorTint").Vector4);
+            Assert.Equal(0.75f, maskedAsset.Parameters.Single(p => p.Name == "MetallicFactor").Float);
+            Assert.Equal(0.35f, maskedAsset.Parameters.Single(p => p.Name == "Roughness").Float);
+            Assert.Equal(
+                new System.Numerics.Vector3(0.2f, 0.4f, 0.6f),
+                maskedAsset.Parameters.Single(p => p.Name == "EmissiveFactor").Vector3);
+            Assert.False((TextureReference(maskedAsset, nameof(StandardMaterialData.AlbedoMap)) == Guid.Empty));
+            Assert.False((TextureReference(maskedAsset, nameof(StandardMaterialData.NormalMap)) == Guid.Empty));
+            Assert.False((TextureReference(maskedAsset, nameof(StandardMaterialData.ARMMap)) == Guid.Empty));
 
-            Assert.Equal(UnlitShaderGuid, transparentAsset.Passes![0].Shader?.AssetGuid);
-            Assert.Contains(transparentAsset.Passes[0].Tags!, tag => tag.Name == "translucent");
-            Assert.DoesNotContain(transparentAsset.Passes[0].Tags!, tag => tag.Name == "opaque");
+            Assert.Equal(
+                new System.Numerics.Vector4(1.0f, 1.0f, 1.0f, 0.5f),
+                transparentAsset.Parameters.Single(p => p.Name == "BaseColorTint").Vector4);
+            Assert.False((TextureReference(
+                transparentAsset,
+                nameof(UnlitMaterialData.AlbedoMap)) == Guid.Empty));
 
             Assert.NotNull(bodyAsset.Regions);
             Assert.Single(bodyAsset.Regions);
             Assert.Equal("region_0", bodyAsset.Regions[0].Name);
+            Assert.Equal([maskedMaterial.AssetGuid.ToString()], bodyAsset.MaterialGuids);
+            Assert.Equal([maskedMaterial.AssetGuid], bodyMesh.Dependencies);
             Assert.NotNull(bodyMeshMeta);
-            Assert.Equal(GltfSourceImporter.ImporterVersion, bodyMeshMeta!.ImporterVersion);
+            Assert.Equal(GltfSourceImporter.ImporterVersion, sourceMeta.ImporterVersion);
 
             Assert.NotNull(eyesAsset.Regions);
             Assert.Single(eyesAsset.Regions);
             Assert.Equal("region_0", eyesAsset.Regions[0].Name);
+            Assert.Equal([transparentMaterial.AssetGuid.ToString()], eyesAsset.MaterialGuids);
+            Assert.Equal([transparentMaterial.AssetGuid], eyesMesh.Dependencies);
 
-            // Verify texture sub-assets are produced and texture bindings use GUIDs
+            // Verify texture sub-assets are produced and strong TextureData slots retain asset ids.
             var textureKeys = first.Where(asset => asset.SubAssetKey.StartsWith("texture:")).ToArray();
-            Assert.Equal(5, textureKeys.Length);
-
-            // Verify masked material texture bindings contain parseable GUIDs (not file paths)
-            foreach (TextureBinding binding in maskedAsset.Textures!)
-            {
-                Assert.True(AssetGuid.TryParse(binding.TextureGuid, out AssetGuid parsedGuid), $"TextureBinding '{binding.Name}' should contain a valid GUID, got: '{binding.TextureGuid}'");
-                Assert.False(parsedGuid.IsEmpty, $"TextureBinding '{binding.Name}' GUID should not be empty");
-            }
+            Assert.Equal(4, textureKeys.Length);
+            Assert.All(
+                new[]
+                {
+                    TextureReference(maskedAsset, nameof(StandardMaterialData.AlbedoMap)),
+                    TextureReference(maskedAsset, nameof(StandardMaterialData.NormalMap)),
+                    TextureReference(maskedAsset, nameof(StandardMaterialData.ARMMap)),
+                },
+                static guid => Assert.NotEqual(Guid.Empty, guid));
         }
         finally
         {
@@ -124,45 +127,45 @@ public class GltfSourceImporterTests
         try
         {
             string gltfPath = WriteTestProject(dir, writeImporterSettings: true);
-            SourceMeta sourceMeta = SourceMetaFiles.Load(gltfPath);
+            SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
             var importer = new GltfSourceImporter();
 
-            AssetImportFingerprint? firstFingerprint = importer.GetFingerprint(
+            ImportInputs? firstFingerprint = importer.GetInputs(
                 dir,
                 gltfPath,
                 sourceMeta
             );
             Assert.NotNull(firstFingerprint);
-            AssetImportFingerprint first = firstFingerprint!;
+            ImportInputs first = firstFingerprint!;
 
             string bufferPath = Path.Combine(dir, "assets", "Models", "character.bin");
             byte[] bufferBytes = File.ReadAllBytes(bufferPath);
             bufferBytes[0] ^= 0x1;
             File.WriteAllBytes(bufferPath, bufferBytes);
 
-            AssetImportFingerprint? bufferFingerprint = importer.GetFingerprint(
+            ImportInputs? bufferFingerprint = importer.GetInputs(
                 dir,
                 gltfPath,
                 sourceMeta
             );
             Assert.NotNull(bufferFingerprint);
-            AssetImportFingerprint afterBufferChange = bufferFingerprint!;
+            ImportInputs afterBufferChange = bufferFingerprint!;
 
             string imagePath = Path.Combine(dir, "assets", "Models", "textures", "albedo.png");
             byte[] imageBytes = File.ReadAllBytes(imagePath);
             imageBytes[^1] ^= 0x1;
             File.WriteAllBytes(imagePath, imageBytes);
 
-            AssetImportFingerprint? imageFingerprint = importer.GetFingerprint(
+            ImportInputs? imageFingerprint = importer.GetInputs(
                 dir,
                 gltfPath,
                 sourceMeta
             );
             Assert.NotNull(imageFingerprint);
-            AssetImportFingerprint afterImageChange = imageFingerprint!;
+            ImportInputs afterImageChange = imageFingerprint!;
 
-            Assert.NotEqual(first.ContentFingerprint, afterBufferChange.ContentFingerprint);
-            Assert.NotEqual(afterBufferChange.ContentFingerprint, afterImageChange.ContentFingerprint);
+            Assert.NotEqual(first.InputHash, afterBufferChange.InputHash);
+            Assert.NotEqual(afterBufferChange.InputHash, afterImageChange.InputHash);
         }
         finally
         {
@@ -174,10 +177,10 @@ public class GltfSourceImporterTests
     {
         string templateDir = Path.Combine(dir, "assets", "Materials", "Templates");
         Directory.CreateDirectory(templateDir);
-        WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", LitShaderGuid);
-        WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", UnlitShaderGuid);
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "DefaultPBR", LitShaderGuid);
-        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultUnlitMaterialTemplate), "TestUnlit_1", UnlitShaderGuid);
+        WriteTemplate(Path.Combine(templateDir, "PbrTemplate.material.asset"), "LitTemplate", unlit: false);
+        WriteTemplate(Path.Combine(templateDir, "UnlitTemplate.material.asset"), "UnlitTemplate", unlit: true);
+        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultLitMaterialTemplate), "Standard", unlit: false);
+        WriteTemplate(Path.Combine(dir, GltfImporterSettings.DefaultUnlitMaterialTemplate), "TestUnlit_1", unlit: true);
 
         string modelDir = Path.Combine(dir, "assets", "Models");
         string textureDir = Path.Combine(modelDir, "textures");
@@ -203,7 +206,7 @@ public class GltfSourceImporterTests
                 }
                 """).RootElement.Clone();
 
-            SourceMetaFiles.Save(gltfPath, new SourceMeta
+            SourceMeta.Save(gltfPath, new SourceMeta
             {
                 SourceGuid = SourceGuid.New(),
                 Importer = "GltfSourceImporter",
@@ -214,40 +217,28 @@ public class GltfSourceImporterTests
         return gltfPath;
     }
 
-    private static void WriteTemplate(string path, string name, string shaderGuid)
+    private static void WriteTemplate(string path, string name, bool unlit)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        AssetWriter.Write(new Material
-        {
-            AssetGuid = AssetGuid.New().ToFlatString(),
-            Name = name,
-            Passes =
-            [
-                new PassEntry
-                {
-                    Shader = new ShaderRef
-                    {
-                        AssetGuid = shaderGuid,
-                        EntryPoint = "main",
-                        Stage = ShaderStage.Compute,
-                    },
-                    Tags =
-                    [
-                        new TagEntry { Name = "opaque" },
-                    ],
-                    Components =
-                    [
-                        new ComponentEntry
-                        {
-                            TypeName = "OverlayShade",
-                            Json = "{\"Layer\":5}",
-                        },
-                    ],
-                },
-            ],
-            Textures = [],
-            Scalars = [],
-        }, path);
+        MaterialData material = unlit
+            ? new UnlitMaterialData
+            {
+                AssetGuid = Guid.NewGuid().ToString(),
+                Name = name,
+                Shader = new(Guid.Parse(UnlitShaderGuid)),
+            }
+            : new StandardMaterialData
+            {
+                AssetGuid = Guid.NewGuid().ToString(),
+                Name = name,
+                Shader = new(Guid.Parse(LitShaderGuid)),
+            };
+        AssetWriter.Write((material).ToAsset(), path);
+    }
+
+    private static Guid TextureReference(MaterialData material, string name)
+    {
+        return material.Parameters.Single(p => p.Name == name).Texture.Value;
     }
 
     private static byte[] BuildTriangleBuffer()

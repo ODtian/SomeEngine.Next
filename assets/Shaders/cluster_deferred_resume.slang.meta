@@ -1,0 +1,36 @@
+{
+  "source_guid": "9a7dc8b2-9f84-4c86-944e-ebf0562169f2",
+  "importer": "SlangShaderImporter",
+  "importer_settings": {
+    "cook_profile": "default"
+  },
+  "importer_version": 26,
+  "input_hash": "c75fab1dd4ab9786d3448d8af473ba3735508760580ac9f567a2f64d6c71fa87",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/cluster_deferred_resume.slang",
+      "content_hash": "b8801968b3597c7b2d5d8bda77c7b016220400fda545c2c9601b9364a99c82cd"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_structures.slang",
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+    },
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
+      "sub_asset_key": "shader:main",
+      "input_hash": "c75fab1dd4ab9786d3448d8af473ba3735508760580ac9f567a2f64d6c71fa87",
+      "dependencies": [],
+      "asset_path": "cluster_deferred_resume.shader.asset"
+    }
+  ]
+}

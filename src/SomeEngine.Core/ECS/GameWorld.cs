@@ -8,6 +8,8 @@ namespace SomeEngine.Core.ECS;
 
 public sealed class GameWorld : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("ecs", "GameWorld.Update");
+    private static readonly SomeEngine.Diagnostics.TraceSite SystemsUpdateTrace = new("ecs", "GameWorld.Systems.Update");
     private const int LifetimeOpen = 0;
     private const int LifetimeClosing = 1;
     private const int LifetimeClosed = 2;
@@ -41,11 +43,11 @@ public sealed class GameWorld : IDisposable
                 throw new InvalidOperationException("GameWorld is already updating.");
             _updatingThread = thread;
         }
-        using var scope = Profiler.BeginScope("GameWorld.Update");
+        using var scope = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         try
         {
             var context = new ImmediateSystemContext(World, 0, 0, deltaTime);
-            using (Profiler.BeginScope("GameWorld.Systems.Update"))
+            using (SomeEngine.Diagnostics.EngineTrace.Begin(SystemsUpdateTrace))
                 Systems.Update(ref context);
             Systems.Complete();
             World.Flush();

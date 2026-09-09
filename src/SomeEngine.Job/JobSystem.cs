@@ -19,6 +19,8 @@ public static partial class JobSystem
         set => Current.ManagedPayloadPolicy = value;
     }
 
+    public static int WorkerCount => Current.WorkerCount;
+
     public static void Initialize(JobRuntimeConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);

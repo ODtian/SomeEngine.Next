@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Assets.Data;
@@ -8,9 +7,7 @@ public readonly record struct MeshPayloadPage(
     long Offset,
     int Size,
     uint ClusterCount,
-    uint VertexStride,
-    Vector3 QuantOrigin,
-    float QuantStep,
+    ulong VertexEncodingHash,
     ReadOnlyMemory<byte> Sha256);
 
 /// <summary>Shared validation for materialized and range-streamed mesh payloads.</summary>
@@ -34,13 +31,13 @@ public static class MeshPayloadLayout
             throw new ArgumentException($"A {MeshPageHeader.Size}-byte page header is required.", nameof(headerBytes));
 
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(headerBytes);
-        ulong expectedPositionsOffset = checked(
-            (ulong)MeshPageHeader.Size + ((ulong)header.ClusterCount * GPUCluster.SizeInBytes));
-        ulong expectedAttributesOffset = checked(
-            expectedPositionsOffset + ((ulong)header.TotalVertexCount * 3 * sizeof(ushort)));
+        ulong expectedVertexBlobsOffset = checked(
+            (ulong)MeshPageHeader.Size + ((ulong)header.ClusterCount * PackedCluster.SizeInBytes));
         ulong expectedIndicesOffset = checked(
-            expectedAttributesOffset + ((ulong)header.TotalVertexCount * header.VertexStride));
-        ulong pageSize = checked((ulong)header.IndicesOffset + ((ulong)header.TotalTriangleCount * 3));
+            expectedVertexBlobsOffset + header.VertexBlobBytes);
+        ulong expectedExtensionOffset = checked(
+            expectedIndicesOffset + ((ulong)header.TotalTriangleCount * 3));
+        ulong pageSize = checked(expectedExtensionOffset + header.ExtensionDataSize);
 
         if (header.ClusterCount == 0)
         {
@@ -48,23 +45,19 @@ public static class MeshPayloadLayout
                 $"Cluster page at byte {offset} must contain at least one cluster record.");
         }
         if (header.ClustersOffset != MeshPageHeader.Size ||
-            header.PositionsOffset != expectedPositionsOffset ||
-            header.AttributesOffset != expectedAttributesOffset ||
-            header.IndicesOffset != expectedIndicesOffset)
+            header.VertexBlobsOffset != expectedVertexBlobsOffset ||
+            header.IndicesOffset != expectedIndicesOffset ||
+            header.ExtensionDataOffset != expectedExtensionOffset)
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has an inconsistent stream layout: " +
-                $"clusters={header.ClustersOffset}, positions={header.PositionsOffset}, " +
-                $"attributes={header.AttributesOffset}, indices={header.IndicesOffset}.");
+                $"clusters={header.ClustersOffset}, vertexBlobs={header.VertexBlobsOffset}, " +
+                $"indices={header.IndicesOffset}, extensions={header.ExtensionDataOffset}.");
         }
-        if (!float.IsFinite(header.QuantOriginX) ||
-            !float.IsFinite(header.QuantOriginY) ||
-            !float.IsFinite(header.QuantOriginZ) ||
-            !float.IsFinite(header.QuantStep) ||
-            header.QuantStep <= 0)
+        if (header.VertexEncodingHash == 0 || header.Reserved != 0)
         {
             throw new InvalidDataException(
-                $"Cluster page at byte {offset} has invalid quantization parameters.");
+                $"Cluster page at byte {offset} has invalid opaque vertex metadata.");
         }
         if (pageSize < MeshPageHeader.Size || pageSize > MeshPageHeader.MaxPageSize)
         {
@@ -82,9 +75,7 @@ public static class MeshPayloadLayout
             offset,
             checked((int)pageSize),
             header.ClusterCount,
-            header.VertexStride,
-            new Vector3(header.QuantOriginX, header.QuantOriginY, header.QuantOriginZ),
-            header.QuantStep,
+            header.VertexEncodingHash,
             ReadOnlyMemory<byte>.Empty);
     }
 }

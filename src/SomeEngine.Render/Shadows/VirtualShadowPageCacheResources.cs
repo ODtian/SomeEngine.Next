@@ -8,19 +8,20 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
 {
     internal const uint UnownedPage = uint.MaxValue;
     internal const int PageMetadataStride = 16;
+    internal const uint EvictionBucketCount = 8;
 
     private readonly IGraphicsBackend _backend;
     private readonly Buffer _freePages;
     private readonly Buffer _freePageCount;
     private readonly Buffer _pageMetadata;
-    private readonly Buffer _compactRequests;
-    private readonly Buffer _compactRequestCount;
+    private readonly Buffer _evictionPages;
+    private readonly Buffer _evictionBucketCounts;
     private readonly BufferBoundaryState[] _freePagesEndpoint;
     private readonly BufferBoundaryState[] _freePageCountEndpoint;
     private readonly BufferBoundaryState[] _pageMetadataEndpoint;
-    private readonly BufferBoundaryState[] _compactRequestsEndpoint;
-    private readonly BufferBoundaryState[] _compactRequestCountEndpoint;
-    private bool _pending;
+    private readonly BufferBoundaryState[] _evictionPagesEndpoint;
+    private readonly BufferBoundaryState[] _evictionBucketCountsEndpoint;
+    private bool _inFlight;
     private bool _disposed;
 
     internal VirtualShadowPageCacheResources(
@@ -34,35 +35,32 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
         Buffer? freePages = null;
         Buffer? freePageCount = null;
         Buffer? pageMetadata = null;
-        Buffer? compactRequests = null;
-        Buffer? compactRequestCount = null;
+        Buffer? evictionPages = null;
+        Buffer? evictionBucketCounts = null;
         try
         {
             freePages = Create(
                 device,
                 checked((ulong)settings.MaxPhysicalPages * sizeof(uint)),
-                "Virtual shadow free-page stack");
-            freePageCount = Create(
-                device,
-                sizeof(uint),
-                "Virtual shadow free-page count");
+                "Virtual shadow free pages");
+            freePageCount = Create(device, sizeof(uint), "Virtual shadow free-page count");
             pageMetadata = Create(
                 device,
                 checked((ulong)settings.MaxPhysicalPages * PageMetadataStride),
-                "Virtual shadow page LRU metadata");
-            compactRequests = Create(
+                "Virtual shadow page age metadata");
+            evictionPages = Create(
                 device,
-                checked((ulong)settings.PageTableEntryCount * sizeof(uint)),
-                "Virtual shadow compact request list");
-            compactRequestCount = Create(
+                checked((ulong)settings.MaxPhysicalPages * EvictionBucketCount * sizeof(uint)),
+                "Virtual shadow eviction pages");
+            evictionBucketCounts = Create(
                 device,
-                sizeof(uint),
-                "Virtual shadow compact request count");
+                checked((ulong)EvictionBucketCount * sizeof(uint)),
+                "Virtual shadow eviction bucket counts");
         }
         catch
         {
-            compactRequestCount?.Dispose();
-            compactRequests?.Dispose();
+            evictionBucketCounts?.Dispose();
+            evictionPages?.Dispose();
             pageMetadata?.Dispose();
             freePageCount?.Dispose();
             freePages?.Dispose();
@@ -72,54 +70,57 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
         _freePages = freePages;
         _freePageCount = freePageCount;
         _pageMetadata = pageMetadata;
-        _compactRequests = compactRequests;
-        _compactRequestCount = compactRequestCount;
+        _evictionPages = evictionPages;
+        _evictionBucketCounts = evictionBucketCounts;
         _freePagesEndpoint = [Initial(_freePages)];
         _freePageCountEndpoint = [Initial(_freePageCount)];
         _pageMetadataEndpoint = [Initial(_pageMetadata)];
-        _compactRequestsEndpoint = [Initial(_compactRequests)];
-        _compactRequestCountEndpoint = [Initial(_compactRequestCount)];
+        _evictionPagesEndpoint = [Initial(_evictionPages)];
+        _evictionBucketCountsEndpoint = [Initial(_evictionBucketCounts)];
     }
 
     internal VirtualShadowPageCacheFrameResources BeginFrame()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_pending)
-            throw new InvalidOperationException("The previous virtual-shadow page-cache frame is pending.");
-        _pending = true;
+        if (_inFlight)
+            throw new InvalidOperationException("The previous virtual-shadow page-cache frame is still active.");
+        _inFlight = true;
         return new VirtualShadowPageCacheFrameResources(
             new VirtualShadowBufferResource(_freePages, _freePagesEndpoint),
             new VirtualShadowBufferResource(_freePageCount, _freePageCountEndpoint),
             new VirtualShadowBufferResource(_pageMetadata, _pageMetadataEndpoint),
-            new VirtualShadowBufferResource(_compactRequests, _compactRequestsEndpoint),
-            new VirtualShadowBufferResource(_compactRequestCount, _compactRequestCountEndpoint));
+            new VirtualShadowBufferResource(_evictionPages, _evictionPagesEndpoint),
+            new VirtualShadowBufferResource(_evictionBucketCounts, _evictionBucketCountsEndpoint));
     }
 
-    internal void Commit(QueueCompletion completion)
+    internal void Commit(
+        ReadOnlySpan<QueueCompletion> completions,
+        bool poolProcessed,
+        bool metadataInitialized)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_pending)
-            throw new InvalidOperationException("No virtual-shadow page-cache frame is pending.");
-        SetEndpoint(_freePagesEndpoint, _freePages, completion);
-        SetEndpoint(_freePageCountEndpoint, _freePageCount, completion);
-        SetEndpoint(_pageMetadataEndpoint, _pageMetadata, completion);
-        SetEndpoint(_compactRequestsEndpoint, _compactRequests, completion);
-        SetEndpoint(_compactRequestCountEndpoint, _compactRequestCount, completion);
-        _pending = false;
+        if (!_inFlight)
+            throw new InvalidOperationException("No virtual-shadow page-cache frame is active.");
+        QueueCompletion computeCompletion = FindCompletion(completions, QueueType.Compute);
+        if (poolProcessed)
+        {
+            SetEndpoint(_freePagesEndpoint, _freePages, computeCompletion);
+            SetEndpoint(_freePageCountEndpoint, _freePageCount, computeCompletion);
+            SetEndpoint(_evictionPagesEndpoint, _evictionPages, computeCompletion);
+            SetEndpoint(
+                _evictionBucketCountsEndpoint,
+                _evictionBucketCounts,
+                computeCompletion);
+        }
+        if (poolProcessed || metadataInitialized)
+            SetEndpoint(_pageMetadataEndpoint, _pageMetadata, computeCompletion);
+        _inFlight = false;
     }
 
     internal void Discard()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _pending = false;
-    }
-
-    internal static uint[] BuildInitialFreePages(uint maxPhysicalPages)
-    {
-        var result = new uint[checked((int)maxPhysicalPages)];
-        for (uint page = 0; page < maxPhysicalPages; page++)
-            result[page] = maxPhysicalPages - page - 1u;
-        return result;
+        _inFlight = false;
     }
 
     public void Dispose()
@@ -127,12 +128,12 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
         if (_disposed)
             return;
         List<Exception>? failures = null;
-        Dispose(_compactRequestCount, ref failures);
-        Dispose(_compactRequests, ref failures);
+        Dispose(_evictionBucketCounts, ref failures);
+        Dispose(_evictionPages, ref failures);
         Dispose(_pageMetadata, ref failures);
         Dispose(_freePageCount, ref failures);
         Dispose(_freePages, ref failures);
-        _pending = false;
+        _inFlight = false;
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
@@ -166,6 +167,16 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
             completion.Queue,
             completion);
 
+    private static QueueCompletion FindCompletion(
+        ReadOnlySpan<QueueCompletion> completions,
+        QueueType type)
+    {
+        foreach (ref readonly QueueCompletion completion in completions)
+            if (completion.Queue.Type == type)
+                return completion;
+        throw new InvalidOperationException($"Virtual shadow page cache requires a {type} queue completion.");
+    }
+
     private static void Dispose(IDisposable value, ref List<Exception>? failures)
     {
         try { value.Dispose(); }
@@ -177,5 +188,5 @@ internal readonly record struct VirtualShadowPageCacheFrameResources(
     VirtualShadowBufferResource FreePages,
     VirtualShadowBufferResource FreePageCount,
     VirtualShadowBufferResource PageMetadata,
-    VirtualShadowBufferResource CompactRequests,
-    VirtualShadowBufferResource CompactRequestCount);
+    VirtualShadowBufferResource EvictionPages,
+    VirtualShadowBufferResource EvictionBucketCounts);

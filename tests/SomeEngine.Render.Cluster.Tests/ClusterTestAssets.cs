@@ -12,8 +12,11 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 internal static class ClusterTestAssets
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const int IndexBytes = 3;
+    internal const string StandardVertexEncoding = "someengine.vertex.standard.cluster.v1";
+    internal const int VertexBlobBytes = 1;
+    internal const int IndexBytes = 3;
+    internal const int PageBytes = MeshPageHeader.Size + PackedCluster.SizeInBytes
+        + VertexBlobBytes + IndexBytes;
 
     internal static async ValueTask<ClusterMeshRegistration> AddAuthoredMeshAsync(
         this ClusterMeshes manager,
@@ -32,13 +35,12 @@ internal static class ClusterTestAssets
         Mesh streamed;
         try
         {
-            AssetWriter.Write(asset, path);
-            streamed = await Mesh.OpenStreamedAsync(path);
+            ClusterTestFiles.WriteMesh(asset, path);
+            streamed = await ClusterTestFiles.OpenMeshAsync(path);
         }
         finally
         {
             File.Delete(path);
-            File.Delete(AssetMetaFiles.GetMetaPath(path));
         }
 
         return streamed;
@@ -55,9 +57,9 @@ internal static class ClusterTestAssets
         ControlledRangeSource? controlled = null;
         try
         {
-            AssetWriter.Write(asset, path);
+            ClusterTestFiles.WriteMesh(asset, path);
             controlled = new ControlledRangeSource(FileRangeSource.Open(path), targetReadLength);
-            Mesh streamed = await Mesh.OpenStreamedAsync(
+            Mesh streamed = await ClusterTestFiles.OpenMeshAsync(
                 controlled,
                 ownsSource: true);
             controlled.Arm();
@@ -72,7 +74,6 @@ internal static class ClusterTestAssets
         finally
         {
             File.Delete(path);
-            File.Delete(AssetMetaFiles.GetMetaPath(path));
         }
     }
 
@@ -80,7 +81,7 @@ internal static class ClusterTestAssets
         ClusterMeshes manager,
         uint pageId,
         CancellationToken cancellationToken = default)
-        => manager.LoadPageIntoFinalOwnerAsync(pageId, cancellationToken);
+        => manager.LoadPageIntoStagingAsync(pageId, cancellationToken);
 
     internal static T AssertSingle<T>(ReadOnlySpan<T> items)
     {
@@ -108,36 +109,10 @@ internal static class ClusterTestAssets
 
     internal static Mesh CreateSinglePageMesh(string name)
     {
-        const uint vertexStride = 32;
-        int pageBytes = checked(MeshPageHeader.Size + GPUCluster.SizeInBytes
-            + PositionBytes + (int)vertexStride + IndexBytes);
-        byte[] payload = new byte[pageBytes + Marshal.SizeOf<ClusterBVHNode>()];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes)),
-            AttributesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes)),
-            IndicesOffset = checked((uint)(MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + vertexStride)),
-            VertexStride = vertexStride,
-            QuantStep = 1,
-        };
-        MemoryMarshal.Write(payload.AsSpan(), in header);
-
-        var cluster = new GPUCluster
-        {
-            LODRadius = 1,
-            PackedCenterZRadius = 1u << 16,
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-            BoundMax = Vector3.One,
-        };
-        MemoryMarshal.Write(
-            payload.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes),
-            in cluster);
+        byte[] payload = new byte[PageBytes + Marshal.SizeOf<ClusterBVHNode>()];
+        CreatePageData().CopyTo(payload, 0);
+        PackedCluster cluster = MemoryMarshal.Read<PackedCluster>(
+            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes));
 
         var leaf = new ClusterBVHNode
         {
@@ -145,17 +120,49 @@ internal static class ClusterTestAssets
             NodeType = 1,
         };
         leaf.SetLeafData(clusterStart: 0, clusterCount: 1);
-        MemoryMarshal.Write(payload.AsSpan(pageBytes), in leaf);
+        MemoryMarshal.Write(payload.AsSpan(PageBytes), in leaf);
 
         return new Mesh
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
             Name = name,
             Bounds = new Bounds { Center = new Vec3(), Radius = 1 },
             Payload = payload,
-            VertexStride = vertexStride,
-            BvhOffset = checked((ulong)pageBytes),
-            QuantStep = 1,
+            VertexEncoding = StandardVertexEncoding,
+            BvhOffset = PageBytes,
         };
+    }
+
+    internal static byte[] CreatePageData(byte marker = 0)
+    {
+        byte[] payload = new byte[PageBytes];
+        var header = new MeshPageHeader
+        {
+            ClusterCount = 1,
+            TotalVertexCount = 1,
+            TotalTriangleCount = 1,
+            VertexBlobBytes = VertexBlobBytes,
+            ClustersOffset = MeshPageHeader.Size,
+            VertexBlobsOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes,
+            IndicesOffset = MeshPageHeader.Size + PackedCluster.SizeInBytes + VertexBlobBytes,
+            ExtensionDataOffset = PageBytes,
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(StandardVertexEncoding),
+        };
+        MemoryMarshal.Write(payload.AsSpan(), in header);
+
+        var cluster = new PackedCluster
+        {
+            VertexBlobSize = VertexBlobBytes,
+            ExtensionOffset = uint.MaxValue,
+            LODRadius = 1,
+            PackedCounts = 1u | (1u << 8),
+            MaterialTableOffset = uint.MaxValue,
+            BoundMax = marker == 0 ? Vector3.One : new Vector3(marker),
+        };
+        MemoryMarshal.Write(
+            payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
+            in cluster);
+
+        payload[checked((int)header.VertexBlobsOffset)] = marker;
+        return payload;
     }
 }

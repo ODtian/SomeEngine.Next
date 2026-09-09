@@ -19,7 +19,8 @@ internal readonly record struct ClusterBvhRegistration(
     int ByteLength,
     uint NodeCount,
     int PageCount,
-    uint[] LocalPageByNode);
+    uint[] LocalPageByNode,
+    int HierarchyLevels);
 
 internal readonly record struct ClusterBvhLeafIndex(
     uint FirstNode,
@@ -35,6 +36,10 @@ internal readonly record struct ClusterBvhPatch(
     uint Value,
     Memory<byte> Destination);
 internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
+internal sealed record ClusterBvhPublication(
+    int PatchCount,
+    Mesh[] RootMeshes,
+    ClusterStagedUpload[] Uploads);
 
 internal sealed class ClusterBvh
 {
@@ -59,8 +64,11 @@ internal sealed class ClusterBvh
     internal ClusterBvh(IClusterBvhStorage? storage = null)
         => _storage = storage ?? new SparseClusterBvhStorage(DefaultCapacityBytes);
 
+    public int HierarchyLevels { get; private set; } = 1;
+
     public int RegisteredCount => _roots.Count;
     public int PublishedCount => _publishedCount;
+    public ulong ByteLength => checked((ulong)_count * NodeBytes);
     public bool HasPendingPublication
         => _pendingPatches.Count != 0 ||
            _pendingRootMeshes.Count != 0;
@@ -165,7 +173,7 @@ internal sealed class ClusterBvh
         }
 
         Span<ClusterBVHNode> patched = MemoryMarshal.Cast<byte, ClusterBVHNode>(destination.Memory.Span);
-        ValidateTopology(patched);
+        int hierarchyDepth = ValidateTopology(patched);
         uint[] localPageByNode = PatchNodes(patched, firstNode, pages);
 
         uint root = firstNode + checked((uint)nodeCount) - 1;
@@ -177,7 +185,8 @@ internal sealed class ClusterBvh
             destination.Memory.Length,
             nodeCount32,
             pages.Count,
-            localPageByNode);
+            localPageByNode,
+            Math.Max(1, hierarchyDepth - 1));
     }
 
     public uint Commit(in ClusterBvhRegistration registration)
@@ -187,6 +196,7 @@ internal sealed class ClusterBvh
         var range = new ClusterBvhAllocation(byteOffset, checked((uint)registration.ByteLength));
         _allocations.Add(range);
         _count += registration.NodeCount;
+        HierarchyLevels = Math.Max(HierarchyLevels, registration.HierarchyLevels);
         _roots.Add(registration.Mesh, new ClusterRootState(registration.Root, Published: false));
         _leafIndexes.Add(new ClusterBvhLeafIndex(
             registration.FirstNode,
@@ -262,12 +272,16 @@ internal sealed class ClusterBvh
             _pendingPatches.Count - checkpoint.PatchCount);
     }
 
-    public void PreparePublication()
+    public ClusterBvhPublication PreparePublication()
     {
         foreach (ClusterBvhPatch patch in _pendingPatches)
         {
             if (patch.Destination.Length != sizeof(uint))
                 throw new InvalidOperationException($"Cluster BVH patch at {patch.Offset} has an invalid destination.");
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                patch.Destination.Span,
+                patch.Value);
+            _storage.Stage(patch.Offset, sizeof(uint));
         }
         foreach (Mesh mesh in _pendingRootMeshes)
         {
@@ -276,27 +290,35 @@ internal sealed class ClusterBvh
                 throw new InvalidOperationException("Pending Cluster root metadata is inconsistent.");
             }
         }
+        return new ClusterBvhPublication(
+            _pendingPatches.Count,
+            [.. _pendingRootMeshes],
+            _storage.CaptureStagedUploads());
     }
 
-    public void PublishPending()
+    public void CommitPublication(ClusterBvhPublication publication)
     {
-        foreach (ClusterBvhPatch patch in _pendingPatches)
+        ArgumentNullException.ThrowIfNull(publication);
+        if (publication.PatchCount > _pendingPatches.Count ||
+            publication.RootMeshes.Length > _pendingRootMeshes.Count)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(
-                patch.Destination.Span,
-                patch.Value);
-            _storage.Stage(patch.Offset, sizeof(uint));
+            throw new InvalidOperationException("The prepared Cluster BVH publication is ahead of pending state.");
         }
-        _storage.Publish();
-        foreach (Mesh mesh in _pendingRootMeshes)
+        for (int index = 0; index < publication.RootMeshes.Length; index++)
         {
+            Mesh mesh = publication.RootMeshes[index];
+            if (!ReferenceEquals(mesh, _pendingRootMeshes[index]))
+                throw new InvalidOperationException("The prepared Cluster BVH root publication is stale.");
             ClusterRootState root = _roots[mesh];
+            if (root.Published)
+                throw new InvalidOperationException("The prepared Cluster BVH root is already published.");
             _roots[mesh] = root with { Published = true };
             _publishedCount = checked(_publishedCount + 1);
         }
 
-        _pendingPatches.Clear();
-        _pendingRootMeshes.Clear();
+        _storage.CompleteStagedUploads(publication.Uploads);
+        _pendingPatches.RemoveRange(0, publication.PatchCount);
+        _pendingRootMeshes.RemoveRange(0, publication.RootMeshes.Length);
     }
 
     public Exception? Clear()
@@ -319,6 +341,7 @@ internal sealed class ClusterBvh
         _leafIndexes.Clear();
         _pendingRootMeshes.Clear();
         _count = 0;
+        HierarchyLevels = 1;
         _registeredPageCount = 0;
         _publishedCount = 0;
         try
@@ -464,7 +487,7 @@ internal sealed class ClusterBvh
             "Cluster page id is outside the BVH leaf index.");
     }
 
-    private static void ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
+    private static int ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
     {
         if (nodes.IsEmpty)
             throw new InvalidOperationException("A Cluster BVH must contain a root node.");
@@ -517,6 +540,7 @@ internal sealed class ClusterBvh
         int stackCount = 1;
         stackNodes[0] = root;
         states[root] = 1;
+        int maximumDepth = 1;
 
         while (stackCount != 0)
         {
@@ -543,6 +567,7 @@ internal sealed class ClusterBvh
                     stackNodes[stackCount] = child;
                     stackNextChildren[stackCount] = 0;
                     stackCount++;
+                    maximumDepth = Math.Max(maximumDepth, stackCount);
                 }
                 continue;
             }
@@ -558,6 +583,7 @@ internal sealed class ClusterBvh
         }
 
         ValidateTraversalStack(nodes, root, stackNodes);
+        return maximumDepth;
     }
 
     private static void ValidateTraversalStack(

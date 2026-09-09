@@ -1,113 +1,38 @@
 #ifndef CLUSTER_SHADE_PIPELINE_SLANG
 #define CLUSTER_SHADE_PIPELINE_SLANG
 
-#include "vertex_evaluate.slang"
+#include "vertex_consumer_cache.slang"
 #include "material_interfaces.slang"
 #include "triangle_surface_inverse.slang"
+#include "cluster_view.slang"
 
 struct ShadeUniforms
 {
-    float4x4 ViewProj;
-    float4x4 ClipToWorld;
-    float4x4 View;
-    float4x4 PrevViewProj;
-    float4x4 MotionViewProj;
-    float4x4 PrevMotionViewProj;
     uint DebugMode;
     uint ScreenWidth;
     uint ScreenHeight;
     uint ShadingBin;
-    uint MaterialCount;
-    uint LightLayerMask;
-    uint Pad1;
-    float3 CameraPos;
-    float Pad2;
-    uint HasPreviousFrame;
-    uint WriteMotionVectors;
+    uint ShadeBinCount;
+    uint MaterialSlotCapacity;
+    uint Pad2;
     uint Pad3;
-    uint Pad4;
-};
-
-struct LightCountsUniform
-{
-    uint DirectionalCount;
-    uint PointCount;
-    uint SpotCount;
-    uint Pad0;
-};
-
-struct GPULight
-{
-    float3 Position;
-    float Range;
-    float3 Direction;
-    float InnerConeCos;
-    float3 Color;
-    float Intensity;
-    float OuterConeCos;
-    uint LayerMask;
-    int CookieIndex;
-    float CookieStrength;
-    float4x4 WorldToLightCookie;
-    float4 CookieScaleOffset;
 };
 
 ConstantBuffer<ShadeUniforms> Uniforms;
-ConstantBuffer<LightCountsUniform> LightCounts;
-StructuredBuffer<GPULight> LightBuffer;
-Texture2DArray LightCookieAtlas;
-SamplerState LightCookieSampler;
 
-cbuffer LightGridUniforms
-{
-    uint2 LightGridTileSize;
-    uint2 LightGridTileCount;
-    float4 LightGridZParams;
-    uint DepthSliceCount;
-    uint3 LightGridPad0;
-};
-
-StructuredBuffer<uint2> ClusterLightGrid;
-StructuredBuffer<uint> LightIndexList;
-
-StructuredBuffer<uint> PixelCoordBuffer;
+StructuredBuffer<uint2> PixelCoordBuffer;
 StructuredBuffer<uint> BinOffsets;
 StructuredBuffer<uint> BinCounts;
+StructuredBuffer<ClusterViewUniforms> Views;
 
-Texture2D<uint> VisBuffer;
-Texture2D<float> DepthBuffer;
+Texture2DArray<uint> VisBuffer;
+Texture2DArray<float> DepthBuffer;
 
 StructuredBuffer<DrawRequest> VisibleClusters;
 ByteAddressBuffer PageHeap;
 
-RWTexture2D<float4> OutputColor;
-RWTexture2D<float2> OutputMotionVectors;
-
-ByteAddressBuffer DeformCache;
-StructuredBuffer<uint> CacheOffsets;
-static const uint SHADE_CACHE_OFFSET_INVALID = 0xFFFFFFFDu;
-static const uint LIGHT_GRID_INVALID_CLUSTER = 0xFFFFFFFFu;
-
-uint GetClusterIndex(uint2 pixelCoord, float3 surfacePosition)
-{
-    if (LightGridTileSize.x == 0u ||
-        LightGridTileSize.y == 0u ||
-        LightGridTileCount.x == 0u ||
-        LightGridTileCount.y == 0u ||
-        DepthSliceCount == 0u)
-    {
-        return LIGHT_GRID_INVALID_CLUSTER;
-    }
-
-    uint2 tileCoord = pixelCoord / LightGridTileSize;
-    if (tileCoord.x >= LightGridTileCount.x || tileCoord.y >= LightGridTileCount.y)
-        return LIGHT_GRID_INVALID_CLUSTER;
-
-    float viewDepth = mul(float4(surfacePosition, 1.0), Uniforms.View).z;
-    float normalizedDepth = saturate((viewDepth - LightGridZParams.x) * LightGridZParams.z);
-    uint sliceIndex = min((uint)(normalizedDepth * (float)DepthSliceCount), DepthSliceCount - 1u);
-    return (sliceIndex * LightGridTileCount.y + tileCoord.y) * LightGridTileCount.x + tileCoord.x;
-}
+RWTexture2DArray<float4> OutputColor;
+RWTexture2DArray<float2> OutputMotionVectors;
 
 struct TriangleInfo
 {
@@ -117,17 +42,14 @@ struct TriangleInfo
     uint vi0;
     uint vi1;
     uint vi2;
-    uint pageOffset;
-    int3 intBase;
-    uint vStart;
+    uint vertexBlobAddress;
+    uint vertexBlobSize;
     uint vertexCount;
-    uint totalVertexCount;
-    uint posOffset;
-    uint attrOffset;
-    uint idxOffset;
+    uint viewIndex;
+    uint materialSlot;
 };
 
-bool decodeTriangle(uint2 pixelCoord, out TriangleInfo tri)
+bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
 {
     tri = {};
     if (pixelCoord.x >= Uniforms.ScreenWidth || pixelCoord.y >= Uniforms.ScreenHeight)
@@ -141,23 +63,48 @@ bool decodeTriangle(uint2 pixelCoord, out TriangleInfo tri)
     tri.triangleID = DecodeVisBufferTriangleID(visData);
 
     DrawRequest req = VisibleClusters[tri.visibleClusterIndex];
-    tri.pageOffset = req.PageOffset;
+    if (DrawRequestViewIndex(req) != pixelCoord.z)
+        return false;
     tri.instanceID = req.InstanceID;
+    tri.viewIndex = DrawRequestViewIndex(req);
 
     uint tStart;
     uint packedCounts;
-    LoadClusterInfo(PageHeap, tri.pageOffset, req.ClusterID, tri.intBase, tri.vStart, tStart, packedCounts);
+    LoadClusterInfo(
+        PageHeap,
+        req.PageOffset,
+        DrawRequestClusterID(req),
+        tri.vertexBlobAddress,
+        tri.vertexBlobSize,
+        tStart,
+        packedCounts);
     tri.vertexCount = packedCounts & 0xFFu;
 
-    tri.totalVertexCount = PageHeap.Load(tri.pageOffset + 4);
-    uint4 header1 = PageHeap.Load4(tri.pageOffset + 16);
-    tri.posOffset = header1.y;
-    tri.attrOffset = header1.z;
-    tri.idxOffset = header1.w;
+    uint clusterOffset =
+        req.PageOffset + PageHeap.Load(req.PageOffset + 16u) +
+        DrawRequestClusterID(req) * PACKED_CLUSTER_STRIDE_BYTES;
+    uint localMaterial = LocalMaterial(
+        PageHeap.Load(clusterOffset + 68u),
+        PageHeap.Load(clusterOffset + 72u),
+        tri.triangleID);
+    uint slotOffset = LoadClusterMaterialSlotOffset(
+        InstanceData,
+        LoadRenderInstanceMetadata(
+            InstanceProperties,
+            CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
+        tri.instanceID);
+    if (slotOffset >= Uniforms.MaterialSlotCapacity ||
+        localMaterial >= Uniforms.MaterialSlotCapacity - slotOffset)
+    {
+        return false;
+    }
+    tri.materialSlot = slotOffset + localMaterial;
 
-    tri.vi0 = FetchVertexIndex(PageHeap, tri.pageOffset, tri.idxOffset, tStart, tri.triangleID, 0);
-    tri.vi1 = FetchVertexIndex(PageHeap, tri.pageOffset, tri.idxOffset, tStart, tri.triangleID, 1);
-    tri.vi2 = FetchVertexIndex(PageHeap, tri.pageOffset, tri.idxOffset, tStart, tri.triangleID, 2);
+    uint idxOffset = PageHeap.Load(req.PageOffset + 24u);
+
+    tri.vi0 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 0);
+    tri.vi1 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 1);
+    tri.vi2 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 2);
     return true;
 }
 
@@ -169,374 +116,222 @@ VertexEvalContext makeVertexEvalContext(
 {
     VertexEvalContext ctx;
     ctx.pageHeap = PageHeap;
-    ctx.pageOffset = tri.pageOffset;
-    ctx.posOffset = tri.posOffset;
-    ctx.attrOffset = tri.attrOffset;
-    ctx.vertexStride = PageHeap.Load(tri.pageOffset + 44u);
-    ctx.idxOffset = tri.idxOffset;
-    ctx.vStart = tri.vStart;
-    ctx.totalVertexCount = tri.totalVertexCount;
-    ctx.localVertIdx = localVertIdx;
-    ctx.intBase = tri.intBase;
+    ctx.vertexBlobAddress = tri.vertexBlobAddress;
+    ctx.vertexBlobSize = tri.vertexBlobSize;
+    ctx.localVertexIndex = localVertIdx;
     ctx.instanceID = tri.instanceID;
     ctx.transform = transform;
     ctx.IsPreviousFrame = isPreviousFrame;
     return ctx;
 }
 
-void evaluateTriangleVerticesWithTransform<TVE : IVertexEvaluate>(
+Triangle evaluateTriangleWithTransform<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
     TriangleInfo tri,
     RenderInstanceTransform transform,
-    uint isPreviousFrame,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
+    uint isPreviousFrame)
 {
-    v0 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0));
-    v1 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1));
-    v2 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2));
+    SurfaceVertex v0 = EvaluateSurfaceVertexWave(
+        evaluator,
+        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0),
+        tri.visibleClusterIndex);
+    SurfaceVertex v1 = EvaluateSurfaceVertexWave(
+        evaluator,
+        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1),
+        tri.visibleClusterIndex);
+    SurfaceVertex v2 = EvaluateSurfaceVertexWave(
+        evaluator,
+        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2),
+        tri.visibleClusterIndex);
+    return MakeTriangle(v0, v1, v2);
 }
 
-void evaluateTriangleVertices<TVE : IVertexEvaluate>(
+Triangle evaluateTriangle<TVE : IVertexEvaluate>(
     uniform TVE evaluator,
-    TriangleInfo tri,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
+    TriangleInfo tri)
 {
-    evaluateTriangleVerticesWithTransform(
+    return evaluateTriangleWithTransform(
         evaluator,
         tri,
         GetCurrentInstanceTransform(tri.instanceID),
-        0,
-        v0,
-        v1,
-        v2);
+        0u);
 }
 
-void evaluatePreviousTriangleVertices<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TriangleInfo tri,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
+float3 computeTriangleBarycentricAt(
+    float2 pixelPosition,
+    ClusterViewUniforms view,
+    Triangle triangle)
 {
-    evaluateTriangleVerticesWithTransform(
-        evaluator,
-        tri,
-        GetPreviousInstanceTransform(tri.instanceID),
-        1,
-        v0,
-        v1,
-        v2);
+    ScreenProjection sp0 = ProjectToScreenProjection(triangle.Position0, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp1 = ProjectToScreenProjection(triangle.Position1, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp2 = ProjectToScreenProjection(triangle.Position2, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    return ComputePerspectiveBarycentric(pixelPosition, sp0, sp1, sp2);
 }
 
-void readCachedTriangleVertices<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TriangleInfo tri,
-    ByteAddressBuffer cache,
-    StructuredBuffer<uint> offsets,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
+float3 ReconstructWorldPositionAt(
+    float2 pixelPosition,
+    float depth,
+    ClusterViewUniforms view)
 {
-    uint cacheBaseByte = offsets[tri.visibleClusterIndex];
-    if (cacheBaseByte >= SHADE_CACHE_OFFSET_INVALID)
-    {
-        evaluateTriangleVertices(evaluator, tri, v0, v1, v2);
-        return;
-    }
-
-    v0 = evaluator.readCache(cache, cacheBaseByte, tri.vertexCount, tri.vi0);
-    v1 = evaluator.readCache(cache, cacheBaseByte, tri.vertexCount, tri.vi1);
-    v2 = evaluator.readCache(cache, cacheBaseByte, tri.vertexCount, tri.vi2);
+    float2 uv = pixelPosition /
+        float2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    float4 world = mul(
+        float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0),
+        view.ClipToWorld);
+    return abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
 }
 
-void readCachedPreviousTriangleVertices<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TriangleInfo tri,
-    ByteAddressBuffer cache,
-    StructuredBuffer<uint> offsets,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
+SurfaceBarycentrics ResolveBarycentrics<TDomain : IDomainEvaluate>(
+    uniform TDomain domain,
+    uint3 pixelCoord,
+    ClusterViewUniforms view,
+    Triangle triangle)
 {
-    uint cacheBaseByte = offsets[tri.visibleClusterIndex];
-    if (cacheBaseByte >= SHADE_CACHE_OFFSET_INVALID)
-    {
-        evaluatePreviousTriangleVertices(evaluator, tri, v0, v1, v2);
-        return;
-    }
+    float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
+    float3 seed = computeTriangleBarycentricAt(
+        pixelCenter, view, triangle);
+    float3 seedX = computeTriangleBarycentricAt(
+        pixelCenter + float2(1.0, 0.0), view, triangle);
+    float3 seedY = computeTriangleBarycentricAt(
+        pixelCenter + float2(0.0, 1.0), view, triangle);
+    float depth = DepthBuffer.Load(int4(pixelCoord, 0));
 
-    v0 = evaluator.readPreviousCache(cache, cacheBaseByte, tri.vertexCount, tri.vi0);
-    v1 = evaluator.readPreviousCache(cache, cacheBaseByte, tri.vertexCount, tri.vi1);
-    v2 = evaluator.readPreviousCache(cache, cacheBaseByte, tri.vertexCount, tri.vi2);
+    SurfaceReconstructionInput input;
+    input.TargetPosition = ReconstructWorldPositionAt(pixelCenter, depth, view);
+    input.TargetPositionDx = ReconstructWorldPositionAt(
+        pixelCenter + float2(1.0, 0.0), depth, view);
+    input.TargetPositionDy = ReconstructWorldPositionAt(
+        pixelCenter + float2(0.0, 1.0), depth, view);
+    input.CameraPosition = view.CameraPos;
+    input.ParentValue = seed;
+    input.ParentDx = seedX - seed;
+    input.ParentDy = seedY - seed;
+    input.ViewProjection = view.ViewProj;
+    input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    return domain.reconstruct(triangle, input);
 }
 
-void loadTriangleVertices<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TriangleInfo tri,
-    bool useDeformCache,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
-{
-    if (useDeformCache)
-    {
-        readCachedTriangleVertices(evaluator, tri, DeformCache, CacheOffsets, v0, v1, v2);
-        return;
-    }
-
-    evaluateTriangleVertices(evaluator, tri, v0, v1, v2);
-}
-
-void loadPreviousTriangleVertices<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TriangleInfo tri,
-    bool useDeformCache,
-    out TVE.DeformedVertex v0,
-    out TVE.DeformedVertex v1,
-    out TVE.DeformedVertex v2)
-{
-    evaluatePreviousTriangleVertices(evaluator, tri, v0, v1, v2);
-}
-
-float2 clipToUv(float4 clip)
+float2 ClusterMotionClipToUv(float4 clip)
 {
     float2 ndc = clip.xy / clip.w;
     return float2(ndc.x * 0.5 + 0.5, 1.0 - (ndc.y * 0.5 + 0.5));
 }
 
-bool shouldWriteMotionVectors()
-{
-    return Uniforms.WriteMotionVectors != 0 && Uniforms.HasPreviousFrame != 0;
-}
-
-void writeZeroMotionVector(uint2 pixelCoord)
-{
-    OutputMotionVectors[pixelCoord] = float2(0.0);
-}
-
-float3 computeTriangleBarycentric<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    uint2 pixelCoord,
-    TVE.DeformedVertex v0,
-    TVE.DeformedVertex v1,
-    TVE.DeformedVertex v2)
-{
-    float3 p0 = evaluator.getPosition(v0);
-    float3 p1 = evaluator.getPosition(v1);
-    float3 p2 = evaluator.getPosition(v2);
-    ScreenProjection sp0 = ProjectToScreenProjection(p0, Uniforms.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp1 = ProjectToScreenProjection(p1, Uniforms.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp2 = ProjectToScreenProjection(p2, Uniforms.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    return ComputePerspectiveBarycentric(float2(pixelCoord) + 0.5, sp0, sp1, sp2);
-}
-
-SurfaceVertex MakeSurfaceVertex<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TVE.DeformedVertex value)
-{
-    SurfaceVertex result;
-    result.Position = evaluator.getPosition(value);
-    result.Normal = evaluator.getNormal(value);
-    result.TexCoord = evaluator.getTexCoord0(value);
-    return result;
-}
-
-Triangle MakeSurfaceTriangle<TVE : IVertexEvaluate>(
-    uniform TVE evaluator,
-    TVE.DeformedVertex v0,
-    TVE.DeformedVertex v1,
-    TVE.DeformedVertex v2)
-{
-    return MakeTriangle(
-        MakeSurfaceVertex(evaluator, v0),
-        MakeSurfaceVertex(evaluator, v1),
-        MakeSurfaceVertex(evaluator, v2));
-}
-
-float3 ReconstructWorldPosition(uint2 pixelCoord)
-{
-    float2 uv = (float2(pixelCoord) + 0.5) /
-        float2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    float depth = DepthBuffer.Load(int3(pixelCoord, 0));
-    float4 world = mul(
-        float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0),
-        Uniforms.ClipToWorld);
-    return abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
-}
-
-SurfaceBarycentrics ResolveBarycentrics<
+void WriteClusterMotion<
     TVE : IVertexEvaluate,
-    TSurface : ITriangleSurface>(
+    TDomain : IDomainEvaluate>(
     uniform TVE evaluator,
-    uniform TSurface surface,
-    uint2 pixelCoord,
-    Triangle triangle,
-    TVE.DeformedVertex v0,
-    TVE.DeformedVertex v1,
-    TVE.DeformedVertex v2)
+    uniform TDomain domain,
+    TriangleInfo tri,
+    ClusterViewUniforms view,
+    SurfaceEval currentSurface,
+    float3 bary,
+    uint3 pixelCoord)
 {
-    float3 seed = computeTriangleBarycentric(evaluator, pixelCoord, v0, v1, v2);
-    return ResolveTriangleSurface(
-        surface,
-        triangle,
-        ReconstructWorldPosition(pixelCoord),
-        seed,
-        Uniforms.ViewProj,
-        uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight));
-}
-
-void writeMotionVector<TVE : IVertexEvaluate, TSurface : ITriangleSurface>(
-    uniform TVE evaluator,
-    uniform TSurface surface,
-    uint2 pixelCoord,
-    float3 barycentric,
-    Triangle currentTriangle,
-    TVE.DeformedVertex previousV0,
-    TVE.DeformedVertex previousV1,
-    TVE.DeformedVertex previousV2)
-{
-    if (!shouldWriteMotionVectors())
+    if (view.HasPrevHistory == 0u)
     {
-        writeZeroMotionVector(pixelCoord);
+        OutputMotionVectors[pixelCoord] = 0.0.xx;
         return;
     }
 
-    Triangle previousTriangle = MakeSurfaceTriangle(
+    Triangle previousTriangle = evaluateTriangleWithTransform(
         evaluator,
-        previousV0,
-        previousV1,
-        previousV2);
-    float3 currentPosition = surface.position(currentTriangle, barycentric);
-    float3 previousPosition = surface.position(previousTriangle, barycentric);
-
-    float4 currentClip = mul(float4(currentPosition, 1.0), Uniforms.MotionViewProj);
-    float4 previousClip = mul(float4(previousPosition, 1.0), Uniforms.PrevMotionViewProj);
-
-    if (abs(currentClip.w) < 1e-6 || abs(previousClip.w) < 1e-6)
-    {
-        writeZeroMotionVector(pixelCoord);
-        return;
-    }
-
-    OutputMotionVectors[pixelCoord] = clipToUv(currentClip) - clipToUv(previousClip);
+        tri,
+        GetPreviousInstanceTransform(tri.instanceID),
+        1u);
+    float3 previousPosition = domain.position(previousTriangle, bary);
+    float4 currentClip = mul(float4(currentSurface.Position, 1.0), view.ViewProj);
+    float4 previousClip = mul(float4(previousPosition, 1.0), view.PrevViewProj);
+    OutputMotionVectors[pixelCoord] =
+        abs(currentClip.w) < 1e-6 || abs(previousClip.w) < 1e-6
+            ? 0.0.xx
+            : ClusterMotionClipToUv(currentClip) - ClusterMotionClipToUv(previousClip);
 }
 
 void CSShadeCore<
     TVE : IVertexEvaluate,
-    TSurface : ITriangleSurface,
-    TMaterial : ISurfaceEvaluate<TVE>>(
+    TDomain : IDomainEvaluate,
+    TSurface : ISurfaceEvaluate>(
     uniform TVE vertexEval,
+    uniform TDomain domain,
     uniform TSurface surface,
-    uniform TMaterial material,
-    uint3 tid,
-    bool useDeformCache)
+    uint3 tid)
 {
-    if (tid.x >= BinCounts[Uniforms.ShadingBin])
-        return;
-
-    uint pixelIdx = BinOffsets[Uniforms.ShadingBin] + tid.x;
-    uint packedCoord = PixelCoordBuffer[pixelIdx];
-    uint2 pixelCoord = uint2(packedCoord & 0xFFFFu, packedCoord >> 16);
+    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
+    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
+    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
+    bool fullTile = group < tiles;
+    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
+    if (!fullTile && workIndex >= quads) return;
+    uint2 work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
+    uint row = work.x / Uniforms.ScreenWidth;
+    uint3 pixelCoord = uint3(work.x % Uniforms.ScreenWidth,
+        row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
+    uint corner = lane & 3u;
+    if (!fullTile && (work.y & (1u << corner)) == 0u) return;
+    // Consecutive groups of four lanes always cover a spatial quad.
+    uint quad = lane / 4u;
+    pixelCoord.xy += uint2(corner & 1u, corner >> 1u);
+    if (fullTile) pixelCoord.xy += uint2(quad % 4u, quad / 4u) * 2u;
 
     TriangleInfo tri;
     if (!decodeTriangle(pixelCoord, tri))
         return;
+    ClusterViewUniforms view = Views[tri.viewIndex];
 
-    TVE.DeformedVertex v0;
-    TVE.DeformedVertex v1;
-    TVE.DeformedVertex v2;
-    loadTriangleVertices(vertexEval, tri, useDeformCache, v0, v1, v2);
-
-    Triangle triangle = MakeSurfaceTriangle(vertexEval, v0, v1, v2);
+    Triangle triangle = evaluateTriangle(vertexEval, tri);
     SurfaceBarycentrics coordinates = ResolveBarycentrics(
-        vertexEval,
-        surface,
+        domain,
         pixelCoord,
-        triangle,
-        v0,
-        v1,
-        v2);
-    float3 bary = coordinates.Valid != 0u
-        ? coordinates.Value
-        : computeTriangleBarycentric(vertexEval, pixelCoord, v0, v1, v2);
-    SurfaceEval surfaceEval = surface.eval(triangle, bary);
+        view,
+        triangle);
+    if (coordinates.Valid == 0u)
+        return;
+    float3 bary = coordinates.Value;
+    SurfaceEval surfaceEval = domain.eval(triangle, bary);
+    WriteClusterMotion(
+        vertexEval,
+        domain,
+        tri,
+        view,
+        surfaceEval,
+        bary,
+        pixelCoord);
 
     if (Uniforms.DebugMode != 0)
     {
-        material.evaluateDebug(
-            vertexEval,
+        surface.evaluateDebug(
             Uniforms.DebugMode,
             pixelCoord,
             tri.instanceID,
+            tri.materialSlot,
             surfaceEval,
             bary,
-            v0,
-            v1,
-            v2,
+            triangle,
             OutputColor);
-        writeZeroMotionVector(pixelCoord);
         return;
     }
 
-    material.evaluateSurface(
-        vertexEval,
+    surface.evaluateSurface(
         pixelCoord,
         tri.instanceID,
+        tri.materialSlot,
         surfaceEval,
         bary,
-        v0,
-        v1,
-        v2,
+        triangle,
         OutputColor);
-
-    if (shouldWriteMotionVectors())
-    {
-        TVE.DeformedVertex previousV0;
-        TVE.DeformedVertex previousV1;
-        TVE.DeformedVertex previousV2;
-        loadPreviousTriangleVertices(vertexEval, tri, useDeformCache, previousV0, previousV1, previousV2);
-        writeMotionVector(
-            vertexEval,
-            surface,
-            pixelCoord,
-            bary,
-            triangle,
-            previousV0,
-            previousV1,
-            previousV2);
-    }
-    else
-    {
-        writeZeroMotionVector(pixelCoord);
-    }
 }
 
 void CSShade<
     TVE : IVertexEvaluate,
-    TSurface : ITriangleSurface,
-    TMaterial : ISurfaceEvaluate<TVE>>(
+    TDomain : IDomainEvaluate,
+    TSurface : ISurfaceEvaluate>(
     uniform TVE vertexEval,
+    uniform TDomain domain,
     uniform TSurface surface,
-    uniform TMaterial material,
     uint3 tid)
 {
-    CSShadeCore(vertexEval, surface, material, tid, false);
-}
-
-void CSShadeFromCache<
-    TVE : IVertexEvaluate,
-    TSurface : ITriangleSurface,
-    TMaterial : ISurfaceEvaluate<TVE>>(
-    uniform TVE vertexEval,
-    uniform TSurface surface,
-    uniform TMaterial material,
-    uint3 tid)
-{
-    CSShadeCore(vertexEval, surface, material, tid, true);
+    CSShadeCore(vertexEval, domain, surface, tid);
 }
 
 #endif

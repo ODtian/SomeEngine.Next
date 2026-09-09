@@ -7,42 +7,37 @@ public readonly record struct ImportedAsset
     private ImportedAsset(
         string subAssetKey,
         string outputPath,
-        AssetDescription info)
+        AssetEntry info)
     {
-        AssetGuid = info.AssetGuid;
-        Name = info.Name;
-        SubAssetKey = subAssetKey;
-        OutputPath = outputPath;
-        AssetType = info.AssetType;
-        SchemaFingerprint = info.SchemaFingerprint;
-        Dependencies = info.Dependencies;
+        Entry = info with { Path = outputPath, SubAssetKey = subAssetKey };
     }
 
-    public AssetGuid AssetGuid { get; }
-    public string Name { get; }
-    public string SubAssetKey { get; }
-    public string OutputPath { get; }
-    public string AssetType { get; }
-    public ulong SchemaFingerprint { get; }
-    public IReadOnlyList<AssetGuid> Dependencies { get; }
+    public AssetEntry Entry { get; }
+    public Guid AssetGuid => Entry.AssetGuid;
+    public string Name => Entry.Name;
+    public string SubAssetKey => Entry.SubAssetKey;
+    public string OutputPath => Entry.Path;
+    public string AssetType => Entry.AssetType;
+    public ulong SchemaFingerprint => Entry.SchemaFingerprint;
+    public IReadOnlyList<Guid> Dependencies => Entry.Dependencies;
 
     public static ImportedAsset Create<T>(
-        T asset,
+        Asset<T> asset,
         string subAssetKey,
         string outputPath)
         where T : class
     {
         ArgumentNullException.ThrowIfNull(asset);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        AssetDescription info = AssetMetadata.Describe(asset, outputPath);
+        AssetEntry info = asset.File.Entry;
         return new ImportedAsset(
             subAssetKey ?? string.Empty,
             outputPath,
             info);
     }
 
-    internal AssetDescription Info
-        => new(AssetGuid, Name, AssetType, SchemaFingerprint, Dependencies);
+    internal AssetEntry Info
+        => Entry;
 }
 
 public enum AssetDiagnosticKind
@@ -64,14 +59,14 @@ public sealed class AssetDiagnostic
     public required AssetDiagnosticSeverity Severity { get; init; }
     public required string Path { get; init; }
     public required string Message { get; init; }
-    public AssetGuid AssetGuid { get; init; }
+    public Guid AssetGuid { get; init; }
     public SourceGuid SourceGuid { get; init; }
-    public AssetGuid RelatedAssetGuid { get; init; }
-    public bool HasAsset => !AssetGuid.IsEmpty;
-    public bool HasRelatedAsset => !RelatedAssetGuid.IsEmpty;
+    public Guid RelatedAssetGuid { get; init; }
+    public bool HasAsset => AssetGuid != System.Guid.Empty;
+    public bool HasRelatedAsset => (RelatedAssetGuid != System.Guid.Empty);
 }
 
-public sealed class DependencyEntryData
+public sealed class FileDependency
 {
     public required string RelativePath { get; init; }
     public required string ContentHash { get; init; }

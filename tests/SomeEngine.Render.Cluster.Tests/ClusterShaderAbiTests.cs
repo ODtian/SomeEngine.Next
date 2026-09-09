@@ -5,6 +5,7 @@ using SlangShaderSharp;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Render.Cluster;
+using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Instances;
 using SlangShaderReflection = SlangShaderSharp.ShaderReflection;
 
@@ -15,6 +16,55 @@ public sealed class ClusterShaderAbiTests
 {
     // Sorts before SomeEngine ids so the exact-layout probe exercises shifted Cluster ordinals.
     private const string TestTintCanonicalId = "material.test.tint";
+
+    [Fact]
+    public void Hardware_indices_match_every_software_tessellation_pattern()
+    {
+        MethodInfo create = typeof(ClusterPipelineSystem).GetMethod("CreateTessellationPatternIndices",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        ushort[] indices = (ushort[])create.Invoke(null, null)!;
+        string shader = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "assets", "Shaders", "cluster_tessellation_types.slang"));
+        string table = System.Text.RegularExpressions.Regex.Match(shader,
+            @"TESS_PATTERN_TRIANGLES\[204\]\s*=\s*\{([^}]+)\}").Groups[1].Value;
+        uint[] triangles = System.Text.RegularExpressions.Regex.Matches(table, @"(\d+)u")
+            .Select(static match => uint.Parse(match.Groups[1].Value)).ToArray();
+        Assert.Equal(204, triangles.Length);
+        Assert.Equal(triangles.Length * 3, indices.Length);
+        for (int triangle = 0; triangle < triangles.Length; triangle++)
+        for (int corner = 0; corner < 3; corner++)
+            Assert.Equal((triangles[triangle] >> (corner * 6)) & 63u, indices[triangle * 3 + corner]);
+    }
+
+    [Fact]
+    public async Task Cooked_default_geometry_entries_retain_vertex_contract_attributes()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        (string AssetName, string EntryPoint, string Subject, ClusterConservativeBounds Bounds)[] geometryEntries =
+        [
+            ("sw_raster.shader.asset", "CSSWRasterBufferAtomic64", "software visibility raster", ClusterConservativeBounds.Finite),
+            ("cluster_draw.shader.asset", "VSVisBuffer", "hardware visibility raster", ClusterConservativeBounds.Finite),
+            ("cluster_tessellation_phong.shader.asset", "SeedPhongTessellation", "tessellation seed", ClusterConservativeBounds.Unbounded),
+            ("cluster_tessellation_phong.shader.asset", "ClusterTessellationHardwareVertex", "hardware tessellation raster", ClusterConservativeBounds.Unbounded),
+        ];
+        foreach ((string assetName, string entryPoint, string subject, ClusterConservativeBounds expectedBounds) in geometryEntries)
+        {
+            Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(
+                repositoryRoot,
+                "assets",
+                "Shaders",
+                assetName));
+
+            Assert.Equal(
+                ClusterTestAssets.StandardVertexEncoding,
+                ClusterGeometryContracts.RequireVertexEncoding(shader, entryPoint, subject));
+            Assert.Equal(
+                expectedBounds,
+                ClusterGeometryContracts.RequireConservativeBounds(
+                    shader,
+                    entryPoint,
+                    subject));
+        }
+    }
 
     [Fact]
     public async Task SharedInstanceLayoutsMatchGeneratedContractAndConsumersCompile()
@@ -36,7 +86,7 @@ public sealed class ClusterShaderAbiTests
         Assert.True(createResult.Succeeded, $"Failed to create the Slang global session: {createResult}.");
 
         SlangProfileID spirvProfile = globalSession.FindProfile("glsl_460");
-        SlangProfileID dxilProfile = globalSession.FindProfile("sm_6_5");
+        SlangProfileID dxilProfile = globalSession.FindProfile("sm_6_6");
         Assert.NotEqual(SlangProfileID.Unknown, spirvProfile);
         Assert.NotEqual(SlangProfileID.Unknown, dxilProfile);
         TargetDesc[] targets = OperatingSystem.IsWindows() &&
@@ -118,6 +168,10 @@ public sealed class ClusterShaderAbiTests
             composedLayout,
             composedLayout.Resolve<Vector4>(tintKey));
         AssertPipelineNeutralMaterialInterfaceCompiles(
+            session,
+            shaderDirectory,
+            sessionDesc.Targets.Length);
+        AssertTextureDisplacementDomainCompiles(
             session,
             shaderDirectory,
             sessionDesc.Targets.Length);
@@ -232,11 +286,6 @@ public sealed class ClusterShaderAbiTests
         const string source = """
                 #include "material_interfaces.slang"
 
-                struct NeutralMaterialVertex : IMaterialVertex
-                {
-                    typedef float3 DeformedVertex;
-                };
-
                 RWStructuredBuffer<float3> NeutralInterfaceProbeOutput;
 
                 [shader("compute")]
@@ -275,6 +324,87 @@ public sealed class ClusterShaderAbiTests
             targetCount);
     }
 
+    private static void AssertTextureDisplacementDomainCompiles(
+        ISession session,
+        string shaderDirectory,
+        int targetCount)
+    {
+        const string source = """
+                #include "texture_displacement.slang"
+
+                Texture2D<float> ProbeDisplacementMap;
+                Texture2D<float2> ProbeDisplacementBoundsMap;
+                SamplerState ProbeLinearRepeatSampler;
+                RWStructuredBuffer<float4> ProbeDisplacementOutput;
+
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void TextureDisplacementDomainProbe(uint3 dispatchThreadId : SV_DispatchThreadID)
+                {
+                    TextureDisplacement domain = MakeTextureDisplacement(
+                        ProbeDisplacementMap,
+                        ProbeDisplacementBoundsMap,
+                        ProbeLinearRepeatSampler,
+                        float2(-2.0, 3.0),
+                        1.0,
+                        0.0);
+                    Triangle triangle = {};
+                    triangle.Normal0 = float3(0.0, 0.0, 1.0);
+                    triangle.Normal1 = triangle.Normal0;
+                    triangle.Normal2 = triangle.Normal0;
+                    float3 minimum;
+                    float3 maximum;
+                    domain.bounds(triangle, minimum, maximum);
+                    float3 bary0 = float3(1.0, 0.0, 0.0);
+                    float3 bary1 = float3(0.0, 1.0, 0.0);
+                    float3 bary2 = float3(0.0, 0.0, 1.0);
+                    float3 position0 = domain.position(triangle, bary0);
+                    float3 position1 = domain.position(triangle, bary1);
+                    float3 position2 = domain.position(triangle, bary2);
+                    DomainErrorBounds error = domain.errorBounds(
+                        triangle,
+                        bary0,
+                        bary1,
+                        bary2,
+                        position0,
+                        position1,
+                        position2);
+                    SurfaceEval evaluation = domain.eval(
+                        triangle,
+                        float3(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0));
+                    ProbeDisplacementOutput[dispatchThreadId.x] =
+                        float4(maximum - minimum + evaluation.Normal * 0.0, error.Interior);
+                }
+                """;
+        const string shaderFile = "texture_displacement_domain_probe.slang";
+        string shaderPath = Path.Combine(shaderDirectory, shaderFile);
+        IModule? module = session.LoadModuleFromSource(
+            "texture_displacement_domain_probe",
+            shaderPath,
+            Slang.CreateBlob(source),
+            out ISlangBlob? moduleDiagnostics);
+        Assert.True(
+            module is not null,
+            $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
+
+        SlangResult entryPointResult = module.FindAndCheckEntryPoint(
+            "TextureDisplacementDomainProbe",
+            SlangStage.Compute,
+            out IEntryPoint entryPoint,
+            out ISlangBlob? entryPointDiagnostics);
+        Assert.True(
+            entryPointResult.Succeeded,
+            "Failed to check TextureDisplacementDomainProbe: "
+            + (entryPointDiagnostics?.AsString ?? entryPointResult.ToString()));
+        AssertEntryPointCompiles(
+            session,
+            module,
+            entryPoint,
+            shaderFile,
+            "TextureDisplacementDomainProbe",
+            targetCount);
+    }
+
     private static async Task AssertConfiguredClusterOperationsCompile(
         ISession session,
         string repositoryRoot,
@@ -282,12 +412,12 @@ public sealed class ClusterShaderAbiTests
     {
         AssetManifest manifest = AssetManifest.Load(
             Path.Combine(repositoryRoot, "Library", "AssetManifest"));
-        AssetManifestRecord configurationRecord = Assert.Single(
-            manifest.List(AssetType<ClusterShaders>.Name));
+        AssetEntry configurationRecord = Assert.Single(
+            manifest.List(Asset<ClusterShaders>.FileType));
         await using var loader = new AssetLoader(
             new LooseAssetStorage(repositoryRoot, manifest));
-        ClusterShaders configuration = await loader.LoadAsync(
-            new AssetId<ClusterShaders>(configurationRecord.Guid));
+        await using Asset<ClusterShaders> file = await loader.OpenAsync(new AssetId<ClusterShaders>(configurationRecord.AssetGuid));
+        ClusterShaders configuration = await ClusterShaders.CreateAsync(file, loader);
         IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
             configuration.Operations);
         Assert.Equal(
@@ -302,11 +432,10 @@ public sealed class ClusterShaderAbiTests
             Assert.NotEmpty(entries);
             ShaderRef first = entries[0];
             Assert.True(
-                AssetGuid.TryParse(first.AssetGuid, out AssetGuid shaderGuid),
+                Guid.TryParse(first.AssetGuid, out Guid shaderGuid),
                 $"Operation {operation.Role} has no Shader asset identity.");
             Assert.All(entries, entry => Assert.Equal(first.AssetGuid, entry.AssetGuid));
-            Shader shader = first.Asset
-                ?? await loader.LoadAsync(new AssetId<Shader>(shaderGuid));
+            Shader shader = configuration.GetShader(first);
             string source = Assert.IsType<string>(shader.ImportTrace?.SourcePath);
             string sourcePath = Path.GetFullPath(Path.Combine(
                 repositoryRoot,

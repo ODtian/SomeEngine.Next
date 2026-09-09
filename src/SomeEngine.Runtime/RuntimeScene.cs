@@ -13,7 +13,14 @@ namespace SomeEngine.Runtime;
 internal sealed class RuntimeScene : IDisposable
 {
     private readonly World _world;
+    private Mesh[] _meshes = [];
     private readonly SceneMotion[] _motions;
+    private readonly (Entity Entity, PointLight Value)[] _playbackLights;
+    private readonly Material[] _playbackMaterials;
+    private readonly Vector3 _initialCameraPosition;
+    private static readonly SomeEngine.Diagnostics.TraceSite MovingMeshesTrace = new("scene", "MovingMeshes");
+    private static readonly SomeEngine.Diagnostics.TraceSite MovingLightsTrace = new("scene", "MovingLights");
+    private static readonly SomeEngine.Diagnostics.TraceSite ChangingMaterialsTrace = new("scene", "ChangingMaterials");
     private readonly QueryHandle _motionQuery;
     private int[] _motionByEntitySlot;
     private readonly float _verticalFieldOfView;
@@ -26,6 +33,8 @@ internal sealed class RuntimeScene : IDisposable
     private RuntimeScene(
         World world,
         SceneMotion[] motions,
+        (Entity Entity, PointLight Value)[] playbackLights,
+        Material[] playbackMaterials,
         QueryHandle motionQuery,
         int[] motionByEntitySlot,
         RuntimeCamera camera,
@@ -38,6 +47,9 @@ internal sealed class RuntimeScene : IDisposable
     {
         _world = world;
         _motions = motions;
+        _playbackLights = playbackLights;
+        _playbackMaterials = playbackMaterials;
+        _initialCameraPosition = camera.Position;
         _motionQuery = motionQuery;
         _motionByEntitySlot = motionByEntitySlot;
         Camera = camera;
@@ -60,137 +72,171 @@ internal sealed class RuntimeScene : IDisposable
     internal static async ValueTask<RuntimeScene> CreateAsync(
         World world,
         AssetLoader assets,
-        RenderScene scene)
+        Asset<World> asset)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(assets);
-        ArgumentNullException.ThrowIfNull(scene);
+        SceneData scene = asset.GetFieldsGenerated<SceneData>();
 
         SceneMeshInstance[] instances = [.. scene.MeshInstances ?? []];
-        var meshes = new Dictionary<AssetGuid, Mesh>();
-        var materials = new Dictionary<AssetGuid, Material>();
-        foreach (SceneMeshInstance instance in instances)
-        {
-            AssetGuid meshGuid = ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid));
-            if (!meshes.ContainsKey(meshGuid))
-                meshes.Add(meshGuid, await assets.LoadAsync(new AssetId<Mesh>(meshGuid)).ConfigureAwait(false));
-            foreach (string materialValue in instance.MaterialGuids ?? [])
-            {
-                AssetGuid materialGuid = ParseGuid(materialValue, nameof(instance.MaterialGuids));
-                if (!materials.ContainsKey(materialGuid))
-                    materials.Add(
-                        materialGuid,
-                        await assets.LoadAsync(new AssetId<Material>(materialGuid)).ConfigureAwait(false));
-            }
-        }
-
-        var motions = new List<SceneMotion>(instances.Length);
-        Vector3 meshPositionMin = new(float.PositiveInfinity);
-        Vector3 meshPositionMax = new(float.NegativeInfinity);
-        foreach (SceneMeshInstance instance in instances)
-        {
-            Mesh mesh = meshes[ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid))];
-            Quaternion rotation = QuaternionValue(instance.Rotation);
-            Vector3 position = VectorValue(instance.Position, nameof(instance.Position));
-            meshPositionMin = Vector3.Min(meshPositionMin, position);
-            meshPositionMax = Vector3.Max(meshPositionMax, position);
-            Vector3 scale = VectorValue(instance.Scale, nameof(instance.Scale));
-            TransformQvvs transform = new(position, rotation)
-            {
-                Stretch = scale,
-                Scale = 1.0f,
-            };
-
-            Entity entity = world.CreateEntity();
-            world.Add(entity, new WorldTransform { Qvvs = transform });
-            world.Add(entity, new MeshInstance
-            {
-                Mesh = mesh,
-                BoundsExpansion = instance.BoundsExpansion,
-            });
-            world.AddBuffer<MeshMaterialBinding>(entity);
-            MeshMaterialBinding[] bindings = [.. (instance.MaterialGuids ?? []).Select(
-                value => new MeshMaterialBinding(
-                    materials[ParseGuid(value, nameof(instance.MaterialGuids))]))];
-            world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(
-                entity,
-                ref bindings,
-                static (DynamicBuffer<MeshMaterialBinding> buffer, ref MeshMaterialBinding[] values) =>
-                {
-                    buffer.EnsureCapacity(values.Length);
-                    foreach (MeshMaterialBinding value in values)
-                        buffer.Add(value);
-                });
-
-            Vector3 amplitude = instance.MotionAmplitude is null
-                ? Vector3.Zero
-                : VectorValue(instance.MotionAmplitude, nameof(instance.MotionAmplitude));
-            if (amplitude != Vector3.Zero)
-                motions.Add(SceneMotion.Create(entity, transform, amplitude, instance.MotionSeed));
-        }
-
-        foreach (SceneDirectionalLight light in scene.DirectionalLights ?? [])
-        {
-            Entity entity = world.CreateEntity();
-            world.Add(entity, new DirectionalLight(
-                VectorValue(light.Direction, nameof(light.Direction)),
-                VectorValue(light.Color, nameof(light.Color)),
-                light.Intensity,
-                light.LayerMask));
-        }
-        foreach (ScenePointLight light in scene.PointLights ?? [])
-        {
-            Entity entity = world.CreateEntity();
-            world.Add(entity, new PointLight(
-                VectorValue(light.Position, nameof(light.Position)),
-                light.Range,
-                VectorValue(light.Color, nameof(light.Color)),
-                light.Intensity,
-                light.LayerMask));
-        }
-        foreach (SceneSpotLight light in scene.SpotLights ?? [])
-        {
-            Entity entity = world.CreateEntity();
-            world.Add(entity, new SpotLight(
-                VectorValue(light.Position, nameof(light.Position)),
-                light.Range,
-                VectorValue(light.Direction, nameof(light.Direction)),
-                light.InnerConeCos,
-                light.OuterConeCos,
-                VectorValue(light.Color, nameof(light.Color)),
-                light.Intensity,
-                light.LayerMask));
-        }
-
-        SceneCamera camera = scene.Camera
-            ?? throw new InvalidDataException("The render scene has no camera.");
-        var runtimeCamera = new RuntimeCamera(
-            VectorValue(camera.Position, nameof(camera.Position)),
-            VectorValue(camera.Target, nameof(camera.Target)),
-            VectorValue(camera.Up, nameof(camera.Up)));
-        if (instances.Length == 0)
-            meshPositionMin = meshPositionMax = Vector3.Zero;
-        SceneMotion[] motionRows = [.. motions];
-        QueryHandle motionQuery = world.Query(
-            new QueryDefinitionBuilder().ReadWrite<WorldTransform>());
+        var meshes = new Dictionary<Guid, Mesh>();
+        var materials = new Dictionary<Guid, Material>();
+        var createdEntities = new List<Entity>();
         try
         {
-            return new RuntimeScene(
-                world,
-                motionRows,
-                motionQuery,
-                BuildMotionIndex(motionRows),
-                runtimeCamera,
-                camera.VerticalFieldOfView,
-                camera.NearPlane,
-                camera.FarPlane,
-                instances.Length,
-                meshPositionMin,
-                meshPositionMax);
+            foreach (SceneMeshInstance instance in instances)
+            {
+                Guid meshGuid = ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid));
+                if (!meshes.ContainsKey(meshGuid))
+                {
+                    await using Asset<Mesh> file = await assets.OpenAsync(new AssetId<Mesh>(meshGuid)).ConfigureAwait(false);
+                    meshes.Add(meshGuid, await Mesh.CreateAsync(file).ConfigureAwait(false));
+                }
+                foreach (string materialValue in instance.MaterialGuids ?? [])
+                {
+                    Guid materialGuid = ParseGuid(materialValue, nameof(instance.MaterialGuids));
+                    if (!materials.ContainsKey(materialGuid))
+                    {
+                        await using Asset<Material> file = await assets.OpenAsync(new AssetId<Material>(materialGuid)).ConfigureAwait(false);
+                        materials.Add(materialGuid, await Material.CreateAsync(file, assets).ConfigureAwait(false));
+                    }
+                }
+            }
+
+            var motions = new List<SceneMotion>(instances.Length);
+            Vector3 meshPositionMin = new(float.PositiveInfinity);
+            Vector3 meshPositionMax = new(float.NegativeInfinity);
+            foreach (SceneMeshInstance instance in instances)
+            {
+                Mesh mesh = meshes[ParseGuid(instance.MeshGuid, nameof(instance.MeshGuid))];
+                Quaternion rotation = QuaternionValue(instance.Rotation);
+                Vector3 position = VectorValue(instance.Position, nameof(instance.Position));
+                meshPositionMin = Vector3.Min(meshPositionMin, position);
+                meshPositionMax = Vector3.Max(meshPositionMax, position);
+                Vector3 scale = VectorValue(instance.Scale, nameof(instance.Scale));
+                TransformQvvs transform = new(position, rotation)
+                {
+                    Stretch = scale,
+                    Scale = 1.0f,
+                };
+
+                Entity entity = world.CreateEntity();
+                createdEntities.Add(entity);
+                world.Add(entity, new WorldTransform { Qvvs = transform });
+                world.Add(entity, new MeshInstance
+                {
+                    Mesh = mesh,
+                    BoundsExpansion = instance.BoundsExpansion,
+                });
+                world.AddBuffer<MeshMaterialBinding>(entity);
+                MeshMaterialBinding[] bindings = [.. (instance.MaterialGuids ?? []).Select(
+                value => new MeshMaterialBinding(
+                    materials[ParseGuid(value, nameof(instance.MaterialGuids))]))];
+                world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(
+                    entity,
+                    ref bindings,
+                    static (DynamicBuffer<MeshMaterialBinding> buffer, ref MeshMaterialBinding[] values) =>
+                    {
+                        buffer.EnsureCapacity(values.Length);
+                        foreach (MeshMaterialBinding value in values)
+                            buffer.Add(value);
+                    });
+
+                Vector3 amplitude = instance.MotionAmplitude is null
+                    ? Vector3.Zero
+                    : VectorValue(instance.MotionAmplitude, nameof(instance.MotionAmplitude));
+                if (amplitude != Vector3.Zero)
+                    motions.Add(SceneMotion.Create(entity, transform, amplitude, instance.MotionSeed));
+            }
+
+            foreach (SceneDirectionalLight light in scene.DirectionalLights ?? [])
+            {
+                Entity entity = world.CreateEntity();
+                createdEntities.Add(entity);
+                world.Add(entity, new DirectionalLight(
+                    VectorValue(light.Direction, nameof(light.Direction)),
+                    VectorValue(light.Color, nameof(light.Color)),
+                    light.Intensity,
+                    light.LayerMask));
+            }
+            List<(Entity, PointLight)> playbackLights = [];
+            foreach (ScenePointLight light in scene.PointLights ?? [])
+            {
+                Entity entity = world.CreateEntity();
+                createdEntities.Add(entity);
+                PointLight value = new(
+                    VectorValue(light.Position, nameof(light.Position)),
+                    light.Range,
+                    VectorValue(light.Color, nameof(light.Color)),
+                    light.Intensity,
+                    light.LayerMask);
+                world.Add(entity, value);
+                playbackLights.Add((entity, value));
+            }
+            foreach (SceneSpotLight light in scene.SpotLights ?? [])
+            {
+                Entity entity = world.CreateEntity();
+                createdEntities.Add(entity);
+                world.Add(entity, new SpotLight(
+                    VectorValue(light.Position, nameof(light.Position)),
+                    light.Range,
+                    VectorValue(light.Direction, nameof(light.Direction)),
+                    light.InnerConeCos,
+                    light.OuterConeCos,
+                    VectorValue(light.Color, nameof(light.Color)),
+                    light.Intensity,
+                    light.LayerMask));
+            }
+
+            SceneCamera camera = scene.Camera
+                ?? throw new InvalidDataException("The render scene has no camera.");
+            var runtimeCamera = new RuntimeCamera(
+                VectorValue(camera.Position, nameof(camera.Position)),
+                VectorValue(camera.Target, nameof(camera.Target)),
+                VectorValue(camera.Up, nameof(camera.Up)));
+            if (instances.Length == 0)
+                meshPositionMin = meshPositionMax = Vector3.Zero;
+            SceneMotion[] motionRows = [.. motions];
+            QueryHandle motionQuery = world.Query(
+                new QueryDefinitionBuilder().ReadWrite<WorldTransform>());
+            try
+            {
+                return new RuntimeScene(
+                    world,
+                    motionRows,
+                    [.. playbackLights],
+                    [.. materials.Values],
+                    motionQuery,
+                    BuildMotionIndex(motionRows),
+                    runtimeCamera,
+                    camera.VerticalFieldOfView,
+                    camera.NearPlane,
+                    camera.FarPlane,
+                    instances.Length,
+                    meshPositionMin,
+                    meshPositionMax)
+                { _meshes = [.. meshes.Values] };
+            }
+            catch
+            {
+                world.ReleaseQuery(motionQuery);
+                throw;
+            }
         }
-        catch
+        catch (Exception failure)
         {
-            world.ReleaseQuery(motionQuery);
+            var errors = new List<Exception> { failure };
+            foreach (Entity entity in createdEntities)
+                try { if (world.IsAlive(entity)) world.DestroyEntity(entity); }
+                catch (Exception cleanup) { errors.Add(cleanup); }
+            foreach (Material material in materials.Values)
+                try { material.Dispose(); }
+                catch (Exception cleanup) { errors.Add(cleanup); }
+            foreach (Mesh mesh in meshes.Values)
+                try { mesh.Dispose(); }
+                catch (Exception cleanup) { errors.Add(cleanup); }
+            if (errors.Count != 1)
+                throw new AggregateException("Scene creation and cleanup failed.", errors);
             throw;
         }
     }
@@ -208,15 +254,44 @@ internal sealed class RuntimeScene : IDisposable
 
     internal void Update(float elapsedSeconds)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
         _elapsedSeconds = elapsedSeconds;
         UpdateMotionRows();
         if (_motionIndexInvalid)
             RebuildMotionIndex();
+        SomeEngine.Diagnostics.EngineTrace.Counter(MovingMeshesTrace, _motions.Length);
+    }
+
+    // Reproducible input for renderer measurements; this is scene behavior, not trace policy.
+    internal void Play(float seconds, bool animateMaterials)
+    {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Playback);
+        Update(seconds);
+        Camera.SetPosition(_initialCameraPosition + new Vector3(MathF.Sin(seconds) * 0.3f, MathF.Sin(seconds * 0.7f) * 0.15f, 0));
+        for (int index = 0; index < _playbackLights.Length; index++)
+        {
+            (Entity entity, PointLight light) = _playbackLights[index];
+            _world.Replace(entity, new PointLight(
+                light.Position + new Vector3(MathF.Sin(seconds + index) * 0.5f, 0, 0), light.Range, light.Color,
+                light.Intensity * (0.9f + MathF.Cos(seconds + index) * 0.1f), light.LayerMask));
+        }
+        int changingMaterials = 0;
+        if (animateMaterials)
+            foreach (Material material in _playbackMaterials)
+                if (material is StandardMaterial standard)
+                {
+                    standard.Roughness = 0.5f + MathF.Sin(seconds) * 0.2f;
+                    changingMaterials++;
+                }
+        SomeEngine.Diagnostics.EngineTrace.Counter(MovingLightsTrace, _playbackLights.Length);
+        SomeEngine.Diagnostics.EngineTrace.Counter(ChangingMaterialsTrace, changingMaterials);
     }
 
     private void UpdateMotionRows()
     {
+        if (_motions.Length == 0)
+            return;
         RuntimeScene state = this;
         _world.ExecuteQuery(
             _motionQuery,
@@ -230,7 +305,6 @@ internal sealed class RuntimeScene : IDisposable
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
             ReadOnlySpan<Entity> entities = chunk.Entities;
-            Span<WorldTransform> transforms = chunk.ReadWrite<WorldTransform>();
             for (int row = 0; row < entities.Length; row++)
             {
                 Entity entity = entities[row];
@@ -253,7 +327,7 @@ internal sealed class RuntimeScene : IDisposable
                     MathF.Sin(_elapsedSeconds * motion.Frequency.Z) * motion.Amplitude.Z);
                 TransformQvvs value = motion.BaseTransform;
                 value.Position += offset;
-                transforms[row] = new WorldTransform { Qvvs = value };
+                chunk.ReadWrite<WorldTransform>(row) = new WorldTransform { Qvvs = value };
             }
         }
     }
@@ -293,13 +367,24 @@ internal sealed class RuntimeScene : IDisposable
     {
         if (_disposed)
             return;
-        _world.ReleaseQuery(_motionQuery);
         _disposed = true;
+        var errors = new List<Exception>();
+        try { _world.ReleaseQuery(_motionQuery); }
+        catch (Exception error) { errors.Add(error); }
+        foreach (Material material in _playbackMaterials)
+            try { material.Dispose(); }
+            catch (Exception error) { errors.Add(error); }
+        foreach (Mesh mesh in _meshes)
+            try { mesh.Dispose(); }
+            catch (Exception error) { errors.Add(error); }
+        _meshes = [];
+        if (errors.Count != 0)
+            throw new AggregateException("Some scene resources could not be closed.", errors);
     }
 
-    private static AssetGuid ParseGuid(string? value, string field)
+    private static Guid ParseGuid(string? value, string field)
     {
-        if (!AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
+        if (!Guid.TryParse(value, out Guid guid) || (guid == System.Guid.Empty))
             throw new InvalidDataException($"Scene field '{field}' contains invalid asset GUID '{value}'.");
         return guid;
     }

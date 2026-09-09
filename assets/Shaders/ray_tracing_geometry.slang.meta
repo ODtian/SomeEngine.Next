@@ -1,0 +1,32 @@
+{
+  "source_guid": "e8e702e1-106f-432d-8f88-1cd41ca19b8f",
+  "importer": "SlangShaderImporter",
+  "importer_settings": {
+    "cook_profile": "default"
+  },
+  "importer_version": 26,
+  "input_hash": "8787495d7f90fc192d53b2f72602138746b4dc468f6ad78118e088e4e7052efd",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/cluster_structures.slang",
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+    },
+    {
+      "relative_path": "assets/Shaders/feature_visible_clusters.slang",
+      "content_hash": "7fc33f17a093e88175b5e620c9b7d3034141cd46c23d5f55fa1a82713f6232c2"
+    },
+    {
+      "relative_path": "assets/Shaders/ray_tracing_geometry.slang",
+      "content_hash": "42588dd4f94d53ccd5010e40dfd619b4857f23b6bef3eb6d095c8add26f84917"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "f950c332-8897-5f3a-9b27-6b641f44871e",
+      "sub_asset_key": "shader:main",
+      "input_hash": "8787495d7f90fc192d53b2f72602138746b4dc468f6ad78118e088e4e7052efd",
+      "dependencies": [],
+      "asset_path": "ray_tracing_geometry.shader.asset"
+    }
+  ]
+}

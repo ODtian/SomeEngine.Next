@@ -1,0 +1,1809 @@
+{
+  "scope": "Current dirty worktree of codex/render-enhancement, not committed HEAD alone; no matched main-branch whole-renderer comparison.",
+  "head": "a787000034e7eba7559d20299a2c704216444011",
+  "main": "b1d59a82835e2b044c193835dd3967960afe555f",
+  "sourceHashes": "F:\\.codex\\research\\render-performance-review-20260905\\source-hashes.json",
+  "environment": {
+    "CapturedAt": "2026-09-05T15:16:04.5002783+08:00",
+    "Head": "a787000034e7eba7559d20299a2c704216444011",
+    "Main": "b1d59a82835e2b044c193835dd3967960afe555f",
+    "Dotnet": "10.0.111",
+    "Cpu": {
+      "Name": "Intel(R) Xeon(R) CPU E5-2698B v3 @ 2.00GHz",
+      "NumberOfCores": 16,
+      "NumberOfLogicalProcessors": 32,
+      "MaxClockSpeed": 2001
+    },
+    "Os": {
+      "Caption": "Microsoft Windows 11 专业工作站版",
+      "Version": "10.0.26200",
+      "BuildNumber": "26200",
+      "TotalVisibleMemorySize": 66946112
+    },
+    "Gpu": [
+      {
+        "Name": "NVIDIA GeForce RTX 3080",
+        "DriverVersion": "32.0.16.1074"
+      },
+      {
+        "Name": "MuMu Virtual Display Adapter",
+        "DriverVersion": "20.36.41.498"
+      }
+    ],
+    "Power": "电源方案 GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (高性能)"
+  },
+  "method": {
+    "default": "3 alternating-order process repetitions per variant; 512 frames each, discard first 256.",
+    "scenarios": "2 reversed-order repetitions per variant; 384 frames each, discard first 192. Dynamic scenes use wall clock, not fixed replay.",
+    "wall": "CPU render-loop elapsed time including admission, events, game wait, preparation, recording/submission and present call. Hidden window, no VSync, 1280x720, three frames in flight. Not scanout latency or GPU timestamp frame duration.",
+    "instrumentation": "Release copies of RuntimeApplication.cs and FrameExecutor.cs; preallocated runtime rows, small per-frame graph measurement rows. No console/file writes in timed loop. Baseline uses neither validation, frame-output readback, graph diagnostics, RenderDoc nor EventPipe.",
+    "gpu": "Fresh RenderDoc 1.43 capture at frame 100, runtime exits before replay; seven EventGPUDuration replays. Event totals are not async frame wall times.",
+    "memory": "Distinct heaps referenced by latest allocations of each of three frame states; classify Heap.Info.MemoryType. Does not include every idle heap, persistent resources, RHI allocations or WDDM residency."
+  },
+  "frameResults": {
+    "default-dynamic": {
+      "runCount": 2,
+      "medianOfRunMediansMs": 45.470325,
+      "runMedianRangeMs": [
+        45.27535,
+        45.6653
+      ],
+      "runP95RangeMs": [
+        68.0622,
+        68.8458
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-dynamic-0.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 45.6653,
+            "p95": 68.8458,
+            "mean": 49.524131770833336
+          },
+          "renderThreadBytes": {
+            "median": 850728.0,
+            "p95": 921112,
+            "mean": 856033.7083333334
+          },
+          "graph": {
+            "buildRowsMs": 0.27335,
+            "reuseKeyMs": 0.0689,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.0302499999999997,
+            "synchronizationMs": 14.618,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 24.8504,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": true,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-dynamic-1.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 45.27535,
+            "p95": 68.0622,
+            "mean": 48.640163020833334
+          },
+          "renderThreadBytes": {
+            "median": 850960.0,
+            "p95": 920520,
+            "mean": 856680.5
+          },
+          "graph": {
+            "buildRowsMs": 0.279,
+            "reuseKeyMs": 0.06975,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.09305,
+            "synchronizationMs": 14.9084,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 24.20125,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": true,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "default-hw-async": {
+      "runCount": 3,
+      "medianOfRunMediansMs": 39.4495,
+      "runMedianRangeMs": [
+        38.4972,
+        40.734049999999996
+      ],
+      "runP95RangeMs": [
+        47.8973,
+        54.016
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hw-async-0.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 39.4495,
+            "p95": 54.016,
+            "mean": 41.118483984375
+          },
+          "renderThreadBytes": {
+            "median": 705712.0,
+            "p95": 771232,
+            "mean": 708581.78125
+          },
+          "graph": {
+            "buildRowsMs": 0.2626,
+            "reuseKeyMs": 0.0666,
+            "analyzeMs": 0.0001,
+            "materializeMs": 1.8357999999999999,
+            "synchronizationMs": 14.9359,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 20.46465,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 123.0,
+            "accesses": 873.0,
+            "buffers": 137.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hw-async-1.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 38.4972,
+            "p95": 47.8973,
+            "mean": 39.863089453125
+          },
+          "renderThreadBytes": {
+            "median": 705712.0,
+            "p95": 771248,
+            "mean": 708659.125
+          },
+          "graph": {
+            "buildRowsMs": 0.26115,
+            "reuseKeyMs": 0.0648,
+            "analyzeMs": 0.0001,
+            "materializeMs": 1.8239999999999998,
+            "synchronizationMs": 14.6717,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 19.9946,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 123.0,
+            "accesses": 873.0,
+            "buffers": 137.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hw-async-2.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 40.734049999999996,
+            "p95": 53.3901,
+            "mean": 42.64398671875
+          },
+          "renderThreadBytes": {
+            "median": 705760.0,
+            "p95": 771432,
+            "mean": 709070
+          },
+          "graph": {
+            "buildRowsMs": 0.27315,
+            "reuseKeyMs": 0.065,
+            "analyzeMs": 0.0001,
+            "materializeMs": 1.93485,
+            "synchronizationMs": 15.6362,
+            "diagnosticsMs": 0.0006,
+            "recordSubmitMs": 21.07595,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 123.0,
+            "accesses": 873.0,
+            "buffers": 137.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "default-hw-serial": {
+      "runCount": 3,
+      "medianOfRunMediansMs": 39.60745,
+      "runMedianRangeMs": [
+        39.1607,
+        39.8322
+      ],
+      "runP95RangeMs": [
+        51.7485,
+        55.3215
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hw-serial-0.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 39.1607,
+            "p95": 51.7485,
+            "mean": 40.90488984375
+          },
+          "renderThreadBytes": {
+            "median": 705736.0,
+            "p95": 773648,
+            "mean": 710130.59375
+          },
+          "graph": {
+            "buildRowsMs": 0.2667,
+            "reuseKeyMs": 0.0634,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.01465,
+            "synchronizationMs": 15.0023,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 20.02485,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 123.0,
+            "accesses": 873.0,
+            "buffers": 137.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hw-serial-1.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 39.60745,
+            "p95": 51.759,
+            "mean": 41.352261328125
+          },
+          "renderThreadBytes": {
+            "median": 706584.0,
+            "p95": 772600,
+            "mean": 710277.1875
+          },
+          "graph": {
+            "buildRowsMs": 0.26744999999999997,
+            "reuseKeyMs": 0.0643,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.05255,
+            "synchronizationMs": 15.34865,
+            "diagnosticsMs": 0.0005,
+            "recordSubmitMs": 20.041600000000003,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 123.0,
+            "accesses": 873.0,
+            "buffers": 137.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hw-serial-2.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 39.8322,
+            "p95": 55.3215,
+            "mean": 41.671161328125
+          },
+          "renderThreadBytes": {
+            "median": 705772.0,
+            "p95": 773616,
+            "mean": 709201.53125
+          },
+          "graph": {
+            "buildRowsMs": 0.2722,
+            "reuseKeyMs": 0.0641,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.04605,
+            "synchronizationMs": 15.535,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 20.19345,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 123.0,
+            "accesses": 873.0,
+            "buffers": 137.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "default-hybrid-async": {
+      "runCount": 3,
+      "medianOfRunMediansMs": 43.44395,
+      "runMedianRangeMs": [
+        43.08255,
+        45.2849
+      ],
+      "runP95RangeMs": [
+        67.629,
+        73.909
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hybrid-async-0.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 43.08255,
+            "p95": 67.629,
+            "mean": 47.315455078125
+          },
+          "renderThreadBytes": {
+            "median": 843044.0,
+            "p95": 909000,
+            "mean": 846894.84375
+          },
+          "graph": {
+            "buildRowsMs": 0.27955,
+            "reuseKeyMs": 0.0703,
+            "analyzeMs": 0.0001,
+            "materializeMs": 1.9308,
+            "synchronizationMs": 14.97335,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 23.852899999999998,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hybrid-async-1.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 45.2849,
+            "p95": 73.909,
+            "mean": 49.762001562500004
+          },
+          "renderThreadBytes": {
+            "median": 844380.0,
+            "p95": 913144,
+            "mean": 848730.28125
+          },
+          "graph": {
+            "buildRowsMs": 0.28145,
+            "reuseKeyMs": 0.0691,
+            "analyzeMs": 0.0001,
+            "materializeMs": 1.9886499999999998,
+            "synchronizationMs": 15.48105,
+            "diagnosticsMs": 0.0005,
+            "recordSubmitMs": 24.92825,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hybrid-async-2.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 43.44395,
+            "p95": 67.6589,
+            "mean": 48.000153125
+          },
+          "renderThreadBytes": {
+            "median": 843084.0,
+            "p95": 908848,
+            "mean": 846468.40625
+          },
+          "graph": {
+            "buildRowsMs": 0.2846,
+            "reuseKeyMs": 0.0677,
+            "analyzeMs": 0.0001,
+            "materializeMs": 1.87555,
+            "synchronizationMs": 15.224450000000001,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 24.000799999999998,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "default-hybrid-serial": {
+      "runCount": 3,
+      "medianOfRunMediansMs": 39.72595,
+      "runMedianRangeMs": [
+        39.61635,
+        40.00375
+      ],
+      "runP95RangeMs": [
+        50.6024,
+        53.9049
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hybrid-serial-0.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 40.00375,
+            "p95": 53.9049,
+            "mean": 41.892296875
+          },
+          "renderThreadBytes": {
+            "median": 843016.0,
+            "p95": 908320,
+            "mean": 845800.59375
+          },
+          "graph": {
+            "buildRowsMs": 0.2777,
+            "reuseKeyMs": 0.0695,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.0986000000000002,
+            "synchronizationMs": 14.77685,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 20.9971,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hybrid-serial-1.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 39.72595,
+            "p95": 51.8382,
+            "mean": 41.423336328125
+          },
+          "renderThreadBytes": {
+            "median": 843248.0,
+            "p95": 910328,
+            "mean": 846754.3125
+          },
+          "graph": {
+            "buildRowsMs": 0.28154999999999997,
+            "reuseKeyMs": 0.0697,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.1337,
+            "synchronizationMs": 14.9679,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 20.3164,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\default-hybrid-serial-2.json",
+          "frames": 512,
+          "warmup": 256,
+          "samples": 256,
+          "wallMs": {
+            "median": 39.61635,
+            "p95": 50.6024,
+            "mean": 41.27502421875
+          },
+          "renderThreadBytes": {
+            "median": 844136.0,
+            "p95": 908272,
+            "mean": 845978.625
+          },
+          "graph": {
+            "buildRowsMs": 0.28559999999999997,
+            "reuseKeyMs": 0.0691,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.10395,
+            "synchronizationMs": 14.90335,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 20.211100000000002,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "displacement-hw": {
+      "runCount": 2,
+      "medianOfRunMediansMs": 42.35275,
+      "runMedianRangeMs": [
+        41.271249999999995,
+        43.434250000000006
+      ],
+      "runP95RangeMs": [
+        57.3153,
+        59.5599
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\displacement-hw-0.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 41.271249999999995,
+            "p95": 57.3153,
+            "mean": 43.605547395833334
+          },
+          "renderThreadBytes": {
+            "median": 1929112.0,
+            "p95": 1995272,
+            "mean": 1938630.1666666667
+          },
+          "graph": {
+            "buildRowsMs": 0.46809999999999996,
+            "reuseKeyMs": 0.1035,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.4574,
+            "synchronizationMs": 14.60715,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 21.018549999999998,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 171.0,
+            "accesses": 1528.0,
+            "buffers": 169.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\displacement-hw-1.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 43.434250000000006,
+            "p95": 59.5599,
+            "mean": 45.21047760416667
+          },
+          "renderThreadBytes": {
+            "median": 1929400.0,
+            "p95": 1995728,
+            "mean": 1939873.0833333333
+          },
+          "graph": {
+            "buildRowsMs": 0.4718,
+            "reuseKeyMs": 0.10464999999999999,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.54445,
+            "synchronizationMs": 14.74305,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 22.07985,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 171.0,
+            "accesses": 1528.0,
+            "buffers": 169.0,
+            "textures": 25.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": true,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "displacement-hybrid-async": {
+      "runCount": 2,
+      "medianOfRunMediansMs": 49.309,
+      "runMedianRangeMs": [
+        49.175799999999995,
+        49.4422
+      ],
+      "runP95RangeMs": [
+        70.9973,
+        74.1561
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\displacement-hybrid-async-0.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 49.175799999999995,
+            "p95": 74.1561,
+            "mean": 53.03777760416666
+          },
+          "renderThreadBytes": {
+            "median": 2088600.0,
+            "p95": 2172176,
+            "mean": 2102487.5833333335
+          },
+          "graph": {
+            "buildRowsMs": 0.4927,
+            "reuseKeyMs": 0.1094,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.5829,
+            "synchronizationMs": 14.65615,
+            "diagnosticsMs": 0.0005,
+            "recordSubmitMs": 27.20655,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 177.0,
+            "accesses": 1602.0,
+            "buffers": 175.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\displacement-hybrid-async-1.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 49.4422,
+            "p95": 70.9973,
+            "mean": 52.618435416666664
+          },
+          "renderThreadBytes": {
+            "median": 2095404.0,
+            "p95": 2172976,
+            "mean": 2105876.7083333335
+          },
+          "graph": {
+            "buildRowsMs": 0.4931,
+            "reuseKeyMs": 0.1068,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.5586,
+            "synchronizationMs": 14.465250000000001,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 27.35135,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 177.0,
+            "accesses": 1602.0,
+            "buffers": 175.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "displacement-hybrid-noasync": {
+      "runCount": 2,
+      "medianOfRunMediansMs": 41.634074999999996,
+      "runMedianRangeMs": [
+        40.2863,
+        42.981849999999994
+      ],
+      "runP95RangeMs": [
+        57.3515,
+        58.4924
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\displacement-hybrid-noasync-0.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 42.981849999999994,
+            "p95": 57.3515,
+            "mean": 45.37056354166667
+          },
+          "renderThreadBytes": {
+            "median": 2089528.0,
+            "p95": 2168960,
+            "mean": 2101136.4583333335
+          },
+          "graph": {
+            "buildRowsMs": 0.5016,
+            "reuseKeyMs": 0.10744999999999999,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.7151500000000004,
+            "synchronizationMs": 15.277450000000002,
+            "diagnosticsMs": 0.0005,
+            "recordSubmitMs": 21.35615,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 177.0,
+            "accesses": 1602.0,
+            "buffers": 175.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\displacement-hybrid-noasync-1.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 40.2863,
+            "p95": 58.4924,
+            "mean": 43.09326510416667
+          },
+          "renderThreadBytes": {
+            "median": 2089496.0,
+            "p95": 2169584,
+            "mean": 2101908.5833333335
+          },
+          "graph": {
+            "buildRowsMs": 0.493,
+            "reuseKeyMs": 0.10835,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.59635,
+            "synchronizationMs": 14.2684,
+            "diagnosticsMs": 0.0005,
+            "recordSubmitMs": 20.214750000000002,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 177.0,
+            "accesses": 1602.0,
+            "buffers": 175.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": false,
+            "AsyncCompute": false,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    },
+    "sparse-dynamic": {
+      "runCount": 2,
+      "medianOfRunMediansMs": 44.3966,
+      "runMedianRangeMs": [
+        43.99435,
+        44.79885
+      ],
+      "runP95RangeMs": [
+        67.2707,
+        67.6409
+      ],
+      "runs": [
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\sparse-dynamic-0.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 43.99435,
+            "p95": 67.6409,
+            "mean": 47.8166171875
+          },
+          "renderThreadBytes": {
+            "median": 843288.0,
+            "p95": 912616,
+            "mean": 848528.5416666666
+          },
+          "graph": {
+            "buildRowsMs": 0.27495,
+            "reuseKeyMs": 0.0692,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.04495,
+            "synchronizationMs": 14.427900000000001,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 24.3722,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": true,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        },
+        {
+          "file": "F:\\.codex\\research\\render-performance-review-20260905\\sparse-dynamic-1.json",
+          "frames": 384,
+          "warmup": 192,
+          "samples": 192,
+          "wallMs": {
+            "median": 44.79885,
+            "p95": 67.2707,
+            "mean": 47.97688541666667
+          },
+          "renderThreadBytes": {
+            "median": 844760.0,
+            "p95": 912080,
+            "mean": 849670.0833333334
+          },
+          "graph": {
+            "buildRowsMs": 0.2774,
+            "reuseKeyMs": 0.0687,
+            "analyzeMs": 0.0001,
+            "materializeMs": 2.0449,
+            "synchronizationMs": 14.8186,
+            "diagnosticsMs": 0.0004,
+            "recordSubmitMs": 24.91075,
+            "reused": 1.0,
+            "staticFastPath": 0.0,
+            "declaredPasses": 129.0,
+            "accesses": 955.0,
+            "buffers": 143.0,
+            "textures": 24.0
+          },
+          "options": {
+            "DynamicScene": true,
+            "AsyncCompute": true,
+            "ForceHardwareRaster": false,
+            "DeviceValidation": false,
+            "VerifyFrameOutput": false
+          }
+        }
+      ]
+    }
+  },
+  "gpuFresh": {
+    "default": {
+      "capture": "F:\\.codex\\research\\render-performance-review-20260905\\capture-default_frame100.rdc",
+      "frame": 100,
+      "replays": 7,
+      "replaySumMedianMs": 5.182816,
+      "eventCount": 90,
+      "zeroDispatches": 26,
+      "lighting": {
+        "id": "ResourceId::1774",
+        "label": "Lighting frame views",
+        "tile": [
+          16,
+          16,
+          80,
+          45
+        ],
+        "depthSlices_maxPerCell_directional_nonDirectional": [
+          16,
+          64,
+          1,
+          3
+        ],
+        "width_height_cells": [
+          1280,
+          720,
+          57600
+        ]
+      },
+      "entries": [
+        {
+          "entry": "BuildClusteredLightGrid",
+          "events": 1,
+          "medianMs": 2.67664,
+          "minMs": 2.587616,
+          "maxMs": 3.251136
+        },
+        {
+          "entry": "ClusterShade",
+          "events": 1,
+          "medianMs": 1.166336,
+          "minMs": 1.161216,
+          "maxMs": 1.845248
+        },
+        {
+          "entry": "PSMain",
+          "events": 12,
+          "medianMs": 0.18944,
+          "minMs": 0.188672,
+          "maxMs": 0.19385599999999997
+        },
+        {
+          "entry": "ClusterRasterSoftwareImageAtomic64",
+          "events": 4,
+          "medianMs": 0.10118400000000001,
+          "minMs": 0.10009599999999998,
+          "maxMs": 0.10319999999999999
+        },
+        {
+          "entry": "ReduceHiZPair",
+          "events": 8,
+          "medianMs": 0.098944,
+          "minMs": 0.09712000000000001,
+          "maxMs": 0.10147200000000002
+        },
+        {
+          "entry": "PSResolveVisibilityWinner",
+          "events": 2,
+          "medianMs": 0.072448,
+          "minMs": 0.071424,
+          "maxMs": 0.073632
+        },
+        {
+          "entry": "TraverseHierarchyLevel",
+          "events": 8,
+          "medianMs": 0.061952,
+          "minMs": 0.060256,
+          "maxMs": 0.06307200000000002
+        },
+        {
+          "entry": "ResumeDeferredClusterWork",
+          "events": 2,
+          "medianMs": 0.059648,
+          "minMs": 0.057760000000000006,
+          "maxMs": 0.061248
+        },
+        {
+          "entry": "InitHiZ",
+          "events": 2,
+          "medianMs": 0.057791999999999996,
+          "minMs": 0.055263999999999994,
+          "maxMs": 0.058528000000000004
+        },
+        {
+          "entry": "SeedHierarchyRoots",
+          "events": 2,
+          "medianMs": 0.040544,
+          "minMs": 0.040096,
+          "maxMs": 0.041696
+        },
+        {
+          "entry": "ResetBins",
+          "events": 4,
+          "medianMs": 0.033696,
+          "minMs": 0.032032,
+          "maxMs": 0.034848
+        },
+        {
+          "entry": "CountShadeBins",
+          "events": 1,
+          "medianMs": 0.031744,
+          "minMs": 0.030719999999999997,
+          "maxMs": 0.031744
+        },
+        {
+          "entry": "ReserveBins",
+          "events": 4,
+          "medianMs": 0.029376,
+          "minMs": 0.02848,
+          "maxMs": 0.030624000000000002
+        },
+        {
+          "entry": "ScatterShadeBins",
+          "events": 1,
+          "medianMs": 0.028672,
+          "minMs": 0.027648,
+          "maxMs": 0.029696
+        },
+        {
+          "entry": "MarkVirtualShadowPages",
+          "events": 1,
+          "medianMs": 0.028192000000000002,
+          "minMs": 0.027424,
+          "maxMs": 0.030656
+        },
+        {
+          "entry": "ClearVisibilityWinner",
+          "events": 1,
+          "medianMs": 0.02688,
+          "minMs": 0.02672,
+          "maxMs": 0.02736
+        },
+        {
+          "entry": "CountBins",
+          "events": 4,
+          "medianMs": 0.021056000000000002,
+          "minMs": 0.020192,
+          "maxMs": 0.021696
+        },
+        {
+          "entry": "CullPhaseOne",
+          "events": 2,
+          "medianMs": 0.019839999999999997,
+          "minMs": 0.019232,
+          "maxMs": 0.020448
+        },
+        {
+          "entry": "ScatterBins",
+          "events": 4,
+          "medianMs": 0.019200000000000002,
+          "minMs": 0.018335999999999998,
+          "maxMs": 0.01952
+        },
+        {
+          "entry": "CSResolve",
+          "events": 1,
+          "medianMs": 0.01712,
+          "minMs": 0.01696,
+          "maxMs": 0.018528
+        },
+        {
+          "entry": "ReduceHiZ",
+          "events": 2,
+          "medianMs": 0.014912000000000002,
+          "minMs": 0.013663999999999999,
+          "maxMs": 0.015071999999999999
+        },
+        {
+          "entry": "ClusterRasterPixelImageAtomic64",
+          "events": 5,
+          "medianMs": 0.010208,
+          "minMs": 0.008928,
+          "maxMs": 0.012416
+        },
+        {
+          "entry": "ID3D12GraphicsCommandList::ClearRenderTargetView()",
+          "events": 4,
+          "medianMs": 0.009696,
+          "minMs": 0.009311999999999999,
+          "maxMs": 0.010048000000000001
+        },
+        {
+          "entry": "AllocateVirtualShadowPages",
+          "events": 1,
+          "medianMs": 0.009216,
+          "minMs": 0.009216,
+          "maxMs": 0.009216
+        },
+        {
+          "entry": "CompactVirtualShadowViews",
+          "events": 1,
+          "medianMs": 0.008192000000000001,
+          "minMs": 0.008192000000000001,
+          "maxMs": 0.009216
+        },
+        {
+          "entry": "CullPhaseTwo",
+          "events": 2,
+          "medianMs": 0.0066879999999999995,
+          "minMs": 0.006144,
+          "maxMs": 0.007168
+        },
+        {
+          "entry": "ClearCull",
+          "events": 1,
+          "medianMs": 0.00656,
+          "minMs": 0.006272000000000001,
+          "maxMs": 0.0072640000000000005
+        },
+        {
+          "entry": "ResetShadeBins",
+          "events": 1,
+          "medianMs": 0.0056960000000000005,
+          "minMs": 0.00512,
+          "maxMs": 0.006112
+        },
+        {
+          "entry": "MarkVirtualShadowCoarsePages",
+          "events": 1,
+          "medianMs": 0.00512,
+          "minMs": 0.004096000000000001,
+          "maxMs": 0.01024
+        },
+        {
+          "entry": "ReserveShadeBins",
+          "events": 1,
+          "medianMs": 0.00512,
+          "minMs": 0.004096000000000001,
+          "maxMs": 0.006144
+        },
+        {
+          "entry": "BuildVirtualShadowPagePool",
+          "events": 1,
+          "medianMs": 0.0042239999999999995,
+          "minMs": 0.00368,
+          "maxMs": 0.004608
+        },
+        {
+          "entry": "ReduceVirtualShadowPageHiZ",
+          "events": 2,
+          "medianMs": 0.004096000000000001,
+          "minMs": 0.0030720000000000005,
+          "maxMs": 0.004096000000000001
+        },
+        {
+          "entry": "InitializeVirtualShadowPageHiZ",
+          "events": 2,
+          "medianMs": 0.003648,
+          "minMs": 0.003328,
+          "maxMs": 0.004064
+        },
+        {
+          "entry": "ClearVirtualShadowPages",
+          "events": 1,
+          "medianMs": 0.0020480000000000003,
+          "minMs": 0.0020480000000000003,
+          "maxMs": 0.0020480000000000003
+        }
+      ]
+    },
+    "displacement": {
+      "capture": "F:\\.codex\\research\\render-performance-review-20260905\\capture-displacement_frame100.rdc",
+      "frame": 100,
+      "replays": 7,
+      "replaySumMedianMs": 11.414112000000008,
+      "eventCount": 170,
+      "zeroDispatches": 57,
+      "lighting": {
+        "id": "ResourceId::2069",
+        "label": "Lighting frame views",
+        "tile": [
+          16,
+          16,
+          80,
+          45
+        ],
+        "depthSlices_maxPerCell_directional_nonDirectional": [
+          16,
+          64,
+          1,
+          1
+        ],
+        "width_height_cells": [
+          1280,
+          720,
+          57600
+        ]
+      },
+      "entries": [
+        {
+          "entry": "BuildClusteredLightGrid",
+          "events": 1,
+          "medianMs": 10.081216000000001,
+          "minMs": 10.042591999999999,
+          "maxMs": 10.394624
+        },
+        {
+          "entry": "PSMain",
+          "events": 12,
+          "medianMs": 0.18444799999999997,
+          "minMs": 0.18371200000000001,
+          "maxMs": 0.18668800000000002
+        },
+        {
+          "entry": "ClusterTessellationSplit",
+          "events": 24,
+          "medianMs": 0.16927999999999993,
+          "minMs": 0.16192,
+          "maxMs": 0.175872
+        },
+        {
+          "entry": "ReduceHiZPair",
+          "events": 8,
+          "medianMs": 0.09840000000000002,
+          "minMs": 0.09673599999999999,
+          "maxMs": 0.099008
+        },
+        {
+          "entry": "PSResolveVisibilityWinner",
+          "events": 20,
+          "medianMs": 0.09673600000000002,
+          "minMs": 0.09596799999999998,
+          "maxMs": 0.097536
+        },
+        {
+          "entry": "ClusterShade",
+          "events": 1,
+          "medianMs": 0.084992,
+          "minMs": 0.082944,
+          "maxMs": 0.088064
+        },
+        {
+          "entry": "ResumeDeferredClusterWork",
+          "events": 2,
+          "medianMs": 0.058112000000000004,
+          "minMs": 0.057055999999999996,
+          "maxMs": 0.060384
+        },
+        {
+          "entry": "InitHiZ",
+          "events": 2,
+          "medianMs": 0.055296,
+          "minMs": 0.054655999999999996,
+          "maxMs": 0.05648
+        },
+        {
+          "entry": "ClusterTessellationDiceImageAtomic64",
+          "events": 4,
+          "medianMs": 0.045056,
+          "minMs": 0.042368,
+          "maxMs": 0.045536
+        },
+        {
+          "entry": "ResetBins",
+          "events": 4,
+          "medianMs": 0.034111999999999996,
+          "minMs": 0.033184,
+          "maxMs": 0.03584
+        },
+        {
+          "entry": "ReserveBins",
+          "events": 4,
+          "medianMs": 0.034048,
+          "minMs": 0.032288,
+          "maxMs": 0.034879999999999994
+        },
+        {
+          "entry": "ResetTessellationBins",
+          "events": 4,
+          "medianMs": 0.033952,
+          "minMs": 0.033216,
+          "maxMs": 0.035776
+        },
+        {
+          "entry": "SeedHierarchyRoots",
+          "events": 2,
+          "medianMs": 0.02944,
+          "minMs": 0.028416,
+          "maxMs": 0.030432
+        },
+        {
+          "entry": "ClusterRasterPixelImageAtomic64",
+          "events": 14,
+          "medianMs": 0.028576,
+          "minMs": 0.027168,
+          "maxMs": 0.029536
+        },
+        {
+          "entry": "MarkVirtualShadowPages",
+          "events": 1,
+          "medianMs": 0.027744,
+          "minMs": 0.027648,
+          "maxMs": 0.028672
+        },
+        {
+          "entry": "CountShadeBins",
+          "events": 1,
+          "medianMs": 0.027648,
+          "minMs": 0.027648,
+          "maxMs": 0.029696
+        },
+        {
+          "entry": "ClearVisibilityWinner",
+          "events": 1,
+          "medianMs": 0.027104,
+          "minMs": 0.026688,
+          "maxMs": 0.027648
+        },
+        {
+          "entry": "ScatterShadeBins",
+          "events": 1,
+          "medianMs": 0.026624000000000002,
+          "minMs": 0.026624000000000002,
+          "maxMs": 0.027648
+        },
+        {
+          "entry": "TraverseHierarchyLevel",
+          "events": 4,
+          "medianMs": 0.026112,
+          "minMs": 0.024896,
+          "maxMs": 0.026624
+        },
+        {
+          "entry": "ClusterTessellationSeed",
+          "events": 4,
+          "medianMs": 0.021471999999999998,
+          "minMs": 0.020608,
+          "maxMs": 0.022912000000000002
+        },
+        {
+          "entry": "CountBins",
+          "events": 4,
+          "medianMs": 0.019743999999999998,
+          "minMs": 0.018208000000000002,
+          "maxMs": 0.020448
+        },
+        {
+          "entry": "ReserveTessellationBins",
+          "events": 4,
+          "medianMs": 0.01968,
+          "minMs": 0.017856,
+          "maxMs": 0.020352
+        },
+        {
+          "entry": "CountTessellationBins",
+          "events": 4,
+          "medianMs": 0.01728,
+          "minMs": 0.01648,
+          "maxMs": 0.017344000000000002
+        },
+        {
+          "entry": "CSResolve",
+          "events": 1,
+          "medianMs": 0.017184,
+          "minMs": 0.01664,
+          "maxMs": 0.018335999999999998
+        },
+        {
+          "entry": "ScatterBins",
+          "events": 4,
+          "medianMs": 0.016672,
+          "minMs": 0.015488,
+          "maxMs": 0.017536000000000003
+        },
+        {
+          "entry": "CullPhaseOne",
+          "events": 2,
+          "medianMs": 0.016,
+          "minMs": 0.014752,
+          "maxMs": 0.016576
+        },
+        {
+          "entry": "ReduceHiZ",
+          "events": 2,
+          "medianMs": 0.0144,
+          "minMs": 0.013856,
+          "maxMs": 0.015264
+        },
+        {
+          "entry": "ScatterTessellationBins",
+          "events": 4,
+          "medianMs": 0.013696,
+          "minMs": 0.012352,
+          "maxMs": 0.014336
+        },
+        {
+          "entry": "ID3D12GraphicsCommandList::CopyBufferRegion()",
+          "events": 9,
+          "medianMs": 0.012448,
+          "minMs": 0.012288,
+          "maxMs": 0.013023999999999999
+        },
+        {
+          "entry": "MarkVirtualShadowCoarsePages",
+          "events": 1,
+          "medianMs": 0.01024,
+          "minMs": 0.009216,
+          "maxMs": 0.011264
+        },
+        {
+          "entry": "ID3D12GraphicsCommandList::ClearRenderTargetView()",
+          "events": 4,
+          "medianMs": 0.009152,
+          "minMs": 0.008928,
+          "maxMs": 0.009856
+        },
+        {
+          "entry": "ClusterRasterSoftwareImageAtomic64",
+          "events": 4,
+          "medianMs": 0.008192000000000001,
+          "minMs": 0.008,
+          "maxMs": 0.009216000000000002
+        },
+        {
+          "entry": "CompactVirtualShadowViews",
+          "events": 1,
+          "medianMs": 0.008192000000000001,
+          "minMs": 0.007168,
+          "maxMs": 0.009216
+        },
+        {
+          "entry": "ClearCull",
+          "events": 1,
+          "medianMs": 0.007296,
+          "minMs": 0.006592,
+          "maxMs": 0.008128000000000002
+        },
+        {
+          "entry": "AllocateVirtualShadowPages",
+          "events": 1,
+          "medianMs": 0.007168,
+          "minMs": 0.006144,
+          "maxMs": 0.007168
+        },
+        {
+          "entry": "CullPhaseTwo",
+          "events": 2,
+          "medianMs": 0.0066879999999999995,
+          "minMs": 0.00624,
+          "maxMs": 0.007552
+        },
+        {
+          "entry": "ResetShadeBins",
+          "events": 1,
+          "medianMs": 0.006432,
+          "minMs": 0.00592,
+          "maxMs": 0.00688
+        },
+        {
+          "entry": "ReserveShadeBins",
+          "events": 1,
+          "medianMs": 0.00512,
+          "minMs": 0.00512,
+          "maxMs": 0.006144
+        },
+        {
+          "entry": "BuildVirtualShadowPagePool",
+          "events": 1,
+          "medianMs": 0.004448,
+          "minMs": 0.004064000000000001,
+          "maxMs": 0.005248
+        },
+        {
+          "entry": "ReduceVirtualShadowPageHiZ",
+          "events": 2,
+          "medianMs": 0.004096000000000001,
+          "minMs": 0.0030720000000000005,
+          "maxMs": 0.004096000000000001
+        },
+        {
+          "entry": "InitializeVirtualShadowPageHiZ",
+          "events": 2,
+          "medianMs": 0.003936,
+          "minMs": 0.00336,
+          "maxMs": 0.004416
+        },
+        {
+          "entry": "ClearVirtualShadowPages",
+          "events": 1,
+          "medianMs": 0.0020480000000000003,
+          "minMs": 0.0020480000000000003,
+          "maxMs": 0.0020480000000000003
+        }
+      ]
+    }
+  },
+  "memory": {
+    "resourcePlacementSumBytes": 151912448,
+    "uniqueDeviceLocalHeapBytes": 1879048192,
+    "uniqueUploadHeapBytes": 100663296,
+    "raw": "F:\\.codex\\research\\render-performance-review-20260905\\detail-memory.json",
+    "repeat": "F:\\.codex\\research\\render-performance-review-20260905\\detail-repeat-memory.json"
+  },
+  "sparseRanges": {
+    "Adapter": "NVIDIA GeForce RTX 3080",
+    "Method": "64 readers, 1 or 128 disjoint ranges, 16 warmup frames, 48 measured frames, four alternating repetitions. CPU execution includes submission and state commit; GPU wait is outside the measured interval. Allocation is on the calling thread only; validation is disabled.",
+    "Results": [
+      {
+        "repeat": 0,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 44.4,
+        "RegistrationP95Us": 58.3,
+        "ExecutionMedianUs": 305.5,
+        "ExecutionP95Us": 369.6,
+        "CallingThreadAllocationMedianBytes": 264
+      },
+      {
+        "repeat": 0,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 29.9,
+        "RegistrationP95Us": 43.8,
+        "ExecutionMedianUs": 253.9,
+        "ExecutionP95Us": 288.8,
+        "CallingThreadAllocationMedianBytes": 368
+      },
+      {
+        "repeat": 0,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 768,
+        "RegistrationP95Us": 846,
+        "ExecutionMedianUs": 11687.4,
+        "ExecutionP95Us": 12870.1,
+        "CallingThreadAllocationMedianBytes": 18552
+      },
+      {
+        "repeat": 0,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 7.7,
+        "RegistrationP95Us": 18.3,
+        "ExecutionMedianUs": 741.5,
+        "ExecutionP95Us": 827.1,
+        "CallingThreadAllocationMedianBytes": 18656
+      },
+      {
+        "repeat": 1,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 7.1,
+        "RegistrationP95Us": 7.6,
+        "ExecutionMedianUs": 142.1,
+        "ExecutionP95Us": 172.3,
+        "CallingThreadAllocationMedianBytes": 368
+      },
+      {
+        "repeat": 1,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 10.1,
+        "RegistrationP95Us": 10.7,
+        "ExecutionMedianUs": 139.5,
+        "ExecutionP95Us": 173.7,
+        "CallingThreadAllocationMedianBytes": 264
+      },
+      {
+        "repeat": 1,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 7.3,
+        "RegistrationP95Us": 8.1,
+        "ExecutionMedianUs": 701.4,
+        "ExecutionP95Us": 765.6,
+        "CallingThreadAllocationMedianBytes": 18656
+      },
+      {
+        "repeat": 1,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 759,
+        "RegistrationP95Us": 831.1,
+        "ExecutionMedianUs": 9224.6,
+        "ExecutionP95Us": 9888.9,
+        "CallingThreadAllocationMedianBytes": 18552
+      },
+      {
+        "repeat": 2,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 9.9,
+        "RegistrationP95Us": 11.6,
+        "ExecutionMedianUs": 97.3,
+        "ExecutionP95Us": 153.8,
+        "CallingThreadAllocationMedianBytes": 264
+      },
+      {
+        "repeat": 2,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 6.9,
+        "RegistrationP95Us": 7.1,
+        "ExecutionMedianUs": 81.9,
+        "ExecutionP95Us": 94,
+        "CallingThreadAllocationMedianBytes": 368
+      },
+      {
+        "repeat": 2,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 749.1,
+        "RegistrationP95Us": 837.1,
+        "ExecutionMedianUs": 9131.6,
+        "ExecutionP95Us": 9600,
+        "CallingThreadAllocationMedianBytes": 18552
+      },
+      {
+        "repeat": 2,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 7.6,
+        "RegistrationP95Us": 10.4,
+        "ExecutionMedianUs": 601.4,
+        "ExecutionP95Us": 815.3,
+        "CallingThreadAllocationMedianBytes": 18656
+      },
+      {
+        "repeat": 3,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 7.1,
+        "RegistrationP95Us": 12.7,
+        "ExecutionMedianUs": 77.5,
+        "ExecutionP95Us": 113.9,
+        "CallingThreadAllocationMedianBytes": 368
+      },
+      {
+        "repeat": 3,
+        "rangeCount": 1,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 10,
+        "RegistrationP95Us": 10.3,
+        "ExecutionMedianUs": 97.1,
+        "ExecutionP95Us": 110.5,
+        "CallingThreadAllocationMedianBytes": 264
+      },
+      {
+        "repeat": 3,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": true,
+        "samples": 48,
+        "RegistrationMedianUs": 7.3,
+        "RegistrationP95Us": 9.2,
+        "ExecutionMedianUs": 595.9,
+        "ExecutionP95Us": 631.4,
+        "CallingThreadAllocationMedianBytes": 18656
+      },
+      {
+        "repeat": 3,
+        "rangeCount": 128,
+        "passCount": 64,
+        "shared": false,
+        "samples": 48,
+        "RegistrationMedianUs": 754.9,
+        "RegistrationP95Us": 822.3,
+        "ExecutionMedianUs": 9065.1,
+        "ExecutionP95Us": 9425.7,
+        "CallingThreadAllocationMedianBytes": 18552
+      }
+    ]
+  },
+  "rawDirectory": "F:\\.codex\\research\\render-performance-review-20260905"
+}

@@ -1,5 +1,36 @@
 {
   "source_guid": "1cc7de1e-43e0-49cd-b30a-3460cccadc19",
   "importer": "SlangShaderImporter",
-  "importer_settings": null
+  "importer_settings": {
+    "cook_profile": "default"
+  },
+  "importer_version": 26,
+  "input_hash": "e71f84026c6d7a1cc656e2cc92dfed0d11c01310a97519934e2ec46f8bb7a89e",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/clustered_light_grid.slang",
+      "content_hash": "7dbc14060b7db530a8c1dc92dbe515972f090d74517417e82fc5e9df30adf8c0"
+    },
+    {
+      "relative_path": "assets/Shaders/common.slang",
+      "content_hash": "15b848671166b0f7760a59b569030982263a5486a537cf5bc0543279f04166dd"
+    },
+    {
+      "relative_path": "assets/Shaders/render_lighting.slang",
+      "content_hash": "c764a5c47ff78017cf2a2fcd1b0ed1ee078d52e6d050395ff2da9a2d1b9c98b3"
+    },
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "f6e9d4ed-6534-5cda-be15-c733ae158d48",
+      "sub_asset_key": "shader:main",
+      "input_hash": "e71f84026c6d7a1cc656e2cc92dfed0d11c01310a97519934e2ec46f8bb7a89e",
+      "dependencies": [],
+      "asset_path": "clustered_light_grid.shader.asset"
+    }
+  ]
 }

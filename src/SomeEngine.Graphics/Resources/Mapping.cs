@@ -153,22 +153,30 @@ internal abstract class MappingLease
 /// <para><b>After Dispose:</b> Bytes, Range, Flush, and Invalidate are invalid; a previously copied Span is contractually invalid even though the runtime cannot revoke it.</para>
 /// <para>See <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-001">RHI-LIFE-001</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-002">RHI-LIFE-002</see>, <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-006">RHI-LIFE-006</see>, and <see href="wiki/architecture/RHI/Lifetime-Concurrency-and-Diagnostics.md#rhi-life-007">RHI-LIFE-007</see>.</para>
 /// </remarks>
-public unsafe ref struct MappedBuffer
+public unsafe struct MappedBuffer : IDisposable
 {
     private readonly MappingLease? _lease;
-    private readonly Span<byte> _bytes;
+    private readonly Memory<byte> _memory;
+    private readonly nint _pointer;
+    private readonly int _length;
     private readonly ulong _sequence;
 
-    internal MappedBuffer(MappingLease lease, Span<byte> bytes, ulong sequence)
+    internal MappedBuffer(MappingLease lease, Memory<byte> bytes, ulong sequence)
     {
         _lease = lease;
-        _bytes = bytes;
+        _memory = bytes;
+        _pointer = 0;
+        _length = bytes.Length;
         _sequence = sequence;
     }
 
     internal MappedBuffer(MappingLease lease, nint pointer, int length, ulong sequence)
-        : this(lease, new Span<byte>((void*)pointer, length), sequence)
     {
+        _lease = lease;
+        _memory = default;
+        _pointer = pointer;
+        _length = length;
+        _sequence = sequence;
     }
 
     public BufferRange Range
@@ -186,7 +194,7 @@ public unsafe ref struct MappedBuffer
         {
             MappingLease lease = RequireLease();
             lease.EnsureActive(_sequence);
-            return _bytes;
+            return _pointer == 0 ? _memory.Span : new Span<byte>((void*)_pointer, _length);
         }
     }
 

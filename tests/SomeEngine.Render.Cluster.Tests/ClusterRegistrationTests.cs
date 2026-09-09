@@ -194,7 +194,7 @@ public sealed class ClusterRegistrationTests
         using Mesh second = await ClusterTestAssets.OpenRuntimeMeshAsync(
             ClusterTestAssets.CreateSinglePageMesh("revision-two"));
         _ = await manager.AddMeshAsync(first);
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.True(manager.IsMeshRegistered(first));
         Assert.True(manager.TryGetPublishedRoot(first, out uint rootBefore));
 
@@ -203,6 +203,25 @@ public sealed class ClusterRegistrationTests
         Assert.True(manager.IsMeshRegistered(first));
         Assert.True(manager.TryGetPublishedRoot(first, out uint rootAfter));
         Assert.Equal(rootBefore, rootAfter);
+    }
+
+    [Fact]
+    public async Task DifferentVertexEncodingsCanShareResidency()
+    {
+        using var manager = new ClusterMeshes();
+        Mesh standard = ClusterTestAssets.CreateSinglePageMesh("standard");
+        ClusterMeshRegistration standardRegistration = await manager.AddAuthoredMeshAsync(standard);
+        Assert.True(manager.IsMeshRegistered(standardRegistration.Mesh));
+
+        Mesh incompatible = ClusterTestAssets.CreateSinglePageMesh("incompatible");
+        incompatible.VertexEncoding = "test.vertex.other.v1";
+        MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(incompatible.Payload!.Value.Span);
+        header.VertexEncodingHash = VertexEncodingCompatibility.Hash(incompatible.VertexEncoding);
+        MemoryMarshal.Write(incompatible.Payload.Value.Span, in header);
+
+        ClusterMeshRegistration incompatibleRegistration = await manager.AddAuthoredMeshAsync(incompatible);
+        Assert.True(manager.IsMeshRegistered(standardRegistration.Mesh));
+        Assert.True(manager.IsMeshRegistered(incompatibleRegistration.Mesh));
     }
 
     private static ValueTask<ControlledRuntimeMesh> OpenControlledAsync(string name)
@@ -243,8 +262,11 @@ public sealed class ClusterRegistrationTests
         public void Stage(ulong offset, int length)
             => _inner.Stage(offset, length);
 
-        public void Publish()
-            => _inner.Publish();
+        public ClusterStagedUpload[] CaptureStagedUploads()
+            => _inner.CaptureStagedUploads();
+
+        public void CompleteStagedUploads(ReadOnlySpan<ClusterStagedUpload> uploads)
+            => _inner.CompleteStagedUploads(uploads);
 
         public void Release(ulong offset, int length)
             => _inner.Release(offset, length);

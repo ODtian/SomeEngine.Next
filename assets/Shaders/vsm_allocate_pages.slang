@@ -4,333 +4,229 @@ struct VirtualShadowPageAllocationUniforms
 {
     uint PageTableEntryCount;
     uint MaxPhysicalPages;
-    uint ClearTilesPerPageAxis;
+    uint FinePageTableEntryCount;
     uint VirtualPagesPerView;
+    uint CoarsePagesPerView;
     uint ViewCount;
-    uint TraversalGroupCount;
-    uint MaxPagesToRasterPerFrame;
-    uint PhysicalPageEvictionProbeCount;
+    uint FrameIndex;
+    uint EvictionBucketCount;
 };
 
 ConstantBuffer<VirtualShadowPageAllocationUniforms> PageAllocation;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 StructuredBuffer<uint> RequestedShadowPages;
-StructuredBuffer<uint> RequestedShadowPageList;
-StructuredBuffer<uint> RequestedShadowPageCount;
 RWStructuredBuffer<uint4> ShadowPageTable;
-RWStructuredBuffer<uint> ShadowPageAllocator;
 RWStructuredBuffer<uint> PhysicalPageOwners;
-RWStructuredBuffer<uint> ShadowPagesToRaster;
-RWStructuredBuffer<uint> ShadowRasterBudget;
-RWStructuredBuffer<uint4> ShadowDirtyPageBounds;
-RWStructuredBuffer<uint> ActivePhysicalPages;
+RWStructuredBuffer<uint4> PageMetadata;
+RWStructuredBuffer<uint> FreePages;
+RWStructuredBuffer<uint> FreePageCount;
+RWStructuredBuffer<uint> EvictionPages;
+RWStructuredBuffer<uint> EvictionBucketCounts;
+RWStructuredBuffer<uint2> ActivePhysicalPages;
 RWStructuredBuffer<uint> ActivePhysicalPageCount;
-RWStructuredBuffer<uint> ShadowRasterViewMask;
-RWByteAddressBuffer ClearPageDispatchArgs;
-RWByteAddressBuffer ShadowTraversalDispatchArgs;
+RWStructuredBuffer<uint> ShadowAllocationFailures;
 
-int2 RequestedWorldPage(
-    uint pageTableIndex,
-    VirtualShadowMapParameters shadowView)
+static const uint VSM_UNOWNED_PAGE = 0xFFFFFFFFu;
+// One bounded counter reservation per active wave. Each lane receives a distinct
+// stack index; a partly depleted stack serves its prefix before trying eviction.
+bool ReservePages(RWStructuredBuffer<uint> counts, uint counterIndex, out uint index)
 {
-    uint pagesPerRow = VirtualShadowPagesPerRow(shadowView);
-    uint localIndex = pageTableIndex - shadowView.PageTableOffset;
-    uint2 slot = uint2(localIndex % pagesPerRow, localIndex / pagesPerRow);
-    uint mask = pagesPerRow - 1u;
-    uint2 originSlot = uint2(
-        asuint(shadowView.VirtualPageOriginX) & mask,
-        asuint(shadowView.VirtualPageOriginY) & mask);
-    uint2 localPage = (slot - originSlot) & mask;
-    return int2(
-        shadowView.VirtualPageOriginX,
-        shadowView.VirtualPageOriginY) + int2(localPage);
+    uint requested = WaveActiveCountBits(true);
+    uint taken = 0u;
+    uint baseIndex = 0u;
+    if (WaveIsFirstLane())
+    {
+        uint observed;
+        InterlockedAdd(counts[counterIndex], 0u, observed);
+        while (observed > 0u)
+        {
+            uint latest;
+            taken = min(observed, requested);
+            InterlockedCompareExchange(counts[counterIndex], observed, observed - taken, latest);
+            if (latest == observed)
+            {
+                baseIndex = observed - taken;
+                break;
+            }
+            observed = latest;
+            taken = 0u;
+        }
+    }
+    taken = WaveReadLaneFirst(taken);
+    index = WaveReadLaneFirst(baseIndex) + WavePrefixCountBits(true);
+    return WavePrefixCountBits(true) < taken;
 }
 
-bool TryAllocateFreePhysicalPage(
-    uint ownerPageTableIndex,
-    out uint physicalPage)
+bool PopEvictionPage(out uint page)
 {
-    uint observed = ShadowPageAllocator[0];
-    [loop]
-    while (observed < PageAllocation.MaxPhysicalPages)
+    for (int bucket = int(PageAllocation.EvictionBucketCount) - 1; bucket >= 0; bucket--)
     {
-        uint latest;
-        InterlockedCompareExchange(
-            ShadowPageAllocator[0],
-            observed,
-            observed + 1u,
-            latest);
-        if (latest == observed)
+        uint local;
+        if (ReservePages(EvictionBucketCounts, uint(bucket), local))
         {
-            physicalPage = observed;
-            PhysicalPageOwners[physicalPage] = ownerPageTableIndex;
+            page = EvictionPages[uint(bucket) * PageAllocation.MaxPhysicalPages + local];
             return true;
         }
-        observed = latest;
     }
-    physicalPage = 0u;
+    page = 0u;
     return false;
 }
 
-bool TryEvictPhysicalPage(
-    uint ownerPageTableIndex,
-    out uint physicalPage)
+void ReleaseOldMapping(uint atlasPage)
 {
-    uint probeCount = min(
-        PageAllocation.MaxPhysicalPages,
-        PageAllocation.PhysicalPageEvictionProbeCount);
-    [loop]
-    for (uint attempt = 0u; attempt < probeCount; attempt++)
+    uint oldOwner = PhysicalPageOwners[atlasPage];
+    if (oldOwner < PageAllocation.PageTableEntryCount)
     {
-        uint cursor;
-        InterlockedAdd(ShadowPageAllocator[1], 1u, cursor);
-        uint candidate = cursor % PageAllocation.MaxPhysicalPages;
-        uint oldOwner = PhysicalPageOwners[candidate];
-        if (oldOwner < PageAllocation.PageTableEntryCount &&
-            RequestedShadowPages[oldOwner] != 0u)
-        {
-            continue;
-        }
-
-        // The old virtual mapping is locked before the physical owner changes. Therefore no
-        // observable state can contain a new owner while the old virtual page still resolves to
-        // this physical page. A failed owner claim restores the old mapping before retrying.
-        uint expectedMapping = PackVirtualShadowPage(candidate + 1u);
-        bool lockedOldMapping = false;
-        if (oldOwner < PageAllocation.PageTableEntryCount)
-        {
-            uint observedMapping;
-            InterlockedCompareExchange(
-                ShadowPageTable[oldOwner].x,
-                expectedMapping,
-                VSM_PAGE_LOCKED,
-                observedMapping);
-            if (observedMapping != expectedMapping)
-                continue;
-            lockedOldMapping = true;
-        }
-
-        uint latestOwner;
+        uint expected = PackVirtualShadowPage(atlasPage + 1u);
+        uint ignored;
         InterlockedCompareExchange(
-            PhysicalPageOwners[candidate],
-            oldOwner,
-            ownerPageTableIndex,
-            latestOwner);
-        if (latestOwner != oldOwner)
-        {
-            if (lockedOldMapping)
-            {
-                uint ignoredRestore;
-                InterlockedCompareExchange(
-                    ShadowPageTable[oldOwner].x,
-                    VSM_PAGE_LOCKED,
-                    expectedMapping,
-                    ignoredRestore);
-            }
-            continue;
-        }
+            ShadowPageTable[oldOwner].x,
+            expected,
+            VSM_PAGE_UNMAPPED,
+            ignored);
+    }
+    PhysicalPageOwners[atlasPage] = VSM_UNOWNED_PAGE;
+}
 
-        if (lockedOldMapping)
-        {
-            uint ignoredClear;
-            InterlockedCompareExchange(
-                ShadowPageTable[oldOwner].x,
-                VSM_PAGE_LOCKED,
-                VSM_PAGE_UNMAPPED,
-                ignoredClear);
-        }
-        physicalPage = candidate;
+bool AcquireAtlasPage(uint newTableIndex, out uint atlasPage)
+{
+    uint freeIndex;
+    if (ReservePages(FreePageCount, 0u, freeIndex))
+    {
+        atlasPage = FreePages[freeIndex];
+        PhysicalPageOwners[atlasPage] = newTableIndex;
         return true;
     }
-    physicalPage = 0u;
-    return false;
+    if (!PopEvictionPage(atlasPage))
+        return false;
+    ReleaseOldMapping(atlasPage);
+    PhysicalPageOwners[atlasPage] = newTableIndex;
+    return true;
 }
 
-bool TryReserveRasterBudget()
+uint ResolveViewIndex(uint tableIndex)
 {
-    uint observed = ShadowRasterBudget[0];
-    while (observed < PageAllocation.MaxPagesToRasterPerFrame)
+    if (tableIndex < PageAllocation.FinePageTableEntryCount)
+        return tableIndex / PageAllocation.VirtualPagesPerView;
+    uint coarseIndex = tableIndex - PageAllocation.FinePageTableEntryCount;
+    return coarseIndex / PageAllocation.CoarsePagesPerView;
+}
+
+bool IsCoarseTableIndex(uint tableIndex)
+{
+    return tableIndex >= PageAllocation.FinePageTableEntryCount;
+}
+
+int2 ResolveExpectedFineWorldPage(
+    uint tableIndex,
+    VirtualShadowMapParameters view)
+{
+    uint dimension = VirtualShadowPagesPerRow(view);
+    uint mask = dimension - 1u;
+    uint localIndex = tableIndex - view.PageTableOffset;
+    uint2 slot = uint2(localIndex % dimension, localIndex / dimension);
+    uint2 originSlot = uint2(
+        asuint(view.VirtualPageOriginX) & mask,
+        asuint(view.VirtualPageOriginY) & mask);
+    uint2 localPage = (slot - originSlot) & mask;
+    return int2(view.VirtualPageOriginX, view.VirtualPageOriginY) + int2(localPage);
+}
+
+int2 ResolveExpectedCoarseWorldPage(
+    uint tableIndex,
+    VirtualShadowMapParameters view)
+{
+    uint dimension = VirtualShadowCoarsePagesPerRow(view);
+    uint mask = dimension - 1u;
+    uint localIndex = tableIndex - view.CoarsePageTableOffset;
+    uint2 slot = uint2(localIndex % dimension, localIndex / dimension);
+    int scale = int(1u << view.CoarsePageShift);
+    int2 origin = int2(
+        VirtualShadowFloorDiv(view.VirtualPageOriginX, scale),
+        VirtualShadowFloorDiv(view.VirtualPageOriginY, scale));
+    uint2 originSlot = uint2(asuint(origin.x) & mask, asuint(origin.y) & mask);
+    uint2 localPage = (slot - originSlot) & mask;
+    return origin + int2(localPage);
+}
+
+void PublishDirtyPage(
+    uint tableIndex,
+    uint viewIndex,
+    uint atlasPage)
+{
+    uint activeIndex = 0u;
+    uint waveCount = WaveActiveCountBits(true);
+    if (WaveIsFirstLane())
+        InterlockedAdd(ActivePhysicalPageCount[0], waveCount, activeIndex);
+    activeIndex = WaveReadLaneFirst(activeIndex) + WavePrefixCountBits(true);
+    if (activeIndex < PageAllocation.MaxPhysicalPages)
     {
-        uint latest;
-        InterlockedCompareExchange(
-            ShadowRasterBudget[0],
-            observed,
-            observed + 1u,
-            latest);
-        if (latest == observed)
-            return true;
-        observed = latest;
+        ActivePhysicalPages[activeIndex] = uint2(atlasPage, tableIndex);
+
     }
-    return false;
-}
-
-void PublishDirtyPageBounds(uint viewIndex, uint2 localPage)
-{
-    // The buffer is zero-cleared. Inverted minima let all four fields use InterlockedMax while
-    // preserving an empty value without a dedicated initialization pass.
-    uint ignored;
-    InterlockedMax(
-        ShadowDirtyPageBounds[viewIndex].x,
-        0xFFFFu - localPage.x,
-        ignored);
-    InterlockedMax(
-        ShadowDirtyPageBounds[viewIndex].y,
-        0xFFFFu - localPage.y,
-        ignored);
-    InterlockedMax(
-        ShadowDirtyPageBounds[viewIndex].z,
-        localPage.x + 1u,
-        ignored);
-    InterlockedMax(
-        ShadowDirtyPageBounds[viewIndex].w,
-        localPage.y + 1u,
-        ignored);
-}
-
-uint ResolvePhysicalPage(
-    uint pageTableIndex,
-    int2 expectedWorldPage,
-    uint cacheGeneration,
-    out bool newlyAllocated)
-{
-    newlyAllocated = false;
-    uint4 observedEntry = ShadowPageTable[pageTableIndex];
-    [loop]
-    for (uint attempt = 0u; attempt < 64u; attempt++)
-    {
-        uint observed = observedEntry.x;
-        if (observed != VSM_PAGE_UNMAPPED && observed != VSM_PAGE_LOCKED &&
-            IsVirtualShadowPageTag(observedEntry, expectedWorldPage))
-        {
-            return observed;
-        }
-        if (observed == VSM_PAGE_LOCKED)
-        {
-            observedEntry = ShadowPageTable[pageTableIndex];
-            continue;
-        }
-
-        uint latest;
-        InterlockedCompareExchange(
-            ShadowPageTable[pageTableIndex].x,
-            observed,
-            VSM_PAGE_LOCKED,
-            latest);
-        if (latest != observed)
-        {
-            observedEntry = ShadowPageTable[pageTableIndex];
-            continue;
-        }
-
-        uint physicalPage;
-        bool acquired = observed != VSM_PAGE_UNMAPPED;
-        if (acquired)
-        {
-            physicalPage = observed - 1u;
-            PhysicalPageOwners[physicalPage] = pageTableIndex;
-        }
-        else
-        {
-            acquired = TryAllocateFreePhysicalPage(pageTableIndex, physicalPage) ||
-                TryEvictPhysicalPage(pageTableIndex, physicalPage);
-        }
-
-        if (!acquired)
-        {
-            ShadowPageTable[pageTableIndex].x = VSM_PAGE_UNMAPPED;
-            return VSM_PAGE_UNMAPPED;
-        }
-
-        ShadowPageTable[pageTableIndex].y = asuint(expectedWorldPage.x);
-        ShadowPageTable[pageTableIndex].z = asuint(expectedWorldPage.y);
-        ShadowPageTable[pageTableIndex].w = cacheGeneration;
-        uint published = PackVirtualShadowPage(physicalPage + 1u);
-        ShadowPageTable[pageTableIndex].x = published;
-        newlyAllocated = true;
-        return published;
-    }
-    return VSM_PAGE_UNMAPPED;
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void AllocateVirtualShadowPages(uint3 dispatchThreadId : SV_DispatchThreadID)
+void AllocateVirtualShadowPages(uint3 threadId : SV_DispatchThreadID)
 {
-    uint requestIndex = dispatchThreadId.x;
-    uint requestCount = min(
-        RequestedShadowPageCount[0],
-        PageAllocation.PageTableEntryCount);
-    if (requestIndex >= requestCount)
-        return;
-    uint pageTableIndex = RequestedShadowPageList[requestIndex];
-    if (pageTableIndex >= PageAllocation.PageTableEntryCount)
+    uint tableIndex = threadId.x;
+    if (tableIndex >= PageAllocation.PageTableEntryCount ||
+        RequestedShadowPages[tableIndex] != PageAllocation.FrameIndex)
         return;
 
-    uint viewIndex = PageAllocation.VirtualPagesPerView > 0u
-        ? pageTableIndex / PageAllocation.VirtualPagesPerView
-        : PageAllocation.ViewCount;
+    uint viewIndex = ResolveViewIndex(tableIndex);
     if (viewIndex >= PageAllocation.ViewCount)
         return;
-    VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
-    int2 expectedWorldPage = RequestedWorldPage(pageTableIndex, shadowView);
-    uint4 currentEntry = ShadowPageTable[pageTableIndex];
-    bool currentMapping =
-        currentEntry.x != VSM_PAGE_UNMAPPED &&
-        currentEntry.x != VSM_PAGE_LOCKED &&
-        IsVirtualShadowPageTag(currentEntry, expectedWorldPage);
-    bool needsRaster =
-        !currentMapping ||
-        currentEntry.w != shadowView.CacheGeneration;
-    if (!needsRaster || !TryReserveRasterBudget())
-        return;
+    VirtualShadowMapParameters view = ShadowViews[viewIndex];
+    bool coarse = IsCoarseTableIndex(tableIndex);
+    int2 expectedWorldPage = coarse
+        ? ResolveExpectedCoarseWorldPage(tableIndex, view)
+        : ResolveExpectedFineWorldPage(tableIndex, view);
 
-    bool newlyAllocated;
-    uint pageEntry = ResolvePhysicalPage(
-        pageTableIndex,
-        expectedWorldPage,
-        shadowView.CacheGeneration,
-        newlyAllocated);
-    if (pageEntry == VSM_PAGE_UNMAPPED)
-        return;
-    ShadowPageTable[pageTableIndex].w = shadowView.CacheGeneration;
-    ShadowPagesToRaster[pageTableIndex] = 1u;
-
-    uint activeIndex;
-    InterlockedAdd(ActivePhysicalPageCount[0], 1u, activeIndex);
-    if (activeIndex >= PageAllocation.MaxPhysicalPages)
-        return;
-    uint physicalPage = pageEntry - 1u;
-    ActivePhysicalPages[activeIndex] = physicalPage;
-    uint2 localPage = uint2(
-        expectedWorldPage - int2(
-            shadowView.VirtualPageOriginX,
-            shadowView.VirtualPageOriginY));
-    PublishDirtyPageBounds(viewIndex, localPage);
-
-    if (viewIndex < PageAllocation.ViewCount && viewIndex < 32u)
+    uint4 entry = ShadowPageTable[tableIndex];
+    bool sameTag = entry.x != VSM_PAGE_UNMAPPED &&
+        entry.x != VSM_PAGE_LOCKED &&
+        IsVirtualShadowPageTag(entry, expectedWorldPage);
+    uint atlasPage = 0u;
+    uint packedPage = VSM_PAGE_UNMAPPED;
+    if (sameTag)
     {
-        uint ignoredMask;
-        InterlockedOr(ShadowRasterViewMask[0], 1u << viewIndex, ignoredMask);
-        uint ignoredGroups;
-        uint traversalGroupsX = min(
-            PageAllocation.TraversalGroupCount,
-            65535u);
-        uint traversalGroupsY = max(
-            1u,
-            ((PageAllocation.TraversalGroupCount - 1u) / 65535u) + 1u);
-        ShadowTraversalDispatchArgs.InterlockedMax(
-            0u,
-            traversalGroupsX,
-            ignoredGroups);
-        ShadowTraversalDispatchArgs.InterlockedMax(
-            4u,
-            traversalGroupsY,
-            ignoredGroups);
-        ShadowTraversalDispatchArgs.Store(8u, 1u);
+        if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+            return;
+        packedPage = entry.x;
+        PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
+        if (entry.w == view.CacheGeneration)
+            return;
+    }
+    else if (entry.x != VSM_PAGE_UNMAPPED && entry.x != VSM_PAGE_LOCKED)
+    {
+        if (!DecodeVirtualShadowPage(entry.x, atlasPage))
+            return;
+        packedPage = entry.x;
+        PhysicalPageOwners[atlasPage] = tableIndex;
+    }
+    else
+    {
+        if (!AcquireAtlasPage(tableIndex, atlasPage))
+        {
+            uint failureIndex = coarse ? 0u : 1u;
+            uint ignored;
+            InterlockedAdd(ShadowAllocationFailures[failureIndex], 1u, ignored);
+            return;
+        }
+        packedPage = PackVirtualShadowPage(atlasPage + 1u);
     }
 
-    uint ignored;
-    ClearPageDispatchArgs.InterlockedMax(0u, activeIndex + 1u, ignored);
-    ClearPageDispatchArgs.Store(4u, PageAllocation.ClearTilesPerPageAxis);
-    ClearPageDispatchArgs.Store(8u, PageAllocation.ClearTilesPerPageAxis);
+    ShadowPageTable[tableIndex] = uint4(
+        packedPage,
+        asuint(expectedWorldPage.x),
+        asuint(expectedWorldPage.y),
+        view.CacheGeneration);
+    PageMetadata[atlasPage].x = PageAllocation.FrameIndex;
+    PageMetadata[atlasPage].y = view.CacheGeneration;
+    PublishDirtyPage(
+        tableIndex,
+        viewIndex,
+        atlasPage);
 }

@@ -15,7 +15,7 @@ internal sealed class MeshPayloadSource : IDisposable
     private SharedState? _state;
 
     internal MeshPayloadSource(
-        BinaryDocument<Mesh> document,
+        BinaryDocument<MeshData> document,
         IRangeSource payload,
         long bvhOffset,
         int bvhLength,
@@ -119,12 +119,12 @@ internal sealed class MeshPayloadSource : IDisposable
     private sealed class SharedState
     {
         private readonly object _gate = new();
-        private readonly BinaryDocument<Mesh> _document;
+        private readonly BinaryDocument<MeshData> _document;
         private ReadOnlyMemory<byte> _bvhSha256;
         private int _references = 1;
 
         internal SharedState(
-            BinaryDocument<Mesh> document,
+            BinaryDocument<MeshData> document,
             IRangeSource payload,
             long bvhOffset,
             int bvhLength,
@@ -178,8 +178,8 @@ internal sealed class MeshPayloadSource : IDisposable
                 return;
 
             _bvhSha256 = default;
-            Payload.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            _document.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            try { Payload.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            finally { _document.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }
     }
 
@@ -194,17 +194,13 @@ internal sealed class MeshPayloadSource : IDisposable
             {
                 MeshPayloadPageDigest digest = digests[index]
                     ?? throw new InvalidDataException($"Mesh page digest {index} is null.");
-                Vec3 origin = digest.QuantOrigin
-                    ?? throw new InvalidDataException($"Mesh page digest {index} has no quantization origin.");
                 ReadOnlyMemory<byte> sha256 = digest.Sha256
                     ?? throw new InvalidDataException($"Mesh page digest {index} has no SHA-256 digest.");
                 return new MeshPayloadPage(
                     checked((long)digest.Offset),
                     checked((int)digest.Length),
                     digest.ClusterCount,
-                    digest.VertexStride,
-                    new System.Numerics.Vector3(origin.X, origin.Y, origin.Z),
-                    digest.QuantStep,
+                    digest.VertexEncodingHash,
                     sha256);
             }
         }

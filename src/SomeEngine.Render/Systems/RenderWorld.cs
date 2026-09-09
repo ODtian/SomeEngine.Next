@@ -1,6 +1,4 @@
 using SomeEngine.ECS;
-using SomeEngine.ECS.Registry;
-using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Systems;
 
@@ -35,10 +33,10 @@ public sealed class RenderWorld : World
             extraction,
             static systems => systems.TryApplyChangesDirect());
 
-    internal bool HasExtractionValueHooks =>
-        HasValueReplaceHookCallbacks(ComponentMetadata<RenderMesh>.Id) ||
-        HasValueReplaceHookCallbacks(ComponentMetadata<RenderDirectionalLight>.Id) ||
-        HasValueReplaceHookCallbacks(ComponentMetadata<RenderPointLight>.Id) ||
-        HasValueReplaceHookCallbacks(ComponentMetadata<RenderSpotLight>.Id) ||
-        HasValueReplaceHookCallbacks(ComponentMetadata<RenderLightCookie>.Id);
+    internal bool HasExtractionValueHooks(ReadOnlySpan<int> components)
+    {
+        foreach (int component in components)
+            if (HasValueReplaceHookCallbacks(component)) return true;
+        return false;
+    }
 }

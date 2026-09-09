@@ -1,7 +1,6 @@
 namespace SomeEngine.Assets.Schema;
 
-[global::SomeEngine.Assets.Asset(".texture.asset")]
-public partial class Texture
+public partial class TextureData
 {
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path) => [];
+    internal IReadOnlyList<Guid> GetDependencies(string path) => [];
 }

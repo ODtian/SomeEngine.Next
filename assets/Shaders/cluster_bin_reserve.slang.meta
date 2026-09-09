@@ -1,5 +1,48 @@
 {
   "source_guid": "a8912e3e-df74-4a68-ad62-d12752b14921",
   "importer": "SlangShaderImporter",
-  "importer_settings": null
+  "importer_settings": {
+    "cook_profile": "default"
+  },
+  "importer_version": 26,
+  "input_hash": "2d9632271b7e99944c9582741fb854ed2fd63e94af2a69d318c17628ade89b81",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/cluster_bin_common.slang",
+      "content_hash": "c46df5453b1e85189bda9046beaa1dda5dccf9def4cedf38da62c9dd40dfdda3"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_bin_io.slang",
+      "content_hash": "ea0eb677c8f30c23f9c73cca63bda27de834cc96a3e777bd861031d4fa78dffe"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_bin_reserve.slang",
+      "content_hash": "6d1759283c9df236d05930f1b9adbbdb8444e903b3a526b1c943b4e01de888b8"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_structures.slang",
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_tessellation_types.slang",
+      "content_hash": "6bd34c6fefe33af1b2e4a651438193c519048a75e1a814cfac2f434b98f5e366"
+    },
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "be364c6a-306d-5f51-94ed-4c92e0b3d3db",
+      "sub_asset_key": "shader:main",
+      "input_hash": "2d9632271b7e99944c9582741fb854ed2fd63e94af2a69d318c17628ade89b81",
+      "dependencies": [],
+      "asset_path": "cluster_bin_reserve.shader.asset"
+    }
+  ]
 }

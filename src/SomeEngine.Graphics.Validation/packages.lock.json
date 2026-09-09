@@ -54,10 +54,14 @@
       "slangshadersharp": {
         "type": "Project"
       },
+      "someengine.diagnostics": {
+        "type": "Project"
+      },
       "someengine.graphics": {
         "type": "Project",
         "dependencies": {
-          "SlangShaderSharp": "[1.0.0, )"
+          "SlangShaderSharp": "[1.0.0, )",
+          "SomeEngine.Diagnostics": "[1.0.0, )"
         }
       },
       "someengine.graphics.direct3d12": {

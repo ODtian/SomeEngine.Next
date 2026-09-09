@@ -33,6 +33,10 @@ struct ClusteredLightGridParameters
     float P11;
     uint ScreenWidth;
     uint ScreenHeight;
+    uint CellCountPerView;
+    uint Pad0;
+    uint Pad1;
+    uint Pad2;
 };
 
 uint ClusteredLightDepthSlice(
@@ -49,13 +53,15 @@ uint ClusteredLightDepthSlice(
 
 uint ClusteredLightCellIndex(
     ClusteredLightGridParameters parameters,
+    uint viewIndex,
     uint2 pixelCoord,
     float viewDepth)
 {
     uint2 tileCoord = pixelCoord / uint2(parameters.TileSizeX, parameters.TileSizeY);
     uint sliceIndex = ClusteredLightDepthSlice(parameters, viewDepth);
-    return (sliceIndex * parameters.TileCountY + tileCoord.y) *
-        parameters.TileCountX + tileCoord.x;
+    return viewIndex * parameters.CellCountPerView +
+        (sliceIndex * parameters.TileCountY + tileCoord.y) *
+            parameters.TileCountX + tileCoord.x;
 }
 
 #endif

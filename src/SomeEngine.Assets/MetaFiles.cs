@@ -1,177 +1,112 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SomeEngine.Assets;
 
-public sealed class SourceMeta
+public sealed partial class SourceMeta
 {
     public required SourceGuid SourceGuid { get; init; }
     public required string Importer { get; init; }
     public JsonElement? ImporterSettings { get; init; }
+    public uint ImporterVersion { get; set; }
+    public string InputHash { get; set; } = "";
+    public IReadOnlyList<FileDependency> Inputs { get; set; } = [];
+    public List<SourceOutput> Outputs { get; init; } = [];
+
+    public SourceOutput? FindOutput(string path)
+        => Outputs.FirstOrDefault(output => string.Equals(output.AssetPath, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
+
+    public void SetOutput(SourceOutput output)
+    {
+        output = output with
+        {
+            Dependencies = output.Dependencies.Where(dependency => !Inputs.Any(common =>
+                common.RelativePath == dependency.RelativePath && common.ContentHash == dependency.ContentHash)).ToArray(),
+        };
+        int index = Outputs.FindIndex(value => value.SubAssetKey == output.SubAssetKey);
+        if (index < 0) Outputs.Add(output); else Outputs[index] = output;
+    }
 }
 
-public sealed class AssetMeta
+public sealed record SourceOutput
 {
-    public required AssetGuid AssetGuid { get; init; }
-    public required SourceGuid SourceGuid { get; init; }
+    public required Guid AssetGuid { get; init; }
     public required string SubAssetKey { get; init; }
-    public required string ContentFingerprint { get; init; }
-    public required IReadOnlyList<DependencyEntryData> Dependencies { get; init; }
-    public required uint ImporterVersion { get; init; }
+    public required string InputHash { get; init; }
+    /// <summary>Inputs additional to, or different from, the source-wide Inputs list.</summary>
+    public required IReadOnlyList<FileDependency> Dependencies { get; init; }
     public required string AssetPath { get; init; }
 }
 
-public static class SourceMetaFiles
+public sealed partial class SourceMeta
 {
-    public static SourceMeta GetOrCreate(
-        string sourcePath,
-        string importer = AssetFormatVersions.SlangShaderImporterName)
+    public static SourceMeta GetOrCreate(string sourcePath, string importer = "SlangShaderImporter")
     {
-        string metaPath = GetMetaPath(sourcePath = Path.GetFullPath(sourcePath));
-        if (File.Exists(metaPath))
-        {
-            return Load(sourcePath);
-        }
-
-        SourceMeta meta = new() { SourceGuid = SourceGuid.New(), Importer = importer };
+        if (File.Exists(GetMetaPath(sourcePath))) return Load(sourcePath);
+        var meta = new SourceMeta { SourceGuid = SourceGuid.New(), Importer = importer };
         Save(sourcePath, meta);
         return meta;
     }
 
     public static SourceMeta Load(string sourcePath)
     {
-        string metaPath = GetMetaPath(sourcePath = Path.GetFullPath(sourcePath));
-        SourceMetaDocument document = JsonSerializer.Deserialize(
-                File.ReadAllText(metaPath),
-                AssetMetaJsonContext.Default.SourceMetaDocument)
-            ?? throw new InvalidOperationException($"Failed to read source meta '{metaPath}'.");
+        string directory = Path.GetDirectoryName(Path.GetFullPath(sourcePath))!;
+        SourceMetaDocument data = JsonSerializer.Deserialize(File.ReadAllText(GetMetaPath(sourcePath)),
+            SourceMetaJsonContext.Default.SourceMetaDocument)
+            ?? throw new InvalidDataException($"Invalid source metadata '{sourcePath}'.");
         return new SourceMeta
         {
-            SourceGuid = SourceGuid.Parse(document.SourceGuid),
-            Importer = document.Importer,
-            ImporterSettings = document.ImporterSettings.HasValue
-                && document.ImporterSettings.Value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined
-                    ? document.ImporterSettings.Value.Clone()
-                    : null,
+            SourceGuid = SourceGuid.Parse(data.SourceGuid), Importer = data.Importer,
+            ImporterSettings = data.ImporterSettings, ImporterVersion = data.ImporterVersion,
+            InputHash = data.InputHash, Inputs = data.Inputs,
+            Outputs = data.Outputs.Select(output => output with
+            {
+                AssetPath = Path.GetFullPath(Path.Combine(directory, output.AssetPath)),
+            }).ToList(),
         };
     }
 
     public static void Save(string sourcePath, SourceMeta meta)
     {
-        string metaPath = GetMetaPath(sourcePath = Path.GetFullPath(sourcePath));
-        Directory.CreateDirectory(Path.GetDirectoryName(metaPath)!);
-        File.WriteAllText(
-            metaPath,
-            JsonSerializer.Serialize(
-                new SourceMetaDocument
-                {
-                    SourceGuid = meta.SourceGuid.ToFlatString(),
-                    Importer = meta.Importer,
-                    ImporterSettings = meta.ImporterSettings?.Clone(),
-                },
-                AssetMetaJsonContext.Default.SourceMetaDocument));
+        string metaPath = GetMetaPath(sourcePath);
+        string directory = Path.GetDirectoryName(metaPath)!;
+        Directory.CreateDirectory(directory);
+        var data = new SourceMetaDocument
+        {
+            SourceGuid = meta.SourceGuid.ToString(), Importer = meta.Importer,
+            ImporterSettings = meta.ImporterSettings, ImporterVersion = meta.ImporterVersion,
+            InputHash = meta.InputHash, Inputs = meta.Inputs.ToList(),
+            Outputs = meta.Outputs.Select(output => output with
+            {
+                AssetPath = Path.GetRelativePath(directory, output.AssetPath).Replace('\\', '/'),
+            }).ToList(),
+        };
+        string temporary = metaPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(data, SourceMetaJsonContext.Default.SourceMetaDocument));
+            File.Move(temporary, metaPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
     }
 
     public static string GetMetaPath(string sourcePath) => Path.GetFullPath(sourcePath) + ".meta";
-
-}
-
-public static class AssetMetaFiles
-{
-    public static AssetMeta? TryLoad(string assetPath)
-    {
-        string metaPath = GetMetaPath(assetPath = Path.GetFullPath(assetPath));
-        if (!File.Exists(metaPath))
-        {
-            return null;
-        }
-
-        AssetMetaDocument? document = JsonSerializer.Deserialize(
-            File.ReadAllText(metaPath),
-            AssetMetaJsonContext.Default.AssetMetaDocument);
-        if (document == null || !AssetGuid.TryParse(document.AssetGuid, out AssetGuid assetGuid))
-        {
-            return null;
-        }
-
-        SourceGuid sourceGuid = SourceGuid.TryParse(document.SourceGuid, out SourceGuid parsedSourceGuid) ? parsedSourceGuid : SourceGuid.Empty;
-        return new AssetMeta
-        {
-            AssetGuid = assetGuid,
-            SourceGuid = sourceGuid,
-            SubAssetKey = document.SubAssetKey,
-            ContentFingerprint = document.ContentFingerprint,
-            Dependencies = document.Dependencies.Select(static entry => new DependencyEntryData
-            {
-                RelativePath = entry.Path,
-                ContentHash = entry.Hash,
-            }).ToArray(),
-            ImporterVersion = document.ImporterVersion,
-            AssetPath = assetPath,
-        };
-    }
-
-    public static void Save(string assetPath, AssetMeta meta)
-    {
-        string metaPath = GetMetaPath(assetPath = Path.GetFullPath(assetPath));
-        Directory.CreateDirectory(Path.GetDirectoryName(metaPath)!);
-        File.WriteAllText(
-            metaPath,
-            JsonSerializer.Serialize(
-                new AssetMetaDocument
-                {
-                    AssetGuid = meta.AssetGuid.ToFlatString(),
-                    SourceGuid = meta.SourceGuid.IsEmpty ? string.Empty : meta.SourceGuid.ToFlatString(),
-                    SubAssetKey = meta.SubAssetKey,
-                    ContentFingerprint = meta.ContentFingerprint,
-                    Dependencies = meta.Dependencies.Select(static entry => new MetaDepDoc
-                    {
-                        Path = entry.RelativePath,
-                        Hash = entry.ContentHash,
-                    }).ToList(),
-                    ImporterVersion = meta.ImporterVersion,
-                },
-                AssetMetaJsonContext.Default.AssetMetaDocument));
-    }
-
-    public static string GetMetaPath(string assetPath) => Path.GetFullPath(assetPath) + ".meta";
-    public static bool IsMetaPath(string metaPath) => metaPath.EndsWith(".asset.meta", StringComparison.OrdinalIgnoreCase);
-
 }
 
 internal sealed class SourceMetaDocument
 {
-    public string SourceGuid { get; set; } = string.Empty;
-    public string Importer { get; set; } = string.Empty;
+    public string SourceGuid { get; set; } = "";
+    public string Importer { get; set; } = "";
     public JsonElement? ImporterSettings { get; set; }
-}
-
-internal sealed class AssetMetaDocument
-{
-    public string AssetGuid { get; set; } = string.Empty;
-    public string SourceGuid { get; set; } = string.Empty;
-    public string SubAssetKey { get; set; } = string.Empty;
-    public string ContentFingerprint { get; set; } = string.Empty;
-    public List<MetaDepDoc> Dependencies { get; set; } = [];
     public uint ImporterVersion { get; set; }
+    public string InputHash { get; set; } = "";
+    public List<FileDependency> Inputs { get; set; } = [];
+    public List<SourceOutput> Outputs { get; set; } = [];
 }
 
-internal sealed class MetaDepDoc
-{
-    public string Path { get; set; } = string.Empty;
-    public string Hash { get; set; } = string.Empty;
-}
-
-[JsonSourceGenerationOptions(
-    WriteIndented = true,
-    PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(SourceMetaDocument))]
-[JsonSerializable(typeof(AssetMetaDocument))]
-internal sealed partial class AssetMetaJsonContext : JsonSerializerContext
-{
-}
-
+internal sealed partial class SourceMetaJsonContext : JsonSerializerContext;

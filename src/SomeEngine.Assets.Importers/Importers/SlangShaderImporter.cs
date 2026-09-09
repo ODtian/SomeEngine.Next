@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,13 +9,13 @@ using SlangShaderSharp;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using Schema = global::SomeEngine.Assets.Schema;
+using SlangProgram = SlangShaderSharp.ShaderProgram;
 
 namespace SomeEngine.Assets.Importers;
 
 public static partial class SlangShaderImporter
 {
-    public const uint ImporterVersion = AssetFormatVersions.SlangShaderImporterVersion;
-    public const uint ShaderAssetSchemaVersion = AssetFormatVersions.ShaderAssetSchemaVersion;
+    public const uint ImporterVersion = 26;
 
     [ThreadStatic]
     private static IGlobalSession? t_globalSession;
@@ -34,57 +33,57 @@ public static partial class SlangShaderImporter
         }
     }
 
-    public static Schema.Shader Import(string filePath, string? source = null)
+    public static Schema.ShaderData Import(string filePath, string? source = null)
     {
-        SourceMeta sourceMeta = SourceMetaFiles.GetOrCreate(filePath);
+        SourceMeta sourceMeta = SourceMeta.GetOrCreate(filePath);
         SlangShaderCookProfile profile = ResolveProfile(sourceMeta, filePath);
-        AssetMeta? existingAsset = AssetMetaFiles.TryLoad(
+        SourceOutput? existingAsset = sourceMeta.FindOutput(
             Path.ChangeExtension(Path.GetFullPath(filePath), ".shader.asset")
         );
         return Import(filePath, sourceMeta, existingAsset, profile, source);
     }
 
-    public static Schema.Shader ImportTransient(string filePath)
+    public static Schema.ShaderData ImportTransient(string filePath)
     {
         filePath = Path.GetFullPath(filePath);
-        var sourceMeta = File.Exists(SourceMetaFiles.GetMetaPath(filePath))
-            ? SourceMetaFiles.Load(filePath)
+        var sourceMeta = File.Exists(SourceMeta.GetMetaPath(filePath))
+            ? SourceMeta.Load(filePath)
             : new SourceMeta
             {
                 SourceGuid = SourceGuid.New(),
                 Importer = nameof(SlangShaderImporter),
             };
 
-        AssetMeta? existingAsset = AssetMetaFiles.TryLoad(
+        SourceOutput? existingAsset = sourceMeta.FindOutput(
             Path.ChangeExtension(filePath, ".shader.asset")
         );
         SlangShaderCookProfile profile = ResolveProfile(sourceMeta, filePath);
         return Import(filePath, sourceMeta, existingAsset, profile, source: null, writeCache: false);
     }
 
-    public static Schema.Shader ImportTransient(
+    public static Schema.ShaderData ImportTransient(
         string filePath,
         SlangShaderCookProfile profile)
     {
         filePath = Path.GetFullPath(filePath);
-        var sourceMeta = File.Exists(SourceMetaFiles.GetMetaPath(filePath))
-            ? SourceMetaFiles.Load(filePath)
+        var sourceMeta = File.Exists(SourceMeta.GetMetaPath(filePath))
+            ? SourceMeta.Load(filePath)
             : new SourceMeta
             {
                 SourceGuid = SourceGuid.New(),
                 Importer = nameof(SlangShaderImporter),
             };
 
-        AssetMeta? existingAsset = AssetMetaFiles.TryLoad(
+        SourceOutput? existingAsset = sourceMeta.FindOutput(
             Path.ChangeExtension(filePath, ".shader.asset")
         );
         return Import(filePath, sourceMeta, existingAsset, profile, source: null, writeCache: false);
     }
 
-    public static Schema.Shader Import(
+    public static Schema.ShaderData Import(
         string filePath,
         SourceMeta sourceMeta,
-        AssetMeta? existingAsset,
+        SourceOutput? existingAsset,
         SlangShaderCookProfile profile,
         string? source = null,
         bool writeCache = true
@@ -98,7 +97,7 @@ public static partial class SlangShaderImporter
             writeCache,
             trackObserver: null);
 
-    internal static Schema.Shader ImportTransientForLifetimeTest(
+    internal static Schema.ShaderData ImportTransientForLifetimeTest(
         string filePath,
         Action<object> trackObserver)
     {
@@ -119,10 +118,10 @@ public static partial class SlangShaderImporter
             trackObserver);
     }
 
-    private static Schema.Shader ImportCore(
+    private static Schema.ShaderData ImportCore(
         string filePath,
         SourceMeta sourceMeta,
-        AssetMeta? existingAsset,
+        SourceOutput? existingAsset,
         SlangShaderCookProfile profile,
         string? source,
         bool writeCache,
@@ -150,7 +149,7 @@ public static partial class SlangShaderImporter
     private static ShaderImportContext CreateImportContext(
         string filePath,
         SourceMeta sourceMeta,
-        AssetMeta? existingAsset,
+        SourceOutput? existingAsset,
         SlangShaderCookProfile profile,
         string? source,
         bool writeCache)
@@ -159,7 +158,7 @@ public static partial class SlangShaderImporter
         string cachePath = Path.ChangeExtension(filePath, ".shader.asset");
         string projectRoot = SlangDeps.ProjectRoot(filePath);
         string subAssetKey = "shader:main";
-        AssetGuid assetGuid = SlangDeps.GuidFor(sourceMeta.SourceGuid, subAssetKey);
+        Guid assetGuid = ImportedAssetIds.Create(sourceMeta.SourceGuid, subAssetKey);
         if (existingAsset != null && existingAsset.AssetGuid != assetGuid)
         {
             existingAsset = null;
@@ -199,13 +198,13 @@ public static partial class SlangShaderImporter
             throw new Exception($"Failed to load module {name}: {GetString(diagnostics)}");
         }
 
-        DependencyEntryData[] dependencies = SlangDeps.Collect(module, context.FilePath, context.ProjectRoot);
-        string fingerprint = SlangDeps.Fingerprint(
+        FileDependency[] dependencies = SlangDeps.Collect(module, context.FilePath, context.ProjectRoot);
+        string fingerprint = ImportHash.ComputeInputHash(
             dependencies,
             ImporterVersion,
             context.Profile.FingerprintPart);
         ShaderMetadata metadata = CreateMetadata();
-        Schema.Shader asset = CreateShaderAsset(context, name, fingerprint, dependencies, metadata);
+        Schema.ShaderData asset = CreateShaderAsset(context, name, fingerprint, dependencies, metadata);
         return new ShaderImportState(
             context,
             targets,
@@ -273,24 +272,24 @@ public static partial class SlangShaderImporter
             Tags = [],
             MaterialBindings = [],
             MaterialScalarLayouts = [],
-            MaterialInstanceProperties = [],
+            InstanceProperties = [],
         };
     }
 
-    private static Schema.Shader CreateShaderAsset(
+    private static Schema.ShaderData CreateShaderAsset(
         ShaderImportContext context,
         string name,
         string fingerprint,
-        DependencyEntryData[] dependencies,
+        FileDependency[] dependencies,
         ShaderMetadata metadata)
     {
-        return new Schema.Shader
+        return new Schema.ShaderData
         {
-            SchemaVersion = ShaderAssetSchemaVersion,
-            AssetGuid = context.AssetGuid.ToFlatString(),
+            SchemaVersion = ShaderData.Version,
+            AssetGuid = context.AssetGuid.ToString(),
             Name = name,
             ImportTrace = CreateImportTrace(context, fingerprint, dependencies),
-            Variants = [],
+            Programs = [],
             EntryPointAttributes = [],
             Reflections = [],
             EntryPointReflections = [],
@@ -302,11 +301,11 @@ public static partial class SlangShaderImporter
     private static Schema.ImportTrace CreateImportTrace(
         ShaderImportContext context,
         string fingerprint,
-        DependencyEntryData[] dependencies)
+        FileDependency[] dependencies)
     {
         return new Schema.ImportTrace
         {
-            SourceGuid = context.SourceMeta.SourceGuid.ToFlatString(),
+            SourceGuid = context.SourceMeta.SourceGuid.ToString(),
             SourcePath = context.FilePath,
             SubAssetKey = context.SubAssetKey,
             ContentFingerprint = fingerprint,
@@ -402,38 +401,32 @@ public static partial class SlangShaderImporter
     private static void CollectEntryPoints(ShaderImportState state)
     {
         int entryPointCount = state.Module.GetDefinedEntryPointCount();
+        if (entryPointCount == 0)
+            throw new InvalidDataException("A cooked shader module must define at least one entry point.");
+
+        var entries = new CookedEntryPoint[entryPointCount];
+        var components = new IComponentType[checked(entryPointCount + 1)];
+        components[0] = state.Module;
         for (int index = 0; index < entryPointCount; index++)
         {
-            if (!TryCreateLinkedEntryPoint(state, index, out LinkedEntryPoint linkedEntryPoint))
-            {
-                continue;
-            }
-
-            AddCompiledVariants(state, linkedEntryPoint);
-            AddEntryPointReflections(state, linkedEntryPoint);
-            AddMaterialScalarLayouts(state, linkedEntryPoint.LinkedProgram);
+            state.Module.GetDefinedEntryPoint(index, out IEntryPoint entryPoint);
+            state.Lifetime.Track(entryPoint);
+            entries[index] = new CookedEntryPoint(
+                entryPoint,
+                SlangEntryMeta.Read(entryPoint.GetFunctionReflection()));
+            components[index + 1] = entryPoint;
         }
-    }
 
-    private static bool TryCreateLinkedEntryPoint(
-        ShaderImportState state,
-        int index,
-        out LinkedEntryPoint linkedEntryPoint)
-    {
-        linkedEntryPoint = default;
-        state.Module.GetDefinedEntryPoint(index, out IEntryPoint entryPoint);
-        state.Lifetime.Track(entryPoint);
-        List<SlangEntryMeta.Attr> attributes = SlangEntryMeta.Read(entryPoint.GetFunctionReflection());
         state.Session.CreateCompositeComponentType(
-            [state.Module, entryPoint],
+            components,
             out IComponentType? composedProgram,
             out ISlangBlob? diagnostics);
         state.Lifetime.Track(composedProgram);
         state.Lifetime.Track(diagnostics);
         if (composedProgram == null)
         {
-            Console.WriteLine($"Warning: Failed to compose entry point {index}: {GetString(diagnostics)}");
-            return false;
+            throw new InvalidDataException(
+                $"Failed to compose cooked shader program: {GetString(diagnostics)}");
         }
 
         composedProgram.Link(out IComponentType? linkedProgram, out ISlangBlob? linkDiagnostics);
@@ -441,53 +434,83 @@ public static partial class SlangShaderImporter
         state.Lifetime.Track(linkDiagnostics);
         if (linkedProgram == null)
         {
-            Console.WriteLine($"Warning: Failed to link entry point {index}: {GetString(linkDiagnostics)}");
-            return false;
+            throw new InvalidDataException(
+                $"Failed to link cooked shader program: {GetString(linkDiagnostics)}");
         }
 
-        linkedEntryPoint = new LinkedEntryPoint(entryPoint, linkedProgram, attributes);
-        return true;
+        AddMaterialScalarLayouts(state, linkedProgram);
+        AddCookedPrograms(state, linkedProgram, entries);
     }
 
-    private static void AddEntryPointReflections(
+    private static void AddCookedPrograms(
         ShaderImportState state,
-        LinkedEntryPoint linkedEntryPoint)
+        IComponentType linkedProgram,
+        ReadOnlySpan<CookedEntryPoint> entries)
     {
         for (int targetIndex = 0; targetIndex < state.Targets.Length; targetIndex++)
         {
-            ShaderReflection reflection = linkedEntryPoint.LinkedProgram.GetLayout(
+            ShaderReflection reflection = linkedProgram.GetLayout(
                 (nint)targetIndex,
                 out ISlangBlob? diagnostics);
             state.Lifetime.Track(diagnostics);
             if (reflection == ShaderReflection.Null)
-            {
-                continue;
-            }
+                throw new InvalidDataException(
+                    $"Failed to obtain cooked shader layout for target {targetIndex}: " +
+                    GetString(diagnostics));
 
-            SlangResult metadataResult = linkedEntryPoint.LinkedProgram.GetEntryPointMetadata(
-                0,
-                targetIndex,
-                out IMetadata metadata,
-                out ISlangBlob? metadataDiagnostics);
-            state.Lifetime.Track(metadata);
-            state.Lifetime.Track(metadataDiagnostics);
-            if (metadataResult.Failed)
+            string backend = BackendName(state.Targets[targetIndex]);
+            SlangProgram program = SlangProgram.Capture(linkedProgram, targetIndex, backend);
+            byte[] payload = program.ToArray();
+            int programIndex = state.Asset.Programs!.Count;
+            state.Asset.Programs.Add(new CookedShaderProgram
+            {
+                Backend = backend,
+                Data = payload,
+                Program = program,
+                ContentHash = Convert.ToHexString(SHA256.HashData(payload)),
+            });
+
+            if (reflection.EntryPointCount != checked((nuint)entries.Length) ||
+                program.EntryPoints.Count != entries.Length)
             {
                 throw new InvalidDataException(
-                    $"Failed to obtain compiled entry-point metadata for target {targetIndex}: "
-                        + GetString(metadataDiagnostics));
-            }
-            if (metadata is null)
-            {
-                throw new InvalidDataException(
-                    $"Slang returned no compiled entry-point metadata for target {targetIndex}.");
+                    $"Cooked target {targetIndex} exposes {reflection.EntryPointCount} native and " +
+                    $"{program.EntryPoints.Count} detached entries; expected {entries.Length}.");
             }
 
-            AddEntryPointReflection(
-                state,
-                BackendName(state.Targets[targetIndex]),
-                reflection,
-                metadata);
+            for (int entryIndex = 0; entryIndex < entries.Length; entryIndex++)
+            {
+                SlangResult metadataResult = linkedProgram.GetEntryPointMetadata(
+                    entryIndex,
+                    targetIndex,
+                    out IMetadata metadata,
+                    out ISlangBlob? metadataDiagnostics);
+                state.Lifetime.Track(metadata);
+                state.Lifetime.Track(metadataDiagnostics);
+                if (metadataResult.Failed || metadata is null)
+                {
+                    throw new InvalidDataException(
+                        $"Failed to obtain compiled entry-point metadata for target {targetIndex}, " +
+                        $"entry {entryIndex}: {GetString(metadataDiagnostics)}");
+                }
+
+                AddEntryPointReflection(
+                    state,
+                    backend,
+                    reflection,
+                    reflection.GetEntryPointByIndex(checked((nuint)entryIndex)),
+                    metadata);
+                AddEntryPointAttributes(
+                    state.Asset,
+                    programIndex,
+                    entryIndex,
+                    entries[entryIndex].Attributes);
+                AddEntryPointMetadata(
+                    state.Asset,
+                    programIndex,
+                    entryIndex,
+                    entries[entryIndex].Attributes);
+            }
         }
     }
 
@@ -495,18 +518,28 @@ public static partial class SlangShaderImporter
         ShaderImportState state,
         string backendName,
         ShaderReflection reflection,
+        EntryPointReflection entryReflection,
         IMetadata metadata)
     {
-        EntryPointReflection entryReflection = reflection.GetEntryPointByIndex(0);
         ShaderStage stage = entryReflection.Stage != SlangStage.None
             ? MapStage(entryReflection.Stage)
             : ShaderStage.Vertex;
-        var entryResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
+        var globalResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
         CollectGlobalMaterialResources(reflection, state.Metadata);
-        HashSet<string> materialResourceNames = EntryPointMaterialResources(entryReflection, state.Metadata);
-        CollectGlobalResources(reflection, stage, entryResources, backendName, materialResourceNames);
-        CollectEntryPointResources(entryReflection, stage, entryResources, backendName);
-        RemoveUnusedEntryPointResources(entryResources, backendName, metadata);
+        EntryPointMaterialResources(entryReflection, state.Metadata);
+        CollectGlobalResources(reflection, stage, globalResources, backendName);
+        Dictionary<SlangBindingMap.SpaceKey, uint> entryBases =
+            SlangBindingMap.Next(globalResources, backendName);
+        var parameterResources = new Dictionary<SlangBindingMap.ResourceKey, uint>();
+        CollectEntryPointResources(
+            entryReflection,
+            stage,
+            parameterResources,
+            backendName,
+            entryBases);
+        RemoveUnusedEntryPointResources(globalResources, backendName, metadata);
+        SlangBindingMap.Merge(globalResources, parameterResources);
+        Dictionary<SlangBindingMap.ResourceKey, uint> entryResources = globalResources;
         SlangBindingMap.Merge(state.BackendResourceMaps[backendName], entryResources);
         state.Asset.EntryPointReflections!.Add(
             new Schema.ShaderEntryPointReflection
@@ -567,7 +600,7 @@ public static partial class SlangShaderImporter
                 or Schema.DescriptorType.StorageBuffer => SlangParameterCategory.UnorderedAccess,
             Schema.DescriptorType.Sampler => SlangParameterCategory.SamplerState,
             _ => throw new InvalidDataException(
-                $"Shader entry reflection cannot query usage for slot kind {kind}."),
+                $"ShaderData entry reflection cannot query usage for slot kind {kind}."),
         };
     }
 
@@ -599,8 +632,7 @@ public static partial class SlangShaderImporter
         ShaderReflection reflection,
         ShaderStage stage,
         Dictionary<SlangBindingMap.ResourceKey, uint> resources,
-        string backendName,
-        HashSet<string> materialResourceNames)
+        string backendName)
     {
         for (uint parameterIndex = 0; parameterIndex < reflection.ParameterCount; parameterIndex++)
         {
@@ -608,8 +640,7 @@ public static partial class SlangShaderImporter
                 reflection.GetParameterByIndex(parameterIndex),
                 stage,
                 resources,
-                backendName,
-                skipNames: materialResourceNames);
+                backendName);
         }
     }
 
@@ -617,9 +648,9 @@ public static partial class SlangShaderImporter
         EntryPointReflection entryReflection,
         ShaderStage stage,
         Dictionary<SlangBindingMap.ResourceKey, uint> resources,
-        string backendName)
+        string backendName,
+        IReadOnlyDictionary<SlangBindingMap.SpaceKey, uint> bindingBases)
     {
-        var bindingBases = SlangBindingMap.Next(resources, backendName);
         for (uint parameterIndex = 0; parameterIndex < entryReflection.ParameterCount; parameterIndex++)
         {
             SlangBindingMap.Collect(
@@ -654,70 +685,10 @@ public static partial class SlangShaderImporter
             state.Metadata);
     }
 
-    private static void AddCompiledVariants(
-        ShaderImportState state,
-        LinkedEntryPoint linkedEntryPoint)
-    {
-        ShaderReflection baseReflection = linkedEntryPoint.LinkedProgram.GetLayout(
-            0,
-            out ISlangBlob? diagnostics);
-        state.Lifetime.Track(diagnostics);
-        if (baseReflection == ShaderReflection.Null)
-        {
-            baseReflection = linkedEntryPoint.LinkedProgram.GetLayout(1, out diagnostics);
-            state.Lifetime.Track(diagnostics);
-        }
-
-        EntryPointReflection entryPointReflection = baseReflection.GetEntryPointByIndex(0);
-        for (int targetIndex = 0; targetIndex < state.Targets.Length; targetIndex++)
-        {
-            AddCompiledVariant(state, linkedEntryPoint, entryPointReflection, targetIndex);
-        }
-    }
-
-    private static void AddCompiledVariant(
-        ShaderImportState state,
-        LinkedEntryPoint linkedEntryPoint,
-        EntryPointReflection entryPointReflection,
-        int targetIndex)
-    {
-        linkedEntryPoint.LinkedProgram.GetEntryPointCode(0, targetIndex, out var codeBlob, out var diagnostics);
-        state.Lifetime.Track(codeBlob);
-        state.Lifetime.Track(diagnostics);
-        if (codeBlob == null)
-        {
-            Console.WriteLine($"Warning: Failed to get code for target {targetIndex}: {GetString(diagnostics)}");
-            return;
-        }
-
-        int variantIndex = state.Asset.Variants!.Count;
-        byte[] rawBytes = GetBytes(codeBlob);
-        state.Asset.Variants.Add(CreateBytecode(state.Targets[targetIndex], entryPointReflection, rawBytes));
-        AddEntryPointAttributes(state.Asset, variantIndex, linkedEntryPoint.Attributes);
-        AddEntryPointMetadata(state.Asset, variantIndex, linkedEntryPoint.Attributes);
-    }
-
-    private static ShaderBytecode CreateBytecode(
-        TargetDesc target,
-        EntryPointReflection entryPointReflection,
-        byte[] rawBytes)
-    {
-        byte[] contentHash = target.Format == SlangCompileTarget.Spirv
-            ? ComputeSpirvSemanticHash(rawBytes)
-            : SHA256.HashData(rawBytes);
-        return new ShaderBytecode
-        {
-            Backend = BackendName(target),
-            Stage = MapStage(entryPointReflection.Stage),
-            EntryPoint = entryPointReflection.Name,
-            Data = rawBytes,
-            ContentHash = Convert.ToHexString(contentHash),
-        };
-    }
-
     private static void AddEntryPointAttributes(
-        Schema.Shader asset,
-        int variantIndex,
+        Schema.ShaderData asset,
+        int programIndex,
+        int entryPointIndex,
         IReadOnlyList<SlangEntryMeta.Attr> attributes)
     {
         for (int attributeIndex = 0; attributeIndex < attributes.Count; attributeIndex++)
@@ -725,7 +696,8 @@ public static partial class SlangShaderImporter
             asset.EntryPointAttributes!.Add(
                 new Schema.ShaderEntryPointAttribute
                 {
-                    VariantIndex = variantIndex,
+                    ProgramIndex = programIndex,
+                    EntryPointIndex = entryPointIndex,
                     Name = attributes[attributeIndex].Name,
                     Args = attributes[attributeIndex].Args.Count == 0
                         ? []
@@ -735,11 +707,15 @@ public static partial class SlangShaderImporter
     }
 
     private static void AddEntryPointMetadata(
-        Schema.Shader asset,
-        int variantIndex,
+        Schema.ShaderData asset,
+        int programIndex,
+        int entryPointIndex,
         IReadOnlyList<SlangEntryMeta.Attr> attributes)
     {
-        ShaderEntryPointMetadata? entryPointMetadata = SlangEntryMeta.Create(variantIndex, attributes);
+        ShaderEntryPointMetadata? entryPointMetadata = SlangEntryMeta.Create(
+            programIndex,
+            entryPointIndex,
+            attributes);
         if (entryPointMetadata != null)
         {
             asset.EntryPointMetadata!.Add(entryPointMetadata);
@@ -747,7 +723,7 @@ public static partial class SlangShaderImporter
     }
 
     private static void AddBackendReflections(
-        Schema.Shader asset,
+        Schema.ShaderData asset,
         Dictionary<string, Dictionary<SlangBindingMap.ResourceKey, uint>> backendResourceMaps)
     {
         foreach (var kvp in backendResourceMaps)
@@ -765,40 +741,35 @@ public static partial class SlangShaderImporter
 
     private static void SaveShaderCache(
         ShaderImportContext context,
-        Schema.Shader asset,
+        Schema.ShaderData asset,
         string fingerprint,
-        DependencyEntryData[] dependencies)
+        FileDependency[] dependencies)
     {
         if (!context.WriteCache || !File.Exists(context.FilePath))
         {
             return;
         }
 
-        try
-        {
-            AssetWriter.Write(asset, context.CachePath);
-            AssetMetaFiles.Save(context.CachePath, CreateAssetMeta(context, asset, fingerprint, dependencies));
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Warning: Failed to save shader asset cache to {context.CachePath}: {ex.Message}");
-        }
+        AssetWriter.Write(asset.ToAsset(), context.CachePath);
+        context.SourceMeta.ImporterVersion = ImporterVersion;
+        context.SourceMeta.InputHash = fingerprint;
+        context.SourceMeta.Inputs = dependencies;
+        context.SourceMeta.SetOutput(CreateOutput(context, asset, fingerprint, dependencies));
+        SourceMeta.Save(context.FilePath, context.SourceMeta);
     }
 
-    private static AssetMeta CreateAssetMeta(
+    private static SourceOutput CreateOutput(
         ShaderImportContext context,
-        Schema.Shader asset,
+        Schema.ShaderData asset,
         string fingerprint,
-        DependencyEntryData[] dependencies)
+        FileDependency[] dependencies)
     {
-        return new AssetMeta
+        return new SourceOutput
         {
-            AssetGuid = AssetGuid.Parse(asset.AssetGuid ?? AssetGuid.Empty.ToFlatString()),
-            SourceGuid = context.SourceMeta.SourceGuid,
+            AssetGuid = Guid.Parse(asset.AssetGuid ?? Guid.Empty.ToString()),
             SubAssetKey = context.SubAssetKey,
-            ContentFingerprint = fingerprint,
+            InputHash = fingerprint,
             Dependencies = dependencies,
-            ImporterVersion = ImporterVersion,
             AssetPath = context.CachePath,
         };
     }
@@ -816,9 +787,9 @@ public static partial class SlangShaderImporter
         string CachePath,
         string ProjectRoot,
         string SubAssetKey,
-        AssetGuid AssetGuid,
+        Guid AssetGuid,
         SourceMeta SourceMeta,
-        AssetMeta? ExistingAsset,
+        SourceOutput? ExistingAsset,
         SlangShaderCookProfile Profile,
         string? Source,
         bool WriteCache);
@@ -829,16 +800,15 @@ public static partial class SlangShaderImporter
         SlangImportLifetime Lifetime,
         ISession Session,
         IModule Module,
-        DependencyEntryData[] Dependencies,
+        FileDependency[] Dependencies,
         string Fingerprint,
         ShaderMetadata Metadata,
-        Schema.Shader Asset,
+        Schema.ShaderData Asset,
         Dictionary<string, Dictionary<SlangBindingMap.ResourceKey, uint>> BackendResourceMaps,
         List<string> MaterialScalarTypes);
 
-    private readonly record struct LinkedEntryPoint(
+    private readonly record struct CookedEntryPoint(
         IEntryPoint EntryPoint,
-        IComponentType LinkedProgram,
         IReadOnlyList<SlangEntryMeta.Attr> Attributes);
 
     private static SlangShaderCookProfile ResolveProfile(SourceMeta sourceMeta, string filePath)
@@ -904,62 +874,6 @@ public static partial class SlangShaderImporter
                 (int)blob.GetBufferSize()
             );
         }
-    }
-
-    private static byte[] GetBytes(ISlangBlob blob)
-    {
-        unsafe
-        {
-            var span = new ReadOnlySpan<byte>(blob.GetBufferPointer(), (int)blob.GetBufferSize());
-            return span.ToArray();
-        }
-    }
-
-    /// <summary>
-    /// Strip OpName (5) and OpMemberName (6) instructions from SPIR-V bytecode.
-    /// These instructions encode debug variable/member names but don't affect
-    /// execution semantics. Removing them ensures identical logic with different
-    /// variable names produces the same content hash.
-    /// SPIR-V binary format: header (5 words) + instructions.
-    /// Each instruction: word0 = (wordCount &lt;&lt; 16) | opcode, followed by (wordCount-1) words.
-    /// </summary>
-    private static byte[] ComputeSpirvSemanticHash(ReadOnlySpan<byte> spirv)
-    {
-        if (spirv.Length < 20)
-            return SHA256.HashData(spirv);
-
-        const ushort OpName = 5;
-        const ushort OpMemberName = 6;
-        const int HeaderWords = 5;
-
-        ReadOnlySpan<uint> words = MemoryMarshal.Cast<byte, uint>(spirv);
-        // Validate SPIR-V magic number
-        if (words[0] != 0x07230203)
-            return SHA256.HashData(spirv);
-
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(spirv[..(HeaderWords * sizeof(uint))]);
-
-        // Process instructions, skip OpName and OpMemberName
-        int pos = HeaderWords;
-        while (pos < words.Length)
-        {
-            uint instrWord = words[pos];
-            ushort opcode = (ushort)(instrWord & 0xFFFF);
-            ushort wordCount = (ushort)(instrWord >> 16);
-
-            if (wordCount == 0)
-                break; // Malformed
-            if (pos + wordCount > words.Length)
-                break;
-
-            if (opcode != OpName && opcode != OpMemberName)
-                hash.AppendData(spirv.Slice(pos * sizeof(uint), wordCount * sizeof(uint)));
-
-            pos += wordCount;
-        }
-
-        return hash.GetHashAndReset();
     }
 
 }

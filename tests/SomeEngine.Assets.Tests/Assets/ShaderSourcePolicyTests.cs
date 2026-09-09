@@ -16,10 +16,10 @@ public class ShaderSourcePolicyTests
 
         foreach (string entryPoint in entryPoints)
         {
-            Assert.Contains(asset.Variants!, v =>
-                v.EntryPoint == entryPoint
-                && v.Data.HasValue
-                && v.Data.Value.Length > 0);
+            Assert.Contains(asset.Programs!, program =>
+                program.Data is { } data && data.Length > 0
+                && program.Program!.EntryPoints.Any(entry =>
+                    entry.Name == entryPoint && entry.Code.Length > 0));
         }
     }
 
@@ -29,13 +29,14 @@ public class ShaderSourcePolicyTests
     [InlineData("cluster_resolve.slang")]
     [InlineData("cluster_shade_material.slang")]
     [InlineData("cluster_shade_unlit.slang")]
+    [InlineData("cluster_tessellation_phong.slang")]
     [InlineData("debug_sphere.slang")]
     public void ClusterEntryModulesImportAfterLayoutChange(string shaderFile)
     {
         var asset = SlangShaderImporter.ImportTransient(TestProjectPaths.ShaderPath(shaderFile));
 
-        Assert.NotNull(asset.Variants);
-        Assert.NotEmpty(asset.Variants);
+        Assert.NotNull(asset.Programs);
+        Assert.NotEmpty(asset.Programs);
         Assert.NotNull(asset.EntryPointReflections);
         Assert.NotEmpty(asset.EntryPointReflections);
     }

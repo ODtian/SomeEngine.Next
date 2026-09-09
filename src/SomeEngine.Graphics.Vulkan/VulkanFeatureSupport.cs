@@ -31,7 +31,8 @@ internal sealed record VulkanExtendedFeatureSupport(
     uint MaximumDescriptorSetUpdateAfterBindAccelerationStructures,
     bool RayTracingPipeline,
     bool RayTracingPipelineTraceRaysIndirect,
-    bool RayQuery)
+    bool RayQuery,
+    bool ShaderImageInt64Atomics)
 {
     internal const string ConservativeRasterizationExtensionName =
         "VK_EXT_conservative_rasterization";
@@ -42,6 +43,8 @@ internal sealed record VulkanExtendedFeatureSupport(
     internal const string DeviceGeneratedCommandsExtensionName =
         "VK_EXT_device_generated_commands";
     internal const string Robustness2ExtensionName = "VK_EXT_robustness2";
+    internal const string ShaderImageAtomicInt64ExtensionName =
+        "VK_EXT_shader_image_atomic_int64";
 
     internal static unsafe VulkanExtendedFeatureSupport Query(
         Vk vk,
@@ -123,6 +126,12 @@ internal sealed record VulkanExtendedFeatureSupport(
         PhysicalDeviceRayQueryFeaturesKHR rayQuery = QueryFeature<PhysicalDeviceRayQueryFeaturesKHR>(
             vk, physicalDevice, extensions.Contains("VK_KHR_ray_query"),
             StructureType.PhysicalDeviceRayQueryFeaturesKhr);
+        PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64 =
+            QueryFeature<PhysicalDeviceShaderImageAtomicInt64FeaturesEXT>(
+                vk,
+                physicalDevice,
+                extensions.Contains(ShaderImageAtomicInt64ExtensionName),
+                StructureType.PhysicalDeviceShaderImageAtomicInt64FeaturesExt);
         return new VulkanExtendedFeatureSupport(
             conditional.ConditionalRendering,
             transform.TransformFeedback,
@@ -155,7 +164,8 @@ internal sealed record VulkanExtendedFeatureSupport(
             accelerationProperties.MaxDescriptorSetUpdateAfterBindAccelerationStructures,
             rayTracing.RayTracingPipeline,
             rayTracing.RayTracingPipelineTraceRaysIndirect,
-            rayQuery.RayQuery);
+            rayQuery.RayQuery,
+            imageInt64.ShaderImageInt64Atomics);
     }
 
     private static unsafe T QueryFeature<T>(

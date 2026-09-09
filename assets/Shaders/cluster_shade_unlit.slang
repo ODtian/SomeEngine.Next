@@ -1,4 +1,5 @@
 #include "cluster_shade_pipeline.slang"
+#include "triangle_surface.slang"
 
 [MaterialScalars]
 struct UnlitScalars
@@ -8,20 +9,16 @@ struct UnlitScalars
 
 struct UnlitPixelContext
 {
-    uint2 pixelCoord;
+    uint3 pixelCoord;
     uint instanceID;
     float3 worldNormal;
     float2 uv0;
 };
 
 UnlitPixelContext BuildUnlitPixelContext(
-    uint2 pixelCoord,
+    uint3 pixelCoord,
     uint instanceID,
-    SurfaceEval surface,
-    float3 bary,
-    StaticVertexEval.DeformedVertex v0,
-    StaticVertexEval.DeformedVertex v1,
-    StaticVertexEval.DeformedVertex v2)
+    SurfaceEval surface)
 {
     UnlitPixelContext ctx;
     ctx.pixelCoord = pixelCoord;
@@ -31,48 +28,40 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
+struct UnlitMaterial : ISurfaceEvaluate
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
 
     void evaluateSurface(
-        uniform StaticVertexEval eval,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        StaticVertexEval.DeformedVertex v0,
-        StaticVertexEval.DeformedVertex v1,
-        StaticVertexEval.DeformedVertex v2,
-        RWTexture2D<float4> outputColor)
+        Triangle triangle,
+        RWTexture2DArray<float4> outputColor)
     {
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
             instanceID,
-            surface,
-            bary,
-            v0,
-            v1,
-            v2);
+            surface);
         float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);
-        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>();
+        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(materialSlot);
         outputColor[ctx.pixelCoord] = float4(
             albedoSample.rgb * scalars.BaseColorTint.rgb,
             1.0);
     }
 
     void evaluateDebug(
-        uniform StaticVertexEval eval,
         uint debugMode,
-        uint2 pixelCoord,
+        uint3 pixelCoord,
         uint instanceID,
+        uint materialSlot,
         SurfaceEval surface,
         float3 bary,
-        StaticVertexEval.DeformedVertex v0,
-        StaticVertexEval.DeformedVertex v1,
-        StaticVertexEval.DeformedVertex v2,
-        RWTexture2D<float4> outputColor)
+        Triangle triangle,
+        RWTexture2DArray<float4> outputColor)
     {
         if (debugMode == 8)
         {
@@ -83,11 +72,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         UnlitPixelContext ctx = BuildUnlitPixelContext(
             pixelCoord,
             instanceID,
-            surface,
-            bary,
-            v0,
-            v1,
-            v2);
+            surface);
 
         if (debugMode == 9)
         {
@@ -105,7 +90,7 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
         if (debugMode == 11)
         {
             float3 pos = surface.Position;
-            float3 basePos = bary.x * v0.basePosition + bary.y * v1.basePosition + bary.z * v2.basePosition;
+            float3 basePos = EvalLinearPosition(triangle, bary);
             outputColor[pixelCoord] = float4(abs(pos - basePos) * 3.0, 1.0);
             return;
         }
@@ -114,24 +99,9 @@ struct UnlitMaterial : ISurfaceEvaluate<StaticVertexEval>
     }
 };
 
-UnlitMaterial Material;
+typedef StaticVertexEval VertexEvaluate;
+typedef LinearSurface DomainEvaluate;
+typedef OpaquePixelEvaluate PixelEvaluate;
+typedef UnlitMaterial SurfaceEvaluate;
 
-[MaterialTarget("cluster.shade")]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CSUnlitShade(uint3 tid : SV_DispatchThreadID)
-{
-    StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
-    CSShade(vertexEval, surface, Material, tid);
-}
-
-[MaterialTarget("cluster.shade.cached")]
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void CSUnlitShadeCached(uint3 tid : SV_DispatchThreadID)
-{
-    StaticVertexEval vertexEval;
-    LinearSurface surface = MakeLinearSurface();
-    CSShadeFromCache(vertexEval, surface, Material, tid);
-}
+#include "cluster_material_entries.slang"

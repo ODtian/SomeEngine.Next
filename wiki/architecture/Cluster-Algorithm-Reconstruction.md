@@ -13,10 +13,12 @@ semantic operations rather than one field per legacy shader file. Its default op
 1. BVH traversal and bounded page-fault production;
 2. phase-one cull against previous HiZ and phase-two cull against current HiZ;
 3. shared raster/deform bin reset, count, reserve, and scatter;
-4. deform-cache population with bounded allocation and explicit overflow fallback;
+4. deform-cache sizing, global prefix allocation, and payload population with invalid-on-overflow
+   output;
 5. software and hardware visibility raster, depth merge, and HiZ construction;
 6. material binning and material shading;
-7. motion vectors, visibility resolve, temporal resolve, tone map, and presentation.
+7. explicit visibility, depth, and material-color capabilities consumed by independent lighting,
+   temporal, post-processing, or presentation features.
 
 Shader source paths and concrete entry-point names are authoring data. Runtime selects an
 operation by `ClusterShaderOperationRole`, resolves the referenced cooked shader through the
@@ -27,17 +29,53 @@ canonical `AssetLoader`, and constructs pipeline layouts from cooked reflection.
 `RasterDeformBinningReset`, `RasterDeformBinningCount`,
 `RasterDeformBinningReserve`, and `RasterDeformBinningScatter` produce both raster batches and
 one deform entry per visible cluster, keyed through the material-slot vertex-evaluator field.
-`DeformCachePopulate` consumes those deform bins and writes cache offsets and payloads. Cached
-software raster, hardware raster, and shading consume the offsets; clusters that do not fit in
-the bounded arena retain the explicit overflow sentinel and evaluate vertices directly.
+The material deform stage first writes opaque size/alignment requests. The fixed core allocator
+then performs a saturating global prefix and publishes aligned offsets before the material stage
+writes payloads. Cached software raster, hardware raster, and shading consume those offsets;
+clusters that do not fit retain the explicit overflow sentinel and are dropped or produce invalid
+output. They never evaluate vertices through an alternate inline path.
 
-The cache allocator commits bytes with a bounded compare/exchange loop. Its used-byte counter
-never exceeds the arena, while separate counters distinguish binned clusters from clusters that
-actually populated the cache. Empty phase-two work cannot erase phase-one diagnostic evidence.
+The selected allocator performs no global allocation atomics. It reserves `size + alignment - 1`
+bytes for each request so a simple associative prefix can preserve arbitrary power-of-two
+alignment without understanding the payload. Separate counters distinguish binned clusters from
+clusters that actually populated the cache, and empty phase-two work cannot erase phase-one
+diagnostic evidence. The three evaluated designs and the D3D12/Vulkan measurements are recorded in
+[[Cluster-Deform-Cache-Allocator-Benchmark-2026-09-01]].
 
 The removed standalone `cluster_deform_binning.slang` was not the authority for this path. It was
 an unreferenced copy whose key calculation no longer matched the material-slot contract. The
 working deform-binning algorithm remains in the semantic raster/deform operation quartet.
+
+## Unified multi-view contract
+
+One retained Cluster graph records all views. A frame uploads one fixed-capacity
+`StructuredBuffer<ClusterViewUniforms>` and assigns each collected `RenderView` its packed-array
+index. Traversal dispatches instances on X and views on Y; pixel and HiZ passes dispatch view
+layers on Z. Candidate and visible records are `uint4` values whose fourth component is the view
+index. Raster/deform work is `uint3`, and shade work is `uint2`; both retain the same index through
+execution. The visibility, depth, material-color, software-depth, and HiZ resources are texture
+arrays with the pipeline's fixed `ViewCapacity`.
+
+Cluster never interprets an index as main, stereo, VSM, reflection, or another business role.
+Callers decide which `RenderView` values occupy the packed array and which output layers they
+consume. All active views currently share the retained output extent. Candidate storage is one
+bounded global arena shared across views, so overflow has the same ordinary bounded-work meaning
+as a single-view overflow; it does not select a view-specific fallback.
+
+Raster work generation is separate from raster command execution. Reset/count/reserve/scatter
+produces grouped bins, offsets, counts, and indirect arguments. A `ClusterRasterExecutor` selected
+when the pipeline is constructed supplies the software and hardware command callbacks captured by
+the retained graph. The default executor issues indirect dispatches and draws. Frame recording
+updates work data and view counts only; it performs no dynamic executor lookup. A replacement
+therefore changes real command-recording behavior without duplicating traversal, culling,
+deformation, or work generation.
+
+On 2026-09-01 the standard Runtime was exercised with two active `RenderView` entities against
+the D3D12 backend. The unified graph completed analysis, materialization, recording, and GPU
+submission for both view layers; the desktop automation session then encountered its known
+`IDXGISwapChain::Present` failure after submission. The committed ABI tests additionally require
+view indices on every candidate/visible/raster/deform/shade work shape and reject business-role
+branches in Cluster shader sources.
 
 ## Rejected copy-shaped implementation
 
@@ -53,10 +91,11 @@ The following shapes were direct transplantation and are not part of the accepte
   including a nonexistent deform-cache-request entry point;
 - copied pass resource lists containing bindings that the reflected entry point did not read;
 - fixed built-in GUIDs used to locate default scene, renderer, or runtime configuration;
-- an unbounded deform-cache append counter and compile-time software-raster tuning constants.
+- an unbounded deform-cache append counter, inline overflow recovery, and compile-time
+  software-raster tuning constants.
 
 These were removed or replaced by semantic operations, exact reflected resource dependencies,
-authoring-time GUID propagation, a bounded allocator, and explicit pipeline options.
+authoring-time GUID propagation, a bounded prefix allocator, and explicit pipeline options.
 
 ## Adopted kernels versus independent rewrites
 
@@ -95,6 +134,7 @@ streaming failures, non-empty visibility and shading, more than 256 output color
 screen coverage.
 
 The same run observed 330,752 deform-bin entries. Roughly 21,000 clusters populated the 64 MiB
-cache before the bounded arena filled; remaining clusters followed the explicit direct-evaluation
-fallback. Exact counts and frame hashes may vary with scheduling and animation, so acceptance is
-based on invariants and non-empty ranges rather than a copied legacy baseline.
+cache before the bounded arena filled; remaining clusters retained invalid cache offsets and were
+dropped by cached raster/shade consumers. Exact counts and frame hashes may vary with scheduling
+and animation, so acceptance is based on invariants and non-empty ranges rather than a copied
+legacy baseline.

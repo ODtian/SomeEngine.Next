@@ -4,199 +4,126 @@ internal sealed partial class FrameExecutor
 {
     private int[][] _resourceBeginFrontiers = [];
     private int[][] _resourceEndFrontiers = [];
+    private readonly HashSet<int> _materializeBuffers = [], _materializeTextures = [], _materializeViews = [];
+
+    private void MaterializationChanged((GraphAccessTargetKind Kind, int Index) key)
+    {
+        ChangeResourceParameters(key);
+        GraphIdentity identity;
+        if (key.Kind == GraphAccessTargetKind.Buffer && key.Index < _buffers.Count)
+        {
+            _materializeBuffers.Add(key.Index);
+            identity = _buffers[key.Index].Identity;
+        }
+        else if (key.Kind == GraphAccessTargetKind.Texture && key.Index < _textures.Count)
+        {
+            _materializeTextures.Add(key.Index);
+            identity = _textures[key.Index].Identity;
+        }
+        else return;
+        if (_resourceViewRows.TryGetValue(key, out HashSet<int>? rows)) _materializeViews.UnionWith(rows);
+        foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(identity, []))
+            if (_viewIndices.TryGetValue(view, out int index)) _materializeViews.Add(index);
+    }
 
     private void Materialize()
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.Materialize);
         FrameTransientResourceAllocator memory = _frame.Slot.TransientResources
             ?? throw new InvalidOperationException("The frame slot has no transient resource allocator.");
-        int resourceCount = checked(_buffers.Length + _textures.Length);
-        PrepareArray(ref _resourceBeginFrontiers, resourceCount);
-        PrepareArray(ref _resourceEndFrontiers, resourceCount);
+        int resourceCount = checked(_buffers.Count + _textures.Count);
+        EnsureCapacity(ref _resourceBeginFrontiers, resourceCount);
+        EnsureCapacity(ref _resourceEndFrontiers, resourceCount);
+        UpdatePlacements(memory);
 
-        for (int bufferIndex = 0; bufferIndex < _buffers.Length; bufferIndex++)
+        foreach (int bufferIndex in _materializeBuffers)
         {
+            if (bufferIndex >= _buffers.Count) continue;
             FrameBuffer buffer = _buffers[bufferIndex];
-            if (buffer.LastUse < 0 || buffer.Resource is not null) continue;
+            if (buffer.LastPass < 0) continue;
+            if (buffer.Resource is not null)
+            {
+                _buffers[bufferIndex] = buffer;
+                continue;
+            }
             if (buffer.Ownership == RenderGraphResourceOwnership.CallerOwned)
                 throw new InvalidOperationException("An external Buffer was not bound.");
             if (buffer.Lifetime == RenderGraphResourceLifetime.Persistent)
                 throw new InvalidOperationException("A persistent Buffer was not materialized by the structural commit.");
 
-            if (buffer.Requirements.Size == 0)
-            {
-                buffer.Requirements = _frame.Backend.GetBufferMemoryRequirements(
-                    _frame.Graph.Device,
-                    buffer.Description,
-                    buffer.MemoryType);
-            }
-            ResolveResourceFrontiers(GraphAccessTargetKind.Buffer, bufferIndex, bufferIndex,
-                out int[] begin, out int[] end);
-            buffer.Placement = memory.Place(
-                buffer.Requirements,
-                buffer.MemoryType,
-                buffer.Description.NodePlacement,
-                begin,
-                end,
-                bufferIndex);
-            bool cacheable = _stableExecutionEligible &&
-                memory.CanCacheResources &&
-                buffer.Definition is not null &&
-                buffer.Ownership == RenderGraphResourceOwnership.GraphOwned &&
-                buffer.Lifetime == RenderGraphResourceLifetime.PerFrame &&
-                buffer.InitialData is null;
-            Buffer? resource = cacheable
-                ? memory.FindCachedResource(
-                    GraphAccessTargetKind.Buffer,
-                    buffer.Identity,
-                    buffer.Placement) as Buffer
-                : null;
-            if (resource is null)
-            {
-                resource = _frame.Backend.CreatePlacedBuffer(
-                    _frame.Graph.Device,
-                    buffer.Placement.Heap,
-                    buffer.Placement.Offset,
-                    buffer.Description);
-                if (cacheable)
-                    _ = memory.CacheResource(
-                        GraphAccessTargetKind.Buffer,
-                        buffer.Identity,
-                        buffer.Placement,
-                        resource);
-            }
-            if (ReferenceEquals(buffer.Placement.AliasingPredecessor, resource))
-                buffer.Placement = buffer.Placement with { AliasingPredecessor = null };
+            buffer.Placement = memory.GetPlacement(buffer.AllocationIdentity);
+            Buffer resource = _frame.Backend.CreatePlacedBuffer(_frame.Graph.Device,
+                buffer.Placement.Heap, buffer.Placement.Offset, buffer.Description);
             buffer.Resource = resource;
-            if (cacheable)
-                buffer.EntryBoundaryStates = memory.FindCachedBufferStates(
-                    buffer.Identity,
-                    resource);
-            if (buffer.InitialData is { Length: > 0 } initialData)
-            {
-                BufferRange range = new(0, checked((ulong)initialData.Length));
-                using MappedBuffer mapping = _frame.Backend.Map(resource, MapType.Write, range);
-                initialData.CopyTo(mapping.Bytes);
-                mapping.Flush(range);
-                buffer.EntryBoundaryStates =
-                [
-                    new BufferBoundaryState(
-                        range,
-                        resource.InitialSync,
-                        resource.InitialAccess,
-                        ResourceContentState.Defined),
-                ];
-            }
-            memory.SetResource(buffer.Placement, resource);
-            RetireAliasingPredecessor(memory, buffer.Placement);
+            memory.SetResource(buffer.AllocationIdentity, resource);
             _buffers[bufferIndex] = buffer;
+            _resourceRows[resource] = (GraphAccessTargetKind.Buffer, bufferIndex);
+            ChangeResourceParameters((GraphAccessTargetKind.Buffer, bufferIndex));
         }
 
-        for (int textureIndex = 0; textureIndex < _textures.Length; textureIndex++)
+        foreach (int textureIndex in _materializeTextures)
         {
+            if (textureIndex >= _textures.Count) continue;
             FrameTexture texture = _textures[textureIndex];
-            if (texture.LastUse < 0 || texture.Resource is not null) continue;
+            if (texture.LastPass < 0 || texture.Resource is not null) continue;
             if (texture.Ownership == RenderGraphResourceOwnership.CallerOwned)
                 throw new InvalidOperationException("An external Texture was not bound.");
             if (texture.Lifetime == RenderGraphResourceLifetime.Persistent)
                 throw new InvalidOperationException("A persistent Texture was not materialized by the structural commit.");
 
             TextureDesc description = texture.BorrowDescription();
-            if (texture.Requirements.Size == 0)
-                texture.Requirements = _frame.Backend.GetTextureMemoryRequirements(
-                    _frame.Graph.Device, description);
-            ResolveResourceFrontiers(GraphAccessTargetKind.Texture, textureIndex,
-                checked(_buffers.Length + textureIndex),
-                out int[] begin, out int[] end);
-            texture.Placement = memory.Place(
-                texture.Requirements,
-                MemoryType.DeviceLocal,
-                texture.NodePlacement,
-                begin,
-                end,
-                checked(_buffers.Length + textureIndex));
-            bool cacheable = _stableExecutionEligible &&
-                memory.CanCacheResources &&
-                texture.Definition is not null &&
-                texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
-                texture.Lifetime == RenderGraphResourceLifetime.PerFrame;
-            Texture? resource = cacheable
-                ? memory.FindCachedResource(
-                    GraphAccessTargetKind.Texture,
-                    texture.Identity,
-                    texture.Placement) as Texture
-                : null;
-            if (resource is null)
-            {
-                resource = _frame.Backend.CreatePlacedTexture(
-                    _frame.Graph.Device,
-                    texture.Placement.Heap,
-                    texture.Placement.Offset,
-                    description);
-                if (cacheable)
-                    _ = memory.CacheResource(
-                        GraphAccessTargetKind.Texture,
-                        texture.Identity,
-                        texture.Placement,
-                        resource);
-            }
-            if (ReferenceEquals(texture.Placement.AliasingPredecessor, resource))
-                texture.Placement = texture.Placement with { AliasingPredecessor = null };
+            texture.Placement = memory.GetPlacement(texture.AllocationIdentity);
+            Texture resource = _frame.Backend.CreatePlacedTexture(_frame.Graph.Device,
+                texture.Placement.Heap, texture.Placement.Offset, description);
             texture.Resource = resource;
-            if (cacheable)
-                texture.EntryBoundaryStates = memory.FindCachedTextureStates(
-                    texture.Identity,
-                    resource);
-            memory.SetResource(texture.Placement, resource);
-            RetireAliasingPredecessor(memory, texture.Placement);
+            memory.SetResource(texture.AllocationIdentity, resource);
             _textures[textureIndex] = texture;
+            _resourceRows[resource] = (GraphAccessTargetKind.Texture, textureIndex);
+            ChangeResourceParameters((GraphAccessTargetKind.Texture, textureIndex));
         }
 
-        for (int viewIndex = 0; viewIndex < _views.Length; viewIndex++)
+        foreach (int viewIndex in _materializeViews)
         {
+            if (viewIndex >= _views.Count) continue;
             FrameView view = _views[viewIndex];
+            if (view.Kind == GraphViewKind.BufferCbv)
+            {
+                ChangeViewParameters(viewIndex);
+                continue;
+            }
             if (view.View is not null) continue;
-            bool resolved = TryResolveViewResources(view, out Resource? primary, out Resource? secondary);
-            bool cacheable = view.Definition is not null && resolved &&
-                memory.IsCached(primary!) &&
-                (secondary is null || memory.IsCached(secondary));
-            DeviceResource? materialized = cacheable
-                ? memory.FindCachedView(view.Identity, primary!, secondary)
-                : null;
-            bool cached = materialized is not null;
-            materialized ??= CreateView(view);
-            if (materialized is null) continue;
+            if (!TryResolveViewResources(view, out Resource? primary, out Resource? secondary)) continue;
+            DeviceResource? materialized = memory.FindCachedView(view, primary!, secondary);
+            if (materialized is null)
+            {
+                materialized = CreateView(view);
+                if (materialized is null) continue;
+                memory.CacheView(view, materialized, primary!, secondary);
+            }
             view.View = materialized;
             _views[viewIndex] = view;
-            if (!cached)
-            {
-                cached = cacheable && memory.CacheView(
-                    view.Identity,
-                    materialized,
-                    primary!,
-                    secondary);
-                if (!cached) _frame.Slot.Own(materialized);
-            }
+            ChangeViewParameters(viewIndex);
         }
 
         _frame.Backend.PublishDescriptors(_frame.Graph.Device);
-        memory.CompletePlacement();
+        foreach (GraphIdentity identity in memory.CompletePlacement())
+        {
+            if (!_allocationRows.TryGetValue(identity, out var key)) continue;
+            ResourcePlacement placement = memory.GetPlacement(identity);
+            if (key.Kind == GraphAccessTargetKind.Buffer) CollectionsMarshal.AsSpan(_buffers)[key.Index].Placement = placement;
+            else CollectionsMarshal.AsSpan(_textures)[key.Index].Placement = placement;
+            _changedSynchronizationResources.Add(key);
+        }
+        _materializeBuffers.Clear(); _materializeTextures.Clear(); _materializeViews.Clear();
     }
 
     private DeviceResource? CreateView(in FrameView view)
     {
         switch (view.Kind)
         {
-            case GraphViewKind.BufferCbv:
-                {
-                    Buffer buffer = _buffers[ResolveBuffer(view.Buffer)].Resource!;
-                    BufferRange range = GraphStructureIndex.ResolveRange(view.BufferRange, buffer.Info.Size);
-                    return _frame.Backend.CreateBufferCbv(
-                        _frame.Graph.Device,
-                        new BufferCbvDesc(buffer, range, view.Label));
-                }
             case GraphViewKind.BufferSrv:
                 {
-                    Buffer buffer = _buffers[ResolveBuffer(view.Buffer)].Resource!;
+                    Buffer buffer = _buffers[view.BufferIndex].Resource!;
                     BufferRange range = GraphStructureIndex.ResolveRange(view.BufferRange, buffer.Info.Size);
                     return _frame.Backend.CreateBufferSrv(
                         _frame.Graph.Device,
@@ -205,10 +132,10 @@ internal sealed partial class FrameExecutor
                 }
             case GraphViewKind.BufferUav:
                 {
-                    Buffer buffer = _buffers[ResolveBuffer(view.Buffer)].Resource!;
+                    Buffer buffer = _buffers[view.BufferIndex].Resource!;
                     BufferRange range = GraphStructureIndex.ResolveRange(view.BufferRange, buffer.Info.Size);
                     Buffer? counter = view.AdditionalBuffer.IsValid
-                        ? _buffers[ResolveBuffer(view.AdditionalBuffer)].Resource
+                        ? _buffers[view.AdditionalBufferIndex].Resource
                         : null;
                     return _frame.Backend.CreateBufferUav(
                         _frame.Graph.Device,
@@ -217,7 +144,7 @@ internal sealed partial class FrameExecutor
                 }
             case GraphViewKind.TextureSrv:
                 {
-                    Texture texture = _textures[ResolveTexture(view.Texture)].Resource!;
+                    Texture texture = _textures[view.TextureIndex].Resource!;
                     return _frame.Backend.CreateTextureSrv(
                         _frame.Graph.Device,
                         new TextureSrvDesc(texture, view.TextureRange,
@@ -225,7 +152,7 @@ internal sealed partial class FrameExecutor
                 }
             case GraphViewKind.TextureUav:
                 {
-                    Texture texture = _textures[ResolveTexture(view.Texture)].Resource!;
+                    Texture texture = _textures[view.TextureIndex].Resource!;
                     return _frame.Backend.CreateTextureUav(
                         _frame.Graph.Device,
                         new TextureUavDesc(texture, view.TextureRange,
@@ -233,7 +160,7 @@ internal sealed partial class FrameExecutor
                 }
             case GraphViewKind.ColorAttachment:
                 {
-                    Texture texture = _textures[ResolveTexture(view.Texture)].Resource!;
+                    Texture texture = _textures[view.TextureIndex].Resource!;
                     return _frame.Backend.CreateColorAttachmentView(
                         _frame.Graph.Device,
                         new ColorAttachmentViewDesc(texture, view.TextureRange,
@@ -241,7 +168,7 @@ internal sealed partial class FrameExecutor
                 }
             case GraphViewKind.DepthStencil:
                 {
-                    Texture texture = _textures[ResolveTexture(view.Texture)].Resource!;
+                    Texture texture = _textures[view.TextureIndex].Resource!;
                     return _frame.Backend.CreateDepthStencilView(
                         _frame.Graph.Device,
                         new DepthStencilViewDesc(texture, view.TextureRange,
@@ -264,15 +191,15 @@ internal sealed partial class FrameExecutor
             case GraphViewKind.BufferCbv:
             case GraphViewKind.BufferSrv:
             case GraphViewKind.BufferUav:
-                primary = _buffers[ResolveBuffer(view.Buffer)].Resource;
-                if (view.AdditionalBuffer.IsValid)
-                    secondary = _buffers[ResolveBuffer(view.AdditionalBuffer)].Resource;
+                primary = _buffers[view.BufferIndex].Resource;
+                if (view.AdditionalBufferIndex >= 0)
+                    secondary = _buffers[view.AdditionalBufferIndex].Resource;
                 return primary is not null;
             case GraphViewKind.TextureSrv:
             case GraphViewKind.TextureUav:
             case GraphViewKind.ColorAttachment:
             case GraphViewKind.DepthStencil:
-                primary = _textures[ResolveTexture(view.Texture)].Resource;
+                primary = _textures[view.TextureIndex].Resource;
                 return primary is not null;
             default:
                 primary = null;
@@ -294,7 +221,7 @@ internal sealed partial class FrameExecutor
         Array.Fill(begin, int.MaxValue);
         Array.Clear(end);
         bool used = false;
-        for (int accessIndex = 0; accessIndex < _accesses.Length; accessIndex++)
+        foreach (int accessIndex in CollectResourceAccesses(kind, resourceIndex, enabledOnly: false))
         {
             FrameResourceAccess access = _accesses[accessIndex];
             if (!_live[access.PassIndex] || access.TargetKind != kind ||
@@ -314,13 +241,87 @@ internal sealed partial class FrameExecutor
             if (begin[lane] == int.MaxValue) begin[lane] = 0;
     }
 
-    private void RetireAliasingPredecessor(
-        FrameTransientResourceAllocator memory,
-        in ResourcePlacement placement)
+    private readonly Dictionary<GraphIdentity, (GraphAccessTargetKind Kind, int Index)> _allocationRows = [];
+    private readonly Dictionary<Resource, (GraphAccessTargetKind Kind, int Index)> _resourceRows = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _placementResources = [];
+    private readonly List<TransientAllocationRequest> _allocationRequests = [];
+
+    private void UpdatePlacements(FrameTransientResourceAllocator memory)
     {
-        if (placement.AliasingPredecessor is not null &&
-            !memory.IsCached(placement.AliasingPredecessor))
-            _frame.Slot.Own(placement.AliasingPredecessor);
+        foreach (var key in _placementResources)
+        {
+            if (!ResourceExists(key)) continue;
+            GraphIdentity identity;
+            int first, last;
+            if (key.Kind == GraphAccessTargetKind.Buffer)
+            {
+                FrameBuffer row = _buffers[key.Index];
+                if (row.Ownership != RenderGraphResourceOwnership.GraphOwned || row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
+                identity = row.AllocationIdentity; first = row.FirstPass; last = row.LastPass;
+            }
+            else if (key.Kind == GraphAccessTargetKind.Texture)
+            {
+                FrameTexture row = _textures[key.Index];
+                if (row.Ownership != RenderGraphResourceOwnership.GraphOwned || row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
+                identity = row.AllocationIdentity; first = row.FirstPass; last = row.LastPass;
+            }
+            else continue;
+            if (last < 0) { memory.Deactivate(identity); continue; }
+            ResolveResourceFrontiers(key.Kind, key.Index, key.Kind == GraphAccessTargetKind.Buffer ? key.Index : _buffers.Count + key.Index,
+                out int[] begin, out int[] end);
+            memory.UpdateLifetime(identity, begin, end, _passes[first].Queue!, _passes[last].Queue!);
+        }
+        foreach (GraphIdentity identity in memory.ReconcileLifetimes())
+        {
+            if (!_allocationRows.TryGetValue(identity, out var key)) continue;
+            GraphIdentity resourceIdentity;
+            if (key.Kind == GraphAccessTargetKind.Buffer)
+            {
+                ref FrameBuffer row = ref CollectionsMarshal.AsSpan(_buffers)[key.Index];
+                row.Resource = null; row.Placement = default; row.EntryBoundaryStates = null;
+                resourceIdentity = row.Identity;
+            }
+            else
+            {
+                ref FrameTexture row = ref CollectionsMarshal.AsSpan(_textures)[key.Index];
+                row.Resource = null; row.Placement = default; row.EntryBoundaryStates = null;
+                resourceIdentity = row.Identity;
+            }
+            MaterializationChanged(key);
+            _changedSynchronizationResources.Add(key);
+            if (_resourceViewRows.TryGetValue(key, out HashSet<int>? viewRows))
+                foreach (int index in viewRows) CollectionsMarshal.AsSpan(_views)[index].View = null;
+            foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(resourceIdentity, []))
+                if (_viewIndices.TryGetValue(view, out int index)) CollectionsMarshal.AsSpan(_views)[index].View = null;
+            if (_resourceAccessLists.TryGetValue(key, out List<int>? accesses))
+                foreach (int index in accesses) InvalidateRasterRendering(_accesses[index].PassIndex);
+        }
+        _allocationRequests.Clear();
+        foreach (int index in _materializeBuffers)
+        {
+            if (index >= _buffers.Count) continue;
+            ref FrameBuffer row = ref CollectionsMarshal.AsSpan(_buffers)[index];
+            if (row.LastPass < 0 || row.Resource is not null || row.Ownership != RenderGraphResourceOwnership.GraphOwned ||
+                row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
+            if (row.Requirements.Size == 0)
+                row.Requirements = _frame.Backend.GetBufferMemoryRequirements(_frame.Graph.Device, row.Description, row.MemoryType);
+            ResolveResourceFrontiers(GraphAccessTargetKind.Buffer, index, index, out int[] begin, out int[] end);
+            _allocationRequests.Add(new(row.AllocationIdentity, row.Requirements, row.MemoryType, row.Description.NodePlacement,
+                begin, end, _passes[row.FirstPass].Queue!, _passes[row.LastPass].Queue!));
+        }
+        foreach (int index in _materializeTextures)
+        {
+            if (index >= _textures.Count) continue;
+            ref FrameTexture row = ref CollectionsMarshal.AsSpan(_textures)[index];
+            if (row.LastPass < 0 || row.Resource is not null || row.Ownership != RenderGraphResourceOwnership.GraphOwned ||
+                row.Lifetime != RenderGraphResourceLifetime.PerFrame) continue;
+            if (row.Requirements.Size == 0)
+                row.Requirements = _frame.Backend.GetTextureMemoryRequirements(_frame.Graph.Device, row.BorrowDescription());
+            ResolveResourceFrontiers(GraphAccessTargetKind.Texture, index, _buffers.Count + index, out int[] begin, out int[] end);
+            _allocationRequests.Add(new(row.AllocationIdentity, row.Requirements, MemoryType.DeviceLocal, row.NodePlacement,
+                begin, end, _passes[row.FirstPass].Queue!, _passes[row.LastPass].Queue!));
+        }
+        memory.Allocate(_allocationRequests);
+        _placementResources.Clear();
     }
 }
-

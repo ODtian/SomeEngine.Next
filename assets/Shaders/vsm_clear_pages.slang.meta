@@ -1,5 +1,24 @@
 {
   "source_guid": "cad46fc6-2bd8-47b3-ba33-f47cf2541898",
   "importer": "SlangShaderImporter",
-  "importer_settings": null
+  "importer_settings": {
+    "cook_profile": "default"
+  },
+  "importer_version": 26,
+  "input_hash": "5007d10ebf8d406bff8cabca32b11cdbe340e0aa79c77fa4627ba8201c641c6f",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/vsm_clear_pages.slang",
+      "content_hash": "14e8201eb38cd0029f0c570a77aa9692c5352366b7140258ea912d18d320c8fd"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "a9a22745-3926-5a80-b5ce-0c0ed50716bd",
+      "sub_asset_key": "shader:main",
+      "input_hash": "5007d10ebf8d406bff8cabca32b11cdbe340e0aa79c77fa4627ba8201c641c6f",
+      "dependencies": [],
+      "asset_path": "vsm_clear_pages.shader.asset"
+    }
+  ]
 }

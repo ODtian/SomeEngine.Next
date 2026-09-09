@@ -7,47 +7,25 @@ internal sealed class VulkanTestShaderProgram : IDisposable
 {
     private static readonly Lazy<IGlobalSession> GlobalSession = new(CreateGlobalSession);
     private readonly List<ComObject> _owned;
+    private readonly IComponentType _nativeProgram;
 
     private VulkanTestShaderProgram(
         List<ComObject> owned,
-        IComponentType program,
-        ShaderReflection reflection,
-        EntryPointReflection[] entries)
+        IComponentType nativeProgram,
+        ShaderProgram program)
     {
         _owned = owned;
+        _nativeProgram = nativeProgram;
         Program = program;
-        Reflection = reflection;
-        Entries = entries;
+        Reflection = program.Layout;
+        Entries = [.. program.EntryPoints];
     }
 
-    internal IComponentType Program { get; }
-    internal ShaderReflection Reflection { get; }
-    internal EntryPointReflection[] Entries { get; }
+    internal ShaderProgram Program { get; }
+    internal ShaderProgramLayout Reflection { get; }
+    internal ShaderEntryPoint[] Entries { get; }
 
-    internal unsafe byte[] GetEntryPointCode(int index)
-    {
-        ISlangBlob? code = null;
-        ISlangBlob? diagnostics = null;
-        try
-        {
-            Require(
-                Program.GetEntryPointCode(index, 0, out code!, out diagnostics),
-                $"entry code {index}",
-                diagnostics);
-            if (code is null || code.GetBufferPointer() is null || code.GetBufferSize() == 0)
-                throw new InvalidOperationException($"Entry point {index} produced no SPIR-V code.");
-            return new ReadOnlySpan<byte>(
-                (void*)code.GetBufferPointer(),
-                checked((int)code.GetBufferSize())).ToArray();
-        }
-        finally
-        {
-            if ((object?)code is ComObject codeObject)
-                codeObject.FinalRelease();
-            if ((object?)diagnostics is ComObject diagnosticsObject)
-                diagnosticsObject.FinalRelease();
-        }
-    }
+    internal byte[] GetEntryPointCode(int index) => Entries[index].Code.ToArray();
 
     internal bool IsParameterLocationUsed(
         int entryPointIndex,
@@ -60,7 +38,7 @@ internal sealed class VulkanTestShaderProgram : IDisposable
         try
         {
             Require(
-                Program.GetEntryPointMetadata(
+                _nativeProgram.GetEntryPointMetadata(
                     entryPointIndex,
                     0,
                     out metadata!,
@@ -165,7 +143,8 @@ internal sealed class VulkanTestShaderProgram : IDisposable
                     reflectedEntries[index].Stage != entries[index].Stage)
                     throw new InvalidOperationException($"Unexpected reflection for {entries[index].Name}.");
             }
-            return new VulkanTestShaderProgram(owned, linked, reflection, reflectedEntries);
+            ShaderProgram cooked = ShaderProgram.Capture(linked!, 0, "spirv");
+            return new VulkanTestShaderProgram(owned, linked!, cooked);
 
             T Track<T>(T value) where T : class
             {

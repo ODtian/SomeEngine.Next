@@ -228,16 +228,4 @@ internal static class MappedTestDocumentWrites
         => MappedTestDocument.Write(stream =>
             builder.WriteSignedAsync(stream, privateKey, generation).GetAwaiter().GetResult());
 
-    internal static MappedTestDocument BuildMapped(
-        this AssetPackPatchBuilder builder,
-        Guid? generation = null)
-        => MappedTestDocument.Write(stream =>
-            builder.WriteAsync(stream, generation).GetAwaiter().GetResult());
-
-    internal static MappedTestDocument BuildSignedMapped(
-        this AssetPackPatchBuilder builder,
-        System.Security.Cryptography.RSA privateKey,
-        Guid? generation = null)
-        => MappedTestDocument.Write(stream =>
-            builder.WriteSignedAsync(stream, privateKey, generation).GetAwaiter().GetResult());
 }

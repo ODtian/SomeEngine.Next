@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Data;
@@ -12,28 +11,23 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class MeshStreamingTests
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const uint VertexStride = 16;
-    private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
-        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int PageBytes = ClusterTestAssets.PageBytes;
 
     [Fact]
     public async Task StreamedOpenAndOneHundredDuplicateFaultsReadOnlyOneRequestedPage()
     {
         using var directory = new TemporaryDirectory();
         Mesh sourceAsset = TwoPageMesh();
-        AssetGuid guid = AssetGuid.New();
+        Guid guid = Guid.NewGuid();
         string path = System.IO.Path.Combine(directory.Path, "streamed.mesh.asset");
-        AssetWriter.Write(sourceAsset, path);
+        ClusterTestFiles.WriteMesh(sourceAsset, path);
         var counted = new CountingRangeSource(FileRangeSource.Open(path));
-        using Mesh streamed = await Mesh.OpenStreamedAsync(
+        using Mesh streamed = await ClusterTestFiles.OpenMeshAsync(
             counted,
             ownsSource: true);
         Assert.Null(streamed.Payload);
-        using MeshPayloadSource payloadSource = RetainPayloadSource(streamed);
-        Assert.Equal(2, payloadSource.Pages.Count);
-        Assert.Equal(3 * Marshal.SizeOf<ClusterBVHNode>(), payloadSource.BvhLength);
+        Assert.Equal(2, streamed.PageCount);
+        Assert.Equal(3 * Marshal.SizeOf<ClusterBVHNode>(), streamed.BvhByteLength);
 
         RangeRead[] metadataReads = counted.Reads;
         Assert.DoesNotContain(metadataReads, static read => read.Length == MeshPageHeader.Size);
@@ -45,7 +39,7 @@ public sealed class MeshStreamingTests
 
         RangeRead[] registeredReads = counted.Reads;
         Assert.Equal(readCountBeforeRegistration + 1, registeredReads.Length);
-        Assert.Equal(payloadSource.BvhLength, registeredReads[readCountBeforeRegistration].Length);
+        Assert.Equal(streamed.BvhByteLength, registeredReads[readCountBeforeRegistration].Length);
         Assert.Same(streamed, registration.Mesh);
         Assert.Equal(2u, registration.PageCount);
         ClusterMeshesSnapshot registrationSnapshot = manager.CaptureSnapshot();
@@ -99,22 +93,14 @@ public sealed class MeshStreamingTests
         using var directory = new TemporaryDirectory();
         string path = System.IO.Path.Combine(directory.Path, "integrity.mesh.asset");
         Mesh asset = TwoPageMesh();
-        AssetWriter.Write(asset, path);
+        ClusterTestFiles.WriteMesh(asset, path);
 
         var probe = new CountingRangeSource(FileRangeSource.Open(path));
-        using (Mesh valid = await Mesh.OpenStreamedAsync(probe, ownsSource: true))
+        using (Mesh valid = await ClusterTestFiles.OpenMeshAsync(probe, ownsSource: true))
         {
-            using MeshPayloadSource source = RetainPayloadSource(valid);
-            Assert.All(source.Pages, static page => Assert.Equal(32, page.Sha256.Length));
-            Assert.True(MemoryMarshal.TryGetArray(
-                (ReadOnlyMemory<byte>)valid.PageDigests![0].Sha256!.Value,
-                out ArraySegment<byte> rootDigest));
-            Assert.True(MemoryMarshal.TryGetArray(source.Pages[0].Sha256, out ArraySegment<byte> sourceDigest));
-            Assert.Same(rootDigest.Array, sourceDigest.Array);
-            Assert.Equal(rootDigest.Offset, sourceDigest.Offset);
-            Assert.Equal(rootDigest.Count, sourceDigest.Count);
-            var page = new byte[source.Pages[0].Size];
-            await source.ReadPageIntoAsync(0, page);
+            Assert.All(valid.PageDigests!, static page => Assert.Equal(32, page.Sha256!.Value.Length));
+            var page = new byte[valid.GetPageByteLength(0)];
+            await valid.ReadPageAsync(0, page);
             Assert.Equal(PageBytes, page.Length);
         }
 
@@ -132,18 +118,18 @@ public sealed class MeshStreamingTests
             PageBytes,
             static bytes =>
             {
-                int quantStepOffset = checked((int)Marshal.OffsetOf<MeshPageHeader>(nameof(MeshPageHeader.QuantStep)));
-                bytes[quantStepOffset] ^= 0x01;
+                int encodingHashOffset = checked((int)Marshal.OffsetOf<MeshPageHeader>(
+                    nameof(MeshPageHeader.VertexEncodingHash)));
+                bytes[encodingHashOffset] ^= 0x01;
             });
-        using (Mesh corrupted = await Mesh.OpenStreamedAsync(
+        using (Mesh corrupted = await ClusterTestFiles.OpenMeshAsync(
             headerCorruption,
             ownsSource: true))
-        using (MeshPayloadSource source = RetainPayloadSource(corrupted))
         {
-            var page = new byte[source.Pages[0].Size];
+            var page = new byte[corrupted.GetPageByteLength(0)];
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
             {
-                await source.ReadPageIntoAsync(0, page);
+                await corrupted.ReadPageAsync(0, page);
             });
         }
 
@@ -151,16 +137,15 @@ public sealed class MeshStreamingTests
             FileRangeSource.Open(path),
             firstPageOffset,
             PageBytes,
-            static bytes => bytes[MeshPageHeader.Size + GPUCluster.SizeInBytes] ^= 0x01);
-        using (Mesh corrupted = await Mesh.OpenStreamedAsync(
+            static bytes => bytes[MeshPageHeader.Size + PackedCluster.SizeInBytes] ^= 0x01);
+        using (Mesh corrupted = await ClusterTestFiles.OpenMeshAsync(
             pageCorruption,
             ownsSource: true))
-        using (MeshPayloadSource source = RetainPayloadSource(corrupted))
         {
-            var page = new byte[source.Pages[0].Size];
+            var page = new byte[corrupted.GetPageByteLength(0)];
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
             {
-                await source.ReadPageIntoAsync(0, page);
+                await corrupted.ReadPageAsync(0, page);
             });
         }
 
@@ -169,29 +154,24 @@ public sealed class MeshStreamingTests
             bvhOffset,
             bvhLength,
             static bytes => bytes[^1] ^= 0x01);
-        using (Mesh corrupted = await Mesh.OpenStreamedAsync(
+        using (Mesh corrupted = await ClusterTestFiles.OpenMeshAsync(
             bvhCorruption,
             ownsSource: true))
-        using (MeshPayloadSource source = RetainPayloadSource(corrupted))
         {
-            var bvh = new byte[source.BvhLength];
+            var bvh = new byte[corrupted.BvhByteLength];
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
             {
-                await source.ReadBvhIntoAsync(bvh);
+                await corrupted.ReadBvhAsync(bvh);
             });
         }
     }
 
     private static void CompletePublication(ClusterMeshes manager)
     {
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
     }
 
-    private static MeshPayloadSource RetainPayloadSource(Mesh mesh)
-    {
-        Assert.True(mesh.TryRetainPayloadSource(out MeshPayloadSource? source));
-        return Assert.IsType<MeshPayloadSource>(source);
-    }
+
 
     private static Mesh TwoPageMesh()
     {
@@ -215,40 +195,14 @@ public sealed class MeshStreamingTests
         {
             Name = "RangeStreamedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            VertexStride = VertexStride,
+            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
             Payload = payload,
             BvhOffset = 2 * PageBytes,
-            QuantStep = 1f,
         };
     }
 
     private static byte[] PageData(byte marker)
-    {
-        byte[] data = new byte[PageBytes];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
-            AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + VertexStride,
-            VertexStride = VertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(data.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new GPUCluster
-        {
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-            BoundMax = new Vector3(marker),
-        };
-        MemoryMarshal.Write(data.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes), in cluster);
-        data[^1] = 0;
-        return data;
-    }
+        => ClusterTestAssets.CreatePageData(marker);
 
     private static ClusterBVHNode Leaf(uint localPage)
     {

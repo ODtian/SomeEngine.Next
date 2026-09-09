@@ -20,21 +20,19 @@ internal sealed class BenchmarkShaderProgram : IDisposable
 
     internal BenchmarkShaderProgram(
         List<ComObject> owned,
-        IComponentType program,
-        ShaderReflection reflection,
-        EntryPointReflection[] entries,
+        ShaderProgram program,
         string manifestSha256)
     {
         _owned = owned;
         Program = program;
-        Reflection = reflection;
-        Entries = entries;
+        Reflection = program.Layout;
+        Entries = [.. program.EntryPoints];
         ManifestSha256 = manifestSha256;
     }
 
-    internal IComponentType Program { get; }
-    internal ShaderReflection Reflection { get; }
-    internal EntryPointReflection[] Entries { get; }
+    internal ShaderProgram Program { get; }
+    internal ShaderProgramLayout Reflection { get; }
+    internal ShaderEntryPoint[] Entries { get; }
     internal string ManifestSha256 { get; }
 
     public void Dispose()
@@ -170,8 +168,6 @@ internal static class BenchmarkShaders
             return new BenchmarkShaderProgram(
                 compiled.Owned,
                 compiled.Program,
-                compiled.Reflection,
-                compiled.ReflectedEntries,
                 BenchmarkEnvironment.Sha256Bytes(manifestBytes));
         }
         catch
@@ -191,8 +187,6 @@ internal static class BenchmarkShaders
             return new BenchmarkShaderProgram(
                 compiled.Owned,
                 compiled.Program,
-                compiled.Reflection,
-                compiled.ReflectedEntries,
                 identity);
         }
         catch
@@ -353,7 +347,9 @@ internal static class BenchmarkShaders
                 TrackOptional(diagnostics);
                 code[index] = blob.Buffer.ToArray();
             }
-            return new Compiled(owned, linked, reflection, reflected, code);
+            string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
+            ShaderProgram cooked = ShaderProgram.Capture(linked, 0, backend);
+            return new Compiled(owned, cooked, code);
 
             T Track<T>(T value) where T : class
             {
@@ -410,8 +406,6 @@ internal static class BenchmarkShaders
 
     private sealed record Compiled(
         List<ComObject> Owned,
-        IComponentType Program,
-        ShaderReflection Reflection,
-        EntryPointReflection[] ReflectedEntries,
+        ShaderProgram Program,
         byte[][] Code);
 }

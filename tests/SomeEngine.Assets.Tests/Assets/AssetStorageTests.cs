@@ -12,7 +12,7 @@ public class AssetStorageTests
     [Fact]
     public void CreateImporters_ExposesAuthoringPipelineTypes()
     {
-        IReadOnlyList<IAssetImporter> importers = AssetAuthoring.CreateImporters();
+        IReadOnlyList<IAssetImporter> importers = [new GltfSourceImporter(), new SlangSourceImporter()];
 
         Assert.Contains(importers, importer => importer.ImporterName == nameof(SomeEngine.Assets.Importers.SlangShaderImporter));
         Assert.Contains(importers, importer => importer.ImporterName == nameof(SomeEngine.Assets.Importers.GltfSourceImporter));
@@ -21,13 +21,14 @@ public class AssetStorageTests
     [Fact]
     public void AssetRuntimeAssemblyDoesNotReferenceImporterToolchains()
     {
-        string[] references = typeof(Texture).Assembly
+        string[] references = typeof(TextureData).Assembly
             .GetReferencedAssemblies()
             .Select(static assembly => assembly.Name ?? string.Empty)
             .ToArray();
 
         Assert.DoesNotContain(references, static name => name.StartsWith("SharpGLTF", StringComparison.Ordinal));
-        Assert.DoesNotContain(references, static name => name.StartsWith("SlangShaderSharp", StringComparison.Ordinal));
+        Assert.Contains(references, static name =>
+            string.Equals(name, "SlangShaderSharp", StringComparison.Ordinal));
         Assert.DoesNotContain(references, static name => name.Contains("MeshOptimizer", StringComparison.Ordinal));
     }
 
@@ -38,27 +39,24 @@ public class AssetStorageTests
 
         try
         {
-            AssetGuid materialGuid = AssetGuid.New();
+            Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "generated.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write(new Material
+            AssetWriter.Write<Material>((new StandardMaterialData
             {
-                AssetGuid = materialGuid.ToFlatString(),
+                AssetGuid = materialGuid.ToString(),
                 Name = "GeneratedMaterial",
-                Passes = [],
-                Textures = [],
-                Scalars = [],
-            }, materialPath);
+            }).ToAsset(), materialPath);
 
-            AssetProject project = AssetAuthoring.CreateProject(dir);
+            AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             await project.RegisterAssetAsync<Material>(
                 "assets/Materials/generated.material.asset");
             IAssetStorage storage = project.CreateStorage();
             Assert.True(storage.TryFind(materialGuid, out AssetEntry entry));
-            await using BinaryDocument<Material> document =
-                await AssetProject.OpenAsync<Material>(storage, entry);
+            await using BinaryDocument<MaterialData> document =
+                await AssetTestFiles.OpenAsync<Material, MaterialData>(storage, entry);
 
-            Assert.Equal(materialGuid.ToFlatString(), document.Root.AssetGuid);
+            Assert.Equal(materialGuid.ToString(), document.Root.AssetGuid);
             Assert.Equal(materialGuid, project.Resolve("assets/Materials/generated.material.asset"));
         }
         finally

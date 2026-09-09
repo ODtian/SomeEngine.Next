@@ -5,35 +5,12 @@ using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Lighting;
 
-/// <summary>One-frame publication boundary between light management and render pipelines.</summary>
-public sealed class RenderLightSetMailbox
-{
-    private RenderLightSet? _pending;
-
-    public void Publish(RenderLightSet lights)
-    {
-        ArgumentNullException.ThrowIfNull(lights);
-        if (Interlocked.CompareExchange(ref _pending, lights, null) is not null)
-        {
-            throw new InvalidOperationException("The previous render-light set was not consumed.");
-        }
-    }
-
-    public RenderLightSet TakeRequired()
-    {
-        return Interlocked.Exchange(ref _pending, null)
-            ?? throw new InvalidOperationException(
-                "No render-light set was published for this frame.");
-    }
-}
-
 /// <summary>
-/// Owns light-component queries and publishes one immutable-for-rendering light set. Geometry,
-/// light assignment, shadow and shading pipelines consume the publication without querying ECS.
+/// Owns light-component queries and one immutable-for-rendering light set. Geometry,
+/// light assignment, shadow and shading pipelines consume this system without querying ECS.
 /// </summary>
 public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
 {
-    private readonly RenderLightSetMailbox _mailbox;
     private readonly RenderLightSet _lights = new();
     private QueryHandle _directional;
     private QueryHandle _point;
@@ -41,8 +18,9 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
     private long _topologyRevision = -1;
     private bool _created;
 
-    public RenderLightSetSystem(RenderLightSetMailbox mailbox)
-        => _mailbox = mailbox ?? throw new ArgumentNullException(nameof(mailbox));
+    public RenderLightSet RequireCurrent() => _created
+        ? _lights
+        : throw new InvalidOperationException("The render-light set system is not active.");
 
     public void OnCreate(ref RenderFrameSystemContext context)
     {
@@ -84,7 +62,6 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
         if (_topologyRevision == topologyRevision &&
             !AnyLightChanged(ref context))
         {
-            _mailbox.Publish(_lights);
             return;
         }
         RenderLightSet lights = _lights;
@@ -104,7 +81,6 @@ public sealed class RenderLightSetSystem : ISystem<RenderFrameSystemContext>
             static (QueryCursor cursor, ref RenderLightSet lights) => lights.CollectSpot(cursor));
         lights.CommitChanges();
         _topologyRevision = topologyRevision;
-        _mailbox.Publish(lights);
     }
 
     private bool AnyLightChanged(ref RenderFrameSystemContext context)

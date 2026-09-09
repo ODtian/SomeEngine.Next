@@ -53,6 +53,7 @@ internal sealed class WorkQueue : IWorkQueue
     private readonly int _busySpinCount;
     // Monitor.Wait/Pulse require a monitor object; keep this separate from Lock.
     private readonly object _stateLock = new();
+    private readonly object _workerWaitLock = new();
     private readonly AutoResetEvent _latencyCompletedSignal = new(initialState: false);
     private readonly MpmcInjector<ReadyTicket>[] _injectors;
     private readonly ConcurrentQueue<ReadyTicket>[] _injectorOverflow;
@@ -65,6 +66,7 @@ internal sealed class WorkQueue : IWorkQueue
     private long _wakeEpoch;
     private object? _latencyState;
     private Action<object?, int>? _latencyAction;
+    private SomeEngine.Diagnostics.TraceContext _latencyTrace;
     private ExceptionDispatchInfo? _latencyFailure;
     private int _latencyValue;
     private int _latencyPriorityIndex;
@@ -298,18 +300,20 @@ internal sealed class WorkQueue : IWorkQueue
             sequence = checked(_latencyRequestedSequence + 1);
             _latencyState = state;
             _latencyAction = action;
+            _latencyTrace = SomeEngine.Diagnostics.EngineTrace.Context;
             _latencyFailure = null;
             _latencyValue = value;
             _latencyPriorityIndex = JobPriorityOrder.PriorityIndex(priority);
             Volatile.Write(ref _latencyRequestedSequence, sequence);
             Interlocked.Increment(ref _wakeEpoch);
-            Monitor.PulseAll(_stateLock);
+            WakeWorkerThreads(1);
             return true;
         }
     }
 
     public void JoinLatencyWork(long sequence)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.JoinLatency);
         if (sequence <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(sequence));
@@ -332,7 +336,7 @@ internal sealed class WorkQueue : IWorkQueue
             failure = _latencyFailure;
             _latencyFailure = null;
             _latencyJoinedSequence = sequence;
-            Monitor.Pulse(_stateLock);
+            Monitor.PulseAll(_stateLock);
         }
         failure?.Throw();
     }
@@ -404,6 +408,7 @@ internal sealed class WorkQueue : IWorkQueue
             Monitor.PulseAll(_stateLock);
         }
 
+        WakeWorkerThreads(int.MaxValue);
         foreach (Thread worker in _workers)
         {
             if (worker.IsAlive)
@@ -473,7 +478,7 @@ internal sealed class WorkQueue : IWorkQueue
             }
         }
 
-        WakeWorkers();
+        WakeWorkers(drainerCount);
     }
 
     private bool WaitForWork(bool waitIndefinitely)
@@ -494,54 +499,49 @@ internal sealed class WorkQueue : IWorkQueue
         }
 
         long observedEpoch = Volatile.Read(ref _wakeEpoch);
-        lock (_stateLock)
+        object waitLock = workerThread ? _workerWaitLock : _stateLock;
+        lock (waitLock)
         {
             if (Volatile.Read(ref _readyTicketCount) > 0 ||
-                _latencyClaimedSequence != _latencyRequestedSequence)
-            {
+                Volatile.Read(ref _latencyClaimedSequence) != Volatile.Read(ref _latencyRequestedSequence))
                 return true;
-            }
-            if (IsDisposed)
-                return false;
+            if (IsDisposed) return false;
 
-            _sleepingWorkerCount++;
+            if (workerThread) Interlocked.Increment(ref _sleepingWorkerCount);
             try
             {
                 if (Volatile.Read(ref _wakeEpoch) != observedEpoch ||
                     Volatile.Read(ref _readyTicketCount) > 0 ||
-                    _latencyClaimedSequence != _latencyRequestedSequence)
-                {
+                    Volatile.Read(ref _latencyClaimedSequence) != Volatile.Read(ref _latencyRequestedSequence))
                     return true;
-                }
-
-                if (workerThread)
-                    _counters.WorkerParked();
-                if (waitIndefinitely)
-                    Monitor.Wait(_stateLock);
-                else
-                    Monitor.Wait(
-                        _stateLock,
-                        TimeSpan.FromMilliseconds(WaitForExternalStateMilliseconds));
-                if (workerThread)
-                    _counters.WorkerWoke();
+                if (workerThread) _counters.WorkerParked();
+                if (waitIndefinitely) Monitor.Wait(waitLock);
+                else Monitor.Wait(waitLock, WaitForExternalStateMilliseconds);
+                if (workerThread) _counters.WorkerWoke();
                 return true;
             }
             finally
             {
-                _sleepingWorkerCount--;
+                if (workerThread) Interlocked.Decrement(ref _sleepingWorkerCount);
             }
         }
     }
 
-    private void WakeWorkers()
+    private void WakeWorkers(int maximumWorkerCount = int.MaxValue)
     {
         Interlocked.Increment(ref _wakeEpoch);
-        if (Volatile.Read(ref _sleepingWorkerCount) == 0)
-            return;
+        WakeWorkerThreads(maximumWorkerCount);
+        // External helpers and latency producers wait for different state from workers.
+        lock (_stateLock) Monitor.PulseAll(_stateLock);
+    }
 
-        lock (_stateLock)
+    private void WakeWorkerThreads(int maximumCount)
+    {
+        if (Volatile.Read(ref _sleepingWorkerCount) == 0) return;
+        lock (_workerWaitLock)
         {
-            Monitor.PulseAll(_stateLock);
+            int count = Math.Min(maximumCount, _sleepingWorkerCount);
+            for (int worker = 0; worker < count; worker++) Monitor.Pulse(_workerWaitLock);
         }
     }
 
@@ -638,6 +638,7 @@ internal sealed class WorkQueue : IWorkQueue
 
     private bool TryExecuteLatencyWork()
     {
+        SomeEngine.Diagnostics.TraceContext traceContext;
         object? state;
         Action<object?, int>? action;
         int value;
@@ -657,12 +658,15 @@ internal sealed class WorkQueue : IWorkQueue
             _latencyClaimedSequence = sequence;
             state = _latencyState;
             action = _latencyAction;
+            traceContext = _latencyTrace;
             value = _latencyValue;
         }
 
         ExceptionDispatchInfo? failure = null;
         try
         {
+            using var association = SomeEngine.Diagnostics.EngineTrace.Associate(traceContext);
+            using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Latency);
             action!(state, value);
         }
         catch (Exception exception)
@@ -677,7 +681,7 @@ internal sealed class WorkQueue : IWorkQueue
             _latencyAction = null;
             Volatile.Write(ref _latencyCompletedSequence, sequence);
             _latencyCompletedSignal.Set();
-            Monitor.Pulse(_stateLock);
+            Monitor.PulseAll(_stateLock);
         }
         return true;
     }

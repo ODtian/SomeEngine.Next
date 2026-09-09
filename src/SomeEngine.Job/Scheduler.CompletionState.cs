@@ -21,6 +21,7 @@ public sealed partial class Scheduler
         internal ExceptionDispatchInfo? Fault => Volatile.Read(ref _failure)?.DispatchInfo;
         internal bool FailureReported => Volatile.Read(ref _failure)?.Reported == true;
         internal void ReportFailure() => Volatile.Read(ref _failure)?.Report();
+        internal SomeEngine.Diagnostics.TraceContext TraceContext;
         internal bool FaultObserved;
         internal bool QueuedForFaultReuse;
         internal List<DependencyContinuation> Continuations { get; } = [];
@@ -46,6 +47,7 @@ public sealed partial class Scheduler
 
         internal void Reset(int pendingWork, int pendingDependencies, bool scheduleDependenciesSealed)
         {
+            TraceContext = SomeEngine.Diagnostics.EngineTrace.Context;
             Version++;
             InUse = true;
             Completed = false;
@@ -76,6 +78,7 @@ public sealed partial class Scheduler
 
         internal void Release()
         {
+            TraceContext = default;
             InUse = false;
             Completed = true;
             PendingWork = 0;

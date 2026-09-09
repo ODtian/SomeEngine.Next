@@ -10,6 +10,25 @@ internal static class Program
                 throw new PlatformNotSupportedException("SomeEngine.Runtime currently requires Direct3D 12 on Windows.");
 
             RuntimeStartupOptions options = RuntimeStartupOptions.Parse(args);
+            using var trace = options.TraceOutput is null ? null : SomeEngine.Diagnostics.EngineTrace.Start(
+                options.TraceOutput, new SomeEngine.Diagnostics.TraceOptions
+                {
+                    Detail = options.TraceDetail,
+                    Allocations = options.TraceAllocations,
+                    Scopes = !options.TraceFramesOnly,
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["application"] = "SomeEngine",
+                        ["backend"] = options.GraphicsBackend.ToString(),
+                        ["dynamicScene"] = options.DynamicScene.ToString(),
+                        ["asyncCompute"] = options.AsyncCompute.ToString(),
+                        ["synchronousFrames"] = options.SynchronousFrames.ToString(),
+                        ["scenePlayback"] = options.ScenePlayback ?? "none",
+                        ["fixedFrameSeconds"] = options.FixedFrameSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["frameLimit"] = options.FrameLimit.ToString(),
+                        ["arguments"] = string.Join(" ", args),
+                    },
+                });
             if (options.SkipSwapchainPresent)
             {
                 throw new ArgumentException(
@@ -25,6 +44,8 @@ internal static class Program
         catch (Exception failure)
         {
             Console.Error.WriteLine(failure);
+            if (failure is SomeEngine.Graphics.GraphicsException { Diagnostic: { Length: > 0 } diagnostic })
+                Console.Error.WriteLine(diagnostic);
             return 1;
         }
     }

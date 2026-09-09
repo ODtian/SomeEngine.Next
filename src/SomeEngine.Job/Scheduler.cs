@@ -102,6 +102,8 @@ public sealed partial class Scheduler : IDisposable
         }
     }
 
+    internal int WorkerCount => _config.WorkerCount;
+
     public JobRuntimeStats GetStats()
     {
         return _counters.Snapshot();

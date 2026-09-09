@@ -12,7 +12,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         ValidateRayTracingPipeline(desc, GetRayTracingCapability(nativeDevice));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
+        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
         RayPipelineBuild build = BuildRayPipeline(desc, reflection);
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
@@ -63,7 +63,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        RetainedShaderProgram program = RetainedShaderProgram.Capture(desc.Program);
         try
         {
             var snapshot = new RayPipelineSnapshot(desc, program.Program);
@@ -229,16 +229,16 @@ internal sealed unsafe partial class VulkanBackend
 
     private static RayPipelineBuild BuildRayPipeline(
         in RayTracingPipelineDesc desc,
-        ShaderReflection reflection)
+        ShaderProgramLayout reflection)
     {
         var stages = new List<RayStageBuild>();
         var groups = new List<RayTracingShaderGroupCreateInfoKHR>();
-        var generalGroups = new Dictionary<EntryPointReflection, uint>();
+        var generalGroups = new Dictionary<ShaderEntryPoint, uint>();
         var hitGroups = new Dictionary<string, uint>(StringComparer.Ordinal);
-        var entries = new List<EntryPointReflection>();
-        foreach (EntryPointReflection entry in desc.RayGeneration)
+        var entries = new List<ShaderEntryPoint>();
+        foreach (ShaderEntryPoint entry in desc.RayGeneration)
             AddGeneral(entry, SlangStage.RayGeneration, ShaderStageFlags.RaygenBitKhr);
-        foreach (EntryPointReflection entry in desc.Miss)
+        foreach (ShaderEntryPoint entry in desc.Miss)
             AddGeneral(entry, SlangStage.Miss, ShaderStageFlags.MissBitKhr);
         foreach (RayTracingHitGroup hit in desc.HitGroups)
         {
@@ -260,7 +260,7 @@ internal sealed unsafe partial class VulkanBackend
                 IntersectionShader = intersection,
             });
         }
-        foreach (EntryPointReflection entry in desc.Callable)
+        foreach (ShaderEntryPoint entry in desc.Callable)
             AddGeneral(entry, SlangStage.Callable, ShaderStageFlags.CallableBitKhr);
         return new RayPipelineBuild(
             reflection,
@@ -271,7 +271,7 @@ internal sealed unsafe partial class VulkanBackend
             entries.Distinct().ToArray());
 
         void AddGeneral(
-            EntryPointReflection entry,
+            ShaderEntryPoint entry,
             SlangStage slangStage,
             ShaderStageFlags nativeStage)
         {
@@ -291,19 +291,19 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         uint AddOptionalStage(
-            EntryPointReflection entry,
+            ShaderEntryPoint entry,
             SlangStage slangStage,
             ShaderStageFlags nativeStage) =>
-            entry == EntryPointReflection.Null
+            entry == ShaderEntryPoint.Null
                 ? Vk.ShaderUnusedKhr
                 : AddStage(entry, slangStage, nativeStage);
 
         uint AddStage(
-            EntryPointReflection entry,
+            ShaderEntryPoint entry,
             SlangStage slangStage,
             ShaderStageFlags nativeStage)
         {
-            if (entry == EntryPointReflection.Null || entry.Stage != slangStage)
+            if (entry == ShaderEntryPoint.Null || entry.Stage != slangStage)
                 throw new ArgumentException($"A ray-tracing entry point must have Slang stage {slangStage}.", nameof(desc));
             uint index = checked((uint)stages.Count);
             stages.Add(new RayStageBuild(entry, slangStage, nativeStage));
@@ -364,20 +364,20 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     private sealed record RayPipelineBuild(
-        ShaderReflection Reflection,
+        ShaderProgramLayout Reflection,
         RayStageBuild[] Stages,
         RayTracingShaderGroupCreateInfoKHR[] Groups,
-        Dictionary<EntryPointReflection, uint> GeneralGroups,
+        Dictionary<ShaderEntryPoint, uint> GeneralGroups,
         Dictionary<string, uint> HitGroups,
-        EntryPointReflection[] Entries);
+        ShaderEntryPoint[] Entries);
 
     private readonly record struct RayStageBuild(
-        EntryPointReflection Entry,
+        ShaderEntryPoint Entry,
         SlangStage SlangStage,
         ShaderStageFlags NativeStage);
 
     private sealed class VulkanRayTracingPipelineState(
-        Dictionary<EntryPointReflection, uint> generalGroups,
+        Dictionary<ShaderEntryPoint, uint> generalGroups,
         Dictionary<string, uint> hitGroups,
         uint groupCount,
         uint handleSize,
@@ -385,7 +385,7 @@ internal sealed unsafe partial class VulkanBackend
         uint baseAlignment,
         uint maximumStride)
     {
-        internal Dictionary<EntryPointReflection, uint> GeneralGroups { get; } = generalGroups;
+        internal Dictionary<ShaderEntryPoint, uint> GeneralGroups { get; } = generalGroups;
         internal Dictionary<string, uint> HitGroups { get; } = hitGroups;
         internal uint GroupCount { get; } = groupCount;
         internal uint HandleSize { get; } = handleSize;
@@ -603,7 +603,7 @@ internal sealed unsafe partial class VulkanBackend
                     if (parameterIndex >= update.ParameterBlocks.Length)
                         throw new ArgumentOutOfRangeException(nameof(update.ParameterBlocks));
                     RayTracingLocalParameterBlock block = update.ParameterBlocks[checked((int)parameterIndex)];
-                    if (block.Layout == VariableLayoutReflection.Null || block.ResourceCount != 0)
+                    if (block.Layout == ShaderVariableLayout.Null || block.ResourceCount != 0)
                         throw new NotSupportedException(
                             "Vulkan shader records expose ordinary bytes only; opaque resources " +
                             "must be addressed through global bindless descriptor indices.");
@@ -674,10 +674,10 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class RayPipelineSnapshot
     {
-        private readonly IComponentType _program;
-        private readonly EntryPointReflection[] _rayGeneration;
-        private readonly EntryPointReflection[] _miss;
-        private readonly EntryPointReflection[] _callable;
+        private readonly ShaderProgram _program;
+        private readonly ShaderEntryPoint[] _rayGeneration;
+        private readonly ShaderEntryPoint[] _miss;
+        private readonly ShaderEntryPoint[] _callable;
         private readonly RayTracingHitGroup[] _hitGroups;
         private readonly uint _recursion;
         private readonly uint _payload;
@@ -689,7 +689,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal RayPipelineSnapshot(
             in RayTracingPipelineDesc desc,
-            IComponentType program)
+            ShaderProgram program)
         {
             _program = program;
             _rayGeneration = desc.RayGeneration.ToArray();

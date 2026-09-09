@@ -27,21 +27,47 @@ public class IcoSphereTest
 
         // Process through ClusterBuilder
         var meshAsset = ClusterBuilder.ProcessRaw(
-            vertices, attributes, indices, new System.Collections.Generic.List<string>(), "IcoSphere_LOD5"
+            vertices,
+            attributes,
+            indices,
+            SomeEngine.Assets.Tests.Assets.ClusterBuilderTestMaterials.Slots(),
+            "IcoSphere_LOD5"
         );
 
         Assert.NotNull(meshAsset.Payload);
         Assert.True(meshAsset.Payload.Value.Length > 0);
 
         // The runtime contract is one opaque raw vertex record, not a fixed attribute schema.
-        Assert.True(meshAsset.VertexStride > 0);
+        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, meshAsset.VertexEncoding);
 
-        // Save to test output, not the excluded samples workspace.
-        string outputPath = Path.Combine(TestProjectPaths.ProjectRoot(), "TestResults", "SomeEngine.Assets.Tests", "IcoSphere.mesh.asset");
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        bool sawPartialWord = false;
+        int pageOffset = 0;
+        while ((ulong)pageOffset < meshAsset.BvhOffset)
+        {
+            ReadOnlySpan<byte> payload = meshAsset.Payload.Value.Span[pageOffset..];
+            var header = System.Runtime.InteropServices.MemoryMarshal.Read<SomeEngine.Assets.Data.MeshPageHeader>(payload);
+            var clusters = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, SomeEngine.Assets.Data.PackedCluster>(
+                payload.Slice((int)header.ClustersOffset, (int)header.ClusterCount * SomeEngine.Assets.Data.PackedCluster.SizeInBytes));
+            foreach (ref readonly var cluster in clusters)
+            {
+                int address = checked((int)(header.VertexBlobsOffset + cluster.VertexBlobOffset));
+                Assert.Equal(0, address & 3);
+                Assert.Equal(0u, cluster.VertexBlobSize & 3u);
+                uint vertexCount = BitConverter.ToUInt32(payload.Slice(address + 8, 4));
+                uint stride = BitConverter.ToUInt32(payload.Slice(address + 16, 4));
+                uint bits = BitConverter.ToUInt32(payload.Slice(address + 20, 4)) + vertexCount * stride;
+                sawPartialWord |= (bits & 31u) != 0u;
+                Assert.Equal(((bits + 31u) / 32u) * 4u, cluster.VertexBlobSize);
+            }
+            pageOffset += checked((int)(header.ExtensionDataOffset + header.ExtensionDataSize));
+        }
+        Assert.True(sawPartialWord);
 
-        AssetWriter.Write(meshAsset, outputPath);
-        Mesh roundTrip = await Mesh.ReadAsync(outputPath);
+        using var directory = new SomeEngine.Assets.Tests.Assets.AssetTestDirectory();
+        string outputPath = directory.File("icosphere.mesh.asset");
+
+        AssetWriter.Write(meshAsset.ToAsset(), outputPath);
+        MeshData roundTrip = await MeshData.ReadAsync(outputPath);
         Assert.Equal(meshAsset.Payload.Value.ToArray(), roundTrip.Payload!.Value.ToArray());
     }
 

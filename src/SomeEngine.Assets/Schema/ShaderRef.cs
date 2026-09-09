@@ -12,10 +12,7 @@ public sealed partial class ShaderRef
 
     public ShaderStage Stage { get; set; }
 
-    [BinaryIgnore]
-    public Shader? Asset { get; internal set; }
-
-    internal static AssetGuid Require(
+    internal static Guid Require(
         ShaderRef? shader,
         string owner,
         string field,
@@ -23,10 +20,10 @@ public sealed partial class ShaderRef
     {
         if (shader is null)
             throw new InvalidDataException($"{owner} field '{field}' is missing.");
-        if (!global::SomeEngine.Assets.AssetGuid.TryParse(
+        if (!global::System.Guid.TryParse(
                 shader.AssetGuid,
-                out AssetGuid guid)
-            || guid.IsEmpty)
+                out Guid guid)
+            || (guid == System.Guid.Empty))
         {
             throw new InvalidDataException(
                 $"{owner} field '{field}.AssetGuid' has invalid shader GUID '{shader.AssetGuid}'.");

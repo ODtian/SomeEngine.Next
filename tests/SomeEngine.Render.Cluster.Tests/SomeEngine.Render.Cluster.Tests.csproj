@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Serialization\SomeEngine.Serialization.csproj" />
   </ItemGroup>
@@ -63,6 +64,20 @@
     <Content Include="..\..\external\dxc\bin\x64\dxil.dll"
              Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
       <Link>dxil.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\assets\Shaders\hello_triangle.shader.asset">
+      <Link>Content\Shaders\hello_triangle.shader.asset</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\assets\Shaders\cluster_shade_material.shader.asset">
+      <Link>Content\Shaders\cluster_shade_material.shader.asset</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\assets\Shaders\cluster_shade_unlit.shader.asset">
+      <Link>Content\Shaders\cluster_shade_unlit.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

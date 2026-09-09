@@ -248,9 +248,33 @@ internal sealed class AssetPackBodyRangeSource : IRangeSource
 
 public sealed class AssetPackBuilder
 {
-    private readonly Dictionary<Guid, PendingAsset> _assets = [];
+    private readonly Dictionary<Guid, AssetBytes> _assets = [];
+
+    private readonly AssetPack? _basePack;
+    private Guid[] _changedAssetIds = [];
+
+    /// <summary>Creates a complete pack, or a difference pack relative to the supplied base.</summary>
+    public AssetPackBuilder(AssetPack? basePack = null) => _basePack = basePack;
 
     public int Count => _assets.Count;
+    public IReadOnlyList<Guid> ChangedAssetIds => _changedAssetIds;
+
+    private async ValueTask<AssetBytes[]> SelectAssetsAsync(CancellationToken cancellationToken)
+    {
+        AssetBytes[] assets = OrderedAssets();
+        if (_basePack is null)
+            return assets;
+        var changed = new List<AssetBytes>();
+        foreach (AssetBytes asset in assets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await _basePack.ContentEqualsAsync(
+                    asset.AssetId, asset.AssetType, asset.Document, asset.SchemaFingerprint,
+                    cancellationToken).ConfigureAwait(false))
+                changed.Add(asset);
+        }
+        return changed.ToArray();
+    }
 
     public AssetPackBuilder AddAsset(
         Guid assetId,
@@ -281,7 +305,7 @@ public sealed class AssetPackBuilder
                 nameof(schemaFingerprint));
         }
 
-        _assets.Add(assetId, new PendingAsset(
+        _assets.Add(assetId, new AssetBytes(
             assetId,
             assetType,
             documentBytes,
@@ -433,10 +457,12 @@ public sealed class AssetPackBuilder
         Guid? generation = null,
         CancellationToken cancellationToken = default)
     {
-        BinaryDocumentWriter builder = CreateDocumentBuilder();
+        AssetBytes[] ordered = await SelectAssetsAsync(cancellationToken).ConfigureAwait(false);
+        BinaryDocumentWriter builder = CreateDocumentBuilder(ordered);
         await builder.WriteAsync(destination, generation, cancellationToken).ConfigureAwait(false);
         long bodyLength = destination.Position;
         AssetPackFooterFormat.Write(destination, bodyLength, ReadOnlySpan<byte>.Empty);
+        _changedAssetIds = ordered.Select(static asset => asset.AssetId).ToArray();
     }
 
     public async ValueTask WriteSignedAsync(
@@ -447,7 +473,7 @@ public sealed class AssetPackBuilder
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(privateKey);
-        PendingAsset[] ordered = OrderedAssets();
+        AssetBytes[] ordered = await SelectAssetsAsync(cancellationToken).ConfigureAwait(false);
         Digest256 digest = await CreateDocumentBuilder(ordered)
             .WriteAuthenticatedAsync(destination, generation, cancellationToken)
             .ConfigureAwait(false);
@@ -460,6 +486,7 @@ public sealed class AssetPackBuilder
             RSASignaturePadding.Pkcs1);
         long bodyLength = destination.Position;
         AssetPackFooterFormat.Write(destination, bodyLength, signature);
+        _changedAssetIds = ordered.Select(static asset => asset.AssetId).ToArray();
     }
 
     public async ValueTask PublishAsync(
@@ -555,13 +582,13 @@ public sealed class AssetPackBuilder
         }
     }
 
-    private BinaryDocumentWriter CreateDocumentBuilder(PendingAsset[]? assets = null)
+    private BinaryDocumentWriter CreateDocumentBuilder(AssetBytes[]? assets = null)
     {
-        PendingAsset[] ordered = assets ?? OrderedAssets();
+        AssetBytes[] ordered = assets ?? OrderedAssets();
 
         var catalog = new AssetPackIndex(ordered.Length);
         var usedKeys = new HashSet<ulong>();
-        foreach (PendingAsset asset in ordered)
+        foreach (AssetBytes asset in ordered)
         {
             ulong key = AssetChunkKey(asset.AssetId);
             if (!usedKeys.Add(key))
@@ -583,7 +610,7 @@ public sealed class AssetPackBuilder
         BinaryDocumentWriter builder = BinaryDocumentWriter.Create(catalog);
         for (int i = 0; i < ordered.Length; i++)
         {
-            PendingAsset asset = ordered[i];
+            AssetBytes asset = ordered[i];
             AssetPackEntry entry = catalog.Entries[i];
             builder.AddChunk(
                 entry.ChunkKey,
@@ -597,7 +624,7 @@ public sealed class AssetPackBuilder
         return builder;
     }
 
-    private PendingAsset[] OrderedAssets() => _assets.Values
+    private AssetBytes[] OrderedAssets() => _assets.Values
         .OrderBy(static asset => asset.AssetId.ToString("N", CultureInfo.InvariantCulture), StringComparer.Ordinal)
         .ToArray();
 
@@ -612,7 +639,7 @@ public sealed class AssetPackBuilder
         return key == 0 ? ulong.MaxValue : key;
     }
 
-    private sealed record PendingAsset(
+    private sealed record AssetBytes(
         Guid AssetId,
         string AssetType,
         ReadOnlyMemory<byte> Document,
@@ -813,110 +840,21 @@ public sealed class AssetPack : IAsyncDisposable
                 $"Pack chunk fingerprint 0x{descriptor.TypeFingerprint:X16} does not match catalog " +
                 $"fingerprint 0x{entry.SchemaFingerprint:X16}.");
         }
-        IRangeSource source = await _document.OpenChunkRangeSourceAsync(entry.ChunkKey, cancellationToken)
-            .ConfigureAwait(false);
-        return new PackAssetRangeSource(entry, Generation, source);
+        BinaryDocument<AssetPackIndex> document = _document.Duplicate();
+        try
+        {
+            IRangeSource source = await document.OpenChunkRangeSourceAsync(entry.ChunkKey, cancellationToken)
+                .ConfigureAwait(false);
+            return new PackAssetRangeSource(entry, Generation, source, document);
+        }
+        catch
+        {
+            await document.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public ValueTask DisposeAsync() => _document.DisposeAsync();
-}
-
-/// <summary>
-/// Builds a deterministic overlay containing only assets whose complete binary documents differ
-/// from the base pack. Unchanged assets are deliberately omitted from the patch.
-/// </summary>
-public sealed class AssetPackPatchBuilder
-{
-    private readonly AssetPack _basePack;
-    private readonly Dictionary<Guid, PendingUpdate> _updates = [];
-    private Guid[] _changedAssetIds = [];
-
-    public AssetPackPatchBuilder(AssetPack basePack)
-    {
-        _basePack = basePack ?? throw new ArgumentNullException(nameof(basePack));
-    }
-
-    public IReadOnlyList<Guid> ChangedAssetIds => _changedAssetIds;
-
-    public AssetPackPatchBuilder AddAsset(
-        Guid assetId,
-        string assetType,
-        ReadOnlyMemory<byte> documentBytes,
-        ulong schemaFingerprint)
-    {
-        if (assetId == Guid.Empty)
-            throw new ArgumentOutOfRangeException(nameof(assetId));
-        ArgumentException.ThrowIfNullOrWhiteSpace(assetType);
-        if (!_updates.TryAdd(assetId, new PendingUpdate(
-                assetId,
-                assetType,
-                documentBytes,
-                schemaFingerprint)))
-        {
-            throw new InvalidOperationException($"Asset {assetId} already has a patch candidate.");
-        }
-        return this;
-    }
-
-    public async ValueTask WriteAsync(
-        FileStream destination,
-        Guid? generation = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(destination);
-        AssetPackBuilder builder = await CreatePatchBuilderAsync(cancellationToken).ConfigureAwait(false);
-        await builder.WriteAsync(destination, generation, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async ValueTask WriteSignedAsync(
-        FileStream destination,
-        RSA privateKey,
-        Guid? generation = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(destination);
-        ArgumentNullException.ThrowIfNull(privateKey);
-        AssetPackBuilder builder = await CreatePatchBuilderAsync(cancellationToken).ConfigureAwait(false);
-        await builder.WriteSignedAsync(destination, privateKey, generation, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async ValueTask<AssetPackBuilder> CreatePatchBuilderAsync(
-        CancellationToken cancellationToken)
-    {
-        var builder = new AssetPackBuilder();
-        var changed = new List<Guid>();
-        foreach (PendingUpdate update in _updates.Values.OrderBy(static value => value.AssetId))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (await _basePack.ContentEqualsAsync(
-                    update.AssetId,
-                    update.AssetType,
-                    update.Document,
-                    update.SchemaFingerprint,
-                    cancellationToken)
-                    .ConfigureAwait(false))
-            {
-                continue;
-            }
-
-            builder.AddAsset(
-                update.AssetId,
-                update.AssetType,
-                update.Document,
-                update.SchemaFingerprint);
-            changed.Add(update.AssetId);
-        }
-
-        _changedAssetIds = changed.ToArray();
-        return builder;
-    }
-
-    private sealed record PendingUpdate(
-        Guid AssetId,
-        string AssetType,
-        ReadOnlyMemory<byte> Document,
-        ulong SchemaFingerprint);
 }
 
 internal sealed class PackAssetRangeSource : IRangeSource, IBinaryDocumentReceipt
@@ -926,9 +864,12 @@ internal sealed class PackAssetRangeSource : IRangeSource, IBinaryDocumentReceip
     private readonly string _generation;
     private int _disposed;
 
-    internal PackAssetRangeSource(AssetPackEntry entry, Guid packGeneration, IRangeSource source)
+    private readonly BinaryDocument<AssetPackIndex> _document;
+
+    internal PackAssetRangeSource(AssetPackEntry entry, Guid packGeneration, IRangeSource source, BinaryDocument<AssetPackIndex> document)
     {
         Entry = entry;
+        _document = document;
         _source = source;
         _sourceGeneration = source.Generation;
         _generation = $"{_sourceGeneration}:pack:{packGeneration:N}:{entry.AssetId:N}";
@@ -994,12 +935,18 @@ internal sealed class PackAssetRangeSource : IRangeSource, IBinaryDocumentReceip
         }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         IRangeSource? source = Interlocked.Exchange(ref _source, null);
-        return source is null ? ValueTask.CompletedTask : source.DisposeAsync();
+        try
+        {
+            if (source is not null) await source.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            await _document.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private IRangeSource GetSource()
@@ -1013,50 +960,5 @@ internal sealed class PackAssetRangeSource : IRangeSource, IBinaryDocumentReceip
     {
         if (!StringComparer.Ordinal.Equals(_sourceGeneration, source.Generation))
             throw new IOException("Pack asset backing source generation changed while the range was open.");
-    }
-}
-
-public sealed class AssetPackOverlay : IAsyncDisposable
-{
-    private readonly AssetPack[] _packs;
-
-    /// <param name="packsHighestPriorityFirst">Hotfix/DLC packs before base packs.</param>
-    public AssetPackOverlay(IEnumerable<AssetPack> packsHighestPriorityFirst)
-    {
-        ArgumentNullException.ThrowIfNull(packsHighestPriorityFirst);
-        _packs = packsHighestPriorityFirst.ToArray();
-        if (_packs.Length == 0)
-            throw new ArgumentException("At least one asset pack is required.", nameof(packsHighestPriorityFirst));
-    }
-
-    public bool TryResolve(Guid assetId, out AssetPack? pack, out AssetPackEntry? entry)
-    {
-        foreach (AssetPack candidate in _packs)
-        {
-            if (candidate.TryGetEntry(assetId, out entry))
-            {
-                pack = candidate;
-                return true;
-            }
-        }
-
-        pack = null;
-        entry = null;
-        return false;
-    }
-
-    public ValueTask<IRangeSource> OpenAssetSourceAsync(
-        Guid assetId,
-        CancellationToken cancellationToken = default)
-    {
-        if (!TryResolve(assetId, out AssetPack? pack, out _))
-            throw new KeyNotFoundException($"Asset {assetId} was not found in any pack overlay.");
-        return pack!.OpenAssetSourceAsync(assetId, cancellationToken);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        foreach (AssetPack pack in _packs)
-            await pack.DisposeAsync().ConfigureAwait(false);
     }
 }

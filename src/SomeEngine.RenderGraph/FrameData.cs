@@ -169,9 +169,19 @@ internal sealed class GeneralFramePassCallbackStore<TState> : FramePassCallbackS
 
 internal readonly record struct FramePassCallbackStoreKey(GraphPassKind Kind, Type StateType);
 
+internal readonly record struct BufferContents(BufferRange Range, ResourceContentState Contents, BufferContentScope Scope);
+internal readonly record struct TextureContents(TextureSubresourceRange Range, ResourceContentState Contents);
+internal readonly record struct BufferSyncState(BufferRange Range, PipelineSync Sync, ResourceAccess Access,
+    Queue? Queue, Queue? ReleasedTo);
+internal readonly record struct TextureSyncState(TextureSubresourceRange Range, PipelineSync Sync, ResourceAccess Access,
+    TextureLayout Layout, Queue? Queue, Queue? ReleasedTo, TextureSubresourceRange? ReleaseRange);
+internal readonly record struct BufferSyncInput(Buffer? Resource, Resource? Alias, BufferSyncState[]? States);
+internal readonly record struct TextureSyncInput(Texture? Resource, Resource? Alias, TextureSyncState[]? States);
+
 internal struct FrameBuffer
 {
     internal GraphIdentity Identity;
+    internal GraphIdentity AllocationIdentity;
     internal GraphBuffer? Definition;
     internal BufferDesc Description;
     internal MemoryType MemoryType;
@@ -180,15 +190,17 @@ internal struct FrameBuffer
     internal MemoryRequirements Requirements;
     internal Buffer? Resource;
     internal BufferBoundaryState[]? EntryBoundaryStates;
-    internal byte[]? InitialData;
-    internal int FirstUse;
-    internal int LastUse;
+    internal BufferContents[]? Contents;
+    internal BufferSyncInput Synchronization;
+    internal int FirstPass;
+    internal int LastPass;
     internal ResourcePlacement Placement;
 }
 
 internal struct FrameTexture
 {
     internal GraphIdentity Identity;
+    internal GraphIdentity AllocationIdentity;
     internal GraphTexture? Definition;
     internal TextureDimension Dimension;
     internal uint Width;
@@ -207,8 +219,10 @@ internal struct FrameTexture
     internal MemoryRequirements Requirements;
     internal Texture? Resource;
     internal TextureBoundaryState[]? EntryBoundaryStates;
-    internal int FirstUse;
-    internal int LastUse;
+    internal TextureContents[]? Contents;
+    internal TextureSyncInput Synchronization;
+    internal int FirstPass;
+    internal int LastPass;
     internal ResourcePlacement Placement;
 
     internal TextureDesc BorrowDescription() => new(
@@ -222,6 +236,7 @@ internal struct FrameQueryPool
     internal GraphQueryPool Definition;
     internal QueryPool Resource;
     internal QueryBoundaryState[] EntryBoundaryStates;
+    internal (QueryRange Range, ResourceContentState Contents)[]? Contents;
 }
 
 internal struct FrameRayTracingShaderTable
@@ -231,14 +246,41 @@ internal struct FrameRayTracingShaderTable
     internal RayTracingShaderTable Resource;
     internal GraphParameterResourceBinding[] Inventory;
     internal RayTracingShaderTableBoundaryState[] EntryBoundaryStates;
+    internal ResourceContentState Contents;
 }
 
 internal struct FrameView
 {
+    internal FrameView(GraphView source)
+    {
+        Kind = source.Kind;
+        Buffer = source.Buffer;
+        BufferInput = source.BufferInput;
+        TextureInput = source.TextureInput;
+        Texture = source.Texture;
+        AdditionalBuffer = source.AdditionalBuffer;
+        BufferRange = source.BufferRange;
+        TextureRange = source.TextureRange;
+        BufferFormat = source.BufferFormat;
+        TextureFormat = source.TextureFormat;
+        StructureStride = source.StructureStride;
+        CounterOffset = source.CounterOffset;
+        Dimension = source.Dimension;
+        ReadOnlyDepth = source.ReadOnlyDepth;
+        ReadOnlyStencil = source.ReadOnlyStencil;
+        Label = source.Label;
+    }
+
     internal GraphIdentity Identity;
     internal GraphView? Definition;
+    internal int BufferIndex;
+    internal int TextureIndex;
+    internal int AdditionalBufferIndex;
+    internal bool Connected;
     internal GraphViewKind Kind;
     internal GraphIdentity Buffer;
+    internal GraphBufferInput? BufferInput;
+    internal GraphTextureInput? TextureInput;
     internal GraphIdentity Texture;
     internal GraphIdentity AdditionalBuffer;
     internal BufferRange BufferRange;
@@ -263,11 +305,11 @@ internal struct FramePass
     internal PassQueueSelection QueuePolicy;
     internal PassOptions Options;
     internal Pipeline? Pipeline;
-    internal VariableLayoutReflection ParameterLayout;
+    internal ShaderVariableLayout ParameterLayout;
     internal byte[]? ParameterOrdinaryData;
     internal List<GraphParameterResourceBinding>? ParameterBindings;
     internal List<GraphIdentity>? PersistentBindings;
-    internal int DeclarationOrdinal;
+    internal long DeclarationOrdinal;
     internal bool Enabled;
     internal bool Live;
     internal Queue? Queue;
@@ -278,17 +320,6 @@ internal struct FramePass
     internal FramePassCallbackStore? FrameCallbacks;
     internal int FrameCallbackIndex;
     internal int ExtensionPointIndex;
-}
-
-internal sealed class FramePassOverlay
-{
-    internal Pipeline? Pipeline;
-    internal bool PipelineAssigned;
-    internal VariableLayoutReflection ParameterLayout;
-    internal byte[] ParameterOrdinaryData = [];
-    internal bool ParameterBlockAssigned;
-    internal List<GraphParameterResourceBinding> ParameterBindings { get; } = [];
-    internal List<GraphIdentity> PersistentBindings { get; } = [];
 }
 
 internal struct FrameResourceAccess
@@ -302,11 +333,25 @@ internal struct FrameResourceAccess
     internal PipelineSync Sync;
     internal ResourceAccess Access;
     internal BufferRange BufferRange;
+    internal BufferRangeSet? SharedBufferRanges;
     internal TextureSubresourceRange TextureRange;
     internal QueryRange QueryRange;
     internal TextureLayout TextureLayout;
     internal ResourceContentState? ResultContents;
+    internal BufferContentScope BufferContentScope;
+    internal UnorderedAccessHazardMode UnorderedAccessHazards;
     internal int ResourceIndex;
     internal int PassIndex;
+    internal int PassAdjacencyIndex;
+    internal int ResourceAdjacencyIndex;
+    internal bool Connected;
 }
 
+internal readonly record struct ParameterInputValue(
+    ResourceBinding Binding,
+    GraphIdentity Resource,
+    BufferRange BufferRange,
+    TextureSubresourceRange TextureRange,
+    GraphIdentity Secondary,
+    BufferRange SecondaryBufferRange,
+    TextureSubresourceRange SecondaryTextureRange);

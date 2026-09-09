@@ -1,39 +1,16 @@
 namespace SomeEngine.Assets.Schema;
 
-public sealed partial class RenderScene
+internal sealed partial class SceneData
 {
-    internal static async ValueTask<RenderScene> LoadAssetAsync(
-        AssetLoadContext context,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        SomeEngine.Serialization.Containers.BinaryDocument<RenderScene> document = await context
-            .OpenAsync<RenderScene>()
-            .ConfigureAwait(false);
-        RenderScene asset = document.Root;
-        Validate(asset);
-
-        foreach (AssetGuid dependency in Dependencies(asset))
-        {
-            if (IsMeshDependency(asset, dependency))
-                _ = await context.LoadDependencyAsync(new AssetId<Mesh>(dependency)).ConfigureAwait(false);
-            else
-                _ = await context.LoadDependencyAsync(new AssetId<Material>(dependency)).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-
-        return asset;
-    }
-
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
+    internal IReadOnlyList<Guid> GetDependencies(string path)
     {
         Validate(this, path);
         return Dependencies(this);
     }
 
-    private static IReadOnlyList<AssetGuid> Dependencies(RenderScene scene)
+    private static IReadOnlyList<Guid> Dependencies(SceneData scene)
     {
-        var values = new HashSet<AssetGuid>();
+        var values = new HashSet<Guid>();
         foreach (SceneMeshInstance instance in scene.MeshInstances ?? [])
         {
             values.Add(RequireGuid(instance.MeshGuid, nameof(SceneMeshInstance.MeshGuid)));
@@ -41,12 +18,12 @@ public sealed partial class RenderScene
                 values.Add(RequireGuid(material, nameof(SceneMeshInstance.MaterialGuids)));
         }
 
-        AssetGuid[] result = [.. values];
-        Array.Sort(result, static (left, right) => left.Value.CompareTo(right.Value));
+        Guid[] result = [.. values];
+        Array.Sort(result, static (left, right) => left.CompareTo(right));
         return result;
     }
 
-    private static bool IsMeshDependency(RenderScene scene, AssetGuid dependency)
+    private static bool IsMeshDependency(SceneData scene, Guid dependency)
     {
         foreach (SceneMeshInstance instance in scene.MeshInstances ?? [])
         {
@@ -56,7 +33,7 @@ public sealed partial class RenderScene
         return false;
     }
 
-    private static void Validate(RenderScene scene, string path = "")
+    private static void Validate(SceneData scene, string path = "")
     {
         ArgumentNullException.ThrowIfNull(scene);
         if (scene.Camera is null)
@@ -85,9 +62,9 @@ public sealed partial class RenderScene
         }
     }
 
-    private static AssetGuid RequireGuid(string? value, string field)
+    private static Guid RequireGuid(string? value, string field)
     {
-        if (!global::SomeEngine.Assets.AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
+        if (!global::System.Guid.TryParse(value, out Guid guid) || (guid == System.Guid.Empty))
             throw new InvalidDataException($"Render scene field '{field}' has invalid asset GUID '{value}'.");
         return guid;
     }

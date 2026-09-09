@@ -151,6 +151,18 @@ public sealed class ScalarLayout
             WriteIntegerField(fieldBytes, field, unchecked((uint)value));
     }
 
+    internal void Write(string name, bool value, Span<byte> payload)
+    {
+        if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
+            WriteIntegerField(fieldBytes, field, value ? 1u : 0u);
+    }
+
+    internal void Write(string name, Vector2 value, Span<byte> payload)
+    {
+        if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
+            WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(value, 0, 0));
+    }
+
     internal void Write(string name, Vector3 value, Span<byte> payload)
     {
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
@@ -162,6 +174,76 @@ public sealed class ScalarLayout
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
             WriteFloatField(fieldBytes, field.ComponentCount, value);
     }
+
+    internal ScalarMaterialLayout Resolve(Material material)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
+        var bindings = new List<ScalarMaterialBinding>(_fields.Count);
+        for (int fieldIndex = 0; fieldIndex < _fields.Count; fieldIndex++)
+        {
+            ScalarFieldLayout field = _fields[fieldIndex];
+            uint? materialSlot = null;
+            for (uint slot = 0; slot < definitions.Count; slot++)
+            {
+                if (!string.Equals(
+                        definitions[checked((int)slot)].Name,
+                        field.Name,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                materialSlot = slot;
+                break;
+            }
+            if (materialSlot is { } resolved)
+                bindings.Add(new ScalarMaterialBinding(resolved, field,
+                    definitions[(int)resolved].ValueType == typeof(int) ||
+                    definitions[(int)resolved].ValueType == typeof(uint) ||
+                    definitions[(int)resolved].ValueType == typeof(bool)));
+        }
+        return new ScalarMaterialLayout(this, [.. bindings]);
+    }
+
+    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings)
+    {
+        var result = new byte[ByteSize];
+        WriteHeader(result);
+        Span<byte> payload = result.AsSpan(HeaderByteSize, checked((int)PayloadByteSize));
+        foreach (ref readonly ScalarMaterialBinding binding in bindings)
+        {
+            ScalarFieldLayout field = binding.Field;
+            Span<byte> fieldBytes = payload.Slice((int)field.Offset, (int)field.Size);
+            if (binding.IsInteger)
+                WriteIntegerField(fieldBytes, field, material.GetInteger(binding.MaterialSlot));
+            else
+                WriteFloatField(fieldBytes, field.ComponentCount, material.GetFloatComponents(binding.MaterialSlot));
+        }
+        return result;
+    }
+
+    internal sealed class ScalarMaterialLayout
+    {
+        private readonly ScalarLayout _layout;
+        private readonly ScalarMaterialBinding[] _bindings;
+
+        internal ScalarMaterialLayout(ScalarLayout layout, ScalarMaterialBinding[] bindings)
+        {
+            _layout = layout;
+            _bindings = bindings;
+        }
+
+        internal int ByteSize => _layout.ByteSize;
+        internal uint LayoutHash => _layout.LayoutHash;
+        internal uint PayloadByteSize => _layout.PayloadByteSize;
+
+        internal byte[] Encode(Material material) => _layout.Encode(material, _bindings);
+    }
+
+    internal readonly record struct ScalarMaterialBinding(
+        uint MaterialSlot,
+        ScalarFieldLayout Field,
+        bool IsInteger);
 
     private bool TryField(
         string name,

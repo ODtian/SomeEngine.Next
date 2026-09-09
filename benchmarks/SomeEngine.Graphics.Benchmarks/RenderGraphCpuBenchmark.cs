@@ -153,9 +153,9 @@ internal static class RenderGraphCpuBenchmark
         using Pipeline computePipeline = backend.CreateComputePipeline(
             device,
             new ComputePipelineDesc(shader.Program, shader.Entries[2], "Dagor graph CPU compute"));
-        VariableLayoutReflection globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        if (globalLayout == VariableLayoutReflection.Null)
+        ShaderVariableLayout globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        if (globalLayout == ShaderVariableLayout.Null)
             throw new InvalidDataException("The benchmark shader has no global parameter layout.");
 
         PersistentParameterBindings[] materials = CreateMaterials(
@@ -327,8 +327,8 @@ internal static class RenderGraphCpuBenchmark
                 1,
                 false,
                 graphicsBackend == GraphicsBackendKind.Direct3D12,
-                statistics.LogicalTransientBytes,
-                statistics.PhysicalTransientBytes),
+                statistics.TransientResourceBytes,
+                statistics.TransientHeapBytes),
             $"Immediately before RenderGraph.BeginFrame through real {graphicsBackend} command-buffer close and Queue.Submit return; frame-slot GPU wait is outside.",
             minimumWarmupFrames,
             measurement.Warmup.Length,
@@ -532,9 +532,6 @@ internal static class RenderGraphCpuBenchmark
             PassCullingMode.NeverCull,
             PassSchedulingMode.PreserveDeclarationPosition,
             recording,
-            state.Kind == DagorPassKind.Raster
-                ? RasterPassMergeMode.Mergeable
-                : RasterPassMergeMode.Isolated,
             EstimatedExecutionCost: executionCost,
             EstimatedRecordingCost: recordingCost);
         string label = $"Dagor {state.Kind.ToString().ToLowerInvariant()} {state.KindOrdinal:D2} pass {pass:D2}";
@@ -932,7 +929,7 @@ internal static class RenderGraphCpuBenchmark
         IGraphicsBackend backend,
         Device device,
         Pipeline pipeline,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         int count)
     {
         var result = new PersistentParameterBindings[count];

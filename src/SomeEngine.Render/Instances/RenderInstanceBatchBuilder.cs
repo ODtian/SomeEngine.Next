@@ -329,7 +329,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 }
                 else if (current.GroupCount != 0)
                 {
-                    _owner.Rewrite(_context, ref packets, current, in _composer);
+                    _owner.Rewrite(_context, ref packets, current, in _composer,
+                        _forcedChanges != RenderInstanceChanges.None);
                 }
                 Changed = true;
             }
@@ -557,7 +558,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 composer,
                 [],
                 [],
-                destinations);
+                destinations,
+                true);
             if (packets.RowCount <= InlinePacketRowLimit)
             {
                 _ = packets.ExecuteInline(in fill);
@@ -763,7 +765,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         RenderPrepareSystemContext context,
         ref ReadOnlyQueryPacketPlan packets,
         RenderInstanceBatches<TGroupKey> current,
-        in TComposer composer)
+        in TComposer composer,
+        bool writeAll)
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         int groupCount = current.GroupCount;
@@ -791,7 +794,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 composer,
                 current.EntityOffsets,
                 current.Addresses,
-                destinations);
+                destinations,
+                writeAll);
             if (packets.RowCount <= InlinePacketRowLimit)
                 _ = packets.ExecuteInline(in fillJob);
             else
@@ -1044,7 +1048,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         TComposer composer,
         int[] entityOffsets,
         RenderInstanceBatchAddress<TGroupKey>[] addresses,
-        RenderInstanceWriteSlice[] destinations) : IReadOnlyQueryPacketJob
+        RenderInstanceWriteSlice[] destinations,
+        bool writeAll) : IReadOnlyQueryPacketJob
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(
@@ -1056,16 +1061,33 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 local.OneInstancePerEntity)
             {
                 TGroupKey key = default!;
-                local.WritePacket(
-                    in key,
-                    0,
-                    packet,
-                    destinations[0].Slice(context.OutputStart, packet.Count));
+                if (writeAll)
+                    local.WritePacket(in key, 0, packet, destinations[0].Slice(context.OutputStart, packet.Count));
+                else
+                {
+                    int start = 0;
+                    while (start < packet.Count)
+                    {
+                        while (start < packet.Count &&
+                            local.GetChanges(packet.Slice(start, 1), context.LastSystemVersion) == RenderInstanceChanges.None)
+                            start++;
+                        if (start == packet.Count) break;
+                        int end = start + 1;
+                        while (end < packet.Count &&
+                            local.GetChanges(packet.Slice(end, 1), context.LastSystemVersion) != RenderInstanceChanges.None)
+                            end++;
+                        local.WritePacket(in key, 0, packet.Slice(start, end - start),
+                            destinations[0].Slice(context.OutputStart + start, end - start));
+                        start = end;
+                    }
+                }
                 return;
             }
 
             for (int row = 0; row < packet.Count; row++)
             {
+                if (!writeAll && local.GetChanges(packet.Slice(row, 1), context.LastSystemVersion) == RenderInstanceChanges.None)
+                    continue;
                 int entity = checked(context.OutputStart + row);
                 int start = entityOffsets[entity];
                 int count = entityOffsets[entity + 1] - start;

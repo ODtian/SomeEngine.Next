@@ -149,6 +149,66 @@ public sealed class SystemGroup<TContext> : IDisposable
         UpdateCore(useTemplate: true, ref template);
 
     /// <summary>
+    /// Creates enabled systems without running their update callbacks. This is used when a
+    /// system must publish long-lived structure before the first update boundary.
+    /// </summary>
+    public void Initialize()
+    {
+        TContext template = default!;
+        InitializeCore(useTemplate: false, ref template);
+    }
+
+    public void Initialize(ref TContext template) =>
+        InitializeCore(useTemplate: true, ref template);
+
+    private void InitializeCore(bool useTemplate, ref TContext template)
+    {
+        ThrowIfLifecycleCallbackReentry();
+        ThrowIfJobCallbackWouldWaitForLifecycleControl();
+        ThrowIfDisposed();
+        lock (_gate)
+        {
+            WaitForLifecycleControlUnderGate();
+            ThrowIfDisposed();
+
+            for (int i = 0; i < _nodes.Count; i++)
+            {
+                SystemSlot slot = _slots[i];
+                if (!slot.Enabled || slot.Created)
+                    continue;
+
+                using JobSubmissionScope submissions =
+                    slot.RequireJobLifetime().EnterSubmissionScope();
+                EnterLifecycleCallback();
+                try
+                {
+                    slot.CurrentSystemVersion = _driver.AcquireSystemVersion(ref slot);
+                    TContext context;
+                    if (useTemplate)
+                    {
+                        context = template;
+                        _driver.CreateContext(ref slot, ref context);
+                    }
+                    else
+                    {
+                        context = _driver.CreateContext(ref slot);
+                    }
+                    _driver.BeforeUpdate(ref slot, ref context);
+                    _nodes[i].OnCreate(ref context);
+                    slot.Created = true;
+                    _driver.AfterUpdate(ref slot, ref context);
+                    slot.LastSystemVersion = slot.CurrentSystemVersion;
+                    _slots[i] = slot;
+                }
+                finally
+                {
+                    ExitLifecycleCallback();
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Completes work submitted by previous updates, including child tasks. Systems remain
     /// enabled and may run again. Use this at a data-visibility boundary, not after each system.
     /// </summary>

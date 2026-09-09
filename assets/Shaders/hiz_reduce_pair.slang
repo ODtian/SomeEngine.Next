@@ -2,29 +2,33 @@
 #include "resource_effects.slang"
 
 [ResourceEffect(ResourceEffects.Read, ResourceQualifiers.None)]
-RWTexture2D<float> Source;
+RWTexture2DArray<float> Source;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2D<float> Middle;
+RWTexture2DArray<float> Middle;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWTexture2D<float> Destination;
+RWTexture2DArray<float> Destination;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void ReduceHiZPair(uint3 threadId : SV_DispatchThreadID)
 {
     uint2 coordinate = threadId.xy;
+    uint viewIndex = threadId.z;
     uint destinationWidth;
     uint destinationHeight;
-    Destination.GetDimensions(destinationWidth, destinationHeight);
+    uint destinationLayers;
+    Destination.GetDimensions(destinationWidth, destinationHeight, destinationLayers);
     if (coordinate.x >= destinationWidth || coordinate.y >= destinationHeight)
         return;
 
     uint middleWidth;
     uint middleHeight;
-    Middle.GetDimensions(middleWidth, middleHeight);
+    uint middleLayers;
+    Middle.GetDimensions(middleWidth, middleHeight, middleLayers);
     uint sourceWidth;
     uint sourceHeight;
-    Source.GetDimensions(sourceWidth, sourceHeight);
+    uint sourceLayers;
+    Source.GetDimensions(sourceWidth, sourceHeight, sourceLayers);
 
     uint2 middleBase = coordinate * 2u;
     uint middleEndX = CoveredEnd(coordinate.x, destinationWidth, middleWidth);
@@ -42,10 +46,12 @@ void ReduceHiZPair(uint3 threadId : SV_DispatchThreadID)
             float middleDepth = 0.0;
             for (uint sourceY = sourceBase.y; sourceY <= sourceEndY; sourceY++)
                 for (uint sourceX = sourceBase.x; sourceX <= sourceEndX; sourceX++)
-                    middleDepth = max(middleDepth, Source[uint2(sourceX, sourceY)]);
-            Middle[middleCoordinate] = middleDepth;
+                    middleDepth = max(
+                        middleDepth,
+                        Source[uint3(sourceX, sourceY, viewIndex)]);
+            Middle[uint3(middleCoordinate, viewIndex)] = middleDepth;
             maximumDepth = max(maximumDepth, middleDepth);
         }
     }
-    Destination[coordinate] = maximumDepth;
+    Destination[uint3(coordinate, viewIndex)] = maximumDepth;
 }

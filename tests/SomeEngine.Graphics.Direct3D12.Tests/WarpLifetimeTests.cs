@@ -935,9 +935,9 @@ public sealed class WarpLifetimeTests
         Pipeline computePipeline = Keep(backend.CreateComputePipeline(
             device,
             new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0))));
-        VariableLayoutReflection globalLayout =
-            shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        Assert.NotEqual(VariableLayoutReflection.Null, globalLayout);
+        ShaderVariableLayout globalLayout =
+            shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        Assert.NotEqual(ShaderVariableLayout.Null, globalLayout);
         _ = Keep(backend.CreatePersistentParameterBindings(
             device,
             computePipeline,
@@ -1007,7 +1007,7 @@ public sealed class WarpLifetimeTests
                 "rhi_lifetime_ray_table",
                 raySource,
                 rayEntries);
-            EntryPointReflection[] rayGeneration = [rayShader.GetEntryPoint(0)];
+            ShaderEntryPoint[] rayGeneration = [rayShader.GetEntryPoint(0)];
             Pipeline rayPipeline = Keep(backend.CreateRayTracingPipeline(
                 device,
                 new RayTracingPipelineDesc(

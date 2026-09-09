@@ -23,10 +23,10 @@ public sealed class SlangReflectionFactTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "associative_parameter_placement_cache", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(globals);
-        VariableLayoutReflection[] blocks = Enumerable.Range(
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout data = GetDataLayout(globals);
+        ShaderVariableLayout[] blocks = Enumerable.Range(
                 0, checked((int)data.SubObjectRangeCount))
             .Select(index => data.GetSubObjectRangeOffset(index))
             .ToArray();
@@ -73,10 +73,10 @@ public sealed class SlangReflectionFactTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "reverse_nested_parameter_blocks", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection globalData = GetDataLayout(globals);
-        VariableLayoutReflection[] siblings = Enumerable.Range(
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout globalData = GetDataLayout(globals);
+        ShaderVariableLayout[] siblings = Enumerable.Range(
                 0, checked((int)globalData.SubObjectRangeCount))
             .Where(index => (globalData.GetBindingRangeType(
                     globalData.GetSubObjectRangeBindingRangeIndex(index)) &
@@ -84,10 +84,10 @@ public sealed class SlangReflectionFactTests
             .Select(index => globalData.GetSubObjectRangeOffset(index))
             .ToArray();
         Assert.Equal(2, siblings.Length);
-        VariableLayoutReflection first = siblings[0];
-        VariableLayoutReflection second = siblings[1];
-        VariableLayoutReflection firstNested = GetDataLayout(first).GetSubObjectRangeOffset(0);
-        VariableLayoutReflection secondNested = GetDataLayout(second).GetSubObjectRangeOffset(0);
+        ShaderVariableLayout first = siblings[0];
+        ShaderVariableLayout second = siblings[1];
+        ShaderVariableLayout firstNested = GetDataLayout(first).GetSubObjectRangeOffset(0);
+        ShaderVariableLayout secondNested = GetDataLayout(second).GetSubObjectRangeOffset(0);
         Assert.NotEqual(first, second);
         Assert.NotEqual(firstNested, secondNested);
 
@@ -173,10 +173,10 @@ public sealed class SlangReflectionFactTests
             "ordinary_fast_path_16", sixteenBytes, entries, "sm_6_0");
         using D3D12TestShaderProgram invalidShader = D3D12TestShaderProgram.Compile(
             "ordinary_fast_path_32", thirtyTwoBytes, entries, "sm_6_0");
-        VariableLayoutReflection validLayout =
-            validShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        VariableLayoutReflection invalidLayout =
-            invalidShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout validLayout =
+            validShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        ShaderVariableLayout invalidLayout =
+            invalidShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
         Assert.Equal((nuint)16, GetDataLayout(validLayout).GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nuint)32, GetDataLayout(invalidLayout).GetSize(SlangParameterCategory.Uniform));
 
@@ -217,10 +217,10 @@ public sealed class SlangReflectionFactTests
             "distinct_pipeline_raw_identity_first", source, entries, "sm_6_0");
         using D3D12TestShaderProgram secondShader = D3D12TestShaderProgram.Compile(
             "distinct_pipeline_raw_identity_second", source, entries, "sm_6_0");
-        VariableLayoutReflection firstLayout =
-            firstShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        VariableLayoutReflection secondLayout =
-            secondShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout firstLayout =
+            firstShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        ShaderVariableLayout secondLayout =
+            secondShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
         Assert.NotEqual(firstLayout, secondLayout);
 
         using IGraphicsBackend backend = new D3D12Backend();
@@ -288,9 +288,9 @@ public sealed class SlangReflectionFactTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "bounded_array_element_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout reflected = GetDataLayout(layout);
         nint inputRange = Enumerable.Range(0, checked((int)reflected.BindingRangeCount))
             .Select(static index => (nint)index)
             .Single(index =>
@@ -420,9 +420,9 @@ public sealed class SlangReflectionFactTests
         {
             using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
                 name, source, [new("computeMain", SlangStage.Compute)], "sm_6_0");
-            VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-                ?? VariableLayoutReflection.Null;
-            TypeLayoutReflection data = GetDataLayout(layout);
+            ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+                ?? ShaderVariableLayout.Null;
+            ShaderTypeLayout data = GetDataLayout(layout);
             SlangBindingType[] order = Enumerable.Range(0, checked((int)data.BindingRangeCount))
                 .Select(index => data.GetBindingRangeType(index)).ToArray();
             if (name == "manual_order")
@@ -542,9 +542,9 @@ public sealed class SlangReflectionFactTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "combined_texture_sampler_diagnostic", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout data = GetDataLayout(layout);
         nint combinedRange = Enumerable.Range(0, checked((int)data.BindingRangeCount))
             .Select(static index => (nint)index)
             .Single(index => data.GetBindingRangeDescriptorRangeCount(index) > 1);
@@ -661,7 +661,7 @@ public sealed class SlangReflectionFactTests
     }
 
     [Fact]
-    public void Runtime_existential_subobject_requires_specialization_and_is_not_silently_omitted()
+    public void Cooking_rejects_a_runtime_existential_subobject_that_is_not_fully_specialized()
     {
         const string source = """
             [anyValueSize(32)]
@@ -678,27 +678,11 @@ public sealed class SlangReflectionFactTests
             void computeMain(uint3 id : SV_DispatchThreadID)
             { outputValues[0] = dynamicValue.getValue(); }
             """;
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
-            "runtime_existential_subobject", source,
-            [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(globals);
-        Assert.Contains(Enumerable.Range(0, checked((int)data.SubObjectRangeCount)), index =>
-        {
-            nint range = data.GetSubObjectRangeBindingRangeIndex(index);
-            return (data.GetBindingRangeType(range) & SlangBindingType.BaseMask) ==
-                SlangBindingType.ExistentialValue &&
-                data.GetBindingRangeDescriptorRangeCount(range) == 0;
-        });
-        Assert.True(shader.Program.GetSpecializationParamCount() > 0);
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        GraphicsException error = Assert.Throws<GraphicsException>(() =>
-            backend.CreateComputePipeline(device,
-                new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0))));
-        Assert.Equal(GraphicsError.PipelineCreation, error.Error);
-        Assert.Contains("fully specialized Slang program", error.Message,
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+            D3D12TestShaderProgram.Compile(
+                "runtime_existential_subobject", source,
+                [new("computeMain", SlangStage.Compute)], "sm_6_0"));
+        Assert.Contains("fully specialized", error.Message,
             StringComparison.Ordinal);
     }
 
@@ -745,9 +729,9 @@ public sealed class SlangReflectionFactTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "global_unbounded_heap_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_6");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout data = GetDataLayout(layout);
         Assert.Equal(2, Enumerable.Range(0, checked((int)data.BindingRangeCount))
             .Count(index => unchecked((nuint)data.GetBindingRangeBindingCount(index)) ==
                 Slang.UnboundedSize));
@@ -814,13 +798,13 @@ public sealed class SlangReflectionFactTests
     {
         ComputePipelineDesc original = new(
             Program: null!,
-            Compute: EntryPointReflection.Null,
+            Compute: ShaderEntryPoint.Null,
             Label: "original");
         ComputePipelineDesc changed = original with { Label = "changed" };
-        (IComponentType program, EntryPointReflection compute, string? label) = changed;
+        (ShaderProgram program, ShaderEntryPoint compute, string? label) = changed;
 
         Assert.Null(program);
-        Assert.Equal(EntryPointReflection.Null, compute);
+        Assert.Equal(ShaderEntryPoint.Null, compute);
         Assert.Equal("changed", label);
         Assert.True(changed.StaticSamplers.IsEmpty);
     }
@@ -846,9 +830,9 @@ public sealed class SlangReflectionFactTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(globals);
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout data = GetDataLayout(globals);
 
         nint subObject = Enumerable.Range(0, checked((int)data.SubObjectRangeCount))
             .Select(static index => (nint)index)
@@ -863,7 +847,7 @@ public sealed class SlangReflectionFactTests
             data.GetBindingRangeFirstDescriptorRangeIndex(constantRange);
         Assert.Equal(SlangBindingType.ConstantBuffer,
             data.GetDescriptorSetDescriptorRangeType(constantSet, constantDescriptorRange));
-        VariableLayoutReflection constants = data.GetSubObjectRangeOffset(subObject);
+        ShaderVariableLayout constants = data.GetSubObjectRangeOffset(subObject);
         Assert.Equal(
             (nuint)3,
             constants.GetOffset(SlangParameterCategory.ConstantBuffer));
@@ -940,7 +924,7 @@ public sealed class SlangReflectionFactTests
                 [new("computeMain", SlangStage.Compute)],
                 SlangCompileTarget.Spirv,
                 "spirv_1_5");
-        VariableLayoutReflection entry = shader.GetEntryPoint(0).VarLayout;
+        ShaderVariableLayout entry = shader.GetEntryPoint(0).VarLayout;
 
         Assert.Contains(
             Enumerable.Range(0, checked((int)entry.CategoryCount))
@@ -976,9 +960,9 @@ public sealed class SlangReflectionFactTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection globalData = GetDataLayout(globals);
+        ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout globalData = GetDataLayout(globals);
         SlangBindingType[] globalSubObjectTypes = Enumerable.Range(
                 0,
                 checked((int)globalData.SubObjectRangeCount))
@@ -998,12 +982,12 @@ public sealed class SlangReflectionFactTests
                 (globalData.GetBindingRangeType(
                     globalData.GetSubObjectRangeBindingRangeIndex(index)) &
                     SlangBindingType.BaseMask) == SlangBindingType.ParameterBlock);
-        VariableLayoutReflection parameters =
+        ShaderVariableLayout parameters =
             globalData.GetSubObjectRangeOffset(parameterSubObject);
         Assert.Equal(
             (nint)0,
             globalData.GetSubObjectRangeSpaceOffset(parameterSubObject));
-        TypeLayoutReflection parameterData = GetDataLayout(parameters);
+        ShaderTypeLayout parameterData = GetDataLayout(parameters);
         Assert.Equal((nint)1, parameterData.SubObjectRangeCount);
         nint nestedSubObject = 0;
         nint nestedRange =
@@ -1014,7 +998,7 @@ public sealed class SlangReflectionFactTests
         nint nestedRangeSpace =
             parameterData.GetSubObjectRangeSpaceOffset(nestedSubObject);
         Assert.Equal((nint)0, nestedRangeSpace);
-        VariableLayoutReflection nested =
+        ShaderVariableLayout nested =
             parameterData.GetSubObjectRangeOffset(nestedSubObject);
         nuint nestedVariableSpace = nested.GetOffset(
             SlangParameterCategory.SubElementRegisterSpace);
@@ -1068,12 +1052,12 @@ public sealed class SlangReflectionFactTests
         var varyingFacts = new List<(SlangBindingType Type, nint DescriptorRangeCount)>();
         for (int entryIndex = 0; entryIndex < 2; entryIndex++)
         {
-            EntryPointReflection entryPoint = shader.GetEntryPoint(entryIndex);
-            VariableLayoutReflection[] varyingLayouts =
+            ShaderEntryPoint entryPoint = shader.GetEntryPoint(entryIndex);
+            ShaderVariableLayout[] varyingLayouts =
                 [entryPoint.VarLayout, entryPoint.ResultVarLayout];
-            foreach (VariableLayoutReflection varyingLayout in varyingLayouts)
+            foreach (ShaderVariableLayout varyingLayout in varyingLayouts)
             {
-                TypeLayoutReflection entry = GetDataLayout(varyingLayout);
+                ShaderTypeLayout entry = GetDataLayout(varyingLayout);
                 for (nint rangeIndex = 0; rangeIndex < entry.BindingRangeCount; rangeIndex++)
                 {
                     SlangBindingType type =
@@ -1113,10 +1097,10 @@ public sealed class SlangReflectionFactTests
                 new AttachmentFormatSignature(formats, null)));
     }
 
-    private static TypeLayoutReflection GetDataLayout(
-        VariableLayoutReflection layout)
+    private static ShaderTypeLayout GetDataLayout(
+        ShaderVariableLayout layout)
     {
-        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
+        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             result = result.ElementTypeLayout.UnwrapArray();
         return result;

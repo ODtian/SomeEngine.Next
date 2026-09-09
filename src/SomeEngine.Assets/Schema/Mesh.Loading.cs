@@ -5,84 +5,110 @@ namespace SomeEngine.Assets.Schema;
 
 public partial class Mesh : IDisposable, IAsyncDisposable
 {
+    private readonly object _contentGate = new();
     private MeshPayloadSource? _payloadSource;
+    private int _disposed;
 
-    [SomeEngine.Serialization.BinaryIgnore]
     public ulong Revision { get; private set; } = 1;
-
-    [SomeEngine.Serialization.BinaryIgnore]
     public bool IsStreamed => Volatile.Read(ref _payloadSource) is not null;
 
     internal bool TryRetainPayloadSource(out MeshPayloadSource? source)
     {
-        MeshPayloadSource? current = Volatile.Read(ref _payloadSource);
-        if (current is null)
+        lock (_contentGate)
         {
-            source = null;
-            return false;
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            source = _payloadSource?.Retain();
+            return source is not null;
         }
-
-        source = current.Retain();
-        return true;
     }
 
     internal bool TryBorrowPayloadSource(out MeshPayloadSource? source)
     {
-        source = Volatile.Read(ref _payloadSource);
-        return source is not null;
+        lock (_contentGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            source = _payloadSource;
+            return source is not null;
+        }
     }
 
     internal void AttachPayloadSource(MeshPayloadSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if (Interlocked.CompareExchange(ref _payloadSource, source, null) is not null)
-            throw new InvalidOperationException("Mesh already owns a streamed payload source.");
+        lock (_contentGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            if (_payloadSource is not null)
+                throw new InvalidOperationException("Mesh already has a streamed payload source.");
+            _payloadSource = source;
+        }
     }
 
-    internal static async ValueTask<Mesh> LoadAssetAsync(
-        AssetLoadContext context,
-        CancellationToken cancellationToken)
+    public static async ValueTask<Mesh> CreateAsync(Asset<Mesh> asset,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(asset);
         cancellationToken.ThrowIfCancellationRequested();
-        BinaryDocument<Mesh> document = await context
-            .OpenAsync<Mesh>()
-            .ConfigureAwait(false);
-        Mesh root = await OpenStreamedAsync(document, cancellationToken).ConfigureAwait(false);
-        return context.Transfer(document, root);
+        BinaryDocument<MeshData>? document = asset.OpenDocumentGenerated<MeshData>();
+        if (document is null)
+        {
+            MeshData fields = asset.GetFieldsGenerated<MeshData>();
+            Memory<byte> payload = fields.Payload
+                ?? throw new InvalidDataException("Mesh file content has no payload.");
+            MeshData.PopulatePayloadIntegrity(fields, payload.Span);
+            fields.PayloadKey = MeshData.PayloadChunkKey;
+            fields.PayloadLength = checked((ulong)payload.Length);
+            fields.AssetGuid = null;
+            return new Mesh { _content = fields };
+        }
+        return await MeshData.OpenStreamedAsync(document, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static ValueTask ApplyReloadAsync(
-        Mesh current,
-        Mesh replacement,
-        CancellationToken cancellationToken)
+    /// <summary>Changes this mesh at the caller's world update boundary; existing page reads retain their bytes.</summary>
+    public async ValueTask UpdateAsync(Asset<Mesh> asset, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        await using Mesh replacement = await CreateAsync(asset, cancellationToken).ConfigureAwait(false);
+        await ApplyReloadAsync(this, replacement, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static Mesh FromFields(MeshData fields)
+    {
+        MeshData content = fields.CopyFields();
+        content.AssetGuid = null;
+        return new Mesh { _content = content };
+    }
+
+    internal static ValueTask ApplyReloadAsync(Mesh current, Mesh replacement, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(replacement);
         cancellationToken.ThrowIfCancellationRequested();
-
-        MeshPayloadSource? next = Interlocked.Exchange(ref replacement._payloadSource, null);
-        MeshPayloadSource? previous = Interlocked.Exchange(ref current._payloadSource, next);
-        current.AssetGuid = replacement.AssetGuid;
-        current.Name = replacement.Name;
-        current.Bounds = replacement.Bounds;
-        current.VertexStride = replacement.VertexStride;
-        current.PayloadKey = replacement.PayloadKey;
-        current.PayloadLength = replacement.PayloadLength;
-        current.Payload = replacement.Payload;
-        current.BvhOffset = replacement.BvhOffset;
-        current.PageDigests = replacement.PageDigests;
-        current.BvhLength = replacement.BvhLength;
-        current.BvhSha256 = replacement.BvhSha256;
-        current.QuantOrigin = replacement.QuantOrigin;
-        current.QuantStep = replacement.QuantStep;
-        current.Regions = replacement.Regions;
-        current.Revision = checked(current.Revision + 1);
+        MeshPayloadSource? previous;
+        lock (current._contentGate)
+        {
+            ObjectDisposedException.ThrowIf(current._disposed != 0, current);
+            ulong revision = checked(current.Revision + 1);
+            MeshPayloadSource? next = Interlocked.Exchange(ref replacement._payloadSource, null);
+            previous = Interlocked.Exchange(ref current._payloadSource, next);
+            current._content = replacement._content;
+            current.Revision = revision;
+        }
         previous?.Dispose();
         return ValueTask.CompletedTask;
     }
 
     public void Dispose()
-        => Interlocked.Exchange(ref _payloadSource, null)?.Dispose();
+    {
+        MeshPayloadSource? source;
+        lock (_contentGate)
+        {
+            if (_disposed != 0) return;
+            Volatile.Write(ref _disposed, 1);
+            source = Interlocked.Exchange(ref _payloadSource, null);
+        }
+        source?.Dispose();
+    }
 
     public ValueTask DisposeAsync()
     {

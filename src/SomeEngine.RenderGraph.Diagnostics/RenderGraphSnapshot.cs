@@ -169,7 +169,7 @@ public sealed class RenderGraphSnapshot
         GraphPassKind Kind,
         bool Enabled,
         bool Live,
-        int DeclarationOrdinal,
+        long DeclarationOrdinal,
         int ScheduledOrdinal,
         QueueInfo? Queue);
 

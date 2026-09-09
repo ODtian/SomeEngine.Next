@@ -1,0 +1,550 @@
+{
+  "reviewedWorktree": "F:/SomeEngine.Next-render-enhancement",
+  "head": "a787000034e7eba7559d20299a2c704216444011",
+  "fullReadText": 694,
+  "excludedTestFiles": 197,
+  "binaryInventoryOnly": 57,
+  "publicApiReproductions": 20,
+  "items": [
+    {
+      "id": "A01",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "已复现 18",
+      "path": "src/SomeEngine.Render/Instances/RenderInstanceResources.cs",
+      "title": "实例并行写权限与底层映射生命周期不一致",
+      "description": "公共 API 允许多个互不重叠的切片并行写入，批次构建也使用这一能力；每次写入却对同一 Buffer 重新 Map，而 D3D12/Vulkan 每个 Buffer 只有一个活动映射。16 个并行切片出现 7 次 active mapping 异常。",
+      "recommendation": "在一次 prepare 写入期间统一持有映射，把互不重叠的数据跨度交给写入者；不要给每个元素写入加锁掩盖模型冲突。"
+    },
+    {
+      "id": "A02",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "已复现 14",
+      "path": "src/SomeEngine.Render/Frame/RenderFrameCoordinator.cs",
+      "title": "等待失败提前解除 GPU 读者保护",
+      "description": "WaitForTrackedSubmissions 在等待完成前清空读者 fence。人为阻塞 GPU 并让等待超时后，submission 仍未完成，但 TryBeginPrepare 已允许独占写入。",
+      "recommendation": "只有已确认完成的读者才能移除；超时应保留仍在使用数据的提交。"
+    },
+    {
+      "id": "A03",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "已复现 13",
+      "path": "src/SomeEngine.Render/Frame/RenderTimeline.cs",
+      "title": "用三种队列类型代替真实队列身份",
+      "description": "协调器与 timeline 以固定 3 个完成项建模，但 RHI 允许多个同类型队列。观察四个被阻塞的图形队列后，prepare 抛出 IndexOutOfRangeException。",
+      "recommendation": "按真实 Queue 身份记录完成条件，统一协调器与 timeline 的表示。"
+    },
+    {
+      "id": "A04",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "已复现 5、6",
+      "path": "src/SomeEngine.Render/RenderDevice.Textures.cs",
+      "title": "上传完成状态由录制或失败执行提前确认",
+      "description": "MaterialBindless.Upload 在帧成功前清除 dirty 并置 initialized，取消帧后重试没有上传 pass；纹理路径虽然处理显式取消，却把录制失败收到的 executed=true 当成上传完成，下一帧只剩消费和 finalize。",
+      "recommendation": "图执行结果必须区分未提交、部分提交和已提交的具体工作；上传状态只能由对应提交事实推进。"
+    },
+    {
+      "id": "A05",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Direct3D12/CommandLifecycle.cs",
+      "title": "D3D12 资源依赖在多条捕获路径中重复且不完整",
+      "description": "直接资源、瞬态 view、持久 descriptor 各自枚举依赖。瞬态 BufferUav 捕获主 buffer 和 descriptor，遗漏 counter；view 路径也遗漏直接 sparse resource 路径保留的映射代。释放 view/旧映射后，录制命令缺少仍需要的依赖。",
+      "recommendation": "由同一份资源依赖描述生成命令保留集合，覆盖 counter 与映射代；不要继续逐入口补名单。"
+    },
+    {
+      "id": "A06",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanSparse.cs",
+      "title": "稀疏映射替换过早释放旧 heap 引用",
+      "description": "QueueBindSparse 返回成功后便释放旧映射字典保留的 heap；该返回只表示工作已入队。队列工作持有新映射，普通 resource 捕获也没有保留旧映射代，旧 GPU 使用尚未完成时旧内存即可释放。",
+      "recommendation": "把被替换映射和旧 heap 引用保留到相关 GPU 工作完成。"
+    },
+    {
+      "id": "A07",
+      "priority": "P2",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.RenderGraph/GraphStructureIndex.cs",
+      "title": "维护了没有执行消费者的另一套生命周期与放置模型",
+      "description": "ResourceLifetimes、NextPlacementToken、NonTransientResourceCount 仅在该索引内部维护；TransientPlacements 的外部使用只取 Keys 做资源压缩。实际帧另行计算生命周期和分配。所谓 movedAllocations 统计 token 替换，不代表 GPU 分配移动。",
+      "recommendation": "删除无消费者的生命周期/放置状态；保留必要的编辑校验，并共享真正需要一致的算法。"
+    },
+    {
+      "id": "A08",
+      "priority": "P2",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Validation/ValidationLayer.cs",
+      "title": "校验层自己的状态缺少完整释放入口",
+      "description": "录制状态在 End 加入、Submit 移除，已录制但直接 Dispose 的命令没有相应清理；query 状态也没有 pool 释放清理。诊断模型因此与实际对象生命周期脱节。",
+      "recommendation": "让校验状态跟随对象与命令代的真实结束事件清理；不要以扫描全部历史对象替代生命周期。"
+    },
+    {
+      "id": "A09",
+      "priority": "P2",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanDescriptors.cs",
+      "title": "descriptor pool 回收结果没有返回分配搜索",
+      "description": "Free 将 set 归还原 pool，而 Allocate 只尝试当前 active pool。重复超过单 pool 容量的相同峰值工作负载，即使每轮全释放，也会持续建立新 pool。",
+      "recommendation": "分配器应再次使用仍有空闲容量的旧 pool，让保留量收敛到并发峰值。"
+    },
+    {
+      "id": "A10",
+      "priority": "P2",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.RenderGraph/CommandScopes.cs",
+      "title": "纹理复制 footprint 有重复权威，上传端为错误估计补填充",
+      "description": "Graph 以 RowPitch×Height×Depth 估算复制字节，忽略压缩块行；纹理上传 Repack 又按这个估计增加填充以通过 Graph 校验。压缩纹理可因像素行与块行混淆产生约四倍的行存储需求。",
+      "recommendation": "Graph 统一消费 RHI 的复制 footprint，并移除上传端为错误估计添加的填充。"
+    },
+    {
+      "id": "B01",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 1",
+      "path": "src/SomeEngine.RenderGraph/RenderGraphFrame.cs",
+      "title": "Execute 参数错误后丢失帧清理入口",
+      "description": "向 Execute 传入过小输出数组会在实际执行清理区之前抛出；外层仍清除自己的 state。Dispose 无法结束 Graph 的活动帧，下一次 BeginFrame 和 Graph.Dispose 都被阻止。",
+      "recommendation": "参数拒绝必须保留可清理帧，或在同一个 finally 中结束帧。"
+    },
+    {
+      "id": "B02",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 2",
+      "path": "src/SomeEngine.RenderGraph/RenderGraphEdit.cs",
+      "title": "已提交编辑的副本仍能修改发布结构",
+      "description": "复制 edit，提交原值后，通过旧副本 SetPassLabel 能修改已发布诊断，StructureVersion 却不变。",
+      "recommendation": "每次编辑操作验证实际编辑代仍有效，关闭后不能再访问已发布的 staging。"
+    },
+    {
+      "id": "B03",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 3",
+      "path": "src/SomeEngine.RenderGraph/PassDefinition.cs",
+      "title": "旧 pass 定义能写进复用后的新帧",
+      "description": "保留已结束帧的 PassDefinition，下一帧复用容器后旧定义能向新帧增加 access；探针观察到新帧多出一次访问。",
+      "recommendation": "定义句柄携带并验证取得它时的帧身份。"
+    },
+    {
+      "id": "B04",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "已复现 4",
+      "path": "src/SomeEngine.RenderGraph/RenderGraphEdit.cs",
+      "title": "放弃编辑会复用已经发出的资源身份",
+      "description": "在被放弃的编辑中取得的 GraphBufferId，与下次编辑新建资源的 ID 相等。外部保留的失败编辑句柄可误认新对象。",
+      "recommendation": "已发出的身份代不能随编辑回滚而重新发放。"
+    },
+    {
+      "id": "B05",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 8",
+      "path": "src/SomeEngine.RenderGraph/FrameSynchronization.cs",
+      "title": "同步解析失败污染后续帧的缓存",
+      "description": "冲突 layout 被正常拒绝后，部分 WaitPasses 已修改但反向索引尚未注册；下一次合法帧清理索引时 KeyNotFoundException。",
+      "recommendation": "同步结果整体成功后再安装，或失败时完整撤销涉及的索引。"
+    },
+    {
+      "id": "B06",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "已复现 9",
+      "path": "src/SomeEngine.RenderGraph/RenderGraphFrameState.cs",
+      "title": "动态 pass 声明失败留下范围读取",
+      "description": "声明回调先 ReadRanges 再抛异常，撤销路径未清除 buffer range reads。替代的空 pass 复用身份并继承读取，执行报 RG4001。",
+      "recommendation": "声明失败应撤销该声明生成的全部数据。"
+    },
+    {
+      "id": "B07",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "已复现 10",
+      "path": "src/SomeEngine.RenderGraph/RenderGraphEdit.cs",
+      "title": "添加已有 pass 的 rendering region 未标记结构变化",
+      "description": "仅对已有 pass DefineRenderingRegion 后 Commit，版本不变；取得的新 region 随后执行越界。AddRenderingRegion 没有 TouchPass。",
+      "recommendation": "region 变更必须进入正常的编辑变化记录。"
+    },
+    {
+      "id": "B08",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 11",
+      "path": "src/SomeEngine.RenderGraph/ResourceAllocators.cs",
+      "title": "分配回滚留下已释放资源引用",
+      "description": "创建非法 typed+structured view 导致 Commit 失败后，移除该 view 并重试同一编辑，执行使用已 Dispose 的 NativeLease。回滚释放对象却未清除 staging 引用。",
+      "recommendation": "回滚同时撤销引用和分配记录，重试必须重新创建资源。"
+    },
+    {
+      "id": "B09",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 12",
+      "path": "src/SomeEngine.RenderGraph/RenderGraph.cs",
+      "title": "帧绑定的外部 buffer 完成查询漏报",
+      "description": "DeclareExternalBuffer + BindExternalBuffer 的 GPU 访问尚被阻塞时，GetRangeCompletionCount 返回 0。收集只匹配 PersistentResource/RegisteredResource，漏掉 BoundResource。",
+      "recommendation": "完成查询统一解析该帧真正绑定的资源。"
+    },
+    {
+      "id": "B10",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 7",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanCommands.cs",
+      "title": "提交数组被拒绝后命令停留在 Submitting",
+      "description": "Submit([A,A]) 第二次 claim 失败；调用者只在整个 ClaimCommands 返回后得到计数，因此未回滚第一个 A，后续合法提交也失败。",
+      "recommendation": "逐项记录已 claim 数量，异常时只撤销已经成功取得的项目。"
+    },
+    {
+      "id": "B11",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 15",
+      "path": "src/SomeEngine.Render/Instances/RenderInstanceBuffer.cs",
+      "title": "写入 scope 的旧副本能释放新 scope 的锁",
+      "description": "复制 column write scope 并结束原值，打开新 scope 后再 Dispose 旧副本，会放开新 scope 的锁；当前 scope 仍存在时 Get 成功，当前 Dispose 再报 SynchronizationLockException。",
+      "recommendation": "结束操作必须识别自己的写入代且最多执行一次。"
+    },
+    {
+      "id": "B12",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 19",
+      "path": "src/SomeEngine.Render/Instances/RenderInstanceResources.cs",
+      "title": "实例第二代改写不满足 Vulkan 映射规则",
+      "description": "CopyBatchState 对 Upload buffer 使用 MapType.Read；Vulkan 明确拒绝。实际首轮发布成功，第二轮 rewrite 在该调用失败。",
+      "recommendation": "明确跨后端的上传内存读取语义，或用可移植的数据复制方式；不要改成 ReadWrite 绕过检查。"
+    },
+    {
+      "id": "B13",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "已复现 16",
+      "path": "src/SomeEngine.Render/Materials/ScalarLayout.cs",
+      "title": "相同排序字段得到不同布局哈希",
+      "description": "FromFields 在字段排序前计算 hash。字段输入顺序相反时，最终 Fields 相同而 Hash 不同。",
+      "recommendation": "按最终字段顺序计算身份。"
+    },
+    {
+      "id": "B14",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "已复现 17",
+      "path": "src/SomeEngine.Render/Frame/TemporalJitter.cs",
+      "title": "正交投影的非零抖动完全无效",
+      "description": "ApplyNdc 仅修改 M31/M32 并乘 M34；正交投影 M34=0，非零 jitter 后矩阵完全不变。",
+      "recommendation": "根据齐次投影关系实施偏移，使正交和透视投影均成立。"
+    },
+    {
+      "id": "B15",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "已复现 20",
+      "path": "src/SomeEngine.Generators/MaterialGen.cs",
+      "title": "派生材质属性覆盖继承属性的存储位置",
+      "description": "生成器每个类型从 slot 0 开始，并仅为本地属性生成 CreateSlots。SurfaceMaterial.Roughness=.25、CoatedMaterial.Coating=.75 后两者都读到 .75，SlotCount=1。",
+      "recommendation": "继承布局必须包含基类的 slots，派生属性从继承布局末尾编号。"
+    },
+    {
+      "id": "B16",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Render/Instances/RenderInstanceSource.cs",
+      "title": "变化日志截断后把不完整变化标成已覆盖",
+      "description": "固定 128 项日志淘汰旧记录后，CollapseAfter 把剩余记录重新归到 committed revision，先前被淘汰的字段变化不再可得，却失去要求完整刷新所需的历史缺口。",
+      "recommendation": "截断要保留历史不完整的边界，让读取方执行完整刷新。"
+    },
+    {
+      "id": "B17",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Render/Systems/MeshRenderExtractor.cs",
+      "title": "实例化实体的材质变化读取不存在的 MeshInstance",
+      "description": "InstancedMesh + WorldTransform + 材质绑定可以触发 materialsChanged，后续却无条件读取 meshes[row]；没有 MeshInstance 的合法实体对应空 span。",
+      "recommendation": "按实体实际渲染组成选择提取分支。"
+    },
+    {
+      "id": "B18",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Render/Systems/RenderExtractionSchedule.cs",
+      "title": "物体停止移动后 previous transform 不前进",
+      "description": "增量提取只为变化行推进 Previous；下一帧无变化便返回，Previous 持续保留移动前值。完整 reconcile 又会推进它，因此运动历史取决于无关拓扑变化。",
+      "recommendation": "将每帧历史推进与本帧属性变化分开处理。"
+    },
+    {
+      "id": "B19",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Runtime/RuntimeApplication.cs",
+      "title": "窗口 resize 后视图尺寸与渲染资源尺寸分离",
+      "description": "resize 只重建 swapchain 并更新宽高，视图使用新尺寸；cluster、lighting、temporal、debug 和 presentation pass 仍保留启动尺寸。lighting 按新 viewport 计算网格，却使用旧尺寸分配的存储。BindExternalTexture 本身不会因尺寸变化立即拒绝。",
+      "recommendation": "窗口尺寸变化应驱动整套依赖尺寸的资源和 pass 数据更新。"
+    },
+    {
+      "id": "B20",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanAccelerationStructures.cs",
+      "title": "索引 BLAS 用顶点数计算三角形数",
+      "description": "CreateTriangleGeometry 把 geometry.Count/3 用作 primitive count，而 Count 是顶点数。4 个顶点、12 个索引应有 4 个三角形，此处只构建 1 个。",
+      "recommendation": "索引几何使用 index range 和 index size 计算 primitive count。"
+    },
+    {
+      "id": "B21",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanPipelines.cs",
+      "title": "逻辑混合操作直接转换到不同顺序的原生枚举",
+      "description": "RHI 为 Clear、Set、Copy…，VkLogicOp 为 Clear、And、AndReverse、Copy…。直接 cast 让 Copy 变成 AndReverse，Set 变成 And。",
+      "recommendation": "使用逐项显式映射。"
+    },
+    {
+      "id": "B22",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanQueries.cs",
+      "title": "渲染区域内的查询先执行禁止在区域内调用的 reset",
+      "description": "BeginQueryCore 紧邻 BeginQuery 调用 CmdResetQueryPool；occlusion query 在 rendering 内开始时，该 reset 的原生位置非法。区域内 timestamp 同样受影响。",
+      "recommendation": "在渲染区域外安排查询 reset，并保留区域内开始查询的公共行为。"
+    },
+    {
+      "id": "B23",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanRayTracingPipelines.cs",
+      "title": "shader table 的记录数被误限于 shader group 数",
+      "description": "Hit/Miss/Callable record count 不得超过 GroupCount 的检查，把可重复引用的记录实例数量与唯一 group 数量混为一谈。大量对象共享同一 hit group 的正常表被拒绝。",
+      "recommendation": "逐条验证引用的 group，不限制记录总数为 group 数。"
+    },
+    {
+      "id": "B24",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanResources.cs",
+      "title": "普通非方形数组纹理被错误标成 cube compatible",
+      "description": "所有 2D 且层数至少 6 的 image 都增加 CubeCompatible；宽高不等的普通 Texture2DArray 因而违反 Vulkan cube image 的宽高相等要求。",
+      "recommendation": "仅在合法且实际需要的 cube 能力条件下添加该 flag。"
+    },
+    {
+      "id": "B25",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanResources.cs",
+      "title": "predication buffer 缺少原生 conditional rendering usage",
+      "description": "BufferUsages.Predication 只变成 IndirectBufferBit，没有 ConditionalRenderingBitEXT，但 SetPredication 会把该 buffer 交给 CmdBeginConditionalRendering。",
+      "recommendation": "正确表达该 buffer 的原生用途。"
+    },
+    {
+      "id": "B26",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanBarriers.cs",
+      "title": "普通 shading 同步掩码无条件包含光追 stage",
+      "description": "AllShading/NonPixelShading 无条件加入 RayTracingShaderBitKHR；未启用相应光追能力的设备会收到不合法 stage mask。",
+      "recommendation": "按已启用能力形成完整的 shading stage 集合。"
+    },
+    {
+      "id": "B27",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Direct3D12/CommandCopies.cs",
+      "title": "D3D12 整子资源复制仍传入 source box",
+      "description": "CopyTexture 始终传 &sourceBox。MSAA 或 depth/stencil 整子资源复制要求 pSrcBox 为 NULL，即使数值恰好覆盖整个子资源也不等价。",
+      "recommendation": "按原生要求为这些整子资源复制传空 box。"
+    },
+    {
+      "id": "B28",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Direct3D12/CommandBarriers.cs",
+      "title": "可选队列专用 COMMON 模式破坏跨队列类型交接",
+      "description": "UseQueueSpecificCommonLayouts=true 时，release 的 after 和 acquire 的 before 也被转换为各自队列专用 COMMON，而交接需要双方均可使用的中性 COMMON。默认 false 不触发。",
+      "recommendation": "队列交接保持中性布局，仅队列内使用专用布局。"
+    },
+    {
+      "id": "B29",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Direct3D12/DescriptorStorage.cs",
+      "title": "D3D12 单 cube view 忽略起始数组层",
+      "description": "合法的 FirstArrayLayer=6、ArrayLayerCount=6 在 TextureCube SRV 中无法表达起始层，当前创建仍选择该形状，实际采样第一个 cube。",
+      "recommendation": "选择能表达起始 cube 的 TextureCubeArray 描述。"
+    },
+    {
+      "id": "B30",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanBindlessDescriptors.cs",
+      "title": "bindless 空值被跳过写入而非形成空 descriptor",
+      "description": "新 generation 的 PopulateGeneration 跳过 IsNull，留下未初始化 descriptor；partially bound 与 null descriptor feature 不会把该位置自动写成可读取的 null。",
+      "recommendation": "与其他 descriptor 路径一致，写入合法的有类型空值。"
+    },
+    {
+      "id": "B31",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "assets/Shaders/cluster_cull.slang",
+      "title": "candidate 容量末尾的线程先越界读再检查",
+      "description": "LoadAndFilterCandidate 在检查 MaxCandidates 前读取 CandidateClusters[threadId]。计数可溢出容量，dispatch clamp 后再向上取整为 64 线程；非 64 整数倍容量的最后一组可越界读。默认容量整除 64 不触发。",
+      "recommendation": "在第一次读取前完成容量检查。"
+    },
+    {
+      "id": "B32",
+      "priority": "P1",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "assets/Shaders/cluster_bvh_traverse_seed.slang",
+      "title": "允许的遍历容量可产生超出上限的一维 dispatch",
+      "description": "节点按每组 4 个生成 Dispatch.X，未拆分二维 dispatch；超过 262140 个待遍历节点会超过 65535 组，而默认 MaxCandidates 为 1048576，现有容量检查不能排除此工作量。",
+      "recommendation": "让容量约束与每个实际 dispatch 的组大小一致，或支持多维/分段分发。"
+    },
+    {
+      "id": "B33",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "数学反例，未做 GPU 图像复现",
+      "path": "assets/Shaders/clustered_light_grid.slang",
+      "title": "离轴球体光源的屏幕范围不是保守包围",
+      "description": "投影范围以 x/z 为中心、r/sqrt(z²-r²) 为半径。x=8、z=10、r=1、投影比例 1 时右界约 .900504，真实切线右界约 .937040，遗漏可受光 tile。",
+      "recommendation": "使用保守球体投影边界，并明确支持的投影类型。"
+    },
+    {
+      "id": "B34",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "assets/Shaders/vertex_evaluate.slang",
+      "title": "非均匀 stretch 后法线仍只做旋转",
+      "description": "位置使用 Scale×Stretch，normal/tangent 只旋转；非均匀缩放需要法线逆转置处理，负缩放还涉及切线手性。",
+      "recommendation": "让用户材质的默认顶点解释正确处理其公开支持的变换。"
+    },
+    {
+      "id": "B35",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Assets/ResidentAssetTable.cs",
+      "title": "一次加载失败永久占住资产缓存项",
+      "description": "CompleteLoadAsync 保留 faulted entry，之后 LoadAsync 重用同一个失败 task；ReloadAsync 又要求已有 ready Value。临时 I/O 恢复后仍无法在同一个 loader 中重试。",
+      "recommendation": "可恢复加载失败允许重新发起，区别于已证实损坏的不可变内容。"
+    },
+    {
+      "id": "B36",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Render.Cluster/PageStream.cs",
+      "title": "所有页面读取失败都被永久拉黑",
+      "description": "包括 SourceReadFailed 在内的失败全部加入 permanently failed 集合，后续 GPU page fault 也不再重试，必须重建整个 epoch。",
+      "recommendation": "区分临时读取失败和永久无效页面。"
+    },
+    {
+      "id": "B37",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Assets.Importers/Importers/SlangShaderImporter.cs",
+      "title": "显式 shader 源码与磁盘缓存身份不一致",
+      "description": "可选 source 参数参与编译，但依赖/缓存身份仍从磁盘计算，且允许写缓存；传入不同源码可覆盖磁盘源码对应缓存。",
+      "recommendation": "编译输入必须参与同一缓存身份，或禁用该路径的磁盘源码缓存写入。"
+    },
+    {
+      "id": "B38",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Render.Features/Shadows/VirtualShadowFeature.cs",
+      "title": "构造失败后已转入字段的 GPU 对象没有清理",
+      "description": "shadowMap/dispatchLayout 转入字段并把局部置空后，才开始 graph edit 和配置；catch 只释放局部。已有活动 edit 等确定性失败即可让这些资源失去清理入口。",
+      "recommendation": "把所有可能失败的初始化纳入同一构造清理边界。"
+    },
+    {
+      "id": "A11",
+      "priority": "P1",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanDevice.cs",
+      "title": "无法证明 GPU 静止时仍销毁提交资源",
+      "description": "DeviceWaitIdle 返回非 device-lost 失败后记录 teardown failure，但仍继续 drain children 并销毁 command pools/捕获对象，之后才处理失败。普通等待失败不等于设备已丢失，也不证明 GPU 停止。",
+      "recommendation": "区分完成、设备实际丢失与完成未知；未知状态不能释放仍可能被 GPU 使用的数据。"
+    },
+    {
+      "id": "A12",
+      "priority": "P2",
+      "category": "架构",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Direct3D12/Device.cs",
+      "title": "D3D12 父设备销毁顺序晚于最后一次回收等待产生新工作",
+      "description": "NativeDevice.Release 先 quiesce queues，再释放 children；Swapchain.Release 此时又 signal 并加入 PresentationRetirement。随后直接释放 native queues，没有再次处理新产生的退休项，保留的 backbuffer/swapchain 引用没有排空。",
+      "recommendation": "让 child teardown 产生的回收工作进入最后一次 drain，再释放队列。"
+    },
+    {
+      "id": "B39",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanSparse.cs",
+      "title": "稀疏映射原生坐标与托管记录不一致",
+      "description": "boxed native bind 使用 XYZ/宽高深，托管 replacement/copy 却沿 X+index 走；Reused 只在字典里重复一个 heap offset，原生 bind 仍映射连续 N tiles，且要求 N tiles 的 heap；opaque texture offset 又忽略 subresource 与 mip-tail 起点。",
+      "recommendation": "以同一个 tile 地址展开算法生成原生绑定和保留记录，正确处理 boxed、reused、packed tail。"
+    },
+    {
+      "id": "B40",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanRendering.cs",
+      "title": "多层附件被固定为单层 rendering",
+      "description": "VkRenderingInfo.LayerCount 固定为 1，没有使用附件 view 的多层范围。合法数组附件不能按描述向后续层渲染。",
+      "recommendation": "从公开附件范围生成正确的层数及一致性约束。"
+    },
+    {
+      "id": "B41",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Graphics.Vulkan/VulkanMeshAndShading.cs",
+      "title": "shading rate image 的设置晚于实际生效时点",
+      "description": "SetShadingRateImageCore 只记录供下一次 BeginRendering 使用的 view；Graph RasterScope 在当前 BeginRendering 之后调用它，因此当前 draw 不生效，状态还可能影响下一个区域。",
+      "recommendation": "让该状态在当前渲染区域创建时进入原生描述，并保持公共 API 的时序语义。"
+    },
+    {
+      "id": "B42",
+      "priority": "P2",
+      "category": "实现",
+      "evidence": "静态确认",
+      "path": "src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.cs",
+      "title": "公开允许的空场景和小尺寸不能经过完整流水线",
+      "description": "材料集为空时 reconcile 拒绝；1×1 output 可以构造，但 HiZ 录制要求至少两个 mip；启用 metrics 时固定复制 64 像素，不适用于更窄输出。",
+      "recommendation": "统一公开输入范围与整条流水线要求，空场景应有明确正常行为。"
+    }
+  ]
+}

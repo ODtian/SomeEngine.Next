@@ -2,9 +2,9 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-[global::SomeEngine.Assets.Asset(".virtualshadow.asset")]
-public sealed partial class VirtualShadowMapShaders
+[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.VirtualShadowMapShaders")]
+[global::SomeEngine.Assets.Asset(typeof(VirtualShadowMapShaders), ".virtualshadow.asset")]
+internal sealed partial class VirtualShadowMapShadersData
 {
     public string? AssetGuid { get; set; }
 
@@ -12,32 +12,65 @@ public sealed partial class VirtualShadowMapShaders
 
     public ShaderRef? MarkPages { get; set; }
 
+    public ShaderRef? MarkCoarsePages { get; set; }
+
     public ShaderRef? AllocatePages { get; set; }
 
     public ShaderRef? ClearPages { get; set; }
 
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
+    public ShaderRef? InitializeState { get; set; }
+
+    public ShaderRef? InvalidateCasters { get; set; }
+
+    public ShaderRef? BuildPagePool { get; set; }
+
+    public ShaderRef? CompactViews { get; set; }
+
+    public ShaderRef? InitializePageHiZ { get; set; }
+
+    public ShaderRef? ReducePageHiZ { get; set; }
+
+    internal IReadOnlyList<Guid> GetDependencies(string path)
     {
-        string owner = $"Virtual shadow map shader asset '{path}'";
-        AssetGuid mark = ShaderRef.Require(
+        string subject = $"Virtual shadow map shader asset '{path}'";
+        ShaderRef?[] entries =
+        [
             MarkPages,
-            owner,
-            nameof(MarkPages),
-            ShaderStage.Compute);
-        AssetGuid allocate = ShaderRef.Require(
+            MarkCoarsePages,
             AllocatePages,
-            owner,
-            nameof(AllocatePages),
-            ShaderStage.Compute);
-        AssetGuid clear = ShaderRef.Require(
             ClearPages,
-            owner,
+            InitializeState,
+            InvalidateCasters,
+            BuildPagePool,
+            CompactViews,
+            InitializePageHiZ,
+            ReducePageHiZ,
+        ];
+        string[] names =
+        [
+            nameof(MarkPages),
+            nameof(MarkCoarsePages),
+            nameof(AllocatePages),
             nameof(ClearPages),
-            ShaderStage.Compute);
-        var result = new List<AssetGuid>(3) { mark };
-        if (!result.Contains(allocate)) result.Add(allocate);
-        if (!result.Contains(clear)) result.Add(clear);
-        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+            nameof(InitializeState),
+            nameof(InvalidateCasters),
+            nameof(BuildPagePool),
+            nameof(CompactViews),
+            nameof(InitializePageHiZ),
+            nameof(ReducePageHiZ),
+        ];
+        var result = new List<Guid>(entries.Length);
+        for (int index = 0; index < entries.Length; index++)
+        {
+            Guid shader = ShaderRef.Require(
+                entries[index],
+                subject,
+                names[index],
+                ShaderStage.Compute);
+            if (!result.Contains(shader))
+                result.Add(shader);
+        }
+        result.Sort(static (left, right) => left.CompareTo(right));
         return result;
     }
 }

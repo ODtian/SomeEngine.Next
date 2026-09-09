@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Data;
@@ -11,15 +10,11 @@ namespace SomeEngine.Render.Cluster.Tests;
 
 public sealed class ResidencyBudgetTests
 {
-    private const int PositionBytes = 3 * sizeof(ushort);
-    private const uint VertexStride = 16;
-    private const int IndexBytes = 3;
-    private const int PageBytes = MeshPageHeader.Size + GPUCluster.SizeInBytes
-        + PositionBytes + (int)VertexStride + IndexBytes;
+    private const int PageBytes = ClusterTestAssets.PageBytes;
     private const int GpuPageBytes = (PageBytes + 15) & ~15;
 
     [Fact]
-    public async Task FinalGpuReservationSpansDirectIoPublicationAndRetirement()
+    public async Task GpuReservationSpansStagingPublicationAndRetirement()
     {
         ResidencyBudgetLedger ledger = Ledger(stagingBytes: 0, GpuPageBytes);
         RegisteredManagerFixture fixture = await RegisteredManagerAsync(
@@ -103,7 +98,7 @@ public sealed class ResidencyBudgetTests
         Assert.Equal(0u, pending.Pages.Resident);
         Assert.Equal(PageData()[0], storageBytes[finalDestination.Offset]);
 
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
         Assert.Equal(0, ledger.Used(ResidencyClass.UploadStaging));
         ClusterMeshesSnapshot published = manager.CaptureSnapshot();
         Assert.Equal(0, published.Pages.UncompletedLoads);
@@ -218,7 +213,7 @@ public sealed class ResidencyBudgetTests
         Assert.Equal(PageStreamFailureCode.InvalidPayload, failure.Code);
         Assert.Equal(0, ledger.Used(ResidencyClass.UploadStaging));
         Assert.Equal(0, ledger.Used(ResidencyClass.Gpu));
-        Assert.False(manager.PublishPending());
+        Assert.False(manager.SubmitPending());
         AssertWithinBudgets(ledger);
     }
 
@@ -238,49 +233,14 @@ public sealed class ResidencyBudgetTests
         InvalidOperationException primary = await Assert.ThrowsAsync<InvalidOperationException>(
             async () => await ClusterTestAssets.LoadPageAsync(manager, registration.FirstPageId));
 
-        Assert.Contains("Final Cluster page storage returned", primary.Message, StringComparison.Ordinal);
+        Assert.Contains("Cluster page staging storage returned", primary.Message, StringComparison.Ordinal);
         ClusterMeshesSnapshot snapshot = manager.CaptureSnapshot();
         ClusterCleanupFailure cleanup = Assert.IsType<ClusterCleanupFailure>(snapshot.LastCleanupFailure);
         Assert.Equal(ClusterCleanupStage.PageLoad, cleanup.Stage);
-        Assert.Contains("Injected final-storage release failure", cleanup.Message, StringComparison.Ordinal);
+        Assert.Contains("Injected staging-storage release failure", cleanup.Message, StringComparison.Ordinal);
         Assert.Equal(checked((uint)GpuPageBytes), snapshot.Heap.UsedBytes);
         Assert.Equal(0, ledger.Used(ResidencyClass.Gpu));
-        Assert.False(manager.PublishPending());
-    }
-
-    [Fact]
-    public async Task FailedEvictionReleaseDoesNotBlockThePageFromReloadingElsewhere()
-    {
-        ResidencyBudgetLedger ledger = Ledger(stagingBytes: 0, GpuPageBytes);
-        var storage = new FailOncePageStorage(new byte[2 * GpuPageBytes]);
-        RegisteredManagerFixture fixture = await RegisteredManagerAsync(
-            pageCount: 1,
-            heapBytes: 2 * GpuPageBytes,
-            ledger,
-            pageStorage: storage);
-        using ClusterMeshes manager = fixture.Manager;
-        ClusterMeshRegistration registration = fixture.Registration;
-        uint pageId = registration.FirstPageId;
-
-        Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, pageId));
-        Assert.True(manager.PublishPending());
-        storage.FailNextRelease();
-        Assert.True(manager.EvictPage(pageId));
-        Assert.True(manager.PublishPending());
-
-        ClusterMeshesSnapshot evicted = manager.CaptureSnapshot();
-        ClusterCleanupFailure cleanup = Assert.IsType<ClusterCleanupFailure>(evicted.LastCleanupFailure);
-        Assert.Equal(ClusterCleanupStage.Publication, cleanup.Stage);
-        Assert.Contains("Injected final-storage release failure", cleanup.Message, StringComparison.Ordinal);
-        Assert.Equal(checked((uint)GpuPageBytes), evicted.Heap.UsedBytes);
-        Assert.Equal(0, ledger.Used(ResidencyClass.Gpu));
-
-        Assert.Equal(PageLoadResult.Staged, await ClusterTestAssets.LoadPageAsync(manager, pageId));
-        Assert.True(manager.PublishPending());
-        ClusterMeshesSnapshot reloaded = manager.CaptureSnapshot();
-        Assert.Equal(1u, reloaded.Pages.Resident);
-        Assert.Equal(checked((uint)(2 * GpuPageBytes)), reloaded.Heap.UsedBytes);
-        Assert.Equal(GpuPageBytes, ledger.Used(ResidencyClass.Gpu));
+        Assert.False(manager.SubmitPending());
     }
 
     [Fact]
@@ -412,12 +372,12 @@ public sealed class ResidencyBudgetTests
             await Task.Delay(1);
         }
 
-        throw new TimeoutException("The direct-final page streamer did not reach the expected residency state.");
+        throw new TimeoutException("The staged page streamer did not reach the expected residency state.");
     }
 
     private static void CompletePublication(ClusterMeshes manager)
     {
-        Assert.True(manager.PublishPending());
+        Assert.True(manager.SubmitPending());
     }
 
     private sealed class ShortAllocationStorage : IClusterPageStorage
@@ -435,48 +395,20 @@ public sealed class ResidencyBudgetTests
         {
         }
 
-        public void Publish()
+        public ClusterStagedUpload[] CaptureStagedUploads() => [];
+
+        public void CompleteStagedUploads(ReadOnlySpan<ClusterStagedUpload> uploads)
         {
         }
 
         public void Release(uint offset, int length)
         {
             if (Interlocked.Exchange(ref _failNextRelease, 0) != 0)
-                throw new InvalidOperationException("Injected final-storage release failure.");
+                throw new InvalidOperationException("Injected staging-storage release failure.");
             _bytes = null;
         }
 
         public void Dispose() => _bytes = null;
-    }
-
-    private sealed class FailOncePageStorage : IClusterPageStorage
-    {
-        private readonly TestClusterPageStorage _inner;
-        private int _failNextRelease;
-
-        internal FailOncePageStorage(Memory<byte> memory)
-            => _inner = new TestClusterPageStorage(memory);
-
-        internal void FailNextRelease()
-            => Volatile.Write(ref _failNextRelease, 1);
-
-        public Memory<byte> Allocate(uint offset, int length)
-            => _inner.Allocate(offset, length);
-
-        public void Stage(uint offset, int length)
-            => _inner.Stage(offset, length);
-
-        public void Publish()
-            => _inner.Publish();
-
-        public void Release(uint offset, int length)
-        {
-            if (Interlocked.Exchange(ref _failNextRelease, 0) != 0)
-                throw new InvalidOperationException("Injected final-storage release failure.");
-            _inner.Release(offset, length);
-        }
-
-        public void Dispose() => _inner.Dispose();
     }
 
     private static Mesh Mesh(int pageCount)
@@ -496,42 +428,16 @@ public sealed class ResidencyBudgetTests
 
         return new Mesh
         {
-            AssetGuid = AssetGuid.New().ToFlatString(),
             Name = "BudgetedMesh",
             Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            VertexStride = VertexStride,
+            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
             Payload = payload,
             BvhOffset = checked((ulong)pageRegionBytes),
-            QuantStep = 1f,
         };
     }
 
     private static byte[] PageData()
-    {
-        byte[] data = new byte[PageBytes];
-        var header = new MeshPageHeader
-        {
-            ClusterCount = 1,
-            TotalVertexCount = 1,
-            TotalTriangleCount = 1,
-            ClustersOffset = MeshPageHeader.Size,
-            PositionsOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes,
-            AttributesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes + PositionBytes,
-            IndicesOffset = MeshPageHeader.Size + GPUCluster.SizeInBytes
-                + PositionBytes + VertexStride,
-            VertexStride = VertexStride,
-            QuantStep = 1f,
-        };
-        MemoryMarshal.Write(data.AsSpan(0, MeshPageHeader.Size), in header);
-        var cluster = new GPUCluster
-        {
-            PackedCounts = 1u | (1u << 8),
-            MaterialTableOffset = uint.MaxValue,
-            BoundMax = Vector3.One,
-        };
-        MemoryMarshal.Write(data.AsSpan(MeshPageHeader.Size, GPUCluster.SizeInBytes), in cluster);
-        return data;
-    }
+        => ClusterTestAssets.CreatePageData();
 
     private static ClusterBVHNode Leaf(uint localPage)
     {

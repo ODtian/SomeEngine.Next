@@ -28,7 +28,7 @@ internal static class TestAssets
         {
             if (!Materials.TryGetValue((id, revision), out Material? asset))
             {
-                asset = new Material { Name = $"material-{id}-r{revision}" };
+                asset = new StandardMaterial { Name = $"material-{id}-r{revision}" };
                 Materials.Add((id, revision), asset);
             }
             return asset;

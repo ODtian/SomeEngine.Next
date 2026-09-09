@@ -19,12 +19,13 @@ public partial class World
             return;
 
         // A root admitted before closure may continue using its World while Dispose waits its
-        // full scheduler scope. Unrelated roots cannot reach execution because submission
-        // ownership rejects them before a scheduler state is published.
+        // full scheduler scope. The closing thread may help execute unrelated jobs while
+        // joining those roots; thread equality alone must not grant such a callback access.
         if (state == LifetimeClosing &&
             (_execution?.IsExecutingCurrentScope == true ||
              OwnsCurrentSerializationWriteLifetime() ||
-             Volatile.Read(ref _lifetimeOwnerThreadId) == Environment.CurrentManagedThreadId))
+             (!JobExecutionContext.IsActive &&
+              Volatile.Read(ref _lifetimeOwnerThreadId) == Environment.CurrentManagedThreadId)))
             return;
 
         throw new ObjectDisposedException(nameof(World));

@@ -3,5 +3,22 @@
   "importer": "SlangShaderImporter",
   "importer_settings": {
     "cook_profile": "default"
-  }
+  },
+  "importer_version": 26,
+  "input_hash": "cb7f2428e59edcf4dcd8ed8245ddb83a332946596273291a42bd812958c04982",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/imgui.slang",
+      "content_hash": "788891400a17713c886540b9d1242a08c749dfbac5881c2a7a7c52d0b44bf22c"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "3dc64d6f-9f36-5c94-b823-7a249deea078",
+      "sub_asset_key": "shader:main",
+      "input_hash": "cb7f2428e59edcf4dcd8ed8245ddb83a332946596273291a42bd812958c04982",
+      "dependencies": [],
+      "asset_path": "imgui.shader.asset"
+    }
+  ]
 }

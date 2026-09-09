@@ -1,4 +1,7 @@
 <Solution>
+  <Project Path="src\SomeEngine.Diagnostics\SomeEngine.Diagnostics.csproj" />
+  <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />
+  <Project Path="tests\SomeEngine.Diagnostics.Tests\SomeEngine.Diagnostics.Tests.csproj" />
   <Project Path="src\SomeEngine.Core\SomeEngine.Core.csproj" />
   <!-- SlangShaderSharp is used by asset cooking and executable shader-ABI reflection tests. -->
   <Project Path="external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
@@ -22,6 +25,7 @@
   <Project Path="src\SomeEngine.Render.MaterialBindless\SomeEngine.Render.MaterialBindless.csproj" />
   <Project Path="src\SomeEngine.Render.Cluster\SomeEngine.Render.Cluster.csproj" />
   <Project Path="src\SomeEngine.Render.Cluster.Pipeline\SomeEngine.Render.Cluster.Pipeline.csproj" />
+  <Project Path="src\SomeEngine.Render.Features\SomeEngine.Render.Features.csproj" />
   <Project Path="src\SomeEngine.Runtime\SomeEngine.Runtime.csproj" />
   <Project Path="tests\SomeEngine.Runtime.Tests\SomeEngine.Runtime.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
@@ -49,5 +53,9 @@
   <Project Path="tests\SomeEngine.Graphics.Vulkan.Tests\SomeEngine.Graphics.Vulkan.Tests.csproj" />
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/SomeEngine.Assets.Consumer.Tests/SomeEngine.Assets.Consumer.Tests.csproj" />
+  </Folder>
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
 </Solution>

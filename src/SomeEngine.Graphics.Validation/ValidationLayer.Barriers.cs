@@ -346,7 +346,7 @@ public sealed partial class ValidationLayer
                     {
                         Reject(
                             "Barriers",
-                            "QueueAcquire must be the first local operation for its range; the matching release belongs to another Queue submission.",
+                            $"QueueAcquire for resource '{validationEvent.Range.Resource.Label}' must be the first local operation for its range; the matching release belongs to another Queue submission.",
                             validationEvent.Range.Resource.Label);
                     }
                 }
@@ -609,18 +609,59 @@ public sealed partial class ValidationLayer
         ResourceAccess declaredAccess,
         TextureLayout? declaredLayout)
     {
-        if (actualSync == declaredSync &&
+        PipelineSync requiredScope = ExpandSynchronizationScopes(actualSync);
+        PipelineSync declaredScope = ExpandSynchronizationScopes(declaredSync);
+        if ((declaredScope & requiredScope) == requiredScope &&
             actualAccess == declaredAccess &&
             actualLayout == declaredLayout)
         {
             return;
         }
 
+        // Upload heaps remain in the backend's generic-read state. The portable RHI represents
+        // that immutable state as None/NoAccess, while a graph boundary may name the concrete
+        // read stage that consumed the mapped data before its first explicit barrier or release.
+        if (range.Resource is Buffer { Info.MemoryType: MemoryType.Upload } &&
+            actualSync == PipelineSync.None &&
+            actualAccess == ResourceAccess.NoAccess &&
+            actualLayout is null &&
+            declaredLayout is null &&
+            (declaredAccess & (
+                ResourceAccess.RenderTarget |
+                ResourceAccess.UnorderedAccess |
+                ResourceAccess.DepthStencilWrite |
+                ResourceAccess.StreamOutput |
+                ResourceAccess.CopyDestination |
+                ResourceAccess.ResolveDestination |
+                ResourceAccess.RayTracingAccelerationStructureWrite)) == 0)
+        {
+            return;
+        }
+
         Reject(
             "Barriers",
-            $"Incorrect Before state. Tracked state is Sync={actualSync}, Access={actualAccess}, Layout={FormatLayout(actualLayout)}; " +
+            $"Incorrect Before state for '{range.Resource.Label ?? "unnamed resource"}'. " +
+            $"Tracked state is Sync={actualSync}, Access={actualAccess}, Layout={FormatLayout(actualLayout)}; " +
             $"the barrier declares Sync={declaredSync}, Access={declaredAccess}, Layout={FormatLayout(declaredLayout)}.",
             range.Resource.Label);
+    }
+
+    private static PipelineSync ExpandSynchronizationScopes(PipelineSync value)
+    {
+        if (value == PipelineSync.All) return value;
+        // A following barrier must contain the preceding synchronization scope.
+        // Composite shader/draw scopes are sets of stages, not distinct states.
+        if ((value & PipelineSync.Draw) != 0)
+            value = (value & ~PipelineSync.Draw) | PipelineSync.IndexInput |
+                PipelineSync.VertexShading | PipelineSync.PixelShading |
+                PipelineSync.DepthStencil | PipelineSync.RenderTarget;
+        if ((value & PipelineSync.AllShading) != 0)
+            value = (value & ~PipelineSync.AllShading) | PipelineSync.VertexShading |
+                PipelineSync.PixelShading | PipelineSync.ComputeShading | PipelineSync.RayTracing;
+        if ((value & PipelineSync.NonPixelShading) != 0)
+            value = (value & ~PipelineSync.NonPixelShading) | PipelineSync.VertexShading |
+                PipelineSync.ComputeShading | PipelineSync.RayTracing;
+        return value;
     }
 
     private ResourceSubmissionReservation? PlanResourceSubmission(
@@ -745,6 +786,13 @@ public sealed partial class ValidationLayer
         {
             ResourceCellState current = GetSimulatedState(range.State, cell, changes);
             RequireQueueOwnership(queue, range, current);
+
+            // Buffer access scopes restart with each submission and are independent per queue.
+            // Consecutive barriers within this submission still validate their before state.
+            if (range.Resource is Buffer && queue.Device.Capabilities.SupportsConcurrentBufferReads &&
+                (!changes.ContainsKey(new ResourceCellKey(range.State, cell)) ||
+                 !ReferenceEquals(current.OwnerQueue, queue)))
+                current = current with { Sync = validationEvent.SyncBefore, Access = validationEvent.AccessBefore };
 
             if (validationEvent.Phase == BarrierPhase.End)
             {
@@ -980,14 +1028,18 @@ public sealed partial class ValidationLayer
         {
             Reject(
                 "Barriers",
-                "The resource range is between QueueRelease and QueueAcquire and cannot be accessed.",
+                $"The resource range is between QueueRelease and QueueAcquire and cannot be accessed. Resource: '{range.Resource.Label}'.",
                 range.Resource.Label);
         }
+        if (range.Resource is Buffer && queue.Device.Capabilities.SupportsConcurrentBufferReads)
+            return;
         if (state.OwnerQueue is not null && !ReferenceEquals(state.OwnerQueue, queue))
         {
+            string resourceLabel = range.Resource.Label ?? "<unlabeled resource>";
             Reject(
                 "Barriers",
-                "Resource use moved to another Queue without QueueRelease, QueueAcquire, and an ordering wait.",
+                $"Resource '{resourceLabel}' use moved from {state.OwnerQueue.Type} to {queue.Type} " +
+                "without QueueRelease, QueueAcquire, and an ordering wait.",
                 range.Resource.Label);
         }
         if (state.OwnerQueue is null && state.OwnerType is { } ownerType && ownerType != queue.Type)

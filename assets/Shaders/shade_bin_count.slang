@@ -6,30 +6,33 @@ ByteAddressBuffer InstanceData;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> BinCounts;
 ConstantBuffer<ShadeBinUniforms> Uniforms;
-Texture2D<uint> VisBuffer;
-StructuredBuffer<uint4> VisibleClusters;
-StructuredBuffer<uint> SlotBuffer;
+Texture2DArray<uint> VisBuffer;
+StructuredBuffer<DrawRequest> VisibleClusters;
+StructuredBuffer<uint> ShadeSlots;
 ByteAddressBuffer PageHeap;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void CountShadeBins(uint3 threadId : SV_DispatchThreadID)
+void CountShadeBins(uint3 threadId : SV_DispatchThreadID, uint lane : SV_GroupIndex)
 {
-    if (threadId.x >= Uniforms.ScreenWidth || threadId.y >= Uniforms.ScreenHeight)
-        return;
-
-    uint visibility = VisBuffer[threadId.xy];
-    if (IsVisBufferEmpty(visibility))
-        return;
-
-    uint4 cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
-    uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.z);
-    uint bin = FindShadeBin(
-        SlotBuffer,
-        PageHeap,
-        Uniforms,
-        slotOffset,
-        cluster,
-        DecodeVisBufferTriangleID(visibility));
-    CountShade(BinCounts, bin);
+    uint bin = 0xFFFFFFFFu;
+    if (threadId.x < Uniforms.ScreenWidth && threadId.y < Uniforms.ScreenHeight)
+    {
+        uint visibility = VisBuffer[threadId];
+        if (!IsVisBufferEmpty(visibility))
+        {
+            DrawRequest cluster = VisibleClusters[DecodeVisBufferVisibleClusterIndex(visibility)];
+            if (DrawRequestViewIndex(cluster) == threadId.z)
+            {
+                uint slotOffset = MaterialSlotOffset(InstanceData, InstanceProperties, cluster.InstanceID);
+                bin = FindShadeBin(ShadeSlots, PageHeap, Uniforms, slotOffset, cluster,
+                    DecodeVisBufferTriangleID(visibility));
+            }
+        }
+    }
+    uint mask;
+    bool fullTile;
+    if (!ClassifyShadeTile(bin, lane, mask, fullTile)) return;
+    uint counter = bin * 2u + (fullTile ? 0u : 1u);
+    CountShade(BinCounts, counter);
 }

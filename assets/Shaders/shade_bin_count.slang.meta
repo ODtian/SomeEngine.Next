@@ -1,5 +1,64 @@
 {
   "source_guid": "bbf2dfa3-5628-4a58-8dd5-6dc7a4bb522f",
   "importer": "SlangShaderImporter",
-  "importer_settings": null
+  "importer_settings": {
+    "cook_profile": "default"
+  },
+  "importer_version": 26,
+  "input_hash": "9f95663835d755f1537865d754e47bb8a80ab8befdf8c3b060dc9487d8fdc720",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/cluster_bin_io.slang",
+      "content_hash": "ea0eb677c8f30c23f9c73cca63bda27de834cc96a3e777bd861031d4fa78dffe"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_instance_properties.slang",
+      "content_hash": "ba3fa8bcbef6cc98a007b09cd82563cc2e1840a51041a02b4d805950abb074d8"
+    },
+    {
+      "relative_path": "assets/Shaders/cluster_structures.slang",
+      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "257c971df8a60a404b817488e8c7a1fe401f409bebab96e65dabe863b148b23e"
+    },
+    {
+      "relative_path": "assets/Shaders/render_instance_properties.slang",
+      "content_hash": "33eb01451d41f3ff6649fdd438a416ca212ec3c0128e9d36e20ac5c374234f54"
+    },
+    {
+      "relative_path": "assets/Shaders/render_instance_transform.slang",
+      "content_hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
+    },
+    {
+      "relative_path": "assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "assets/Shaders/shade_bin_common.slang",
+      "content_hash": "e3f21634d87ce869936ae71c0622d54fde4710c10252fc62f2def615ee171040"
+    },
+    {
+      "relative_path": "assets/Shaders/shade_bin_count.slang",
+      "content_hash": "3d949cdeee409a3fb569aaa7119876ee181675a0f72710330211fbc6d658b49b"
+    },
+    {
+      "relative_path": "assets/Shaders/visbuffer_encoding.slang",
+      "content_hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
+    },
+    {
+      "relative_path": "assets/Shaders/wave_aggregation.slang",
+      "content_hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "2bb497ab-fcf4-5fb5-88e9-a510d278a6fb",
+      "sub_asset_key": "shader:main",
+      "input_hash": "9f95663835d755f1537865d754e47bb8a80ab8befdf8c3b060dc9487d8fdc720",
+      "dependencies": [],
+      "asset_path": "shade_bin_count.shader.asset"
+    }
+  ]
 }

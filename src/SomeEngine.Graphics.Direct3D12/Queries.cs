@@ -8,6 +8,7 @@ internal sealed unsafe partial class D3D12Backend
 {
     public QueryPool CreateQueryPool(Device device, in QueryPoolDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         nativeDevice.ThrowIfUnavailable();
         if (!Enum.IsDefined(desc.Type))
@@ -45,8 +46,8 @@ internal sealed unsafe partial class D3D12Backend
         Guid iid = ID3D12QueryHeap.Guid;
         ThrowIfFailed(
             nativeDevice,
-            nativeDevice.Native->CreateQueryHeap(
-                &nativeDescription,
+                DeviceResourceTrace.CreateQueryHeap(
+            nativeDevice.Native, &nativeDescription,
                 &iid,
                 (void**)&heap),
             NativeOperationType.Ordinary,
@@ -63,7 +64,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         catch
         {
-            _ = heap->Release();
+            _ = ResourceTrace.Release(heap);
             throw;
         }
         nativeDevice.RegisterChild(result);
@@ -72,6 +73,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void BeginQuery(CommandContext context, QueryPool pool, uint queryIndex)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12QueryPool native = RequireQueryPool(pool);
         native.RequireQueue(command);
@@ -80,11 +82,12 @@ internal sealed unsafe partial class D3D12Backend
             throw new InvalidOperationException("Timestamp queries are written, not begun.");
         command.PrepareCaptures(1);
         command.Capture(native);
-        command.List->BeginQuery(native.Native, native.NativeType, queryIndex);
+        CommandExecutionTrace.BeginQuery(command.List, native.Native, native.NativeType, queryIndex);
     }
 
     public void EndQuery(CommandContext context, QueryPool pool, uint queryIndex)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12QueryPool native = RequireQueryPool(pool);
         native.RequireQueue(command);
@@ -93,11 +96,12 @@ internal sealed unsafe partial class D3D12Backend
             throw new InvalidOperationException("Timestamp queries are written, not ended.");
         command.PrepareCaptures(1);
         command.Capture(native);
-        command.List->EndQuery(native.Native, native.NativeType, queryIndex);
+        CommandExecutionTrace.EndQuery(command.List, native.Native, native.NativeType, queryIndex);
     }
 
     public void WriteTimestamp(CommandContext context, QueryPool pool, uint queryIndex)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12QueryPool native = RequireQueryPool(pool);
         native.RequireQueue(command);
@@ -106,7 +110,7 @@ internal sealed unsafe partial class D3D12Backend
             throw new InvalidOperationException("WriteTimestamp requires a Timestamp QueryPool.");
         command.PrepareCaptures(1);
         command.Capture(native);
-        command.List->EndQuery(native.Native, NativeQueryType.Timestamp, queryIndex);
+        CommandExecutionTrace.EndQuery(command.List, native.Native, NativeQueryType.Timestamp, queryIndex);
     }
 
     public void ResolveQueries(
@@ -117,6 +121,7 @@ internal sealed unsafe partial class D3D12Backend
         Buffer destination,
         in BufferRange destinationRange)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12QueryPool native = RequireQueryPool(pool);
         D3D12Buffer buffer = RequireBuffer(destination);
@@ -135,47 +140,47 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareCaptures(2, 0, 1);
         command.Capture(native);
         command.Capture(buffer);
-        command.List->ResolveQueryData(
-            native.Native,
-            native.NativeType,
-            firstQuery,
-            queryCount,
-            buffer.Native,
-            range.Offset);
+        CommandTransferTrace.ResolveQueryData(
+                command.List, native.Native,
+                    native.NativeType,
+                    firstQuery,
+                    queryCount,
+                    buffer.Native,
+                    range.Offset);
     }
 
     private static QueryHeapType ToQueryHeapType(
         SomeEngine.Graphics.QueryType type,
         QueueType queueType) => type switch
-    {
-        SomeEngine.Graphics.QueryType.Timestamp when queueType == QueueType.Copy =>
-            QueryHeapType.CopyQueueTimestamp,
-        SomeEngine.Graphics.QueryType.Timestamp => QueryHeapType.Timestamp,
-        SomeEngine.Graphics.QueryType.Occlusion or
-            SomeEngine.Graphics.QueryType.BinaryOcclusion => QueryHeapType.Occlusion,
-        SomeEngine.Graphics.QueryType.PipelineStatistics => QueryHeapType.PipelineStatistics,
-        SomeEngine.Graphics.QueryType.StreamOutputStatistics => QueryHeapType.SOStatistics,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
-    };
+        {
+            SomeEngine.Graphics.QueryType.Timestamp when queueType == QueueType.Copy =>
+                QueryHeapType.CopyQueueTimestamp,
+            SomeEngine.Graphics.QueryType.Timestamp => QueryHeapType.Timestamp,
+            SomeEngine.Graphics.QueryType.Occlusion or
+                SomeEngine.Graphics.QueryType.BinaryOcclusion => QueryHeapType.Occlusion,
+            SomeEngine.Graphics.QueryType.PipelineStatistics => QueryHeapType.PipelineStatistics,
+            SomeEngine.Graphics.QueryType.StreamOutputStatistics => QueryHeapType.SOStatistics,
+            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        };
 
     private static NativeQueryType ToNativeQueryType(
         SomeEngine.Graphics.QueryType type,
         uint streamIndex) => type switch
-    {
-        SomeEngine.Graphics.QueryType.Timestamp => NativeQueryType.Timestamp,
-        SomeEngine.Graphics.QueryType.Occlusion => NativeQueryType.Occlusion,
-        SomeEngine.Graphics.QueryType.BinaryOcclusion => NativeQueryType.BinaryOcclusion,
-        SomeEngine.Graphics.QueryType.PipelineStatistics => NativeQueryType.PipelineStatistics,
-        SomeEngine.Graphics.QueryType.StreamOutputStatistics => streamIndex switch
         {
-            0 => NativeQueryType.SOStatisticsStream0,
-            1 => NativeQueryType.SOStatisticsStream1,
-            2 => NativeQueryType.SOStatisticsStream2,
-            3 => NativeQueryType.SOStatisticsStream3,
-            _ => throw new ArgumentOutOfRangeException(nameof(streamIndex)),
-        },
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
-    };
+            SomeEngine.Graphics.QueryType.Timestamp => NativeQueryType.Timestamp,
+            SomeEngine.Graphics.QueryType.Occlusion => NativeQueryType.Occlusion,
+            SomeEngine.Graphics.QueryType.BinaryOcclusion => NativeQueryType.BinaryOcclusion,
+            SomeEngine.Graphics.QueryType.PipelineStatistics => NativeQueryType.PipelineStatistics,
+            SomeEngine.Graphics.QueryType.StreamOutputStatistics => streamIndex switch
+            {
+                0 => NativeQueryType.SOStatisticsStream0,
+                1 => NativeQueryType.SOStatisticsStream1,
+                2 => NativeQueryType.SOStatisticsStream2,
+                3 => NativeQueryType.SOStatisticsStream3,
+                _ => throw new ArgumentOutOfRangeException(nameof(streamIndex)),
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        };
 
     private static QueryResultInfo GetQueryResultInfo(SomeEngine.Graphics.QueryType type) => type switch
     {

@@ -8,8 +8,25 @@ internal static class RuntimeWait
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(2);
 
+    internal static void Task(Task task, NativeWindow window, TimeSpan timeout)
+    {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.TaskCompletion);
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(window);
+        ValidateTimeout(timeout);
+        var elapsed = Stopwatch.StartNew();
+        while (!task.IsCompleted)
+        {
+            Pump(window);
+            if (HasExpired(elapsed, timeout))
+                throw new TimeoutException("The runtime operation did not complete before its timeout.");
+        }
+        task.GetAwaiter().GetResult();
+    }
+
     internal static T Task<T>(Task<T> task, NativeWindow window, TimeSpan timeout)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.TaskCompletion);
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(window);
         ValidateTimeout(timeout);

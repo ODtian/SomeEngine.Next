@@ -466,23 +466,23 @@ internal static partial class SlangBindingMap
     {
         if (reflectedEffect == Schema.AccessEffect.None)
             throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' has no reflected access effect.");
+                $"ShaderData resource '{variable.Name}' has no reflected access effect.");
 
         AttributeReflection selected = FindResourceEffect(variable);
         if (selected == AttributeReflection.Null)
             return (reflectedEffect, reflectedQualifiers);
         if (kind == Schema.DescriptorType.Sampler)
             throw new InvalidDataException(
-                $"Shader sampler '{variable.Name}' cannot declare AccessEffect.");
+                $"ShaderData sampler '{variable.Name}' cannot declare AccessEffect.");
         if (selected.ArgumentCount != 2)
             throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' ResourceEffect must provide effects and qualifiers arguments.");
+                $"ShaderData resource '{variable.Name}' ResourceEffect must provide effects and qualifiers arguments.");
 
         Schema.AccessEffect declaredEffect = ParseEffect(variable.Name, selected);
         Schema.ShaderQualifiers declaredQualifiers = ParseQualifiers(variable.Name, selected);
         if (((int)declaredEffect & ~(int)reflectedEffect) != 0)
             throw new InvalidDataException(
-                $"Shader resource '{variable.Name}' declares effect {declaredEffect} beyond its reflected effect {reflectedEffect}.");
+                $"ShaderData resource '{variable.Name}' declares effect {declaredEffect} beyond its reflected effect {reflectedEffect}.");
         ValidateQualifiers(variable.Name, declaredEffect, declaredQualifiers, kind, reflectedEffect);
         return (declaredEffect, reflectedQualifiers | declaredQualifiers);
     }
@@ -497,7 +497,7 @@ internal static partial class SlangBindingMap
                 continue;
             if (selected != AttributeReflection.Null)
                 throw new InvalidDataException(
-                    $"Shader resource '{variable.Name}' declares ResourceEffect more than once.");
+                    $"ShaderData resource '{variable.Name}' declares ResourceEffect more than once.");
             selected = attribute;
         }
         return selected;
@@ -522,7 +522,7 @@ internal static partial class SlangBindingMap
         2 => Schema.AccessEffect.Write,
         3 => Schema.AccessEffect.ReadWrite,
         int value => throw new InvalidDataException(
-            $"Shader resource '{resourceName}' declares invalid ResourceEffects value {value}."),
+            $"ShaderData resource '{resourceName}' declares invalid ResourceEffects value {value}."),
     };
 
     private static Schema.ShaderQualifiers ParseQualifiers(
@@ -538,7 +538,7 @@ internal static partial class SlangBindingMap
             Schema.ShaderQualifiers.Feedback);
         if (qualifierValue < 0 || (qualifierValue & ~allQualifiers) != 0)
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' declares invalid ResourceQualifiers value {qualifierValue}.");
+                $"ShaderData resource '{resourceName}' declares invalid ResourceQualifiers value {qualifierValue}.");
         return (Schema.ShaderQualifiers)qualifierValue;
     }
 
@@ -575,7 +575,7 @@ internal static partial class SlangBindingMap
         bool storage = kind is Schema.DescriptorType.StorageBuffer or Schema.DescriptorType.StorageTexture;
         if (qualifiers != Schema.ShaderQualifiers.None && !storage)
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' declares qualifiers on non-storage slot {kind}.");
+                $"ShaderData resource '{resourceName}' declares qualifiers on non-storage slot {kind}.");
     }
 
     private static void ValidateAtomicQualifier(
@@ -589,7 +589,7 @@ internal static partial class SlangBindingMap
              reflectedEffect != Schema.AccessEffect.ReadWrite))
         {
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' must declare ReadWrite and expose read-write access for Atomic qualifiers.");
+                $"ShaderData resource '{resourceName}' must declare ReadWrite and expose read-write access for Atomic qualifiers.");
         }
     }
 
@@ -603,7 +603,7 @@ internal static partial class SlangBindingMap
         if ((qualifiers & qualifier) != 0 &&
             effect is not (Schema.AccessEffect.Write or Schema.AccessEffect.ReadWrite))
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' must include Write for {qualifierName} qualifiers.");
+                $"ShaderData resource '{resourceName}' must include Write for {qualifierName} qualifiers.");
     }
 
     private static void ValidateReadQualifier(
@@ -614,7 +614,7 @@ internal static partial class SlangBindingMap
         if ((qualifiers & Schema.ShaderQualifiers.Consume) != 0 &&
             effect is not (Schema.AccessEffect.Read or Schema.AccessEffect.ReadWrite))
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' must include Read for Consume qualifiers.");
+                $"ShaderData resource '{resourceName}' must include Read for Consume qualifiers.");
     }
 
     private static void ValidateFeedbackQualifier(
@@ -625,7 +625,7 @@ internal static partial class SlangBindingMap
         if ((qualifiers & Schema.ShaderQualifiers.Feedback) != 0 &&
             effect != Schema.AccessEffect.ReadWrite)
             throw new InvalidDataException(
-                $"Shader resource '{resourceName}' must declare ReadWrite for Feedback qualifiers.");
+                $"ShaderData resource '{resourceName}' must declare ReadWrite for Feedback qualifiers.");
     }
 
     private static bool IsResourceEffectAttribute(string name) =>
@@ -652,7 +652,7 @@ internal static partial class SlangBindingMap
         TypeReflection type = variable.Type.UnwrapArray();
         if (type.Kind is SlangTypeKind.ParameterBlock or SlangTypeKind.Struct)
             throw new InvalidDataException(
-                $"Shader variable '{variable.Name}' declares AccessEffect on a resource container instead of a resource-valued leaf.");
+                $"ShaderData variable '{variable.Name}' declares AccessEffect on a resource container instead of a resource-valued leaf.");
     }
 
     private static Schema.TextureSampleType? TextureSampleType(

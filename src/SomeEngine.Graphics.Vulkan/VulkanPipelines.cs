@@ -4,6 +4,35 @@ namespace SomeEngine.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanBackend
 {
+    private void ValidateComputeSubgroupSize(VulkanDevice device, uint size)
+    {
+        PhysicalDeviceVulkan13Features features13 = new()
+        {
+            SType = StructureType.PhysicalDeviceVulkan13Features,
+        };
+        PhysicalDeviceFeatures2 features = new()
+        {
+            SType = StructureType.PhysicalDeviceFeatures2,
+            PNext = &features13,
+        };
+        Api.GetPhysicalDeviceFeatures2(device.PhysicalDevice, &features);
+        PhysicalDeviceSubgroupSizeControlProperties subgroup = new()
+        {
+            SType = StructureType.PhysicalDeviceSubgroupSizeControlProperties,
+        };
+        PhysicalDeviceProperties2 properties = new()
+        {
+            SType = StructureType.PhysicalDeviceProperties2,
+            PNext = &subgroup,
+        };
+        Api.GetPhysicalDeviceProperties2(device.PhysicalDevice, &properties);
+        if (!features13.SubgroupSizeControl ||
+            (subgroup.RequiredSubgroupSizeStages & ShaderStageFlags.ComputeBit) == 0 ||
+            size < subgroup.MinSubgroupSize ||
+            size > subgroup.MaxSubgroupSize)
+            throw new NotSupportedException($"The compute shader requires subgroup size {size}.");
+    }
+
     internal Pipeline CreateGraphicsPipeline(
         RhiDevice device,
         in GraphicsPipelineDesc desc,
@@ -12,11 +41,11 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ValidateGraphicsPipeline(nativeDevice, desc);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
+        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
         VulkanStreamOutputPlan? streamOutput = desc.HasStreamOutput
             ? VulkanStreamOutputPlan.Create(nativeDevice, desc.Vertex, desc.StreamOutput)
             : null;
-        EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
+        ShaderEntryPoint[] entries = [desc.Vertex, desc.Pixel];
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
             reflection,
@@ -66,7 +95,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        RetainedShaderProgram program = RetainedShaderProgram.Capture(desc.Program);
         try
         {
             GraphicsPipelineSnapshot snapshot = new(desc, program.Program);
@@ -91,7 +120,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ArgumentNullException.ThrowIfNull(desc.Program);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
+        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
             nativeDevice,
             reflection,
@@ -121,6 +150,16 @@ internal sealed unsafe partial class VulkanBackend
                 Module = module,
                 PName = (byte*)entryName,
             };
+            PipelineShaderStageRequiredSubgroupSizeCreateInfo requiredSubgroup = new()
+            {
+                SType = StructureType.PipelineShaderStageRequiredSubgroupSizeCreateInfo,
+                RequiredSubgroupSize = checked((uint)desc.Compute.ComputeWaveSize),
+            };
+            if (requiredSubgroup.RequiredSubgroupSize != 0)
+            {
+                ValidateComputeSubgroupSize(nativeDevice, requiredSubgroup.RequiredSubgroupSize);
+                stage.PNext = &requiredSubgroup;
+            }
             ComputePipelineCreateInfo createInfo = new()
             {
                 SType = StructureType.ComputePipelineCreateInfo,
@@ -167,7 +206,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
-        RetainedSlangProgram program = RetainedSlangProgram.Capture(desc.Program);
+        RetainedShaderProgram program = RetainedShaderProgram.Capture(desc.Program);
         try
         {
             ComputePipelineSnapshot snapshot = new(desc, program.Program);
@@ -467,118 +506,55 @@ internal sealed unsafe partial class VulkanBackend
     }
 
     private static CompiledSpirv CompileSpirv(
-        IComponentType program,
-        ShaderReflection reflection,
+        ShaderProgram program,
+        ShaderProgramLayout reflection,
         VulkanPipelineLayoutState layout,
-        EntryPointReflection entry,
+        ShaderEntryPoint entry,
         SlangStage expectedStage,
         string role,
         VulkanStreamOutputPlan? streamOutput = null)
     {
-        if (entry == EntryPointReflection.Null || entry.Stage != expectedStage)
+        if (entry == ShaderEntryPoint.Null || entry.Stage != expectedStage)
             throw new ArgumentException($"The {role} entry point has the wrong Slang stage.", nameof(entry));
-        int selected = -1;
+        bool belongsToProgram = false;
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
             if (reflection.GetEntryPointByIndex(index) == entry)
             {
-                selected = checked((int)index);
+                belongsToProgram = true;
                 break;
             }
         }
-        if (selected < 0)
+        if (!belongsToProgram)
             throw new ArgumentException("The entry point does not belong to the supplied Slang program.", nameof(entry));
-        ISlangBlob? code = null;
-        ISlangBlob? diagnostics = null;
-        try
-        {
-            SlangResult result = program.GetEntryPointCode(selected, 0, out code!, out diagnostics);
-            if (!result.Succeeded || code is null || code.GetBufferPointer() is null || code.GetBufferSize() == 0)
-                throw new GraphicsException(GraphicsError.ShaderCompilation, FormatSlangFailure($"Slang {role} SPIR-V generation failed", diagnostics));
-            byte[] bytes = NormalizeSpirvDescriptorBindings(
-                new ReadOnlySpan<byte>(
-                    (void*)code.GetBufferPointer(),
-                    checked((int)code.GetBufferSize())),
-                layout.GetSpirvTargets(entry),
-                out VulkanSpirvBindingTarget[] activeTargets);
-            string entryName = FindSpirvEntryPointName(bytes, entry.Name);
-            if (streamOutput is not null)
-                bytes = ApplySpirvStreamOutput(bytes, entryName, streamOutput);
-            return new CompiledSpirv(bytes, entryName, activeTargets);
-        }
-        finally
-        {
-            ReleaseSlang(code);
-            ReleaseSlang(diagnostics);
-        }
+        if (entry.Code.IsEmpty)
+            throw new GraphicsException(
+                GraphicsError.ShaderCompilation,
+                $"The cooked {role} entry point contains no SPIR-V.");
+        byte[] bytes = NormalizeSpirvDescriptorBindings(
+            entry.Code.Span,
+            layout.GetSpirvTargets(entry),
+            out VulkanSpirvBindingTarget[] activeTargets);
+        string entryName = entry.TargetName;
+        if (string.IsNullOrWhiteSpace(entryName))
+            throw new GraphicsException(
+                GraphicsError.ShaderCompilation,
+                $"The cooked {role} entry point has no target entry name.");
+        if (streamOutput is not null)
+            bytes = ApplySpirvStreamOutput(bytes, entryName, streamOutput);
+        return new CompiledSpirv(bytes, entryName, activeTargets);
     }
 
-    private static string FindSpirvEntryPointName(
-        ReadOnlySpan<byte> code,
-        string expectedName)
-    {
-        ReadOnlySpan<uint> words = MemoryMarshal.Cast<byte, uint>(code);
-        string? onlyName = null;
-        int nameCount = 0;
-        for (int index = 5; index < words.Length;)
-        {
-            uint instruction = words[index];
-            int wordCount = checked((int)(instruction >> 16));
-            uint opcode = instruction & 0xFFFF;
-            if (wordCount <= 0 || index > words.Length - wordCount)
-                break;
-            if (opcode == 15 && wordCount >= 4)
-            {
-                ReadOnlySpan<byte> nameBytes = MemoryMarshal.AsBytes(words.Slice(index + 3, wordCount - 3));
-                int terminator = nameBytes.IndexOf((byte)0);
-                if (terminator >= 0)
-                    nameBytes = nameBytes[..terminator];
-                string name = System.Text.Encoding.UTF8.GetString(nameBytes);
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    if (string.Equals(name, expectedName, StringComparison.Ordinal))
-                        return name;
-                    onlyName = name;
-                    nameCount++;
-                }
-            }
-            index += wordCount;
-        }
-        if (nameCount == 1 && onlyName is not null)
-            return onlyName;
-        throw new GraphicsException(
-            GraphicsError.ShaderCompilation,
-            $"SPIR-V does not contain the requested entry point '{expectedName}'.");
-    }
-
-    private static ShaderReflection GetProgramReflection(IComponentType program)
+    private static ShaderProgramLayout GetProgramReflection(ShaderProgram program)
     {
         ArgumentNullException.ThrowIfNull(program);
-        ISlangBlob? diagnostics = null;
-        try
+        if (!string.Equals(program.Backend, "spirv", StringComparison.OrdinalIgnoreCase))
         {
-            ShaderReflection reflection = program.GetLayout(0, out diagnostics);
-            if (reflection == ShaderReflection.Null)
-                throw new GraphicsException(GraphicsError.ShaderCompilation, FormatSlangFailure("Slang program reflection failed", diagnostics));
-            if (program.GetSpecializationParamCount() != 0)
-                throw new GraphicsException(GraphicsError.PipelineCreation, "Pipeline creation requires a fully specialized Slang program.");
-            return reflection;
+            throw new GraphicsException(
+                GraphicsError.PipelineCreation,
+                $"Vulkan pipeline creation requires cooked SPIR-V, not '{program.Backend}'.");
         }
-        finally
-        {
-            ReleaseSlang(diagnostics);
-        }
-    }
-
-    private static string FormatSlangFailure(string prefix, ISlangBlob? diagnostics) =>
-        string.IsNullOrWhiteSpace(diagnostics?.AsString)
-            ? prefix
-            : $"{prefix}: {diagnostics.AsString.Trim()}";
-
-    private static void ReleaseSlang(object? value)
-    {
-        if (value is System.Runtime.InteropServices.Marshalling.ComObject wrapper)
-            wrapper.FinalRelease();
+        return program.Layout;
     }
 
     private static void ValidateGraphicsPipeline(
@@ -778,9 +754,9 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class GraphicsPipelineSnapshot
     {
-        private readonly IComponentType _program;
-        private readonly EntryPointReflection _vertex;
-        private readonly EntryPointReflection _pixel;
+        private readonly ShaderProgram _program;
+        private readonly ShaderEntryPoint _vertex;
+        private readonly ShaderEntryPoint _pixel;
         private readonly VertexBufferLayout[] _vertexBuffers;
         private readonly VertexAttribute[] _vertexAttributes;
         private readonly SomeEngine.Graphics.PrimitiveTopology _topology;
@@ -803,7 +779,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal GraphicsPipelineSnapshot(
             in GraphicsPipelineDesc desc,
-            IComponentType program)
+            ShaderProgram program)
         {
             _program = program;
             _vertex = desc.Vertex;
@@ -893,14 +869,14 @@ internal sealed unsafe partial class VulkanBackend
 
     private sealed class ComputePipelineSnapshot
     {
-        private readonly IComponentType _program;
-        private readonly EntryPointReflection _compute;
+        private readonly ShaderProgram _program;
+        private readonly ShaderEntryPoint _compute;
         private readonly string? _label;
         private readonly StaticSamplerBinding[] _staticSamplers;
 
         internal ComputePipelineSnapshot(
             in ComputePipelineDesc desc,
-            IComponentType program)
+            ShaderProgram program)
         {
             _program = program;
             _compute = desc.Compute;

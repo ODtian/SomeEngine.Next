@@ -23,14 +23,14 @@ public class SourceMetaFilesTests
             }
             """).RootElement.Clone();
 
-        SourceMetaFiles.Save(sourcePath, new SourceMeta
+        SourceMeta.Save(sourcePath, new SourceMeta
         {
             SourceGuid = SourceGuid.New(),
             Importer = "GltfSourceImporter",
             ImporterSettings = settings,
         });
 
-        SourceMeta loaded = SourceMetaFiles.Load(sourcePath);
+        SourceMeta loaded = SourceMeta.Load(sourcePath);
 
         Assert.True(loaded.ImporterSettings.HasValue);
         Assert.Equal(

@@ -256,50 +256,72 @@ internal sealed unsafe partial class D3D12Backend
 {
     /// <summary>Returns a caller-disposed exclusive borrow of the native Queue.</summary>
     /// <remarks>The borrow holds the same Queue gate as submission and sparse mapping.</remarks>
-    public D3D12CommandQueueLock LockCommandQueue(Queue queue) =>
-        RequireQueue(queue, nameof(queue)).AcquireNativeLock();
-
+    public D3D12CommandQueueLock LockCommandQueue(Queue queue)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireQueue(queue, nameof(queue)).AcquireNativeLock();
+    }
     /// <summary>Returns the borrowed native Device pointer without AddRef.</summary>
-    public ID3D12Device10* GetNativeDevice(Device device) =>
-        RequireDevice(device, nameof(device)).Native;
-
+    public ID3D12Device10* GetNativeDevice(Device device)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireDevice(device, nameof(device)).Native;
+    }
     /// <summary>Returns the borrowed native Adapter pointer without AddRef.</summary>
-    public IDXGIAdapter4* GetNativeAdapter(Device device) =>
-        RequireDevice(device, nameof(device)).NativeAdapter;
-
+    public IDXGIAdapter4* GetNativeAdapter(Device device)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireDevice(device, nameof(device)).NativeAdapter;
+    }
     /// <summary>Returns the borrowed native Buffer resource pointer without AddRef.</summary>
-    public ID3D12Resource* GetNativeResource(Buffer buffer) =>
-        RequireBuffer(buffer).Native;
-
+    public ID3D12Resource* GetNativeResource(Buffer buffer)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireBuffer(buffer).Native;
+    }
     /// <summary>Returns the borrowed native Texture resource pointer without AddRef.</summary>
-    public ID3D12Resource* GetNativeResource(Texture texture) =>
-        RequireTexture(texture).Native;
-
+    public ID3D12Resource* GetNativeResource(Texture texture)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireTexture(texture).Native;
+    }
     /// <summary>Returns the borrowed native Heap pointer without AddRef.</summary>
-    public ID3D12Heap* GetNativeHeap(Heap heap) =>
-        RequireHeap(heap).Native;
-
+    public ID3D12Heap* GetNativeHeap(Heap heap)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireHeap(heap).Native;
+    }
     /// <summary>Returns the borrowed native graphics/compute/mesh pipeline pointer without AddRef.</summary>
-    public ID3D12PipelineState* GetNativePipelineState(Pipeline pipeline) =>
-        (ID3D12PipelineState*)RequirePipeline(pipeline).NativeObject;
-
+    public ID3D12PipelineState* GetNativePipelineState(Pipeline pipeline)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return (ID3D12PipelineState*)RequirePipeline(pipeline).NativeObject;
+    }
     /// <summary>Returns the borrowed native ray-tracing/Work-Graph state object without AddRef.</summary>
-    public ID3D12StateObject* GetNativeStateObject(Pipeline pipeline) =>
-        (ID3D12StateObject*)RequirePipeline(pipeline).NativeObject;
-
+    public ID3D12StateObject* GetNativeStateObject(Pipeline pipeline)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return (ID3D12StateObject*)RequirePipeline(pipeline).NativeObject;
+    }
     /// <summary>Returns the borrowed native root signature without AddRef.</summary>
-    public ID3D12RootSignature* GetNativeRootSignature(Pipeline pipeline) =>
-        RequirePipeline(pipeline).RootSignature.Native;
-
+    public ID3D12RootSignature* GetNativeRootSignature(Pipeline pipeline)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequirePipeline(pipeline).RootSignature.Native;
+    }
     /// <summary>Returns the borrowed native Query Heap without AddRef.</summary>
-    public ID3D12QueryHeap* GetNativeQueryHeap(QueryPool pool) =>
-        RequireQueryPool(pool).Native;
-
+    public ID3D12QueryHeap* GetNativeQueryHeap(QueryPool pool)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireQueryPool(pool).Native;
+    }
     /// <summary>Returns the borrowed native Fence for an ExternalTimeline without AddRef.</summary>
     /// <remarks>A Queue's private completion Fence is never exposed by native access.</remarks>
-    public ID3D12Fence* GetNativeTimeline(ExternalTimeline timeline) =>
-        RequireTimeline(timeline).Native;
-
+    public ID3D12Fence* GetNativeTimeline(ExternalTimeline timeline)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireTimeline(timeline).Native;
+    }
     /// <summary>Returns a Recording-scoped borrowed command list and dirties its full state shadow.</summary>
     /// <remarks>
     /// The resource span is consumed synchronously. Automatic retirement captures every listed
@@ -309,6 +331,7 @@ internal sealed unsafe partial class D3D12Backend
         CommandContext context,
         ReadOnlySpan<Resource> retainedResources)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         return command.BorrowNativeCommandList(retainedResources);
     }

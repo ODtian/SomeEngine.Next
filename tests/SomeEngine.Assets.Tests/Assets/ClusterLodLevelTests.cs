@@ -10,7 +10,12 @@ public sealed class ClusterLodLevelTests
     public void ProcessedIcoSphereContainsLowerLodLevels()
     {
         var (vertices, indices, attributes) = PrimitiveMeshGenerator.CreateIcoSphere(5);
-        var meshAsset = ClusterBuilder.ProcessRaw(vertices, attributes, indices, new List<string>(), "TestLOD");
+        var meshAsset = ClusterBuilder.ProcessRaw(
+            vertices,
+            attributes,
+            indices,
+            ClusterBuilderTestMaterials.Slots(),
+            "TestLOD");
 
         (int[] levelCounts, int maxLevel, _) = ReadLevelCounts(meshAsset.Payload!.Value);
 
@@ -39,18 +44,18 @@ public sealed class ClusterLodLevelTests
                 break;
 
             uint clusterCount = MemoryMarshal.Read<uint>(pageSpan.Slice(0, 4));
-            uint totalTriCount = MemoryMarshal.Read<uint>(pageSpan.Slice(8, 4));
             uint clustersOffset = MemoryMarshal.Read<uint>(pageSpan.Slice(16, 4));
-            uint indicesOffset = MemoryMarshal.Read<uint>(pageSpan.Slice(28, 4));
-            uint pageSize = indicesOffset + totalTriCount * 3;
+            uint extensionDataOffset = MemoryMarshal.Read<uint>(pageSpan.Slice(28, 4));
+            uint extensionDataSize = MemoryMarshal.Read<uint>(pageSpan.Slice(40, 4));
+            uint pageSize = checked(extensionDataOffset + extensionDataSize);
 
-            int clusterByteSize = Marshal.SizeOf<GPUCluster>();
+            int clusterByteSize = Marshal.SizeOf<PackedCluster>();
             if (clustersOffset + clusterCount * clusterByteSize > pageSpan.Length)
                 break;
             ReadOnlySpan<byte> clustersSpan = pageSpan.Slice((int)clustersOffset, (int)clusterCount * clusterByteSize);
-            ReadOnlySpan<GPUCluster> clusters = MemoryMarshal.Cast<byte, GPUCluster>(clustersSpan);
+            ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(clustersSpan);
 
-            foreach (GPUCluster cluster in clusters)
+            foreach (PackedCluster cluster in clusters)
             {
                 int level = (int)((cluster.PackedCounts >> 16) & 0xFF);
                 if ((uint)level < (uint)levelCounts.Length)

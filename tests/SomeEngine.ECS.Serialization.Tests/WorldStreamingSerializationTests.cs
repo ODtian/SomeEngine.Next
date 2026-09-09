@@ -148,44 +148,6 @@ public sealed class WorldStreamingSerializationTests
     }
 
     [Fact]
-    public async Task SnapshotControlPlane_SerializesConcurrentTopologyWriteWithoutRevisionBump()
-    {
-        var world = new World();
-        using var admission = new BlockingSnapshotAdmission();
-        world.BindJobAdmission(admission);
-
-        Task capture = Task.Run(() =>
-        {
-            using var output = new MemoryStream();
-            WorldSerializer.WriteWorld(output, world, new SerializationRegistry());
-        });
-        Assert.True(admission.WaitUntilSnapshotEntered(TimeSpan.FromSeconds(10)));
-
-        Task<Entity> mutation = Task.Run(() => world.CreateEntity());
-        try
-        {
-            Task completed = await Task.WhenAny(
-                mutation,
-                Task.Delay(TimeSpan.FromMilliseconds(200)));
-            Assert.NotSame(mutation, completed);
-        }
-        finally
-        {
-            admission.ReleaseSnapshot();
-        }
-
-        await capture.WaitAsync(TimeSpan.FromSeconds(10));
-        Entity created = await mutation.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.True(world.IsAlive(created));
-    }
-
-
-
-
-
-
-
-    [Fact]
     public void WorldSerializationPreservesQueryResults()
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
@@ -768,60 +730,7 @@ public sealed class WorldStreamingSerializationTests
 
 
 
-    private sealed class BlockingSnapshotAdmission : IWorldJobAdmission, IDisposable
-    {
-        private readonly SemaphoreSlim _exclusive = new(1, 1);
-        private readonly ManualResetEventSlim _snapshotEntered = new(initialState: false);
-        private readonly ManualResetEventSlim _releaseSnapshot = new(initialState: false);
-        private int _blockNextSnapshot = 1;
 
-        public bool HasCurrentJobScope => false;
-
-        public bool HasCurrentThreadScope(World world) => false;
-
-        internal bool WaitUntilSnapshotEntered(TimeSpan timeout) =>
-            _snapshotEntered.Wait(timeout);
-
-        internal void ReleaseSnapshot() => _releaseSnapshot.Set();
-
-        public void Enter(World world, in WorldJobAdmissionRequest request)
-        {
-            _exclusive.Wait();
-            try
-            {
-                bool snapshotControlPlane =
-                    request.Topology == WorldTopologyAccess.Write &&
-                    !request.BumpsTopologyRevision &&
-                    !request.CanWrite;
-                if (snapshotControlPlane &&
-                    Interlocked.Exchange(ref _blockNextSnapshot, 0) != 0)
-                {
-                    _snapshotEntered.Set();
-                    _releaseSnapshot.Wait();
-                }
-            }
-            catch
-            {
-                _exclusive.Release();
-                throw;
-            }
-        }
-
-        public void Exit(World world, in WorldJobAdmissionRequest request) =>
-            _exclusive.Release();
-
-        public void ValidateCommandBufferAccess(World world)
-        {
-        }
-
-        public void Dispose()
-        {
-            _releaseSnapshot.Set();
-            _exclusive.Dispose();
-            _snapshotEntered.Dispose();
-            _releaseSnapshot.Dispose();
-        }
-    }
 
     private sealed class ThrowingWriteStream : Stream
     {

@@ -21,7 +21,7 @@ The product entry point is `IGraphicsBackend`. `DeviceFeatures` is used only whi
 creation. After creation, `TryGetCapability<TCapability>` and `Device.Capabilities` are the facts a
 caller may rely on.
 
-## Contract pages
+## Architecture pages
 
 - [[Core-Contract]] — public boundary, shader authority, error and allocation rules.
 - [[Lifetime-Concurrency-and-Diagnostics]] — Dispose, parent teardown, physical retention and Device Lost.
@@ -51,3 +51,11 @@ implementation details used to preserve native ownership and failure atomicity.
 
 Render Graph is a consumer of this contract. It may automate scheduling and lifetime decisions, but
 it must express the resulting barriers, Queue waits and submissions through the same RHI operations.
+
+## Working with RenderGraph
+
+RG owns declaration/value dependencies and execution scheduling; RHI owns native translation and the lifetime of captured resources. `DeviceLimits.ShaderBufferAlignment` gives a sufficient base-offset alignment for shader buffer views; an element stride can impose an additional alignment. RG combines these facts in its existing upload allocator. Constant buffers may be bound directly as a buffer/range, using the same backend recording lifetime as other bindings.
+
+Each texture subresource has one combined access state per pass. A barrier batch contains independent operations; a split barrier is a paired operation whose two ranges must remain equal. Memory aliasing makes storage available to a new resource but never transfers the previous resource's state to it.
+
+See [[Render-Graph]] for the single description of graph mutation, boundary writeback and cache invalidation. Ordinary behavioral tests replace the removed harness and source-shape gates.

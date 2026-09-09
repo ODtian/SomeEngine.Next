@@ -25,18 +25,24 @@ internal sealed unsafe partial class D3D12Backend
     private const int DxgiErrorDeviceReset = unchecked((int)0x887A0007);
     private const int DxgiErrorDriverInternalError = unchecked((int)0x887A0020);
 
-    public Queue GetQueue(Device device, QueueType type, uint index = 0) =>
-        RequireDevice(device, nameof(device)).GetQueue(type, index);
-
+    public Queue GetQueue(Device device, QueueType type, uint index = 0)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireDevice(device, nameof(device)).GetQueue(type, index);
+    }
     public bool TryGetCapability<TCapability>(
         Device device,
         out TCapability? capability)
-        where TCapability : DeviceCapability =>
-        RequireDevice(device, nameof(device)).TryGetCapability(out capability);
-
-    public void CollectCompleted(Device device) =>
+        where TCapability : DeviceCapability
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        return RequireDevice(device, nameof(device)).TryGetCapability(out capability);
+    }
+    public void CollectCompleted(Device device)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiWaitAndCollect);
         RequireDevice(device, nameof(device)).CollectCompleted();
-
+    }
     private static bool IsDirectDeviceRemovalCode(long result) =>
         result is DxgiErrorDeviceRemoved or
             DxgiErrorDeviceHung or
@@ -125,7 +131,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             int? queriedReason = device.Native is null
                 ? null
-                : device.Native->GetDeviceRemovedReason();
+                : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
             throw PublishDeviceLoss(
                 device,
                 result,
@@ -166,7 +172,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         int reason = device.Native is null
             ? 0
-            : device.Native->GetDeviceRemovedReason();
+            : DeviceQueryTrace.GetDeviceRemovedReason(device.Native);
         if (IsDeviceRemovedReason(reason))
         {
             throw PublishDeviceLoss(
@@ -211,6 +217,7 @@ internal sealed unsafe partial class D3D12Backend
         private IDXGIAdapter4* _adapter;
         private ID3D12Device10* _native;
         private int _nativeDeviceLossConfirmed;
+        private readonly uint[] _descriptorIncrements = new uint[4];
 
         private D3D12Device(
             D3D12Backend backend,
@@ -230,6 +237,9 @@ internal sealed unsafe partial class D3D12Backend
             _children = new GraphicsObjectRegistry(_childrenGate);
             _adapter = adapter;
             _native = native;
+            for (int type = 0; type < _descriptorIncrements.Length; type++)
+                _descriptorIncrements[type] = DeviceQueryTrace.GetDescriptorHandleIncrementSize(
+                    native, (DescriptorHeapType)type);
             SetNativeName(native, description.Label ?? "SomeEngine D3D12 Device");
             _resourceAllocator = new D3D12ResourceAllocator(this);
             _pipelineCompiler = new D3D12PipelineCompiler(this);
@@ -294,6 +304,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
+        internal uint DescriptorIncrement(DescriptorHeapType type) => _descriptorIncrements[(int)type];
         internal ID3D12Device10* Native => _native;
         internal D3D12Backend Backend => _backend;
         internal IDXGIAdapter4* NativeAdapter => _adapter;
@@ -430,8 +441,8 @@ internal sealed unsafe partial class D3D12Backend
             Guid iid = ID3D12Device10.Guid;
             ThrowIfFailed(
                 null,
-                backend._deviceFactory->CreateDevice(
-                    (IUnknown*)adapter,
+                    DevicePipelineTrace.CreateDevice(
+                backend._deviceFactory, (IUnknown*)adapter,
                     D3DFeatureLevel.Level120,
                     &iid,
                     (void**)&native),
@@ -493,7 +504,7 @@ internal sealed unsafe partial class D3D12Backend
             catch
             {
                 if (native is not null)
-                    _ = native->Release();
+                    _ = DeviceQueryTrace.Release(native);
                 throw;
             }
         }
@@ -760,8 +771,8 @@ internal sealed unsafe partial class D3D12Backend
                     Guid queueIid = ID3D12CommandQueue.Guid;
                     ThrowIfFailed(
                         this,
-                        _native->CreateCommandQueue(
-                            &nativeDescription,
+                            DevicePipelineTrace.CreateCommandQueue(
+                        _native, &nativeDescription,
                             &queueIid,
                             (void**)&nativeQueue),
                         NativeOperationType.Ordinary,
@@ -775,8 +786,8 @@ internal sealed unsafe partial class D3D12Backend
                     {
                         ThrowIfFailed(
                             this,
-                            _native->CreateFence(
-                                0,
+                                DevicePipelineTrace.CreateFence(
+                            _native, 0,
                                 FenceFlags.None,
                                 &fenceIid,
                                 (void**)&fence),
@@ -797,9 +808,9 @@ internal sealed unsafe partial class D3D12Backend
                     }
                     catch
                     {
-                        _ = nativeQueue->Release();
+                        _ = QueueTrace.Release(nativeQueue);
                         if (fence is not null)
-                            _ = fence->Release();
+                            _ = ResourceTrace.Release(fence);
                         throw;
                     }
                 }
@@ -1043,12 +1054,12 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12Device10* native = _native;
             _native = null;
             if (native is not null)
-                _ = native->Release();
+                _ = DeviceQueryTrace.Release(native);
 
             IDXGIAdapter4* adapter = _adapter;
             _adapter = null;
             if (adapter is not null)
-                _ = adapter->Release();
+                _ = PresentationTrace.Release(adapter);
         }
 
         private void ReleaseQueues()
@@ -1072,14 +1083,23 @@ internal sealed unsafe partial class D3D12Backend
                     ResourceDescriptorCapacity: 1_000_000,
                     SamplerDescriptorCapacity: 2_048,
                     ConstantBufferAlignment: 256,
+                    ShaderBufferAlignment: 16,
                     TextureDataPitchAlignment: 256,
-                    TextureDataPlacementAlignment: 512),
+                    TextureDataPlacementAlignment: 512,
+                    MaximumConstantBufferRange: 65_536),
                 supportsBundles: true,
                 supportsPipelineStatistics: true,
                 supportsStreamOutputStatistics: true,
                 supportsDepthBounds: features.DepthBoundsSupported,
                 supportedDynamicStates: GetSupportedDynamicStates(features),
-                features.Formats);
+                features.Formats,
+                supportsBufferInt64Atomics: features.BufferInt64AtomicsSupported,
+                supportsImageInt64Atomics: features.ImageInt64AtomicsSupported,
+                // D3D12/SM 6.6 does not guarantee forward progress between thread groups.
+                // Keep the persistent queue disabled until the backend can prove a stronger
+                // device-specific scheduling contract.
+                supportsComputeForwardProgress: false,
+                supportsConcurrentBufferReads: features.EnhancedBarriers);
 
         private static DynamicStates GetSupportedDynamicStates(
             in D3D12FeatureSupport features)
@@ -1104,6 +1124,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly D3D12Device _device;
         private ulong _nextCompletion = 1;
+        private readonly Dictionary<D3D12Queue, ulong> _completionWaits = [];
         private int _released;
 
         internal D3D12Queue(
@@ -1146,17 +1167,35 @@ internal sealed unsafe partial class D3D12Backend
             ulong value = _nextCompletion;
             ThrowIfFailed(
                 _device,
-                Native->Signal(Fence, value),
+                    QueueTrace.Signal(Native, Fence, value),
                 NativeOperationType.Ordinary,
                 "ID3D12CommandQueue::Signal");
             _nextCompletion = value + 1;
             return new QueueCompletion(this, value);
         }
 
+        internal bool WaitForCompletionUnderGate(D3D12Queue source, ulong value)
+        {
+            if (ReferenceEquals(this, source) ||
+                (_completionWaits.TryGetValue(source, out ulong covered) && covered >= value))
+                return false;
+            bool complete = source.IsComplete(value);
+            if (!complete)
+            {
+                ThrowIfFailed(
+                    _device,
+                    QueueTrace.Wait(Native, source.Fence, value),
+                    NativeOperationType.Ordinary,
+                    "ID3D12CommandQueue::Wait");
+            }
+            _completionWaits[source] = value;
+            return !complete;
+        }
+
         internal bool IsComplete(ulong value)
         {
             _device.ThrowIfUnavailable();
-            ulong completed = Fence->GetCompletedValue();
+            ulong completed = ResourceTrace.GetCompletedValue(Fence);
             if (completed == ulong.MaxValue)
             {
                 throw PublishDeviceLoss(
@@ -1182,12 +1221,12 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12Fence* fence = Fence;
             Fence = null;
             if (fence is not null)
-                _ = fence->Release();
+                _ = ResourceTrace.Release(fence);
 
             ID3D12CommandQueue* queue = Native;
             Native = null;
             if (queue is not null)
-                _ = queue->Release();
+                _ = QueueTrace.Release(queue);
         }
 
         internal void QuiescePayloads() => DrainOrAbandonPayloads();
@@ -1199,14 +1238,17 @@ internal sealed unsafe partial class D3D12Backend
             uint nodeCount,
             DeviceFeatures availableFeatures,
             in FeatureDataD3D12Options options,
+            bool int64ShaderOps,
             in FeatureDataD3D12Options2 options2,
             in FeatureDataD3D12Options5 options5,
             in FeatureDataD3D12Options6 options6,
             in FeatureDataD3D12Options7 options7,
+            in FeatureDataD3D12Options9 options9,
             in FeatureDataD3D12Options12 options12,
             in FeatureDataD3D12Options15 options15,
             in FeatureDataD3D12Options16 options16,
             in FeatureDataD3D12Options21 options21,
+            bool shaderModel66,
             FormatSupport[] formats,
             Format[] sparseTexture2DFormats,
             Format[] sparseTexture3DFormats,
@@ -1215,14 +1257,17 @@ internal sealed unsafe partial class D3D12Backend
             NodeCount = nodeCount;
             AvailableFeatures = availableFeatures;
             Options = options;
+            Int64ShaderOps = int64ShaderOps;
             Options2 = options2;
             Options5 = options5;
             Options6 = options6;
             Options7 = options7;
+            Options9 = options9;
             Options12 = options12;
             Options15 = options15;
             Options16 = options16;
             Options21 = options21;
+            ShaderModel66 = shaderModel66;
             Formats = formats;
             SparseTexture2DFormats = sparseTexture2DFormats;
             SparseTexture3DFormats = sparseTexture3DFormats;
@@ -1232,14 +1277,17 @@ internal sealed unsafe partial class D3D12Backend
         internal uint NodeCount { get; }
         internal DeviceFeatures AvailableFeatures { get; }
         internal FeatureDataD3D12Options Options { get; }
+        internal bool Int64ShaderOps { get; }
         internal FeatureDataD3D12Options2 Options2 { get; }
         internal FeatureDataD3D12Options5 Options5 { get; }
         internal FeatureDataD3D12Options6 Options6 { get; }
         internal FeatureDataD3D12Options7 Options7 { get; }
+        internal FeatureDataD3D12Options9 Options9 { get; }
         internal FeatureDataD3D12Options12 Options12 { get; }
         internal FeatureDataD3D12Options15 Options15 { get; }
         internal FeatureDataD3D12Options16 Options16 { get; }
         internal FeatureDataD3D12Options21 Options21 { get; }
+        internal bool ShaderModel66 { get; }
         internal FormatSupport[] Formats { get; }
         internal Format[] SparseTexture2DFormats { get; }
         internal Format[] SparseTexture3DFormats { get; }
@@ -1249,12 +1297,30 @@ internal sealed unsafe partial class D3D12Backend
         internal bool DynamicIndexBufferStripCutSupported =>
             Options15.DynamicIndexBufferStripCutSupported;
         internal bool DynamicDepthBiasSupported => Options16.DynamicDepthBiasSupported;
+        internal bool BufferInt64AtomicsSupported =>
+            ShaderModel66 && Int64ShaderOps;
+        internal bool ImageInt64AtomicsSupported
+        {
+            get
+            {
+                FormatFeatures r64 = Formats[(int)Format.R64UInt].Features;
+                const FormatFeatures required =
+                    FormatFeatures.ShaderLoad |
+                    FormatFeatures.Storage |
+                    FormatFeatures.StorageStore;
+                return ShaderModel66 &&
+                    Int64ShaderOps &&
+                    Options9.AtomicInt64OnTypedResourceSupported &&
+                    (r64 & required) == required;
+            }
+        }
 
         internal static D3D12FeatureSupport Query(ID3D12Device10* device)
         {
             FeatureDataD3D12Options options = QueryFeature<FeatureDataD3D12Options>(
                 device,
                 NativeFeature.D3D12Options);
+            bool int64ShaderOps = QueryInt64ShaderOps(device);
             FeatureDataD3D12Options2 options2 = QueryFeature<FeatureDataD3D12Options2>(
                 device,
                 NativeFeature.D3D12Options2);
@@ -1267,6 +1333,12 @@ internal sealed unsafe partial class D3D12Backend
             FeatureDataD3D12Options7 options7 = QueryFeature<FeatureDataD3D12Options7>(
                 device,
                 NativeFeature.D3D12Options7);
+            FeatureDataD3D12Options9 options9 = TryQueryFeature(
+                device,
+                NativeFeature.D3D12Options9,
+                out FeatureDataD3D12Options9 queriedOptions9)
+                    ? queriedOptions9
+                    : default;
             FeatureDataD3D12Options12 options12 = QueryFeature<FeatureDataD3D12Options12>(
                 device,
                 NativeFeature.D3D12Options12);
@@ -1279,6 +1351,12 @@ internal sealed unsafe partial class D3D12Backend
             FeatureDataD3D12Options21 options21 = QueryFeature<FeatureDataD3D12Options21>(
                 device,
                 NativeFeature.D3D12Options21);
+            FeatureDataShaderModel shaderModel = new(D3DShaderModel.ShaderModel66);
+            bool shaderModel66 = DeviceQueryTrace.CheckFeatureSupport(
+device, NativeFeature.ShaderModel,
+                    &shaderModel,
+                    (uint)sizeof(FeatureDataShaderModel)) >= 0 &&
+                shaderModel.HighestShaderModel >= D3DShaderModel.ShaderModel66;
 
             DeviceFeatures features =
                 DeviceFeatures.Presentation |
@@ -1317,7 +1395,7 @@ internal sealed unsafe partial class D3D12Backend
             if (options21.WorkGraphsTier != Silk.NET.Direct3D12.WorkGraphsTier.TierNotSupported)
                 features |= DeviceFeatures.WorkGraphs;
 
-            uint nodeCount = device->GetNodeCount();
+            uint nodeCount = DeviceQueryTrace.GetNodeCount(device);
             if (nodeCount > 1)
                 features |= DeviceFeatures.LinkedAdapters;
 
@@ -1325,19 +1403,27 @@ internal sealed unsafe partial class D3D12Backend
                 nodeCount,
                 features,
                 options,
+                int64ShaderOps,
                 options2,
                 options5,
                 options6,
                 options7,
+                options9,
                 options12,
                 options15,
                 options16,
                 options21,
+                shaderModel66,
                 formats,
                 sparseTexture2DFormats,
                 sparseTexture3DFormats,
                 samplerFeedbackFormats);
         }
+
+        private static bool QueryInt64ShaderOps(ID3D12Device10* device) =>
+            QueryFeature<FeatureDataD3D12Options1>(
+                device,
+                NativeFeature.D3D12Options1).Int64ShaderOps;
 
         private static FormatSupport[] QueryFormatSupport(
             ID3D12Device10* device,
@@ -1350,8 +1436,8 @@ internal sealed unsafe partial class D3D12Backend
             {
                 Format format = formats[index];
                 FeatureDataFormatSupport support = new(FormatMappings.ToDxgi(format));
-                int query = device->CheckFeatureSupport(
-                    NativeFeature.FormatSupport,
+                int query = DeviceQueryTrace.CheckFeatureSupport(
+device, NativeFeature.FormatSupport,
                     &support,
                     (uint)sizeof(FeatureDataFormatSupport));
                 ThrowIfFailed(
@@ -1412,8 +1498,8 @@ internal sealed unsafe partial class D3D12Backend
                     FormatMappings.ToShaderViewFormat(format, aspect));
                 ThrowIfFailed(
                     null,
-                    device->CheckFeatureSupport(
-                        NativeFeature.FormatSupport,
+                        DeviceQueryTrace.CheckFeatureSupport(
+                    device, NativeFeature.FormatSupport,
                         &support,
                         (uint)sizeof(FeatureDataFormatSupport)),
                     NativeOperationType.Ordinary,
@@ -1514,8 +1600,8 @@ internal sealed unsafe partial class D3D12Backend
             foreach (uint count in counts)
             {
                 FeatureDataMultisampleQualityLevels levels = new(format, count, flags, 0);
-                int query = device->CheckFeatureSupport(
-                    NativeFeature.MultisampleQualityLevels,
+                int query = DeviceQueryTrace.CheckFeatureSupport(
+device, NativeFeature.MultisampleQualityLevels,
                     &levels,
                     (uint)sizeof(FeatureDataMultisampleQualityLevels));
                 ThrowIfFailed(
@@ -1557,8 +1643,8 @@ internal sealed unsafe partial class D3D12Backend
             Silk.NET.DXGI.Format format)
         {
             FeatureDataFormatSupport support = new(format);
-            int query = device->CheckFeatureSupport(
-                NativeFeature.FormatSupport,
+            int query = DeviceQueryTrace.CheckFeatureSupport(
+device, NativeFeature.FormatSupport,
                 &support,
                 (uint)sizeof(FeatureDataFormatSupport));
             ThrowIfFailed(
@@ -1576,10 +1662,23 @@ internal sealed unsafe partial class D3D12Backend
             T value = default;
             ThrowIfFailed(
                 null,
-                device->CheckFeatureSupport(feature, &value, (uint)sizeof(T)),
+                    DeviceQueryTrace.CheckFeatureSupport(device, feature, &value, (uint)sizeof(T)),
                 NativeOperationType.Ordinary,
                 $"ID3D12Device::CheckFeatureSupport({feature})");
             return value;
+        }
+
+        private static bool TryQueryFeature<T>(
+            ID3D12Device10* device,
+            NativeFeature feature,
+            out T value)
+            where T : unmanaged
+        {
+            T queried = default;
+            bool supported =
+                DeviceQueryTrace.CheckFeatureSupport(device, feature, &queried, (uint)sizeof(T)) >= 0;
+            value = queried;
+            return supported;
         }
     }
 

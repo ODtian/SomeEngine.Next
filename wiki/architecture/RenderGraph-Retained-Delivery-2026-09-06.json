@@ -1,0 +1,5687 @@
+{
+  "date": "2026-09-06",
+  "worktree": "F:\\SomeEngine.Next-render-enhancement",
+  "rawDirectory": "F:\\.codex\\research\\render-retained-delivery-20260905",
+  "metricDefinitions": {
+    "nativeSubmitMs": "Historical field name: measures the whole Backend.Submit call, including managed preparation, queue gate, native Wait/ExecuteCommandLists/Signal, and submission bookkeeping. Not an isolated native driver duration or an unavoidable lower bound."
+  },
+  "environment": {
+    "cpu": "Xeon E5-2698B v3",
+    "gpu": "NVIDIA GeForce RTX 3080",
+    "backend": "D3D12",
+    "resolution": [
+      1280,
+      720
+    ],
+    "build": "Release .NET 10; external timing instrumentation; validation disabled for timings"
+  },
+  "limits": [
+    "0.5–1 ms CPU objective not reached",
+    "CPU wall timings include waiting and native submission; nested counters must not be added",
+    "RenderDoc event duration sums are not overlapping GPU frame wall time",
+    "Historical displacement uses an older material shader and is not a matched full-frame workload",
+    "Default output is not pixel-identical to historical capture; historical comparison is not an isolated single-change benchmark",
+    "No cross-vendor, Vulkan, 4K, or uncaptured GPU queue timeline measurement"
+  ],
+  "cpu": {
+    "totalFrames": 8448,
+    "steadyFrames": 4224,
+    "current": {
+      "delivered-default-dynamic": {
+        "runCount": 2,
+        "medianOfRunMediansMs": 12.839975,
+        "runMedianRangeMs": [
+          12.771550000000001,
+          12.9084
+        ],
+        "runP95RangeMs": [
+          13.9365,
+          14.1454
+        ],
+        "runs": [
+          {
+            "file": "delivered-default-dynamic-0.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 12.9084,
+                "p95": 14.1454,
+                "mean": 12.948125520833333
+              },
+              "admitEventsMs": {
+                "median": 0.08875,
+                "p95": 0.12,
+                "mean": 0.0951734375
+              },
+              "uiGameWaitMs": {
+                "median": 0.04685,
+                "p95": 0.0725,
+                "mean": 0.0519
+              },
+              "prepareMs": {
+                "median": 0.29955,
+                "p95": 0.4689,
+                "mean": 0.32176822916666664
+              },
+              "reconcileMs": {
+                "median": 0.0014,
+                "p95": 0.0016,
+                "mean": 0.0013869791666666666
+              },
+              "acquireMs": {
+                "median": 0.0092,
+                "p95": 0.0142,
+                "mean": 0.0098140625
+              },
+              "executeMs": {
+                "median": 12.074850000000001,
+                "p95": 13.0802,
+                "mean": 12.0684671875
+              },
+              "presentMs": {
+                "median": 0.39395,
+                "p95": 0.4701,
+                "mean": 0.39961562500000003
+              },
+              "threadBytes": {
+                "median": 780224.0,
+                "p95": 780640,
+                "mean": 779555.0416666666
+              },
+              "recordMs": {
+                "median": 1.06845,
+                "p95": 1.2511,
+                "mean": 1.1249244791666666
+              },
+              "submitMs": {
+                "median": 10.94885,
+                "p95": 11.6747,
+                "mean": 10.920021875
+              },
+              "commitMs": {
+                "median": 0.0218,
+                "p95": 0.0335,
+                "mean": 0.021360416666666666
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.9868,
+              "boundaryUpdatesMs": 0.02325,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.30625,
+              "synchronizationMs": 0.39844999999999997,
+              "diagnosticsMs": 0.0005,
+              "recordSubmitMs": 9.28095,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 324140.0,
+              "recordThreadBytes": 104652.0,
+              "nativeSubmitMs": 3.4887,
+              "commitStateMs": 0.774,
+              "commandCpuSumMs": 2.4134
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": true,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-dynamic-1.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 12.771550000000001,
+                "p95": 13.9365,
+                "mean": 12.785200520833333
+              },
+              "admitEventsMs": {
+                "median": 0.08735000000000001,
+                "p95": 0.1167,
+                "mean": 0.09178645833333333
+              },
+              "uiGameWaitMs": {
+                "median": 0.0439,
+                "p95": 0.0667,
+                "mean": 0.0475546875
+              },
+              "prepareMs": {
+                "median": 0.2802,
+                "p95": 0.4132,
+                "mean": 0.2914614583333333
+              },
+              "reconcileMs": {
+                "median": 0.0013,
+                "p95": 0.0015,
+                "mean": 0.0013447916666666667
+              },
+              "acquireMs": {
+                "median": 0.0093,
+                "p95": 0.0112,
+                "mean": 0.009391145833333333
+              },
+              "executeMs": {
+                "median": 11.973700000000001,
+                "p95": 13.0236,
+                "mean": 11.94920625
+              },
+              "presentMs": {
+                "median": 0.3852,
+                "p95": 0.4597,
+                "mean": 0.39445572916666666
+              },
+              "threadBytes": {
+                "median": 780224.0,
+                "p95": 780544,
+                "mean": 779534.2916666666
+              },
+              "recordMs": {
+                "median": 1.0484,
+                "p95": 1.1834,
+                "mean": 1.0868208333333333
+              },
+              "submitMs": {
+                "median": 10.9033,
+                "p95": 11.6901,
+                "mean": 10.840068229166667
+              },
+              "commitMs": {
+                "median": 0.021249999999999998,
+                "p95": 0.0296,
+                "mean": 0.020233854166666666
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.95175,
+              "boundaryUpdatesMs": 0.0226,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.29564999999999997,
+              "synchronizationMs": 0.382,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 9.2272,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 324212.0,
+              "recordThreadBytes": 104772.0,
+              "nativeSubmitMs": 3.45305,
+              "commitStateMs": 0.76515,
+              "commandCpuSumMs": 2.42285
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": true,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-default-hw-async": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 9.9917,
+        "runMedianRangeMs": [
+          9.64075,
+          10.81655
+        ],
+        "runP95RangeMs": [
+          10.8448,
+          12.4037
+        ],
+        "runs": [
+          {
+            "file": "delivered-default-hw-async-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 10.81655,
+                "p95": 12.4037,
+                "mean": 10.918080859375
+              },
+              "admitEventsMs": {
+                "median": 0.08675,
+                "p95": 0.1245,
+                "mean": 0.0923328125
+              },
+              "uiGameWaitMs": {
+                "median": 0.05235,
+                "p95": 0.08,
+                "mean": 0.056066015625
+              },
+              "prepareMs": {
+                "median": 0.0605,
+                "p95": 0.0907,
+                "mean": 0.0648421875
+              },
+              "reconcileMs": {
+                "median": 0.0014,
+                "p95": 0.0019,
+                "mean": 0.001385546875
+              },
+              "acquireMs": {
+                "median": 0.0104,
+                "p95": 0.0179,
+                "mean": 0.011180078125
+              },
+              "executeMs": {
+                "median": 10.1277,
+                "p95": 11.6896,
+                "mean": 10.271398046875
+              },
+              "presentMs": {
+                "median": 0.40935,
+                "p95": 0.5605,
+                "mean": 0.420876171875
+              },
+              "threadBytes": {
+                "median": 644528.0,
+                "p95": 645040,
+                "mean": 643886.5625
+              },
+              "recordMs": {
+                "median": 0.7133499999999999,
+                "p95": 0.9323,
+                "mean": 0.750885546875
+              },
+              "submitMs": {
+                "median": 9.38455,
+                "p95": 10.7037,
+                "mean": 9.485399609375
+              },
+              "commitMs": {
+                "median": 0.0226,
+                "p95": 0.0496,
+                "mean": 0.026334765625
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.98485,
+              "boundaryUpdatesMs": 0.0228,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.29864999999999997,
+              "synchronizationMs": 0.33504999999999996,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 7.68595,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 874.0,
+              "buffers": 136.0,
+              "textures": 25.0,
+              "graphThreadBytes": 288564.0,
+              "recordThreadBytes": 104176.0,
+              "nativeSubmitMs": 2.7266500000000002,
+              "commitStateMs": 0.69295,
+              "commandCpuSumMs": 2.183
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-hw-async-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 9.9917,
+                "p95": 11.5697,
+                "mean": 10.1769703125
+              },
+              "admitEventsMs": {
+                "median": 0.0815,
+                "p95": 0.1033,
+                "mean": 0.085599609375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0487,
+                "p95": 0.0642,
+                "mean": 0.05166171875
+              },
+              "prepareMs": {
+                "median": 0.05445,
+                "p95": 0.0682,
+                "mean": 0.054343359375
+              },
+              "reconcileMs": {
+                "median": 0.0013,
+                "p95": 0.0016,
+                "mean": 0.001340234375
+              },
+              "acquireMs": {
+                "median": 0.0096,
+                "p95": 0.0114,
+                "mean": 0.0098265625
+              },
+              "executeMs": {
+                "median": 9.4119,
+                "p95": 10.9429,
+                "mean": 9.59907265625
+              },
+              "presentMs": {
+                "median": 0.36225,
+                "p95": 0.4709,
+                "mean": 0.375126171875
+              },
+              "threadBytes": {
+                "median": 644528.0,
+                "p95": 644968,
+                "mean": 643885.4375
+              },
+              "recordMs": {
+                "median": 0.6586000000000001,
+                "p95": 0.8049,
+                "mean": 0.7003375
+              },
+              "submitMs": {
+                "median": 8.726849999999999,
+                "p95": 10.0739,
+                "mean": 8.877323046875
+              },
+              "commitMs": {
+                "median": 0.0187,
+                "p95": 0.0308,
+                "mean": 0.019409375
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.9613,
+              "boundaryUpdatesMs": 0.023,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.2972,
+              "synchronizationMs": 0.3221,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 7.0764,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 874.0,
+              "buffers": 136.0,
+              "textures": 25.0,
+              "graphThreadBytes": 288516.0,
+              "recordThreadBytes": 104092.0,
+              "nativeSubmitMs": 2.59965,
+              "commitStateMs": 0.6493,
+              "commandCpuSumMs": 1.97655
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-hw-async-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 9.64075,
+                "p95": 10.8448,
+                "mean": 9.798585546875
+              },
+              "admitEventsMs": {
+                "median": 0.0774,
+                "p95": 0.097,
+                "mean": 0.08153671875
+              },
+              "uiGameWaitMs": {
+                "median": 0.04055,
+                "p95": 0.0552,
+                "mean": 0.043023828125000003
+              },
+              "prepareMs": {
+                "median": 0.0536,
+                "p95": 0.0734,
+                "mean": 0.061666015625
+              },
+              "reconcileMs": {
+                "median": 0.0013,
+                "p95": 0.0015,
+                "mean": 0.001255859375
+              },
+              "acquireMs": {
+                "median": 0.0093,
+                "p95": 0.0101,
+                "mean": 0.009480859375
+              },
+              "executeMs": {
+                "median": 9.07865,
+                "p95": 10.1699,
+                "mean": 9.23068515625
+              },
+              "presentMs": {
+                "median": 0.3609,
+                "p95": 0.4372,
+                "mean": 0.370937109375
+              },
+              "threadBytes": {
+                "median": 644592.0,
+                "p95": 645144,
+                "mean": 643927.75
+              },
+              "recordMs": {
+                "median": 0.6376999999999999,
+                "p95": 0.7659,
+                "mean": 0.67001640625
+              },
+              "submitMs": {
+                "median": 8.40565,
+                "p95": 9.4114,
+                "mean": 8.53781875
+              },
+              "commitMs": {
+                "median": 0.020450000000000003,
+                "p95": 0.0327,
+                "mean": 0.020837890625
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.89785,
+              "boundaryUpdatesMs": 0.0207,
+              "analyzeMs": 0.0,
+              "materializeMs": 0.2799,
+              "synchronizationMs": 0.30165,
+              "diagnosticsMs": 0.0005,
+              "recordSubmitMs": 6.8805,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 874.0,
+              "buffers": 136.0,
+              "textures": 25.0,
+              "graphThreadBytes": 288580.0,
+              "recordThreadBytes": 104176.0,
+              "nativeSubmitMs": 2.5676,
+              "commitStateMs": 0.6558,
+              "commandCpuSumMs": 1.8812
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-default-hybrid-async": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 12.92285,
+        "runMedianRangeMs": [
+          12.51315,
+          12.9505
+        ],
+        "runP95RangeMs": [
+          14.1528,
+          14.6113
+        ],
+        "runs": [
+          {
+            "file": "delivered-default-hybrid-async-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 12.51315,
+                "p95": 14.1528,
+                "mean": 12.61036640625
+              },
+              "admitEventsMs": {
+                "median": 0.1001,
+                "p95": 0.1256,
+                "mean": 0.1017109375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0545,
+                "p95": 0.0753,
+                "mean": 0.05699765625
+              },
+              "prepareMs": {
+                "median": 0.0547,
+                "p95": 0.0811,
+                "mean": 0.05628046875
+              },
+              "reconcileMs": {
+                "median": 0.0014,
+                "p95": 0.0017,
+                "mean": 0.001431640625
+              },
+              "acquireMs": {
+                "median": 0.0097,
+                "p95": 0.0143,
+                "mean": 0.01007734375
+              },
+              "executeMs": {
+                "median": 11.8979,
+                "p95": 13.5784,
+                "mean": 12.001851953125
+              },
+              "presentMs": {
+                "median": 0.3697,
+                "p95": 0.4656,
+                "mean": 0.38201640625
+              },
+              "threadBytes": {
+                "median": 774104.0,
+                "p95": 774624,
+                "mean": 773463.5625
+              },
+              "recordMs": {
+                "median": 0.7823,
+                "p95": 0.9046,
+                "mean": 0.83728046875
+              },
+              "submitMs": {
+                "median": 11.08955,
+                "p95": 11.827,
+                "mean": 11.14139765625
+              },
+              "commitMs": {
+                "median": 0.0195,
+                "p95": 0.0324,
+                "mean": 0.020921484375
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.0266,
+              "boundaryUpdatesMs": 0.0242,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.32935000000000003,
+              "synchronizationMs": 0.4052,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 9.2329,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 323780.0,
+              "recordThreadBytes": 104852.0,
+              "nativeSubmitMs": 3.5950499999999996,
+              "commitStateMs": 0.751,
+              "commandCpuSumMs": 2.2558
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-hybrid-async-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 12.9505,
+                "p95": 14.6113,
+                "mean": 13.112777734375
+              },
+              "admitEventsMs": {
+                "median": 0.1065,
+                "p95": 0.1496,
+                "mean": 0.111742578125
+              },
+              "uiGameWaitMs": {
+                "median": 0.05935,
+                "p95": 0.0889,
+                "mean": 0.06288359375
+              },
+              "prepareMs": {
+                "median": 0.05745,
+                "p95": 0.0836,
+                "mean": 0.060046484375
+              },
+              "reconcileMs": {
+                "median": 0.0015,
+                "p95": 0.002,
+                "mean": 0.00156171875
+              },
+              "acquireMs": {
+                "median": 0.0097,
+                "p95": 0.0213,
+                "mean": 0.01075546875
+              },
+              "executeMs": {
+                "median": 12.275549999999999,
+                "p95": 13.8741,
+                "mean": 12.444444140625
+              },
+              "presentMs": {
+                "median": 0.4035,
+                "p95": 0.532,
+                "mean": 0.42134375
+              },
+              "threadBytes": {
+                "median": 774104.0,
+                "p95": 774544,
+                "mean": 773477.3125
+              },
+              "recordMs": {
+                "median": 0.8204,
+                "p95": 0.9758,
+                "mean": 0.86169296875
+              },
+              "submitMs": {
+                "median": 11.37445,
+                "p95": 12.8844,
+                "mean": 11.556937109375
+              },
+              "commitMs": {
+                "median": 0.0222,
+                "p95": 0.0389,
+                "mean": 0.023495703125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.06935,
+              "boundaryUpdatesMs": 0.0244,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.3333,
+              "synchronizationMs": 0.41355,
+              "diagnosticsMs": 0.0007,
+              "recordSubmitMs": 9.497,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 323780.0,
+              "recordThreadBytes": 104852.0,
+              "nativeSubmitMs": 3.6717,
+              "commitStateMs": 0.76295,
+              "commandCpuSumMs": 2.3196
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-hybrid-async-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 12.92285,
+                "p95": 14.5642,
+                "mean": 13.068896484375
+              },
+              "admitEventsMs": {
+                "median": 0.10214999999999999,
+                "p95": 0.1429,
+                "mean": 0.10698515625
+              },
+              "uiGameWaitMs": {
+                "median": 0.05905,
+                "p95": 0.0834,
+                "mean": 0.060715625
+              },
+              "prepareMs": {
+                "median": 0.05525,
+                "p95": 0.0801,
+                "mean": 0.058910546875
+              },
+              "reconcileMs": {
+                "median": 0.0014,
+                "p95": 0.0017,
+                "mean": 0.00141484375
+              },
+              "acquireMs": {
+                "median": 0.0097,
+                "p95": 0.017,
+                "mean": 0.010363671875
+              },
+              "executeMs": {
+                "median": 12.2452,
+                "p95": 13.9079,
+                "mean": 12.381520703125
+              },
+              "presentMs": {
+                "median": 0.4209,
+                "p95": 0.6079,
+                "mean": 0.4489859375
+              },
+              "threadBytes": {
+                "median": 774104.0,
+                "p95": 774544,
+                "mean": 773391.90625
+              },
+              "recordMs": {
+                "median": 0.80075,
+                "p95": 0.9368,
+                "mean": 0.840628515625
+              },
+              "submitMs": {
+                "median": 11.40545,
+                "p95": 12.7887,
+                "mean": 11.515068359375
+              },
+              "commitMs": {
+                "median": 0.0217,
+                "p95": 0.0385,
+                "mean": 0.0238078125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.06975,
+              "boundaryUpdatesMs": 0.0249,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.3372,
+              "synchronizationMs": 0.41105,
+              "diagnosticsMs": 0.0008,
+              "recordSubmitMs": 9.48565,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 323780.0,
+              "recordThreadBytes": 104852.0,
+              "nativeSubmitMs": 3.72255,
+              "commitStateMs": 0.7726,
+              "commandCpuSumMs": 2.30175
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-default-hybrid-serial": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 10.5393,
+        "runMedianRangeMs": [
+          10.36845,
+          10.70435
+        ],
+        "runP95RangeMs": [
+          11.8422,
+          12.4726
+        ],
+        "runs": [
+          {
+            "file": "delivered-default-hybrid-serial-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 10.36845,
+                "p95": 12.4726,
+                "mean": 10.62848203125
+              },
+              "admitEventsMs": {
+                "median": 0.07915,
+                "p95": 0.1025,
+                "mean": 0.083285546875
+              },
+              "uiGameWaitMs": {
+                "median": 0.0472,
+                "p95": 0.0719,
+                "mean": 0.050728515625
+              },
+              "prepareMs": {
+                "median": 0.056499999999999995,
+                "p95": 0.0789,
+                "mean": 0.058340234375
+              },
+              "reconcileMs": {
+                "median": 0.0013,
+                "p95": 0.0017,
+                "mean": 0.001437109375
+              },
+              "acquireMs": {
+                "median": 0.0098,
+                "p95": 0.0203,
+                "mean": 0.010494921875
+              },
+              "executeMs": {
+                "median": 9.80505,
+                "p95": 11.8451,
+                "mean": 10.059568359375
+              },
+              "presentMs": {
+                "median": 0.349,
+                "p95": 0.4762,
+                "mean": 0.36462734375
+              },
+              "threadBytes": {
+                "median": 772824.0,
+                "p95": 773328,
+                "mean": 772396.375
+              },
+              "recordMs": {
+                "median": 0.77555,
+                "p95": 0.9217,
+                "mean": 0.824606640625
+              },
+              "submitMs": {
+                "median": 8.97985,
+                "p95": 10.6887,
+                "mean": 9.211399609375
+              },
+              "commitMs": {
+                "median": 0.02065,
+                "p95": 0.0316,
+                "mean": 0.02139609375
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.9815499999999999,
+              "boundaryUpdatesMs": 0.0223,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.31865,
+              "synchronizationMs": 0.33795,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 7.26705,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 322640.0,
+              "recordThreadBytes": 104608.0,
+              "nativeSubmitMs": 2.1164,
+              "commitStateMs": 0.69415,
+              "commandCpuSumMs": 1.9577
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-hybrid-serial-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 10.5393,
+                "p95": 12.2637,
+                "mean": 10.60472109375
+              },
+              "admitEventsMs": {
+                "median": 0.08115,
+                "p95": 0.1072,
+                "mean": 0.085655859375
+              },
+              "uiGameWaitMs": {
+                "median": 0.051949999999999996,
+                "p95": 0.0727,
+                "mean": 0.054635546875
+              },
+              "prepareMs": {
+                "median": 0.0617,
+                "p95": 0.0809,
+                "mean": 0.0631921875
+              },
+              "reconcileMs": {
+                "median": 0.0014,
+                "p95": 0.0018,
+                "mean": 0.00149765625
+              },
+              "acquireMs": {
+                "median": 0.0096,
+                "p95": 0.0145,
+                "mean": 0.0102015625
+              },
+              "executeMs": {
+                "median": 9.975999999999999,
+                "p95": 11.6713,
+                "mean": 10.0149796875
+              },
+              "presentMs": {
+                "median": 0.35760000000000003,
+                "p95": 0.4736,
+                "mean": 0.37455859375
+              },
+              "threadBytes": {
+                "median": 772824.0,
+                "p95": 773272,
+                "mean": 772148.90625
+              },
+              "recordMs": {
+                "median": 0.79515,
+                "p95": 0.9193,
+                "mean": 0.843701953125
+              },
+              "submitMs": {
+                "median": 9.1054,
+                "p95": 10.6288,
+                "mean": 9.143968359375
+              },
+              "commitMs": {
+                "median": 0.0239,
+                "p95": 0.0368,
+                "mean": 0.02504765625
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.0203,
+              "boundaryUpdatesMs": 0.0225,
+              "analyzeMs": 0.0002,
+              "materializeMs": 0.31930000000000003,
+              "synchronizationMs": 0.3472,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 7.30105,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 322396.0,
+              "recordThreadBytes": 103844.0,
+              "nativeSubmitMs": 2.1282,
+              "commitStateMs": 0.6949000000000001,
+              "commandCpuSumMs": 1.9968499999999998
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-default-hybrid-serial-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 10.70435,
+                "p95": 11.8422,
+                "mean": 10.675618359375
+              },
+              "admitEventsMs": {
+                "median": 0.0759,
+                "p95": 0.0966,
+                "mean": 0.07916484375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0425,
+                "p95": 0.0612,
+                "mean": 0.0459453125
+              },
+              "prepareMs": {
+                "median": 0.05135,
+                "p95": 0.0733,
+                "mean": 0.054269140625000004
+              },
+              "reconcileMs": {
+                "median": 0.0012,
+                "p95": 0.0015,
+                "mean": 0.00121875
+              },
+              "acquireMs": {
+                "median": 0.0093,
+                "p95": 0.0198,
+                "mean": 0.009869921875
+              },
+              "executeMs": {
+                "median": 10.147200000000002,
+                "p95": 11.2373,
+                "mean": 10.12818203125
+              },
+              "presentMs": {
+                "median": 0.34655,
+                "p95": 0.4375,
+                "mean": 0.356968359375
+              },
+              "threadBytes": {
+                "median": 772760.0,
+                "p95": 773304,
+                "mean": 772217.28125
+              },
+              "recordMs": {
+                "median": 0.75615,
+                "p95": 0.9315,
+                "mean": 0.797303515625
+              },
+              "submitMs": {
+                "median": 9.34075,
+                "p95": 10.3526,
+                "mean": 9.30959765625
+              },
+              "commitMs": {
+                "median": 0.0182,
+                "p95": 0.0307,
+                "mean": 0.019386328125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.94935,
+              "boundaryUpdatesMs": 0.0206,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.3011,
+              "synchronizationMs": 0.30825,
+              "diagnosticsMs": 0.0005,
+              "recordSubmitMs": 7.6588,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 322640.0,
+              "recordThreadBytes": 104608.0,
+              "nativeSubmitMs": 2.17305,
+              "commitStateMs": 0.7206,
+              "commandCpuSumMs": 2.05795
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-displacement-hw": {
+        "runCount": 2,
+        "medianOfRunMediansMs": 14.345025,
+        "runMedianRangeMs": [
+          14.177900000000001,
+          14.51215
+        ],
+        "runP95RangeMs": [
+          16.9958,
+          17.1312
+        ],
+        "runs": [
+          {
+            "file": "delivered-displacement-hw-0.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 14.51215,
+                "p95": 17.1312,
+                "mean": 14.783898958333333
+              },
+              "admitEventsMs": {
+                "median": 0.1011,
+                "p95": 0.2659,
+                "mean": 0.1230203125
+              },
+              "uiGameWaitMs": {
+                "median": 0.046299999999999994,
+                "p95": 0.0622,
+                "mean": 0.049640104166666664
+              },
+              "prepareMs": {
+                "median": 0.054099999999999995,
+                "p95": 0.0722,
+                "mean": 0.0531890625
+              },
+              "reconcileMs": {
+                "median": 0.0016,
+                "p95": 0.0019,
+                "mean": 0.0015369791666666667
+              },
+              "acquireMs": {
+                "median": 0.0097,
+                "p95": 0.0109,
+                "mean": 0.009801041666666666
+              },
+              "executeMs": {
+                "median": 13.91575,
+                "p95": 16.537,
+                "mean": 14.136135416666667
+              },
+              "presentMs": {
+                "median": 0.38325,
+                "p95": 0.5442,
+                "mean": 0.41057604166666667
+              },
+              "threadBytes": {
+                "median": 2391200.0,
+                "p95": 2393576,
+                "mean": 2390938
+              },
+              "recordMs": {
+                "median": 1.8842,
+                "p95": 4.2822,
+                "mean": 2.0851328125
+              },
+              "submitMs": {
+                "median": 11.827200000000001,
+                "p95": 13.9089,
+                "mean": 12.0256609375
+              },
+              "commitMs": {
+                "median": 0.0216,
+                "p95": 0.0365,
+                "mean": 0.023357291666666665
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.4723,
+              "boundaryUpdatesMs": 0.0281,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.48225,
+              "synchronizationMs": 0.5077,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 9.2299,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 171.0,
+              "accesses": 1589.0,
+              "buffers": 168.0,
+              "textures": 25.0,
+              "graphThreadBytes": 662896.0,
+              "recordThreadBytes": 104640.0,
+              "nativeSubmitMs": 2.5726,
+              "commitStateMs": 1.1586,
+              "commandCpuSumMs": 3.36235
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-displacement-hw-1.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 14.177900000000001,
+                "p95": 16.9958,
+                "mean": 14.626071354166667
+              },
+              "admitEventsMs": {
+                "median": 0.1043,
+                "p95": 0.1321,
+                "mean": 0.11112708333333333
+              },
+              "uiGameWaitMs": {
+                "median": 0.0485,
+                "p95": 0.0641,
+                "mean": 0.0513984375
+              },
+              "prepareMs": {
+                "median": 0.05085,
+                "p95": 0.0719,
+                "mean": 0.052931770833333336
+              },
+              "reconcileMs": {
+                "median": 0.0016,
+                "p95": 0.002,
+                "mean": 0.00170625
+              },
+              "acquireMs": {
+                "median": 0.0094,
+                "p95": 0.0107,
+                "mean": 0.009438020833333333
+              },
+              "executeMs": {
+                "median": 13.57715,
+                "p95": 16.2678,
+                "mean": 13.988276041666667
+              },
+              "presentMs": {
+                "median": 0.39365,
+                "p95": 0.521,
+                "mean": 0.41119375
+              },
+              "threadBytes": {
+                "median": 2391136.0,
+                "p95": 2393576,
+                "mean": 2391130.5833333335
+              },
+              "recordMs": {
+                "median": 1.88225,
+                "p95": 4.3012,
+                "mean": 2.0879296875
+              },
+              "submitMs": {
+                "median": 11.583400000000001,
+                "p95": 13.7645,
+                "mean": 11.8601296875
+              },
+              "commitMs": {
+                "median": 0.0231,
+                "p95": 0.0456,
+                "mean": 0.0380703125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.4933,
+              "boundaryUpdatesMs": 0.0278,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.4871,
+              "synchronizationMs": 0.5219,
+              "diagnosticsMs": 0.0003,
+              "recordSubmitMs": 8.95475,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 171.0,
+              "accesses": 1589.0,
+              "buffers": 168.0,
+              "textures": 25.0,
+              "graphThreadBytes": 662896.0,
+              "recordThreadBytes": 104640.0,
+              "nativeSubmitMs": 2.5976,
+              "commitStateMs": 1.1538499999999998,
+              "commandCpuSumMs": 3.2879
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-displacement-hybrid-async": {
+        "runCount": 2,
+        "medianOfRunMediansMs": 17.24205,
+        "runMedianRangeMs": [
+          17.1203,
+          17.3638
+        ],
+        "runP95RangeMs": [
+          20.6876,
+          20.9736
+        ],
+        "runs": [
+          {
+            "file": "delivered-displacement-hybrid-async-0.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 17.3638,
+                "p95": 20.9736,
+                "mean": 17.860913020833333
+              },
+              "admitEventsMs": {
+                "median": 0.12614999999999998,
+                "p95": 0.3184,
+                "mean": 0.17760677083333334
+              },
+              "uiGameWaitMs": {
+                "median": 0.05355,
+                "p95": 0.0847,
+                "mean": 0.058315104166666666
+              },
+              "prepareMs": {
+                "median": 0.0512,
+                "p95": 0.072,
+                "mean": 0.05333385416666667
+              },
+              "reconcileMs": {
+                "median": 0.0017,
+                "p95": 0.0021,
+                "mean": 0.0016583333333333333
+              },
+              "acquireMs": {
+                "median": 0.0096,
+                "p95": 0.0181,
+                "mean": 0.01019375
+              },
+              "executeMs": {
+                "median": 16.57265,
+                "p95": 19.9423,
+                "mean": 17.144094791666667
+              },
+              "presentMs": {
+                "median": 0.3964,
+                "p95": 0.5878,
+                "mean": 0.4157104166666667
+              },
+              "threadBytes": {
+                "median": 2532712.0,
+                "p95": 2535248,
+                "mean": 2532856.25
+              },
+              "recordMs": {
+                "median": 2.0037000000000003,
+                "p95": 4.6137,
+                "mean": 2.259765625
+              },
+              "submitMs": {
+                "median": 14.409749999999999,
+                "p95": 17.2382,
+                "mean": 14.8560984375
+              },
+              "commitMs": {
+                "median": 0.0251,
+                "p95": 0.0361,
+                "mean": 0.026070833333333335
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.58525,
+              "boundaryUpdatesMs": 0.02695,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.4885,
+              "synchronizationMs": 0.5992500000000001,
+              "diagnosticsMs": 0.0003,
+              "recordSubmitMs": 11.5618,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 177.0,
+              "accesses": 1660.0,
+              "buffers": 175.0,
+              "textures": 24.0,
+              "graphThreadBytes": 708728.0,
+              "recordThreadBytes": 105280.0,
+              "nativeSubmitMs": 3.5749500000000003,
+              "commitStateMs": 1.26615,
+              "commandCpuSumMs": 3.8324
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-displacement-hybrid-async-1.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 17.1203,
+                "p95": 20.6876,
+                "mean": 17.6790125
+              },
+              "admitEventsMs": {
+                "median": 0.11965,
+                "p95": 0.2899,
+                "mean": 0.14502083333333332
+              },
+              "uiGameWaitMs": {
+                "median": 0.0535,
+                "p95": 0.0762,
+                "mean": 0.05955260416666667
+              },
+              "prepareMs": {
+                "median": 0.04765,
+                "p95": 0.0715,
+                "mean": 0.052675
+              },
+              "reconcileMs": {
+                "median": 0.00165,
+                "p95": 0.0021,
+                "mean": 0.001678125
+              },
+              "acquireMs": {
+                "median": 0.0088,
+                "p95": 0.0147,
+                "mean": 0.009601041666666667
+              },
+              "executeMs": {
+                "median": 16.4405,
+                "p95": 19.9461,
+                "mean": 17.014154166666668
+              },
+              "presentMs": {
+                "median": 0.3819,
+                "p95": 0.4683,
+                "mean": 0.3963307291666667
+              },
+              "threadBytes": {
+                "median": 2532712.0,
+                "p95": 2535088,
+                "mean": 2532260.875
+              },
+              "recordMs": {
+                "median": 1.98705,
+                "p95": 4.5761,
+                "mean": 2.2185390625
+              },
+              "submitMs": {
+                "median": 14.3628,
+                "p95": 16.9594,
+                "mean": 14.771422395833333
+              },
+              "commitMs": {
+                "median": 0.02155,
+                "p95": 0.0293,
+                "mean": 0.022287500000000002
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.5488499999999998,
+              "boundaryUpdatesMs": 0.0289,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.4835,
+              "synchronizationMs": 0.61505,
+              "diagnosticsMs": 0.0007,
+              "recordSubmitMs": 11.58515,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 177.0,
+              "accesses": 1660.0,
+              "buffers": 175.0,
+              "textures": 24.0,
+              "graphThreadBytes": 708484.0,
+              "recordThreadBytes": 104464.0,
+              "nativeSubmitMs": 3.5541,
+              "commitStateMs": 1.2695500000000002,
+              "commandCpuSumMs": 3.8781499999999998
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-displacement-hybrid-noasync": {
+        "runCount": 2,
+        "medianOfRunMediansMs": 14.6119,
+        "runMedianRangeMs": [
+          14.55095,
+          14.67285
+        ],
+        "runP95RangeMs": [
+          17.1676,
+          17.2537
+        ],
+        "runs": [
+          {
+            "file": "delivered-displacement-hybrid-noasync-0.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 14.55095,
+                "p95": 17.1676,
+                "mean": 14.809175520833334
+              },
+              "admitEventsMs": {
+                "median": 0.10250000000000001,
+                "p95": 0.1417,
+                "mean": 0.1251375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0514,
+                "p95": 0.0632,
+                "mean": 0.05327239583333333
+              },
+              "prepareMs": {
+                "median": 0.056499999999999995,
+                "p95": 0.0759,
+                "mean": 0.056206770833333336
+              },
+              "reconcileMs": {
+                "median": 0.0016,
+                "p95": 0.002,
+                "mean": 0.0015776041666666666
+              },
+              "acquireMs": {
+                "median": 0.0096,
+                "p95": 0.0139,
+                "mean": 0.01013125
+              },
+              "executeMs": {
+                "median": 13.88205,
+                "p95": 16.5663,
+                "mean": 14.149970833333333
+              },
+              "presentMs": {
+                "median": 0.3953,
+                "p95": 0.4796,
+                "mean": 0.4128791666666667
+              },
+              "threadBytes": {
+                "median": 2531720.0,
+                "p95": 2534192,
+                "mean": 2531509.875
+              },
+              "recordMs": {
+                "median": 2.03475,
+                "p95": 4.5909,
+                "mean": 2.2598479166666667
+              },
+              "submitMs": {
+                "median": 11.72085,
+                "p95": 13.4433,
+                "mean": 11.864840625
+              },
+              "commitMs": {
+                "median": 0.0225,
+                "p95": 0.0327,
+                "mean": 0.023110416666666668
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.5386,
+              "boundaryUpdatesMs": 0.0262,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.4817,
+              "synchronizationMs": 0.48275,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 9.141649999999998,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 177.0,
+              "accesses": 1660.0,
+              "buffers": 175.0,
+              "textures": 24.0,
+              "graphThreadBytes": 707672.0,
+              "recordThreadBytes": 104320.0,
+              "nativeSubmitMs": 2.22225,
+              "commitStateMs": 1.2183,
+              "commandCpuSumMs": 3.3230500000000003
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-displacement-hybrid-noasync-1.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 14.67285,
+                "p95": 17.2537,
+                "mean": 14.9619578125
+              },
+              "admitEventsMs": {
+                "median": 0.10485,
+                "p95": 0.1431,
+                "mean": 0.12853802083333332
+              },
+              "uiGameWaitMs": {
+                "median": 0.052599999999999994,
+                "p95": 0.0693,
+                "mean": 0.0542625
+              },
+              "prepareMs": {
+                "median": 0.0553,
+                "p95": 0.0817,
+                "mean": 0.055239583333333335
+              },
+              "reconcileMs": {
+                "median": 0.0016,
+                "p95": 0.0022,
+                "mean": 0.0016380208333333333
+              },
+              "acquireMs": {
+                "median": 0.0099,
+                "p95": 0.0199,
+                "mean": 0.010315625
+              },
+              "executeMs": {
+                "median": 13.9903,
+                "p95": 16.5993,
+                "mean": 14.283940104166666
+              },
+              "presentMs": {
+                "median": 0.39954999999999996,
+                "p95": 0.5209,
+                "mean": 0.42802395833333334
+              },
+              "threadBytes": {
+                "median": 2531720.0,
+                "p95": 2534352,
+                "mean": 2531852.5416666665
+              },
+              "recordMs": {
+                "median": 2.06305,
+                "p95": 4.7068,
+                "mean": 2.2992625
+              },
+              "submitMs": {
+                "median": 11.8341,
+                "p95": 13.7489,
+                "mean": 11.958978645833334
+              },
+              "commitMs": {
+                "median": 0.0213,
+                "p95": 0.041,
+                "mean": 0.023625520833333333
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.5759500000000002,
+              "boundaryUpdatesMs": 0.0283,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.50605,
+              "synchronizationMs": 0.50475,
+              "diagnosticsMs": 0.0003,
+              "recordSubmitMs": 9.1341,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 177.0,
+              "accesses": 1660.0,
+              "buffers": 175.0,
+              "textures": 24.0,
+              "graphThreadBytes": 707672.0,
+              "recordThreadBytes": 104320.0,
+              "nativeSubmitMs": 2.163,
+              "commitStateMs": 1.2121499999999998,
+              "commandCpuSumMs": 3.4246499999999997
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "delivered-sparse-dynamic": {
+        "runCount": 2,
+        "medianOfRunMediansMs": 12.09315,
+        "runMedianRangeMs": [
+          11.831,
+          12.3553
+        ],
+        "runP95RangeMs": [
+          13.3066,
+          14.7838
+        ],
+        "runs": [
+          {
+            "file": "delivered-sparse-dynamic-0.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 12.3553,
+                "p95": 14.7838,
+                "mean": 12.8234421875
+              },
+              "admitEventsMs": {
+                "median": 0.0838,
+                "p95": 0.1081,
+                "mean": 0.088325
+              },
+              "uiGameWaitMs": {
+                "median": 0.0467,
+                "p95": 0.0737,
+                "mean": 0.05342864583333334
+              },
+              "prepareMs": {
+                "median": 0.16575,
+                "p95": 0.2781,
+                "mean": 0.17137864583333334
+              },
+              "reconcileMs": {
+                "median": 0.0013,
+                "p95": 0.0016,
+                "mean": 0.0013822916666666667
+              },
+              "acquireMs": {
+                "median": 0.0094,
+                "p95": 0.0104,
+                "mean": 0.009684895833333334
+              },
+              "executeMs": {
+                "median": 11.6867,
+                "p95": 13.9853,
+                "mean": 12.130338020833333
+              },
+              "presentMs": {
+                "median": 0.3467,
+                "p95": 0.4851,
+                "mean": 0.3689046875
+              },
+              "threadBytes": {
+                "median": 789640.0,
+                "p95": 792008,
+                "mean": 781385.0416666666
+              },
+              "recordMs": {
+                "median": 0.8060499999999999,
+                "p95": 1.0209,
+                "mean": 0.8881265625
+              },
+              "submitMs": {
+                "median": 10.8107,
+                "p95": 13.0747,
+                "mean": 11.216819791666667
+              },
+              "commitMs": {
+                "median": 0.022699999999999998,
+                "p95": 0.03,
+                "mean": 0.023267708333333335
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.04685,
+              "boundaryUpdatesMs": 0.0222,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.34835,
+              "synchronizationMs": 0.39065,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 8.849,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 342320.0,
+              "recordThreadBytes": 104732.0,
+              "nativeSubmitMs": 3.4221000000000004,
+              "commitStateMs": 0.74685,
+              "commandCpuSumMs": 2.2609500000000002
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": true,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "delivered-sparse-dynamic-1.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 11.831,
+                "p95": 13.3066,
+                "mean": 12.076342708333334
+              },
+              "admitEventsMs": {
+                "median": 0.08345,
+                "p95": 0.1131,
+                "mean": 0.088175
+              },
+              "uiGameWaitMs": {
+                "median": 0.04375,
+                "p95": 0.0672,
+                "mean": 0.04808020833333333
+              },
+              "prepareMs": {
+                "median": 0.1575,
+                "p95": 0.2014,
+                "mean": 0.154209375
+              },
+              "reconcileMs": {
+                "median": 0.0012,
+                "p95": 0.0014,
+                "mean": 0.0012369791666666666
+              },
+              "acquireMs": {
+                "median": 0.009,
+                "p95": 0.0217,
+                "mean": 0.0101015625
+              },
+              "executeMs": {
+                "median": 11.18515,
+                "p95": 12.6195,
+                "mean": 11.418818229166666
+              },
+              "presentMs": {
+                "median": 0.3427,
+                "p95": 0.4329,
+                "mean": 0.35572135416666667
+              },
+              "threadBytes": {
+                "median": 789736.0,
+                "p95": 792008,
+                "mean": 782636.9583333334
+              },
+              "recordMs": {
+                "median": 0.8114,
+                "p95": 0.9312,
+                "mean": 0.8592005208333333
+              },
+              "submitMs": {
+                "median": 10.3308,
+                "p95": 11.3574,
+                "mean": 10.533603645833333
+              },
+              "commitMs": {
+                "median": 0.02305,
+                "p95": 0.0327,
+                "mean": 0.023780729166666667
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 1.0511499999999998,
+              "boundaryUpdatesMs": 0.02225,
+              "analyzeMs": 0.0001,
+              "materializeMs": 0.35195,
+              "synchronizationMs": 0.3987,
+              "diagnosticsMs": 0.0005,
+              "recordSubmitMs": 8.496500000000001,
+              "reused": 1.0,
+              "unused": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 957.0,
+              "buffers": 143.0,
+              "textures": 24.0,
+              "graphThreadBytes": 342416.0,
+              "recordThreadBytes": 104772.0,
+              "nativeSubmitMs": 3.2964,
+              "commitStateMs": 0.735,
+              "commandCpuSumMs": 2.1478
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": true,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      }
+    },
+    "historical": {
+      "default-dynamic": {
+        "runCount": 2,
+        "medianOfRunMediansMs": 45.470325,
+        "runMedianRangeMs": [
+          45.27535,
+          45.6653
+        ],
+        "runP95RangeMs": [
+          68.0622,
+          68.8458
+        ],
+        "runs": [
+          {
+            "file": "default-dynamic-0.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 45.6653,
+                "p95": 68.8458,
+                "mean": 49.524131770833336
+              },
+              "admitEventsMs": {
+                "median": 0.1648,
+                "p95": 0.6863,
+                "mean": 0.22122552083333333
+              },
+              "uiGameWaitMs": {
+                "median": 0.06185,
+                "p95": 0.0803,
+                "mean": 0.06421197916666667
+              },
+              "prepareMs": {
+                "median": 1.0878,
+                "p95": 1.2339,
+                "mean": 1.079571875
+              },
+              "reconcileMs": {
+                "median": 0.0021,
+                "p95": 0.0027,
+                "mean": 0.002125
+              },
+              "acquireMs": {
+                "median": 0.0089,
+                "p95": 0.0201,
+                "mean": 0.009794791666666667
+              },
+              "executeMs": {
+                "median": 43.714349999999996,
+                "p95": 67.1012,
+                "mean": 47.73178125
+              },
+              "presentMs": {
+                "median": 0.40190000000000003,
+                "p95": 0.5069,
+                "mean": 0.41542135416666665
+              },
+              "threadBytes": {
+                "median": 850728.0,
+                "p95": 921112,
+                "mean": 856033.7083333334
+              },
+              "recordMs": {
+                "median": 0.9961500000000001,
+                "p95": 1.3148,
+                "mean": 1.1973041666666666
+              },
+              "submitMs": {
+                "median": 42.464349999999996,
+                "p95": 66.139,
+                "mean": 46.50942552083333
+              },
+              "commitMs": {
+                "median": 0.0221,
+                "p95": 0.0277,
+                "mean": 0.022725
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.27335,
+              "reuseKeyMs": 0.0689,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.0302499999999997,
+              "synchronizationMs": 14.618,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 24.8504,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": true,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-dynamic-1.json",
+            "totalFrames": 384,
+            "warmup": 192,
+            "samples": 192,
+            "stats": {
+              "wallMs": {
+                "median": 45.27535,
+                "p95": 68.0622,
+                "mean": 48.640163020833334
+              },
+              "admitEventsMs": {
+                "median": 0.1613,
+                "p95": 0.7754,
+                "mean": 0.23253489583333334
+              },
+              "uiGameWaitMs": {
+                "median": 0.06235,
+                "p95": 0.0932,
+                "mean": 0.06845
+              },
+              "prepareMs": {
+                "median": 1.1277,
+                "p95": 1.4126,
+                "mean": 1.1404661458333334
+              },
+              "reconcileMs": {
+                "median": 0.0021,
+                "p95": 0.0028,
+                "mean": 0.002196875
+              },
+              "acquireMs": {
+                "median": 0.009,
+                "p95": 0.0201,
+                "mean": 0.010326041666666667
+              },
+              "executeMs": {
+                "median": 43.31125,
+                "p95": 66.3752,
+                "mean": 46.73271770833333
+              },
+              "presentMs": {
+                "median": 0.4233,
+                "p95": 0.614,
+                "mean": 0.4534713541666667
+              },
+              "threadBytes": {
+                "median": 850960.0,
+                "p95": 920520,
+                "mean": 856680.5
+              },
+              "recordMs": {
+                "median": 1.0195,
+                "p95": 1.3052,
+                "mean": 1.1552130208333333
+              },
+              "submitMs": {
+                "median": 42.19755,
+                "p95": 65.5108,
+                "mean": 45.55212083333333
+              },
+              "commitMs": {
+                "median": 0.0213,
+                "p95": 0.0288,
+                "mean": 0.023342708333333333
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.279,
+              "reuseKeyMs": 0.06975,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.09305,
+              "synchronizationMs": 14.9084,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 24.20125,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 377,
+            "options": {
+              "DynamicScene": true,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "default-hw-async": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 39.4495,
+        "runMedianRangeMs": [
+          38.4972,
+          40.734049999999996
+        ],
+        "runP95RangeMs": [
+          47.8973,
+          54.016
+        ],
+        "runs": [
+          {
+            "file": "default-hw-async-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 39.4495,
+                "p95": 54.016,
+                "mean": 41.118483984375
+              },
+              "admitEventsMs": {
+                "median": 0.1345,
+                "p95": 0.4317,
+                "mean": 0.162862109375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0609,
+                "p95": 0.075,
+                "mean": 0.064214453125
+              },
+              "prepareMs": {
+                "median": 0.0535,
+                "p95": 0.0676,
+                "mean": 0.056315625
+              },
+              "reconcileMs": {
+                "median": 0.002,
+                "p95": 0.0025,
+                "mean": 0.002253515625
+              },
+              "acquireMs": {
+                "median": 0.0091,
+                "p95": 0.0103,
+                "mean": 0.009941796875
+              },
+              "executeMs": {
+                "median": 38.78695,
+                "p95": 53.3772,
+                "mean": 40.40149765625
+              },
+              "presentMs": {
+                "median": 0.4003,
+                "p95": 0.5482,
+                "mean": 0.421398828125
+              },
+              "threadBytes": {
+                "median": 705712.0,
+                "p95": 771232,
+                "mean": 708581.78125
+              },
+              "recordMs": {
+                "median": 0.6239,
+                "p95": 0.8768,
+                "mean": 0.73140703125
+              },
+              "submitMs": {
+                "median": 38.1207,
+                "p95": 52.4208,
+                "mean": 39.6472515625
+              },
+              "commitMs": {
+                "median": 0.019,
+                "p95": 0.0236,
+                "mean": 0.020633203125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.2626,
+              "reuseKeyMs": 0.0666,
+              "analyzeMs": 0.0001,
+              "materializeMs": 1.8357999999999999,
+              "synchronizationMs": 14.9359,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 20.46465,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 873.0,
+              "buffers": 137.0,
+              "textures": 25.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hw-async-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 38.4972,
+                "p95": 47.8973,
+                "mean": 39.863089453125
+              },
+              "admitEventsMs": {
+                "median": 0.1315,
+                "p95": 0.3514,
+                "mean": 0.149292578125
+              },
+              "uiGameWaitMs": {
+                "median": 0.0616,
+                "p95": 0.0756,
+                "mean": 0.06356171875
+              },
+              "prepareMs": {
+                "median": 0.0524,
+                "p95": 0.0673,
+                "mean": 0.054839453125
+              },
+              "reconcileMs": {
+                "median": 0.0023,
+                "p95": 0.0027,
+                "mean": 0.002408203125
+              },
+              "acquireMs": {
+                "median": 0.0088,
+                "p95": 0.0096,
+                "mean": 0.0090796875
+              },
+              "executeMs": {
+                "median": 37.820949999999996,
+                "p95": 47.0003,
+                "mean": 39.179166015625
+              },
+              "presentMs": {
+                "median": 0.3983,
+                "p95": 0.48,
+                "mean": 0.404741796875
+              },
+              "threadBytes": {
+                "median": 705712.0,
+                "p95": 771248,
+                "mean": 708659.125
+              },
+              "recordMs": {
+                "median": 0.61685,
+                "p95": 0.7394,
+                "mean": 0.710641015625
+              },
+              "submitMs": {
+                "median": 37.16575,
+                "p95": 46.3769,
+                "mean": 38.445423046875
+              },
+              "commitMs": {
+                "median": 0.0201,
+                "p95": 0.0316,
+                "mean": 0.02093125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.26115,
+              "reuseKeyMs": 0.0648,
+              "analyzeMs": 0.0001,
+              "materializeMs": 1.8239999999999998,
+              "synchronizationMs": 14.6717,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 19.9946,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 873.0,
+              "buffers": 137.0,
+              "textures": 25.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hw-async-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 40.734049999999996,
+                "p95": 53.3901,
+                "mean": 42.64398671875
+              },
+              "admitEventsMs": {
+                "median": 0.16375,
+                "p95": 0.3423,
+                "mean": 0.179762109375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0645,
+                "p95": 0.0956,
+                "mean": 0.07170859375
+              },
+              "prepareMs": {
+                "median": 0.054150000000000004,
+                "p95": 0.0745,
+                "mean": 0.057919140625
+              },
+              "reconcileMs": {
+                "median": 0.0024,
+                "p95": 0.003,
+                "mean": 0.002600390625
+              },
+              "acquireMs": {
+                "median": 0.0091,
+                "p95": 0.0163,
+                "mean": 0.010183203125
+              },
+              "executeMs": {
+                "median": 39.9636,
+                "p95": 52.2495,
+                "mean": 41.875937109375
+              },
+              "presentMs": {
+                "median": 0.4179,
+                "p95": 0.6117,
+                "mean": 0.445876171875
+              },
+              "threadBytes": {
+                "median": 705760.0,
+                "p95": 771432,
+                "mean": 709070
+              },
+              "recordMs": {
+                "median": 0.6706000000000001,
+                "p95": 0.96,
+                "mean": 0.81842109375
+              },
+              "submitMs": {
+                "median": 39.1227,
+                "p95": 51.3267,
+                "mean": 41.0319515625
+              },
+              "commitMs": {
+                "median": 0.0223,
+                "p95": 0.0312,
+                "mean": 0.02323203125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.27315,
+              "reuseKeyMs": 0.065,
+              "analyzeMs": 0.0001,
+              "materializeMs": 1.93485,
+              "synchronizationMs": 15.6362,
+              "diagnosticsMs": 0.0006,
+              "recordSubmitMs": 21.07595,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 873.0,
+              "buffers": 137.0,
+              "textures": 25.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "default-hw-serial": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 39.60745,
+        "runMedianRangeMs": [
+          39.1607,
+          39.8322
+        ],
+        "runP95RangeMs": [
+          51.7485,
+          55.3215
+        ],
+        "runs": [
+          {
+            "file": "default-hw-serial-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 39.1607,
+                "p95": 51.7485,
+                "mean": 40.90488984375
+              },
+              "admitEventsMs": {
+                "median": 0.14400000000000002,
+                "p95": 0.255,
+                "mean": 0.152239453125
+              },
+              "uiGameWaitMs": {
+                "median": 0.0623,
+                "p95": 0.0859,
+                "mean": 0.06602265625
+              },
+              "prepareMs": {
+                "median": 0.0535,
+                "p95": 0.0679,
+                "mean": 0.05600703125
+              },
+              "reconcileMs": {
+                "median": 0.0022,
+                "p95": 0.0027,
+                "mean": 0.002286328125
+              },
+              "acquireMs": {
+                "median": 0.0092,
+                "p95": 0.021,
+                "mean": 0.0100453125
+              },
+              "executeMs": {
+                "median": 38.41545000000001,
+                "p95": 51.0531,
+                "mean": 40.210808984375
+              },
+              "presentMs": {
+                "median": 0.3896,
+                "p95": 0.5065,
+                "mean": 0.407480078125
+              },
+              "threadBytes": {
+                "median": 705736.0,
+                "p95": 773648,
+                "mean": 710130.59375
+              },
+              "recordMs": {
+                "median": 0.6194,
+                "p95": 0.7674,
+                "mean": 0.789151171875
+              },
+              "submitMs": {
+                "median": 37.65665,
+                "p95": 50.4015,
+                "mean": 39.398627734375
+              },
+              "commitMs": {
+                "median": 0.0204,
+                "p95": 0.0249,
+                "mean": 0.020946875
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.2667,
+              "reuseKeyMs": 0.0634,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.01465,
+              "synchronizationMs": 15.0023,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 20.02485,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 873.0,
+              "buffers": 137.0,
+              "textures": 25.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hw-serial-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 39.60745,
+                "p95": 51.759,
+                "mean": 41.352261328125
+              },
+              "admitEventsMs": {
+                "median": 0.14765,
+                "p95": 0.274,
+                "mean": 0.198234765625
+              },
+              "uiGameWaitMs": {
+                "median": 0.06245,
+                "p95": 0.0857,
+                "mean": 0.067076953125
+              },
+              "prepareMs": {
+                "median": 0.0537,
+                "p95": 0.0674,
+                "mean": 0.057192578125
+              },
+              "reconcileMs": {
+                "median": 0.002,
+                "p95": 0.0026,
+                "mean": 0.00254296875
+              },
+              "acquireMs": {
+                "median": 0.0092,
+                "p95": 0.014,
+                "mean": 0.0098625
+              },
+              "executeMs": {
+                "median": 38.9356,
+                "p95": 51.0773,
+                "mean": 40.603019921875
+              },
+              "presentMs": {
+                "median": 0.39635,
+                "p95": 0.5125,
+                "mean": 0.414331640625
+              },
+              "threadBytes": {
+                "median": 706584.0,
+                "p95": 772600,
+                "mean": 710277.1875
+              },
+              "recordMs": {
+                "median": 0.62505,
+                "p95": 1.0531,
+                "mean": 0.791269921875
+              },
+              "submitMs": {
+                "median": 38.1702,
+                "p95": 50.5648,
+                "mean": 39.788410937500004
+              },
+              "commitMs": {
+                "median": 0.02055,
+                "p95": 0.0268,
+                "mean": 0.02136796875
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.26744999999999997,
+              "reuseKeyMs": 0.0643,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.05255,
+              "synchronizationMs": 15.34865,
+              "diagnosticsMs": 0.0005,
+              "recordSubmitMs": 20.041600000000003,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 873.0,
+              "buffers": 137.0,
+              "textures": 25.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hw-serial-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 39.8322,
+                "p95": 55.3215,
+                "mean": 41.671161328125
+              },
+              "admitEventsMs": {
+                "median": 0.13240000000000002,
+                "p95": 0.2371,
+                "mean": 0.14570546875
+              },
+              "uiGameWaitMs": {
+                "median": 0.062200000000000005,
+                "p95": 0.0962,
+                "mean": 0.067791015625
+              },
+              "prepareMs": {
+                "median": 0.05425,
+                "p95": 0.0718,
+                "mean": 0.056832421875
+              },
+              "reconcileMs": {
+                "median": 0.0022,
+                "p95": 0.0027,
+                "mean": 0.002311328125
+              },
+              "acquireMs": {
+                "median": 0.0094,
+                "p95": 0.0209,
+                "mean": 0.010683203125
+              },
+              "executeMs": {
+                "median": 39.1609,
+                "p95": 54.5853,
+                "mean": 40.954633203125
+              },
+              "presentMs": {
+                "median": 0.41205,
+                "p95": 0.5934,
+                "mean": 0.4332046875
+              },
+              "threadBytes": {
+                "median": 705772.0,
+                "p95": 773616,
+                "mean": 709201.53125
+              },
+              "recordMs": {
+                "median": 0.6391,
+                "p95": 0.847,
+                "mean": 0.748737890625
+              },
+              "submitMs": {
+                "median": 38.3645,
+                "p95": 53.8503,
+                "mean": 40.182630078125
+              },
+              "commitMs": {
+                "median": 0.0208,
+                "p95": 0.0256,
+                "mean": 0.021055859375
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.2722,
+              "reuseKeyMs": 0.0641,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.04605,
+              "synchronizationMs": 15.535,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 20.19345,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 123.0,
+              "accesses": 873.0,
+              "buffers": 137.0,
+              "textures": 25.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": true,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "default-hybrid-async": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 43.44395,
+        "runMedianRangeMs": [
+          43.08255,
+          45.2849
+        ],
+        "runP95RangeMs": [
+          67.629,
+          73.909
+        ],
+        "runs": [
+          {
+            "file": "default-hybrid-async-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 43.08255,
+                "p95": 67.629,
+                "mean": 47.315455078125
+              },
+              "admitEventsMs": {
+                "median": 0.15234999999999999,
+                "p95": 0.6874,
+                "mean": 0.24566445312500002
+              },
+              "uiGameWaitMs": {
+                "median": 0.0636,
+                "p95": 0.0816,
+                "mean": 0.068108203125
+              },
+              "prepareMs": {
+                "median": 0.05355,
+                "p95": 0.0696,
+                "mean": 0.0567453125
+              },
+              "reconcileMs": {
+                "median": 0.0025,
+                "p95": 0.003,
+                "mean": 0.002542578125
+              },
+              "acquireMs": {
+                "median": 0.0094,
+                "p95": 0.0103,
+                "mean": 0.010704296875
+              },
+              "executeMs": {
+                "median": 42.24035,
+                "p95": 66.8285,
+                "mean": 46.4946625
+              },
+              "presentMs": {
+                "median": 0.4053,
+                "p95": 0.5664,
+                "mean": 0.437027734375
+              },
+              "threadBytes": {
+                "median": 843044.0,
+                "p95": 909000,
+                "mean": 846894.84375
+              },
+              "recordMs": {
+                "median": 0.7106,
+                "p95": 1.0068,
+                "mean": 0.864169921875
+              },
+              "submitMs": {
+                "median": 41.4065,
+                "p95": 66.037,
+                "mean": 45.6064109375
+              },
+              "commitMs": {
+                "median": 0.0213,
+                "p95": 0.0263,
+                "mean": 0.021816796875
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.27955,
+              "reuseKeyMs": 0.0703,
+              "analyzeMs": 0.0001,
+              "materializeMs": 1.9308,
+              "synchronizationMs": 14.97335,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 23.852899999999998,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hybrid-async-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 45.2849,
+                "p95": 73.909,
+                "mean": 49.762001562500004
+              },
+              "admitEventsMs": {
+                "median": 0.1998,
+                "p95": 0.8057,
+                "mean": 0.2748375
+              },
+              "uiGameWaitMs": {
+                "median": 0.06415,
+                "p95": 0.0925,
+                "mean": 0.06872265625
+              },
+              "prepareMs": {
+                "median": 0.054150000000000004,
+                "p95": 0.0756,
+                "mean": 0.05750390625
+              },
+              "reconcileMs": {
+                "median": 0.0021,
+                "p95": 0.0027,
+                "mean": 0.002246875
+              },
+              "acquireMs": {
+                "median": 0.0091,
+                "p95": 0.0126,
+                "mean": 0.009623046875
+              },
+              "executeMs": {
+                "median": 44.4452,
+                "p95": 73.1599,
+                "mean": 48.91058125
+              },
+              "presentMs": {
+                "median": 0.41405000000000003,
+                "p95": 0.525,
+                "mean": 0.438486328125
+              },
+              "threadBytes": {
+                "median": 844380.0,
+                "p95": 913144,
+                "mean": 848730.28125
+              },
+              "recordMs": {
+                "median": 0.74485,
+                "p95": 0.8924,
+                "mean": 0.86936640625
+              },
+              "submitMs": {
+                "median": 43.5449,
+                "p95": 71.2528,
+                "mean": 48.015020703125
+              },
+              "commitMs": {
+                "median": 0.0225,
+                "p95": 0.0309,
+                "mean": 0.02365390625
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.28145,
+              "reuseKeyMs": 0.0691,
+              "analyzeMs": 0.0001,
+              "materializeMs": 1.9886499999999998,
+              "synchronizationMs": 15.48105,
+              "diagnosticsMs": 0.0005,
+              "recordSubmitMs": 24.92825,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hybrid-async-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 43.44395,
+                "p95": 67.6589,
+                "mean": 48.000153125
+              },
+              "admitEventsMs": {
+                "median": 0.1689,
+                "p95": 0.6241,
+                "mean": 0.227854296875
+              },
+              "uiGameWaitMs": {
+                "median": 0.0626,
+                "p95": 0.088,
+                "mean": 0.0669984375
+              },
+              "prepareMs": {
+                "median": 0.0532,
+                "p95": 0.0696,
+                "mean": 0.05572109375
+              },
+              "reconcileMs": {
+                "median": 0.0023,
+                "p95": 0.0028,
+                "mean": 0.0023625
+              },
+              "acquireMs": {
+                "median": 0.0091,
+                "p95": 0.0204,
+                "mean": 0.009757421875
+              },
+              "executeMs": {
+                "median": 42.6719,
+                "p95": 66.3706,
+                "mean": 47.2195578125
+              },
+              "presentMs": {
+                "median": 0.40775,
+                "p95": 0.4917,
+                "mean": 0.4179015625
+              },
+              "threadBytes": {
+                "median": 843084.0,
+                "p95": 908848,
+                "mean": 846468.40625
+              },
+              "recordMs": {
+                "median": 0.7121999999999999,
+                "p95": 0.83,
+                "mean": 0.813854296875
+              },
+              "submitMs": {
+                "median": 41.8942,
+                "p95": 65.4692,
+                "mean": 46.3802375
+              },
+              "commitMs": {
+                "median": 0.0224,
+                "p95": 0.0282,
+                "mean": 0.02329375
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.2846,
+              "reuseKeyMs": 0.0677,
+              "analyzeMs": 0.0001,
+              "materializeMs": 1.87555,
+              "synchronizationMs": 15.224450000000001,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 24.000799999999998,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": true,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      },
+      "default-hybrid-serial": {
+        "runCount": 3,
+        "medianOfRunMediansMs": 39.72595,
+        "runMedianRangeMs": [
+          39.61635,
+          40.00375
+        ],
+        "runP95RangeMs": [
+          50.6024,
+          53.9049
+        ],
+        "runs": [
+          {
+            "file": "default-hybrid-serial-0.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 40.00375,
+                "p95": 53.9049,
+                "mean": 41.892296875
+              },
+              "admitEventsMs": {
+                "median": 0.1275,
+                "p95": 0.4005,
+                "mean": 0.157552734375
+              },
+              "uiGameWaitMs": {
+                "median": 0.0614,
+                "p95": 0.0808,
+                "mean": 0.063809765625
+              },
+              "prepareMs": {
+                "median": 0.0529,
+                "p95": 0.0669,
+                "mean": 0.0547953125
+              },
+              "reconcileMs": {
+                "median": 0.0022,
+                "p95": 0.0027,
+                "mean": 0.0023296875
+              },
+              "acquireMs": {
+                "median": 0.009,
+                "p95": 0.01,
+                "mean": 0.009385546875
+              },
+              "executeMs": {
+                "median": 39.237899999999996,
+                "p95": 53.0311,
+                "mean": 41.17402890625
+              },
+              "presentMs": {
+                "median": 0.41159999999999997,
+                "p95": 0.5482,
+                "mean": 0.430394921875
+              },
+              "threadBytes": {
+                "median": 843016.0,
+                "p95": 908320,
+                "mean": 845800.59375
+              },
+              "recordMs": {
+                "median": 0.69635,
+                "p95": 0.8701,
+                "mean": 0.816056640625
+              },
+              "submitMs": {
+                "median": 38.49505,
+                "p95": 52.2672,
+                "mean": 40.335794140625
+              },
+              "commitMs": {
+                "median": 0.019,
+                "p95": 0.0247,
+                "mean": 0.0197078125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.2777,
+              "reuseKeyMs": 0.0695,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.0986000000000002,
+              "synchronizationMs": 14.77685,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 20.9971,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hybrid-serial-1.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 39.72595,
+                "p95": 51.8382,
+                "mean": 41.423336328125
+              },
+              "admitEventsMs": {
+                "median": 0.1507,
+                "p95": 0.477,
+                "mean": 0.202548046875
+              },
+              "uiGameWaitMs": {
+                "median": 0.0617,
+                "p95": 0.0792,
+                "mean": 0.064169140625
+              },
+              "prepareMs": {
+                "median": 0.05345,
+                "p95": 0.0745,
+                "mean": 0.058550390625
+              },
+              "reconcileMs": {
+                "median": 0.002,
+                "p95": 0.0024,
+                "mean": 0.002123046875
+              },
+              "acquireMs": {
+                "median": 0.0094,
+                "p95": 0.0161,
+                "mean": 0.010191796875
+              },
+              "executeMs": {
+                "median": 38.95315,
+                "p95": 51.0765,
+                "mean": 40.671453515625004
+              },
+              "presentMs": {
+                "median": 0.39654999999999996,
+                "p95": 0.5176,
+                "mean": 0.414300390625
+              },
+              "threadBytes": {
+                "median": 843248.0,
+                "p95": 910328,
+                "mean": 846754.3125
+              },
+              "recordMs": {
+                "median": 0.70045,
+                "p95": 1.2278,
+                "mean": 0.8780316406249999
+              },
+              "submitMs": {
+                "median": 38.097049999999996,
+                "p95": 50.114,
+                "mean": 39.767837109375
+              },
+              "commitMs": {
+                "median": 0.0209,
+                "p95": 0.03,
+                "mean": 0.0232125
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.28154999999999997,
+              "reuseKeyMs": 0.0697,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.1337,
+              "synchronizationMs": 14.9679,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 20.3164,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          },
+          {
+            "file": "default-hybrid-serial-2.json",
+            "totalFrames": 512,
+            "warmup": 256,
+            "samples": 256,
+            "stats": {
+              "wallMs": {
+                "median": 39.61635,
+                "p95": 50.6024,
+                "mean": 41.27502421875
+              },
+              "admitEventsMs": {
+                "median": 0.14585,
+                "p95": 0.3822,
+                "mean": 0.162034765625
+              },
+              "uiGameWaitMs": {
+                "median": 0.0628,
+                "p95": 0.0885,
+                "mean": 0.066371484375
+              },
+              "prepareMs": {
+                "median": 0.0534,
+                "p95": 0.0686,
+                "mean": 0.055121875
+              },
+              "reconcileMs": {
+                "median": 0.002,
+                "p95": 0.0025,
+                "mean": 0.002103125
+              },
+              "acquireMs": {
+                "median": 0.0092,
+                "p95": 0.0183,
+                "mean": 0.01003984375
+              },
+              "executeMs": {
+                "median": 38.88215,
+                "p95": 49.7859,
+                "mean": 40.537549609375
+              },
+              "presentMs": {
+                "median": 0.4117,
+                "p95": 0.6562,
+                "mean": 0.441803515625
+              },
+              "threadBytes": {
+                "median": 844136.0,
+                "p95": 908272,
+                "mean": 845978.625
+              },
+              "recordMs": {
+                "median": 0.7011499999999999,
+                "p95": 0.9786,
+                "mean": 0.87361796875
+              },
+              "submitMs": {
+                "median": 38.0634,
+                "p95": 49.0214,
+                "mean": 39.640603125
+              },
+              "commitMs": {
+                "median": 0.0205,
+                "p95": 0.0266,
+                "mean": 0.020959765625
+              }
+            },
+            "graphStats": {
+              "buildRowsMs": 0.28559999999999997,
+              "reuseKeyMs": 0.0691,
+              "analyzeMs": 0.0001,
+              "materializeMs": 2.10395,
+              "synchronizationMs": 14.90335,
+              "diagnosticsMs": 0.0004,
+              "recordSubmitMs": 20.211100000000002,
+              "reused": 1.0,
+              "staticFastPath": 0.0,
+              "declaredPasses": 129.0,
+              "accesses": 955.0,
+              "buffers": 143.0,
+              "textures": 24.0
+            },
+            "graphReuseFrames": 505,
+            "options": {
+              "DynamicScene": false,
+              "AsyncCompute": false,
+              "ForceHardwareRaster": false,
+              "DeviceValidation": false,
+              "VerifyFrameOutput": false
+            }
+          }
+        ]
+      }
+    }
+  },
+  "gpu": {
+    "current": {
+      "default": {
+        "capture": "F:\\.codex\\research\\render-retained-delivery-20260905\\capture-default_frame100.rdc",
+        "replays": 7,
+        "eventCount": 91,
+        "replaySumMedianMs": 1.6649280000000009,
+        "lighting": [
+          {
+            "id": "ResourceId::617",
+            "label": "Lighting frame views",
+            "tile": [
+              16,
+              16,
+              80,
+              45
+            ],
+            "depthSlices_maxPerCell_directional_nonDirectional": [
+              16,
+              64,
+              1,
+              3
+            ],
+            "width_height_cells": [
+              1280,
+              720,
+              57600
+            ]
+          },
+          {
+            "id": "ResourceId::1054",
+            "label": "Lighting frame views",
+            "tile": [
+              16,
+              16,
+              80,
+              45
+            ],
+            "depthSlices_maxPerCell_directional_nonDirectional": [
+              16,
+              64,
+              1,
+              3
+            ],
+            "width_height_cells": [
+              1280,
+              720,
+              57600
+            ]
+          },
+          {
+            "id": "ResourceId::1253",
+            "label": "Lighting frame views",
+            "tile": [
+              16,
+              16,
+              80,
+              45
+            ],
+            "depthSlices_maxPerCell_directional_nonDirectional": [
+              16,
+              64,
+              1,
+              3
+            ],
+            "width_height_cells": [
+              1280,
+              720,
+              57600
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "entry": "ClusterShade",
+            "events": 1,
+            "medianMs": 0.468992,
+            "minMs": 0.46592,
+            "maxMs": 0.474112
+          },
+          {
+            "entry": "PSMain",
+            "events": 12,
+            "medianMs": 0.188192,
+            "minMs": 0.186272,
+            "maxMs": 0.19094399999999997
+          },
+          {
+            "entry": "ClusterRasterSoftwareImageAtomic64",
+            "events": 4,
+            "medianMs": 0.10143999999999999,
+            "minMs": 0.098688,
+            "maxMs": 0.104032
+          },
+          {
+            "entry": "BuildClusteredLightGrid",
+            "events": 1,
+            "medianMs": 0.09113600000000001,
+            "minMs": 0.090112,
+            "maxMs": 0.09113600000000001
+          },
+          {
+            "entry": "ReduceHiZPair",
+            "events": 8,
+            "medianMs": 0.078528,
+            "minMs": 0.077344,
+            "maxMs": 0.079296
+          },
+          {
+            "entry": "PSResolveVisibilityWinner",
+            "events": 2,
+            "medianMs": 0.072416,
+            "minMs": 0.071712,
+            "maxMs": 0.072896
+          },
+          {
+            "entry": "AllocateVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.063488,
+            "minMs": 0.062464000000000006,
+            "maxMs": 0.064512
+          },
+          {
+            "entry": "TraverseHierarchyLevel",
+            "events": 8,
+            "medianMs": 0.06246399999999999,
+            "minMs": 0.060512,
+            "maxMs": 0.06457600000000001
+          },
+          {
+            "entry": "ResumeDeferredClusterWork",
+            "events": 2,
+            "medianMs": 0.058784,
+            "minMs": 0.057184,
+            "maxMs": 0.060864
+          },
+          {
+            "entry": "InitHiZ",
+            "events": 2,
+            "medianMs": 0.053664,
+            "minMs": 0.052863999999999994,
+            "maxMs": 0.056672
+          },
+          {
+            "entry": "MarkVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.050816,
+            "minMs": 0.04976,
+            "maxMs": 0.051872
+          },
+          {
+            "entry": "SeedHierarchyRoots",
+            "events": 2,
+            "medianMs": 0.042752,
+            "minMs": 0.041440000000000005,
+            "maxMs": 0.044256
+          },
+          {
+            "entry": "ResetBins",
+            "events": 4,
+            "medianMs": 0.034656,
+            "minMs": 0.03296,
+            "maxMs": 0.035424000000000004
+          },
+          {
+            "entry": "CountShadeBins",
+            "events": 1,
+            "medianMs": 0.033791999999999996,
+            "minMs": 0.032768000000000005,
+            "maxMs": 0.034816
+          },
+          {
+            "entry": "ScatterShadeBins",
+            "events": 1,
+            "medianMs": 0.033791999999999996,
+            "minMs": 0.033248,
+            "maxMs": 0.035968
+          },
+          {
+            "entry": "ReserveBins",
+            "events": 4,
+            "medianMs": 0.0288,
+            "minMs": 0.028192,
+            "maxMs": 0.029376
+          },
+          {
+            "entry": "ClearVisibilityWinner",
+            "events": 1,
+            "medianMs": 0.026752,
+            "minMs": 0.026272,
+            "maxMs": 0.027104
+          },
+          {
+            "entry": "CullPhaseOne",
+            "events": 2,
+            "medianMs": 0.021376,
+            "minMs": 0.020287999999999997,
+            "maxMs": 0.024128
+          },
+          {
+            "entry": "CountBins",
+            "events": 4,
+            "medianMs": 0.021184,
+            "minMs": 0.020352000000000002,
+            "maxMs": 0.02192
+          },
+          {
+            "entry": "CSResolve",
+            "events": 1,
+            "medianMs": 0.017408,
+            "minMs": 0.017056,
+            "maxMs": 0.017984
+          },
+          {
+            "entry": "CompactVirtualShadowViews",
+            "events": 1,
+            "medianMs": 0.015359999999999999,
+            "minMs": 0.014336,
+            "maxMs": 0.016384000000000003
+          },
+          {
+            "entry": "ScatterBins",
+            "events": 4,
+            "medianMs": 0.013920000000000002,
+            "minMs": 0.013472000000000001,
+            "maxMs": 0.015231999999999999
+          },
+          {
+            "entry": "ReduceHiZ",
+            "events": 2,
+            "medianMs": 0.010943999999999999,
+            "minMs": 0.010016,
+            "maxMs": 0.011456000000000001
+          },
+          {
+            "entry": "ClusterRasterMeshPixelImageAtomic64",
+            "events": 5,
+            "medianMs": 0.010528,
+            "minMs": 0.00912,
+            "maxMs": 0.012192000000000001
+          },
+          {
+            "entry": "ID3D12GraphicsCommandList::ClearRenderTargetView()",
+            "events": 4,
+            "medianMs": 0.009792,
+            "minMs": 0.008224,
+            "maxMs": 0.010048
+          },
+          {
+            "entry": "MarkVirtualShadowCoarsePages",
+            "events": 1,
+            "medianMs": 0.008096,
+            "minMs": 0.007904,
+            "maxMs": 0.009184000000000001
+          },
+          {
+            "entry": "CullPhaseTwo",
+            "events": 2,
+            "medianMs": 0.006880000000000001,
+            "minMs": 0.005952,
+            "maxMs": 0.007648
+          },
+          {
+            "entry": "ClearCull",
+            "events": 1,
+            "medianMs": 0.006592,
+            "minMs": 0.006112,
+            "maxMs": 0.007391999999999999
+          },
+          {
+            "entry": "ClearClusteredLightGrid",
+            "events": 1,
+            "medianMs": 0.006048,
+            "minMs": 0.0056,
+            "maxMs": 0.0063679999999999995
+          },
+          {
+            "entry": "BuildVirtualShadowPagePool",
+            "events": 1,
+            "medianMs": 0.005888,
+            "minMs": 0.005344,
+            "maxMs": 0.006016
+          },
+          {
+            "entry": "ResetShadeBins",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.00512,
+            "maxMs": 0.006144
+          },
+          {
+            "entry": "ReserveShadeBins",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.004096000000000001,
+            "maxMs": 0.00512
+          },
+          {
+            "entry": "InitializeVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.003424,
+            "minMs": 0.0032960000000000003,
+            "maxMs": 0.004064
+          },
+          {
+            "entry": "ReduceVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.0030720000000000005,
+            "minMs": 0.0030720000000000005,
+            "maxMs": 0.004096000000000001
+          },
+          {
+            "entry": "ClearVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.0020480000000000003,
+            "minMs": 0.0010240000000000002,
+            "maxMs": 0.0020480000000000003
+          }
+        ]
+      },
+      "displacement": {
+        "capture": "F:\\.codex\\research\\render-retained-delivery-20260905\\capture-displacement_frame100.rdc",
+        "replays": 7,
+        "eventCount": 171,
+        "replaySumMedianMs": 1.7332800000000017,
+        "lighting": [
+          {
+            "id": "ResourceId::708",
+            "label": "Lighting frame views",
+            "tile": [
+              16,
+              16,
+              80,
+              45
+            ],
+            "depthSlices_maxPerCell_directional_nonDirectional": [
+              16,
+              64,
+              1,
+              1
+            ],
+            "width_height_cells": [
+              1280,
+              720,
+              57600
+            ]
+          },
+          {
+            "id": "ResourceId::1281",
+            "label": "Lighting frame views",
+            "tile": [
+              16,
+              16,
+              80,
+              45
+            ],
+            "depthSlices_maxPerCell_directional_nonDirectional": [
+              16,
+              64,
+              1,
+              1
+            ],
+            "width_height_cells": [
+              1280,
+              720,
+              57600
+            ]
+          },
+          {
+            "id": "ResourceId::1524",
+            "label": "Lighting frame views",
+            "tile": [
+              16,
+              16,
+              80,
+              45
+            ],
+            "depthSlices_maxPerCell_directional_nonDirectional": [
+              16,
+              64,
+              1,
+              1
+            ],
+            "width_height_cells": [
+              1280,
+              720,
+              57600
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "entry": "BuildClusteredLightGrid",
+            "events": 1,
+            "medianMs": 0.315392,
+            "minMs": 0.311296,
+            "maxMs": 0.316416
+          },
+          {
+            "entry": "ClusterTessellationSplit",
+            "events": 24,
+            "medianMs": 0.2505920000000001,
+            "minMs": 0.247616,
+            "maxMs": 0.2609279999999999
+          },
+          {
+            "entry": "PSMain",
+            "events": 12,
+            "medianMs": 0.18112000000000003,
+            "minMs": 0.18032000000000004,
+            "maxMs": 0.186112
+          },
+          {
+            "entry": "PSResolveVisibilityWinner",
+            "events": 20,
+            "medianMs": 0.096864,
+            "minMs": 0.096192,
+            "maxMs": 0.097376
+          },
+          {
+            "entry": "ClusterShade",
+            "events": 1,
+            "medianMs": 0.090112,
+            "minMs": 0.088064,
+            "maxMs": 0.09318399999999999
+          },
+          {
+            "entry": "ReduceHiZPair",
+            "events": 8,
+            "medianMs": 0.07696,
+            "minMs": 0.076096,
+            "maxMs": 0.079232
+          },
+          {
+            "entry": "ResumeDeferredClusterWork",
+            "events": 2,
+            "medianMs": 0.058464,
+            "minMs": 0.057567999999999994,
+            "maxMs": 0.060064
+          },
+          {
+            "entry": "InitHiZ",
+            "events": 2,
+            "medianMs": 0.055264,
+            "minMs": 0.053312,
+            "maxMs": 0.06739200000000001
+          },
+          {
+            "entry": "ClusterTessellationDiceImageAtomic64",
+            "events": 4,
+            "medianMs": 0.043103999999999996,
+            "minMs": 0.041344,
+            "maxMs": 0.04512
+          },
+          {
+            "entry": "ResetTessellationBins",
+            "events": 4,
+            "medianMs": 0.034912,
+            "minMs": 0.033728,
+            "maxMs": 0.035615999999999995
+          },
+          {
+            "entry": "ReserveBins",
+            "events": 4,
+            "medianMs": 0.033856,
+            "minMs": 0.032992,
+            "maxMs": 0.03472
+          },
+          {
+            "entry": "ResetBins",
+            "events": 4,
+            "medianMs": 0.032896,
+            "minMs": 0.032512000000000006,
+            "maxMs": 0.03376
+          },
+          {
+            "entry": "ClusterRasterMeshPixelImageAtomic64",
+            "events": 14,
+            "medianMs": 0.030687999999999997,
+            "minMs": 0.029952000000000003,
+            "maxMs": 0.032224
+          },
+          {
+            "entry": "SeedHierarchyRoots",
+            "events": 2,
+            "medianMs": 0.030528,
+            "minMs": 0.029952,
+            "maxMs": 0.031264
+          },
+          {
+            "entry": "MarkVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.029984,
+            "minMs": 0.029376000000000003,
+            "maxMs": 0.030592
+          },
+          {
+            "entry": "CountShadeBins",
+            "events": 1,
+            "medianMs": 0.027648,
+            "minMs": 0.026624000000000002,
+            "maxMs": 0.028672
+          },
+          {
+            "entry": "ScatterShadeBins",
+            "events": 1,
+            "medianMs": 0.027583999999999997,
+            "minMs": 0.026752,
+            "maxMs": 0.028672
+          },
+          {
+            "entry": "TraverseHierarchyLevel",
+            "events": 4,
+            "medianMs": 0.026432,
+            "minMs": 0.025791999999999995,
+            "maxMs": 0.027488
+          },
+          {
+            "entry": "ClearVisibilityWinner",
+            "events": 1,
+            "medianMs": 0.026144,
+            "minMs": 0.025888,
+            "maxMs": 0.02672
+          },
+          {
+            "entry": "ClusterTessellationSeed",
+            "events": 4,
+            "medianMs": 0.0216,
+            "minMs": 0.019999999999999997,
+            "maxMs": 0.022688
+          },
+          {
+            "entry": "CountBins",
+            "events": 4,
+            "medianMs": 0.018976,
+            "minMs": 0.018176,
+            "maxMs": 0.020064000000000002
+          },
+          {
+            "entry": "ReserveTessellationBins",
+            "events": 4,
+            "medianMs": 0.018944,
+            "minMs": 0.018496000000000002,
+            "maxMs": 0.02016
+          },
+          {
+            "entry": "CSResolve",
+            "events": 1,
+            "medianMs": 0.017759999999999998,
+            "minMs": 0.017312,
+            "maxMs": 0.0184
+          },
+          {
+            "entry": "CountTessellationBins",
+            "events": 4,
+            "medianMs": 0.0168,
+            "minMs": 0.016576,
+            "maxMs": 0.018464
+          },
+          {
+            "entry": "ScatterBins",
+            "events": 4,
+            "medianMs": 0.016416,
+            "minMs": 0.015712,
+            "maxMs": 0.01856
+          },
+          {
+            "entry": "CullPhaseOne",
+            "events": 2,
+            "medianMs": 0.015968,
+            "minMs": 0.014912,
+            "maxMs": 0.016416
+          },
+          {
+            "entry": "ScatterTessellationBins",
+            "events": 4,
+            "medianMs": 0.014048000000000001,
+            "minMs": 0.012927999999999999,
+            "maxMs": 0.014656
+          },
+          {
+            "entry": "CompactVirtualShadowViews",
+            "events": 1,
+            "medianMs": 0.013312000000000001,
+            "minMs": 0.012288,
+            "maxMs": 0.013312000000000001
+          },
+          {
+            "entry": "AllocateVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.012288,
+            "minMs": 0.012288,
+            "maxMs": 0.013312000000000001
+          },
+          {
+            "entry": "ID3D12GraphicsCommandList::CopyBufferRegion()",
+            "events": 9,
+            "medianMs": 0.012032000000000001,
+            "minMs": 0.011936,
+            "maxMs": 0.012288
+          },
+          {
+            "entry": "ReduceHiZ",
+            "events": 2,
+            "medianMs": 0.010656,
+            "minMs": 0.009952,
+            "maxMs": 0.011040000000000001
+          },
+          {
+            "entry": "ID3D12GraphicsCommandList::ClearRenderTargetView()",
+            "events": 4,
+            "medianMs": 0.008832,
+            "minMs": 0.008064,
+            "maxMs": 0.009568
+          },
+          {
+            "entry": "ClusterRasterSoftwareImageAtomic64",
+            "events": 4,
+            "medianMs": 0.008192000000000001,
+            "minMs": 0.008192000000000001,
+            "maxMs": 0.009216000000000002
+          },
+          {
+            "entry": "MarkVirtualShadowCoarsePages",
+            "events": 1,
+            "medianMs": 0.006848,
+            "minMs": 0.006592,
+            "maxMs": 0.007744000000000001
+          },
+          {
+            "entry": "CullPhaseTwo",
+            "events": 2,
+            "medianMs": 0.00672,
+            "minMs": 0.006463999999999999,
+            "maxMs": 0.006848
+          },
+          {
+            "entry": "ClearCull",
+            "events": 1,
+            "medianMs": 0.006464,
+            "minMs": 0.006112,
+            "maxMs": 0.007104
+          },
+          {
+            "entry": "ClearClusteredLightGrid",
+            "events": 1,
+            "medianMs": 0.006048,
+            "minMs": 0.005568,
+            "maxMs": 0.006752
+          },
+          {
+            "entry": "BuildVirtualShadowPagePool",
+            "events": 1,
+            "medianMs": 0.005888,
+            "minMs": 0.0050880000000000005,
+            "maxMs": 0.00608
+          },
+          {
+            "entry": "ResetShadeBins",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.00512,
+            "maxMs": 0.00512
+          },
+          {
+            "entry": "ReserveShadeBins",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.004096000000000001,
+            "maxMs": 0.00512
+          },
+          {
+            "entry": "ReduceVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.004096000000000001,
+            "minMs": 0.0030720000000000005,
+            "maxMs": 0.004096000000000001
+          },
+          {
+            "entry": "InitializeVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.003584,
+            "minMs": 0.003136,
+            "maxMs": 0.0041600000000000005
+          },
+          {
+            "entry": "ClearVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.0020480000000000003,
+            "minMs": 0.0020480000000000003,
+            "maxMs": 0.0020480000000000003
+          }
+        ]
+      }
+    },
+    "historical": {
+      "default": {
+        "capture": "F:\\.codex\\research\\render-performance-review-20260905\\capture-default_frame100.rdc",
+        "frame": 100,
+        "replays": 7,
+        "replaySumMedianMs": 5.182816,
+        "eventCount": 90,
+        "zeroDispatches": 26,
+        "lighting": {
+          "id": "ResourceId::1774",
+          "label": "Lighting frame views",
+          "tile": [
+            16,
+            16,
+            80,
+            45
+          ],
+          "depthSlices_maxPerCell_directional_nonDirectional": [
+            16,
+            64,
+            1,
+            3
+          ],
+          "width_height_cells": [
+            1280,
+            720,
+            57600
+          ]
+        },
+        "entries": [
+          {
+            "entry": "BuildClusteredLightGrid",
+            "events": 1,
+            "medianMs": 2.67664,
+            "minMs": 2.587616,
+            "maxMs": 3.251136
+          },
+          {
+            "entry": "ClusterShade",
+            "events": 1,
+            "medianMs": 1.166336,
+            "minMs": 1.161216,
+            "maxMs": 1.845248
+          },
+          {
+            "entry": "PSMain",
+            "events": 12,
+            "medianMs": 0.18944,
+            "minMs": 0.188672,
+            "maxMs": 0.19385599999999997
+          },
+          {
+            "entry": "ClusterRasterSoftwareImageAtomic64",
+            "events": 4,
+            "medianMs": 0.10118400000000001,
+            "minMs": 0.10009599999999998,
+            "maxMs": 0.10319999999999999
+          },
+          {
+            "entry": "ReduceHiZPair",
+            "events": 8,
+            "medianMs": 0.098944,
+            "minMs": 0.09712000000000001,
+            "maxMs": 0.10147200000000002
+          },
+          {
+            "entry": "PSResolveVisibilityWinner",
+            "events": 2,
+            "medianMs": 0.072448,
+            "minMs": 0.071424,
+            "maxMs": 0.073632
+          },
+          {
+            "entry": "TraverseHierarchyLevel",
+            "events": 8,
+            "medianMs": 0.061952,
+            "minMs": 0.060256,
+            "maxMs": 0.06307200000000002
+          },
+          {
+            "entry": "ResumeDeferredClusterWork",
+            "events": 2,
+            "medianMs": 0.059648,
+            "minMs": 0.057760000000000006,
+            "maxMs": 0.061248
+          },
+          {
+            "entry": "InitHiZ",
+            "events": 2,
+            "medianMs": 0.057791999999999996,
+            "minMs": 0.055263999999999994,
+            "maxMs": 0.058528000000000004
+          },
+          {
+            "entry": "SeedHierarchyRoots",
+            "events": 2,
+            "medianMs": 0.040544,
+            "minMs": 0.040096,
+            "maxMs": 0.041696
+          },
+          {
+            "entry": "ResetBins",
+            "events": 4,
+            "medianMs": 0.033696,
+            "minMs": 0.032032,
+            "maxMs": 0.034848
+          },
+          {
+            "entry": "CountShadeBins",
+            "events": 1,
+            "medianMs": 0.031744,
+            "minMs": 0.030719999999999997,
+            "maxMs": 0.031744
+          },
+          {
+            "entry": "ReserveBins",
+            "events": 4,
+            "medianMs": 0.029376,
+            "minMs": 0.02848,
+            "maxMs": 0.030624000000000002
+          },
+          {
+            "entry": "ScatterShadeBins",
+            "events": 1,
+            "medianMs": 0.028672,
+            "minMs": 0.027648,
+            "maxMs": 0.029696
+          },
+          {
+            "entry": "MarkVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.028192000000000002,
+            "minMs": 0.027424,
+            "maxMs": 0.030656
+          },
+          {
+            "entry": "ClearVisibilityWinner",
+            "events": 1,
+            "medianMs": 0.02688,
+            "minMs": 0.02672,
+            "maxMs": 0.02736
+          },
+          {
+            "entry": "CountBins",
+            "events": 4,
+            "medianMs": 0.021056000000000002,
+            "minMs": 0.020192,
+            "maxMs": 0.021696
+          },
+          {
+            "entry": "CullPhaseOne",
+            "events": 2,
+            "medianMs": 0.019839999999999997,
+            "minMs": 0.019232,
+            "maxMs": 0.020448
+          },
+          {
+            "entry": "ScatterBins",
+            "events": 4,
+            "medianMs": 0.019200000000000002,
+            "minMs": 0.018335999999999998,
+            "maxMs": 0.01952
+          },
+          {
+            "entry": "CSResolve",
+            "events": 1,
+            "medianMs": 0.01712,
+            "minMs": 0.01696,
+            "maxMs": 0.018528
+          },
+          {
+            "entry": "ReduceHiZ",
+            "events": 2,
+            "medianMs": 0.014912000000000002,
+            "minMs": 0.013663999999999999,
+            "maxMs": 0.015071999999999999
+          },
+          {
+            "entry": "ClusterRasterPixelImageAtomic64",
+            "events": 5,
+            "medianMs": 0.010208,
+            "minMs": 0.008928,
+            "maxMs": 0.012416
+          },
+          {
+            "entry": "ID3D12GraphicsCommandList::ClearRenderTargetView()",
+            "events": 4,
+            "medianMs": 0.009696,
+            "minMs": 0.009311999999999999,
+            "maxMs": 0.010048000000000001
+          },
+          {
+            "entry": "AllocateVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.009216,
+            "minMs": 0.009216,
+            "maxMs": 0.009216
+          },
+          {
+            "entry": "CompactVirtualShadowViews",
+            "events": 1,
+            "medianMs": 0.008192000000000001,
+            "minMs": 0.008192000000000001,
+            "maxMs": 0.009216
+          },
+          {
+            "entry": "CullPhaseTwo",
+            "events": 2,
+            "medianMs": 0.0066879999999999995,
+            "minMs": 0.006144,
+            "maxMs": 0.007168
+          },
+          {
+            "entry": "ClearCull",
+            "events": 1,
+            "medianMs": 0.00656,
+            "minMs": 0.006272000000000001,
+            "maxMs": 0.0072640000000000005
+          },
+          {
+            "entry": "ResetShadeBins",
+            "events": 1,
+            "medianMs": 0.0056960000000000005,
+            "minMs": 0.00512,
+            "maxMs": 0.006112
+          },
+          {
+            "entry": "MarkVirtualShadowCoarsePages",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.004096000000000001,
+            "maxMs": 0.01024
+          },
+          {
+            "entry": "ReserveShadeBins",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.004096000000000001,
+            "maxMs": 0.006144
+          },
+          {
+            "entry": "BuildVirtualShadowPagePool",
+            "events": 1,
+            "medianMs": 0.0042239999999999995,
+            "minMs": 0.00368,
+            "maxMs": 0.004608
+          },
+          {
+            "entry": "ReduceVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.004096000000000001,
+            "minMs": 0.0030720000000000005,
+            "maxMs": 0.004096000000000001
+          },
+          {
+            "entry": "InitializeVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.003648,
+            "minMs": 0.003328,
+            "maxMs": 0.004064
+          },
+          {
+            "entry": "ClearVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.0020480000000000003,
+            "minMs": 0.0020480000000000003,
+            "maxMs": 0.0020480000000000003
+          }
+        ]
+      },
+      "displacement": {
+        "capture": "F:\\.codex\\research\\render-performance-review-20260905\\capture-displacement_frame100.rdc",
+        "frame": 100,
+        "replays": 7,
+        "replaySumMedianMs": 11.414112000000008,
+        "eventCount": 170,
+        "zeroDispatches": 57,
+        "lighting": {
+          "id": "ResourceId::2069",
+          "label": "Lighting frame views",
+          "tile": [
+            16,
+            16,
+            80,
+            45
+          ],
+          "depthSlices_maxPerCell_directional_nonDirectional": [
+            16,
+            64,
+            1,
+            1
+          ],
+          "width_height_cells": [
+            1280,
+            720,
+            57600
+          ]
+        },
+        "entries": [
+          {
+            "entry": "BuildClusteredLightGrid",
+            "events": 1,
+            "medianMs": 10.081216000000001,
+            "minMs": 10.042591999999999,
+            "maxMs": 10.394624
+          },
+          {
+            "entry": "PSMain",
+            "events": 12,
+            "medianMs": 0.18444799999999997,
+            "minMs": 0.18371200000000001,
+            "maxMs": 0.18668800000000002
+          },
+          {
+            "entry": "ClusterTessellationSplit",
+            "events": 24,
+            "medianMs": 0.16927999999999993,
+            "minMs": 0.16192,
+            "maxMs": 0.175872
+          },
+          {
+            "entry": "ReduceHiZPair",
+            "events": 8,
+            "medianMs": 0.09840000000000002,
+            "minMs": 0.09673599999999999,
+            "maxMs": 0.099008
+          },
+          {
+            "entry": "PSResolveVisibilityWinner",
+            "events": 20,
+            "medianMs": 0.09673600000000002,
+            "minMs": 0.09596799999999998,
+            "maxMs": 0.097536
+          },
+          {
+            "entry": "ClusterShade",
+            "events": 1,
+            "medianMs": 0.084992,
+            "minMs": 0.082944,
+            "maxMs": 0.088064
+          },
+          {
+            "entry": "ResumeDeferredClusterWork",
+            "events": 2,
+            "medianMs": 0.058112000000000004,
+            "minMs": 0.057055999999999996,
+            "maxMs": 0.060384
+          },
+          {
+            "entry": "InitHiZ",
+            "events": 2,
+            "medianMs": 0.055296,
+            "minMs": 0.054655999999999996,
+            "maxMs": 0.05648
+          },
+          {
+            "entry": "ClusterTessellationDiceImageAtomic64",
+            "events": 4,
+            "medianMs": 0.045056,
+            "minMs": 0.042368,
+            "maxMs": 0.045536
+          },
+          {
+            "entry": "ResetBins",
+            "events": 4,
+            "medianMs": 0.034111999999999996,
+            "minMs": 0.033184,
+            "maxMs": 0.03584
+          },
+          {
+            "entry": "ReserveBins",
+            "events": 4,
+            "medianMs": 0.034048,
+            "minMs": 0.032288,
+            "maxMs": 0.034879999999999994
+          },
+          {
+            "entry": "ResetTessellationBins",
+            "events": 4,
+            "medianMs": 0.033952,
+            "minMs": 0.033216,
+            "maxMs": 0.035776
+          },
+          {
+            "entry": "SeedHierarchyRoots",
+            "events": 2,
+            "medianMs": 0.02944,
+            "minMs": 0.028416,
+            "maxMs": 0.030432
+          },
+          {
+            "entry": "ClusterRasterPixelImageAtomic64",
+            "events": 14,
+            "medianMs": 0.028576,
+            "minMs": 0.027168,
+            "maxMs": 0.029536
+          },
+          {
+            "entry": "MarkVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.027744,
+            "minMs": 0.027648,
+            "maxMs": 0.028672
+          },
+          {
+            "entry": "CountShadeBins",
+            "events": 1,
+            "medianMs": 0.027648,
+            "minMs": 0.027648,
+            "maxMs": 0.029696
+          },
+          {
+            "entry": "ClearVisibilityWinner",
+            "events": 1,
+            "medianMs": 0.027104,
+            "minMs": 0.026688,
+            "maxMs": 0.027648
+          },
+          {
+            "entry": "ScatterShadeBins",
+            "events": 1,
+            "medianMs": 0.026624000000000002,
+            "minMs": 0.026624000000000002,
+            "maxMs": 0.027648
+          },
+          {
+            "entry": "TraverseHierarchyLevel",
+            "events": 4,
+            "medianMs": 0.026112,
+            "minMs": 0.024896,
+            "maxMs": 0.026624
+          },
+          {
+            "entry": "ClusterTessellationSeed",
+            "events": 4,
+            "medianMs": 0.021471999999999998,
+            "minMs": 0.020608,
+            "maxMs": 0.022912000000000002
+          },
+          {
+            "entry": "CountBins",
+            "events": 4,
+            "medianMs": 0.019743999999999998,
+            "minMs": 0.018208000000000002,
+            "maxMs": 0.020448
+          },
+          {
+            "entry": "ReserveTessellationBins",
+            "events": 4,
+            "medianMs": 0.01968,
+            "minMs": 0.017856,
+            "maxMs": 0.020352
+          },
+          {
+            "entry": "CountTessellationBins",
+            "events": 4,
+            "medianMs": 0.01728,
+            "minMs": 0.01648,
+            "maxMs": 0.017344000000000002
+          },
+          {
+            "entry": "CSResolve",
+            "events": 1,
+            "medianMs": 0.017184,
+            "minMs": 0.01664,
+            "maxMs": 0.018335999999999998
+          },
+          {
+            "entry": "ScatterBins",
+            "events": 4,
+            "medianMs": 0.016672,
+            "minMs": 0.015488,
+            "maxMs": 0.017536000000000003
+          },
+          {
+            "entry": "CullPhaseOne",
+            "events": 2,
+            "medianMs": 0.016,
+            "minMs": 0.014752,
+            "maxMs": 0.016576
+          },
+          {
+            "entry": "ReduceHiZ",
+            "events": 2,
+            "medianMs": 0.0144,
+            "minMs": 0.013856,
+            "maxMs": 0.015264
+          },
+          {
+            "entry": "ScatterTessellationBins",
+            "events": 4,
+            "medianMs": 0.013696,
+            "minMs": 0.012352,
+            "maxMs": 0.014336
+          },
+          {
+            "entry": "ID3D12GraphicsCommandList::CopyBufferRegion()",
+            "events": 9,
+            "medianMs": 0.012448,
+            "minMs": 0.012288,
+            "maxMs": 0.013023999999999999
+          },
+          {
+            "entry": "MarkVirtualShadowCoarsePages",
+            "events": 1,
+            "medianMs": 0.01024,
+            "minMs": 0.009216,
+            "maxMs": 0.011264
+          },
+          {
+            "entry": "ID3D12GraphicsCommandList::ClearRenderTargetView()",
+            "events": 4,
+            "medianMs": 0.009152,
+            "minMs": 0.008928,
+            "maxMs": 0.009856
+          },
+          {
+            "entry": "ClusterRasterSoftwareImageAtomic64",
+            "events": 4,
+            "medianMs": 0.008192000000000001,
+            "minMs": 0.008,
+            "maxMs": 0.009216000000000002
+          },
+          {
+            "entry": "CompactVirtualShadowViews",
+            "events": 1,
+            "medianMs": 0.008192000000000001,
+            "minMs": 0.007168,
+            "maxMs": 0.009216
+          },
+          {
+            "entry": "ClearCull",
+            "events": 1,
+            "medianMs": 0.007296,
+            "minMs": 0.006592,
+            "maxMs": 0.008128000000000002
+          },
+          {
+            "entry": "AllocateVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.007168,
+            "minMs": 0.006144,
+            "maxMs": 0.007168
+          },
+          {
+            "entry": "CullPhaseTwo",
+            "events": 2,
+            "medianMs": 0.0066879999999999995,
+            "minMs": 0.00624,
+            "maxMs": 0.007552
+          },
+          {
+            "entry": "ResetShadeBins",
+            "events": 1,
+            "medianMs": 0.006432,
+            "minMs": 0.00592,
+            "maxMs": 0.00688
+          },
+          {
+            "entry": "ReserveShadeBins",
+            "events": 1,
+            "medianMs": 0.00512,
+            "minMs": 0.00512,
+            "maxMs": 0.006144
+          },
+          {
+            "entry": "BuildVirtualShadowPagePool",
+            "events": 1,
+            "medianMs": 0.004448,
+            "minMs": 0.004064000000000001,
+            "maxMs": 0.005248
+          },
+          {
+            "entry": "ReduceVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.004096000000000001,
+            "minMs": 0.0030720000000000005,
+            "maxMs": 0.004096000000000001
+          },
+          {
+            "entry": "InitializeVirtualShadowPageHiZ",
+            "events": 2,
+            "medianMs": 0.003936,
+            "minMs": 0.00336,
+            "maxMs": 0.004416
+          },
+          {
+            "entry": "ClearVirtualShadowPages",
+            "events": 1,
+            "medianMs": 0.0020480000000000003,
+            "minMs": 0.0020480000000000003,
+            "maxMs": 0.0020480000000000003
+          }
+        ]
+      }
+    }
+  },
+  "crud": {
+    "method": "Release existing product assemblies; independent write/read branches; CPU BeginEdit+mutation+Commit only; no frame/GPU execution; 12 warmup + 36 samples; three alternating size orders. sameLabel repeats the identical value; emptyCommit has no setter.",
+    "tieredCompilation": false,
+    "current": [
+      {
+        "passes": 64,
+        "operation": "label",
+        "medianUs": 2.2,
+        "runMedianRangeUs": [
+          2.2,
+          12.5
+        ],
+        "medianBytes": 5576,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 64,
+        "operation": "sameLabel",
+        "medianUs": 1.4,
+        "runMedianRangeUs": [
+          1.3,
+          8.2
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 64,
+        "operation": "emptyCommit",
+        "medianUs": 1.4,
+        "runMedianRangeUs": [
+          1.3,
+          10
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 64,
+        "operation": "order",
+        "medianUs": 5.5,
+        "runMedianRangeUs": [
+          5.2,
+          19.1
+        ],
+        "medianBytes": 9416,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "passes": 256,
+        "operation": "label",
+        "medianUs": 2.5,
+        "runMedianRangeUs": [
+          2.4,
+          12.9
+        ],
+        "medianBytes": 5672,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 256,
+        "operation": "sameLabel",
+        "medianUs": 1.5,
+        "runMedianRangeUs": [
+          1.4,
+          7.5
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 256,
+        "operation": "emptyCommit",
+        "medianUs": 1.3,
+        "runMedianRangeUs": [
+          1.3,
+          7.3
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 256,
+        "operation": "order",
+        "medianUs": 5.8,
+        "runMedianRangeUs": [
+          5.6,
+          19.8
+        ],
+        "medianBytes": 9656,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "passes": 1024,
+        "operation": "label",
+        "medianUs": 2.6,
+        "runMedianRangeUs": [
+          2.5,
+          13.2
+        ],
+        "medianBytes": 5768,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 1024,
+        "operation": "sameLabel",
+        "medianUs": 1.5,
+        "runMedianRangeUs": [
+          1.5,
+          7.7
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 1024,
+        "operation": "emptyCommit",
+        "medianUs": 1.4,
+        "runMedianRangeUs": [
+          1.4,
+          7.2
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 1024,
+        "operation": "order",
+        "medianUs": 6,
+        "runMedianRangeUs": [
+          5.7,
+          19
+        ],
+        "medianBytes": 9576,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "passes": 2048,
+        "operation": "label",
+        "medianUs": 2.6,
+        "runMedianRangeUs": [
+          2.6,
+          2.7
+        ],
+        "medianBytes": 5816,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 2048,
+        "operation": "sameLabel",
+        "medianUs": 1.5,
+        "runMedianRangeUs": [
+          1.3,
+          1.5
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 2048,
+        "operation": "emptyCommit",
+        "medianUs": 1.3,
+        "runMedianRangeUs": [
+          1.2,
+          1.3
+        ],
+        "medianBytes": 4240,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "passes": 2048,
+        "operation": "order",
+        "medianUs": 5.8,
+        "runMedianRangeUs": [
+          5.7,
+          6
+        ],
+        "medianBytes": 9896,
+        "unrelatedPassPreserved": true,
+        "unrelatedHazardsPreserved": true,
+        "versionSteps": [
+          1,
+          1,
+          1
+        ]
+      }
+    ],
+    "historical": [
+      {
+        "passes": 64,
+        "operation": "emptyCommit",
+        "medianUs": 31.6,
+        "minUs": 31.1,
+        "maxUs": 99.2,
+        "bytes": 45896,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 64,
+        "operation": "label",
+        "medianUs": 60.4,
+        "minUs": 59.8,
+        "maxUs": 197.2,
+        "bytes": 96472,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 64,
+        "operation": "order",
+        "medianUs": 42.3,
+        "minUs": 40.9,
+        "maxUs": 135,
+        "bytes": 59640,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 64,
+        "operation": "sameLabel",
+        "medianUs": 60.3,
+        "minUs": 58.7,
+        "maxUs": 203.1,
+        "bytes": 96472,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 256,
+        "operation": "emptyCommit",
+        "medianUs": 129.8,
+        "minUs": 129.6,
+        "maxUs": 133.6,
+        "bytes": 161112,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 256,
+        "operation": "label",
+        "medianUs": 238.2,
+        "minUs": 219.7,
+        "maxUs": 259.7,
+        "bytes": 354920,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 256,
+        "operation": "order",
+        "medianUs": 157.1,
+        "minUs": 148.9,
+        "maxUs": 166.6,
+        "bytes": 203608,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 256,
+        "operation": "sameLabel",
+        "medianUs": 237.1,
+        "minUs": 226.2,
+        "maxUs": 238.7,
+        "bytes": 354920,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 1024,
+        "operation": "emptyCommit",
+        "medianUs": 503.2,
+        "minUs": 501.1,
+        "maxUs": 512.5,
+        "bytes": 603960,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 1024,
+        "operation": "label",
+        "medianUs": 907,
+        "minUs": 881.2,
+        "maxUs": 968.6,
+        "bytes": 1363688,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 1024,
+        "operation": "order",
+        "medianUs": 598.9,
+        "minUs": 583.4,
+        "maxUs": 612.8,
+        "bytes": 754600,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 1024,
+        "operation": "sameLabel",
+        "medianUs": 902.3,
+        "minUs": 864.8,
+        "maxUs": 927.4,
+        "bytes": 1363688,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 2048,
+        "operation": "emptyCommit",
+        "medianUs": 974.3,
+        "minUs": 964.8,
+        "maxUs": 1018.6,
+        "bytes": 1259304,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 2048,
+        "operation": "label",
+        "medianUs": 1883.9,
+        "minUs": 1838.8,
+        "maxUs": 1928.1,
+        "bytes": 2786752,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 2048,
+        "operation": "order",
+        "medianUs": 1153.9,
+        "minUs": 1152.3,
+        "maxUs": 1268.2,
+        "bytes": 1567336,
+        "unrelatedPassReplaced": false,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      },
+      {
+        "passes": 2048,
+        "operation": "sameLabel",
+        "medianUs": 1754.3,
+        "minUs": 1741,
+        "maxUs": 1886.6,
+        "bytes": 2786752,
+        "unrelatedPassReplaced": true,
+        "unrelatedHazardsPreserved": true,
+        "versionStep": 1
+      }
+    ]
+  },
+  "memory": {
+    "currentDiagnosticFrame": {
+      "DeclaredPassCount": 129,
+      "LivePassCount": 105,
+      "ScheduledPassCount": 105,
+      "BufferCount": 143,
+      "TextureCount": 24,
+      "AccessCount": 957,
+      "DependencyCount": 902,
+      "BarrierCount": 769,
+      "QueueCount": 3,
+      "TransientResourceBytes": 155582464,
+      "TransientOccupiedBytes": 149028864,
+      "TransientHeapBytes": 149422080,
+      "GraphHeapBytes": 716177408,
+      "AnalysisReused": true,
+      "TransientUnusedBytes": 393216
+    },
+    "historicalPerFlightHeapBytes": [
+      570425344,
+      704643072,
+      704643072
+    ],
+    "historicalScope": "transient heaps only; three in-flight instances",
+    "currentScope": "TransientHeapBytes: one in-flight instance; GraphHeapBytes: all graph heaps including persistent resources"
+  },
+  "tests": {
+    "final-solution-release-tests": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-solution-release-tests.log",
+      "assemblies": [
+        {
+          "failed": 0,
+          "passed": 154,
+          "skipped": 0,
+          "total": 154,
+          "assembly": "SomeEngine.Assets.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 58,
+          "skipped": 0,
+          "total": 58,
+          "assembly": "SomeEngine.Core.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 83,
+          "skipped": 0,
+          "total": 83,
+          "assembly": "SomeEngine.ECS.Benchmarks.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 19,
+          "skipped": 0,
+          "total": 19,
+          "assembly": "SomeEngine.ECS.Fuzz.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 190,
+          "skipped": 0,
+          "total": 190,
+          "assembly": "SomeEngine.ECS.Serialization.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 39,
+          "skipped": 0,
+          "total": 39,
+          "assembly": "SomeEngine.ECS.SourceGen.Tests.dll"
+        },
+        {
+          "failed": 2,
+          "passed": 309,
+          "skipped": 0,
+          "total": 311,
+          "assembly": "SomeEngine.ECS.Systems.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 662,
+          "skipped": 0,
+          "total": 662,
+          "assembly": "SomeEngine.ECS.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 71,
+          "skipped": 0,
+          "total": 71,
+          "assembly": "SomeEngine.Graphics.Benchmarks.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 421,
+          "skipped": 1,
+          "total": 422,
+          "assembly": "SomeEngine.Graphics.Direct3D12.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 29,
+          "skipped": 0,
+          "total": 29,
+          "assembly": "SomeEngine.Graphics.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 48,
+          "skipped": 0,
+          "total": 48,
+          "assembly": "SomeEngine.Graphics.Vulkan.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 5,
+          "skipped": 0,
+          "total": 5,
+          "assembly": "SomeEngine.Job.Dots.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 209,
+          "skipped": 0,
+          "total": 209,
+          "assembly": "SomeEngine.Job.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 139,
+          "skipped": 0,
+          "total": 139,
+          "assembly": "SomeEngine.Render.Cluster.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 81,
+          "skipped": 0,
+          "total": 81,
+          "assembly": "SomeEngine.Render.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 70,
+          "skipped": 0,
+          "total": 70,
+          "assembly": "SomeEngine.RenderGraph.Tests.dll"
+        },
+        {
+          "failed": 0,
+          "passed": 13,
+          "skipped": 0,
+          "total": 13,
+          "assembly": "SomeEngine.Runtime.Tests.dll"
+        },
+        {
+          "failed": 1,
+          "passed": 142,
+          "skipped": 0,
+          "total": 143,
+          "assembly": "SomeEngine.Serialization.Tests.dll"
+        }
+      ],
+      "failed": 3,
+      "passed": 2742,
+      "skipped": 1,
+      "total": 2746
+    },
+    "final-graph-debug-tests": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-graph-debug-tests.log",
+      "assemblies": [
+        {
+          "failed": 0,
+          "passed": 81,
+          "skipped": 0,
+          "total": 81,
+          "assembly": "SomeEngine.RenderGraph.Tests.dll"
+        }
+      ],
+      "failed": 0,
+      "passed": 81,
+      "skipped": 0,
+      "total": 81
+    },
+    "final-ecs-recheck": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-ecs-recheck.log",
+      "assemblies": [
+        {
+          "failed": 1,
+          "passed": 310,
+          "skipped": 0,
+          "total": 311,
+          "assembly": "SomeEngine.ECS.Systems.Tests.dll"
+        }
+      ],
+      "failed": 1,
+      "passed": 310,
+      "skipped": 0,
+      "total": 311
+    },
+    "final-serialization-recheck": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-serialization-recheck.log",
+      "assemblies": [
+        {
+          "failed": 0,
+          "passed": 143,
+          "skipped": 0,
+          "total": 143,
+          "assembly": "SomeEngine.Serialization.Tests.dll"
+        }
+      ],
+      "failed": 0,
+      "passed": 143,
+      "skipped": 0,
+      "total": 143
+    },
+    "final-ecs-no-tiering": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-ecs-no-tiering.log",
+      "assemblies": [
+        {
+          "failed": 1,
+          "passed": 310,
+          "skipped": 0,
+          "total": 311,
+          "assembly": "SomeEngine.ECS.Systems.Tests.dll"
+        }
+      ],
+      "failed": 1,
+      "passed": 310,
+      "skipped": 0,
+      "total": 311
+    },
+    "final-serialization-no-tiering": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-serialization-no-tiering.log",
+      "assemblies": [
+        {
+          "failed": 0,
+          "passed": 143,
+          "skipped": 0,
+          "total": 143,
+          "assembly": "SomeEngine.Serialization.Tests.dll"
+        }
+      ],
+      "failed": 0,
+      "passed": 143,
+      "skipped": 0,
+      "total": 143
+    },
+    "final-ecs-allocation-isolated": {
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\final-ecs-allocation-isolated.log",
+      "assemblies": [
+        {
+          "failed": 0,
+          "passed": 1,
+          "skipped": 0,
+          "total": 1,
+          "assembly": "SomeEngine.ECS.Systems.Tests.dll"
+        }
+      ],
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0,
+      "total": 1
+    }
+  },
+  "testLimit": "The default full solution run has 3 failures outside the changed rendering code. Serialization and lifecycle reruns pass. ECS zero-allocation passes in isolation but still fails in the suite, including with tiering disabled. Do not claim an all-green solution.",
+  "unchangedRelatedProductSources": {
+    "src/SomeEngine.ECS/Queries/QueryRegistry.cs": true,
+    "src/SomeEngine.ECS/Collections/ArrayGrowthExtensions.cs": true,
+    "src/SomeEngine.Job/IJobResourceProvider.cs": true,
+    "src/SomeEngine.ECS/Archetypes/SharedComponentTuple.cs": true,
+    "src/SomeEngine.ECS/BufferExecution.cs": true,
+    "src/SomeEngine.Serialization/BinaryPrimitiveEncoding.cs": true,
+    "src/SomeEngine.Job/SomeEngine.Job.csproj": true,
+    "src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryDefinition.cs": true,
+    "src/SomeEngine.ECS/Hooks/HookStore.cs": true,
+    "src/SomeEngine.Job/WholeAccess.cs": true,
+    "src/SomeEngine.ECS/Owners.RelationGraph.CommandBatch.cs": true,
+    "src/SomeEngine.ECS.Systems/JobEntityRuntime.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationTypeState.Transitions.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationAdjacency.cs": true,
+    "src/SomeEngine.ECS.Systems/WorldJobAdmission.cs": true,
+    "src/SomeEngine.ECS.Systems/WorldJobAdmissionModule.cs": true,
+    "src/SomeEngine.ECS/Registry/ComponentTypeCounter.cs": true,
+    "src/SomeEngine.ECS/Archetypes/ArchetypeEdge.cs": true,
+    "src/SomeEngine.Serialization/Containers/BinaryDocument.cs": true,
+    "src/SomeEngine.ECS/Collections/SmallList.cs": true,
+    "src/SomeEngine.Serialization/BinaryDataWriter.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryPairEnumerator.cs": true,
+    "src/SomeEngine.Job/ResourceManager.ContainerResources.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationTypeState.cs": true,
+    "src/SomeEngine.Job/IJobParallelFor.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryChunkView.cs": true,
+    "src/SomeEngine.ECS/Commands/CommandBuffer.cs": true,
+    "src/SomeEngine.ECS/World.Iteration.cs": true,
+    "src/SomeEngine.Serialization/BinaryContractSerializer.cs": true,
+    "src/SomeEngine.ECS/Owners.Clock.cs": true,
+    "src/SomeEngine.ECS/World.Indexing.cs": true,
+    "src/SomeEngine.ECS.Systems/RelationshipChunkJobs.cs": true,
+    "src/SomeEngine.Serialization/BinaryDataReader.cs": true,
+    "src/SomeEngine.ECS/Archetypes/Archetype.cs": true,
+    "src/SomeEngine.ECS/VersionClock.cs": true,
+    "src/SomeEngine.ECS/Owners.Shared.cs": true,
+    "src/SomeEngine.ECS/World.EntityCopy.cs": true,
+    "src/SomeEngine.ECS/Registry/ComponentInfo.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationGeneration.cs": true,
+    "src/SomeEngine.ECS/Owners.Hooks.cs": true,
+    "src/SomeEngine.ECS/Owners.Iteration.cs": true,
+    "src/SomeEngine.ECS/Sparse/SparseSet.cs": true,
+    "src/SomeEngine.ECS/WorldStructureRoot.cs": true,
+    "src/SomeEngine.ECS/Components/DynamicBufferComponents.cs": true,
+    "src/SomeEngine.ECS.Systems/BufferJobAccess.cs": true,
+    "src/SomeEngine.Job/JobRuntimeStats.cs": true,
+    "src/SomeEngine.ECS.Systems/ImmediateSystemDriver.cs": true,
+    "src/SomeEngine.Job/RangedResourceFrontier.cs": true,
+    "src/SomeEngine.Job/Scheduler.DependencyStore.cs": true,
+    "src/SomeEngine.Job/ManagedPayloadPolicy.cs": true,
+    "src/SomeEngine.ECS/World.JobAdmission.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationEntityMap.cs": true,
+    "src/SomeEngine.Serialization/Containers/BinaryChunkRef.cs": true,
+    "src/SomeEngine.Job/ChaseLevDeque.cs": true,
+    "src/SomeEngine.Job/ResourceManager.Reservations.cs": true,
+    "src/SomeEngine.ECS.Systems/StableQueryPackets.cs": true,
+    "src/SomeEngine.Job/JobRuntimeConfig.cs": true,
+    "src/SomeEngine.ECS/Collections/StableHash.cs": true,
+    "src/SomeEngine.ECS/World.EntityGuards.cs": true,
+    "src/SomeEngine.Job/Scheduler.Fence.cs": true,
+    "src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj": true,
+    "src/SomeEngine.ECS/BundleSpawnMap.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryKey.cs": true,
+    "src/SomeEngine.Job/ResourceAccessRegistration.cs": true,
+    "src/SomeEngine.ECS/Hierarchy/Hierarchy.cs": true,
+    "src/SomeEngine.ECS/Commands/CommandBuffer.Hierarchy.cs": true,
+    "src/SomeEngine.ECS/Owners.Indices.cs": true,
+    "src/SomeEngine.ECS/Owners.Hierarchy.Storage.cs": true,
+    "src/SomeEngine.Job/Scheduler.ScopeStore.cs": true,
+    "src/SomeEngine.ECS/RootComponentContracts.cs": true,
+    "src/SomeEngine.Job/Scheduler.Execution.cs": true,
+    "src/SomeEngine.ECS/Entities/EntityStore.RecordPage.cs": true,
+    "src/SomeEngine.Serialization/Digest256.cs": true,
+    "src/SomeEngine.ECS.Systems/SystemNode.cs": true,
+    "src/SomeEngine.Job/JobResourceToken.cs": true,
+    "src/SomeEngine.ECS/Owners.Hierarchy.MutationTracking.cs": true,
+    "src/SomeEngine.ECS/StructuralMutationScope.cs": true,
+    "src/SomeEngine.Job/Scheduler.Completion.cs": true,
+    "src/SomeEngine.ECS.Systems/ISystemDriver.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationTypeState.Queries.cs": true,
+    "src/SomeEngine.ECS/Owners.Sparse.cs": true,
+    "src/SomeEngine.Job/WorkQueue.cs": true,
+    "src/SomeEngine.ECS/World.Components.cs": true,
+    "src/SomeEngine.Job/JobPayloadLane.cs": true,
+    "src/SomeEngine.ECS/Owners.Copy.cs": true,
+    "src/SomeEngine.ECS/Components/InternalBufferCapacityAttribute.cs": true,
+    "src/SomeEngine.Job/ResourceManager.Hazards.cs": true,
+    "src/SomeEngine.ECS/Collections/SmallListExtensions.cs": true,
+    "src/SomeEngine.Serialization/IO/MemoryMappedRangeSource.cs": true,
+    "src/SomeEngine.Job/JobResourceKey.cs": true,
+    "src/SomeEngine.Serialization/Containers/BinaryDocumentWriter.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryDefinitionBuilder.cs": true,
+    "src/SomeEngine.ECS.Systems/TopologyPacketFinalizer.cs": true,
+    "src/SomeEngine.Job/Scheduler.Dependency.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryHandle.cs": true,
+    "src/SomeEngine.ECS/World.Lifetime.cs": true,
+    "src/SomeEngine.ECS.Systems/JobCommandBuffer.cs": true,
+    "src/SomeEngine.Job/Scheduler.ExecutionStore.cs": true,
+    "src/SomeEngine.ECS/BundleComponents.cs": true,
+    "src/SomeEngine.ECS/World.DynamicBuffer.cs": true,
+    "src/SomeEngine.ECS/SomeEngine.ECS.csproj": true,
+    "src/SomeEngine.ECS/World.Bundle.cs": true,
+    "src/SomeEngine.ECS/TopologyOrderDiagnostics.cs": true,
+    "src/SomeEngine.Serialization/Streaming/DocumentChunkBatchLoader.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryAccessGuards.cs": true,
+    "src/SomeEngine.ECS/Components/BufferRegistry.cs": true,
+    "src/SomeEngine.Serialization/Contracts.cs": true,
+    "src/SomeEngine.ECS/Registry/StoragePath.cs": true,
+    "src/SomeEngine.ECS/Owners.Bundles.cs": true,
+    "src/SomeEngine.ECS.Systems/HierarchyJobAccess.cs": true,
+    "src/SomeEngine.ECS/Components/ISharedComponent.cs": true,
+    "src/SomeEngine.ECS/Components/IComponent.cs": true,
+    "src/SomeEngine.ECS/Entities/EntityRecord.cs": true,
+    "src/SomeEngine.Job/Scheduler.CompletionState.cs": true,
+    "src/SomeEngine.ECS/Components/IComponentBundle.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationEdge.cs": true,
+    "src/SomeEngine.Serialization/Containers/BinaryDocumentFormat.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryChunkEnumerator.cs": true,
+    "src/SomeEngine.ECS.Systems/JobEntity.cs": true,
+    "src/SomeEngine.ECS/World.StructuralTransaction.cs": true,
+    "src/SomeEngine.ECS/Owners.Buffers.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryRowEnumerator.cs": true,
+    "src/SomeEngine.ECS/World.JobAdmission.Lifetime.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationEndpoints.cs": true,
+    "src/SomeEngine.ECS/Owners.Tables.cs": true,
+    "src/SomeEngine.Job/JobAccessMode.cs": true,
+    "src/SomeEngine.Job/Scheduler.Scope.cs": true,
+    "src/SomeEngine.ECS/Registry/ComponentMetadata.cs": true,
+    "src/SomeEngine.ECS/SparseExecution.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryState.cs": true,
+    "src/SomeEngine.ECS/Owners.RelationGraph.cs": true,
+    "src/SomeEngine.ECS/World.SerializationWriteAdmission.cs": true,
+    "src/SomeEngine.ECS/Owners.Commands.cs": true,
+    "src/SomeEngine.Serialization/Streaming/ChunkStreamingMetrics.cs": true,
+    "src/SomeEngine.ECS.Systems/RelationMaintenanceSystem.cs": true,
+    "src/SomeEngine.ECS.Systems/ReadOnlyQueryPacketJobs.cs": true,
+    "src/SomeEngine.ECS/Owners.Hierarchy.SerializationValidation.cs": true,
+    "src/SomeEngine.Job/JobPriority.cs": true,
+    "src/SomeEngine.ECS/Entities/EntityStore.cs": true,
+    "src/SomeEngine.Job/ResourceKind.cs": true,
+    "src/SomeEngine.ECS/Commands/CommandBuffer.Relations.cs": true,
+    "src/SomeEngine.ECS.Systems/RelationJobAccess.cs": true,
+    "src/SomeEngine.ECS/DynamicBuffer.cs": true,
+    "src/SomeEngine.ECS/World.CommandBufferComponents.cs": true,
+    "src/SomeEngine.ECS/Hierarchy/World.Hierarchy.cs": true,
+    "src/SomeEngine.ECS.Systems/SystemSlot.cs": true,
+    "src/SomeEngine.ECS/Archetypes/ArchetypeRegistry.cs": true,
+    "src/SomeEngine.ECS/Commands/CommandBuffer.Buffers.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryCursor.cs": true,
+    "src/SomeEngine.ECS/World.Sparse.cs": true,
+    "src/SomeEngine.Job/JobResourceSafetyException.cs": true,
+    "src/SomeEngine.ECS/World.cs": true,
+    "src/SomeEngine.ECS/Collections/SortedValueKey.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryRow.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationGeneration.Cardinality.cs": true,
+    "src/SomeEngine.Serialization/BinaryContractCatalog.cs": true,
+    "src/SomeEngine.Serialization/IO/RangeSources.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryRecord.cs": true,
+    "src/SomeEngine.ECS/Commands/CommandBuffer.Payloads.cs": true,
+    "src/SomeEngine.ECS.Systems/ImmediateSystemContext.cs": true,
+    "src/SomeEngine.ECS/Registry/ComponentRegistry.cs": true,
+    "src/SomeEngine.ECS/Serialization/WorldSerializationAccess.cs": true,
+    "src/SomeEngine.ECS.Systems/TopologyOperationState.cs": true,
+    "src/SomeEngine.ECS.Systems/SparseJobAccess.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationTypeSlotTable.cs": true,
+    "src/SomeEngine.Job/ResourceManager.Access.cs": true,
+    "src/SomeEngine.ECS.Systems/SystemGroup.cs": true,
+    "src/SomeEngine.ECS.Systems/HierarchyMaintenanceSystem.cs": true,
+    "src/SomeEngine.Serialization/BinaryContractViews.cs": true,
+    "src/SomeEngine.Serialization/Containers/BinaryDocumentView.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryableCapabilities.cs": true,
+    "src/SomeEngine.ECS.Systems/ISystem.cs": true,
+    "src/SomeEngine.ECS/Registry/JobStorageTypeMetadata.cs": true,
+    "src/SomeEngine.ECS/Owners.Hierarchy.cs": true,
+    "src/SomeEngine.Serialization/IO/BoundedCountingStreams.cs": true,
+    "src/SomeEngine.ECS/Hierarchy/HierarchyComponents.cs": true,
+    "src/SomeEngine.Job/Scheduler.SynchronousAccess.cs": true,
+    "src/SomeEngine.Job/Properties/AssemblyInfo.cs": true,
+    "src/SomeEngine.ECS/World.Entities.cs": true,
+    "src/SomeEngine.ECS.Systems/RelationshipJobAccess.cs": true,
+    "src/SomeEngine.ECS.Systems/WorldStorageJobSchedule.cs": true,
+    "src/SomeEngine.ECS/Entities/Entity.cs": true,
+    "src/SomeEngine.ECS/SharedComponentStore.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationTypeState.Support.cs": true,
+    "src/SomeEngine.Job/JobResourceAccess.cs": true,
+    "src/SomeEngine.Job/ResourceManager.cs": true,
+    "src/SomeEngine.ECS/Hooks/ComponentHooks.cs": true,
+    "src/SomeEngine.ECS/Owners.Entities.cs": true,
+    "src/SomeEngine.ECS/World.Queries.cs": true,
+    "src/SomeEngine.ECS/Archetypes/DetachedTableMap.cs": true,
+    "src/SomeEngine.ECS/World.RelationEdges.cs": true,
+    "src/SomeEngine.Serialization/IO/HashingReadStream.cs": true,
+    "src/SomeEngine.Serialization/Containers/BinaryDocumentWriting.cs": true,
+    "src/SomeEngine.Job/ParallelBatchSizer.cs": true,
+    "src/SomeEngine.ECS/BufferView.cs": true,
+    "src/SomeEngine.ECS/Components/IBufferElementData.cs": true,
+    "src/SomeEngine.Job/JobSubmissionLifetime.cs": true,
+    "src/SomeEngine.ECS.Systems/HierarchyPropagationCapture.cs": true,
+    "src/SomeEngine.Job/JobTraits.cs": true,
+    "src/SomeEngine.ECS/World.SerializationPublication.cs": true,
+    "src/SomeEngine.Serialization/Streaming/ChunkRequestScheduler.cs": true,
+    "src/SomeEngine.Serialization/NativeBlocks.cs": true,
+    "src/SomeEngine.Job/JobSafetyMode.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryAccess.cs": true,
+    "src/SomeEngine.ECS/World.ReadSnapshotAdmission.cs": true,
+    "src/SomeEngine.ECS/Entities/EntityStore.Serialization.cs": true,
+    "src/SomeEngine.Job/ResourceAccessReservation.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationGeneration.Mutation.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationTypeState.Tracking.cs": true,
+    "src/SomeEngine.ECS/World.SharedComponent.cs": true,
+    "src/SomeEngine.Job/JobSystem.cs": true,
+    "src/SomeEngine.ECS.Systems/SharedJobAccess.cs": true,
+    "src/SomeEngine.Job/Scheduler.CompletionStore.cs": true,
+    "src/SomeEngine.Job/JobResource.cs": true,
+    "src/SomeEngine.Job/JobWorkStreams.cs": true,
+    "src/SomeEngine.ECS/Registry/PublicComponentMutationGuard.cs": true,
+    "src/SomeEngine.ECS/Relations/RelationSchema.cs": true,
+    "src/SomeEngine.ECS.Systems/ComponentJobAccess.cs": true,
+    "src/SomeEngine.Job/ResourceAccessCoverageIndex.cs": true,
+    "src/SomeEngine.ECS/Archetypes/Chunk.cs": true,
+    "src/SomeEngine.ECS/EntityCopyOptions.cs": true,
+    "src/SomeEngine.Serialization/SomeEngine.Serialization.csproj": true,
+    "src/SomeEngine.Job/Scheduler.cs": true,
+    "src/SomeEngine.ECS/Owners.RelationGraph.EndpointTracking.cs": true,
+    "src/SomeEngine.ECS/Serialization/EntitySlotSnapshot.cs": true,
+    "src/SomeEngine.Job/JobPriorityOrder.cs": true,
+    "src/SomeEngine.ECS/Registry/ComponentOperations.cs": true,
+    "src/SomeEngine.Job/IJobExternalFence.cs": true,
+    "src/SomeEngine.Job/ResourceManager.State.cs": true,
+    "src/SomeEngine.Job/Scheduler.FenceStore.cs": true,
+    "src/SomeEngine.ECS/Hooks/DeferredWorld.cs": true,
+    "src/SomeEngine.Job/JobScheduleOptions.cs": true,
+    "src/SomeEngine.ECS/WorldStructuralMetrics.cs": true,
+    "src/SomeEngine.ECS/Owners.Components.cs": true,
+    "src/SomeEngine.Job/Scheduler.Runtime.cs": true,
+    "src/SomeEngine.Serialization/IO/HashingWriteStream.cs": true,
+    "src/SomeEngine.ECS/World.Hooks.cs": true,
+    "src/SomeEngine.ECS/Owners.ExceptionAccumulator.cs": true,
+    "src/SomeEngine.Job/IndexRange.cs": true,
+    "src/SomeEngine.Job/MpmcInjector.cs": true,
+    "src/SomeEngine.ECS/Queries/QueryTerm.cs": true,
+    "src/SomeEngine.ECS/BundleWriteView.cs": true,
+    "src/SomeEngine.Job/JobHandle.cs": true,
+    "src/SomeEngine.ECS/Serialization/WorldTopologySerializationAccess.cs": true,
+    "src/SomeEngine.Job/IJob.cs": true,
+    "src/SomeEngine.Job/SynchronousResourceOwner.cs": true,
+    "src/SomeEngine.ECS/Indexing/ComponentIndex.cs": true,
+    "src/SomeEngine.Serialization/Packs/AssetPack.cs": true,
+    "src/SomeEngine.Serialization/IO/HttpRangeSource.cs": true,
+    "src/SomeEngine.Job/RuntimeCounters.cs": true,
+    "src/SomeEngine.Serialization/Streaming/ResidencyBudget.cs": true,
+    "src/SomeEngine.ECS/Serialization/TopologyCaptureBudget.cs": true
+  },
+  "scenarioVerification": {
+    "default": {
+      "frames": 24,
+      "deviceValidation": true,
+      "frameOutput": true,
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\delivered-verify-default.log",
+      "metrics": [
+        "Cluster residency: meshes=1/1, pages=2/6, missing=4, queued=0, active=0, failures=0.",
+        "Frame output: 1280x720, rgb=(0-255,0-255,0-255), colors>=256, different=399074, bounds=(24,24)-(946,666) [923x643], hash=009FF3421589BD0A.",
+        "Cluster frame 24: materials=1, candidates=6572/103 groups, phase1=4148 SW+0 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=10344 total/10344 SW, shadeBinTiles=424, shadeItems=49585, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=10344, visProbe=0/64."
+      ]
+    },
+    "displacement": {
+      "frames": 24,
+      "deviceValidation": true,
+      "frameOutput": true,
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\delivered-verify-displacement.log",
+      "metrics": [
+        "Cluster residency: meshes=4/4, pages=4/4, missing=0, queued=0, active=0, failures=0.",
+        "Frame output: 1280x720, rgb=(0-255,0-255,0-255), colors>=256, different=168842, bounds=(24,24)-(776,494) [753x471], hash=24C08B5CC713FCC8.",
+        "Cluster frame 24: materials=1, candidates=32/1 groups, phase1=0 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=52 total/0 SW, shadeBinTiles=352, shadeItems=1963, tessPatches=16740, tessDropped=0, tessLimited=207, tessCulled=0, swDebug=0, visProbe=0/64."
+      ]
+    },
+    "sparse": {
+      "frames": 24,
+      "deviceValidation": true,
+      "frameOutput": true,
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\delivered-verify-sparse.log",
+      "metrics": [
+        "Cluster residency: meshes=1/1, pages=2/6, missing=4, queued=0, active=0, failures=0.",
+        "Frame output: 1280x720, rgb=(0-255,0-255,0-255), colors>=256, different=213110, bounds=(24,24)-(942,503) [919x480], hash=4C8C7320A6385853.",
+        "Cluster frame 24: materials=1, candidates=1024/16 groups, phase1=640 SW+0 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=1536 total/1536 SW, shadeBinTiles=383, shadeItems=11390, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=1536, visProbe=0/64."
+      ]
+    },
+    "wpo": {
+      "frames": 24,
+      "deviceValidation": true,
+      "frameOutput": true,
+      "log": "F:\\.codex\\research\\render-retained-delivery-20260905\\delivered-verify-wpo.log",
+      "metrics": [
+        "Cluster residency: meshes=8/8, pages=8/8, missing=0, queued=0, active=0, failures=0.",
+        "Frame output: 1280x720, rgb=(0-255,0-255,0-255), colors>=256, different=161861, bounds=(24,24)-(774,507) [751x484], hash=20BB03257BEE32B0.",
+        "Cluster frame 24: materials=1, candidates=44/1 groups, phase1=8 SW+20 HW, phase2Candidates=0/0 groups, phase2=0 SW+0 HW, rasterBatches=76 total/24 SW, shadeBinTiles=186, shadeItems=1048, tessPatches=0, tessDropped=0, tessLimited=0, tessCulled=0, swDebug=24, visProbe=0/64."
+      ]
+    }
+  },
+  "sourceHashes": {
+    "src/SomeEngine.RenderGraph/BufferRangeSet.cs": "34eef08417c0eb5521cb018d77d70a33dac67fbadfa2e252d020c657b3c6751c",
+    "src/SomeEngine.RenderGraph/CommandContextPool.cs": "4156c34558de2c96e6bef51974cbcbd321219c5025688848f1d8a2aa907dac86",
+    "src/SomeEngine.RenderGraph/CommandScopes.cs": "133cf1a98e1d22108d82f8200c934a07255b255b9a0f4d33c0769818abb128d1",
+    "src/SomeEngine.RenderGraph/FrameAccesses.cs": "0266397d415469d827df36cba7af7e2c087c97b5e6fe3a630d035ed98dff5299",
+    "src/SomeEngine.RenderGraph/FrameAnalysis.cs": "8336ce53d28d3a3cb46c2cfef87291c50dac090a27c5690d249e7add1ae2a4e0",
+    "src/SomeEngine.RenderGraph/FrameAnalysisChanges.cs": "7c6c79d048d048b2e16b7c4a835e7f5c226f98cd041821a1e0dcff659fb6277b",
+    "src/SomeEngine.RenderGraph/FrameBarrierCompaction.cs": "c1ebe4c1ebcff55925472396367353c08267589f5816d8ff4f912af591ad3c72",
+    "src/SomeEngine.RenderGraph/FrameBufferRanges.cs": "045fc21bedf56f4f8c3c55e7a614bc374938505b2fc84a6264049b4a93d77bc9",
+    "src/SomeEngine.RenderGraph/FrameCommandsValidation.cs": "61371c548fca93a228bdf72906f3f8c8fc0fcafbca2f7212afa2adac90453ab6",
+    "src/SomeEngine.RenderGraph/FrameData.cs": "b748087ed5f9e08ae81ae462df77c6d3a9d55394640eb10502f214956e46abdb",
+    "src/SomeEngine.RenderGraph/FrameDependencies.cs": "98ab543fcd2e4f011b7634bc0239ce892a31cf81b7b0a2d64759319c9c80f9d0",
+    "src/SomeEngine.RenderGraph/FrameDiagnostics.cs": "c261c48e8a930486a583e1b08751e54e2cf858a9bc9affba670b5e64643ece8c",
+    "src/SomeEngine.RenderGraph/FrameExecutor.cs": "427fa80542c13d3a0a63777a15f39d104ef1e07affae11c93d4515df1d8ae5db",
+    "src/SomeEngine.RenderGraph/FrameMaterialization.cs": "cc4169ce47c6fe2dfefef41872f8439ffdb6545e75a168fac198d45d955c1adf",
+    "src/SomeEngine.RenderGraph/FramePlacements.cs": "662462cb5081d784edd97747d45a261096cd92ea0cf0ef29d509ab4784a9de49",
+    "src/SomeEngine.RenderGraph/FrameRecording.cs": "b8629332b3b5db18908f9db9d7022aab4f0879aae3a5dab1836e120a4b602576",
+    "src/SomeEngine.RenderGraph/FrameRows.cs": "b20dcd10c1ac410ffdff9642a8492227385ef43d8f61f62eeb638406818b15d6",
+    "src/SomeEngine.RenderGraph/FrameSchedule.cs": "39d62ce2eb88692377e1435104d2e7a8c4516c6783715227ad64543f64b3d516",
+    "src/SomeEngine.RenderGraph/FrameSlot.cs": "faa61b85ebd3a89aa11be618d7381041b49b6d93e5fefea984bb12256bfff6ec",
+    "src/SomeEngine.RenderGraph/FrameStateCommit.cs": "2550d8b26577b8944a9dd1b4be85f3afdfa865732227378a2b2c04f3e63fcce3",
+    "src/SomeEngine.RenderGraph/FrameSynchronization.cs": "f075a8e6deb31b91c848b7dba54b84692e752bf25c546706fb7506a80b58f0bf",
+    "src/SomeEngine.RenderGraph/FrameSynchronizationChanges.cs": "b048136de14e6309333c6bfa3e98ef9aa29c9be2ee9a64119f56e2f47b0e8b56",
+    "src/SomeEngine.RenderGraph/FrameTextureRanges.cs": "37c3ae81e54ea3e4bca498ac98a49372a55eb58c84e849afc2cdc08eca3cee44",
+    "src/SomeEngine.RenderGraph/FrameTransientResourceAllocator.cs": "50f02b99b4ca4445998354f648ac211563576aab4386574d330412552379abc1",
+    "src/SomeEngine.RenderGraph/FrameValueOrder.cs": "5a5c6e55430ecc7baa96fdf68b856ca522b6093e5ca19674d3c74938d3493de7",
+    "src/SomeEngine.RenderGraph/FrameViewResources.cs": "b86b0bb516318ac85b282f716e7ef11407861f270e8827eafea7ec154fc58edf",
+    "src/SomeEngine.RenderGraph/GlobalUsings.cs": "2f03d7d1c7eb3c9b884f3ae307dde7e7d6bda35e0d2c3c71a917989f53ff8772",
+    "src/SomeEngine.RenderGraph/GraphEditChanges.cs": "1a89436b7ef3f6846e8e2727f6710b478317a2128686aa3a13d2e4ae3b38d262",
+    "src/SomeEngine.RenderGraph/GraphIds.cs": "4843c7009230be367d9b8c5909b8c1f06b5ed67ae026fd569996efa87ff606ab",
+    "src/SomeEngine.RenderGraph/GraphParameterResourceBinding.cs": "4b31f07ad6309ad58680d5e17c29b40a3b1a9e64bc19fdc8efcaadb266f004c9",
+    "src/SomeEngine.RenderGraph/GraphProperties.cs": "47ace35e4f76bd7ae6de80eaf95df36f3860d0b8cd62a5129e5e01732dc7dc82",
+    "src/SomeEngine.RenderGraph/GraphStorage.cs": "dbb1d6bfb7e23da5456e0b6a31f8da80783c623910f8104dc5c207fea05cf331",
+    "src/SomeEngine.RenderGraph/GraphStructureIndex.cs": "187800daaa6e4d2ace909541148ff4721dbe7c9b8a01d85b0f36613f1c0c66f2",
+    "src/SomeEngine.RenderGraph/GraphTypes.cs": "e5970040260e300369a417a3bdab27c22ab77ebf66914449abcf823ce8e24c8b",
+    "src/SomeEngine.RenderGraph/PassCallbacks.cs": "7329ba5b84fb2c05cf337fe112dc7cf8db444cc6ed14944094f77e1281fe6177",
+    "src/SomeEngine.RenderGraph/PassDefinition.cs": "eff00f4c228e41de2e7142907c75e81a68f5f4cea1bfe4dd2c55abd104a7f1b4",
+    "src/SomeEngine.RenderGraph/PassOrder.cs": "ff69ccc636e6b8636a6acd687dad006d81392e769c2b1afac72fcdfdd685f6e7",
+    "src/SomeEngine.RenderGraph/PersistentPassCallbacks.cs": "2a3f157748006d07f007e9c5bfe6d9f1e142a97aa11116aaa5625f1ecc333c3d",
+    "src/SomeEngine.RenderGraph/RenderGraph.cs": "ea813545baf847f12350354427ab288cbff16bf913c830428b831ff59020fbbb",
+    "src/SomeEngine.RenderGraph/RenderGraphDiagnostics.cs": "84e7f2fa467c407d93cb3a14a8631b7a0699f254035b10e04dd0f959aa601e27",
+    "src/SomeEngine.RenderGraph/RenderGraphEdit.cs": "67d0dfd6d818e8daa9327241a67741e20157bb16ead788949de21c21b191fd5a",
+    "src/SomeEngine.RenderGraph/RenderGraphEdit.PersistentAuthoring.cs": "bb1dc007c09368142a04acbacf48f0580abafb7396fbf7b20c99be6881ac3e23",
+    "src/SomeEngine.RenderGraph/RenderGraphFrame.cs": "47596e516f206c0ed0aa8597798845449341e5b09247d17df99fe041c8584139",
+    "src/SomeEngine.RenderGraph/RenderGraphFrameExecutionObserver.cs": "6283ed6e34e7a1caf30f020a8e0c366192c5ce9980550e4b3f23b951465497b0",
+    "src/SomeEngine.RenderGraph/RenderGraphFrameExtension.cs": "5b51043b9baed90285c58db802bc59361e71c07535d41eb4e88c4fa60fab206c",
+    "src/SomeEngine.RenderGraph/RenderGraphFrameState.cs": "1e2740352229c8a02fc7b0e49ff71ca2cb6dc2363bc97c0e94e16e921461525a",
+    "src/SomeEngine.RenderGraph/ResourceAllocators.cs": "4dbc0579abb80230cb14084e48367b7a8671644c074be223ee12b723b24d9688",
+    "src/SomeEngine.RenderGraph/ResourceRules.cs": "f63bfa28063f4b3a6d8a2d10b23a9d378c522e586d78fd0c3df4d2fe28f904aa",
+    "src/SomeEngine.RenderGraph/TransientAllocation.cs": "881d2a2d0d0c81a735588c431f92fb41b10927e4eef1e04b25c46cdc82c1e139",
+    "src/SomeEngine.Render.Features/Lighting/LightingFeature.cs": "6e0216e81dc161152cb3adf3f2c5ea8846286b9b7d9f226eba0e68f06e6b965b",
+    "assets/Shaders/clustered_light_grid.slang": "7dbc14060b7db530a8c1dc92dbe515972f090d74517417e82fc5e9df30adf8c0",
+    "src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Materials.cs": "874961312cf1db8f8e44163d2a196b85537b3156f2d0adda0aae80c4916921e6",
+    "src/SomeEngine.Render.Cluster.Pipeline/ClusterMaterialStages.cs": "3da459a5bb1005288c73316ff82efa1dfb6c2bced883e3f64adc3b3752e675e4",
+    "src/SomeEngine.Assets/Schema/Material.cs": "830aecaa1c05c5f3c5e0742db2fe5ecb180fceafb7b611d1e6cddc5c5d47c0f1",
+    "src/SomeEngine.Graphics.Direct3D12/CommandBindings.cs": "8b077a85a2fa5256a11eedc786e2216e4d2f671a09db67a55c4959bbd5423e4f"
+  }
+}

@@ -1,239 +1,228 @@
+using System.ComponentModel;
 using System.Numerics;
+using SomeEngine.Graphics;
 using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
 
-[global::SomeEngine.Assets.Asset(".material.asset")]
-public partial class Material
+/// <summary>A material has concrete properties and actual shader and texture references.</summary>
+public abstract partial class Material : IDisposable
 {
-    private MaterialSlotDefinition[]? _slotDefinitions;
-    private object?[]? _slotValues;
-    private ulong[]? _slotRevisions;
-    private Dictionary<string, object?>? _weakValues;
+    private static readonly Dictionary<Guid, Func<Material>> Types = [];
+    private static readonly object TypeGate = new();
+    private ulong[]? _changes;
+    private bool _changingProperties;
+    private Texture[] _createdTextures = [];
+    private Shader? _createdShader;
+    private int _disposed;
+    private Shader? _shader;
 
-    [BinaryIgnore]
+    public string? Name { get; set; }
+    public Shader? Shader
+    {
+        get => _shader;
+        set
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            if (ReferenceEquals(_shader, value)) return;
+            if (_shader is not null) _shader.Changed -= OnShaderChanged;
+            _shader = value;
+            if (_shader is not null) _shader.Changed += OnShaderChanged;
+            if (!_changingProperties) { Revision++; RaiseChanged(); }
+        }
+    }
+    private void OnShaderChanged(Shader shader) { Revision++; RaiseChanged(); }
     public ulong Revision { get; private set; } = 1;
+    public event Action<Material>? Changed;
+    public abstract Guid MaterialTypeId { get; }
+    public abstract IReadOnlyList<MaterialPropertyDefinition> Properties { get; }
+    public int PropertyCount => Properties.Count;
 
-    [BinaryIgnore]
-    public IReadOnlyList<MaterialSlotDefinition> Slots => EnsureSlots();
-
-    [BinaryIgnore]
-    public int SlotCount => EnsureSlots().Length;
-
-    public object? GetSlotValue(uint slot)
+    protected void SetProperty<T>(ref T field, T value, uint index)
     {
-        EnsureSlot(slot);
-        return _slotValues![checked((int)slot)];
-    }
-
-    public ulong GetSlotRevision(uint slot)
-    {
-        EnsureSlot(slot);
-        return _slotRevisions![checked((int)slot)];
-    }
-
-    protected T GetSlot<T>(uint slot)
-    {
-        EnsureSlot(slot);
-        object? value = _slotValues![checked((int)slot)];
-        return value is null ? default! : (T)value;
-    }
-
-    protected void SetSlot<T>(uint slot, T value)
-    {
-        EnsureSlot(slot);
-        int index = checked((int)slot);
-        object? current = _slotValues![index];
-        if (typeof(T).IsValueType
-            ? EqualityComparer<T>.Default.Equals(current is null ? default! : (T)current, value)
-            : ReferenceEquals(current, value))
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        _changes ??= new ulong[PropertyCount];
+        _changes[index]++;
+        if (!_changingProperties)
         {
-            return;
+            Revision++;
+            RaiseChanged();
         }
-
-        MaterialSlotDefinition definition = _slotDefinitions![index];
-        if (!definition.ValueType.IsAssignableFrom(typeof(T)) &&
-            (value is not null && !definition.ValueType.IsInstanceOfType(value)))
-        {
-            throw new ArgumentException(
-                $"Material slot {slot} expects '{definition.ValueType.FullName}'.",
-                nameof(value));
-        }
-        _slotValues[index] = value;
-        MarkSlotChanged(index);
     }
 
-    protected virtual MaterialSlotDefinition[] CreateSlots()
+    public ulong GetPropertyRevision(uint index) => _changes?[index] ?? 0;
+    public virtual Texture? GetTexture(uint index) => null;
+    public virtual DeviceResource? GetDeviceResource(uint index) => null;
+    public virtual SamplerDesc GetSampler(uint index) => default;
+    public virtual Vector4 GetFloatComponents(uint index) => default;
+    public virtual uint GetInteger(uint index) => 0;
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public abstract void ApplyParameter(MaterialParameter parameter, Texture? texture);
+    protected abstract void CopyProperties(Material source);
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static void RegisterGeneratedType<T>(string name) where T : Material, new()
     {
-        Dictionary<string, object?> values = _weakValues ?? BuildWeakValues();
-        var result = new MaterialSlotDefinition[values.Count];
-        int slot = 0;
-        foreach ((string name, object? value) in values.OrderBy(static item => item.Key, StringComparer.Ordinal))
-        {
-            Type type = value?.GetType() ?? typeof(object);
-            result[slot] = new MaterialSlotDefinition(checked((uint)slot), name, type);
-            slot++;
-        }
-        return result;
+        lock (TypeGate)
+            if (!Types.TryAdd(BinaryTypeId.FromLogicalName(name), static () => new T()))
+                throw new InvalidOperationException($"Material type '{name}' is already registered.");
     }
 
-    internal void ResolveWeakSlots(IReadOnlyDictionary<string, object?> values)
+    public static async ValueTask<Material> CreateAsync(Asset<Material> asset, AssetLoader loader,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(values);
-        _weakValues = new Dictionary<string, object?>(values, StringComparer.Ordinal);
-        _slotDefinitions = null;
-        _slotValues = null;
-        _slotRevisions = null;
-        _ = EnsureSlots();
-    }
-
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
-    {
-        var result = new List<AssetGuid>();
-        if (Passes is not null)
+        ArgumentNullException.ThrowIfNull(asset);
+        ArgumentNullException.ThrowIfNull(loader);
+        MaterialData fields = await ReadFieldsAsync(asset, loader, [], cancellationToken).ConfigureAwait(false);
+        Material result = CreateEmpty(fields.MaterialType);
+        var textures = new Dictionary<Guid, Texture>();
+        result._changingProperties = true;
+        try
         {
-            for (int index = 0; index < Passes.Count; index++)
+            result.Name = fields.Name;
+            if (!fields.Shader.IsEmpty)
             {
-                AssetGuid shader = ShaderRef.Require(
-                    Passes[index]?.Shader,
-                    $"Material asset '{path}'",
-                    $"Passes[{index}].Shader");
-                if (!result.Contains(shader))
-                    result.Add(shader);
+                await using Asset<Shader> shader = await loader.OpenAsync(fields.Shader, cancellationToken).ConfigureAwait(false);
+                result._createdShader = await Shader.CreateAsync(shader, cancellationToken).ConfigureAwait(false);
+                result.Shader = result._createdShader;
             }
+            foreach (MaterialParameter parameter in fields.Parameters)
+            {
+                Texture? texture = null;
+                if (parameter.Kind == MaterialParameterKind.Texture && !parameter.Texture.IsEmpty)
+                {
+                    if (!textures.TryGetValue(parameter.Texture.Value, out texture))
+                    {
+                        await using Asset<Texture> data = await loader.OpenAsync(parameter.Texture, cancellationToken).ConfigureAwait(false);
+                        texture = await Texture.CreateAsync(data, cancellationToken).ConfigureAwait(false);
+                        textures.Add(parameter.Texture.Value, texture);
+                    }
+                }
+                result.ApplyParameter(parameter, texture);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            result._createdTextures = [.. textures.Values];
+            return result;
         }
-        if (Textures is not null)
+        catch (Exception failure)
         {
-            for (int index = 0; index < Textures.Count; index++)
-                AddRequired(result, Textures[index]?.TextureGuid, path, $"Textures[{index}].TextureGuid");
+            result._createdTextures = [.. textures.Values];
+            try { result.Dispose(); }
+            catch (Exception cleanup) { throw new AggregateException(failure, cleanup); }
+            throw;
         }
-        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+        finally { result._changingProperties = false; }
+    }
+
+    private static async ValueTask<MaterialData> ReadFieldsAsync(Asset<Material> asset, AssetLoader loader,
+        HashSet<Guid> ancestors, CancellationToken cancellationToken)
+    {
+        if (!ancestors.Add(asset.Id.Value))
+            throw new InvalidDataException("Material parent references contain a cycle.");
+        MaterialData fields = asset.GetFieldsGenerated<MaterialData>();
+        if (fields.Parent.IsEmpty) return fields;
+        await using Asset<Material> parent = await loader.OpenAsync(fields.Parent, cancellationToken).ConfigureAwait(false);
+        MaterialData inherited = await ReadFieldsAsync(parent, loader, ancestors, cancellationToken).ConfigureAwait(false);
+        if (fields.MaterialType != Guid.Empty && fields.MaterialType != inherited.MaterialType)
+            throw new InvalidDataException("A material override cannot change the parent's material type.");
+        MaterialData result = inherited.Copy(fields.Name ?? inherited.Name ?? "", asset.Id.Value);
+        if (!fields.Shader.IsEmpty) result.Shader = fields.Shader;
+        foreach (MaterialParameter parameter in fields.Parameters) result.Set(parameter);
         return result;
     }
 
-    internal static ValueTask ApplyReloadAsync(
-        Material current,
-        Material replacement,
-        CancellationToken cancellationToken)
+    /// <summary>Applies new fields at the caller's update boundary. Observers run only after commit.</summary>
+    public async ValueTask UpdateAsync(Asset<Material> asset, AssetLoader loader,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(current);
-        ArgumentNullException.ThrowIfNull(replacement);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        using Material replacement = await CreateAsync(asset, loader, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        if (current.GetType() != replacement.GetType())
-            throw new InvalidDataException("A material reload cannot change the runtime material type.");
-
-        MaterialSlotDefinition[] replacementSlots = replacement.EnsureSlots();
-        MaterialSlotDefinition[] currentSlots = current.EnsureSlots();
-        if (!currentSlots.AsSpan().SequenceEqual(replacementSlots))
-            throw new InvalidDataException("A material reload cannot change its generated slot contract.");
-
-        current.AssetGuid = replacement.AssetGuid;
-        current.Name = replacement.Name;
-        current.Passes = replacement.Passes;
-        current.Textures = replacement.Textures;
-        current.Scalars = replacement.Scalars;
-        current._weakValues = replacement._weakValues is null
-            ? null
-            : new Dictionary<string, object?>(replacement._weakValues, StringComparer.Ordinal);
-        for (int index = 0; index < currentSlots.Length; index++)
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (MaterialTypeId != replacement.MaterialTypeId)
+            throw new InvalidDataException("A material update cannot change its concrete type.");
+        ulong revision = checked(Revision + 1);
+        using Material previousFields = CreateEmpty(MaterialTypeId);
+        previousFields._changingProperties = true;
+        previousFields.Name = Name;
+        previousFields.Shader = Shader;
+        previousFields.CopyProperties(this);
+        Texture[] previous = _createdTextures;
+        Shader? previousShader = _createdShader;
+        _changingProperties = true;
+        try
         {
-            object? next = replacement._slotValues![index];
-            if (Equals(current._slotValues![index], next))
-                continue;
-            current._slotValues[index] = next;
-            current.MarkSlotChanged(index);
+            Name = replacement.Name;
+            Shader = replacement.Shader;
+            CopyProperties(replacement);
         }
-        current.Revision = checked(current.Revision + 1);
-        return ValueTask.CompletedTask;
+        catch
+        {
+            Name = previousFields.Name;
+            Shader = previousFields.Shader;
+            CopyProperties(previousFields);
+            throw;
+        }
+        finally { _changingProperties = false; }
+
+        // User notification must not allow replacement.Dispose to destroy the new fields.
+        _createdTextures = replacement._createdTextures;
+        replacement._createdTextures = [];
+        _createdShader = replacement._createdShader;
+        replacement._createdShader = null;
+        Revision = revision;
+        var errors = new List<Exception>();
+        NotifyChanged(errors);
+        CloseContent(previous, previousShader, errors);
+        if (errors.Count != 0)
+            throw new AggregateException("Material content was updated, but notification or old-content cleanup failed.", errors);
     }
 
-    private MaterialSlotDefinition[] EnsureSlots()
+    public void Dispose()
     {
-        if (_slotDefinitions is not null)
-            return _slotDefinitions;
-        MaterialSlotDefinition[] definitions = CreateSlots();
-        for (int index = 0; index < definitions.Length; index++)
-        {
-            MaterialSlotDefinition definition = definitions[index];
-            if (definition.Slot != checked((uint)index)
-                || string.IsNullOrWhiteSpace(definition.Name)
-                || definition.ValueType is null)
-            {
-                throw new InvalidOperationException("A material slot contract must be dense and fully typed.");
-            }
-        }
-        _slotDefinitions = definitions;
-        _slotValues = new object?[definitions.Length];
-        _slotRevisions = new ulong[definitions.Length];
-
-        Dictionary<string, object?>? weak = _weakValues;
-        if (weak is not null)
-        {
-            for (int index = 0; index < definitions.Length; index++)
-                if (weak.TryGetValue(definitions[index].Name, out object? value))
-                    _slotValues[index] = value;
-        }
-        return definitions;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        if (_shader is not null) _shader.Changed -= OnShaderChanged;
+        var errors = new List<Exception>();
+        CloseContent(Interlocked.Exchange(ref _createdTextures, []),
+            Interlocked.Exchange(ref _createdShader, null), errors);
+        if (errors.Count != 0)
+            throw new AggregateException("Some material content could not be closed.", errors);
     }
 
-    private Dictionary<string, object?> BuildWeakValues()
+    private static Material CreateEmpty(Guid type)
     {
-        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (TextureBinding binding in Textures ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(binding.Name))
-                throw new InvalidDataException("A weak material texture binding must have a name.");
-            values.Add(binding.Name, null);
-        }
-        foreach (ScalarParam scalar in Scalars ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(scalar.Name) || scalar.Value is not { } value)
-                throw new InvalidDataException("A weak material scalar binding must have a name and value.");
-            values.Add(scalar.Name, ConvertValue(value));
-        }
-        return values;
+        lock (TypeGate)
+            return Types.TryGetValue(type, out Func<Material>? create) ? create()
+                : throw new InvalidDataException($"Unknown material type '{type}'.");
     }
 
-    private void EnsureSlot(uint slot)
+    private void RaiseChanged()
     {
-        MaterialSlotDefinition[] definitions = EnsureSlots();
-        if (slot >= definitions.Length)
-            throw new ArgumentOutOfRangeException(nameof(slot));
+        if (Changed is null) return;
+        var errors = new List<Exception>();
+        NotifyChanged(errors);
+        if (errors.Count != 0)
+            throw new AggregateException("Material fields changed, but one or more observers failed.", errors);
     }
 
-    private void MarkSlotChanged(int slot)
+    private void NotifyChanged(List<Exception> errors)
     {
-        _slotRevisions![slot] = checked(_slotRevisions[slot] + 1);
-        Revision = checked(Revision + 1);
+        if (Changed is not { } changed) return;
+        foreach (Action<Material> notify in changed.GetInvocationList())
+            try { notify(this); }
+            catch (Exception error) { errors.Add(error); }
     }
 
-    private static object ConvertValue(ParamValue value)
-        => value.Kind switch
-        {
-            ParamValue.ItemKind.FloatVal => value.FloatVal.V,
-            ParamValue.ItemKind.IntVal => value.IntVal.V,
-            ParamValue.ItemKind.BoolVal => value.BoolVal.V,
-            ParamValue.ItemKind.Vec2Val => new Vector2(value.Vec2Val.X, value.Vec2Val.Y),
-            ParamValue.ItemKind.Vec3Val => new Vector3(value.Vec3Val.X, value.Vec3Val.Y, value.Vec3Val.Z),
-            ParamValue.ItemKind.Vec4Val => new Vector4(
-                value.Vec4Val.X,
-                value.Vec4Val.Y,
-                value.Vec4Val.Z,
-                value.Vec4Val.W),
-            _ => throw new InvalidDataException("A weak material scalar has no supported value."),
-        };
-
-    private static void AddRequired(
-        List<AssetGuid> result,
-        string? value,
-        string path,
-        string field)
+    private static void CloseContent(Texture[] textures, Shader? shader, List<Exception> errors)
     {
-        if (!global::SomeEngine.Assets.AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
-            throw new InvalidDataException($"Material asset '{path}' field '{field}' has an invalid asset GUID '{value}'.");
-        if (!result.Contains(guid))
-            result.Add(guid);
+        foreach (Texture texture in textures)
+            try { texture.Dispose(); }
+            catch (Exception error) { errors.Add(error); }
+        try { shader?.Dispose(); }
+        catch (Exception error) { errors.Add(error); }
     }
 }
 
-public readonly record struct MaterialSlotDefinition(uint Slot, string Name, Type ValueType);
+public readonly record struct MaterialPropertyDefinition(uint Index, string Name, Type ValueType);

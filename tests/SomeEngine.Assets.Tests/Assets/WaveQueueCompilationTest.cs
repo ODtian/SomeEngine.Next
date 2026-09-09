@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Tests;
 
 namespace SomeEngine.Assets.Tests.Assets;
@@ -9,7 +10,7 @@ namespace SomeEngine.Assets.Tests.Assets;
 public class WaveQueueCompilationTest
 {
     [Fact]
-    public void WaveQueue_CompilesWithTrivialTask()
+    public async Task WaveQueue_CompilesWithTrivialTask()
     {
         // Inline Slang source that includes wave_queue.slang and implements a trivial IWaveTask.
         // Each lane "produces" 1 task that writes lane index to a UAV buffer.
@@ -51,31 +52,42 @@ public class WaveQueueCompilationTest
 
         try
         {
-            var asset = SlangShaderImporter.Import(slangFile, source);
+            using var assetFile = SlangShaderImporter.Import(slangFile, source).ToAsset();
+            Shader asset = await Shader.CreateAsync(assetFile);
 
             Assert.NotNull(asset);
-            Assert.NotNull(asset.Variants);
-            Assert.NotEmpty(asset.Variants!);
+            Assert.NotNull(asset.Programs);
+            Assert.NotEmpty(asset.Programs!);
 
             // At least SPIR-V should compile. DXIL requires DXC which may not be available.
-            var csSpirv = asset.Variants!.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "spirv");
-            Assert.NotNull(csSpirv);
-            Assert.True(csSpirv!.Data.HasValue && csSpirv.Data.Value.Length > 0, "SPIR-V bytecode should be non-empty");
+            Assert.True(asset.TryEntry(
+                "spirv",
+                "CSMain",
+                ShaderStage.Compute,
+                out _,
+                out var csSpirv));
+            Assert.True(csSpirv.Code.Length > 0);
 
-            var csDxil = asset.Variants.FirstOrDefault(v => v.EntryPoint == "CSMain" && v.Backend == "dxil");
-            if (csDxil != null)
+            if (asset.TryEntry(
+                "dxil",
+                "CSMain",
+                ShaderStage.Compute,
+                out _,
+                out var csDxil))
             {
-                Assert.True(csDxil.Data.HasValue && csDxil.Data.Value.Length > 0, "DXIL bytecode should be non-empty");
+                Assert.True(csDxil.Code.Length > 0);
             }
             else
             {
                 Console.WriteLine("WARNING: DXIL variant not produced (DXC not found). SPIR-V OK.");
             }
 
-            Console.WriteLine($"WaveQueue compilation OK: {asset.Variants.Count} variants");
-            foreach (var v in asset.Variants)
+            Console.WriteLine($"WaveQueue compilation OK: {asset.Programs.Count} programs");
+            foreach (var program in asset.Programs)
             {
-                Console.WriteLine($"  {v.Backend} / {v.Stage} / {v.EntryPoint}: {v.Data?.Length ?? 0} bytes");
+                Console.WriteLine(
+                    $"  {program.Backend}: {program.Data?.Length ?? 0} bytes, " +
+                    $"{program.Program?.EntryPoints.Count ?? 0} entries");
             }
         }
         finally

@@ -109,9 +109,9 @@ public readonly ref struct ReadOnlyQueryPacket
     }
 
     /// <summary>
-    /// Tests the packet's coarse component-column version against one system version. The query
-    /// must declare read access to the component. This is an invalidation test, not a row identity:
-    /// one changed row deliberately invalidates the packet's borrowed column.
+    /// Tests whether any component row in this packet changed since the system version.
+    /// A sliced packet tests only its own rows. The coarse column version rejects
+    /// unchanged chunks before visiting row versions.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ChangedSince<T>(uint lastSystemVersion) where T : struct
@@ -120,10 +120,10 @@ public readonly ref struct ReadOnlyQueryPacket
             _match,
             read: true,
             write: false);
-        return unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) > 0;
+        return ColumnChangedSince(column, lastSystemVersion);
     }
 
-    /// <summary>Tests the dynamic-buffer header column against one system version.</summary>
+    /// <summary>Tests this packet's dynamic-buffer header rows against one system version.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool BufferChangedSince<T>(uint lastSystemVersion)
         where T : struct, IBufferElement
@@ -134,7 +134,17 @@ public readonly ref struct ReadOnlyQueryPacket
             write: false,
             out int headerColumn,
             out _);
-        return unchecked((int)(_chunk.ChangeVersions[headerColumn] - lastSystemVersion)) > 0;
+        return ColumnChangedSince(headerColumn, lastSystemVersion);
+    }
+
+    private bool ColumnChangedSince(int column, uint lastSystemVersion)
+    {
+        if (unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) <= 0)
+            return false;
+        foreach (uint version in _chunk.WriteVersionRows(column).Slice(_rowStart, Count))
+            if (unchecked((int)(version - lastSystemVersion)) > 0)
+                return true;
+        return false;
     }
 
     public BufferView<T> ReadBuffer<T>(int row)

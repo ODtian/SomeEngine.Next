@@ -32,8 +32,8 @@ public sealed class WarpValidationLayerTests
             source,
             entries,
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
 
         using var backend = new ValidationLayer(new D3D12Backend());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -125,9 +125,9 @@ public sealed class WarpValidationLayerTests
             """;
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "persistent_root_token", source, [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout data = GetDataLayout(layout);
         nint[] samplerRanges = Enumerable.Range(0, checked((int)data.BindingRangeCount))
             .Select(static value => (nint)value)
             .Where(index => (data.GetBindingRangeType(index) & SlangBindingType.BaseMask) ==
@@ -197,8 +197,8 @@ public sealed class WarpValidationLayerTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "static_sampler_input_order", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         SamplerDesc state = new(FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
         StaticSamplerBinding first = StaticSampler(shader.Reflection, layout, 7, 3, state);
@@ -239,8 +239,8 @@ public sealed class WarpValidationLayerTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         SamplerDesc samplerDescription = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
@@ -328,9 +328,9 @@ public sealed class WarpValidationLayerTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "auto_scalar_static_sampler_execution", source,
             [new("computeMain", SlangStage.Compute)], "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection data = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout data = GetDataLayout(layout);
         nint samplerRange = Enumerable.Range(0, checked((int)data.BindingRangeCount))
             .Select(static index => (nint)index)
             .Single(index => (data.GetBindingRangeType(index) & SlangBindingType.BaseMask) ==
@@ -427,8 +427,8 @@ public sealed class WarpValidationLayerTests
             source,
             entries,
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
@@ -475,8 +475,8 @@ public sealed class WarpValidationLayerTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc point = new(
@@ -541,9 +541,9 @@ public sealed class WarpValidationLayerTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout reflected = GetDataLayout(layout);
         nint samplerRange = Enumerable.Range(
                 0,
                 checked((int)reflected.BindingRangeCount))
@@ -560,7 +560,7 @@ public sealed class WarpValidationLayerTests
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
 
-        VariableReflection samplerDeclaration =
+        ShaderVariable samplerDeclaration =
             reflected.GetBindingRangeLeafVariable(samplerRange);
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateComputePipeline(
@@ -597,20 +597,20 @@ public sealed class WarpValidationLayerTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
             FilterType.Nearest, FilterType.Nearest, FilterType.Nearest,
             AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
 
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderTypeLayout reflected = GetDataLayout(layout);
         nint samplerRange = Enumerable.Range(0, checked((int)reflected.BindingRangeCount))
             .Select(static index => (nint)index)
             .Single(index => (reflected.GetBindingRangeType(index) &
                 SlangBindingType.BaseMask) == SlangBindingType.Sampler);
-        VariableReflection samplerDeclaration =
+        ShaderVariable samplerDeclaration =
             reflected.GetBindingRangeLeafVariable(samplerRange);
         GraphicsException failure = Assert.Throws<GraphicsException>(() =>
             backend.CreateComputePipeline(
@@ -650,8 +650,8 @@ public sealed class WarpValidationLayerTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
@@ -690,8 +690,8 @@ public sealed class WarpValidationLayerTests
             source,
             [new("computeMain", SlangStage.Compute)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
@@ -741,8 +741,8 @@ public sealed class WarpValidationLayerTests
             source,
             [new("vertexMain", SlangStage.Vertex), new("pixelMain", SlangStage.Fragment)],
             "sm_6_0");
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         SamplerDesc sampler = new(
@@ -800,14 +800,14 @@ public sealed class WarpValidationLayerTests
             "entry_parameter_static_sampler_identity", source,
             [new("vertexMain", SlangStage.Vertex), new("pixelMain", SlangStage.Fragment)],
             "sm_6_0");
-        VariableLayoutReflection vertexLayout = shader.GetEntryPoint(0).VarLayout;
-        VariableLayoutReflection pixelLayout = shader.GetEntryPoint(1).VarLayout;
+        ShaderVariableLayout vertexLayout = shader.GetEntryPoint(0).VarLayout;
+        ShaderVariableLayout pixelLayout = shader.GetEntryPoint(1).VarLayout;
         Assert.NotEqual(vertexLayout, pixelLayout);
         nint vertexSampler = FindSamplerRange(vertexLayout);
         nint pixelSampler = FindSamplerRange(pixelLayout);
-        VariableReflection vertexSamplerDeclaration =
+        ShaderVariable vertexSamplerDeclaration =
             GetDataLayout(vertexLayout).GetBindingRangeLeafVariable(vertexSampler);
-        VariableReflection pixelSamplerDeclaration =
+        ShaderVariable pixelSamplerDeclaration =
             GetDataLayout(pixelLayout).GetBindingRangeLeafVariable(pixelSampler);
         uint vertexRawOffset = GetSamplerRegister(vertexLayout, vertexSampler);
         uint pixelRawOffset = GetSamplerRegister(pixelLayout, pixelSampler);
@@ -839,9 +839,9 @@ public sealed class WarpValidationLayerTests
         Assert.Contains(native,
             static sampler => sampler.ShaderVisibility == ShaderVisibility.Pixel);
 
-        static nint FindSamplerRange(VariableLayoutReflection layout)
+        static nint FindSamplerRange(ShaderVariableLayout layout)
         {
-            TypeLayoutReflection data = GetDataLayout(layout);
+            ShaderTypeLayout data = GetDataLayout(layout);
             return Enumerable.Range(0, checked((int)data.BindingRangeCount))
                 .Select(static index => (nint)index)
                 .Single(index => (data.GetBindingRangeType(index) & SlangBindingType.BaseMask) ==
@@ -849,10 +849,10 @@ public sealed class WarpValidationLayerTests
         }
 
         static uint GetSamplerRegister(
-            VariableLayoutReflection layout,
+            ShaderVariableLayout layout,
             nint bindingRange)
         {
-            TypeLayoutReflection data = GetDataLayout(layout);
+            ShaderTypeLayout data = GetDataLayout(layout);
             nint set = data.GetBindingRangeDescriptorSetIndex(bindingRange);
             nint descriptorRange = data.GetBindingRangeFirstDescriptorRangeIndex(bindingRange);
             return checked((uint)(
@@ -885,9 +885,9 @@ public sealed class WarpValidationLayerTests
             "slang_parameter_layout_authority",
             source,
             entries);
-        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
-            ?? VariableLayoutReflection.Null;
-        TypeLayoutReflection reflected = GetDataLayout(layout);
+        ShaderVariableLayout layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? ShaderVariableLayout.Null;
+        ShaderTypeLayout reflected = GetDataLayout(layout);
 
         Assert.Equal(4u, checked((uint)reflected.GetSize(SlangParameterCategory.Uniform)));
         Assert.Equal((nint)3, reflected.BindingRangeCount);
@@ -1055,6 +1055,57 @@ public sealed class WarpValidationLayerTests
                               message.Type == ValidationMessageType.Error);
     }
 
+    [Theory]
+    [InlineData(PipelineSync.ComputeShading, PipelineSync.ComputeShading | PipelineSync.PixelShading, false)]
+    [InlineData(PipelineSync.ComputeShading, PipelineSync.ComputeShading | PipelineSync.PixelShading, true)]
+    [InlineData(PipelineSync.ComputeShading, PipelineSync.AllShading, false)]
+    [InlineData(PipelineSync.PixelShading, PipelineSync.Draw, true)]
+    [InlineData(PipelineSync.AllShading, PipelineSync.VertexShading | PipelineSync.PixelShading | PipelineSync.ComputeShading | PipelineSync.RayTracing, true)]
+    public void Barrier_history_accepts_a_before_scope_that_contains_the_tracked_stages(
+        PipelineSync preceding, PipelineSync following, bool separateLists)
+    {
+        var messages = new List<ValidationMessage>();
+        using var backend = CreateFastLayer(messages);
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Buffer buffer = backend.CreateBuffer(device,
+            new BufferDesc(64, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+        using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        backend.Begin(context);
+        backend.Barrier(context, new BufferBarrier(buffer, PipelineSync.None, preceding,
+            ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
+        if (separateLists)
+        {
+            using RecordedCommands first = backend.End(context);
+            SubmitAndWait(backend, queue, first);
+            backend.Begin(context);
+        }
+        backend.Barrier(context, new BufferBarrier(buffer, following, PipelineSync.Copy,
+            ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+        using RecordedCommands commands = backend.End(context);
+        SubmitAndWait(backend, queue, commands);
+        Assert.DoesNotContain(messages, message => message.Type == ValidationMessageType.Error);
+    }
+
+    [Fact]
+    public void Barrier_history_rejects_a_before_scope_that_omits_a_tracked_stage()
+    {
+        var messages = new List<ValidationMessage>();
+        using var backend = CreateFastLayer(messages);
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Buffer buffer = backend.CreateBuffer(device,
+            new BufferDesc(64, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+        using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
+        backend.Begin(context);
+        backend.Barrier(context, new BufferBarrier(buffer, PipelineSync.None,
+            PipelineSync.ComputeShading | PipelineSync.PixelShading,
+            ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
+        Assert.Throws<InvalidOperationException>(() => backend.Barrier(context, new BufferBarrier(
+            buffer, PipelineSync.ComputeShading, PipelineSync.Copy,
+            ResourceAccess.UnorderedAccess, ResourceAccess.CopySource)));
+        backend.Discard(context);
+    }
+
     [Fact]
     public void Barrier_history_rejects_an_incorrect_local_Before_state_without_forwarding_it()
     {
@@ -1187,30 +1238,29 @@ public sealed class WarpValidationLayerTests
     }
 
     [Fact]
-    public void Barrier_history_commits_only_at_Submit_and_preserves_a_valid_transition_chain()
+    public void Texture_barrier_history_commits_only_at_Submit_and_preserves_a_valid_transition_chain()
     {
         var messages = new List<ValidationMessage>();
         using var backend = CreateFastLayer(messages);
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                256,
-                BufferUsages.CopySource | BufferUsages.CopyDestination,
-                "submitted barrier history"));
-        Queue queue = backend.GetQueue(device, QueueType.Copy);
+        using Texture texture = backend.CreateTexture(device,
+            new TextureDesc(TextureDimension.Texture2D, 16, 16, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopySource | TextureUsages.CopyDestination,
+                label: "submitted barrier history"));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
 
         using (CommandContext rejectedContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Copy, 0, 1)))
+                   new CommandContextDesc(QueueType.Graphics, 0, 1)))
         {
             backend.Begin(rejectedContext);
-            backend.Barrier(rejectedContext, new BufferBarrier(
-                buffer,
+            backend.Barrier(rejectedContext, new TextureBarrier(
+                texture, new(0, 1, 0, 1, TextureAspects.Color),
                 PipelineSync.Copy,
                 PipelineSync.Copy,
                 ResourceAccess.CopySource,
-                ResourceAccess.CopyDestination));
+                ResourceAccess.CopyDestination,
+                TextureLayout.CopySource, TextureLayout.CopyDestination));
             using RecordedCommands rejected = backend.End(rejectedContext);
             RecordedCommands[] rejectedCommands = [rejected];
             Assert.Throws<InvalidOperationException>(() => backend.Submit(
@@ -1221,36 +1271,39 @@ public sealed class WarpValidationLayerTests
 
         using (CommandContext firstContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Copy, 0, 2)))
+                   new CommandContextDesc(QueueType.Graphics, 0, 2)))
         {
             backend.Begin(firstContext);
-            backend.Barrier(firstContext, new BufferBarrier(
-                buffer,
+            backend.Barrier(firstContext, new TextureBarrier(
+                texture, new(0, 1, 0, 1, TextureAspects.Color),
                 PipelineSync.None,
                 PipelineSync.Copy,
                 ResourceAccess.NoAccess,
-                ResourceAccess.CopyDestination));
-            backend.Barrier(firstContext, new BufferBarrier(
-                buffer,
+                ResourceAccess.CopyDestination,
+                texture.InitialLayout, TextureLayout.CopyDestination));
+            backend.Barrier(firstContext, new TextureBarrier(
+                texture, new(0, 1, 0, 1, TextureAspects.Color),
                 PipelineSync.Copy,
                 PipelineSync.Copy,
                 ResourceAccess.CopyDestination,
-                ResourceAccess.CopySource));
+                ResourceAccess.CopySource,
+                TextureLayout.CopyDestination, TextureLayout.CopySource));
             using RecordedCommands first = backend.End(firstContext);
             SubmitAndWait(backend, queue, first);
         }
 
         using (CommandContext secondContext = backend.CreateCommandContext(
                    device,
-                   new CommandContextDesc(QueueType.Copy, 0, 1)))
+                   new CommandContextDesc(QueueType.Graphics, 0, 1)))
         {
             backend.Begin(secondContext);
-            backend.Barrier(secondContext, new BufferBarrier(
-                buffer,
+            backend.Barrier(secondContext, new TextureBarrier(
+                texture, new(0, 1, 0, 1, TextureAspects.Color),
                 PipelineSync.Copy,
                 PipelineSync.Copy,
                 ResourceAccess.CopySource,
-                ResourceAccess.CopyDestination));
+                ResourceAccess.CopyDestination,
+                TextureLayout.CopySource, TextureLayout.CopyDestination));
             using RecordedCommands second = backend.End(secondContext);
             SubmitAndWait(backend, queue, second);
         }
@@ -1407,17 +1460,15 @@ public sealed class WarpValidationLayerTests
     }
 
     [Fact]
-    public void Queue_ownership_rejects_use_on_another_Queue_without_release_and_acquire()
+    public void Texture_queue_ownership_rejects_use_on_another_Queue_without_release_and_acquire()
     {
         var messages = new List<ValidationMessage>();
         using var backend = CreateFastLayer(messages);
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer buffer = backend.CreateBuffer(
-            device,
-            new BufferDesc(
-                256,
-                BufferUsages.CopySource | BufferUsages.CopyDestination,
-                "queue ownership"));
+        using Texture texture = backend.CreateTexture(device,
+            new TextureDesc(TextureDimension.Texture2D, 16, 16, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopySource | TextureUsages.CopyDestination,
+                label: "queue ownership"));
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
         Queue copyQueue = backend.GetQueue(device, QueueType.Copy);
 
@@ -1426,12 +1477,13 @@ public sealed class WarpValidationLayerTests
                    new CommandContextDesc(QueueType.Graphics, 0, 1)))
         {
             backend.Begin(graphicsContext);
-            backend.Barrier(graphicsContext, new BufferBarrier(
-                buffer,
+            backend.Barrier(graphicsContext, new TextureBarrier(
+                texture, new(0, 1, 0, 1, TextureAspects.Color),
                 PipelineSync.None,
                 PipelineSync.Copy,
                 ResourceAccess.NoAccess,
-                ResourceAccess.CopySource));
+                ResourceAccess.CopySource,
+                texture.InitialLayout, TextureLayout.CopySource));
             using RecordedCommands commands = backend.End(graphicsContext);
             SubmitAndWait(backend, graphicsQueue, commands);
         }
@@ -1440,12 +1492,13 @@ public sealed class WarpValidationLayerTests
             device,
             new CommandContextDesc(QueueType.Copy, 0, 1));
         backend.Begin(copyContext);
-        backend.Barrier(copyContext, new BufferBarrier(
-            buffer,
+        backend.Barrier(copyContext, new TextureBarrier(
+            texture, new(0, 1, 0, 1, TextureAspects.Color),
             PipelineSync.Copy,
             PipelineSync.Copy,
             ResourceAccess.CopySource,
-            ResourceAccess.CopyDestination));
+            ResourceAccess.CopyDestination,
+                TextureLayout.CopySource, TextureLayout.CopyDestination));
         using RecordedCommands copyCommandsValue = backend.End(copyContext);
         RecordedCommands[] copyCommands = [copyCommandsValue];
 
@@ -1453,7 +1506,10 @@ public sealed class WarpValidationLayerTests
             backend.Submit(
                 copyQueue,
                 new QueueSubmitDesc([], [], copyCommands, [], [])));
-        Assert.Contains("another Queue", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "use moved from Graphics to Copy",
+            exception.Message,
+            StringComparison.Ordinal);
         Assert.Contains(
             messages,
             static message => message.Area == "Barriers" &&
@@ -1552,6 +1608,57 @@ public sealed class WarpValidationLayerTests
             messages.Count(static message =>
                 message.Area == "Commands" &&
                 message.Type == ValidationMessageType.Error) >= 5);
+    }
+
+    [Fact]
+    public void Attachmentless_rendering_requires_and_accepts_the_uav_write_option()
+    {
+        var messages = new List<ValidationMessage>();
+        using var backend = CreateFastLayer(messages);
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+
+        backend.Begin(context);
+        Assert.Throws<InvalidOperationException>(() =>
+            backend.BeginRendering(context, new RenderingDesc([], null, 1, 1)));
+        backend.BeginRendering(context, new RenderingDesc(
+            [],
+            null,
+            1,
+            1,
+            RenderingOptions.AllowUnorderedAccessWrites));
+        backend.EndRendering(context);
+        using RecordedCommands commands = backend.End(context);
+    }
+
+    [Fact]
+    public void Immutable_upload_buffer_accepts_its_first_declared_shader_read_state()
+    {
+        var messages = new List<ValidationMessage>();
+        using var backend = CreateFastLayer(messages);
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Buffer upload = backend.CreateBuffer(
+            device,
+            new BufferDesc(64, BufferUsages.ShaderRead, "immutable upload read"),
+            MemoryType.Upload);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+
+        backend.Begin(context);
+        backend.Barrier(context, new BufferBarrier(
+            upload,
+            PipelineSync.None,
+            PipelineSync.AllShading,
+            ResourceAccess.NoAccess,
+            ResourceAccess.ShaderResource));
+        using RecordedCommands commands = backend.End(context);
+        Assert.DoesNotContain(
+            messages,
+            static message => message.Area == "Barriers" &&
+                              message.Type == ValidationMessageType.Error);
     }
 
     [Fact]
@@ -1662,10 +1769,10 @@ public sealed class WarpValidationLayerTests
             "rhi_validation_other_contract",
             otherSource,
             entries);
-        VariableLayoutReflection layout =
-            bindingShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        Assert.NotEqual(VariableLayoutReflection.Null, layout);
-        TypeLayoutReflection reflectedLayout = GetDataLayout(layout);
+        ShaderVariableLayout layout =
+            bindingShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
+        Assert.NotEqual(ShaderVariableLayout.Null, layout);
+        ShaderTypeLayout reflectedLayout = GetDataLayout(layout);
         ResourceBinding[] validResources = CreateNullBindings(layout);
         uint ordinaryDataSize = checked((uint)reflectedLayout.GetSize(
             SlangParameterCategory.Uniform));
@@ -1843,9 +1950,9 @@ public sealed class WarpValidationLayerTests
     }
 
     private static ResourceBinding[] CreateNullBindings(
-        VariableLayoutReflection layout)
+        ShaderVariableLayout layout)
     {
-        TypeLayoutReflection reflectedLayout = GetDataLayout(layout);
+        ShaderTypeLayout reflectedLayout = GetDataLayout(layout);
         var result = new List<ResourceBinding>();
         for (nint rangeIndex = 0;
              rangeIndex < reflectedLayout.BindingRangeCount;
@@ -1878,26 +1985,26 @@ public sealed class WarpValidationLayerTests
         return [.. result];
     }
 
-    private static TypeLayoutReflection GetDataLayout(VariableLayoutReflection layout)
+    private static ShaderTypeLayout GetDataLayout(ShaderVariableLayout layout)
     {
-        TypeLayoutReflection result = layout.TypeLayout.UnwrapArray();
+        ShaderTypeLayout result = layout.TypeLayout.UnwrapArray();
         if (result.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
         {
-            TypeLayoutReflection element = result.ElementTypeLayout.UnwrapArray();
-            if (element != TypeLayoutReflection.Null)
+            ShaderTypeLayout element = result.ElementTypeLayout.UnwrapArray();
+            if (element != ShaderTypeLayout.Null)
                 result = element;
         }
         return result;
     }
 
     private static StaticSamplerBinding StaticSampler(
-        ShaderReflection reflection,
-        VariableLayoutReflection block,
+        ShaderProgramLayout reflection,
+        ShaderVariableLayout block,
         uint shaderRegister,
         uint registerSpace,
         in SamplerDesc description)
     {
-        TypeLayoutReflection data = GetDataLayout(block);
+        ShaderTypeLayout data = GetDataLayout(block);
         for (nint rangeIndex = 0; rangeIndex < data.BindingRangeCount; rangeIndex++)
         {
             if ((data.GetBindingRangeType(rangeIndex) & SlangBindingType.BaseMask) !=
@@ -1969,7 +2076,7 @@ public sealed class WarpValidationLayerTests
         ValidationLayer backend,
         Device device,
         Pipeline pipeline,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         ResourceBinding[] resources,
         byte[] ordinaryData)
     {
@@ -1982,7 +2089,7 @@ public sealed class WarpValidationLayerTests
     private static void SetTransientBindings(
         ValidationLayer backend,
         CommandContext context,
-        VariableLayoutReflection layout,
+        ShaderVariableLayout layout,
         ResourceBinding[] resources,
         byte[] ordinaryData) =>
         backend.SetTransientParameterBindings(

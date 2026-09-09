@@ -2,78 +2,62 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets;
 
-/// <summary>
-/// Writes one exact-schema asset atomically through its source-generated closed descriptor.
-/// </summary>
+/// <summary>Writes disk content to a temporary file, then atomically replaces its destination.</summary>
 public static class AssetWriter
 {
-    public static void Write<T>(T asset, string path)
-        where T : class
-        => _ = WriteAndDescribe(asset, path);
+    internal static ulong RawBytesSchema { get; }
+        = SomeEngine.Serialization.BinaryFieldKey.FromName("SomeEngine.Assets.RawBytes.v1");
 
-    internal static AssetDescription WriteAndDescribe<T>(T asset, string path)
-        where T : class
+    public static void Write<T>(Asset<T> asset, string path) where T : class
+        => WriteAsync(asset, path).AsTask().GetAwaiter().GetResult();
+
+    public static async ValueTask WriteAsync<T>(Asset<T> asset, string path,
+        CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(asset);
-        AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        BinaryDocumentWriter document = descriptor.CreateWriter(asset)
-            ?? throw new InvalidOperationException("The generated asset writer returned no document.");
-        ValidateRootContract(descriptor, document);
-        AssetDescription info = AssetMetadata.Describe(asset, path);
-        Write(document, path);
-        return info;
-    }
-
-    internal static void ValidateRootContract<T>(
-        AssetTypeDescriptor<T> descriptor,
-        BinaryDocumentWriter document)
-        where T : class
-    {
-        ArgumentNullException.ThrowIfNull(descriptor);
-        ArgumentNullException.ThrowIfNull(document);
-        SomeEngine.Serialization.Containers.BinaryWireTypeDescriptor expectedRoot = descriptor.WireType;
-        if (document.RootDescriptor != expectedRoot)
-        {
-            throw new InvalidDataException(
-                $"Asset writer for '{descriptor.AssetType}' returned root contract " +
-                $"'{document.RootDescriptor.TypeId}' instead of exact contract '{expectedRoot.TypeId}'.");
-        }
-    }
-
-    internal static void Write(BinaryDocumentWriter document, string path)
-    {
-        ArgumentNullException.ThrowIfNull(document);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!AssetFormat<T>.Current.MatchesPath(path))
+            throw new InvalidDataException($"Asset type '{Asset<T>.FileType}' does not accept path '{path}'.");
+        cancellationToken.ThrowIfCancellationRequested();
+        await using AssetFile file = asset.DuplicateFile();
+        await WriteFileAsync(path, file.WriteAsync, cancellationToken).ConfigureAwait(false);
+    }
 
+    internal static void Write(BinaryDocumentWriter document, string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        WriteFileAsync(path, (stream, token) => document.WriteAsync(stream, cancellationToken: token),
+            cancellationToken).AsTask().GetAwaiter().GetResult();
+    }
+
+    private static async ValueTask WriteFileAsync(string path,
+        Func<FileStream, CancellationToken, ValueTask> write, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
         string fullPath = Path.GetFullPath(path);
-        string? directory = Path.GetDirectoryName(fullPath);
-        if (string.IsNullOrEmpty(directory))
-            throw new InvalidOperationException("Asset path has no parent directory.");
+        string directory = Path.GetDirectoryName(fullPath)
+            ?? throw new InvalidOperationException("Asset path has no parent directory.");
         Directory.CreateDirectory(directory);
-
-        string temporaryPath = Path.Combine(
-            directory,
-            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        string temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
-            using (var stream = new FileStream(
-                temporaryPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 128 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write,
+                FileShare.None, bufferSize: 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                document.WriteAsync(stream).AsTask().GetAwaiter().GetResult();
+                await write(stream, cancellationToken).ConfigureAwait(false);
                 stream.Flush(flushToDisk: true);
             }
-
-            File.Move(temporaryPath, fullPath, overwrite: true);
+            cancellationToken.ThrowIfCancellationRequested();
+            // Existing readers continue using the old file; new opens see the new contents.
+            if (File.Exists(fullPath))
+                File.Replace(temporaryPath, fullPath, destinationBackupFileName: null);
+            else
+                File.Move(temporaryPath, fullPath);
         }
         catch
         {
-            if (File.Exists(temporaryPath))
-                File.Delete(temporaryPath);
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             throw;
         }
     }

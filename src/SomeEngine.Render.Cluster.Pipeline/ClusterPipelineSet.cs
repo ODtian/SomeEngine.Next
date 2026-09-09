@@ -17,27 +17,32 @@ internal sealed class ClusterPipelineSet : IDisposable
 
     private readonly List<ClusterPipeline> _pipelines = [];
     private bool _disposed;
+    private readonly ClusterShaders _shaders;
 
     internal ClusterPipelineSet(
         IGraphicsBackend backend,
         Device device,
         ClusterShaders configuration,
-        Format outputFormat)
+        ClusterVisibilityMode visibilityMode)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(configuration);
+        _shaders = configuration;
         _pipelines.EnsureCapacity(RequiredPipelineCount);
         try
         {
             Dictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations =
                 IndexOperations(configuration);
-            CullingEnabled = operations.Values
-                .Where(static operation => ClusterShaders.IsPositionOperation(operation.Role))
-                .All(static operation => operation.BoundsSupport == ClusterBoundsSupport.Finite);
+            ClusterDefaultGeometryContract geometry = ResolveDefaultGeometryContract(operations);
+            DefaultRasterVertexEncoding = geometry.VertexEncoding;
+            DefaultRasterCullingEnabled = geometry.Bounds == ClusterConservativeBounds.Finite;
 
-            ClusterComputePipeline Compute(ClusterShaderOperationRole role, string name) =>
-                CreateCompute(backend, device, operations, _pipelines, role, name);
+            ClusterComputePipeline Compute(
+                ClusterShaderOperationRole role,
+                string name,
+                string? entryPoint = null) =>
+                CreateCompute(backend, device, operations, _pipelines, role, name, entryPoint);
 
                 ClusterRasterPipeline Raster(
                     ClusterShaderOperationRole role,
@@ -49,7 +54,9 @@ internal sealed class ClusterPipelineSet : IDisposable
                     uint sampleCount = 1,
                     string? name = null,
                     uint sampleMask = uint.MaxValue,
-                    bool alphaToCoverage = false) =>
+                    bool alphaToCoverage = false,
+                    string? vertexEntry = null,
+                    string? pixelEntry = null) =>
                     CreateRaster(
                         backend,
                         device,
@@ -64,52 +71,91 @@ internal sealed class ClusterPipelineSet : IDisposable
                         sampleCount,
                         name,
                         sampleMask,
-                        alphaToCoverage);
+                        alphaToCoverage,
+                        vertexEntry,
+                        pixelEntry);
 
             Traversal = Compute(ClusterShaderOperationRole.BvhTraversal, "Cluster BVH traversal");
+            SceneBounds = Compute(ClusterShaderOperationRole.SceneBounds, "Cluster spatial scene bounds");
+
+                TraversalInitialize = Compute(
+                    ClusterShaderOperationRole.BvhTraversalInitialize,
+                    "Cluster BVH traversal initialization");
+                DeferredResume = Compute(
+                    ClusterShaderOperationRole.BvhDeferredResume,
+                    "Cluster deferred hierarchy resume");
                 CullReset = Compute(ClusterShaderOperationRole.CullReset, "Cluster cull reset");
                 CullPhase1 = Compute(ClusterShaderOperationRole.CullPhaseOne, "Cluster cull phase one");
                 CullPhase2 = Compute(ClusterShaderOperationRole.CullPhaseTwo, "Cluster cull phase two");
 
-                RasterDeformBinReset = Compute(
-                    ClusterShaderOperationRole.RasterDeformBinningReset,
-                    "Cluster raster/deform bins reset");
-                RasterDeformBinCount = Compute(
-                    ClusterShaderOperationRole.RasterDeformBinningCount,
-                    "Cluster raster/deform bins count");
-                RasterDeformBinReserve = Compute(
-                    ClusterShaderOperationRole.RasterDeformBinningReserve,
-                    "Cluster raster/deform bins reserve");
-                RasterDeformBinScatter = Compute(
-                    ClusterShaderOperationRole.RasterDeformBinningScatter,
-                    "Cluster raster/deform bins scatter");
-                DeformCachePopulate = Compute(
-                    ClusterShaderOperationRole.DeformCachePopulate,
-                    "Cluster deform cache populate");
-                SoftwareRaster = Compute(
-                    ClusterShaderOperationRole.SoftwareVisibilityRaster,
-                    "Cluster software visibility raster");
+                RasterBinReset = Compute(
+                    ClusterShaderOperationRole.RasterBinningReset,
+                    "Cluster raster bins reset");
+                RasterBinCount = Compute(
+                    ClusterShaderOperationRole.RasterBinningCount,
+                    "Cluster raster bins count");
+                RasterBinReserve = Compute(
+                    ClusterShaderOperationRole.RasterBinningReserve,
+                    "Cluster raster bins reserve");
+                RasterBinScatter = Compute(
+                    ClusterShaderOperationRole.RasterBinningScatter,
+                    "Cluster raster bins scatter");
+                TessellationBinReset = Compute(
+                    ClusterShaderOperationRole.TessellationBinningReset,
+                    "Cluster tessellation bins reset");
+                TessellationBinCount = Compute(
+                    ClusterShaderOperationRole.TessellationBinningCount,
+                    "Cluster tessellation bins count");
+                TessellationBinReserve = Compute(
+                    ClusterShaderOperationRole.TessellationBinningReserve,
+                    "Cluster tessellation bins reserve");
+                TessellationBinScatter = Compute(
+                    ClusterShaderOperationRole.TessellationBinningScatter,
+                    "Cluster tessellation bins scatter");
+                SoftwareRaster = visibilityMode == ClusterVisibilityMode.HardwareOnly
+                    ? null
+                    : Compute(
+                        ClusterShaderOperationRole.SoftwareVisibilityRaster,
+                        "Cluster software visibility raster",
+                        DefaultSoftwareRasterEntry(visibilityMode));
+                WinnerClear = visibilityMode == ClusterVisibilityMode.HardwareOnly
+                    ? null
+                    : Compute(
+                        visibilityMode == ClusterVisibilityMode.ImageAtomic64
+                            ? ClusterShaderOperationRole.VisibilityClearImage
+                            : ClusterShaderOperationRole.VisibilityClearBuffer,
+                        "Cluster visibility winner clear");
 
                 HardwareRaster = Raster(
                     ClusterShaderOperationRole.HardwareVisibilityRaster,
-                    [Format.R32UInt],
-                    depthStencilFormat: Format.D32Float,
+                    visibilityMode == ClusterVisibilityMode.HardwareOnly
+                        ? [Format.R32UInt]
+                        : [],
+                    depthStencilFormat: visibilityMode == ClusterVisibilityMode.HardwareOnly
+                        ? Format.D32Float
+                        : null,
                     rasterizerState: new RasterizerState(Cull: CullType.Back),
-                    depthStencilState: new DepthStencilState(
-                        DepthTest: true,
-                        DepthWrite: true,
-                        DepthComparison: CompareOperation.LessOrEqual),
-                    name: "Cluster hardware visibility raster");
-                DepthMerge = Raster(
-                    ClusterShaderOperationRole.SoftwareDepthMerge,
-                    [],
-                    depthStencilFormat: Format.D32Float,
-                    rasterizerState: new RasterizerState(Cull: CullType.None),
-                    depthStencilState: new DepthStencilState(
-                        DepthTest: true,
-                        DepthWrite: true,
-                        DepthComparison: CompareOperation.Less),
-                    name: "Cluster software depth merge");
+                    depthStencilState: visibilityMode == ClusterVisibilityMode.HardwareOnly
+                        ? new DepthStencilState(
+                            DepthTest: true,
+                            DepthWrite: true,
+                            DepthComparison: CompareOperation.LessOrEqual)
+                        : default,
+                    name: "Cluster hardware visibility raster",
+                    vertexEntry: "VSVisBuffer",
+                    pixelEntry: DefaultHardwarePixelEntry(visibilityMode, ClusterRasterPipeline.SupportsMesh(backend, device)));
+                WinnerResolve = visibilityMode == ClusterVisibilityMode.HardwareOnly
+                    ? null
+                    : Raster(
+                        visibilityMode == ClusterVisibilityMode.ImageAtomic64
+                            ? ClusterShaderOperationRole.VisibilityResolveImage
+                            : ClusterShaderOperationRole.VisibilityResolveBuffer,
+                        [Format.R32UInt],
+                        depthStencilFormat: Format.D32Float,
+                        rasterizerState: new RasterizerState(Cull: CullType.None),
+                        depthStencilState: new DepthStencilState(
+                            DepthTest: true, DepthWrite: true, DepthComparison: CompareOperation.Always),
+                        name: "Cluster visibility winner resolve");
 
                 HiZFirst = Compute(ClusterShaderOperationRole.HiZInitialize, "Cluster HiZ initialize");
                 HiZDownsample = Compute(ClusterShaderOperationRole.HiZReduce, "Cluster HiZ reduce");
@@ -126,19 +172,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                 ShadeBinScatter = Compute(
                     ClusterShaderOperationRole.MaterialBinningScatter,
                     "Cluster material bin scatter");
-                MotionVectors = Compute(ClusterShaderOperationRole.MotionVectors, "Cluster motion vectors");
                 Resolve = Compute(ClusterShaderOperationRole.VisibilityResolve, "Cluster visibility resolve");
-
-                TemporalResolve = Raster(
-                    ClusterShaderOperationRole.TemporalResolve,
-                    [Format.R16G16B16A16Float],
-                    rasterizerState: new RasterizerState(Cull: CullType.None),
-                    name: "Cluster temporal resolve");
-            Tonemap = Raster(
-                    ClusterShaderOperationRole.ToneMapAndPresent,
-                    [outputFormat],
-                    rasterizerState: new RasterizerState(Cull: CullType.None),
-                    name: "Cluster tone map and present");
         }
         catch (Exception primary)
         {
@@ -156,18 +190,26 @@ internal sealed class ClusterPipelineSet : IDisposable
     }
 
     internal ClusterComputePipeline Traversal { get; }
-    internal bool CullingEnabled { get; }
+    internal ClusterComputePipeline SceneBounds { get; }
+    internal ClusterComputePipeline TraversalInitialize { get; }
+    internal ClusterComputePipeline DeferredResume { get; }
+    internal string DefaultRasterVertexEncoding { get; }
+    internal bool DefaultRasterCullingEnabled { get; }
     internal ClusterComputePipeline CullReset { get; }
     internal ClusterComputePipeline CullPhase1 { get; }
     internal ClusterComputePipeline CullPhase2 { get; }
-    internal ClusterComputePipeline RasterDeformBinReset { get; }
-    internal ClusterComputePipeline RasterDeformBinCount { get; }
-    internal ClusterComputePipeline RasterDeformBinReserve { get; }
-    internal ClusterComputePipeline RasterDeformBinScatter { get; }
-    internal ClusterComputePipeline DeformCachePopulate { get; }
-    internal ClusterComputePipeline SoftwareRaster { get; }
+    internal ClusterComputePipeline RasterBinReset { get; }
+    internal ClusterComputePipeline RasterBinCount { get; }
+    internal ClusterComputePipeline RasterBinReserve { get; }
+    internal ClusterComputePipeline RasterBinScatter { get; }
+    internal ClusterComputePipeline TessellationBinReset { get; }
+    internal ClusterComputePipeline TessellationBinCount { get; }
+    internal ClusterComputePipeline TessellationBinReserve { get; }
+    internal ClusterComputePipeline TessellationBinScatter { get; }
+    internal ClusterComputePipeline? SoftwareRaster { get; }
+    internal ClusterComputePipeline? WinnerClear { get; }
     internal ClusterRasterPipeline HardwareRaster { get; }
-    internal ClusterRasterPipeline DepthMerge { get; }
+    internal ClusterRasterPipeline? WinnerResolve { get; }
     internal ClusterComputePipeline HiZFirst { get; }
     internal ClusterComputePipeline HiZDownsample { get; }
     internal ClusterComputePipeline HiZDownsampleTwo { get; }
@@ -175,18 +217,16 @@ internal sealed class ClusterPipelineSet : IDisposable
     internal ClusterComputePipeline ShadeBinCount { get; }
     internal ClusterComputePipeline ShadeBinReserve { get; }
     internal ClusterComputePipeline ShadeBinScatter { get; }
-    internal ClusterComputePipeline MotionVectors { get; }
     internal ClusterComputePipeline Resolve { get; }
-    internal ClusterRasterPipeline TemporalResolve { get; }
-    internal ClusterRasterPipeline Tonemap { get; }
 
-    private static ClusterComputePipeline CreateCompute(
+    private ClusterComputePipeline CreateCompute(
         IGraphicsBackend backend,
         Device device,
         IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations,
         List<ClusterPipeline> ownedPipelines,
         ClusterShaderOperationRole role,
-        string name)
+        string name,
+        string? entryPoint = null)
     {
         ClusterShaderOperation operation = GetOperation(operations, role);
         ShaderRef compute = GetShader(operation, role, ShaderStage.Compute);
@@ -195,13 +235,12 @@ internal sealed class ClusterPipelineSet : IDisposable
         ClusterComputePipeline? created = null;
         try
         {
-            Shader shader = compute.Asset ?? throw new InvalidDataException(
-                $"Cluster shader operation '{role}' has no resolved shader asset.");
+            Shader shader = _shaders.GetShader(compute);
             created = ClusterComputePipeline.Create(
                 backend,
                 device,
                 shader,
-                compute.EntryPoint!,
+                entryPoint ?? compute.EntryPoint!,
                 name);
             ownedPipelines.Add(created);
             ClusterComputePipeline result = created;
@@ -221,7 +260,7 @@ internal sealed class ClusterPipelineSet : IDisposable
         }
     }
 
-    private static ClusterRasterPipeline CreateRaster(
+    private ClusterRasterPipeline CreateRaster(
         IGraphicsBackend backend,
         Device device,
         IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations,
@@ -235,13 +274,15 @@ internal sealed class ClusterPipelineSet : IDisposable
         uint sampleCount,
         string? name,
         uint sampleMask,
-        bool alphaToCoverage)
+        bool alphaToCoverage,
+        string? vertexEntry = null,
+        string? pixelEntry = null)
     {
         ClusterShaderOperation operation = GetOperation(operations, role);
         ShaderRef vertex = GetShader(operation, role, ShaderStage.Vertex);
         ShaderRef pixel = GetShader(operation, role, ShaderStage.Pixel);
-        AssetGuid vertexGuid = GetShaderGuid(vertex, role);
-        AssetGuid pixelGuid = GetShaderGuid(pixel, role);
+        Guid vertexGuid = GetShaderGuid(vertex, role);
+        Guid pixelGuid = GetShaderGuid(pixel, role);
         if (vertexGuid != pixelGuid)
             throw new InvalidDataException($"Cluster shader operation '{role}' spans shader assets.");
 
@@ -249,16 +290,17 @@ internal sealed class ClusterPipelineSet : IDisposable
         ClusterRasterPipeline? created = null;
         try
         {
-            Shader shader = vertex.Asset ?? throw new InvalidDataException(
-                $"Cluster shader operation '{role}' has no resolved shader asset.");
-            if (!ReferenceEquals(shader, pixel.Asset))
+            Shader shader = _shaders.GetShader(vertex);
+            if (!ReferenceEquals(shader, _shaders.GetShader(pixel)))
                 throw new InvalidDataException($"Cluster shader operation '{role}' has inconsistent resolved shader assets.");
+            bool usesMesh = role == ClusterShaderOperationRole.HardwareVisibilityRaster &&
+                ClusterRasterPipeline.SupportsMesh(backend, device);
             created = ClusterRasterPipeline.Create(
                 backend,
                 device,
                 shader,
-                vertex.EntryPoint!,
-                pixel.EntryPoint!,
+                usesMesh ? "MSVisBuffer" : vertexEntry ?? vertex.EntryPoint!,
+                pixelEntry ?? pixel.EntryPoint!,
                 colorFormats,
                 depthStencilFormat,
                 rasterizerState,
@@ -267,7 +309,8 @@ internal sealed class ClusterPipelineSet : IDisposable
                 sampleCount,
                 name,
                 sampleMask,
-                alphaToCoverage);
+                alphaToCoverage,
+                geometryStage: usesMesh ? ShaderStage.Mesh : ShaderStage.Vertex);
             ownedPipelines.Add(created);
             ClusterRasterPipeline result = created;
             created = null;
@@ -293,6 +336,46 @@ internal sealed class ClusterPipelineSet : IDisposable
             ? operation
             : throw new InvalidDataException(
                 $"Cluster render asset has no '{role}' shader operation.");
+
+    private ClusterDefaultGeometryContract ResolveDefaultGeometryContract(
+        IReadOnlyDictionary<ClusterShaderOperationRole, ClusterShaderOperation> operations)
+    {
+        string? vertexEncoding = null;
+        ClusterConservativeBounds bounds = ClusterConservativeBounds.Finite;
+        foreach (ClusterShaderOperation operation in operations.Values)
+        {
+            if (!ClusterShaders.IsPositionOperation(operation.Role))
+                continue;
+            ShaderStage stage = IsRasterOperation(operation.Role)
+                ? ShaderStage.Vertex
+                : ShaderStage.Compute;
+            ShaderRef shaderReference = GetShader(operation, operation.Role, stage);
+            Shader shader = _shaders.GetShader(shaderReference);
+            string entryPoint = shaderReference.EntryPoint!;
+            string subject = $"Cluster shader operation '{operation.Role}'";
+            string currentEncoding = ClusterGeometryContracts.RequireVertexEncoding(
+                shader,
+                entryPoint,
+                subject);
+            if (vertexEncoding is not null &&
+                !string.Equals(vertexEncoding, currentEncoding, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"{subject} accepts vertex encoding '{currentEncoding}', but the Cluster pipeline " +
+                    $"already requires '{vertexEncoding}'.");
+            }
+            vertexEncoding = currentEncoding;
+            if (ClusterGeometryContracts.RequireConservativeBounds(shader, entryPoint, subject) ==
+                ClusterConservativeBounds.Unbounded)
+            {
+                bounds = ClusterConservativeBounds.Unbounded;
+            }
+        }
+        return new ClusterDefaultGeometryContract(
+            vertexEncoding ?? throw new InvalidDataException(
+                "Cluster render asset has no vertex-evaluating shader operation."),
+            bounds);
+    }
 
     private static ShaderRef GetShader(
         ClusterShaderOperation operation,
@@ -322,11 +405,11 @@ internal sealed class ClusterPipelineSet : IDisposable
         return result;
     }
 
-    private static AssetGuid GetShaderGuid(
+    private static Guid GetShaderGuid(
         ShaderRef shader,
         ClusterShaderOperationRole role)
     {
-        if (!AssetGuid.TryParse(shader.AssetGuid, out AssetGuid guid) || guid.IsEmpty)
+        if (!Guid.TryParse(shader.AssetGuid, out Guid guid) || (guid == System.Guid.Empty))
             throw new InvalidDataException($"Cluster shader operation '{role}' has no shader asset.");
         return guid;
     }
@@ -353,17 +436,6 @@ internal sealed class ClusterPipelineSet : IDisposable
                 throw new InvalidDataException(
                     "Cluster render asset contains an invalid shader-operation role.");
             }
-            bool affectsPosition = ClusterShaders.IsPositionOperation(operation.Role);
-            bool validBounds = affectsPosition
-                ? operation.BoundsSupport is ClusterBoundsSupport.Finite or ClusterBoundsSupport.Unbounded
-                : operation.BoundsSupport == ClusterBoundsSupport.NotApplicable;
-            if (!validBounds)
-            {
-                throw new InvalidDataException(
-                    affectsPosition
-                        ? $"Cluster shader operation '{operation.Role}' must declare Finite or Unbounded bounds support."
-                        : $"Cluster shader operation '{operation.Role}' cannot declare geometry bounds support.");
-            }
             bool isRaster = IsRasterOperation(operation.Role);
             IList<ShaderRef>? shaders = operation.Shaders;
             bool validShape = shaders is not null && (isRaster
@@ -378,10 +450,10 @@ internal sealed class ClusterPipelineSet : IDisposable
                 throw new InvalidDataException(
                     $"Cluster shader operation '{operation.Role}' has an invalid shader-stage set.");
             }
-            AssetGuid? shaderGuid = null;
+            Guid? shaderGuid = null;
             foreach (ShaderRef shader in shaders!)
             {
-                AssetGuid current = GetShaderGuid(shader, operation.Role);
+                Guid current = GetShaderGuid(shader, operation.Role);
                 if (string.IsNullOrWhiteSpace(shader.EntryPoint))
                 {
                     throw new InvalidDataException(
@@ -405,9 +477,29 @@ internal sealed class ClusterPipelineSet : IDisposable
 
     private static bool IsRasterOperation(ClusterShaderOperationRole role) => role is
         ClusterShaderOperationRole.HardwareVisibilityRaster or
-        ClusterShaderOperationRole.SoftwareDepthMerge or
-        ClusterShaderOperationRole.TemporalResolve or
-        ClusterShaderOperationRole.ToneMapAndPresent;
+        ClusterShaderOperationRole.VisibilityResolveImage or
+        ClusterShaderOperationRole.VisibilityResolveBuffer;
+
+    private static string DefaultSoftwareRasterEntry(ClusterVisibilityMode mode) => mode switch
+    {
+        ClusterVisibilityMode.ImageAtomic64 => "CSSWRasterImageAtomic64",
+        ClusterVisibilityMode.BufferAtomic64 => "CSSWRasterBufferAtomic64",
+        ClusterVisibilityMode.HardwareOnly => throw new InvalidOperationException(
+            "Hardware-only visibility has no software raster entry."),
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
+    private static string DefaultHardwarePixelEntry(ClusterVisibilityMode mode, bool mesh) => (mode, mesh) switch
+    {
+        (ClusterVisibilityMode.ImageAtomic64, false) => "PSVisBufferImageAtomic64",
+        (ClusterVisibilityMode.BufferAtomic64, false) => "PSVisBufferBufferAtomic64",
+        (ClusterVisibilityMode.HardwareOnly, false) => "PSVisBufferHardwareOnly",
+        (ClusterVisibilityMode.ImageAtomic64, true) => "PSMeshVisBufferImageAtomic64",
+        (ClusterVisibilityMode.BufferAtomic64, true) => "PSMeshVisBufferBufferAtomic64",
+        (ClusterVisibilityMode.HardwareOnly, true) => "PSMeshVisBufferHardwareOnly",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
 
     public void Dispose()
     {
@@ -444,3 +536,7 @@ internal sealed class ClusterPipelineSet : IDisposable
         catch (Exception failure) { (failures ??= []).Add(failure); }
     }
 }
+
+internal readonly record struct ClusterDefaultGeometryContract(
+    string VertexEncoding,
+    ClusterConservativeBounds Bounds);

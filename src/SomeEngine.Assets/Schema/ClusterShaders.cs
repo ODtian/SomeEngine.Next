@@ -1,16 +1,15 @@
 namespace SomeEngine.Assets.Schema;
 
-[global::SomeEngine.Assets.Asset(".clusterrender.asset")]
-public partial class ClusterShaders
+internal partial class ClusterShadersData
 {
-    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
+    internal IReadOnlyList<Guid> GetDependencies(string path)
     {
         IList<ClusterShaderOperation> operations = Operations
             ?? throw Invalid(path, "Operations is missing.");
         if (operations.Count == 0)
             throw Invalid(path, "Operations is empty.");
 
-        var result = new List<AssetGuid>();
+        var result = new List<Guid>();
         var roles = new HashSet<ClusterShaderOperationRole>();
         for (int index = 0; index < operations.Count; index++)
         {
@@ -24,19 +23,6 @@ public partial class ClusterShaders
             }
             if (!roles.Add(operation.Role))
                 throw Invalid(path, $"{field}.Role '{operation.Role}' is duplicated.");
-
-            bool affectsPosition = IsPositionOperation(operation.Role);
-            bool validBounds = affectsPosition
-                ? operation.BoundsSupport is ClusterBoundsSupport.Finite or ClusterBoundsSupport.Unbounded
-                : operation.BoundsSupport == ClusterBoundsSupport.NotApplicable;
-            if (!validBounds)
-            {
-                throw Invalid(
-                    path,
-                    affectsPosition
-                        ? $"{field}.BoundsSupport must explicitly be Finite or Unbounded."
-                        : $"{field}.BoundsSupport must be NotApplicable for this operation.");
-            }
 
             IList<ShaderRef> shaders = operation.Shaders
                 ?? throw Invalid(path, $"{field}.Shaders is missing.");
@@ -55,10 +41,10 @@ public partial class ClusterShaders
                     $"{field}.Shaders must contain either one compute entry or one vertex/pixel pair.");
             }
 
-            AssetGuid? operationShader = null;
+            Guid? operationShader = null;
             for (int shaderIndex = 0; shaderIndex < shaders.Count; shaderIndex++)
             {
-                AssetGuid shader = ShaderRef.Require(
+                Guid shader = ShaderRef.Require(
                     shaders[shaderIndex],
                     $"Cluster render asset '{path}'",
                     $"{field}.Shaders[{shaderIndex}]");
@@ -80,17 +66,11 @@ public partial class ClusterShaders
                 throw Invalid(path, $"Operations has no '{role}' role.");
         }
 
-        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+        result.Sort(static (left, right) => left.CompareTo(right));
         return result;
     }
 
     private static InvalidDataException Invalid(string path, string message)
         => new($"Cluster render asset '{path}' {message}");
 
-    public static bool IsPositionOperation(ClusterShaderOperationRole role) => role is
-        ClusterShaderOperationRole.DeformCachePopulate or
-        ClusterShaderOperationRole.SoftwareVisibilityRaster or
-        ClusterShaderOperationRole.HardwareVisibilityRaster or
-        ClusterShaderOperationRole.MotionVectors or
-        ClusterShaderOperationRole.VisibilityResolve;
 }

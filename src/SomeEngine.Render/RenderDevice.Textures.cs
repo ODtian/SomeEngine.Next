@@ -1,0 +1,1046 @@
+using SomeEngine.Assets.Schema;
+using SomeEngine.Graphics;
+using SomeEngine.RenderGraph;
+using SomeEngine.Serialization.Streaming;
+using EngineTexture = SomeEngine.Assets.Schema.Texture;
+using RhiTexture = SomeEngine.Graphics.Texture;
+using TextureDimension = SomeEngine.Graphics.TextureDimension;
+using TextureViewDimension = SomeEngine.Graphics.TextureViewDimension;
+
+namespace SomeEngine.Render;
+
+public sealed partial class RenderDevice
+{
+    private readonly HashSet<EngineTexture> _textures =
+        new(ReferenceEqualityComparer.Instance);
+    private TextureRealization? _missingTexture;
+
+    public RhiTexture MissingTexture
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return RequireMissingTexture().Resource;
+        }
+    }
+
+    public TextureSrv MissingTextureSrv
+    {
+        get
+        {
+            ThrowIfDisposed();
+            TextureRealization realization = RequireMissingTexture();
+            return GetTextureSrv(realization, realization.Shape.FullRange,
+                realization.Shape.SampledFormat, realization.Shape.SampledDimension,
+                "RenderDevice missing texture SRV");
+        }
+    }
+
+    public RhiTexture GetTexture(EngineTexture asset)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(asset);
+        return GetOrCreateTexture(asset).Resource;
+    }
+
+    public TextureSrv GetTextureSrv(
+        EngineTexture asset,
+        TextureSubresourceRange? range = null,
+        Format? format = null,
+        TextureViewDimension? dimension = null,
+        string? label = null)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(asset);
+        TextureRealization realization = GetOrCreateTexture(asset);
+        TextureShape shape = realization.Shape;
+        TextureSubresourceRange resolved = range ?? shape.ResidentRange(realization.FirstResidentMip);
+        ValidateResidentRange(realization, resolved);
+        return GetTextureSrv(
+            realization,
+            resolved,
+            format ?? shape.SampledFormat,
+            dimension ?? shape.SampledDimension,
+            label);
+    }
+
+    public TextureUav GetTextureUav(
+        EngineTexture asset,
+        in TextureSubresourceRange range,
+        Format? format = null,
+        TextureViewDimension? dimension = null,
+        string? label = null)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(asset);
+        TextureRealization realization = GetOrCreateTexture(asset);
+        if (!realization.Resource.Info.Usages.HasFlag(TextureUsages.Storage))
+            throw new NotSupportedException("The Texture format does not support storage views.");
+        TextureShape shape = realization.Shape;
+        Format resolvedFormat = format ?? shape.SampledFormat;
+        TextureViewDimension resolvedDimension = dimension ?? shape.SampledDimension;
+        var key = new TextureViewKey(
+            TextureViewKind.Uav,
+            range,
+            resolvedFormat,
+            resolvedDimension);
+        if (realization.Views.TryGetValue(key, out DeviceResource? cached))
+            return (TextureUav)cached;
+        TextureUav view = _backend.CreateTextureUav(
+            _device,
+            new TextureUavDesc(
+                realization.Resource,
+                range,
+                resolvedFormat,
+                resolvedDimension,
+                label));
+        realization.Views.Add(key, view);
+        return view;
+    }
+
+    /// <summary>
+    /// Makes the currently resident Texture payload available to one RenderGraph frame and orders
+    /// the supplied consumer after any one-shot upload passes. The caller still imports/gets the
+    /// returned Graphics.Texture and declares the consumer's real RenderGraph access explicitly.
+    /// This method performs no asset I/O.
+    /// </summary>
+    public RhiTexture PrepareTexture(
+        ref RenderGraphFrame frame,
+        GraphPassId consumer,
+        EngineTexture asset)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(asset);
+        EngineTexture content = asset.GetUploadContent();
+        if (!content.HasBootstrap)
+            throw new InvalidOperationException("A Texture must have a resident Bootstrap before rendering.");
+
+        TextureRealization? realization;
+        if (!asset.TryGetDeviceData(_device, out realization))
+        {
+            realization = CreateTexture(TextureShape.From(content, _device), content.Name);
+            try
+            {
+                UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: true);
+                realization.Revision = content.Revision;
+                realization.Initialized = true;
+                asset.SetDeviceData(_device, realization);
+                _textures.Add(asset);
+                realization.TextureObject = asset;
+            }
+            catch
+            {
+                AbortPendingUpload(realization);
+                realization.Dispose();
+                throw;
+            }
+        }
+        else if (!realization.Initialized && ReferenceEquals(content, asset))
+        {
+            UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: true);
+            realization.Revision = content.Revision;
+            realization.Initialized = true;
+        }
+        else if (realization.Revision != content.Revision)
+        {
+            TextureShape nextShape = TextureShape.From(content, _device);
+            {
+                TextureRealization replacement = CreateTexture(nextShape, content.Name);
+                try
+                {
+                    UploadCurrentResident(ref frame, consumer, content, replacement, replaceContents: true);
+                    replacement.Revision = content.Revision;
+                    replacement.Initialized = true;
+                }
+                catch (Exception error)
+                {
+                    AbortPendingUpload(replacement);
+                    replacement.Dispose();
+                    asset.FailDeviceUpdate(content, error);
+                    throw;
+                }
+                replacement.ReplacedAsset = asset;
+                replacement.ReplacedRealization = realization;
+                asset.SetDeviceData(_device, replacement);
+                replacement.TextureObject = asset;
+                realization = replacement;
+            }
+        }
+        else
+        {
+            UploadCurrentResident(ref frame, consumer, content, realization, replaceContents: false);
+        }
+
+        EnsureImported(ref frame, realization);
+        EnsureFinalizationPass(ref frame, realization);
+        foreach (GraphPassId upload in realization.UploadPasses)
+        {
+            frame.OrderAfter(consumer, upload);
+            frame.OrderAfter(realization.FinalizationPass, upload);
+        }
+        frame.OrderAfter(realization.FinalizationPass, consumer);
+        return realization.Resource;
+    }
+
+    public RhiTexture PrepareMissingTexture(
+        ref RenderGraphFrame frame,
+        GraphPassId consumer)
+    {
+        ThrowIfDisposed();
+        TextureRealization realization = RequireMissingTexture();
+        EnsureNoOtherUploadFrame(ref frame, realization);
+        EnsureImported(ref frame, realization);
+        if (!realization.Initialized)
+        {
+            TextureMipTile tile = MissingTile();
+            PreparedTile prepared = PrepareTile(
+                realization.Resource,
+                realization.Shape,
+                tile,
+                new byte[] { 255, 0, 255, 255 });
+            PreparedTile[] upload = [prepared];
+            BeginUpload(ref frame, asset: null, realization, replaceContents: true);
+            try
+            {
+                ScheduleUpload(ref frame, realization, upload);
+            }
+            catch
+            {
+                AbortPendingUpload(realization);
+                throw;
+            }
+            realization.Initialized = true;
+            realization.FirstResidentMip = 0;
+        }
+        EnsureFinalizationPass(ref frame, realization);
+        foreach (GraphPassId upload in realization.UploadPasses)
+        {
+            frame.OrderAfter(consumer, upload);
+            frame.OrderAfter(realization.FinalizationPass, upload);
+        }
+        frame.OrderAfter(realization.FinalizationPass, consumer);
+        return realization.Resource;
+    }
+
+    private void CreateMissingTexture()
+    {
+        var shape = new TextureShape(
+            TextureDimension.Texture2D,
+            1,
+            1,
+            1,
+            1,
+            1,
+            Format.R8G8B8A8UNorm,
+            Format.R8G8B8A8UNorm,
+            TextureViewDimension.Texture2D,
+            TextureAspects.Color,
+            TextureUsages.Sampled | TextureUsages.CopyDestination);
+        _missingTexture = CreateTexture(shape, "RenderDevice missing texture");
+    }
+
+    private TextureRealization RequireMissingTexture()
+        => _missingTexture ?? throw new ObjectDisposedException(nameof(RenderDevice));
+
+    private TextureRealization GetOrCreateTexture(EngineTexture asset)
+    {
+        if (asset.TryGetDeviceData(_device, out TextureRealization? realization))
+            return realization;
+        realization = CreateTexture(TextureShape.From(asset, _device), asset.Name);
+        asset.SetDeviceData(_device, realization);
+                _textures.Add(asset);
+                realization.TextureObject = asset;
+        return realization;
+    }
+
+    private TextureRealization CreateTexture(in TextureShape shape, string? label)
+    {
+        Format[] permittedFormats = shape.Format == shape.SampledFormat
+            ? []
+            : [shape.SampledFormat];
+        var description = new TextureDesc(
+            shape.Dimension,
+            shape.Width,
+            shape.Height,
+            shape.Depth,
+            shape.MipLevelCount,
+            shape.ResourceArrayLayerCount,
+            1,
+            shape.Format,
+            shape.Usages,
+            permittedFormats,
+            label ?? "RenderDevice Texture realization");
+        return new TextureRealization(this, shape, _backend.CreateTexture(_device, description));
+    }
+
+    private TextureSrv GetTextureSrv(
+        TextureRealization realization,
+        in TextureSubresourceRange range,
+        Format format,
+        TextureViewDimension dimension,
+        string? label)
+    {
+        var key = new TextureViewKey(TextureViewKind.Srv, range, format, dimension);
+        if (realization.Views.TryGetValue(key, out DeviceResource? cached))
+            return (TextureSrv)cached;
+        TextureSrv view = _backend.CreateTextureSrv(
+            _device,
+            new TextureSrvDesc(realization.Resource, range, format, dimension, label));
+        realization.Views.Add(key, view);
+        return view;
+    }
+
+    private void UploadCurrentResident(
+        ref RenderGraphFrame frame,
+        GraphPassId consumer,
+        EngineTexture asset,
+        TextureRealization realization,
+        bool replaceContents)
+    {
+        EnsureNoOtherUploadFrame(ref frame, realization);
+        EnsureImported(ref frame, realization);
+        PreparedTile[] tiles = PrepareResidentTiles(asset, realization, replaceContents);
+        if (replaceContents && tiles.Length == 0)
+            throw new InvalidOperationException("A replacement Texture has no resident Bootstrap payload.");
+        if (tiles.Length != 0)
+        {
+            BeginUpload(ref frame, asset, realization, replaceContents);
+            try
+            {
+                ScheduleUpload(ref frame, realization, tiles);
+            }
+            catch
+            {
+                AbortPendingUpload(realization);
+                throw;
+            }
+        }
+        UpdateResidentMip(asset, realization);
+        if (realization.FirstResidentMip > asset.BootstrapMipLevel)
+            throw new InvalidOperationException("The resident Texture payload does not contain its Bootstrap mip.");
+        foreach (GraphPassId upload in realization.UploadPasses)
+            frame.OrderAfter(consumer, upload);
+    }
+
+    private PreparedTile[] PrepareResidentTiles(
+        EngineTexture asset,
+        TextureRealization realization,
+        bool includeUploaded)
+    {
+        var result = new List<PreparedTile>();
+        foreach (TextureMipTile tile in asset.MipTiles ?? [])
+        {
+            if (!includeUploaded && realization.ContainsUploadedChunk(tile.ChunkKey))
+                continue;
+            if (!asset.IsStreamed && tile.Payload is { } bytes)
+            {
+                result.Add(PrepareTile(realization.Resource, realization.Shape, tile, bytes.Span));
+                continue;
+            }
+            if (!asset.TryAcquireResidentMipTile(
+                    tile.MipLevel,
+                    tile.ArrayLayer,
+                    tile.Face,
+                    tile.DepthSlice,
+                    tile.TileX,
+                    tile.TileY,
+                    out ResidentChunkLease lease))
+            {
+                continue;
+            }
+            using (lease)
+                result.Add(PrepareTile(
+                    realization.Resource,
+                    realization.Shape,
+                    tile,
+                    lease.Memory.Span));
+        }
+        return [.. result];
+    }
+
+    private PreparedTile PrepareTile(
+        RhiTexture destination,
+        in TextureShape shape,
+        TextureMipTile tile,
+        ReadOnlySpan<byte> source)
+    {
+        uint arrayLayer = shape.ResolveArrayLayer(tile.ArrayLayer, tile.Face);
+        uint z = shape.Dimension == TextureDimension.Texture3D ? tile.DepthSlice : 0;
+        TextureAspects copyAspect = SelectCopyAspect(shape.Aspects);
+        var copy = new BufferTextureCopy(
+            null!, 0, 0, 0, destination,
+            tile.MipLevel, arrayLayer, copyAspect,
+            tile.TileX, tile.TileY, z,
+            tile.Width, tile.Height, 1);
+        Format[] permittedFormats = shape.Format == shape.SampledFormat
+            ? []
+            : [shape.SampledFormat];
+        var description = new TextureDesc(
+            shape.Dimension,
+            shape.Width,
+            shape.Height,
+            shape.Depth,
+            shape.MipLevelCount,
+            shape.ResourceArrayLayerCount,
+            1,
+            shape.Format,
+            shape.Usages,
+            permittedFormats);
+        TextureCopyFootprint footprint = _backend.GetTextureCopyFootprint(
+            _device,
+            description,
+            copy,
+            0);
+        return new PreparedTile(
+            Repack(source, tile, footprint),
+            footprint,
+            tile.ChunkKey,
+            tile.MipLevel,
+            arrayLayer,
+            copyAspect,
+            tile.TileX,
+            tile.TileY,
+            z,
+            tile.Width,
+            tile.Height);
+    }
+
+    private static byte[] Repack(
+        ReadOnlySpan<byte> source,
+        TextureMipTile tile,
+        in TextureCopyFootprint footprint)
+    {
+        ulong sourceRowPitch = tile.RowPitch == 0 ? footprint.RowSize : tile.RowPitch;
+        if (sourceRowPitch < footprint.RowSize)
+            throw new InvalidDataException("A Texture tile row pitch is smaller than its RHI copy row size.");
+        ulong requiredSource = checked(
+            footprint.RowCount == 0
+                ? 0
+                : ((ulong)(footprint.RowCount - 1) * sourceRowPitch) + footprint.RowSize);
+        if (requiredSource > checked((ulong)source.Length))
+            throw new InvalidDataException("A Texture tile payload is shorter than its storage layout.");
+
+        ulong graphValidatedSize = checked(
+            footprint.Offset +
+            ((ulong)Math.Max(footprint.RowPitch, 1u) * Math.Max(tile.Height, 1u)));
+        byte[] result = new byte[checked((int)Math.Max(footprint.TotalSize, graphValidatedSize))];
+        for (uint row = 0; row < footprint.RowCount; row++)
+        {
+            int sourceOffset = checked((int)((ulong)row * sourceRowPitch));
+            int destinationOffset = checked((int)(
+                footprint.Offset + ((ulong)row * footprint.RowPitch)));
+            source.Slice(sourceOffset, checked((int)footprint.RowSize)).CopyTo(
+                result.AsSpan(destinationOffset, checked((int)footprint.RowSize)));
+        }
+        return result;
+    }
+
+    private static TextureAspects SelectCopyAspect(TextureAspects aspects)
+    {
+        if ((aspects & TextureAspects.Color) != 0)
+            return TextureAspects.Color;
+        if ((aspects & TextureAspects.Depth) != 0)
+            return TextureAspects.Depth;
+        if ((aspects & TextureAspects.Stencil) != 0)
+            return TextureAspects.Stencil;
+        throw new InvalidDataException("A Texture has no copyable aspect.");
+    }
+
+    private void EnsureImported(ref RenderGraphFrame frame, TextureRealization realization)
+    {
+        if (ReferenceEquals(realization.FrameGraph, frame.Owner) &&
+            realization.FrameIdentity == frame.FrameIdentity)
+            return;
+        realization.AddFrame();
+        frame.RetireAfterFrame(new TextureFrameCompletion(realization));
+        realization.FrameGraph = frame.Owner;
+        realization.FrameIdentity = frame.FrameIdentity;
+        realization.UploadPasses.Clear();
+        realization.FinalizationScheduled = false;
+        TextureBoundaryState[] boundaries = CreateBoundaryStates(realization);
+        realization.GraphResource = frame.Import(realization.Resource, boundaries);
+    }
+
+    private static void EnsureFinalizationPass(
+        ref RenderGraphFrame frame,
+        TextureRealization realization)
+    {
+        if (realization.FinalizationScheduled) return;
+        if (!realization.Initialized ||
+            realization.FirstResidentMip >= realization.Shape.MipLevelCount)
+        {
+            throw new InvalidOperationException(
+                "A RenderDevice Texture cannot be finalized before resident contents exist.");
+        }
+
+        var finalization = new TextureFinalizationPass(
+            realization.GraphResource,
+            realization.Shape.ResidentRange(realization.FirstResidentMip));
+        realization.FinalizationPass = frame.AddGeneralPass(
+            $"Finalize RenderDevice Texture '{realization.Resource.Label}'",
+            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            finalization,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition access, ref TextureFinalizationPass data) =>
+                _ = access.Read(
+                    data.Texture,
+                    data.Range,
+                    PipelineSync.AllShading,
+                    ResourceAccess.ShaderResource,
+                    TextureLayout.ShaderResource),
+            static (ref GeneralPassCommandScope commands, in TextureFinalizationPass data) =>
+            {
+                _ = commands;
+                _ = data;
+            });
+        realization.FinalizationScheduled = true;
+    }
+
+    private TextureBoundaryState[] CreateBoundaryStates(TextureRealization realization)
+    {
+        if (!realization.Initialized)
+        {
+            return
+            [
+                new TextureBoundaryState(
+                    realization.Shape.FullRange,
+                    realization.Resource.InitialSync,
+                    realization.Resource.InitialAccess,
+                    realization.Resource.InitialLayout,
+                    ResourceContentState.Undefined),
+            ];
+        }
+
+        Queue graphicsQueue = _backend.GetQueue(_device, QueueType.Graphics);
+        QueueCompletion? readyAfter = null;
+        foreach (QueueCompletion completion in CaptureSubmittedCompletions())
+        {
+            if (ReferenceEquals(completion.Queue, graphicsQueue))
+            {
+                readyAfter = completion;
+                break;
+            }
+        }
+        return
+        [
+            new TextureBoundaryState(
+                realization.Shape.ResidentRange(realization.FirstResidentMip),
+                PipelineSync.AllShading,
+                ResourceAccess.ShaderResource,
+                TextureLayout.ShaderResource,
+                ResourceContentState.Defined,
+                graphicsQueue,
+                readyAfter),
+        ];
+    }
+
+    private static void ScheduleUpload(
+        ref RenderGraphFrame frame,
+        TextureRealization realization,
+        ReadOnlySpan<PreparedTile> tiles)
+    {
+        foreach (ref readonly PreparedTile tile in tiles)
+        {
+            GraphBufferSlice upload = frame.Upload(
+                tile.Bytes,
+                BufferUsages.CopySource,
+                "Texture mip tile upload");
+            var state = new TextureUploadPass(
+                upload,
+                realization.GraphResource,
+                checked(upload.Range.Offset + tile.Footprint.Offset),
+                tile.Footprint.RowPitch,
+                tile.Height,
+                tile.MipLevel,
+                tile.ArrayLayer,
+                tile.Aspect,
+                tile.X,
+                tile.Y,
+                tile.Z,
+                tile.Width,
+                tile.Height);
+            GraphPassId copy = frame.AddCopyPass(
+                "Upload RenderDevice Texture mip tile",
+                PassQueueSelection.AnyOfType(QueueType.Graphics),
+                state,
+                new PassOptions(Culling: PassCullingMode.NeverCull),
+                static (ref PassDefinition definition, ref TextureUploadPass value) =>
+                {
+                    _ = definition.Read(
+                        value.Upload.Buffer,
+                        value.Upload.Range,
+                        PipelineSync.Copy,
+                        ResourceAccess.CopySource);
+                    _ = definition.Write(
+                        value.Destination,
+                        new TextureSubresourceRange(
+                            value.MipLevel,
+                            1,
+                            value.ArrayLayer,
+                            1,
+                            value.Aspect),
+                        PipelineSync.Copy,
+                        ResourceAccess.CopyDestination,
+                        TextureLayout.CopyDestination,
+                        WriteCoverage.Partial,
+                        ResourceContentState.Defined);
+                },
+                static (ref CopyPassCommandScope commands, in TextureUploadPass value) =>
+                {
+                    commands.CopyBufferToTexture(new BufferTextureCopy(
+                        commands.GetBuffer(value.Upload.Buffer),
+                        value.BufferOffset,
+                        value.BufferRowPitch,
+                        value.BufferImageHeight,
+                        commands.GetTexture(value.Destination),
+                        value.MipLevel,
+                        value.ArrayLayer,
+                        value.Aspect,
+                        value.X,
+                        value.Y,
+                        value.Z,
+                        value.Width,
+                        value.Height,
+                        1));
+                });
+            realization.UploadPasses.Add(copy);
+            realization.PendingUploadedChunks.Add(tile.ChunkKey);
+        }
+    }
+
+    private static void UpdateResidentMip(EngineTexture asset, TextureRealization realization)
+    {
+        uint first = asset.MipLevelCount;
+        for (uint mip = asset.MipLevelCount; mip > 0; mip--)
+        {
+            uint candidate = mip - 1;
+            bool hasTiles = false;
+            bool complete = true;
+            foreach (TextureMipTile tile in asset.MipTiles ?? [])
+            {
+                if (tile.MipLevel != candidate)
+                    continue;
+
+                hasTiles = true;
+                if (!realization.ContainsUploadedChunk(tile.ChunkKey))
+                {
+                    complete = false;
+                    break;
+                }
+            }
+            if (!hasTiles || !complete)
+                break;
+            first = candidate;
+        }
+        realization.FirstResidentMip = first;
+    }
+
+    private static void ValidateResidentRange(
+        TextureRealization realization,
+        in TextureSubresourceRange range)
+    {
+        if (!realization.Initialized)
+            throw new InvalidOperationException("The Texture realization has not uploaded Bootstrap data.");
+        if (range.FirstMipLevel < realization.FirstResidentMip ||
+            range.MipLevelCount == 0 ||
+            range.FirstMipLevel >= realization.Shape.MipLevelCount ||
+            range.MipLevelCount > realization.Shape.MipLevelCount - range.FirstMipLevel)
+        {
+            throw new ArgumentOutOfRangeException(nameof(range));
+        }
+    }
+
+    private static TextureMipTile MissingTile() => new()
+    {
+        MipLevel = 0,
+        ArrayLayer = 0,
+        Face = 0,
+        DepthSlice = 0,
+        TileX = 0,
+        TileY = 0,
+        Width = 1,
+        Height = 1,
+        RowPitch = 4,
+        SlicePitch = 4,
+        ChunkKey = 1,
+        DecodedLength = 4,
+    };
+
+    /// <summary>Releases only this texture's allocation on this device after submitted work completes.</summary>
+    public void ReleaseTexture(EngineTexture texture)
+    {
+        if (texture.RemoveDeviceData(_device) is TextureRealization data)
+        {
+            ConfirmTextureUpdate(data);
+            ReleaseTexture(data);
+        }
+    }
+
+    private void ReleaseTexture(TextureRealization data)
+    {
+        ConfirmTextureUpdate(data);
+        if (data.TextureObject is { } texture)
+            _textures.Remove(texture);
+        if (data.PendingFrameGraph is not null)
+        {
+            data.ReleaseAfterUpload = true;
+            return;
+        }
+        data.RequestRelease();
+    }
+
+    private void DisposeTextures()
+    {
+        foreach (EngineTexture texture in _textures.ToArray())
+            if (texture.RemoveDeviceData(_device) is TextureRealization data)
+            {
+                ConfirmTextureUpdate(data);
+                data.Dispose();
+            }
+        _textures.Clear();
+        _missingTexture?.Dispose();
+        _missingTexture = null;
+    }
+
+    private static void BeginUpload(
+        ref RenderGraphFrame frame,
+        EngineTexture? asset,
+        TextureRealization realization,
+        bool replaceContents)
+    {
+        if (ReferenceEquals(realization.PendingFrameGraph, frame.Owner) &&
+            realization.PendingFrameIdentity == frame.FrameIdentity)
+        {
+            if (replaceContents != realization.ReplacesContents ||
+                !ReferenceEquals(asset, realization.PendingAsset))
+            {
+                throw new InvalidOperationException(
+                    "A Texture realization cannot mix upload transactions in one frame.");
+            }
+            return;
+        }
+        if (realization.PendingFrameGraph is not null)
+        {
+            throw new InvalidOperationException(
+                "A Texture realization already belongs to another active frame.");
+        }
+
+        realization.PendingFrameGraph = frame.Owner;
+        realization.PendingFrameIdentity = frame.FrameIdentity;
+        realization.PendingAsset = asset;
+        realization.ReplacesContents = replaceContents;
+        realization.RollbackInitialized = realization.Initialized;
+        realization.RollbackFirstResidentMip = realization.FirstResidentMip;
+        realization.RollbackRevision = realization.Revision;
+        realization.PendingUploadedChunks.Clear();
+        if (replaceContents)
+        {
+            realization.RollbackUploadedChunks = [.. realization.UploadedChunks];
+            realization.UploadedChunks.Clear();
+        }
+        frame.ObserveExecution(realization);
+    }
+
+    private static void EnsureNoOtherUploadFrame(
+        ref RenderGraphFrame frame,
+        TextureRealization realization)
+    {
+        if (realization.PendingFrameGraph is null ||
+            (ReferenceEquals(realization.PendingFrameGraph, frame.Owner) &&
+             realization.PendingFrameIdentity == frame.FrameIdentity))
+        {
+            return;
+        }
+        throw new InvalidOperationException(
+            "A Texture upload is still being authored by another RenderGraph frame.");
+    }
+
+    private static void AbortPendingUpload(TextureRealization realization)
+    {
+        if (realization.PendingFrameGraph is not null)
+            realization.FinishUpload(executed: false);
+    }
+
+    private void FinishUpload(TextureRealization realization, bool executed)
+    {
+        if (realization.PendingFrameGraph is null)
+            return;
+
+        EngineTexture? asset = realization.PendingAsset;
+        TextureRealization? replaced = realization.ReplacedRealization;
+        EngineTexture? replacedAsset = realization.ReplacedAsset;
+        if (executed)
+        {
+            realization.UploadedChunks.UnionWith(realization.PendingUploadedChunks);
+            if (asset is not null)
+                UpdateResidentMip(asset, realization);
+        }
+        else
+        {
+            realization.Initialized = realization.RollbackInitialized;
+            realization.FirstResidentMip = realization.RollbackFirstResidentMip;
+            realization.Revision = realization.RollbackRevision;
+            if (realization.RollbackUploadedChunks is { } uploaded)
+            {
+                realization.UploadedChunks.Clear();
+                realization.UploadedChunks.UnionWith(uploaded);
+            }
+        }
+
+        realization.ClearUploadTransaction();
+        if (realization.ReleaseAfterUpload)
+        {
+            if (replaced is not null) replaced.RequestRelease();
+            realization.RequestRelease();
+            return;
+        }
+        if (replaced is null || replacedAsset is null)
+            return;
+
+        if (executed && asset is not null && !ReferenceEquals(asset, replacedAsset))
+        {
+            replacedAsset.CompleteDeviceUpdate(_device, asset);
+            return;
+        }
+        if (executed)
+        {
+            ConfirmTextureUpdate(realization);
+            return;
+        }
+        CancelTextureUpdate(realization);
+        if (asset is not null)
+            replacedAsset.FailDeviceUpdate(asset, new OperationCanceledException("Texture upload frame did not complete."));
+    }
+
+    private void ConfirmTextureUpdate(TextureRealization data)
+    {
+        TextureRealization? previous = data.ReplacedRealization;
+        data.ReplacedRealization = null;
+        data.ReplacedAsset = null;
+        if (previous is not null) previous.RequestRelease();
+    }
+
+    private void CancelTextureUpdate(TextureRealization data)
+    {
+        EngineTexture? texture = data.ReplacedAsset;
+        TextureRealization? previous = data.ReplacedRealization;
+        if (texture is null || previous is null) return;
+        if (!texture.IsDisposed) texture.SetDeviceData(_device, previous);
+        else previous.RequestRelease();
+        data.ReplacedRealization = null;
+        data.ReplacedAsset = null;
+        if (data.PendingFrameGraph is not null) data.ReleaseAfterUpload = true;
+        else data.RequestRelease();
+    }
+
+    private sealed class TextureFrameCompletion(TextureRealization texture) : IDisposable
+    {
+        private TextureRealization? _texture = texture;
+        public void Dispose() => Interlocked.Exchange(ref _texture, null)?.CompleteFrame();
+    }
+
+    private enum TextureViewKind : byte
+    {
+        Srv,
+        Uav,
+    }
+
+    private readonly record struct TextureViewKey(
+        TextureViewKind Kind,
+        TextureSubresourceRange Range,
+        Format Format,
+        TextureViewDimension Dimension);
+
+    private sealed class TextureRealization : IDisposable, IRenderGraphFrameExecutionObserver, ITextureDeviceData
+    {
+        private readonly RenderDevice _owner;
+
+        internal TextureRealization(RenderDevice owner, TextureShape shape, RhiTexture resource)
+        {
+            _owner = owner;
+            Shape = shape;
+            Resource = resource;
+            FirstResidentMip = shape.MipLevelCount;
+        }
+
+        internal EngineTexture? TextureObject { get; set; }
+        SomeEngine.Graphics.Texture ITextureDeviceData.Texture => Resource;
+        uint ITextureDeviceData.FirstAvailableMip => FirstResidentMip;
+        void ITextureDeviceData.Release() => _owner.ReleaseTexture(this);
+        void ITextureDeviceData.ConfirmUpdate() => _owner.ConfirmTextureUpdate(this);
+        void ITextureDeviceData.CancelUpdate() => _owner.CancelTextureUpdate(this);
+        private readonly object _framesGate = new();
+        private int _activeFrames;
+        private bool _releaseRequested;
+        private bool _retirementQueued;
+        internal void AddFrame() { lock (_framesGate) _activeFrames++; }
+        internal void CompleteFrame()
+        {
+            lock (_framesGate)
+            {
+                _activeFrames--;
+                QueueRelease();
+            }
+        }
+        internal void RequestRelease()
+        {
+            lock (_framesGate)
+            {
+                _releaseRequested = true;
+                QueueRelease();
+            }
+        }
+        private void QueueRelease()
+        {
+            if (!_releaseRequested || _activeFrames != 0 || _retirementQueued) return;
+            _retirementQueued = true;
+            _owner.Retire(this);
+        }
+        private bool _released;
+
+        internal TextureShape Shape { get; }
+        internal RhiTexture Resource { get; }
+        internal Dictionary<TextureViewKey, DeviceResource> Views { get; } = [];
+        internal ulong Revision { get; set; }
+        internal bool Initialized { get; set; }
+        internal bool ReleaseAfterUpload { get; set; }
+        internal uint FirstResidentMip { get; set; }
+        internal ulong FrameIdentity { get; set; }
+        internal SomeEngine.RenderGraph.RenderGraph? FrameGraph { get; set; }
+        internal GraphTextureId GraphResource { get; set; }
+        internal GraphPassId FinalizationPass { get; set; }
+        internal bool FinalizationScheduled { get; set; }
+        internal List<GraphPassId> UploadPasses { get; } = [];
+        internal HashSet<ulong> UploadedChunks { get; } = [];
+        internal HashSet<ulong> PendingUploadedChunks { get; } = [];
+        internal SomeEngine.RenderGraph.RenderGraph? PendingFrameGraph { get; set; }
+        internal ulong PendingFrameIdentity { get; set; }
+        internal EngineTexture? PendingAsset { get; set; }
+        internal bool ReplacesContents { get; set; }
+        internal bool RollbackInitialized { get; set; }
+        internal uint RollbackFirstResidentMip { get; set; }
+        internal ulong RollbackRevision { get; set; }
+        internal HashSet<ulong>? RollbackUploadedChunks { get; set; }
+        internal EngineTexture? ReplacedAsset { get; set; }
+        internal TextureRealization? ReplacedRealization { get; set; }
+
+        internal bool ContainsUploadedChunk(ulong chunk) =>
+            UploadedChunks.Contains(chunk) || PendingUploadedChunks.Contains(chunk);
+
+        internal void FinishUpload(bool executed) => _owner.FinishUpload(this, executed);
+
+        internal void ClearUploadTransaction()
+        {
+            PendingFrameGraph = null;
+            PendingFrameIdentity = 0;
+            PendingAsset = null;
+            ReplacesContents = false;
+            PendingUploadedChunks.Clear();
+            RollbackUploadedChunks = null;
+        }
+
+        void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(bool executed) =>
+            FinishUpload(executed);
+
+        public void Dispose()
+        {
+            if (_released) return;
+            _released = true;
+            foreach (DeviceResource view in Views.Values)
+                view.Dispose();
+            Views.Clear();
+            Resource.Dispose();
+        }
+    }
+
+    private readonly record struct PreparedTile(
+        byte[] Bytes,
+        TextureCopyFootprint Footprint,
+        ulong ChunkKey,
+        uint MipLevel,
+        uint ArrayLayer,
+        TextureAspects Aspect,
+        uint X,
+        uint Y,
+        uint Z,
+        uint Width,
+        uint Height);
+
+    private readonly record struct TextureUploadPass(
+        GraphBufferSlice Upload,
+        GraphTextureId Destination,
+        ulong BufferOffset,
+        uint BufferRowPitch,
+        uint BufferImageHeight,
+        uint MipLevel,
+        uint ArrayLayer,
+        TextureAspects Aspect,
+        uint X,
+        uint Y,
+        uint Z,
+        uint Width,
+        uint Height);
+
+    private readonly record struct TextureShape(
+        TextureDimension Dimension,
+        uint Width,
+        uint Height,
+        uint Depth,
+        uint MipLevelCount,
+        uint ResourceArrayLayerCount,
+        Format Format,
+        Format SampledFormat,
+        TextureViewDimension SampledDimension,
+        TextureAspects Aspects,
+        TextureUsages Usages)
+    {
+        internal TextureSubresourceRange FullRange =>
+            new(0, MipLevelCount, 0, ResourceArrayLayerCount, Aspects);
+
+        internal TextureSubresourceRange ResidentRange(uint firstMip) =>
+            new(firstMip, MipLevelCount - firstMip, 0, ResourceArrayLayerCount, Aspects);
+
+        internal uint ResolveArrayLayer(uint arrayLayer, uint face) =>
+            SampledDimension is TextureViewDimension.Cube or TextureViewDimension.CubeArray
+                ? checked((arrayLayer * 6) + face)
+                : arrayLayer;
+
+        internal static TextureShape From(EngineTexture asset, Device device)
+        {
+            bool cube = asset.SampledDimension is
+                TextureViewDimension.Cube or TextureViewDimension.CubeArray;
+            uint layers = cube
+                ? checked(asset.ArrayLayerCount * 6)
+                : asset.ArrayLayerCount;
+            TextureAspects aspects = asset.Format switch
+            {
+                Format.D16UNorm or Format.D32Float => TextureAspects.Depth,
+                Format.D24UNormS8UInt or Format.D32FloatS8UInt =>
+                    TextureAspects.Depth | TextureAspects.Stencil,
+                _ => TextureAspects.Color,
+            };
+            FormatFeatures features = device.Capabilities
+                .GetFormatSupport(asset.Format)
+                .Features;
+            TextureUsages usages = TextureUsages.Sampled | TextureUsages.CopyDestination;
+            if (features.HasFlag(FormatFeatures.Storage))
+                usages |= TextureUsages.Storage;
+            return new TextureShape(
+                asset.Dimension,
+                asset.Width,
+                asset.Height,
+                asset.Depth,
+                asset.MipLevelCount,
+                layers,
+                asset.Format,
+                asset.SampledFormat,
+                asset.SampledDimension,
+                aspects,
+                usages);
+        }
+    }
+
+    private readonly record struct TextureFinalizationPass(
+        GraphTextureId Texture,
+        TextureSubresourceRange Range);
+}

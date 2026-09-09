@@ -48,6 +48,7 @@ public sealed class D3D12MappingTests
         (PortableFormat.R32UInt, NativeFormat.FormatR32Uint),
         (PortableFormat.R32SInt, NativeFormat.FormatR32Sint),
         (PortableFormat.R32Float, NativeFormat.FormatR32Float),
+        (PortableFormat.R64UInt, NativeFormat.FormatR32G32Uint),
         (PortableFormat.R32G32UInt, NativeFormat.FormatR32G32Uint),
         (PortableFormat.R32G32SInt, NativeFormat.FormatR32G32Sint),
         (PortableFormat.R32G32Float, NativeFormat.FormatR32G32Float),

@@ -7,9 +7,10 @@ namespace SomeEngine.Assets.Importers;
 
 internal static partial class SlangMaterialMeta
 {
-    public const byte Texture = 0;
+    public const byte TextureData = 0;
     public const byte Sampler = 1;
     public const byte Buffer = 2;
+    public const byte AccelerationStructure = 3;
     public const byte Unknown = 255;
 
     public static void BindEntry(
@@ -52,7 +53,7 @@ internal static partial class SlangMaterialMeta
             if (existing.ResourceType != resourceType)
             {
                 throw new InvalidOperationException(
-                    $"Shader material binding '{name}' was reflected with conflicting resource types {existing.ResourceType} and {resourceType}.");
+                    $"ShaderData material binding '{name}' was reflected with conflicting resource types {existing.ResourceType} and {resourceType}.");
             }
 
             return;
@@ -69,7 +70,7 @@ internal static partial class SlangMaterialMeta
     public static List<string> ScalarTypes(
         DeclReflection root,
         string source,
-        IReadOnlyList<DependencyEntryData> dependencies,
+        IReadOnlyList<FileDependency> dependencies,
         string projectRoot)
     {
         var result = new List<string>();
@@ -107,7 +108,7 @@ internal static partial class SlangMaterialMeta
 
         Visit(root);
         ReadTypes(source, AddType);
-        foreach (DependencyEntryData dependency in dependencies)
+        foreach (FileDependency dependency in dependencies)
         {
             string path = DependencyPath(projectRoot, dependency.RelativePath);
             if (File.Exists(path))
@@ -163,12 +164,12 @@ internal static partial class SlangMaterialMeta
 
     public static void SortInstanceProperties(Schema.ShaderMetadata metadata)
     {
-        if (metadata.MaterialInstanceProperties is not { Count: > 1 } properties)
+        if (metadata.InstanceProperties is not { Count: > 1 } properties)
         {
             return;
         }
 
-        metadata.MaterialInstanceProperties = properties
+        metadata.InstanceProperties = properties
             .OrderBy(static property => property.MaterialScalarLayoutName, StringComparer.Ordinal)
             .ThenBy(static property => property.CanonicalId, StringComparer.Ordinal)
             .ToList();
@@ -188,6 +189,9 @@ internal static partial class SlangMaterialMeta
         {
             SlangTypeKind.SamplerState => Sampler,
             SlangTypeKind.ConstantBuffer => Buffer,
+            SlangTypeKind.Resource when
+                shape == SlangResourceShape.AccelerationStructure =>
+                AccelerationStructure,
             SlangTypeKind.Resource
             or SlangTypeKind.TextureBuffer
             or SlangTypeKind.ShaderStorageBuffer =>
@@ -195,7 +199,7 @@ internal static partial class SlangMaterialMeta
                     or SlangResourceShape.ByteAddressBuffer
                     or SlangResourceShape.TextureBuffer
                     ? Buffer
-                    : Texture,
+                    : TextureData,
             _ => Unknown,
         };
     }
@@ -330,7 +334,7 @@ internal static partial class SlangMaterialMeta
         if (attribute.ArgumentCount != 2)
         {
             throw new InvalidOperationException(
-                $"Material scalar field '{fieldLayout.Name}' must declare InstanceProperty with exactly canonical-id and accessor arguments.");
+                $"MaterialData scalar field '{fieldLayout.Name}' must declare InstanceProperty with exactly canonical-id and accessor arguments.");
         }
 
         string canonicalId = attribute.GetArgumentValueString(0);
@@ -341,17 +345,17 @@ internal static partial class SlangMaterialMeta
         if (scalarType == 0 || fieldSize == 0)
         {
             throw new NotSupportedException(
-                $"Material instance property '{canonicalId}' must be a fixed-size scalar, vector, or matrix value.");
+                $"MaterialData instance property '{canonicalId}' must be a fixed-size scalar, vector, or matrix value.");
         }
 
         int reflectedAlignment = fieldTypeLayout.GetAlignment(SlangParameterCategory.Uniform);
         if (reflectedAlignment <= 0)
         {
             throw new InvalidOperationException(
-                $"Material instance property '{canonicalId}' has invalid reflected alignment {reflectedAlignment}.");
+                $"MaterialData instance property '{canonicalId}' has invalid reflected alignment {reflectedAlignment}.");
         }
 
-        var property = new Schema.ShaderMaterialInstanceProperty
+        var property = new Schema.ShaderInstanceProperty
         {
             CanonicalId = canonicalId,
             MaterialScalarLayoutName = materialScalarLayoutName,
@@ -365,8 +369,8 @@ internal static partial class SlangMaterialMeta
             DefaultValue = new byte[checked((int)fieldSize)],
         };
 
-        metadata.MaterialInstanceProperties ??= [];
-        foreach (Schema.ShaderMaterialInstanceProperty existing in metadata.MaterialInstanceProperties)
+        metadata.InstanceProperties ??= [];
+        foreach (Schema.ShaderInstanceProperty existing in metadata.InstanceProperties)
         {
             bool sameLayout = string.Equals(
                 existing.MaterialScalarLayoutName,
@@ -380,7 +384,7 @@ internal static partial class SlangMaterialMeta
                     if (!SameInstanceProperty(existing, property))
                     {
                         throw new InvalidOperationException(
-                            $"Material instance property '{canonicalId}' was reflected with conflicting " +
+                            $"MaterialData instance property '{canonicalId}' was reflected with conflicting " +
                             $"contracts in scalar layout '{materialScalarLayoutName}'.");
                     }
 
@@ -390,7 +394,7 @@ internal static partial class SlangMaterialMeta
                 if (!SameInstanceEncoding(existing, property))
                 {
                     throw new InvalidOperationException(
-                        $"Material instance property '{canonicalId}' changes its byte encoding " +
+                        $"MaterialData instance property '{canonicalId}' changes its byte encoding " +
                         "across material scalar layouts.");
                 }
 
@@ -398,7 +402,7 @@ internal static partial class SlangMaterialMeta
             }
         }
 
-        metadata.MaterialInstanceProperties.Add(property);
+        metadata.InstanceProperties.Add(property);
     }
 
     private static AttributeReflection FindAttribute(VariableReflection variable, string name)
@@ -429,13 +433,13 @@ internal static partial class SlangMaterialMeta
         if (!IsCanonicalId(canonicalId))
         {
             throw new InvalidOperationException(
-                $"Material scalar field '{fieldName}' declares an invalid InstanceProperty canonical id.");
+                $"MaterialData scalar field '{fieldName}' declares an invalid InstanceProperty canonical id.");
         }
 
         if (!IsIdentifier(accessor))
         {
             throw new InvalidOperationException(
-                $"Material instance property '{canonicalId}' declares invalid accessor '{accessor}'.");
+                $"MaterialData instance property '{canonicalId}' declares invalid accessor '{accessor}'.");
         }
     }
 
@@ -502,8 +506,8 @@ internal static partial class SlangMaterialMeta
     }
 
     private static bool SameInstanceProperty(
-        Schema.ShaderMaterialInstanceProperty left,
-        Schema.ShaderMaterialInstanceProperty right)
+        Schema.ShaderInstanceProperty left,
+        Schema.ShaderInstanceProperty right)
     {
         if (!string.Equals(left.CanonicalId, right.CanonicalId, StringComparison.Ordinal)
             || !string.Equals(
@@ -527,8 +531,8 @@ internal static partial class SlangMaterialMeta
     }
 
     private static bool SameInstanceEncoding(
-        Schema.ShaderMaterialInstanceProperty left,
-        Schema.ShaderMaterialInstanceProperty right)
+        Schema.ShaderInstanceProperty left,
+        Schema.ShaderInstanceProperty right)
     {
         if (!string.Equals(left.CanonicalId, right.CanonicalId, StringComparison.Ordinal)
             || left.Size != right.Size

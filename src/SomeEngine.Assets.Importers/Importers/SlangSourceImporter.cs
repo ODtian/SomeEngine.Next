@@ -15,26 +15,26 @@ public sealed class SlangSourceImporter : IAssetImporter
     public bool MatchesSourcePath(string sourcePath)
         => SourceExtensions.Any(extension => sourcePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
-    public AssetImportFingerprint? GetFingerprint(string projectRoot, string sourcePath, SourceMeta sourceMeta)
+    public ImportInputs? GetInputs(string projectRoot, string sourcePath, SourceMeta sourceMeta)
     {
         string fullPath = Path.IsPathRooted(sourcePath)
             ? Path.GetFullPath(sourcePath)
             : Path.GetFullPath(Path.Combine(projectRoot, sourcePath));
         SlangShaderCookProfile profile = ResolveProfile(sourceMeta, fullPath);
         string outputPath = Path.ChangeExtension(fullPath, ".shader.asset");
-        AssetMeta? existingAsset = AssetMetaFiles.TryLoad(outputPath);
+        SourceOutput? existingAsset = sourceMeta.FindOutput(outputPath);
         if (existingAsset == null)
         {
             return null;
         }
 
         return SlangDeps.Refresh(
-                existingAsset.Dependencies,
+                sourceMeta.Inputs.Concat(existingAsset.Dependencies).DistinctBy(static input => input.RelativePath).ToArray(),
                 projectRoot,
                 SlangShaderImporter.ImporterVersion,
                 profile.FingerprintPart)
             ?? SlangDeps.Refresh(
-                existingAsset.Dependencies,
+                sourceMeta.Inputs.Concat(existingAsset.Dependencies).DistinctBy(static input => input.RelativePath).ToArray(),
                 Path.GetDirectoryName(fullPath) ?? projectRoot,
                 SlangShaderImporter.ImporterVersion,
                 profile.FingerprintPart);
@@ -49,17 +49,17 @@ public sealed class SlangSourceImporter : IAssetImporter
         string fullPath = Path.IsPathRooted(sourcePath)
             ? Path.GetFullPath(sourcePath)
             : Path.GetFullPath(Path.Combine(projectRoot, sourcePath));
-        SourceMeta sourceMeta = SourceMetaFiles.GetOrCreate(fullPath, ImporterName);
+        SourceMeta sourceMeta = SourceMeta.GetOrCreate(fullPath, ImporterName);
         SlangShaderCookProfile profile = ResolveProfile(sourceMeta, fullPath);
         string outputPath = Path.ChangeExtension(fullPath, ".shader.asset");
-        Shader asset = SlangShaderImporter.Import(
+        ShaderData asset = SlangShaderImporter.Import(
             fullPath,
             sourceMeta,
-            AssetMetaFiles.TryLoad(outputPath),
+            sourceMeta.FindOutput(outputPath),
             profile);
         IReadOnlyList<ImportedAsset> result =
-            AssetGuid.TryParse(asset.AssetGuid, out AssetGuid guid) && !guid.IsEmpty
-                ? [ImportedAsset.Create(asset, "shader:main", outputPath)]
+            Guid.TryParse(asset.AssetGuid, out Guid guid) && (guid != System.Guid.Empty)
+                ? [ImportedAsset.Create(asset.ToAsset(), "shader:main", outputPath)]
                 : [];
         return ValueTask.FromResult(result);
     }

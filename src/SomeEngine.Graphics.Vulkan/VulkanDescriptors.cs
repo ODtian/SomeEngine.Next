@@ -359,6 +359,9 @@ internal sealed unsafe partial class VulkanBackend
                     slot.ArrayElement,
                     acceleration.Native);
                 return;
+            case VulkanBuffer direct when value.Type == ResourceBindingType.ConstantBuffer:
+                bufferInfo = new DescriptorBufferInfo(direct.Native, value.BufferRange.Offset, value.BufferRange.Size);
+                break;
             case VulkanBufferCbv cbv:
             {
                 VulkanBuffer buffer = (VulkanBuffer)cbv.Resource;
@@ -1084,6 +1087,8 @@ internal sealed unsafe partial class VulkanBackend
         value.Value!.ThrowIfDisposed();
         bool valid = value.Value switch
         {
+            VulkanBuffer direct => shape.Type == ResourceBindingType.ConstantBuffer &&
+                ReferenceEquals(direct.Device, device),
             VulkanBufferCbv cbv =>
                 shape.Type == ResourceBindingType.ConstantBuffer &&
                 ReferenceEquals(cbv.Device, device),

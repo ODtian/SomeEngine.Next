@@ -27,6 +27,7 @@ internal sealed unsafe partial class D3D12Backend
         in PipelineCacheDesc desc,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         cancellationToken.ThrowIfCancellationRequested();
         ValidatePipelineCachePolicy(desc);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
@@ -49,6 +50,7 @@ internal sealed unsafe partial class D3D12Backend
         out int requiredByteCount,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
         byte[] data = RequirePipelineCache(cache).Serialize(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -64,6 +66,7 @@ internal sealed unsafe partial class D3D12Backend
         ReadOnlySpan<PipelineCache> sources,
         CancellationToken cancellationToken = default)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
         D3D12PipelineCache nativeDestination = RequirePipelineCache(destination);
         var nativeSources = new D3D12PipelineCache[sources.Length];
@@ -1088,6 +1091,7 @@ internal sealed unsafe partial class D3D12Backend
         writer.Write(limits.ConstantBufferAlignment);
         writer.Write(limits.TextureDataPitchAlignment);
         writer.Write(limits.TextureDataPlacementAlignment);
+        writer.Write(limits.MaximumConstantBufferRange);
     }
 
     private static void WriteFormatSupport(

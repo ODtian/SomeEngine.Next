@@ -13,11 +13,12 @@ internal sealed unsafe partial class D3D12Backend
         in WorkGraphPipelineDesc desc,
         PipelineCache? cache = null)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);
         D3D12Device nativeDevice = RequireDevice(device, nameof(device));
         WorkGraphs capability = ValidateWorkGraphPipelineDescription(nativeDevice, desc);
         D3D12PipelineCache? nativeCache = GetPipelineCache(nativeDevice, cache);
-        ShaderReflection reflection = GetProgramReflection(desc.Program);
-        EntryPointReflection[] workGraphEntryPoints = CollectWorkGraphEntries(
+        ShaderProgramLayout reflection = GetProgramReflection(desc.Program);
+        ShaderEntryPoint[] workGraphEntryPoints = CollectWorkGraphEntries(
             reflection,
             capability);
         CompiledProgramLibrary library = CompileProgramLibrary(
@@ -36,7 +37,7 @@ internal sealed unsafe partial class D3D12Backend
         NativeLease? statePropertiesLease = null;
         NativeLease? graphPropertiesLease = null;
         D3D12RootSignatureState? globalToRelease = global;
-        RetainedSlangProgram? retainedProgram = null;
+        RetainedShaderProgram? retainedProgram = null;
         D3D12WorkGraphPipeline? result = null;
         try
         {
@@ -129,8 +130,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private D3D12RootSignatureState CompileWorkGraphRootSignature(
         D3D12Device nativeDevice,
-        ShaderReflection reflection,
-        EntryPointReflection[] entryPoints,
+        ShaderProgramLayout reflection,
+        ShaderEntryPoint[] entryPoints,
         ReadOnlySpan<StaticSamplerBinding> staticSamplers) =>
         D3D12RootSignatureBuilder.Compile(
             this,
@@ -162,7 +163,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12StateObject* stateObject,
         ID3D12StateObjectProperties1* stateProperties,
         ID3D12WorkGraphProperties* graphProperties,
-        RetainedSlangProgram? retainedProgram)
+        RetainedShaderProgram? retainedProgram)
     {
         if (result is not null)
         {
@@ -173,22 +174,22 @@ internal sealed unsafe partial class D3D12Backend
         graphPropertiesLease?.Release();
         statePropertiesLease?.Release();
         if (graphProperties is not null)
-            _ = graphProperties->Release();
+            _ = PipelineTrace.Release(graphProperties);
         if (stateProperties is not null)
-            _ = stateProperties->Release();
+            _ = PipelineTrace.Release(stateProperties);
         if (stateObject is not null)
-            _ = stateObject->Release();
+            _ = PipelineTrace.Release(stateObject);
         retainedProgram?.Dispose();
     }
 
-    private EntryPointReflection[] CollectWorkGraphEntries(
-        ShaderReflection reflection,
+    private ShaderEntryPoint[] CollectWorkGraphEntries(
+        ShaderProgramLayout reflection,
         WorkGraphs capability)
     {
-        var entries = new List<EntryPointReflection>();
+        var entries = new List<ShaderEntryPoint>();
         for (uint index = 0; index < reflection.EntryPointCount; index++)
         {
-            EntryPointReflection entry = reflection.GetEntryPointByIndex(index);
+            ShaderEntryPoint entry = reflection.GetEntryPointByIndex(index);
             if (entry.Stage is not (SlangStage.Dispatch or SlangStage.Node))
                 continue;
             _ = ValidateStateObjectEntryPoint(
@@ -211,7 +212,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device nativeDevice,
         D3D12RootSignatureState global,
         byte[][] replayLibraries,
-        EntryPointReflection[] entryPoints,
+        ShaderEntryPoint[] entryPoints,
         uint nodeMask)
     {
         using NativeStateObjectArena arena = new();
@@ -246,8 +247,8 @@ internal sealed unsafe partial class D3D12Backend
             subobjects);
         ID3D12StateObject* stateObject = null;
         Guid iid = ID3D12StateObject.Guid;
-        int createResult = nativeDevice.Native->CreateStateObject(
-            &native,
+        int createResult = DevicePipelineTrace.CreateStateObject(
+nativeDevice.Native, &native,
             &iid,
             (void**)&stateObject);
         ThrowIfFailed(
@@ -261,7 +262,7 @@ internal sealed unsafe partial class D3D12Backend
     private static void AddWorkGraphLibraries(
         NativeStateObjectArena arena,
         byte[][] replayLibraries,
-        EntryPointReflection[] entryPoints,
+        ShaderEntryPoint[] entryPoints,
         StateSubobject* subobjects)
     {
         for (int index = 0; index < replayLibraries.Length; index++)
@@ -291,8 +292,8 @@ internal sealed unsafe partial class D3D12Backend
         graphProperties = null;
         ID3D12StateObjectProperties1* queriedStateProperties = null;
         Guid statePropertiesIid = ID3D12StateObjectProperties1.Guid;
-        int propertiesResult = stateObject->QueryInterface(
-            &statePropertiesIid,
+        int propertiesResult = PipelineTrace.QueryInterface(
+stateObject, &statePropertiesIid,
             (void**)&queriedStateProperties);
         ThrowIfFailed(
             nativeDevice,
@@ -302,8 +303,8 @@ internal sealed unsafe partial class D3D12Backend
         stateProperties = queriedStateProperties;
         ID3D12WorkGraphProperties* queriedGraphProperties = null;
         Guid graphPropertiesIid = ID3D12WorkGraphProperties.Guid;
-        int graphPropertiesResult = stateObject->QueryInterface(
-            &graphPropertiesIid,
+        int graphPropertiesResult = PipelineTrace.QueryInterface(
+stateObject, &graphPropertiesIid,
             (void**)&queriedGraphProperties);
         ThrowIfFailed(
             nativeDevice,
@@ -317,7 +318,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12StateObjectProperties1* stateProperties)
     {
         ProgramIdentifier identifier =
-            stateProperties->GetProgramIdentifier(WorkGraphProgramName);
+            PipelineTrace.GetProgramIdentifier(stateProperties, WorkGraphProgramName);
         if (IsZero(identifier))
         {
             throw new GraphicsException(
@@ -329,7 +330,7 @@ internal sealed unsafe partial class D3D12Backend
 
     private static uint GetWorkGraphIndex(ID3D12WorkGraphProperties* graphProperties)
     {
-        uint graphIndex = graphProperties->GetWorkGraphIndex(WorkGraphProgramName);
+        uint graphIndex = PipelineTrace.GetWorkGraphIndex(graphProperties, WorkGraphProgramName);
         if (graphIndex == uint.MaxValue)
         {
             throw new GraphicsException(
@@ -343,9 +344,9 @@ internal sealed unsafe partial class D3D12Backend
         WorkGraphs capability,
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
-        EntryPointReflection[] submittedEntryPoints)
+        ShaderEntryPoint[] submittedEntryPoints)
     {
-        uint nativeEntryPointCount = graphProperties->GetNumEntrypoints(graphIndex);
+        uint nativeEntryPointCount = PipelineTrace.GetNumEntrypoints(graphProperties, graphIndex);
         if (nativeEntryPointCount == 0 || nativeEntryPointCount > capability.MaximumNodeCount)
         {
             throw new GraphicsException(
@@ -365,7 +366,7 @@ internal sealed unsafe partial class D3D12Backend
         uint graphIndex)
     {
         Silk.NET.Direct3D12.WorkGraphMemoryRequirements native = default;
-        graphProperties->GetWorkGraphMemoryRequirements(graphIndex, &native);
+        PipelineTrace.GetWorkGraphMemoryRequirements(graphProperties, graphIndex, &native);
         WorkGraphMemoryRequirements requirements = new(
             native.MinSizeInBytes,
             native.MaxSizeInBytes,
@@ -376,6 +377,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public WorkGraphMemoryRequirements GetWorkGraphMemoryRequirements(Pipeline pipeline)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12WorkGraphPipeline native = RequireWorkGraphPipeline(pipeline);
         _ = RequireDevice(pipeline.Device, nameof(pipeline))
             .RequireCapability<WorkGraphs>(nameof(GetWorkGraphMemoryRequirements));
@@ -387,6 +389,7 @@ internal sealed unsafe partial class D3D12Backend
         Span<WorkGraphEntryPointInfo> destination,
         out int requiredCount)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12WorkGraphPipeline native = RequireWorkGraphPipeline(pipeline);
         _ = RequireDevice(pipeline.Device, nameof(pipeline))
             .RequireCapability<WorkGraphs>(nameof(TryGetWorkGraphEntryPoints));
@@ -399,6 +402,7 @@ internal sealed unsafe partial class D3D12Backend
         in BufferRegion? backingMemory,
         WorkGraphInitialization initialization)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         _ = command.NativeDevice.RequireCapability<WorkGraphs>(nameof(BindWorkGraph));
         D3D12WorkGraphPipeline nativePipeline = RequireWorkGraphPipeline(pipeline);
@@ -451,7 +455,7 @@ internal sealed unsafe partial class D3D12Backend
             BackingMemory = backing is null
                 ? default
                 : new GpuVirtualAddressRange(
-                    backing.Native->GetGPUVirtualAddress() + range.Offset,
+                    ResourceTrace.GetGPUVirtualAddress(backing.Native) + range.Offset,
                     range.Size),
             NodeLocalRootArgumentsTable = default,
         };
@@ -462,7 +466,7 @@ internal sealed unsafe partial class D3D12Backend
             command.List,
             compute: true,
             nativePipeline.RootSignature.Native);
-        command.List->SetProgram(&native);
+        CommandBindingTrace.SetProgram(command.List, &native);
         command.RememberPipeline(nativePipeline);
         command.RememberWorkGraphProgram(next);
         foreach (DefaultRootTable table in nativePipeline.RootSignature.DefaultTables)
@@ -471,6 +475,7 @@ internal sealed unsafe partial class D3D12Backend
 
     public void DispatchWorkGraph(CommandContext context, in WorkGraphDispatchDesc desc)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         WorkGraphs capability =
             command.NativeDevice.RequireCapability<WorkGraphs>(nameof(DispatchWorkGraph));
@@ -527,7 +532,7 @@ internal sealed unsafe partial class D3D12Backend
     private static void DispatchWorkGraphNodeCpu(
         D3D12CommandContext command,
         D3D12WorkGraphPipeline pipeline,
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         ReadOnlySpan<byte> records,
         uint recordCount,
         uint recordStride)
@@ -553,7 +558,7 @@ internal sealed unsafe partial class D3D12Backend
                 recordCount,
                 null,
                 effectiveStride);
-            command.List->DispatchGraph(&native);
+            CommandExecutionTrace.DispatchGraph(command.List, &native);
             return;
         }
 
@@ -568,14 +573,14 @@ internal sealed unsafe partial class D3D12Backend
                 recordCount,
                 pointer,
                 effectiveStride);
-            command.List->DispatchGraph(&native);
+            CommandExecutionTrace.DispatchGraph(command.List, &native);
         }
     }
 
     private void DispatchWorkGraphNodeGpu(
         D3D12CommandContext command,
         D3D12WorkGraphPipeline pipeline,
-        EntryPointReflection entryPoint,
+        ShaderEntryPoint entryPoint,
         in BufferRegion recordsRegion,
         uint recordCount,
         uint recordStride)
@@ -607,7 +612,7 @@ internal sealed unsafe partial class D3D12Backend
         header.Commit(new ReadOnlySpan<byte>(&input, sizeof(NodeGpuInput)));
         DispatchGraphDesc native = new() { Mode = DispatchMode.NodeGpuInput };
         native.NodeGPUInput = header.Address;
-        command.List->DispatchGraph(&native);
+        CommandExecutionTrace.DispatchGraph(command.List, &native);
     }
 
     private static void DispatchWorkGraphMultiNodeCpu(
@@ -676,7 +681,7 @@ internal sealed unsafe partial class D3D12Backend
                 PNodeInputs = nativeInputs,
                 NodeInputStrideInBytes = (ulong)sizeof(NodeCpuInput),
             };
-            command.List->DispatchGraph(&native);
+            CommandExecutionTrace.DispatchGraph(command.List, &native);
         }
     }
 
@@ -749,7 +754,7 @@ internal sealed unsafe partial class D3D12Backend
         }
         DispatchGraphDesc native = new() { Mode = DispatchMode.MultiNodeGpuInput };
         native.MultiNodeGPUInput = storage.Address;
-        command.List->DispatchGraph(&native);
+        CommandExecutionTrace.DispatchGraph(command.List, &native);
     }
 
     private D3D12Buffer ResolveWorkGraphGpuInput(
@@ -760,7 +765,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         D3D12Buffer records = RequireBuffer(region.Buffer);
         BufferRange range = region.Range.Resolve(records.Info.Size);
-        address = records.Native->GetGPUVirtualAddress() + range.Offset;
+        address = ResourceTrace.GetGPUVirtualAddress(records.Native) + range.Offset;
         if ((records.Info.Usages & BufferUsages.ShaderRead) == 0 ||
             range.Size < requiredBytes ||
             (entry.RecordSize != 0 && address % entry.RecordAlignment != 0))
@@ -774,7 +779,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         for (int index = 0; index < inputs.Length; index++)
         {
-            if (inputs[index].EntryPoint == EntryPointReflection.Null)
+            if (inputs[index].EntryPoint == ShaderEntryPoint.Null)
                 throw new ArgumentException("A Work Graph node input requires a Slang entry point.");
             for (int prior = 0; prior < index; prior++)
             {
@@ -788,7 +793,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         for (int index = 0; index < inputs.Length; index++)
         {
-            if (inputs[index].EntryPoint == EntryPointReflection.Null)
+            if (inputs[index].EntryPoint == ShaderEntryPoint.Null)
                 throw new ArgumentException("A Work Graph node input requires a Slang entry point.");
             for (int prior = 0; prior < index; prior++)
             {
@@ -800,11 +805,11 @@ internal sealed unsafe partial class D3D12Backend
 
     private static SetWorkGraphFlags ToSetWorkGraphFlags(
         WorkGraphInitialization value) => value switch
-    {
-        WorkGraphInitialization.Initialize => SetWorkGraphFlags.Initialize,
-        WorkGraphInitialization.Preserve => SetWorkGraphFlags.None,
-        _ => throw new ArgumentOutOfRangeException(nameof(value)),
-    };
+        {
+            WorkGraphInitialization.Initialize => SetWorkGraphFlags.Initialize,
+            WorkGraphInitialization.Preserve => SetWorkGraphFlags.None,
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        };
 
     private static void ValidateWorkGraphRecordLayout(
         in WorkGraphEntryPointState entry,
@@ -849,7 +854,7 @@ internal sealed unsafe partial class D3D12Backend
         ID3D12WorkGraphProperties* graphProperties,
         uint graphIndex,
         uint nativeEntryPointCount,
-        EntryPointReflection[] submittedEntryPoints,
+        ShaderEntryPoint[] submittedEntryPoints,
         uint maximumInputRecordSize)
     {
         if (nativeEntryPointCount != checked((uint)submittedEntryPoints.Length))
@@ -863,14 +868,14 @@ internal sealed unsafe partial class D3D12Backend
         var materialized = new HashSet<uint>();
         for (uint ordinal = 0; ordinal < nativeEntryPointCount; ordinal++)
         {
-            NodeID id = graphProperties->GetEntrypointID(graphIndex, ordinal);
+            NodeID id = PipelineTrace.GetEntrypointID(graphProperties, graphIndex, ordinal);
             if (id.Name is null)
             {
                 throw new GraphicsException(
                     GraphicsError.PipelineCreation,
                     "D3D12 returned a Work Graph entry point without an identity.");
             }
-            uint nativeIndex = graphProperties->GetEntrypointIndex(graphIndex, id);
+            uint nativeIndex = PipelineTrace.GetEntrypointIndex(graphProperties, graphIndex, id);
             if (nativeIndex == uint.MaxValue)
             {
                 throw new GraphicsException(
@@ -884,8 +889,8 @@ internal sealed unsafe partial class D3D12Backend
                     "D3D12 returned duplicate Work Graph entry-point indices.");
             }
 
-            uint size = graphProperties->GetEntrypointRecordSizeInBytes(graphIndex, nativeIndex);
-            uint alignment = graphProperties->GetEntrypointRecordAlignmentInBytes(graphIndex, nativeIndex);
+            uint size = PipelineTrace.GetEntrypointRecordSizeInBytes(graphProperties, graphIndex, nativeIndex);
+            uint alignment = PipelineTrace.GetEntrypointRecordAlignmentInBytes(graphProperties, graphIndex, nativeIndex);
             RequireValidWorkGraphEntryPointLayout(maximumInputRecordSize, size, alignment);
             result[checked((int)ordinal)] = new WorkGraphEntryPointState(
                 submittedEntryPoints[checked((int)ordinal)],
@@ -952,7 +957,7 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private readonly record struct WorkGraphEntryPointState(
-        EntryPointReflection EntryPoint,
+        ShaderEntryPoint EntryPoint,
         uint NativeIndex,
         uint RecordSize,
         uint RecordAlignment);
@@ -968,7 +973,7 @@ internal sealed unsafe partial class D3D12Backend
             NativeLease native,
             D3D12RootSignatureState root,
             NativeLease[] additionalLeases,
-            RetainedSlangProgram program,
+            RetainedShaderProgram program,
             in ProgramIdentifier identifier,
             in WorkGraphMemoryRequirements memoryRequirements,
             WorkGraphEntryPointState[] entryPoints,
@@ -993,9 +998,9 @@ internal sealed unsafe partial class D3D12Backend
         internal ProgramIdentifier ProgramIdentifier { get; }
         internal WorkGraphMemoryRequirements MemoryRequirements { get; }
 
-        internal WorkGraphEntryPointState GetEntryPoint(EntryPointReflection entryPoint)
+        internal WorkGraphEntryPointState GetEntryPoint(ShaderEntryPoint entryPoint)
         {
-            if (entryPoint == EntryPointReflection.Null)
+            if (entryPoint == ShaderEntryPoint.Null)
                 throw new ArgumentException("A Work Graph dispatch requires a Slang entry point.", nameof(entryPoint));
             foreach (ref readonly WorkGraphEntryPointState entry in _entryPoints.AsSpan())
             {

@@ -1,21 +1,22 @@
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
+using SlangShaderSharp;
 using GraphicsPipeline = SomeEngine.Graphics.Pipeline;
 
 namespace SomeEngine.Render.Assets;
 
-/// <summary>Owns one linked vertex/pixel program and its attachment-compatible RHI pipeline.</summary>
+/// <summary>Owns an attachment-compatible RHI pipeline created from a cooked shader program.</summary>
 public sealed class LinkedRasterPipeline : IDisposable
 {
     private bool _disposed;
 
-    private LinkedRasterPipeline(LiveShaderProgram program, GraphicsPipeline pipeline)
+    private LinkedRasterPipeline(ShaderProgram program, GraphicsPipeline pipeline)
     {
         Program = program;
         Pipeline = pipeline;
     }
 
-    public LiveShaderProgram Program { get; }
+    public ShaderProgram Program { get; }
     public GraphicsPipeline Pipeline { get; }
 
     public static LinkedRasterPipeline Create(
@@ -39,16 +40,19 @@ public sealed class LinkedRasterPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(vertexEntryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(pixelEntryPoint);
-        LiveShaderProgram? program = null;
         GraphicsPipeline? pipeline = null;
         try
         {
-            program = LiveShaderProgram.Link(
-                shader,
-                [
-                    new LiveShaderEntry(vertexEntryPoint, LiveShaderStage.Vertex),
-                    new LiveShaderEntry(pixelEntryPoint, LiveShaderStage.Pixel),
-                ]);
+            CookedShaderEntry vertex = shader.RequireEntry(
+                device.Capabilities.ShaderTarget,
+                vertexEntryPoint,
+                ShaderStage.Vertex);
+            CookedShaderEntry pixel = shader.RequireEntry(
+                device.Capabilities.ShaderTarget,
+                pixelEntryPoint,
+                ShaderStage.Pixel);
+            if (!ReferenceEquals(vertex.Program, pixel.Program))
+                throw new InvalidDataException("Raster entries must belong to one cooked shader program.");
             var multisample = new MultisampleState(sampleCount, sampleMask, alphaToCoverage);
             var blend = new BlendState(
                 blendAttachments,
@@ -60,9 +64,9 @@ public sealed class LinkedRasterPipeline : IDisposable
             pipeline = backend.CreateGraphicsPipeline(
                 device,
                 new GraphicsPipelineDesc(
-                    program.Program,
-                    program.GetEntryPoint(0),
-                    program.GetEntryPoint(1),
+                    vertex.Program,
+                    vertex.EntryPoint,
+                    pixel.EntryPoint,
                     vertexBuffers: default,
                     vertexAttributes: default,
                     PrimitiveTopology.TriangleList,
@@ -74,13 +78,12 @@ public sealed class LinkedRasterPipeline : IDisposable
                     attachments,
                     DynamicStates.Viewport | DynamicStates.Scissor,
                     label));
-            return new LinkedRasterPipeline(program, pipeline);
+            return new LinkedRasterPipeline(vertex.Program, pipeline);
         }
         catch (Exception primary)
         {
             List<Exception>? cleanupFailures = null;
             if (pipeline is not null) TryDispose(pipeline, ref cleanupFailures);
-            if (program is not null) TryDispose(program, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
                 cleanupFailures.Insert(0, primary);
@@ -98,7 +101,6 @@ public sealed class LinkedRasterPipeline : IDisposable
             return;
         List<Exception>? failures = null;
         TryDispose(Pipeline, ref failures);
-        TryDispose(Program, ref failures);
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);

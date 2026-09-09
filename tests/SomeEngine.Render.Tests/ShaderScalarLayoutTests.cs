@@ -54,26 +54,21 @@ public sealed class ShaderScalarLayoutTests
     }
 
     [Fact]
-    public void MaterialRuntimeParametersAreTheSchemaValues()
+    public void MaterialRuntimeParametersAreConcreteTypedSlots()
     {
-        var value = new Vec4Val { X = 1, Y = 2, Z = 3, W = 4 };
-        var material = new Material
+        var value = new System.Numerics.Vector4(1, 2, 3, 4);
+        var material = new StandardMaterial
         {
             Name = "DirectParameters",
-            Passes = [],
-            Textures = [],
-            Scalars =
-            [
-                new ScalarParam
-                {
-                    Name = "BaseColorTint",
-                    Value = new ParamValue(value),
-                },
-            ],
+            BaseColorTint = value,
         };
 
-        ScalarParam parameter = Assert.Single(material.Scalars!);
-        Assert.Equal(4, parameter.Value.Value.Vec4Val.W);
+        Assert.Equal(value, material.BaseColorTint);
+        MaterialPropertyDefinition slot = Assert.Single(
+            material.Properties,
+            static slot => slot.Name == nameof(StandardMaterial.BaseColorTint));
+        Assert.Equal(typeof(System.Numerics.Vector4), slot.ValueType);
+        Assert.Equal(value, material.BaseColorTint);
     }
 
     private static ShaderMaterialScalarLayout Layout(
@@ -102,23 +97,14 @@ public sealed class ShaderScalarLayoutTests
         => new()
         {
             Name = "layout-test",
-            Variants =
-            [
-                new ShaderBytecode
-                {
-                    Backend = "test",
-                    EntryPoint = "Main",
-                    Stage = ShaderStage.Compute,
-                    Data = new byte[] { 1 },
-                },
-            ],
+            Programs = [CookedShaderTestProgram.Create()],
             EntryPointReflections =
             [
                 new ShaderEntryPointReflection
                 {
-                    Backend = "test",
-                    EntryPoint = "Main",
-                    Stage = ShaderStage.Compute,
+                    Backend = "spirv",
+                    EntryPoint = "VSMain",
+                    Stage = ShaderStage.Vertex,
                 },
             ],
             Metadata = new ShaderMetadata

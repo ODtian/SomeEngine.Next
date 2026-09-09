@@ -134,6 +134,7 @@ public enum Format : ushort
     R32UInt,
     R32SInt,
     R32Float,
+    R64UInt,
     R32G32UInt,
     R32G32SInt,
     R32G32Float,

@@ -4,7 +4,6 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
-using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Systems;
 
@@ -15,19 +14,23 @@ namespace SomeEngine.Render.Systems;
 /// </summary>
 public sealed class RenderExtractionSystems : IDisposable
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite ExtractionTrace = new("ecs", "RenderExtraction");
     private readonly RenderWorld _renderWorld;
     private readonly List<IRenderExtractionSystem> _systems = [];
-    private readonly MeshRenderExtractor _mesh;
-    private readonly LightRenderExtractor _lights;
+    private int[] _writtenComponents = [];
     private readonly RenderExtractionContext _context;
     private readonly object _gate = new();
     private QueryDefinition? _sourceQuery;
     private QueryHandle _sourceQueryHandle;
     private World? _mainWorld;
+    private World? _candidateMainWorld;
     private uint _lastSystemVersion;
     private uint _candidateSystemVersion;
     private long _lastTopologyRevision = -1;
-    private bool _nonTransformChange;
+    private long _candidateTopologyRevision;
+    private bool _candidateFullReconciliation;
+    private readonly HashSet<IRenderExtractionSystem> _changedSystems = [];
+    private bool _candidatePending;
     private bool _extractionActive;
     private bool _disposed;
 
@@ -35,10 +38,8 @@ public sealed class RenderExtractionSystems : IDisposable
     {
         _renderWorld = renderWorld ?? throw new ArgumentNullException(nameof(renderWorld));
         _context = new RenderExtractionContext(renderWorld);
-        _mesh = new MeshRenderExtractor();
-        _lights = new LightRenderExtractor();
-        _systems.Add(_mesh);
-        _systems.Add(_lights);
+        _systems.Add(new MeshRenderExtractor());
+        _systems.Add(new LightRenderExtractor());
     }
 
     public int Count
@@ -49,6 +50,20 @@ public sealed class RenderExtractionSystems : IDisposable
             {
                 ThrowIfDisposed();
                 return _systems.Count;
+            }
+        }
+    }
+
+    internal RenderWorld World => _renderWorld;
+
+    internal bool HasPendingCandidate
+    {
+        get
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                return _candidatePending;
             }
         }
     }
@@ -89,11 +104,13 @@ public sealed class RenderExtractionSystems : IDisposable
     }
 
     /// <summary>
-    /// Reconciles render-facing snapshots from <paramref name="mainWorld"/>. The main world is
-    /// read only; render-only components already attached to mirrored entities remain untouched.
+    /// Collects one detached candidate from <paramref name="mainWorld"/>. The main world is read
+    /// only and the live RenderWorld is not mutated. The candidate is published by the next
+    /// RenderPrepareSystems update; a second candidate cannot overwrite pending work.
     /// </summary>
     public void Extract(World mainWorld)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ExtractionTrace);
         ArgumentNullException.ThrowIfNull(mainWorld);
         if (mainWorld is RenderWorld)
         {
@@ -108,6 +125,11 @@ public sealed class RenderExtractionSystems : IDisposable
             ThrowIfDisposed();
             if (_extractionActive)
                 throw new InvalidOperationException("Render extraction is already active.");
+            if (_candidatePending)
+            {
+                throw new InvalidOperationException(
+                    "The previous render extraction candidate has not reached a render update boundary.");
+            }
             RequireAuthoritativeMainWorld(mainWorld);
             _sourceQuery ??= BuildSourceQuery();
             _extractionActive = true;
@@ -119,6 +141,8 @@ public sealed class RenderExtractionSystems : IDisposable
                 try
                 {
                     ExtractCore(mainWorld);
+                    _candidateMainWorld = mainWorld;
+                    _candidatePending = true;
                 }
                 catch
                 {
@@ -140,8 +164,11 @@ public sealed class RenderExtractionSystems : IDisposable
     private QueryDefinition BuildSourceQuery()
     {
         var query = new RenderExtractionQuery();
+        query.Write<RenderTransform>();
+        query.Write<RenderPreviousTransform>();
         for (int index = 0; index < _systems.Count; index++)
             _systems[index].DeclareReads(query);
+        _writtenComponents = query.WrittenComponents.ToArray();
         return query.Build();
     }
 
@@ -151,16 +178,13 @@ public sealed class RenderExtractionSystems : IDisposable
         long topologyRevision = mainWorld.PublishedTopologyRevision;
         bool fullReconciliation =
             _mainWorld is null ||
-            topologyRevision != _lastTopologyRevision ||
-            _systems.Count != 2;
+            topologyRevision != _lastTopologyRevision;
 
         if (!fullReconciliation)
         {
-            _context.EnsureTransformIndexCurrent();
             _context.BeginTransformChanges();
-            _mesh.Reset();
-            _lights.Reset();
-            _nonTransformChange = false;
+            foreach (IRenderExtractionSystem system in _systems) system.Reset();
+            _changedSystems.Clear();
             try
             {
                 RenderExtractionSystems state = this;
@@ -183,43 +207,75 @@ public sealed class RenderExtractionSystems : IDisposable
             _context.CancelTransformChanges();
             CollectFullSnapshot(mainWorld);
         }
+        _candidateTopologyRevision = topologyRevision;
+        _candidateFullReconciliation = fullReconciliation;
+    }
 
-        if (fullReconciliation)
+    /// <summary>
+    /// Publishes the pending candidate while RenderPrepareSystems owns the render update boundary.
+    /// No product caller outside that boundary receives this mutation path.
+    /// </summary>
+    internal bool ApplyPendingCandidate()
+    {
+        lock (_gate)
         {
-            _context.RefreshMirrors();
+            ThrowIfDisposed();
+            if (_extractionActive)
+                throw new InvalidOperationException("Render extraction is still collecting a candidate.");
+            if (!_candidatePending)
+                return false;
+
+            World candidateMainWorld = _candidateMainWorld
+                ?? throw new InvalidOperationException("The pending extraction candidate lost its source World.");
             try
             {
-                _renderWorld.ApplyExtraction(this);
-            }
-            catch
-            {
-                _context.RefreshMirrors();
-                throw;
-            }
-            _context.RefreshMirrors();
-        }
-        else if (_nonTransformChange)
-        {
-            try
-            {
-                if (!_renderWorld.TryApplyExtractionChangesDirect(this))
-                {
-                    _renderWorld.ApplyExtractionChanges(this);
-                    _context.AcceptValuePublication();
-                }
+                ApplyCandidateCore();
+                _context.AcceptTransformChanges();
+                _lastSystemVersion = _candidateSystemVersion;
+                _lastTopologyRevision = _candidateTopologyRevision;
+                _mainWorld ??= candidateMainWorld;
+                ClearCandidate();
+                return true;
             }
             catch
             {
                 _context.CancelTransformChanges();
+                if (_candidateFullReconciliation)
+                    _context.RefreshMirrors();
+                if (_mainWorld is null && _sourceQueryHandle.IsValid)
+                {
+                    candidateMainWorld.ReleaseQuery(_sourceQueryHandle);
+                    _sourceQueryHandle = default;
+                }
+                ClearCandidate();
                 throw;
             }
         }
-        else
-            _context.ApplyTransformChanges();
+    }
 
-        _lastSystemVersion = _candidateSystemVersion;
-        _lastTopologyRevision = topologyRevision;
-        _mainWorld ??= mainWorld;
+    private void ApplyCandidateCore()
+    {
+        if (_candidateFullReconciliation)
+        {
+            _context.RefreshMirrors();
+            _renderWorld.ApplyExtraction(this);
+            _context.RefreshMirrors();
+            return;
+        }
+
+        if (_changedSystems.Count == 0 && !_context.HasTransformChanges) return;
+        if (!_renderWorld.TryApplyExtractionChangesDirect(this))
+            _renderWorld.ApplyExtractionChanges(this);
+    }
+
+    private void ClearCandidate()
+    {
+        _candidateMainWorld = null;
+        _candidateSystemVersion = 0;
+        _candidateTopologyRevision = 0;
+        _candidateFullReconciliation = false;
+        _changedSystems.Clear();
+        _candidatePending = false;
     }
 
     private void CollectFullSnapshot(World mainWorld)
@@ -257,17 +313,8 @@ public sealed class RenderExtractionSystems : IDisposable
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
-            bool hasSpatialMesh =
-                chunk.Has<MeshInstance>() || chunk.Has<InstancedMesh>();
-            bool hasTransform = chunk.Has<WorldTransform>();
-            if (hasSpatialMesh && hasTransform &&
-                chunk.HasChangedSinceLastSystemVersion<WorldTransform>())
-            {
-                _context.CollectTransformChanges(chunk);
-            }
-
-            _nonTransformChange |= _mesh.CollectChanges(chunk);
-            _nonTransformChange |= _lights.CollectChanges(chunk);
+            foreach (IRenderExtractionSystem system in _systems)
+                if (system.CollectChanges(chunk, _context)) _changedSystems.Add(system);
         }
     }
 
@@ -287,24 +334,23 @@ public sealed class RenderExtractionSystems : IDisposable
         // publication boundary without rediscovering or reconciling persistent mirror structure.
         _renderWorld.AcquireSystemVersion();
         _context.ApplyTransformChanges();
-        _mesh.ApplyChanges(_context);
-        _lights.ApplyChanges(_context);
+        foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
     }
 
     internal bool TryApplyChangesDirect()
     {
-        if (_renderWorld.HasExtractionValueHooks)
+        if (_changedSystems.Any(static system => !system.CanApplyChangesDirect) ||
+            _renderWorld.HasExtractionValueHooks(_writtenComponents))
             return false;
 
         // All invariants are checked before the first in-place write. With the topology frontier
         // held and no user callbacks in the changed domains, the remaining operations contain no
         // ordinary failure point and do not need a detached structural root.
-        _mesh.ValidateChanges(_context);
-        _lights.ValidateChanges(_context);
+        _context.ValidateTransformChanges();
+        foreach (IRenderExtractionSystem system in _changedSystems) system.ValidateChanges(_context);
         _renderWorld.AcquireSystemVersion();
         _context.ApplyTransformChanges();
-        _mesh.ApplyChanges(_context);
-        _lights.ApplyChanges(_context);
+        foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
         return true;
     }
 
@@ -316,14 +362,16 @@ public sealed class RenderExtractionSystems : IDisposable
                 return;
             if (_extractionActive)
                 throw new InvalidOperationException("Render extraction is still active.");
+            _context.CancelTransformChanges();
             _context.Dispose();
             if (_sourceQueryHandle.IsValid)
             {
-                (_mainWorld ?? throw new InvalidOperationException(
+                (_mainWorld ?? _candidateMainWorld ?? throw new InvalidOperationException(
                     "A bound extraction query has no authoritative main World."))
                     .ReleaseQuery(_sourceQueryHandle);
                 _sourceQueryHandle = default;
             }
+            ClearCandidate();
             _disposed = true;
         }
     }
@@ -336,6 +384,11 @@ public sealed class RenderExtractionSystems : IDisposable
 public sealed class RenderExtractionQuery
 {
     private readonly QueryDefinitionBuilder _builder = new();
+    internal HashSet<int> WrittenComponents { get; } = [];
+
+    /// <summary>Declares a destination component changed by this extractor.</summary>
+    public void Write<T>() where T : struct, IComponent =>
+        WrittenComponents.Add(SomeEngine.ECS.Registry.ComponentMetadata<T>.Id);
 
     public void ReadOptional<T>() where T : struct
         => _builder.Optional<T>(QueryAccess.Read);
@@ -355,6 +408,20 @@ public interface IRenderExtractionSystem
     void Collect(QueryChunkView chunk);
 
     void Apply(RenderExtractionContext context);
+
+    /// <summary>Collects only values changed since the preceding extraction.</summary>
+    bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context);
+
+    /// <summary>Applies collected values to existing mirrors without changing their membership.</summary>
+    void ApplyChanges(RenderExtractionContext context);
+
+    /// <summary>
+    /// Enables direct value application when all destination components are declared and
+    /// validation completes before writes. Other extractors use the ECS transaction boundary.
+    /// </summary>
+    bool CanApplyChangesDirect => false;
+
+    void ValidateChanges(RenderExtractionContext context) { }
 }
 
 internal readonly record struct RenderMirror(Entity RenderEntity, Entity Source);
@@ -364,44 +431,26 @@ public sealed class RenderExtractionContext : IDisposable
 {
     private readonly RenderWorld _world;
     private readonly QueryHandle _renderSources;
-    private readonly QueryHandle _renderTransformSources;
-    private readonly QueryHandle _renderTransforms;
     private readonly Dictionary<Entity, Entity> _mirrorBySource = [];
     private readonly HashSet<Entity> _retainedSources = [];
     private readonly List<RenderMirror> _mirrors = [];
     private Entity[] _mirrorBySourceSlot = [Entity.Null];
-    private Entity[] _transformSourceBySlot = [Entity.Null];
-    private int[] _transformOrdinalBySourceSlot = [-1];
-    private RenderTransform[] _transformValueByOrdinal = [];
-    private uint[] _transformChangeEpochByOrdinal = [];
-    private uint _transformChangeEpoch;
-    private int _transformChangeCount;
-    private int _renderTransformCount;
-    private int _transformWriteOrdinal;
-    private long _transformIndexTopologyRevision = -1;
-    private bool _transformChangesActive;
+    private readonly List<(Entity Source, RenderTransform Value)> _transformChanges = [];
+    private HashSet<Entity> _movingTransforms = [];
+    private HashSet<Entity> _nextMovingTransforms = [];
 
     internal RenderExtractionContext(RenderWorld world)
     {
         _world = world;
         _renderSources = world.Query(new QueryDefinitionBuilder().Read<RenderSource>());
-        _renderTransformSources = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<RenderSource>()
-                .Read<RenderTransform>()
-                .Read<RenderPreviousTransform>());
-        _renderTransforms = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<RenderSource>()
-                .ReadWrite<RenderTransform>()
-                .ReadWrite<RenderPreviousTransform>());
+
     }
 
     public RenderWorld World => _world;
 
     internal IReadOnlyList<RenderMirror> Mirrors => _mirrors;
 
-    internal Entity RequireMirror(Entity source)
+    public Entity RequireMirror(Entity source)
     {
         if (source.Index <= 0 ||
             (uint)source.Index >= (uint)_mirrorBySourceSlot.Length)
@@ -420,7 +469,7 @@ public sealed class RenderExtractionContext : IDisposable
         return renderEntity;
     }
 
-    internal void UpdateExisting<T>(Entity entity, in T value)
+    public void UpdateExisting<T>(Entity entity, in T value)
         where T : struct, SomeEngine.ECS.IComponent, IEquatable<T>
     {
         RequireExisting<T>(entity);
@@ -444,6 +493,7 @@ public sealed class RenderExtractionContext : IDisposable
     internal void BeginCandidate()
     {
         _retainedSources.Clear();
+        _nextMovingTransforms.Clear();
     }
 
     internal void RefreshMirrors()
@@ -457,7 +507,6 @@ public sealed class RenderExtractionContext : IDisposable
             ref state,
             static (QueryCursor cursor, ref RenderExtractionContext context) =>
                 context.CollectMirrors(cursor));
-        RebuildTransformIndex();
     }
 
     private void CollectMirrors(QueryCursor cursor)
@@ -482,61 +531,6 @@ public sealed class RenderExtractionContext : IDisposable
         }
     }
 
-    internal void EnsureTransformIndexCurrent()
-    {
-        if (_transformIndexTopologyRevision != _world.PublishedTopologyRevision)
-            RebuildTransformIndex();
-    }
-
-    internal void AcceptValuePublication()
-    {
-        // A detached value candidate retains entity/chunk traversal shape. Its root publication
-        // advances the World revision, so carry the already-valid primitive index to that revision.
-        _transformIndexTopologyRevision = _world.PublishedTopologyRevision;
-    }
-
-    private void RebuildTransformIndex()
-    {
-        _transformSourceBySlot.AsSpan().Fill(Entity.Null);
-        _transformOrdinalBySourceSlot.AsSpan().Fill(-1);
-        _renderTransformCount = 0;
-        RenderExtractionContext state = this;
-        _world.ExecuteQuery(
-            _renderTransformSources,
-            ref state,
-            static (QueryCursor cursor, ref RenderExtractionContext context) =>
-                context.CollectTransformIndex(cursor));
-        EnsureTransformOrdinalCapacity(_renderTransformCount);
-        _transformChangeEpochByOrdinal.AsSpan(0, _renderTransformCount).Clear();
-        _transformIndexTopologyRevision = _world.PublishedTopologyRevision;
-    }
-
-    private void CollectTransformIndex(QueryCursor cursor)
-    {
-        foreach (QueryChunkView chunk in cursor.Chunks)
-        {
-            ReadOnlySpan<Entity> renderEntities = chunk.Entities;
-            ReadOnlySpan<RenderSource> sources = chunk.Read<RenderSource>();
-            for (int row = 0; row < renderEntities.Length; row++)
-            {
-                Entity source = sources[row].Entity;
-                EnsureSourceSlot(source.Index);
-                if (_mirrorBySourceSlot[source.Index] != renderEntities[row])
-                {
-                    throw new InvalidOperationException(
-                        $"Render mirror index does not match {renderEntities[row]} for source {source}.");
-                }
-                if (_transformOrdinalBySourceSlot[source.Index] >= 0)
-                {
-                    throw new InvalidOperationException(
-                        $"RenderWorld contains more than one transform mirror for {source}.");
-                }
-                _transformSourceBySlot[source.Index] = source;
-                _transformOrdinalBySourceSlot[source.Index] = _renderTransformCount++;
-            }
-        }
-    }
-
     public Entity RetainMirror(Entity source)
     {
         _retainedSources.Add(source);
@@ -551,133 +545,55 @@ public sealed class RenderExtractionContext : IDisposable
         return entity;
     }
 
+    internal bool HasTransformChanges => _transformChanges.Count != 0 || _movingTransforms.Count != 0;
+
     internal void BeginTransformChanges()
     {
-        if (_transformChangesActive)
-            throw new InvalidOperationException("Transform extraction is already active.");
-        if (_transformChangeEpoch == uint.MaxValue)
-        {
-            _transformChangeEpochByOrdinal.AsSpan(0, _renderTransformCount).Clear();
-            _transformChangeEpoch = 1;
-        }
-        else
-            _transformChangeEpoch++;
-        _transformChangeCount = 0;
-        _transformChangesActive = true;
+        _transformChanges.Clear();
+        _nextMovingTransforms.Clear();
     }
 
     internal void CollectTransformChanges(QueryChunkView chunk)
     {
-        if (!_transformChangesActive)
-            throw new InvalidOperationException("Transform extraction is not active.");
-        if (!chunk.TryRead<WorldTransform>(out ReadOnlySpan<WorldTransform> transforms) ||
-            (!chunk.Has<MeshInstance>() && !chunk.Has<InstancedMesh>()))
-        {
-            return;
-        }
-
+        ReadOnlySpan<WorldTransform> transforms = chunk.Read<WorldTransform>();
         ReadOnlySpan<Entity> entities = chunk.Entities;
-        ReadOnlySpan<uint> writeVersions =
-            chunk.ReadWriteVersions<WorldTransform>();
-        uint lastSystemVersion = chunk.LastSystemVersion;
+        ReadOnlySpan<uint> versions = chunk.ReadWriteVersions<WorldTransform>();
         for (int row = 0; row < entities.Length; row++)
+            if (unchecked((int)(versions[row] - chunk.LastSystemVersion)) > 0)
+                _transformChanges.Add((entities[row], new RenderTransform(transforms[row].Qvvs)));
+    }
+
+    internal void ValidateTransformChanges()
+    {
+        foreach (var change in _transformChanges)
         {
-            if (unchecked((int)(writeVersions[row] - lastSystemVersion)) <= 0)
-                continue;
-            Entity source = entities[row];
-            if ((uint)source.Index >= (uint)_transformOrdinalBySourceSlot.Length ||
-                _transformSourceBySlot[source.Index] != source)
-            {
-                throw new InvalidOperationException(
-                    $"RenderWorld has no persistent transform mirror for changed source {source}.");
-            }
-            int ordinal = _transformOrdinalBySourceSlot[source.Index];
-            if (ordinal < 0)
-            {
-                throw new InvalidOperationException(
-                    $"RenderWorld has no persistent transform ordinal for changed source {source}.");
-            }
-            if (_transformChangeEpochByOrdinal[ordinal] != _transformChangeEpoch)
-                _transformChangeCount++;
-            _transformValueByOrdinal[ordinal] =
-                new RenderTransform(transforms[row].Qvvs);
-            _transformChangeEpochByOrdinal[ordinal] = _transformChangeEpoch;
+            Entity entity = RequireMirror(change.Source);
+            RequireExisting<RenderTransform>(entity);
+            RequireExisting<RenderPreviousTransform>(entity);
         }
     }
 
     internal void ApplyTransformChanges()
     {
-        if (!_transformChangesActive)
-            return;
-        try
-        {
-            if (_transformChangeCount == 0)
-                return;
-            _transformWriteOrdinal = 0;
-            RenderExtractionContext state = this;
-            _world.ExecuteQuery(
-                _renderTransforms,
-                ref state,
-                static (QueryCursor cursor, ref RenderExtractionContext context) =>
-                    context.WriteTransformRows(cursor));
-            if (_transformWriteOrdinal != _renderTransformCount)
-            {
-                throw new InvalidOperationException(
-                    "Render transform traversal no longer matches its structural index.");
-            }
-        }
-        finally
-        {
-            _transformChangeCount = 0;
-            _transformChangesActive = false;
-        }
+        _nextMovingTransforms.Clear();
+        foreach (Entity entity in _movingTransforms)
+            if (_world.IsAlive(entity) && _world.Has<RenderTransform>(entity))
+                UpdateExisting(entity, new RenderPreviousTransform(_world.Read<RenderTransform>(entity)));
+        foreach (var change in _transformChanges)
+            UpsertTransform(RequireMirror(change.Source), change.Value);
+    }
+
+    internal void AcceptTransformChanges()
+    {
+        (_movingTransforms, _nextMovingTransforms) = (_nextMovingTransforms, _movingTransforms);
+        _nextMovingTransforms.Clear();
+        _transformChanges.Clear();
     }
 
     internal void CancelTransformChanges()
     {
-        _transformChangeCount = 0;
-        _transformChangesActive = false;
-    }
-
-    private void WriteTransformRows(QueryCursor cursor)
-    {
-        foreach (QueryChunkView chunk in cursor.Chunks)
-        {
-            Span<RenderTransform> current = chunk.ReadWrite<RenderTransform>();
-            Span<RenderPreviousTransform> previous =
-                chunk.ReadWrite<RenderPreviousTransform>();
-            int firstOrdinal = _transformWriteOrdinal;
-            int afterLastOrdinal = checked(firstOrdinal + current.Length);
-            if (afterLastOrdinal > _renderTransformCount)
-            {
-                throw new InvalidOperationException(
-                    "Render transform traversal exceeds its structural index.");
-            }
-
-            int row = 0;
-            while (row < current.Length)
-            {
-                while (row < current.Length &&
-                       _transformChangeEpochByOrdinal[firstOrdinal + row] !=
-                       _transformChangeEpoch)
-                    row++;
-                int runStart = row;
-                while (row < current.Length &&
-                       _transformChangeEpochByOrdinal[firstOrdinal + row] ==
-                       _transformChangeEpoch)
-                    row++;
-                int runCount = row - runStart;
-                if (runCount == 0) continue;
-
-                Span<RenderTransform> currentRun = current.Slice(runStart, runCount);
-                MemoryMarshal.Cast<RenderTransform, RenderPreviousTransform>(currentRun)
-                    .CopyTo(previous.Slice(runStart, runCount));
-                _transformValueByOrdinal
-                    .AsSpan(firstOrdinal + runStart, runCount)
-                    .CopyTo(currentRun);
-            }
-            _transformWriteOrdinal = afterLastOrdinal;
-        }
+        _transformChanges.Clear();
+        _nextMovingTransforms.Clear();
     }
 
     private void EnsureSourceSlot(int sourceSlot)
@@ -687,18 +603,7 @@ public sealed class RenderExtractionContext : IDisposable
         int oldLength = _mirrorBySourceSlot.Length;
         int newLength = checked(sourceSlot + 1);
         Array.Resize(ref _mirrorBySourceSlot, newLength);
-        Array.Resize(ref _transformSourceBySlot, newLength);
-        Array.Resize(ref _transformOrdinalBySourceSlot, newLength);
         _mirrorBySourceSlot.AsSpan(oldLength).Fill(Entity.Null);
-        _transformSourceBySlot.AsSpan(oldLength).Fill(Entity.Null);
-        _transformOrdinalBySourceSlot.AsSpan(oldLength).Fill(-1);
-    }
-
-    private void EnsureTransformOrdinalCapacity(int count)
-    {
-        if (_transformValueByOrdinal.Length >= count) return;
-        Array.Resize(ref _transformValueByOrdinal, count);
-        Array.Resize(ref _transformChangeEpochByOrdinal, count);
     }
 
     internal void DestroyUnusedMirrors()
@@ -744,13 +649,14 @@ public sealed class RenderExtractionContext : IDisposable
         RenderTransform current = _world.Read<RenderTransform>(entity);
         Upsert(entity, new RenderPreviousTransform(current));
         if (current != value)
+        {
             _world.Replace(entity, value);
+            _nextMovingTransforms.Add(entity);
+        }
     }
 
     public void Dispose()
     {
-        _world.ReleaseQuery(_renderTransforms);
-        _world.ReleaseQuery(_renderTransformSources);
         _world.ReleaseQuery(_renderSources);
     }
 }

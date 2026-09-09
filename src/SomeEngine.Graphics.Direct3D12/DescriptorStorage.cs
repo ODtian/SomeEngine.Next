@@ -145,7 +145,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             _free = new uint[checked((int)capacity)];
             _capacity = capacity;
-            _increment = device.Native->GetDescriptorHandleIncrementSize(type);
+            _increment = device.DescriptorIncrement(type);
             DescriptorHeapDesc description = new(
                 type,
                 capacity,
@@ -155,8 +155,8 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12DescriptorHeap* heap = null;
             ThrowIfFailed(
                 device,
-                device.Native->CreateDescriptorHeap(
-                    &description,
+                    DeviceResourceTrace.CreateDescriptorHeap(
+                device.Native, &description,
                     &iid,
                     (void**)&heap),
                 NativeOperationType.Ordinary,
@@ -165,9 +165,9 @@ internal sealed unsafe partial class D3D12Backend
             SetNativeName(
                 heap,
                 $"{type} Descriptor Heap (capacity={capacity}, nodeMask=0x{nodeMask:X})");
-            CpuStart = _heap->GetCPUDescriptorHandleForHeapStart();
+            CpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_heap);
             GpuStart = shaderVisible
-                ? _heap->GetGPUDescriptorHandleForHeapStart()
+                ? ResourceTrace.GetGPUDescriptorHandleForHeapStart(_heap)
                 : default;
         }
 
@@ -219,7 +219,7 @@ internal sealed unsafe partial class D3D12Backend
             ID3D12DescriptorHeap* heap = _heap;
             _heap = null;
             if (heap is not null)
-                _ = heap->Release();
+                _ = ResourceTrace.Release(heap);
         }
     }
 

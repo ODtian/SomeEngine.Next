@@ -3,5 +3,22 @@
   "importer": "SlangShaderImporter",
   "importer_settings": {
     "cook_profile": "d3d12-sm6.2"
-  }
+  },
+  "importer_version": 26,
+  "input_hash": "fe9ec77bae52ef9dccd258613c48a7f96a5f5c4288d35224e6e85188866d2ede",
+  "inputs": [
+    {
+      "relative_path": "assets/Shaders/hello_triangle.slang",
+      "content_hash": "c15d365801d72f24c556484ab51ce72693009c08247658824802e280084135c1"
+    }
+  ],
+  "outputs": [
+    {
+      "asset_guid": "40101228-9501-58ff-b81a-08767d408801",
+      "sub_asset_key": "shader:main",
+      "input_hash": "fe9ec77bae52ef9dccd258613c48a7f96a5f5c4288d35224e6e85188866d2ede",
+      "dependencies": [],
+      "asset_path": "hello_triangle.shader.asset"
+    }
+  ]
 }

@@ -13,7 +13,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal static VulkanStreamOutputPlan Create(
             VulkanDevice device,
-            EntryPointReflection vertex,
+            ShaderEntryPoint vertex,
             in StreamOutputState state)
         {
             VulkanExtendedFeatureSupport support = device.ExtendedFeatures;
@@ -47,7 +47,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private static void AddElement(
-            EntryPointReflection vertex,
+            ShaderEntryPoint vertex,
             in StreamOutputState state,
             in StreamOutputElement element,
             uint[] offsets,
@@ -69,7 +69,7 @@ internal sealed unsafe partial class VulkanBackend
             used[element.OutputSlot] = true;
             if (element.IsGap)
                 return;
-            if (element.Variable == VariableLayoutReflection.Null ||
+            if (element.Variable == ShaderVariableLayout.Null ||
                 !ContainsLayout(vertex.ResultVarLayout, element.Variable))
             {
                 throw new ArgumentException(
@@ -91,7 +91,7 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private static uint ResolveLocation(
-            VariableLayoutReflection variable,
+            ShaderVariableLayout variable,
             string parameterName)
         {
             nuint reflectedLocation = variable.GetOffset(
@@ -130,12 +130,12 @@ internal sealed unsafe partial class VulkanBackend
         }
 
         private static bool ContainsLayout(
-            VariableLayoutReflection root,
-            VariableLayoutReflection candidate)
+            ShaderVariableLayout root,
+            ShaderVariableLayout candidate)
         {
             if (root == candidate)
                 return true;
-            TypeLayoutReflection type = root.TypeLayout;
+            ShaderTypeLayout type = root.TypeLayout;
             for (uint index = 0; index < type.FieldCount; index++)
                 if (ContainsLayout(type.GetFieldByIndex(index), candidate))
                     return true;
