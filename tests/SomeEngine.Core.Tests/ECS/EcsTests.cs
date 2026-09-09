@@ -37,7 +37,8 @@ public class EcsTests
         {
             ComponentJobAccess<LocalTransform>.ScheduleWrite(
                 context.World, new AdvanceJob(context.World, entity, (float)context.DeltaTime));
-            context.World.Commands().AddTag<UpdatedTag>(entity);
+            if (!context.World.Has<UpdatedTag>(entity))
+                context.World.Commands().AddTag<UpdatedTag>(entity);
         }
     }
 

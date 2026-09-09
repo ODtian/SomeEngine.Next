@@ -35,7 +35,7 @@ public static class Consumer
         SomeEngine.Job.JobSystem.Initialize(new SomeEngine.Job.JobRuntimeConfig { WorkerCount = 2 });
         try
         {
-            var world = new SomeEngine.ECS.World();
+            using var world = new SomeEngine.ECS.World(execution: new WorldJobs(SomeEngine.Job.JobSystem.Default));
             var entity = world.CreateEntity(new Position { X = 7 });
             world.Add(entity, new Velocity { X = 3 });
             new Integrate().ScheduleParallel(world).Complete();

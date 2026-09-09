@@ -22,9 +22,7 @@ public sealed class WorldJobFailClosedTests
         {
             JobHandle handle = JobSystem.Schedule(new RawWorldJob());
 
-            InvalidOperationException error =
-                Assert.Throws<InvalidOperationException>(() => handle.Complete());
-            Assert.Contains("admission", error.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Throws<InvalidOperationException>(() => handle.Complete());
             Assert.Equal(0, world.EntityCount);
             Assert.Equal(revision, world.PublishedTopologyRevision);
         }

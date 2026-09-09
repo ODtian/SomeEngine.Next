@@ -37,7 +37,8 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
         _transformQuery = world.Query(
             new QueryDefinitionBuilder()
                 .Read<LocalTransform>()
-                .Read<WorldTransform>());
+                .Read<WorldTransform>()
+                .Optional<Parent<DefaultHierarchyDomain>>(QueryAccess.Read));
         _parentedTopologyQuery = world.Query(
             new QueryDefinitionBuilder()
                 .Read<Parent<DefaultHierarchyDomain>>());
