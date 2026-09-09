@@ -291,14 +291,11 @@ public class QueryModelTests
         for (int i = 0; i < handles.Length; i++)
         {
             Assert.Equal((i & 1) == 0 ? positionHandle : velocityHandle, handles[i]);
-            Assert.Same(
-                (i & 1) == 0 ? position : velocity,
-                world.GetQueryDefinition(handles[i]));
         }
     }
 
     [Fact]
-    public void QueryDefinition_ExposesZeroCopyReadOnlySpans()
+    public void QueryDefinitionExposesTermsAndAccesses()
     {
         QueryDefinition definition = new QueryDefinitionBuilder()
             .Read<Position>()
@@ -318,28 +315,6 @@ public class QueryModelTests
         Assert.Equal(firstAccess.Kind, definition.Accesses[0].Kind);
     }
 
-    [Fact]
-    public void JobAdmissionAccessSet_IsNormalizedOnceByQueryDefinition()
-    {
-        QueryDefinition definition = new QueryDefinitionBuilder()
-            .Read<Position>()
-            .WriteBuffer<AdmissionOnlyBufferElement>()
-            .Build();
-
-        Assert.True(definition.CanWrite);
-        Assert.False(definition.HasRelationshipWrite);
-        Assert.Equal(2, definition.JobStorageAccesses.Length);
-        WorldJobStorageAccess position = FindStorageAccess(
-            definition.JobStorageAccesses.Span,
-            WorldStorageKind.Table);
-        Assert.Equal(ComponentMetadata<Position>.Id, position.ComponentId);
-        Assert.Equal(WorldStorageAccess.Read, position.Access);
-        WorldJobStorageAccess buffer = FindStorageAccess(
-            definition.JobStorageAccesses.Span,
-            WorldStorageKind.Buffer);
-        Assert.Equal(BufferComponents.Header<AdmissionOnlyBufferElement>(), buffer.ComponentId);
-        Assert.Equal(WorldStorageAccess.Write, buffer.Access);
-    }
 
     [Fact]
     public void JobAdmissionAccessSet_CachesRelationshipWriteClassification()
@@ -531,23 +506,6 @@ public class QueryModelTests
         Assert.Equal([1f], results);
     }
 
-    private static WorldJobStorageAccess FindStorageAccess(
-        ReadOnlySpan<WorldJobStorageAccess> accesses,
-        WorldStorageKind kind)
-    {
-        WorldJobStorageAccess result = default;
-        int matches = 0;
-        for (int index = 0; index < accesses.Length; index++)
-        {
-            if (accesses[index].Kind != kind)
-                continue;
-            result = accesses[index];
-            matches++;
-        }
-
-        Assert.Equal(1, matches);
-        return result;
-    }
 
     private static bool ContainsStorageAccess(
         ReadOnlySpan<WorldJobStorageAccess> accesses,

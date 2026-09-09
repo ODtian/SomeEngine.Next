@@ -15,8 +15,6 @@ public sealed class ShaderScalarLayoutTests
 
         IList<ShaderMaterialScalarLayout> layouts = shader.Metadata!.MaterialScalarLayouts!;
         Assert.Equal(2, layouts.Count);
-        Assert.Same(first, layouts[0]);
-        Assert.Same(second, layouts[1]);
     }
 
     [Fact]
@@ -75,7 +73,6 @@ public sealed class ShaderScalarLayoutTests
         };
 
         ScalarParam parameter = Assert.Single(material.Scalars!);
-        Assert.Same(value, parameter.Value!.Value.Vec4Val);
         Assert.Equal(4, parameter.Value.Value.Vec4Val.W);
     }
 

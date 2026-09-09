@@ -27,14 +27,31 @@ public partial struct Integrate : IJobEntity
         position.X += velocity.X + entity.Index;
     }
 }
+public static class Consumer
+{
+    public static int Execute()
+    {
+        SomeEngine.Job.JobSystem.Shutdown();
+        SomeEngine.Job.JobSystem.Initialize(new SomeEngine.Job.JobRuntimeConfig { WorkerCount = 2 });
+        try
+        {
+            var world = new SomeEngine.ECS.World();
+            var entity = world.CreateEntity(new Position { X = 7 });
+            world.Add(entity, new Velocity { X = 3 });
+            new Integrate().ScheduleParallel(world).Complete();
+            return world.Read<Position>(entity).X - entity.Index;
+        }
+        finally { SomeEngine.Job.JobSystem.Shutdown(); }
+    }
+}
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.Contains("GeneratedQueryAccessDescriptor", generated);
-        Assert.Contains("ScheduleParallel", generated);
-        Assert.Contains("row.Read<", generated);
-        Assert.Contains("row.ReadWrite<", generated);
+        using var stream = new MemoryStream();
+        var emitted = result.Compilation.Emit(stream);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        var assembly = System.Reflection.Assembly.Load(stream.ToArray());
+        Assert.Equal(10, (int)assembly.GetType("Consumer")!.GetMethod("Execute")!.Invoke(null, null)!);
     }
 
     [Fact]
@@ -50,7 +67,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG102");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG102" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -66,7 +83,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG103");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG103" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -83,7 +100,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG104");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG104" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -100,7 +117,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG104");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG104" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -118,7 +135,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG110");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG110" && diagnostic.Location.IsInSource);
     }
 
     [Theory]
@@ -140,11 +157,11 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG110");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG110" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
-    public void SafeAutoPropertiesAndFrameworkValueFieldsKeepStaticAliasProof()
+    public void JobDefinitionWithAutoPropertiesCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -166,14 +183,10 @@ public partial struct Valid : IJobEntity
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.Contains("CreateGeneratedTableAccess<", generated, StringComparison.Ordinal);
-        Assert.Contains("UnsafeAccessorKind.StaticMethod", generated, StringComparison.Ordinal);
-        Assert.Contains("SafeComponent>", generated, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void CanonicalRelationshipWriterIsGeneratedWithoutParallelSurface()
+    public void RelationshipWriterDefinitionProducesSerialAccessDiagnostic()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -186,13 +199,11 @@ public partial struct SerialTopology : IJobEntity
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.DoesNotContain("ScheduleParallel", generated);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG108");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG108" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
-    public void SupportsBufferBorrowAndDirectSparseReference()
+    public void BufferAndSparseJobDefinitionCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS;
@@ -207,13 +218,10 @@ public partial struct Mixed : IJobEntity
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.Contains("ReadBuffer", generated);
-        Assert.Contains("ReadWriteSparse", generated);
     }
 
     [Fact]
-    public void SupportsClosedGenericUnmanagedComponentJobs()
+    public void GenericUnmanagedJobDefinitionCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -226,15 +234,10 @@ public partial struct GenericWrite<T> : IJobEntity
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.Contains("ScheduleParallel<T>", generated);
-        Assert.Contains("where T : unmanaged", generated);
-        Assert.Contains("GeneratedQueryAccess.Table<T>", generated);
-        Assert.DoesNotContain("GeneratedQueryAccess.GeneratedTable<T>", generated);
     }
 
     [Fact]
-    public void ClosedAliasFreeComponent_EmitsStaticAliasCertificateFactory()
+    public void AliasFreeComponentJobDefinitionCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -247,16 +250,10 @@ public partial struct Integrate : IJobEntity
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.True(
-            generated.Contains("CreateGeneratedTableAccess<", StringComparison.Ordinal),
-            generated);
-        Assert.Contains("UnsafeAccessorKind.StaticMethod", generated, StringComparison.Ordinal);
-        Assert.Contains("Position>", generated);
     }
 
     [Fact]
-    public void SupportsParentAndEndpointReadWriteShapesAsSerialTopologyAccess()
+    public void ParentAndEndpointJobDefinitionCompiles()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -274,11 +271,7 @@ public partial struct TopologyEdit : IJobEntity
 """);
 
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG108");
-        string generated = string.Join("\n", result.GeneratedTrees.Select(static tree => tree.GetText().ToString()));
-        Assert.Contains("row.Read<", generated);
-        Assert.Contains("row.ReadWrite<", generated);
-        Assert.DoesNotContain("ScheduleParallel", generated);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG108" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -293,7 +286,7 @@ public partial struct Invalid : IJobEntity
 }
 """);
 
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG102");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG102" && diagnostic.Location.IsInSource);
     }
 
     private static GeneratorTestResult RunGenerator(string source)
@@ -301,7 +294,7 @@ public partial struct Invalid : IJobEntity
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
         SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(source, parseOptions);
         CSharpCompilation compilation = CSharpCompilation.Create(
-            "JobEntityGeneratorDiagnostics",
+            "JobEntityGeneratorDiagnostics_" + Guid.NewGuid().ToString("N"),
             [syntaxTree],
             GetReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
@@ -313,7 +306,7 @@ public partial struct Invalid : IJobEntity
         GeneratorDriverRunResult result = driver.GetRunResult();
         return new GeneratorTestResult(
             result.Diagnostics.Concat(output.GetDiagnostics()).ToImmutableArray(),
-            result.GeneratedTrees);
+            output);
     }
 
     private static MetadataReference[] GetReferences()
@@ -330,5 +323,5 @@ public partial struct Invalid : IJobEntity
 
     private sealed record GeneratorTestResult(
         ImmutableArray<Diagnostic> Diagnostics,
-        ImmutableArray<SyntaxTree> GeneratedTrees);
+        Compilation Compilation);
 }

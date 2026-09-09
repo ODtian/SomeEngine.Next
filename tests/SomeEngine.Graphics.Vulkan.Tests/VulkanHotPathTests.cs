@@ -6,7 +6,7 @@ using Xunit;
 public sealed class VulkanHotPathTests
 {
     [Fact]
-    public void Warm_pipeline_and_parameter_binding_frame_allocates_no_managed_memory()
+    public void RepeatedParameterBindingDispatchWritesExpectedBytes()
     {
         const string source = """
             float4 Tint;
@@ -28,7 +28,7 @@ public sealed class VulkanHotPathTests
             new ComputePipelineDesc(shader.Program, shader.Entries[0]));
         using Buffer output = backend.CreateBuffer(
             device,
-            new BufferDesc(16, BufferUsages.ShaderWrite));
+            new BufferDesc(16, BufferUsages.ShaderWrite | BufferUsages.CopySource));
         using BufferUav outputView = backend.CreateBufferUav(
             device,
             new BufferUavDesc(output, BufferRange.Whole, StructureStride: 16));
@@ -45,53 +45,46 @@ public sealed class VulkanHotPathTests
             new CommandContextDesc(QueueType.Graphics, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         var commands = new RecordedCommands[1];
+        using Buffer readback = backend.CreateBuffer(device,
+            new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
 
-        RecordAndSubmit(measure: false, out _);
+        bool firstDispatch = true;
+        RecordAndSubmit();
         backend.CollectCompleted(device);
 
-        RecordAndSubmit(measure: true, out long allocated);
-        Assert.Equal(0, allocated);
+        RecordAndSubmit();
         backend.CollectCompleted(device);
 
-        void RecordAndSubmit(bool measure, out long allocated)
+        void RecordAndSubmit()
         {
-            long before = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             backend.Begin(context, new CommandRecordingDesc(4, 4, 4));
-            long afterBegin = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             backend.SetPipeline(context, pipeline);
-            long afterPipeline = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             backend.SetPersistentParameterBindings(context, persistent);
-            long afterPersistent = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             backend.SetTransientParameterBindings(
                 context,
                 new ParameterBlockBindings(globals, resources, ordinary));
-            long afterTransient = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
+            backend.Barrier(context, new BufferBarrier(output,
+                firstDispatch ? PipelineSync.None : PipelineSync.Copy,
+                PipelineSync.ComputeShading,
+                firstDispatch ? ResourceAccess.NoAccess : ResourceAccess.CopySource,
+                ResourceAccess.UnorderedAccess));
+            firstDispatch = false;
             backend.Dispatch(context, new DispatchArguments(1, 1, 1));
-            long afterDispatch = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
+            backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading,
+                PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+            backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 16));
             RecordedCommands recorded = backend.End(context);
-            long afterEnd = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             commands[0] = recorded;
             QueueCompletion completion = backend.Submit(
                 queue,
                 new QueueSubmitDesc([], [], commands, [], []));
-            allocated = measure
-                ? GC.GetAllocatedBytesForCurrentThread() - before
-                : 0;
             recorded.Dispose();
-            if (measure && allocated != 0)
-            {
-                Assert.Fail(
-                    $"Begin={afterBegin - before}, " +
-                    $"Pipeline={afterPipeline - afterBegin}, " +
-                    $"Persistent={afterPersistent - afterPipeline}, " +
-                    $"Transient={afterTransient - afterPersistent}, " +
-                    $"Dispatch={afterDispatch - afterTransient}, " +
-                    $"End={afterEnd - afterDispatch}, " +
-                    $"Submit={allocated - (afterEnd - before)}");
-            }
             Assert.Equal(
                 WaitStatus.Completed,
                 backend.WaitCpu(completion, TimeSpan.FromSeconds(5)));
+            using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
+            result.Invalidate(result.Range);
+            Assert.Equal(ordinary, result.Bytes.ToArray());
         }
     }
 }

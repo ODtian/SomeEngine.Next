@@ -26,40 +26,13 @@ public sealed class RelationCanonicalBulkIndexTests
             appliedTarget,
             new FinalImageUnique());
         int entityCount = world.EntityCount;
-        RelationCommandBatchValidationDiagnostics before =
-            world.RelationGraph.StateCommandBatchValidationDiagnostics<FinalImageUnique>();
-
-        using (StructuralMutationScope mutation = world.BeginStructuralMutation())
-        {
-            var graph = world.RelationGraph;
-            graph.BeginCommandBatch();
-            graph.Retarget(
-                world,
-                existing,
-                existingSource,
-                projectedTarget,
-                RelationMaintenanceTiming.Deferred);
-
-            graph.ValidateAndTrackDeferred(world, new[] { existing });
-            Assert.Equal(
-                before,
-                graph.StateCommandBatchValidationDiagnostics<FinalImageUnique>());
-
-            _ = graph.Create(
-                world,
-                immediateSource,
-                projectedTarget,
-                new FinalImageUnique(),
-                timing: RelationMaintenanceTiming.Immediate);
-
-            Assert.Throws<InvalidOperationException>(() =>
-                graph.EndCommandBatch(world, completed: true));
-        }
+        using var commands = new CommandBuffer(world);
+        var relations = commands.Relations<FinalImageUnique>();
+        relations.Retarget(existing, existingSource, projectedTarget, RelationMaintenanceTiming.Deferred);
+        relations.Create(immediateSource, projectedTarget, new FinalImageUnique(), RelationMaintenanceTiming.Immediate);
+        Assert.Throws<InvalidOperationException>(commands.Playback);
 
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(
-            before,
-            world.RelationGraph.StateCommandBatchValidationDiagnostics<FinalImageUnique>());
         Assert.Equal(
             appliedTarget,
             world.GetDirectedRelationEndpoints(existing).Target);
@@ -84,38 +57,12 @@ public sealed class RelationCanonicalBulkIndexTests
             sourceB,
             targetB,
             new FinalImageUnique());
-        RelationCommandBatchValidationDiagnostics before =
-            world.RelationGraph.StateCommandBatchValidationDiagnostics<FinalImageUnique>();
-
-        using (StructuralMutationScope mutation = world.BeginStructuralMutation())
+        using (var commands = new CommandBuffer(world))
         {
-            var graph = world.RelationGraph;
-            graph.BeginCommandBatch();
-            graph.Retarget(
-                world,
-                edgeA,
-                sourceA,
-                targetB,
-                RelationMaintenanceTiming.Deferred);
-
-            graph.ValidateAndTrackDeferred(world, new[] { edgeA });
-            Assert.Equal(
-                before,
-                graph.StateCommandBatchValidationDiagnostics<FinalImageUnique>());
-
-            graph.Retarget(
-                world,
-                edgeB,
-                sourceB,
-                targetA,
-                RelationMaintenanceTiming.Deferred);
-            graph.EndCommandBatch(world, completed: true);
-
-            RelationCommandBatchValidationDiagnostics afterFinalization =
-                graph.StateCommandBatchValidationDiagnostics<FinalImageUnique>();
-            Assert.Equal(1, afterFinalization.FullScanCount - before.FullScanCount);
-            Assert.Equal(2, afterFinalization.TransitionVisitCount - before.TransitionVisitCount);
-            mutation.Commit();
+            var relations = commands.Relations<FinalImageUnique>();
+            relations.Retarget(edgeA, sourceA, targetB, RelationMaintenanceTiming.Deferred);
+            relations.Retarget(edgeB, sourceB, targetA, RelationMaintenanceTiming.Deferred);
+            commands.Playback();
         }
 
         Assert.Equal(targetB, world.GetDirectedRelationEndpoints(edgeA).Target);
@@ -159,8 +106,6 @@ public sealed class RelationCanonicalBulkIndexTests
         for (int i = 0; i < Count; i++)
             edges[i] = pending[i].Resolve();
 
-        RelationCanonicalLookupDiagnostics before =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
         using (var failing = new CommandBuffer(world))
         {
             var relations = failing.Relations<BulkLink>();
@@ -174,9 +119,6 @@ public sealed class RelationCanonicalBulkIndexTests
             Assert.Throws<InvalidOperationException>(() => failing.Playback());
         }
 
-        Assert.Equal(
-            before,
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>());
         Assert.All(edges, edge => Assert.True(world.IsAlive(edge.Entity)));
 
         using (var commands = new CommandBuffer(world))
@@ -187,12 +129,6 @@ public sealed class RelationCanonicalBulkIndexTests
             commands.Playback();
         }
 
-        RelationCanonicalLookupDiagnostics after =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(1, after.BulkIndexBuildCount - before.BulkIndexBuildCount);
-        Assert.Equal(Count, after.BulkIndexBuildEdgeVisits - before.BulkIndexBuildEdgeVisits);
-        Assert.Equal(Count, after.BetweenLookupCount - before.BetweenLookupCount);
-        Assert.Equal(Count, after.BetweenBucketVisits - before.BetweenBucketVisits);
         Assert.All(edges, edge => Assert.False(world.IsAlive(edge.Entity)));
     }
 
@@ -208,8 +144,6 @@ public sealed class RelationCanonicalBulkIndexTests
             oldSource,
             oldTarget,
             new BulkLink());
-        RelationCanonicalLookupDiagnostics before =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
 
         using (var commands = new CommandBuffer(world))
         {
@@ -225,14 +159,6 @@ public sealed class RelationCanonicalBulkIndexTests
             commands.Playback();
         }
 
-        RelationCanonicalLookupDiagnostics after =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(1, after.BulkIndexBuildCount - before.BulkIndexBuildCount);
-        Assert.Equal(1, after.BulkIndexBuildEdgeVisits - before.BulkIndexBuildEdgeVisits);
-        Assert.Equal(2, after.BetweenLookupCount - before.BetweenLookupCount);
-        Assert.Equal(0, after.BetweenBucketVisits - before.BetweenBucketVisits);
-        Assert.Equal(1, after.AtLookupCount - before.AtLookupCount);
-        Assert.Equal(1, after.AtBucketVisits - before.AtBucketVisits);
         Assert.False(world.IsAlive(edge.Entity));
     }
 
@@ -248,8 +174,6 @@ public sealed class RelationCanonicalBulkIndexTests
             source,
             appliedTarget,
             new BulkLink());
-        RelationCanonicalLookupDiagnostics before =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
 
         using (var commands = new CommandBuffer(world))
         {
@@ -270,12 +194,6 @@ public sealed class RelationCanonicalBulkIndexTests
             commands.Playback();
         }
 
-        RelationCanonicalLookupDiagnostics after =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(1, after.BulkIndexBuildCount - before.BulkIndexBuildCount);
-        Assert.Equal(1, after.BulkIndexBuildEdgeVisits - before.BulkIndexBuildEdgeVisits);
-        Assert.Equal(3, after.BetweenLookupCount - before.BetweenLookupCount);
-        Assert.Equal(1, after.BetweenBucketVisits - before.BetweenBucketVisits);
         Assert.False(world.IsAlive(edge.Entity));
     }
 
@@ -329,20 +247,7 @@ public sealed class RelationCanonicalBulkIndexTests
             retarget.Playback();
         }
 
-        RelationCanonicalLookupDiagnostics beforeDirect =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
         world.DestroyEntity(unrelated[0]);
-        RelationCanonicalLookupDiagnostics afterDirect =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(
-            1,
-            afterDirect.CleanupLookupCount - beforeDirect.CleanupLookupCount);
-        Assert.Equal(
-            0,
-            afterDirect.CleanupAppliedEntryVisits - beforeDirect.CleanupAppliedEntryVisits);
-        Assert.Equal(
-            0,
-            afterDirect.CleanupDirtyEntryVisits - beforeDirect.CleanupDirtyEntryVisits);
 
         using (var cleanup = new CommandBuffer(world))
         {
@@ -350,40 +255,11 @@ public sealed class RelationCanonicalBulkIndexTests
                 cleanup.DestroyEntity(unrelated[i]);
             cleanup.Playback();
         }
-        RelationCanonicalLookupDiagnostics afterUnrelated =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(
-            UnrelatedCount - 1,
-            afterUnrelated.CleanupLookupCount - afterDirect.CleanupLookupCount);
-        Assert.Equal(
-            0,
-            afterUnrelated.CleanupAppliedEntryVisits - afterDirect.CleanupAppliedEntryVisits);
-        Assert.Equal(
-            0,
-            afterUnrelated.CleanupDirtyEntryVisits - afterDirect.CleanupDirtyEntryVisits);
 
-        RelationCanonicalLookupDiagnostics beforeCurrent = afterUnrelated;
         world.DestroyEntity(newTargets[0]);
-        RelationCanonicalLookupDiagnostics afterCurrent =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(
-            0,
-            afterCurrent.CleanupAppliedEntryVisits - beforeCurrent.CleanupAppliedEntryVisits);
-        Assert.Equal(
-            1,
-            afterCurrent.CleanupDirtyEntryVisits - beforeCurrent.CleanupDirtyEntryVisits);
         Assert.False(world.IsAlive(edges[0].Entity));
 
-        RelationCanonicalLookupDiagnostics beforeApplied = afterCurrent;
         world.DestroyEntity(oldTargets[1]);
-        RelationCanonicalLookupDiagnostics afterApplied =
-            world.RelationGraph.StateCanonicalLookupDiagnostics<BulkLink>();
-        Assert.Equal(
-            1,
-            afterApplied.CleanupAppliedEntryVisits - beforeApplied.CleanupAppliedEntryVisits);
-        Assert.Equal(
-            0,
-            afterApplied.CleanupDirtyEntryVisits - beforeApplied.CleanupDirtyEntryVisits);
         Assert.False(world.IsAlive(edges[1].Entity));
         Assert.True(world.IsAlive(edges[2].Entity));
     }

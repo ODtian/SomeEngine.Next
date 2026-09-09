@@ -7,7 +7,7 @@ public sealed class VulkanAdapterTests
     [Fact]
     public void Runtime_enumerates_hardware_adapters_with_stable_identity()
     {
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         AdapterInfo[] adapters = new AdapterInfo[8];
 
         bool complete = backend.TryEnumerateAdapters(
@@ -30,7 +30,7 @@ public sealed class VulkanAdapterTests
     [Fact]
     public void Runtime_creates_vulkan_13_device_and_requested_queues()
     {
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues =
         [
             new DeviceQueueDesc(QueueType.Graphics),

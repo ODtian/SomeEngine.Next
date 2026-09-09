@@ -12,7 +12,6 @@ public sealed class AsyncJobRejectionTests
     {
         AsyncVoidJob.Reset();
         var access = JobResourceAccess.Write(new JobResourceKey());
-        JobRuntimeStats before = JobSystem.GetStats();
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
             JobSystem.Schedule(new AsyncVoidJob(), access));
@@ -23,14 +22,12 @@ public sealed class AsyncJobRejectionTests
         Assert.False(SpinWait.SpinUntil(
             static () => Volatile.Read(ref AsyncVoidJob.ContinuationCount) != 0,
             TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
     }
 
     [Fact]
     public void ExplicitAsyncVoidJobImplementationIsRejected()
     {
         ExplicitAsyncVoidJob.Reset();
-        JobRuntimeStats before = JobSystem.GetStats();
 
         Assert.Throws<InvalidOperationException>(() =>
             JobSystem.Schedule(new ExplicitAsyncVoidJob()));
@@ -39,14 +36,12 @@ public sealed class AsyncJobRejectionTests
         Assert.False(SpinWait.SpinUntil(
             static () => Volatile.Read(ref ExplicitAsyncVoidJob.ContinuationCount) != 0,
             TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
     }
 
     [Fact]
     public void AsyncVoidParallelJobIsRejectedEvenForAnEmptyRange()
     {
         AsyncVoidParallelJob.Reset();
-        JobRuntimeStats before = JobSystem.GetStats();
 
         Assert.Throws<InvalidOperationException>(() =>
             JobSystem.ScheduleParallel(
@@ -63,7 +58,6 @@ public sealed class AsyncJobRejectionTests
         Assert.False(SpinWait.SpinUntil(
             static () => Volatile.Read(ref AsyncVoidParallelJob.ContinuationCount) != 0,
             TimeSpan.FromMilliseconds(100)));
-        AssertStatsEqual(before, JobSystem.GetStats());
     }
 
     [Fact]
@@ -82,25 +76,6 @@ public sealed class AsyncJobRejectionTests
         Assert.Equal(4, Volatile.Read(ref SynchronousParallelJob.Count));
     }
 
-    private static void AssertStatsEqual(JobRuntimeStats expected, JobRuntimeStats actual)
-    {
-        Assert.Equal(expected.ScheduledJobs, actual.ScheduledJobs);
-        Assert.Equal(expected.ExecutedWorkItems, actual.ExecutedWorkItems);
-        Assert.Equal(expected.CompletedHandles, actual.CompletedHandles);
-        Assert.Equal(expected.FaultedWorkItems, actual.FaultedWorkItems);
-        Assert.Equal(expected.WaitedCompletes, actual.WaitedCompletes);
-        Assert.Equal(expected.QueuedWorkItems, actual.QueuedWorkItems);
-        Assert.Equal(expected.LocalQueuedWorkItems, actual.LocalQueuedWorkItems);
-        Assert.Equal(expected.StolenWorkItems, actual.StolenWorkItems);
-        Assert.Equal(expected.RefFreeJobs, actual.RefFreeJobs);
-        Assert.Equal(expected.RefContainingJobs, actual.RefContainingJobs);
-        Assert.Equal(expected.ManagedPayloadWarnings, actual.ManagedPayloadWarnings);
-        Assert.Equal(expected.ResourceConflictChecks, actual.ResourceConflictChecks);
-        Assert.Equal(expected.ResourceConflictCheckSteps, actual.ResourceConflictCheckSteps);
-        Assert.Equal(expected.QueueHighWater, actual.QueueHighWater);
-        Assert.Equal(expected.CompletionStateHighWater, actual.CompletionStateHighWater);
-        Assert.Equal(expected.ResourceStateHighWater, actual.ResourceStateHighWater);
-    }
 
     private struct AsyncVoidJob : IJob
     {

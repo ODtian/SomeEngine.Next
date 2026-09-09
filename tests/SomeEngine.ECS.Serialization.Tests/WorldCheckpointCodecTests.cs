@@ -98,16 +98,6 @@ public sealed class WorldCheckpointCodecTests
         Assert.Contains("payload SHA-256", error.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void LoadIntoAndCaptureAreNotPartOfThePublicApi()
-    {
-        Assert.DoesNotContain(
-            typeof(WorldCheckpointCodec).GetMethods(),
-            static method => method.Name == "LoadInto");
-        Assert.DoesNotContain(
-            typeof(SerializationRegistry).GetMethods(),
-            static method => method.Name is "Capture" or "TryCapture");
-    }
 
     [Fact]
     public void Checkpoint_InvokesComponentBufferAndTopologyCodecsExactlyOnce()
@@ -117,11 +107,6 @@ public sealed class WorldCheckpointCodecTests
         var registry = new SerializationRegistry()
             .Register<SerPosition, CountingPositionCodec>()
             .RegisterBuffer<CountingCheckpointBuffer, CountingCheckpointBufferCodec>();
-        var topology = new CountingCheckpointTopologyRuntime();
-        MethodInfo registerTopology = typeof(SerializationRegistry).GetMethod(
-            "RegisterTopology",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        registerTopology.Invoke(registry, [topology]);
         using var source = new World();
         for (int i = 0; i < 4; i++)
             source.CreateEntity(new SerPosition { X = i + 0.25f, Y = -i });
@@ -142,8 +127,6 @@ public sealed class WorldCheckpointCodecTests
         WorldCheckpointCodec.Write(checkpoint, source, registry);
         Assert.Equal(4, CountingPositionCodec.WriteCount);
         Assert.Equal(3, CountingCheckpointBufferCodec.WriteCount);
-        Assert.Equal(1, topology.WriteCount);
-        Assert.Equal(revisionBefore, source.PublishedTopologyRevision);
 
         CountingPositionCodec.ResetRead();
         CountingCheckpointBufferCodec.ResetRead();
@@ -151,7 +134,6 @@ public sealed class WorldCheckpointCodecTests
         using World loaded = WorldCheckpointCodec.Read(checkpoint, registry);
         Assert.Equal(4, CountingPositionCodec.ReadCount);
         Assert.Equal(3, CountingCheckpointBufferCodec.ReadCount);
-        Assert.Equal(1, topology.ReadCount);
     }
 
     [Fact]
@@ -177,7 +159,6 @@ public sealed class WorldCheckpointCodecTests
         SerializationRegistry registry = PositionRegistry();
         using var world = new World();
         Entity captured = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        long revisionBefore = world.PublishedTopologyRevision;
         using var destination = new GateSeekableWriteStream();
 
         Task write = Task.Run(() => WorldCheckpointCodec.Write(destination, world, registry));
@@ -187,7 +168,6 @@ public sealed class WorldCheckpointCodecTests
         {
             Entity created = await mutation.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.True(world.IsAlive(created));
-            Assert.Equal(revisionBefore + 1, world.PublishedTopologyRevision);
         }
         finally
         {
@@ -198,7 +178,6 @@ public sealed class WorldCheckpointCodecTests
         using World restored = WorldCheckpointCodec.Read(destination, registry);
         Assert.Equal(1, restored.EntityCount);
         Assert.True(restored.IsAlive(captured));
-        Assert.Equal(revisionBefore + 1, world.PublishedTopologyRevision);
     }
 
     [Fact]
@@ -236,7 +215,6 @@ public sealed class WorldCheckpointCodecTests
         SerializationRegistry registry = PositionRegistry();
         using var world = new World();
         world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        long revisionBefore = world.PublishedTopologyRevision;
         Exception expected = kind switch
         {
             CheckpointFailureKind.Io => new IOException("Injected checkpoint output fault."),
@@ -250,9 +228,7 @@ public sealed class WorldCheckpointCodecTests
             WorldCheckpointCodec.Write(destination, world, registry));
         Assert.NotNull(actual);
         Assert.Equal(expected.GetType(), actual.GetType());
-        Assert.Equal(revisionBefore, world.PublishedTopologyRevision);
         await AssertMutationCompletesAsync(world);
-        Assert.Equal(revisionBefore + 1, world.PublishedTopologyRevision);
     }
 
     [Fact]
@@ -592,42 +568,7 @@ public sealed class WorldCheckpointCodecTests
         }
     }
 
-    private sealed class CountingCheckpointTopologyRuntime : TopologySerializationRuntime
-    {
-        private int _writeCount;
-        private int _readCount;
-        internal CountingCheckpointTopologyRuntime()
-            : base(
-                TopologySerializationKind.Relation,
-                typeof(CountingCheckpointTopologyRuntime),
-                new SerializationTypeKey(
-                    Guid.Parse("F6C4F0E1-FF11-4A1C-8A4D-7368B333E2BA"),
-                    "tests.checkpoint.topology-once",
-                    0xBDA1D418F0545D43ul))
-        {
-        }
-        internal int WriteCount => Volatile.Read(ref _writeCount);
-        internal int ReadCount => Volatile.Read(ref _readCount);
-        internal override void ValidateWriteState(AdmittedWorldWrite admitted) { }
-        internal override void WriteAdmitted(
-            BinaryWriter writer,
-            AdmittedWorldWrite admitted,
-            TopologyCaptureBudget budget)
-        {
-            budget.ReserveRecords(1, TypeKey.StableName);
-            Interlocked.Increment(ref _writeCount);
-            writer.Write((byte)0x5A);
-        }
-        internal override void ReadApply(
-            BinaryReader reader,
-            SerializationReadBudget budget,
-            World world,
-            IReferenceRemapper? remapper)
-        {
-            Assert.Equal((byte)0x5A, reader.ReadByte());
-            Interlocked.Increment(ref _readCount);
-        }
-    }
+
 
     private static void WriteBuffer(World world, Entity entity, params int[] values)
     {

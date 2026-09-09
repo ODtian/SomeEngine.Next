@@ -128,21 +128,7 @@ internal sealed unsafe partial class VulkanBackend
                 Layout = layout.Native,
             };
             Result result;
-#if SOMEENGINE_TESTING
-            FaultHooks.Before(VulkanCallPoint.CreatePipeline);
-            bool overridden = FaultHooks.TryOverride(
-                VulkanCallPoint.CreatePipeline,
-                out Result injectedResult);
-#endif
-#if SOMEENGINE_TESTING
-            if (overridden)
-            {
-                result = injectedResult;
-            }
-            else if (nativeCache is null)
-#else
             if (nativeCache is null)
-#endif
             {
                 result = Api.CreateComputePipelines(
                     nativeDevice.Native, default, 1, &createInfo, null, &native);
@@ -153,9 +139,6 @@ internal sealed unsafe partial class VulkanBackend
                     result = Api.CreateComputePipelines(
                         nativeDevice.Native, nativeCache.Native, 1, &createInfo, null, &native);
             }
-#if SOMEENGINE_TESTING
-            FaultHooks.After(VulkanCallPoint.CreatePipeline);
-#endif
             ThrowPipelineFailure(nativeDevice, result, "vkCreateComputePipelines");
             pipeline = new VulkanPipeline(nativeDevice, native, layout, PipelineType.Compute, desc.Label);
             return RegisterChildOrDispose(nativeDevice, pipeline);
@@ -365,14 +348,6 @@ internal sealed unsafe partial class VulkanBackend
         GraphicsPipelineCreateInfo* createInfo,
         VkPipeline* native)
     {
-#if SOMEENGINE_TESTING
-        FaultHooks.Before(VulkanCallPoint.CreatePipeline);
-        if (FaultHooks.TryOverride(VulkanCallPoint.CreatePipeline, out Result injectedResult))
-        {
-            FaultHooks.After(VulkanCallPoint.CreatePipeline);
-            return injectedResult;
-        }
-#endif
         Result result = Api.CreateGraphicsPipelines(
             device.Native,
             cache,
@@ -380,9 +355,6 @@ internal sealed unsafe partial class VulkanBackend
             createInfo,
             null,
             native);
-#if SOMEENGINE_TESTING
-        FaultHooks.After(VulkanCallPoint.CreatePipeline);
-#endif
         return result;
     }
 

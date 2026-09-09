@@ -1,4 +1,4 @@
-# Product build and tests are the default path. Harness checks are opt-in.
+# Product build and functional tests are the default path.
 
 set windows-shell := ["pwsh.exe", "-NoProfile", "-Command"]
 
@@ -16,9 +16,6 @@ test *args:
 
 build *args:
     dotnet build SomeEngine.slnx {{ args }}
-
-harness-test *args:
-    dotnet test SomeEngine.Harness.slnx {{ args }}
 
 # Short deterministic model/reference check. Failure artifacts are emitted beside the test binary.
 ecs-fuzz *args:
@@ -39,25 +36,27 @@ ecs-perf *args:
 # Restore and force-rebuild a NativeAOT image without claiming runtime certification.
 ecs-aot-build rid:
     dotnet restore tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} -p:PublishAot=true -p:_IsPublishing=true
-    dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/cert-publish -p:PublishAot=true -p:SelfContained=true -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -p:TrimmerSingleWarn=false
+    dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false
 
-# Host-compatible certification: forced native build followed by native semantic execution.
+# Native build followed by native functional execution.
 ecs-aot rid:
     dotnet restore tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} -p:PublishAot=true -p:_IsPublishing=true
-    dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/cert-publish -p:PublishAot=true -p:SelfContained=true -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -p:TrimmerSingleWarn=false
-    ./tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/cert-publish/SomeEngine.ECS.AotSmoke{{ aot_executable_extension }}
+    dotnet publish tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -r {{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }} --self-contained true --no-restore -t:Rebuild -o tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish -p:PublishAot=true -p:SelfContained=true -p:TrimmerSingleWarn=false
+    ./tools/SomeEngine.ECS.AotSmoke/bin/Release/net10.0/{{ if rid =~ aot_rid_pattern { rid } else { error("unsupported NativeAOT RID") } }}/native-publish/SomeEngine.ECS.AotSmoke{{ aot_executable_extension }}
 
 # Host-executed NativeAOT matrix. Every comma-separated RID must be runnable on this host.
-# Success writes schema-2 evidence containing clean source identity, the exact RID set, and hashes.
+# Records native execution results for each requested RID.
 ecs-aot-matrix rids evidence='artifacts/ecs-aot-evidence.json':
     pwsh -NoProfile -File tools/SomeEngine.ECS.AotSmoke/Invoke-AotMatrix.ps1 -Rids '{{ if rids =~ aot_rid_list_pattern { rids } else { error("RIDs must be a non-empty comma-separated supported list") } }}' -Evidence '{{ if evidence =~ single_quoted_argument_pattern { evidence } else { error("evidence path may not contain a quote or line break") } }}'
 
 ecs-aot-matrix-script-test:
     pwsh -NoProfile -File tools/SomeEngine.ECS.AotSmoke/Test-AotEvidenceDestination.ps1
 
-# Fast local evidence loop; the full certification sequence and native execution are documented.
-ecs-cert-smoke:
-    dotnet test tests/SomeEngine.ECS.Fuzz.Tests/SomeEngine.ECS.Fuzz.Tests.csproj -c Release
-    dotnet test tests/SomeEngine.ECS.Benchmarks.Tests/SomeEngine.ECS.Benchmarks.Tests.csproj -c Release
-    dotnet run --project benchmarks/SomeEngine.ECS.Benchmarks/SomeEngine.ECS.Benchmarks.csproj -c Release -- --profile smoke
-    dotnet run --project tools/SomeEngine.ECS.AotSmoke/SomeEngine.ECS.AotSmoke.csproj -c Release -p:PublishAot=false
+
+# Each destructive category runs in its own test process and writes a separate result file.
+d3d12-device-loss:
+    dotnet test tests/SomeEngine.Graphics.Direct3D12.Tests/SomeEngine.Graphics.Direct3D12.Tests.csproj --filter 'Isolation=DeviceLossProcess' --logger 'trx;LogFileName=d3d12-device-loss.trx' --results-directory artifacts/test-results
+
+d3d12-presentation:
+    dotnet test tests/SomeEngine.Graphics.Direct3D12.Tests/SomeEngine.Graphics.Direct3D12.Tests.csproj --filter 'Isolation=PresentationProcess' --logger 'trx;LogFileName=d3d12-presentation.trx' --results-directory artifacts/test-results
+

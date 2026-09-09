@@ -6,7 +6,6 @@ internal enum BenchmarkProfile
 {
     Smoke,
     Standard,
-    Certification,
 }
 
 internal sealed record BenchmarkOptions(
@@ -16,60 +15,15 @@ internal sealed record BenchmarkOptions(
     int Samples,
     int QueryIterations,
     int StructuralIterations,
-    string? OutputPath,
-    string? BaselinePath,
-    string? AbsoluteBudgetsPath,
-    string? EvidenceManifestPath,
-    double MaximumP50RegressionPercent,
-    double MaximumP99RegressionPercent)
+    string? OutputPath)
 {
-    internal const double DefaultMaximumP50RegressionPercent = 5.0;
-    internal const double DefaultMaximumP99RegressionPercent = 10.0;
-    internal const int CertificationWarmupSamples = 3;
-    internal const int CertificationSamples = 100;
-    internal const int CertificationQueryIterations = 128;
-    internal const int CertificationStructuralIterations = 64;
-
-    internal static readonly int[] CertificationEntityCounts =
-    [
-        100_000,
-        500_000,
-        1_000_000,
-    ];
-
-    internal static string HelpText =>
-        """
-        SomeEngine ECS benchmark and certification runner
-
-        Usage:
-          dotnet run --project benchmarks/SomeEngine.ECS.Benchmarks -c Release -- [options]
-
-        Options:
-          --profile <smoke|standard|certification>
-              smoke (default): 10k entities, 1 warm-up, 3 fresh samples.
-              standard: 100k and 500k entities, 2 warm-ups, 5 fresh samples.
-              certification: fixed 100k, 500k, and 1m entities, 3 warm-ups,
-              100 fresh samples, 128 query passes, and 64 structural
-              publications. Certification requires --baseline,
-              --absolute-budgets, and --evidence-manifest.
-          --entity-counts <count[,count...]>
-              Override smoke/standard profile counts. Suffixes k and m are
-              accepted (for example 100k,500k,1m).
-          --warmup <count>              Override smoke/standard warm-up count.
-          --samples <count>             Override smoke/standard measured count.
-          --query-iterations <count>    Override smoke/standard query passes.
-          --structural-iterations <n>   Override smoke/standard publications.
-          --output <path>               Also write the JSON report to this file.
-          --baseline <report.json>      Compare p50/p99 with a prior runner report.
-          --absolute-budgets <file>     Apply absolute per-scenario budgets.
-          --evidence-manifest <file>    Bind certification to reviewed external evidence.
-          --max-p50-regression-percent <percent>  Default: 5.
-          --max-p99-regression-percent <percent>  Default: 10.
-          --help                        Show this help.
-
-        The default smoke invocation is intentionally short and does not need a
-        baseline or budget file. See README.md next to the project for the absolute
-        budget JSON schema and certification examples.
+    internal static string HelpText => """
+        SomeEngine ECS measurements
+        --profile <smoke|standard>
+        --entity-counts <count[,count...]> (k/m suffixes accepted)
+        --warmup <count> --samples <count>
+        --query-iterations <count> --structural-iterations <count>
+        --output <path> --help
         """;
 
     internal string ProfileName => Profile.ToString().ToLowerInvariant();
@@ -88,12 +42,6 @@ internal sealed record BenchmarkOptions(
         int? queryIterations = null;
         int? structuralIterations = null;
         string? outputPath = null;
-        string? baselinePath = null;
-        string? absoluteBudgetsPath = null;
-        string? evidenceManifestPath = null;
-        double maximumP50RegressionPercent = DefaultMaximumP50RegressionPercent;
-        double maximumP99RegressionPercent = DefaultMaximumP99RegressionPercent;
-
         for (int index = 0; index < args.Length; index++)
         {
             string argument = args[index];
@@ -149,36 +97,6 @@ internal sealed record BenchmarkOptions(
                 case "--output":
                     outputPath = ResolvePath(value);
                     break;
-                case "--baseline":
-                    baselinePath = ResolvePath(value);
-                    break;
-                case "--absolute-budgets":
-                case "--budgets":
-                    absoluteBudgetsPath = ResolvePath(value);
-                    break;
-                case "--evidence-manifest":
-                    evidenceManifestPath = ResolvePath(value);
-                    break;
-                case "--max-p50-regression-percent":
-                    if (!TryParseNonNegativeDouble(
-                            value,
-                            option,
-                            out maximumP50RegressionPercent,
-                            out error))
-                    {
-                        return false;
-                    }
-                    break;
-                case "--max-p99-regression-percent":
-                    if (!TryParseNonNegativeDouble(
-                            value,
-                            option,
-                            out maximumP99RegressionPercent,
-                            out error))
-                    {
-                        return false;
-                    }
-                    break;
                 default:
                     error = $"Unknown option '{option}'.";
                     return false;
@@ -192,56 +110,6 @@ internal sealed record BenchmarkOptions(
         queryIterations ??= defaults.QueryIterations;
         structuralIterations ??= defaults.StructuralIterations;
 
-        if (profile == BenchmarkProfile.Certification)
-        {
-            if (baselinePath is null ||
-                absoluteBudgetsPath is null ||
-                evidenceManifestPath is null)
-            {
-                error =
-                    "The certification profile requires --baseline, --absolute-budgets, " +
-                    "and --evidence-manifest.";
-                return false;
-            }
-
-#if DEBUG
-            error = "The certification profile must be built and run in Release configuration.";
-            return false;
-#else
-            if (!entityCounts.SequenceEqual(CertificationEntityCounts) ||
-                warmupSamples != CertificationWarmupSamples ||
-                samples != CertificationSamples ||
-                queryIterations != CertificationQueryIterations ||
-                structuralIterations != CertificationStructuralIterations)
-            {
-                error =
-                    "The certification workload is fixed: --entity-counts 100k,500k,1m, " +
-                    "--warmup 3, --samples 100, --query-iterations 128, and " +
-                    "--structural-iterations 64. Use smoke or standard for custom workloads.";
-                return false;
-            }
-            if (maximumP50RegressionPercent > DefaultMaximumP50RegressionPercent ||
-                maximumP99RegressionPercent > DefaultMaximumP99RegressionPercent)
-            {
-                error =
-                    "Certification regression limits may be tightened but not relaxed beyond " +
-                    $"p50={DefaultMaximumP50RegressionPercent}% and " +
-                    $"p99={DefaultMaximumP99RegressionPercent}%.";
-                return false;
-            }
-            if (outputPath is not null &&
-                (PathsEqual(outputPath, baselinePath) ||
-                 PathsEqual(outputPath, absoluteBudgetsPath) ||
-                 PathsEqual(outputPath, evidenceManifestPath)))
-            {
-                error =
-                    "Certification --output must not overwrite the approved baseline, budget, " +
-                    "or evidence manifest file.";
-                return false;
-            }
-#endif
-        }
-
         options = new BenchmarkOptions(
             profile,
             entityCounts,
@@ -249,12 +117,7 @@ internal sealed record BenchmarkOptions(
             samples.Value,
             queryIterations.Value,
             structuralIterations.Value,
-            outputPath,
-            baselinePath,
-            absoluteBudgetsPath,
-            evidenceManifestPath,
-            maximumP50RegressionPercent,
-            maximumP99RegressionPercent);
+            outputPath);
         return true;
     }
 
@@ -297,12 +160,6 @@ internal sealed record BenchmarkOptions(
         if (value.Equals("standard", StringComparison.OrdinalIgnoreCase))
         {
             profile = BenchmarkProfile.Standard;
-            return true;
-        }
-        if (value.Equals("certification", StringComparison.OrdinalIgnoreCase) ||
-            value.Equals("cert", StringComparison.OrdinalIgnoreCase))
-        {
-            profile = BenchmarkProfile.Certification;
             return true;
         }
 
@@ -409,32 +266,7 @@ internal sealed record BenchmarkOptions(
         return false;
     }
 
-    private static bool TryParseNonNegativeDouble(
-        string value,
-        string option,
-        out double parsed,
-        out string? error)
-    {
-        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) &&
-            double.IsFinite(parsed) &&
-            parsed >= 0)
-        {
-            error = null;
-            return true;
-        }
-        error = $"Option '{option}' must be a finite non-negative number.";
-        return false;
-    }
-
     private static string ResolvePath(string value) => Path.GetFullPath(value);
-
-    private static bool PathsEqual(string left, string? right) =>
-        right is not null && string.Equals(
-            left,
-            right,
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal);
 
     private sealed record ProfileDefaults(
         int[] EntityCounts,
@@ -447,12 +279,6 @@ internal sealed record BenchmarkOptions(
         {
             BenchmarkProfile.Smoke => new([10_000], 1, 3, 8, 8),
             BenchmarkProfile.Standard => new([100_000, 500_000], 2, 5, 64, 32),
-            BenchmarkProfile.Certification => new(
-                CertificationEntityCounts,
-                CertificationWarmupSamples,
-                CertificationSamples,
-                CertificationQueryIterations,
-                CertificationStructuralIterations),
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         };
     }

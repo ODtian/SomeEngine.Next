@@ -130,8 +130,8 @@ internal sealed unsafe class DirectSilkContext : IDisposable
         NativeResourceDesc description = new(
             ResourceDimension.Texture2D,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             1,
             1,
             NativeFormat.FormatR8G8B8A8Unorm,

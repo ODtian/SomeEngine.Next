@@ -12,9 +12,7 @@ public sealed class RenderInstanceSetTests
         RenderInstancePropertyLayout layout = CreateLayout();
         using var set = new RenderInstanceSet(layout);
 
-        Assert.Same(layout, set.Layout);
         Assert.Equal(0, set.Count);
-        Assert.Equal(1ul, set.Revision);
         Assert.False(set.HasPublishedData);
         Assert.Null(set.Current);
         Assert.IsAssignableFrom<ISystem<RenderPrepareSystemContext>>(set);

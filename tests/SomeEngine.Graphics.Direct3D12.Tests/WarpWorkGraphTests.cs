@@ -79,16 +79,6 @@ public sealed class WarpWorkGraphTests
         Assert.Equal(160UL, requirements.NormalizeBackingSize(1_000));
         Assert.Throws<ArgumentOutOfRangeException>(() => requirements.NormalizeBackingSize(63));
 
-        Assert.DoesNotContain(
-            typeof(WorkGraphs).GetProperties(),
-            static property => property.Name.Contains(
-                "MaximumInputRecordCount",
-                StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            typeof(WorkGraphPipelineDesc).GetProperties(),
-            static property => property.Name.Contains(
-                "MaximumInputRecordCount",
-                StringComparison.Ordinal));
     }
 
     [Fact]

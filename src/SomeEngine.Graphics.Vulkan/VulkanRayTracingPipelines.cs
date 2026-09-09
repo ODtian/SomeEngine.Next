@@ -203,18 +203,7 @@ internal sealed unsafe partial class VulkanBackend
                     Layout = layout.Native,
                 };
                 VkPipeline native = default;
-#if SOMEENGINE_TESTING
-                FaultHooks.Before(VulkanCallPoint.CreatePipeline);
-                bool overridden = FaultHooks.TryOverride(
-                    VulkanCallPoint.CreatePipeline,
-                    out Result injectedResult);
-#endif
                 Result result =
-#if SOMEENGINE_TESTING
-                    overridden
-                        ? injectedResult
-                        :
-#endif
                     device.RayTracingPipelineApi.CreateRayTracingPipelines(
                     device.Native,
                     default,
@@ -223,9 +212,6 @@ internal sealed unsafe partial class VulkanBackend
                     &createInfo,
                     null,
                     &native);
-#if SOMEENGINE_TESTING
-                FaultHooks.After(VulkanCallPoint.CreatePipeline);
-#endif
                 ThrowPipelineFailure(device, result, "vkCreateRayTracingPipelinesKHR");
                 return native;
             }

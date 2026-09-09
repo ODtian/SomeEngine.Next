@@ -9,34 +9,27 @@ internal static class BenchmarkController
     internal static int RunWarp(BenchmarkOptions options) => RunController(
         options,
         BenchmarkProfile.WarpFunctional,
-        processCount: 1,
-        FixedGraphicsProtocol.WarpWarmupFrames,
-        FixedGraphicsProtocol.WarpMeasuredFrames,
-        FixedGraphicsProtocol.WarpDrawCount,
-        FixedGraphicsProtocol.WarpBarrierCount);
+        options.ProcessCount,
+        options.WarmupFrames,
+        options.MeasuredFrames,
+        options.DrawCount,
+        options.BarrierCount,
+        selectedVariants: options.Variants);
 
     internal static int RunDiagnostic(BenchmarkOptions options) => RunController(
         options,
         BenchmarkProfile.FastDiagnostic,
-        FixedGraphicsProtocol.DiagnosticProcessCount,
-        FixedGraphicsProtocol.DiagnosticWarmupFrames,
-        FixedGraphicsProtocol.DiagnosticMeasuredFrames,
-        FixedGraphicsProtocol.DiagnosticDrawCount,
-        FixedGraphicsProtocol.DiagnosticBarrierCount);
-
-    internal static int RunCertification(BenchmarkOptions options) => RunController(
-        options,
-        BenchmarkProfile.VendorCertification,
-        FixedGraphicsProtocol.ProcessCount,
-        FixedGraphicsProtocol.WarmupFrames,
-        FixedGraphicsProtocol.MeasuredFrames,
-        FixedGraphicsProtocol.DrawCount,
-        FixedGraphicsProtocol.BarrierCount);
+        options.ProcessCount,
+        options.WarmupFrames,
+        options.MeasuredFrames,
+        options.DrawCount,
+        options.BarrierCount,
+        selectedVariants: options.Variants);
 
     internal static int RunProbe(BenchmarkOptions options) => RunController(
         options,
         BenchmarkProfile.DeveloperProbe,
-        processCount: 1,
+        options.ProcessCount,
         options.WarmupFrames,
         options.MeasuredFrames,
         options.DrawCount,
@@ -47,23 +40,21 @@ internal static class BenchmarkController
     internal static int EvaluateExisting(BenchmarkOptions options)
     {
         GraphicsBenchmarkReport report = GraphicsBenchmarkReport.Read(options.InputPath!);
-        ProcessGateEvidence[] evidence = LoadRawEvidence(options.InputPath!, report);
-        GateResult gate = report.Profile == BenchmarkProfile.DeveloperProbe
-            ? EvaluateProbe(
+        ProcessMeasurements[] evidence = LoadRawEvidence(options.InputPath!, report);
+        MeasurementSummary summary = EvaluateProbe(
                 evidence,
                 report.Protocol.Workloads.Select(static value => Enum.Parse<GraphicsWorkload>(value)).ToArray(),
                 report.Protocol.DrawCount,
-                report.Protocol.BarrierCount)
-            : BenchmarkGate.Evaluate(report.Profile, report.Protocol, evidence);
-        gate = gate with
+                report.Protocol.BarrierCount);
+        summary = summary with
         {
             PairedDiagnostics = AnalyzePairedDiagnostics(
                 evidence,
                 report.Protocol.DrawCount,
                 report.Protocol.BarrierCount),
         };
-        PrintGate(gate);
-        return gate.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly ? 0 : 3;
+        PrintSummary(summary);
+        return summary.Disposition == RunDisposition.FunctionalOnly ? 0 : 3;
     }
 
     private static int RunController(
@@ -116,14 +107,14 @@ internal static class BenchmarkController
                 throw new DirectoryNotFoundException($"The benchmark resume directory '{runDirectory}' does not exist.");
             started = Directory.GetCreationTimeUtc(runDirectory);
         }
-        var gateEvidence = new List<ProcessGateEvidence>(
-            checked(processCount * FixedGraphicsProtocol.Variants.Length));
-        var rawEvidence = new List<RawProcessEvidence>(gateEvidence.Capacity);
+        var measurements = new List<ProcessMeasurements>(
+            checked(processCount * BenchmarkDefaults.Variants.Length));
+        var rawEvidence = new List<RawProcessEvidence>(measurements.Capacity);
         string reportDirectory = Path.GetDirectoryName(options.OutputPath)!;
 
         for (int processIndex = 0; processIndex < processCount; processIndex++)
         {
-            ReadOnlySpan<ReceiverVariant> round = selectedVariants ?? FixedGraphicsProtocol.GetInterleavedRound(processIndex).ToArray();
+            ReadOnlySpan<ReceiverVariant> round = selectedVariants ?? BenchmarkDefaults.Variants;
             for (int position = 0; position < round.Length; position++)
             {
                 ReceiverVariant variant = round[position];
@@ -183,7 +174,7 @@ internal static class BenchmarkController
                 }
                 if (!File.Exists(childOutput))
                     GraphicsBenchmarkReport.WriteProcess(childOutput, run);
-                gateEvidence.Add(ProcessGateEvidence.Create(run, position));
+                measurements.Add(ProcessMeasurements.Create(run, position));
                 rawEvidence.Add(new RawProcessEvidence(
                     Path.GetRelativePath(reportDirectory, childOutput).Replace('\\', '/'),
                     BenchmarkEnvironment.Sha256File(childOutput),
@@ -203,30 +194,30 @@ internal static class BenchmarkController
             barriers,
             selectedWorkloads,
             selectedVariants);
-        GateResult gate = profile == BenchmarkProfile.DeveloperProbe
-            ? EvaluateProbe(CollectionsMarshal.AsSpan(gateEvidence), selectedWorkloads!, draws, barriers)
-            : BenchmarkGate.Evaluate(profile, protocol, CollectionsMarshal.AsSpan(gateEvidence));
-        gate = gate with
+        MeasurementSummary summary = EvaluateProbe(
+            CollectionsMarshal.AsSpan(measurements),
+            selectedWorkloads ?? BenchmarkDefaults.GetWorkloads(profile).ToArray(), draws, barriers);
+        summary = summary with
         {
             PairedDiagnostics = AnalyzePairedDiagnostics(
-                CollectionsMarshal.AsSpan(gateEvidence),
+                CollectionsMarshal.AsSpan(measurements),
                 draws,
                 barriers),
         };
         GraphicsBenchmarkReport report = new(
-            FixedGraphicsProtocol.Schema,
+            BenchmarkDefaults.Schema,
             profile,
-            gate.Disposition,
-            gate.Reason,
+            summary.Disposition,
+            summary.Reason,
             started,
             DateTimeOffset.UtcNow,
             protocol,
             [.. rawEvidence],
-            gate);
+            summary);
         report.Write(options.OutputPath);
         Console.WriteLine($"Graphics benchmark report: {options.OutputPath}");
-        PrintGate(report.Gate);
-        return report.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly ? 0 : 3;
+        PrintSummary(report.Summary);
+        return report.Disposition == RunDisposition.FunctionalOnly ? 0 : 3;
     }
 
     private static bool CanReuseProcess(
@@ -245,7 +236,7 @@ internal static class BenchmarkController
             ? options.NativeRunnerPath
             : options.ManagedRunnerPath ?? ResolveManagedExecutable();
         if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable) ||
-            run.Disposition is not RunDisposition.Passed and not RunDisposition.FunctionalOnly ||
+            run.Disposition != RunDisposition.FunctionalOnly ||
             run.Environment.AdapterLuidLow != adapter.Id.Low ||
             run.Environment.AdapterLuidHigh != adapter.Id.High ||
             !string.Equals(
@@ -284,14 +275,14 @@ internal static class BenchmarkController
         GraphicsWorkload[]? selectedWorkloads)
     {
         ReadOnlySpan<GraphicsWorkload> expected =
-            selectedWorkloads ?? FixedGraphicsProtocol.GetWorkloads(profile).ToArray();
+            selectedWorkloads ?? BenchmarkDefaults.GetWorkloads(profile).ToArray();
         if (run.Workloads.Length != expected.Length)
             return false;
         for (int index = 0; index < expected.Length; index++)
         {
             WorkloadRun workload = run.Workloads[index];
             if (workload.Workload != expected[index] ||
-                workload.Disposition is not RunDisposition.Passed and not RunDisposition.FunctionalOnly ||
+                workload.Disposition != RunDisposition.FunctionalOnly ||
                 workload.WarmupFrames != warmup ||
                 workload.MeasuredFrames != measured ||
                 workload.DrawCount != ExpectedDrawCount(workload.Workload, draws) ||
@@ -465,51 +456,18 @@ internal static class BenchmarkController
         DateTimeOffset started,
         string reason)
     {
-        (int warmup, int measured, int processCount, int draws, int barriers) = profile switch
-        {
-            BenchmarkProfile.WarpFunctional => (
-                FixedGraphicsProtocol.WarpWarmupFrames,
-                FixedGraphicsProtocol.WarpMeasuredFrames,
-                1,
-                FixedGraphicsProtocol.WarpDrawCount,
-                FixedGraphicsProtocol.WarpBarrierCount),
-            BenchmarkProfile.FastDiagnostic => (
-                FixedGraphicsProtocol.DiagnosticWarmupFrames,
-                FixedGraphicsProtocol.DiagnosticMeasuredFrames,
-                FixedGraphicsProtocol.DiagnosticProcessCount,
-                FixedGraphicsProtocol.DiagnosticDrawCount,
-                FixedGraphicsProtocol.DiagnosticBarrierCount),
-            BenchmarkProfile.VendorCertification => (
-                FixedGraphicsProtocol.WarmupFrames,
-                FixedGraphicsProtocol.MeasuredFrames,
-                FixedGraphicsProtocol.ProcessCount,
-                FixedGraphicsProtocol.DrawCount,
-                FixedGraphicsProtocol.BarrierCount),
-            BenchmarkProfile.DeveloperProbe => (
-                options.WarmupFrames,
-                options.MeasuredFrames,
-                1,
-                options.DrawCount,
-                options.BarrierCount),
-            _ => throw new ArgumentOutOfRangeException(nameof(profile)),
-        };
         ProtocolSnapshot protocol = ProtocolSnapshot.Create(
-            profile,
-            warmup,
-            measured,
-            processCount,
-            draws,
-            barriers,
+            profile, options.WarmupFrames, options.MeasuredFrames,
+            options.ProcessCount, options.DrawCount, options.BarrierCount,
             profile == BenchmarkProfile.DeveloperProbe ? options.Workloads : null,
-            profile == BenchmarkProfile.DeveloperProbe ? options.Variants : null);
-        GateResult gate = new(
+            options.Variants);
+        MeasurementSummary summary = new(
             RunDisposition.Unexecuted,
             reason,
-            [new GateIssue("RHI-EVID-ENVIRONMENT", reason)],
-            [],
+            [new MeasurementIssue("ENVIRONMENT", reason)],
             []);
         new GraphicsBenchmarkReport(
-            FixedGraphicsProtocol.Schema,
+            BenchmarkDefaults.Schema,
             profile,
             RunDisposition.Unexecuted,
             reason,
@@ -517,7 +475,7 @@ internal static class BenchmarkController
             DateTimeOffset.UtcNow,
             protocol,
             [],
-            gate).Write(options.OutputPath);
+            summary).Write(options.OutputPath);
         Console.WriteLine(reason);
         Console.WriteLine($"Graphics benchmark report: {options.OutputPath}");
         return 2;
@@ -535,18 +493,18 @@ internal static class BenchmarkController
         return Path.GetFullPath(path);
     }
 
-    private static ProcessGateEvidence[] LoadRawEvidence(
+    private static ProcessMeasurements[] LoadRawEvidence(
         string reportPath,
         GraphicsBenchmarkReport report)
     {
-        if (!string.Equals(report.Schema, FixedGraphicsProtocol.Schema, StringComparison.Ordinal))
+        if (!string.Equals(report.Schema, BenchmarkDefaults.Schema, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                $"Report schema '{report.Schema}' is not the current '{FixedGraphicsProtocol.Schema}'.");
+                $"Report schema '{report.Schema}' is not the current '{BenchmarkDefaults.Schema}'.");
         }
 
         string reportDirectory = Path.GetDirectoryName(Path.GetFullPath(reportPath))!;
-        var result = new ProcessGateEvidence[report.RawEvidence.Length];
+        var result = new ProcessMeasurements[report.RawEvidence.Length];
         for (int index = 0; index < report.RawEvidence.Length; index++)
         {
             RawProcessEvidence evidence = report.RawEvidence[index];
@@ -560,17 +518,6 @@ internal static class BenchmarkController
                 string actualHash = BenchmarkEnvironment.Sha256File(rawPath);
                 if (!string.Equals(actualHash, evidence.Sha256, StringComparison.Ordinal))
                     throw new InvalidDataException($"Raw evidence SHA-256 mismatch for '{rawPath}'.");
-
-                ReceiverVariant[] round = report.Protocol.InterleavedRounds[evidence.ProcessIndex]
-                    .Select(static value => Enum.Parse<ReceiverVariant>(value))
-                    .ToArray();
-                if ((uint)evidence.Position >= (uint)round.Length ||
-                    round[evidence.Position] != evidence.Variant)
-                {
-                    throw new InvalidDataException(
-                        $"Raw evidence manifest position {evidence.Position} does not identify " +
-                        $"{evidence.Variant} in process {evidence.ProcessIndex}.");
-                }
 
                 run = GraphicsBenchmarkReport.ReadProcess(rawPath);
                 if (run.Variant != evidence.Variant ||
@@ -594,35 +541,17 @@ internal static class BenchmarkController
                     BenchmarkEnvironment.Unavailable(evidence.ProcessIndex),
                     []);
             }
-            result[index] = ProcessGateEvidence.Create(run, evidence.Position);
+            result[index] = ProcessMeasurements.Create(run, evidence.Position);
         }
         return result;
     }
 
-    private static void PrintGate(GateResult gate)
+    private static void PrintSummary(MeasurementSummary summary)
     {
-        Console.WriteLine(gate.Reason);
-        foreach (GateIssue issue in gate.Issues)
+        Console.WriteLine(summary.Reason);
+        foreach (MeasurementIssue issue in summary.Issues)
             Console.WriteLine($"{issue.Code}: {issue.Message}");
-        foreach (DiagnosticBiasResult diagnostic in gate.Diagnostics)
-        {
-            string positions = string.Join(
-                ", ",
-                diagnostic.PositionEffectsPercent.Select(static (value, index) =>
-                    FormattableString.Invariant($"P{index}={value:+0.###;-0.###;0}%")));
-            string rounds = string.Join(
-                ", ",
-                diagnostic.RoundEffectsPercent.Select(static (value, index) =>
-                    FormattableString.Invariant($"R{index}={value:+0.###;-0.###;0}%")));
-            string variants = string.Join(
-                ", ",
-                diagnostic.VariantEffectsPercent.Select(static (value, index) =>
-                    FormattableString.Invariant(
-                        $"{FixedGraphicsProtocol.Variants[index]}={value:+0.###;-0.###;0}%")));
-            Console.WriteLine(FormattableString.Invariant(
-                $"DIAGNOSTIC {diagnostic.Workload}/{diagnostic.Metric}: geomean={diagnostic.GeometricMeanMicroseconds:F3} us; receiver spread={diagnostic.VariantSpreadPercent:F3}% [{variants}]; position spread={diagnostic.PositionSpreadPercent:F3}% [{positions}]; round drift={diagnostic.RoundSpreadPercent:F3}% [{rounds}]; residual RMS={diagnostic.ResidualRmsPercent:F3}%."));
-        }
-        foreach (PairedBlockDiagnostic pair in gate.PairedDiagnostics)
+        foreach (PairedBlockDiagnostic pair in summary.PairedDiagnostics)
         {
             Console.WriteLine(FormattableString.Invariant(
                 $"PAIRED block={pair.ProcessIndex} workload={pair.Workload}: {pair.CandidateVariant}-{pair.BaselineVariant}={pair.DeltaMicrosecondsPerCall:+0.######;-0.######;0} us/call ({pair.DeltaPercent:+0.###;-0.###;0}%); positions {pair.BaselineVariant}={pair.BaselinePosition}, {pair.CandidateVariant}={pair.CandidatePosition}; P95/P50={pair.BaselineP95OverP50:0.###}/{pair.CandidateP95OverP50:0.###}."));
@@ -653,42 +582,41 @@ internal static class BenchmarkController
     {
         BenchmarkProfile.WarpFunctional => "warp",
         BenchmarkProfile.FastDiagnostic => "diagnose",
-        BenchmarkProfile.VendorCertification => "certify",
         BenchmarkProfile.DeveloperProbe => "probe",
         _ => throw new ArgumentOutOfRangeException(nameof(profile)),
     };
 
-    internal static GateResult EvaluateProbe(
-        ReadOnlySpan<ProcessGateEvidence> evidence,
+    internal static MeasurementSummary EvaluateProbe(
+        ReadOnlySpan<ProcessMeasurements> evidence,
         GraphicsWorkload[] workloads,
         int draws,
         int barriers)
     {
         var comparisons = new List<ComparisonResult>();
-        ProcessGateEvidence[] runs = evidence.ToArray();
+        ProcessMeasurements[] runs = evidence.ToArray();
         if (runs.Length == 0)
         {
-            const string missing = "Developer probe has no raw evidence; it is non-gating and cannot certify.";
-            return new GateResult(
+            const string missing = "No measurements were collected.";
+            return new MeasurementSummary(
                 RunDisposition.Unexecuted,
                 missing,
-                [new GateIssue("RHI-PROBE-NO-EVIDENCE", missing)],
-                [],
+                [new MeasurementIssue("NO-MEASUREMENTS", missing)],
                 []);
         }
+        bool outputMismatch = false;
         ReceiverVariant baselineVariant = runs[0].Variant;
         foreach (GraphicsWorkload workload in workloads)
         {
-            WorkloadGateEvidence? baseline = runs[0].Workloads.FirstOrDefault(value => value.Workload == workload);
+            WorkloadMeasurements? baseline = runs[0].Workloads.FirstOrDefault(value => value.Workload == workload);
             if (baseline is null || baseline.CpuSamples.Length == 0)
                 continue;
             double baselineP50 = MetricDistribution.From(baseline.CpuSamples).P50;
             MetricDistribution baselineDistribution = MetricDistribution.From(baseline.CpuSamples);
             int calls = workload == GraphicsWorkload.ExplicitBarrier4096 ? barriers :
                 workload is GraphicsWorkload.EmptySubmit or GraphicsWorkload.ThreeQueuePresent ? 1 : draws;
-            foreach (ProcessGateEvidence run in runs.Skip(1))
+            foreach (ProcessMeasurements run in runs.Skip(1))
             {
-                WorkloadGateEvidence? candidate = run.Workloads.FirstOrDefault(value => value.Workload == workload);
+                WorkloadMeasurements? candidate = run.Workloads.FirstOrDefault(value => value.Workload == workload);
                 if (candidate is null || candidate.CpuSamples.Length == 0)
                     continue;
                 MetricDistribution distribution = MetricDistribution.From(candidate.CpuSamples);
@@ -696,8 +624,7 @@ internal static class BenchmarkController
                 comparisons.Add(new ComparisonResult(
                     $"probe {run.Variant} vs {baselineVariant}", workload, "CPU us/call", "P50",
                     candidateP50 / calls, baselineP50 / calls, (candidateP50 - baselineP50) / calls,
-                    baselineP50 == 0 ? null : (candidateP50 / baselineP50 - 1) * 100,
-                    0, null, Passed: false));
+                    baselineP50 == 0 ? null : (candidateP50 / baselineP50 - 1) * 100));
                 Console.WriteLine(FormattableString.Invariant(
                     $"PROBE {workload}: {run.Variant} vs {baselineVariant}; median delta={(candidateP50 - baselineP50) / calls:+0.######;-0.######;0} us/call ({(candidateP50 / baselineP50 - 1) * 100:+0.###;-0.###;0}%); P95/P50 baseline={baselineDistribution.P95 / baselineDistribution.P50:0.###}, candidate={distribution.P95 / distribution.P50:0.###}; order={string.Join(" -> ", runs.Select(static value => value.Variant))}."));
             }
@@ -710,43 +637,45 @@ internal static class BenchmarkController
                 GraphicsWorkload.TransientDraw10000 or
                 GraphicsWorkload.StateSuppression10000 or
                 GraphicsWorkload.ThreeQueuePresent;
+            outputMismatch |= gpuVisible && (hashes.Length != 1 || string.IsNullOrEmpty(hashes[0]));
+            int variantCount = runs.Where(run => run.Workloads.Any(value => value.Workload == workload))
+                .Select(run => run.Variant).Distinct().Count();
             Console.WriteLine(
-                $"EQUIVALENCE {workload}: {(hashes.Length == 1 ? "matching" : "mismatched")} outputs; " +
+                $"EQUIVALENCE {workload}: {(variantCount < 2 ? "single variant; no cross-variant comparison" : hashes.Length == 1 ? "matching" : "mismatched")} outputs; " +
                 (gpuVisible
                     ? "proof is an untimed GPU-output readback hash."
                     : "no native work counter is directly observable; the hash is protocol identity, while submitted counts/statistics provide the available work proof."));
         }
-        bool failed = runs.Any(static run => run.Disposition is RunDisposition.Failed or RunDisposition.Unexecuted);
+        bool failed = outputMismatch || runs.Any(static run => run.Disposition is RunDisposition.Failed or RunDisposition.Unexecuted);
         string reason = failed
-            ? "Developer probe did not complete; it is explicitly non-gating and can never certify."
-            : "Developer probe completed; results are exploratory, explicitly non-gating, and can never emit certification PASS.";
-        return new GateResult(
+            ? "A workload failed or GPU outputs differed."
+            : "Workloads completed; timings are diagnostic measurements.";
+        return new MeasurementSummary(
             failed ? RunDisposition.Failed : RunDisposition.FunctionalOnly,
             reason,
-            [new GateIssue("RHI-PROBE-NON-GATING", reason)],
-            [.. comparisons],
-            []);
+            failed ? [new MeasurementIssue("EXECUTION", reason)] : [],
+            [.. comparisons]);
     }
 
     private static PairedBlockDiagnostic[] AnalyzePairedDiagnostics(
-        ReadOnlySpan<ProcessGateEvidence> evidence,
+        ReadOnlySpan<ProcessMeasurements> evidence,
         int draws,
         int barriers)
     {
         var results = new List<PairedBlockDiagnostic>();
-        ProcessGateEvidence[] runs = evidence.ToArray();
-        foreach (IGrouping<int, ProcessGateEvidence> block in runs
-            .Where(static run => run.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly)
+        ProcessMeasurements[] runs = evidence.ToArray();
+        foreach (IGrouping<int, ProcessMeasurements> block in runs
+            .Where(static run => run.Disposition == RunDisposition.FunctionalOnly)
             .GroupBy(static run => run.Environment.ProcessIndex)
             .OrderBy(static group => group.Key))
         {
-            ProcessGateEvidence? direct = block.FirstOrDefault(static run => run.Variant == ReceiverVariant.DirectSilk);
-            ProcessGateEvidence? interfaceReceiver = block.FirstOrDefault(static run => run.Variant == ReceiverVariant.InterfaceReceiver);
+            ProcessMeasurements? direct = block.FirstOrDefault(static run => run.Variant == ReceiverVariant.DirectSilk);
+            ProcessMeasurements? interfaceReceiver = block.FirstOrDefault(static run => run.Variant == ReceiverVariant.InterfaceReceiver);
             if (direct is null || interfaceReceiver is null)
                 continue;
-            foreach (WorkloadGateEvidence left in direct.Workloads)
+            foreach (WorkloadMeasurements left in direct.Workloads)
             {
-                WorkloadGateEvidence? right = interfaceReceiver.Workloads.FirstOrDefault(value => value.Workload == left.Workload);
+                WorkloadMeasurements? right = interfaceReceiver.Workloads.FirstOrDefault(value => value.Workload == left.Workload);
                 if (right is null || left.CpuSamples.Length == 0 || right.CpuSamples.Length == 0)
                     continue;
                 double leftP50 = MetricDistribution.From(left.CpuSamples).P50;

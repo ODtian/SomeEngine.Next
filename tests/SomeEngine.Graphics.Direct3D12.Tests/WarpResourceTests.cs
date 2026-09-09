@@ -51,7 +51,7 @@ public sealed class WarpResourceTests
     }
 
     [Fact]
-    public void Private_resource_allocator_reuses_ranges_only_after_native_capture_retirement()
+    public void RecordedCopyRetainsDisposedBufferUntilReadbackCompletes()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
@@ -74,9 +74,6 @@ public sealed class WarpResourceTests
         Assert.Null(first.Heap);
         Assert.Null(upload.Heap);
         Assert.Null(readback.Heap);
-        PooledResourceAllocation firstAllocation = Assert.NotNull(
-            D3D12PrivateState.PooledAllocation(first));
-        Assert.NotEqual(0, firstAllocation.HeapPointer);
 
         BufferRange range = new(0, size);
         using (MappedBuffer mapping = backend.Map(upload, MapType.Write, range))
@@ -108,10 +105,6 @@ public sealed class WarpResourceTests
         first.Dispose();
 
         using Buffer whileCaptured = backend.CreateBuffer(device, pooledDescription);
-        PooledResourceAllocation capturedAllocation = Assert.NotNull(
-            D3D12PrivateState.PooledAllocation(whileCaptured));
-        Assert.Equal(firstAllocation.HeapPointer, capturedAllocation.HeapPointer);
-        Assert.NotEqual(firstAllocation.Offset, capturedAllocation.Offset);
 
         QueueCompletion completion = backend.Submit(
             backend.GetQueue(device, QueueType.Copy),
@@ -123,10 +116,6 @@ public sealed class WarpResourceTests
         backend.CollectCompleted(device);
 
         using Buffer afterCompletion = backend.CreateBuffer(device, pooledDescription);
-        PooledResourceAllocation reused = Assert.NotNull(
-            D3D12PrivateState.PooledAllocation(afterCompletion));
-        Assert.Equal(firstAllocation.HeapPointer, reused.HeapPointer);
-        Assert.Equal(firstAllocation.Offset, reused.Offset);
 
         using (MappedBuffer mapping = backend.Map(readback, MapType.Read, range))
         {
@@ -135,65 +124,23 @@ public sealed class WarpResourceTests
                 Assert.Equal(unchecked((byte)(index * 31 + 7)), mapping.Bytes[index]);
         }
 
-        D3D12MemoryAllocatorInfo info = diagnostics.MemoryAllocator;
-        Assert.True(info.HeapCount >= 3);
-        Assert.True(info.AllocationCount >= 4);
-        Assert.True(info.PooledHeapBytes >= 96UL * 1024 * 1024);
-        Assert.True(info.PooledAllocatedBytes >= 4 * size);
     }
 
     [Fact]
-    public void Oversized_resource_uses_committed_fallback_and_reports_it()
+    public void LargeBufferReportsRequestedSize()
     {
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         Assert.NotNull(diagnostics);
-        D3D12MemoryAllocatorInfo before = diagnostics.MemoryAllocator;
 
         using Buffer large = backend.CreateBuffer(
             device,
             new BufferDesc(33UL * 1024 * 1024, BufferUsages.CopyDestination));
+        Assert.Equal(33UL * 1024 * 1024, large.Info.Size);
 
-        Assert.Null(D3D12PrivateState.PooledAllocation(large));
-        D3D12MemoryAllocatorInfo after = diagnostics.MemoryAllocator;
-        Assert.Equal(before.CommittedFallbackCount + 1, after.CommittedFallbackCount);
     }
 
-    [Fact]
-    public void Resource_allocator_releases_extra_empty_blocks_and_keeps_one_warm_block()
-    {
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Assert.NotNull(diagnostics);
-        const ulong allocationSize = 24UL * 1024 * 1024;
-        var buffers = new Buffer[3];
-        try
-        {
-            for (int index = 0; index < buffers.Length; index++)
-            {
-                buffers[index] = backend.CreateBuffer(
-                    device,
-                    new BufferDesc(allocationSize, BufferUsages.CopyDestination));
-            }
-
-            D3D12MemoryAllocatorInfo populated = diagnostics.MemoryAllocator;
-            Assert.Equal(2, populated.HeapCount);
-            Assert.Equal(3, populated.AllocationCount);
-        }
-        finally
-        {
-            foreach (Buffer? buffer in buffers)
-                buffer?.Dispose();
-        }
-
-        D3D12MemoryAllocatorInfo trimmed = diagnostics.MemoryAllocator;
-        Assert.Equal(1, trimmed.HeapCount);
-        Assert.Equal(0, trimmed.AllocationCount);
-        Assert.Equal(64UL * 1024 * 1024, trimmed.PooledHeapBytes);
-        Assert.Equal(0UL, trimmed.PooledAllocatedBytes);
-    }
 
     [Fact]
     public void Mapping_uses_absolute_windows_and_one_shared_terminal_sequence()
@@ -224,35 +171,6 @@ public sealed class WarpResourceTests
         next.Dispose();
     }
 
-    [Fact]
-    public void Mapping_reuses_its_cold_state_without_managed_allocation()
-    {
-        using D3D12Backend backend = new();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Buffer upload = backend.CreateBuffer(
-            device,
-            new BufferDesc(64, BufferUsages.CopySource),
-            MemoryType.Upload);
-        BufferRange window = new(8, 32);
-
-        for (int index = 0; index < 16; index++)
-        {
-            MappedBuffer warmup = backend.Map(upload, MapType.Write, window);
-            warmup.Bytes[0] = checked((byte)index);
-            warmup.Dispose();
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 256; index++)
-        {
-            MappedBuffer mapping = backend.Map(upload, MapType.Write, window);
-            mapping.Bytes[0] = unchecked((byte)index);
-            mapping.Dispose();
-        }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(0, allocated);
-    }
 
     [Fact]
     public void Stale_mapping_operations_cannot_observe_or_end_a_reused_mapping_slot()

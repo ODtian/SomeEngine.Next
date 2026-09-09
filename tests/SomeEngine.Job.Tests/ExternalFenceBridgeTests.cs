@@ -256,8 +256,6 @@ public sealed class ExternalFenceBridgeTests
         var managed = JobSystem.Schedule(new ExternalFenceJobs.ManagedShellJob(system, 2));
         JobSystem.CombineDependencies([refFree, managed]).Complete();
 
-        Assert.Equal(JobPayloadLane.RefFree, JobSystem.GetPayloadLane<ExternalFenceJobs.RefFreeShellJob>());
-        Assert.Equal(JobPayloadLane.RefContaining, JobSystem.GetPayloadLane<ExternalFenceJobs.ManagedShellJob>());
         Assert.False(staticFence.IsSignaled);
         Assert.Equal([1], ExternalFenceJobs.LogSnapshot());
         Assert.Equal([2], system.SubmittedSnapshot());

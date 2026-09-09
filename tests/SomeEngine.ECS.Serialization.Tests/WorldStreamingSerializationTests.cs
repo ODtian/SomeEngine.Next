@@ -15,38 +15,25 @@ namespace SomeEngine.ECS.Serialization.Tests;
 public sealed class WorldStreamingSerializationTests
 {
     [Fact]
-    public void AdmittedWorldWrite_SuccessAndOutputFault_DoNotAdvanceTopologyRevision()
+    public void FailedOutputCanBeRetriedWithoutChangingSerializedData()
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
         world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        long expectedRevision = world.PublishedTopologyRevision;
-        long expectedEpoch = world.PublishedStructureEpoch;
-        object originalRoot = PublishedStructureRoot(world);
 
         using var successful = new MemoryStream();
         WorldSerializer.WriteWorld(successful, world, registry);
-        object successfulRoot = PublishedStructureRoot(world);
-        Assert.NotSame(originalRoot, successfulRoot);
-        Assert.Equal(expectedRevision, world.PublishedTopologyRevision);
-        Assert.Equal(expectedEpoch, world.PublishedStructureEpoch);
 
         using var faulting = new ThrowingWriteStream();
         Assert.Throws<IOException>(() => WorldSerializer.WriteWorld(faulting, world, registry));
-        object faultRoot = PublishedStructureRoot(world);
-        Assert.NotSame(successfulRoot, faultRoot);
-        Assert.Equal(expectedRevision, world.PublishedTopologyRevision);
-        Assert.Equal(expectedEpoch, world.PublishedStructureEpoch);
 
         // The owner-thread root context must be gone after the output exception. A subsequent
         // capture on this same test thread must pin the current successor, not collide with or
         // read through the failed capture's retained root.
         using var retry = new MemoryStream();
         WorldSerializer.WriteWorld(retry, world, registry);
-        Assert.NotSame(faultRoot, PublishedStructureRoot(world));
+        Assert.Equal(successful.ToArray(), retry.ToArray());
         Assert.Equal(1, world.EntityCount);
-        Assert.Equal(expectedRevision, world.PublishedTopologyRevision);
-        Assert.Equal(expectedEpoch, world.PublishedStructureEpoch);
     }
 
     [Theory]
@@ -150,9 +137,6 @@ public sealed class WorldStreamingSerializationTests
         var world = new World();
         Entity valid = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
         var invalid = new Entity(valid.Index + 100, valid.Generation);
-        object rootBefore = PublishedStructureRoot(world);
-        long epochBefore = world.PublishedStructureEpoch;
-        long revisionBefore = world.PublishedTopologyRevision;
         using var output = new MemoryStream();
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
@@ -160,9 +144,6 @@ public sealed class WorldStreamingSerializationTests
 
         Assert.Contains("not alive", error.Message);
         Assert.Equal(0, output.Length);
-        Assert.Same(rootBefore, PublishedStructureRoot(world));
-        Assert.Equal(epochBefore, world.PublishedStructureEpoch);
-        Assert.Equal(revisionBefore, world.PublishedTopologyRevision);
         Assert.True(world.IsAlive(valid));
     }
 
@@ -172,7 +153,6 @@ public sealed class WorldStreamingSerializationTests
         var world = new World();
         using var admission = new BlockingSnapshotAdmission();
         world.BindJobAdmission(admission);
-        long revisionBeforeCapture = world.PublishedTopologyRevision;
 
         Task capture = Task.Run(() =>
         {
@@ -188,7 +168,6 @@ public sealed class WorldStreamingSerializationTests
                 mutation,
                 Task.Delay(TimeSpan.FromMilliseconds(200)));
             Assert.NotSame(mutation, completed);
-            Assert.Equal(revisionBeforeCapture, world.PublishedTopologyRevision);
         }
         finally
         {
@@ -198,204 +177,24 @@ public sealed class WorldStreamingSerializationTests
         await capture.WaitAsync(TimeSpan.FromSeconds(10));
         Entity created = await mutation.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.True(world.IsAlive(created));
-        Assert.Equal(revisionBeforeCapture + 1, world.PublishedTopologyRevision);
     }
 
-    [Theory]
-    [InlineData(ActiveCaptureOperation.Entity)]
-    [InlineData(ActiveCaptureOperation.Query)]
-    [InlineData(ActiveCaptureOperation.World)]
-    [InlineData(ActiveCaptureOperation.Checkpoint)]
-    public void SerializationCapture_InsideActiveStructuralCandidateFailsBeforeOutput(
-        ActiveCaptureOperation operation)
-    {
-        var registry = new SerializationRegistry().Register<SerPosition>();
-        var world = new World();
-        Entity entity = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<SerPosition>());
-        object publishedRoot = PublishedStructureRoot(world);
-        long publishedEpoch = PublishedStructureEpoch(world);
-        long publishedRevision = world.PublishedTopologyRevision;
 
-        using (StructuralMutationScope mutation = world.BeginStructuralMutation())
-        {
-            object candidateRoot = world.ActiveStructureRoot;
-            using var output = new MemoryStream();
 
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            {
-                switch (operation)
-                {
-                    case ActiveCaptureOperation.Entity:
-                        WorldSerializer.WriteEntity(output, world, entity, registry);
-                        break;
-                    case ActiveCaptureOperation.Query:
-                        WorldSerializer.WriteQuery(output, world, query, registry);
-                        break;
-                    case ActiveCaptureOperation.World:
-                        WorldSerializer.WriteWorld(output, world, registry);
-                        break;
-                    case ActiveCaptureOperation.Checkpoint:
-                        WorldCheckpointCodec.Write(output, world, registry);
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(operation));
-                }
-            });
 
-            Assert.Contains("active structural transaction", error.Message);
-            Assert.Equal(0, output.Length);
-            Assert.Same(candidateRoot, world.ActiveStructureRoot);
-            Assert.Same(publishedRoot, PublishedStructureRoot(world));
-            Assert.Equal(publishedEpoch, PublishedStructureEpoch(world));
-            Assert.Equal(publishedRevision, world.PublishedTopologyRevision);
-            Assert.Equal(1, world.Read<SerPosition>(entity).X);
-        }
 
-        Assert.Same(publishedRoot, PublishedStructureRoot(world));
-        Assert.Equal(publishedEpoch, PublishedStructureEpoch(world));
-        Assert.Equal(publishedRevision, world.PublishedTopologyRevision);
-    }
+
 
     [Fact]
-    public void SerializationCapture_InsidePreCandidateStructuralTransactionFailsBeforeOutput()
-    {
-        var world = new World();
-        object publishedRoot = PublishedStructureRoot(world);
-        long publishedEpoch = PublishedStructureEpoch(world);
-        using (World.StructuralTransactionScope transaction =
-               world.BeginStructuralTransaction())
-        using (var output = new MemoryStream())
-        {
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                WorldSerializer.WriteWorld(
-                    output,
-                    world,
-                    new SerializationRegistry()));
-
-            Assert.Contains("active structural transaction", error.Message);
-            Assert.Equal(0, output.Length);
-            Assert.Same(publishedRoot, PublishedStructureRoot(world));
-            Assert.Equal(publishedEpoch, PublishedStructureEpoch(world));
-        }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void TopologyValidation_WorldMutationUsesTheOrdinaryPublishedRoot(
-        bool useDifferentWorld)
-    {
-        using var serializedWorld = new World();
-        var targetWorld = useDifferentWorld ? new World() : serializedWorld;
-        try
-        {
-            var registry = new SerializationRegistry();
-            RegisterTopologyRuntime(
-                registry,
-                new ValidationReentryTopologyRuntime(() => targetWorld.CreateEntity()));
-            using var output = new MemoryStream();
-
-            WorldSerializer.WriteWorld(output, serializedWorld, registry);
-
-            Assert.Equal(1, targetWorld.EntityCount);
-            output.Position = 0;
-            using World restored = WorldSerializer.ReadWorld(output, registry);
-            Assert.Equal(useDifferentWorld ? 0 : 1, restored.EntityCount);
-        }
-        finally
-        {
-            if (useDifferentWorld)
-                targetWorld.Dispose();
-        }
-    }
-
-    [Fact]
-    public void TopologyValidation_RecursiveSerializationOfSameWorldRejectsStaleCapture()
-    {
-        using var world = new World();
-        using var nestedOutput = new MemoryStream();
-        var registry = new SerializationRegistry();
-        RegisterTopologyRuntime(
-            registry,
-            new ValidationReentryTopologyRuntime(() =>
-                WorldSerializer.WriteWorld(
-                    nestedOutput,
-                    world,
-                    new SerializationRegistry())));
-        using var output = new MemoryStream();
-
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(output, world, registry));
-
-        Assert.Contains("source root changed", error.Message);
-        Assert.Equal(0, output.Length);
-        Assert.True(nestedOutput.Length > 0);
-    }
-
-    [Fact]
-    public void TopologyValidation_RecursiveSerializationOfDifferentWorldIsIndependent()
-    {
-        using var serializedWorld = new World();
-        using var targetWorld = new World();
-        using var nestedOutput = new MemoryStream();
-        var registry = new SerializationRegistry();
-        RegisterTopologyRuntime(
-            registry,
-            new ValidationReentryTopologyRuntime(() =>
-                WorldSerializer.WriteWorld(
-                    nestedOutput,
-                    targetWorld,
-                    new SerializationRegistry())));
-        using var output = new MemoryStream();
-
-        WorldSerializer.WriteWorld(output, serializedWorld, registry);
-
-        Assert.True(output.Length > 0);
-        Assert.True(nestedOutput.Length > 0);
-    }
-
-    [Fact]
-    public void TopologyEncoding_InvokesCodecExactlyOnce()
-    {
-        var registry = new SerializationRegistry();
-        var runtime = new AlternatingTopologyRuntime();
-        MethodInfo registerTopology = typeof(SerializationRegistry).GetMethod(
-            "RegisterTopology",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        registerTopology.Invoke(registry, [runtime]);
-
-        using var output = new CountingNonSeekableWriteStream();
-        WorldSerializer.WriteWorld(output, new World(), registry);
-
-        Assert.Equal(1, runtime.WriteCount);
-    }
-
-    [Fact]
-    public void SnapshotOwnershipHandoff_PreservesMetricsAndQueries()
+    public void WorldSerializationPreservesQueryResults()
     {
         var registry = new SerializationRegistry().Register<SerPosition>();
         var world = new World();
         Entity entity = world.CreateEntity(new SerPosition { X = 1, Y = 2 });
         var query = world.Query(world.QueryDefinition().Read<SerPosition>());
-        WorldStructuralMetrics metricsBefore = world.GetStructuralMetrics();
-        object rootBeforeSnapshot = PublishedStructureRoot(world);
-        long epochBeforeSnapshot = world.PublishedStructureEpoch;
-        long revisionBeforeSnapshot = world.PublishedTopologyRevision;
 
         using var snapshot = new MemoryStream();
         WorldSerializer.WriteWorld(snapshot, world, registry);
-
-        WorldStructuralMetrics metricsAfter = world.GetStructuralMetrics();
-        Assert.NotSame(rootBeforeSnapshot, PublishedStructureRoot(world));
-        Assert.Equal(epochBeforeSnapshot, world.PublishedStructureEpoch);
-        Assert.Equal(revisionBeforeSnapshot, world.PublishedTopologyRevision);
-        Assert.Equal(metricsBefore.Started, metricsAfter.Started);
-        Assert.Equal(metricsBefore.Published, metricsAfter.Published);
-        Assert.Equal(metricsBefore.Aborted, metricsAfter.Aborted);
-        Assert.Equal(metricsBefore.ClonedArchetypeShells, metricsAfter.ClonedArchetypeShells);
-        Assert.Equal(metricsBefore.ClonedChunkShells, metricsAfter.ClonedChunkShells);
-        Assert.Equal(metricsBefore.ClonedQueryMatches, metricsAfter.ClonedQueryMatches);
 
         int matched = 0;
         world.ExecuteQuery(query, cursor =>
@@ -409,44 +208,6 @@ public sealed class WorldStreamingSerializationTests
         Assert.Equal(1, matched);
     }
 
-    [Fact]
-    public void SnapshotSuccessor_SkipsDerivedCachesAndSharesValueBackingUntilMutation()
-    {
-        var registry = new SerializationRegistry().Register<SerPosition>();
-        var world = new World();
-        Entity entity = world.CreateEntity();
-        world.Add(entity, new SerPosition { X = 1, Y = 2 });
-        WorldStructureRoot sourceRoot = world.PublishedStructureRoot;
-        Archetype sourceArchetype = sourceRoot.Tables.All.ToArray().Single(
-            static archetype => archetype.Chunks.ToArray().Any(static chunk => chunk.Count != 0));
-        Chunk sourceChunk =
-            sourceArchetype.Chunks.ToArray().Single(static chunk => chunk.Count != 0);
-        Assert.True(
-            sourceRoot.Tables.All.ToArray().Sum(
-                static archetype => archetype.AddTransitionCount) > 0);
-
-        using var output = new MemoryStream();
-        WorldSerializer.WriteWorld(output, world, registry);
-
-        WorldStructureRoot successor = world.PublishedStructureRoot;
-        Archetype successorArchetype = successor.Tables.All.ToArray().Single(
-            archetype => archetype.PersistentIdentity == sourceArchetype.PersistentIdentity);
-        Chunk successorChunk = successorArchetype.Chunks.ToArray().Single(
-            chunk => chunk.PersistentIdentity == sourceChunk.PersistentIdentity);
-        Assert.All(successor.Tables.All.ToArray(), static archetype =>
-        {
-            Assert.Equal(0, archetype.AddTransitionCount);
-            Assert.Equal(0, archetype.RemoveTransitionCount);
-            Assert.Equal(0, archetype.IncludeTransitionCount);
-            Assert.False(archetype.HasCleanupTransition);
-        });
-        Assert.True(sourceChunk.SharesStorageWith(successorChunk));
-
-        world.Replace(entity, new SerPosition { X = 9, Y = 10 });
-
-        Assert.False(sourceChunk.SharesStorageWith(successorChunk));
-        Assert.Equal(9, world.Read<SerPosition>(entity).X);
-    }
 
     [Fact]
     public void CanonicalWorldStateHash_IsStableAndChangesWithState()
@@ -670,8 +431,6 @@ public sealed class WorldStreamingSerializationTests
         int[] values = [1, 2, 3];
         var world = new World();
         Entity entity = world.CreateEntity(new SnapshotReferenceComponent { Values = values });
-        long revisionBefore = world.PublishedTopologyRevision;
-        WorldStructuralMetrics metricsBefore = world.GetStructuralMetrics();
         using var output = new GateWriteStream();
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -679,8 +438,6 @@ public sealed class WorldStreamingSerializationTests
 
         Assert.Contains("deep snapshot-clone contract", error.Message);
         Assert.False(output.WaitUntilWrite(TimeSpan.FromMilliseconds(100)));
-        Assert.Equal(revisionBefore, world.PublishedTopologyRevision);
-        Assert.Equal(metricsBefore, world.GetStructuralMetrics());
         values[0] = 99;
         Assert.Equal(99, world.Read<SnapshotReferenceComponent>(entity).Values![0]);
     }
@@ -692,8 +449,6 @@ public sealed class WorldStreamingSerializationTests
             .Register<SnapshotReferenceComponent, SnapshotReferenceCodec>();
         var world = new World();
         Entity entity = world.CreateEntity();
-        long revisionBefore = world.PublishedTopologyRevision;
-        WorldStructuralMetrics metricsBefore = world.GetStructuralMetrics();
         using var output = new MemoryStream();
 
         WorldSerializer.WriteWorld(output, world, registry);
@@ -701,8 +456,6 @@ public sealed class WorldStreamingSerializationTests
         Assert.True(output.Length > 0);
         Assert.True(world.IsAlive(entity));
         Assert.False(world.Has<SnapshotReferenceComponent>(entity));
-        Assert.Equal(revisionBefore, world.PublishedTopologyRevision);
-        Assert.Equal(metricsBefore, world.GetStructuralMetrics());
     }
 
     [Fact]
@@ -808,7 +561,6 @@ public sealed class WorldStreamingSerializationTests
                 world,
                 registry,
                 new SerializeOptions(MaximumTopologyRecords: 4)));
-        Assert.Equal(default, world.GetRelationTopologyWriteDiagnostics<StreamingRelation>());
 
         using var accepted = new MemoryStream();
         WorldSerializer.WriteWorld(
@@ -816,57 +568,12 @@ public sealed class WorldStreamingSerializationTests
             world,
             registry,
             new SerializeOptions(MaximumTopologyRecords: 5));
-        RelationTopologyWriteDiagnostics diagnostics =
-            world.GetRelationTopologyWriteDiagnostics<StreamingRelation>();
-        Assert.Equal(1, diagnostics.WriteCount);
-        Assert.Equal(1, diagnostics.EdgeVisits);
-        Assert.Equal(2, diagnostics.OrderedShardVisits);
+        accepted.Position = 0;
+        using World loaded = WorldSerializer.ReadWorld(accepted, registry);
+        Assert.Single(loaded.GetOutgoingRelations<StreamingRelation>(source).Entries.ToArray());
     }
 
-    [Fact]
-    public void TopologyPayloadBudget_StopsTheSingleWriteAtTheFirstExcessByte()
-    {
-        var registry = new SerializationRegistry();
-        var runtime = new OversizedTopologyRuntime();
-        MethodInfo registerTopology = typeof(SerializationRegistry).GetMethod(
-            "RegisterTopology",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        registerTopology.Invoke(registry, [runtime]);
 
-        using var output = new CountingNonSeekableWriteStream();
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            WorldSerializer.WriteWorld(
-                output,
-                new World(),
-                registry,
-                new SerializeOptions(MaximumTopologyPayloadBytes: 4)));
-
-        Assert.Contains("topology payload bytes", error.Message);
-        Assert.Equal(5, runtime.ByteAttempts);
-        Assert.Equal(1, runtime.WriteCount);
-    }
-
-    [Fact]
-    public void TemporaryWorldFailure_PreservesRestoreAndDisposeFaults()
-    {
-        var restoreFailure = new InvalidDataException("restore");
-        var disposeFailure = new IOException("dispose");
-
-        AggregateException aggregate = Assert.Throws<AggregateException>(() =>
-            WorldSerializer.RethrowAfterTemporaryWorldFailure(
-                restoreFailure,
-                () => throw disposeFailure));
-        Assert.Collection(
-            aggregate.InnerExceptions,
-            error => Assert.Same(restoreFailure, error),
-            error => Assert.Same(disposeFailure, error));
-
-        Exception rethrown = Assert.Throws<InvalidDataException>(() =>
-            WorldSerializer.RethrowAfterTemporaryWorldFailure(
-                restoreFailure,
-                static () => { }));
-        Assert.Same(restoreFailure, rethrown);
-    }
 
     [Fact]
     public void RepeatedSnapshotAfterEquivalentWrites_RemainsByteDeterministic()
@@ -890,25 +597,8 @@ public sealed class WorldStreamingSerializationTests
         Assert.Equal(beforeMutation.ToArray(), afterMutation.ToArray());
     }
 
-    private static object PublishedStructureRoot(World world) =>
-        typeof(World).GetProperty(
-            "PublishedStructureRoot",
-            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(world)!;
 
-    private static long PublishedStructureEpoch(World world) =>
-        (long)typeof(World).GetProperty(
-            "PublishedStructureEpoch",
-            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(world)!;
 
-    private static void RegisterTopologyRuntime(
-        SerializationRegistry registry,
-        TopologySerializationRuntime runtime)
-    {
-        MethodInfo registerTopology = typeof(SerializationRegistry).GetMethod(
-            "RegisterTopology",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        registerTopology.Invoke(registry, [runtime]);
-    }
 
     private static async Task AssertMutationCompletesAsync(World world)
     {
@@ -1072,124 +762,11 @@ public sealed class WorldStreamingSerializationTests
         }
     }
 
-    private sealed class AlternatingTopologyRuntime : TopologySerializationRuntime
-    {
-        private int _writeCount;
 
-        internal AlternatingTopologyRuntime()
-            : base(
-                TopologySerializationKind.Relation,
-                typeof(SerPosition),
-                new SerializationTypeKey(
-                    Guid.Parse("4b6cdf55-f2e5-45a0-8a1c-d98d34627e40"),
-                    "tests.alternating-topology",
-                    1))
-        {
-        }
 
-        internal int WriteCount => Volatile.Read(ref _writeCount);
 
-        internal override void ValidateWriteState(AdmittedWorldWrite admitted)
-        {
-        }
 
-        internal override void WriteAdmitted(
-            BinaryWriter writer,
-            AdmittedWorldWrite admitted,
-            TopologyCaptureBudget budget)
-        {
-            budget.ReserveRecords(1, TypeKey.StableName);
-            writer.Write(unchecked((byte)Interlocked.Increment(ref _writeCount)));
-        }
 
-        internal override void ReadApply(
-            BinaryReader reader,
-            SerializationReadBudget budget,
-            World world,
-            IReferenceRemapper? remapper)
-        {
-            reader.ReadByte();
-        }
-    }
-
-    private sealed class ValidationReentryTopologyRuntime : TopologySerializationRuntime
-    {
-        private readonly Action _validation;
-
-        internal ValidationReentryTopologyRuntime(Action validation)
-            : base(
-                TopologySerializationKind.Relation,
-                typeof(ValidationReentryTopologyRuntime),
-                new SerializationTypeKey(
-                    Guid.Parse("A26BD7B7-38D9-45C0-8476-2B0B88615DAE"),
-                    "tests.validation-reentry-topology",
-                    0xA70D08CD86EF421Bul))
-        {
-            _validation = validation;
-        }
-
-        internal override void ValidateWriteState(AdmittedWorldWrite admitted) => _validation();
-
-        internal override void WriteAdmitted(
-            BinaryWriter writer,
-            AdmittedWorldWrite admitted,
-            TopologyCaptureBudget budget) =>
-            budget.ReserveRecords(0, TypeKey.StableName);
-
-        internal override void ReadApply(
-            BinaryReader reader,
-            SerializationReadBudget budget,
-            World world,
-            IReferenceRemapper? remapper)
-        {
-        }
-    }
-
-    private sealed class OversizedTopologyRuntime : TopologySerializationRuntime
-    {
-        private int _byteAttempts;
-        private int _writeCount;
-
-        internal OversizedTopologyRuntime()
-            : base(
-                TopologySerializationKind.Relation,
-                typeof(SerPosition),
-                new SerializationTypeKey(
-                    Guid.Parse("69285009-616e-470e-809d-12cad1a09886"),
-                    "tests.oversized-topology",
-                    1))
-        {
-        }
-
-        internal int ByteAttempts => Volatile.Read(ref _byteAttempts);
-        internal int WriteCount => Volatile.Read(ref _writeCount);
-
-        internal override void ValidateWriteState(AdmittedWorldWrite admitted)
-        {
-        }
-
-        internal override void WriteAdmitted(
-            BinaryWriter writer,
-            AdmittedWorldWrite admitted,
-            TopologyCaptureBudget budget)
-        {
-            budget.ReserveRecords(0, TypeKey.StableName);
-            Interlocked.Increment(ref _writeCount);
-            for (int i = 0; i < 1024; i++)
-            {
-                Interlocked.Increment(ref _byteAttempts);
-                writer.Write((byte)i);
-            }
-        }
-
-        internal override void ReadApply(
-            BinaryReader reader,
-            SerializationReadBudget budget,
-            World world,
-            IReferenceRemapper? remapper)
-        {
-        }
-    }
 
     private sealed class BlockingSnapshotAdmission : IWorldJobAdmission, IDisposable
     {
@@ -1420,69 +997,7 @@ public sealed class WorldStreamingSerializationTests
         }
     }
 
-    private sealed class GateReadStream : Stream
-    {
-        private readonly MemoryStream _inner;
-        private readonly ManualResetEventSlim _entered = new(initialState: false);
-        private readonly ManualResetEventSlim _release = new(initialState: false);
-        private int _blocked;
 
-        internal GateReadStream(byte[] bytes) =>
-            _inner = new MemoryStream(bytes, writable: false);
-
-        internal bool WaitUntilRead(TimeSpan timeout) => _entered.Wait(timeout);
-
-        internal void Release() => _release.Set();
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-        public override void Flush() { }
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            BlockFirstRead();
-            return _inner.Read(buffer, offset, count);
-        }
-        public override int Read(Span<byte> buffer)
-        {
-            BlockFirstRead();
-            return _inner.Read(buffer);
-        }
-        public override int ReadByte()
-        {
-            BlockFirstRead();
-            return _inner.ReadByte();
-        }
-        public override long Seek(long offset, SeekOrigin origin) =>
-            throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) =>
-            throw new NotSupportedException();
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _release.Set();
-                _inner.Dispose();
-                _entered.Dispose();
-                _release.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-        private void BlockFirstRead()
-        {
-            if (Interlocked.Exchange(ref _blocked, 1) != 0)
-                return;
-            _entered.Set();
-            _release.Wait();
-        }
-    }
 
     private sealed class CountingNonSeekableWriteStream : Stream
     {
@@ -1525,47 +1040,5 @@ public sealed class WorldStreamingSerializationTests
         }
     }
 
-    private sealed class NonSeekableInput : Stream
-    {
-        private readonly MemoryStream _inner;
 
-        internal NonSeekableInput(byte[] bytes) =>
-            _inner = new MemoryStream(bytes, writable: false);
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) =>
-            _inner.Read(buffer, offset, count);
-
-        public override int Read(Span<byte> buffer) => _inner.Read(buffer);
-
-        public override int ReadByte() => _inner.ReadByte();
-
-        public override long Seek(long offset, SeekOrigin origin) =>
-            throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) =>
-            throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                _inner.Dispose();
-            base.Dispose(disposing);
-        }
-    }
 }

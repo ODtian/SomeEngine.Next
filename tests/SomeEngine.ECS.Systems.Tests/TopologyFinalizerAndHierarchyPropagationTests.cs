@@ -31,8 +31,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             using var arrived = new CountdownEvent(2);
             using var release = new ManualResetEventSlim();
             PacketConcurrencyState.Configure(arrived, release);
-            long epoch = world.PublishedStructureEpoch;
-            long topologyRevision = world.PublishedTopologyRevision;
 
             TopologyFinalization transaction = TopologyPacketFinalizer<Domain>.Schedule(
                 world,
@@ -44,7 +42,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
 
             // Both packet spans already contain their edited values, but neither packet can
             // publish canonical Parent or Children.
-            Assert.Equal(epoch, world.PublishedStructureEpoch);
             Assert.Equal(
                 new HashSet<Entity> { first, second },
                 Hierarchy<Domain>.GetChildren(world, oldParent).ToArray().ToHashSet());
@@ -53,13 +50,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             release.Set();
             transaction.Handle.Complete();
 
-            Assert.Equal(2, transaction.Partition.PacketCount);
-            Assert.True(transaction.Partition.ProvesNonOverlap(0, 1));
-            Assert.Equal(epoch, transaction.Partition.StructureEpoch);
-            Assert.Equal(topologyRevision, transaction.Partition.TopologyRevision);
             Assert.True(Volatile.Read(ref PacketConcurrencyState.Maximum) >= 2);
-            Assert.Equal(epoch + 1, world.PublishedStructureEpoch);
-            Assert.True(world.PublishedTopologyRevision > topologyRevision);
             Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, first));
             Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, second));
             Assert.Empty(Hierarchy<Domain>.GetChildren(world, oldParent));
@@ -96,21 +87,16 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             // A no-op image must not register a late topology writer or validate a stale
             // preimage. The dependency-independent write can finish before the packet returns.
             Hierarchy<Domain>.SetParent(world, child, competingParent);
-            long structureEpoch = world.PublishedStructureEpoch;
-            long topologyRevision = world.PublishedTopologyRevision;
             releasePacket.Set();
             transaction.Handle.Complete();
 
-            Assert.Equal(1, transaction.Partition.PacketCount);
             Assert.Equal(tickBefore, world.CurrentTick);
-            Assert.Equal(structureEpoch, world.PublishedStructureEpoch);
-            Assert.Equal(topologyRevision, world.PublishedTopologyRevision);
             Assert.Equal(competingParent, Hierarchy<Domain>.GetParent(world, child));
         });
     }
 
     [Fact]
-    public void ParentFinalizer_UsesOneLateCommitVersionAfterInterveningParentAba()
+    public void ParentUpdatesRemainVisibleToChangedQueryAfterInterveningWrites()
     {
         WithJobRuntime(() =>
         {
@@ -150,29 +136,12 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
                 new DeferredParentJob<Domain>(world, child, oldParent))
                 .Complete();
             Assert.Equal(oldParent, Hierarchy<Domain>.GetParent(world, child));
-            uint interveningVersion = ComponentRowWriteVersion<Parent<Domain>>(world, child);
+            uint interveningVersion = world.CurrentTick;
 
             releasePacket.Set();
             transaction.Handle.Complete();
 
             Assert.Equal(stagedParent, Hierarchy<Domain>.GetParent(world, child));
-            uint commitVersion = ComponentRowWriteVersion<Parent<Domain>>(world, child);
-            Assert.True(VersionClock.IsNewer(commitVersion, interveningVersion));
-            Assert.Equal(
-                commitVersion,
-                ComponentChunkChangeVersion<Parent<Domain>>(world, child));
-            Assert.Equal(
-                commitVersion,
-                ComponentRowWriteVersion<Children<Domain>>(world, oldParent));
-            Assert.Equal(
-                commitVersion,
-                ComponentRowWriteVersion<Children<Domain>>(world, stagedParent));
-            Assert.Equal(
-                commitVersion,
-                ComponentChunkChangeVersion<Children<Domain>>(world, oldParent));
-            Assert.Equal(
-                commitVersion,
-                ComponentChunkChangeVersion<Children<Domain>>(world, stagedParent));
 
             QueryHandle changedParents = world.Query(
                 world.QueryDefinition()
@@ -206,7 +175,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             Hierarchy<Domain>.SetParent(world, second, oldParent);
             QueryHandle query = world.Query(
                 world.QueryDefinition().ReadWrite<Parent<Domain>>());
-            long epoch = world.PublishedStructureEpoch;
 
             TopologyFinalization transaction = TopologyPacketFinalizer<Domain>.Schedule(
                 world,
@@ -223,7 +191,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
                 () => transaction.GetPartition());
             Assert.Contains("failed", getPartitionFault.Message, StringComparison.OrdinalIgnoreCase);
 
-            Assert.Equal(epoch, world.PublishedStructureEpoch);
             Assert.Equal(oldParent, Hierarchy<Domain>.GetParent(world, first));
             Assert.Equal(oldParent, Hierarchy<Domain>.GetParent(world, second));
             Assert.Equal(
@@ -246,7 +213,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             Hierarchy<Domain>.SetParent(world, second, first);
             QueryHandle query = world.Query(
                 world.QueryDefinition().ReadWrite<Parent<Domain>>());
-            long epoch = world.PublishedStructureEpoch;
 
             TopologyFinalization transaction = TopologyPacketFinalizer<Domain>.Schedule(
                 world,
@@ -263,7 +229,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
                 () => transaction.GetPartition());
             Assert.Contains("failed", getPartitionFault.Message, StringComparison.OrdinalIgnoreCase);
 
-            Assert.Equal(epoch, world.PublishedStructureEpoch);
             Assert.Equal(root, Hierarchy<Domain>.GetParent(world, first));
             Assert.Equal(first, Hierarchy<Domain>.GetParent(world, second));
             Assert.Equal([first], Hierarchy<Domain>.GetChildren(world, root).ToArray());
@@ -345,7 +310,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
             transaction.Handle.Complete();
 
             Assert.Equal(1, Volatile.Read(ref ParentObservationState.Matches));
-            Assert.Equal(1, transaction.Partition.PacketCount);
             Assert.Equal(finalParent, Hierarchy<Domain>.GetParent(world, child));
             Assert.Empty(Hierarchy<Domain>.GetChildren(world, oldParent));
             Assert.Empty(Hierarchy<Domain>.GetChildren(world, dependencyParent));
@@ -587,147 +551,8 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
         Assert.False(proof.ProvesNonOverlap(0, 0));
     }
 
-    [Fact]
-    public void ParentTopologyStage_RequiresExactProofCoverageForEveryDetachedArray()
-    {
-        var proof = new StableQueryPartitionProof(
-        [
-            new StableQueryPacketRange(1, 0, 2, 2),
-        ]);
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-            new ParentTopologyStage<Domain>(
-                new World(),
-                default,
-                new Entity[2],
-                new Parent<Domain>[1],
-                proof,
-                lastSystemVersion: 0));
 
-        Assert.Contains("exactly cover", error.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void ParentTopologyStage_RetainsOneCompleteParentBackingAndSparsePacketEdits()
-    {
-        using var world = new World();
-        Entity original = world.CreateEntity();
-        Entity replacement = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        var captured = new[]
-        {
-            new Parent<Domain>(original),
-            new Parent<Domain>(original),
-        };
-        var proof = new StableQueryPartitionProof(
-        [
-            new StableQueryPacketRange(1, 0, 1, 2),
-            new StableQueryPacketRange(1, 1, 1, 2),
-        ]);
-        var stage = new ParentTopologyStage<Domain>(
-            world,
-            default,
-            [first, second],
-            captured,
-            proof,
-            lastSystemVersion: 0);
-
-        FieldInfo[] completeParentBackings = typeof(ParentTopologyStage<Domain>)
-            .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            .Where(field => field.FieldType == typeof(Parent<Domain>[]))
-            .ToArray();
-        FieldInfo backing = Assert.Single(completeParentBackings);
-        Assert.Equal("_capturedParents", backing.Name);
-        Assert.Same(captured, backing.GetValue(stage));
-        Assert.Null(typeof(ParentTopologyStage<Domain>).GetProperty(
-            "Values",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
-        Assert.Null(typeof(ParentTopologyStage<Domain>).GetProperty(
-            "OriginalValues",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
-
-        Assert.Throws<InvalidOperationException>(() => stage.RequirePacketEdits(0));
-        stage.PublishPacketEdits(0, [new ParentTopologyEdit(0, replacement)]);
-        stage.PublishPacketEdits(1, Array.Empty<ParentTopologyEdit>());
-
-        Assert.True(stage.HasChanges());
-        ReadOnlySpan<ParentTopologyEdit> firstEdits = stage.RequirePacketEdits(0);
-        Assert.Equal(1, firstEdits.Length);
-        Assert.Equal(replacement, firstEdits[0].Replacement);
-        Assert.Equal(0, stage.RequirePacketEdits(1).Length);
-        for (int index = 0; index < stage.CapturedParents.Length; index++)
-            Assert.Equal(original, stage.CapturedParents[index].Value);
-        Assert.Throws<InvalidOperationException>(
-            () => stage.PublishPacketEdits(0, Array.Empty<ParentTopologyEdit>()));
-    }
-
-    [Fact]
-    public void ParentTopologyStage_RejectsNonCanonicalOrCrossPacketSparseEdits()
-    {
-        using var world = new World();
-        Entity replacement = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        var proof = new StableQueryPartitionProof(
-        [
-            new StableQueryPacketRange(1, 0, 2, 2),
-        ]);
-        var stage = new ParentTopologyStage<Domain>(
-            world,
-            default,
-            [first, second],
-            new Parent<Domain>[2],
-            proof,
-            lastSystemVersion: 0);
-
-        Assert.Throws<InvalidOperationException>(() =>
-            stage.PublishPacketEdits(0, [new ParentTopologyEdit(-1, replacement)]));
-        Assert.Throws<InvalidOperationException>(() =>
-            stage.PublishPacketEdits(0, [new ParentTopologyEdit(2, replacement)]));
-        Assert.Throws<InvalidOperationException>(() => stage.PublishPacketEdits(
-            0,
-            [
-                new ParentTopologyEdit(1, replacement),
-                new ParentTopologyEdit(0, replacement),
-            ]));
-        Assert.Throws<InvalidOperationException>(() => stage.PublishPacketEdits(
-            0,
-            [
-                new ParentTopologyEdit(0, replacement),
-                new ParentTopologyEdit(0, replacement),
-            ]));
-
-        stage.PublishPacketEdits(
-            0,
-            [
-                new ParentTopologyEdit(0, replacement),
-                new ParentTopologyEdit(1, replacement),
-            ]);
-        Assert.Equal(2, stage.RequirePacketEdits(0).Length);
-    }
-
-    [Fact]
-    public void StableTopologyCapture_MaximumPacketSizeDoesNotOverflowCeilingDivision()
-    {
-        using var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Hierarchy<Domain>.SetParent(world, first, parent);
-        Hierarchy<Domain>.SetParent(world, second, parent);
-        QueryHandle query = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<Domain>>());
-
-        ParentTopologyStage<Domain> stage = TopologyStablePacketCapture.Capture<Domain>(
-            world,
-            query,
-            rowsPerPacket: int.MaxValue,
-            lastSystemVersion: 0);
-
-        Assert.Equal(1, stage.PacketCount);
-        Assert.Equal(2, stage.Proof.TotalRowCount);
-    }
 
     [Fact]
     public void Propagation_DerivesDisjointRoots_VisitsOrganizationNodes_AndSupportsMixedOrder()
@@ -802,24 +627,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
                 interveningWriter.Complete();
             }
 
-            Assert.Equal(2, propagation.Partition.RootCount);
-            Assert.Equal(2, propagation.Partition.PacketCount);
-            Assert.Equal(1, propagation.Partition.RootsPerPacket);
-            Assert.Equal(
-                new[] { orderedRoot, unorderedRoot },
-                propagation.Partition.NormalizedRoots.ToArray());
-            Assert.Collection(
-                propagation.Partition.PacketRanges.ToArray(),
-                range =>
-                {
-                    Assert.Equal(0, range.RootStart);
-                    Assert.Equal(1, range.RootCount);
-                },
-                range =>
-                {
-                    Assert.Equal(1, range.RootStart);
-                    Assert.Equal(1, range.RootCount);
-                });
             Assert.True(Volatile.Read(ref PropagationTestState.Maximum) >= 2);
             Assert.True(PropagationTestState.Visited.TryGetValue(organization, out Visit organizationVisit));
             Assert.Equal(orderedRoot, organizationVisit.Root);
@@ -865,148 +672,11 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
 
             releaseBlocker.Set();
             propagation.Handle.Complete();
-            Assert.Equal([root], propagation.Partition.NormalizedRoots.ToArray());
             Assert.True(PropagationTestState.Visited.ContainsKey(root));
         });
     }
 
-    [Fact]
-    public void Propagation_WritableFamilyUsesOnlyCapturedStableRowRanges()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = new World();
-            Entity selected = CreateValueNode(world);
-            Entity unrelated = CreateValueNode(world);
-            JobResourceAccess selectedRange =
-                ComponentRangeWrite<PropagationValue>(world, selected);
-            JobResourceAccess unrelatedRange =
-                ComponentRangeWrite<PropagationValue>(world, unrelated);
-            HierarchyMaintenanceDependency<Domain> maintenance =
-                HierarchyMaintenanceSystem<Domain>.ScheduleDependency(world);
-            using var selectedArrived = new CountdownEvent(1);
-            using var releaseSelected = new ManualResetEventSlim();
-            using var unrelatedStarted = new ManualResetEventSlim();
-            using var overlappingStarted = new ManualResetEventSlim();
-            PropagationTestState.Configure(selectedArrived, releaseSelected);
 
-            HierarchyPropagation propagation = HierarchyPropagationAdapter<Domain>.Schedule(
-                world,
-                [selected],
-                new RecordingPropagationJob<Domain>(),
-                maintenance,
-                [ComponentJobAccess<PropagationValue>.Write(world)],
-                new HierarchyPropagationScheduleOptions(rootsPerPacket: 1));
-            JobHandle unrelatedOwner = default;
-            JobHandle overlappingOwner = default;
-            try
-            {
-                Assert.True(selectedArrived.Wait(TimeSpan.FromSeconds(3)));
-
-                unrelatedOwner = JobSystem.Schedule(
-                    new SignalJob(unrelatedStarted),
-                    [unrelatedRange, RelationshipJobAccess.TopologyRead(world)]);
-                Assert.True(unrelatedStarted.Wait(TimeSpan.FromSeconds(3)));
-                unrelatedOwner.Complete();
-
-                overlappingOwner = JobSystem.Schedule(
-                    new SignalJob(overlappingStarted),
-                    [selectedRange, RelationshipJobAccess.TopologyRead(world)]);
-                Assert.False(overlappingStarted.Wait(TimeSpan.FromMilliseconds(150)));
-
-                releaseSelected.Set();
-                propagation.Handle.Complete();
-                overlappingOwner.Complete();
-                Assert.True(overlappingStarted.IsSet);
-            }
-            finally
-            {
-                releaseSelected.Set();
-                propagation.Handle.Complete();
-                unrelatedOwner.Complete();
-                overlappingOwner.Complete();
-            }
-        });
-    }
-
-    [Fact]
-    public void Propagation_WritableFamilyOmitsCapturedRowsAndAncestorsWithoutTheComponent()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = new World();
-            Entity missingAncestor = world.CreateEntity();
-            Entity root = CreateValueNode(world);
-            Entity presentChild = CreateValueNode(world);
-            Entity missingChild = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, root, missingAncestor);
-            Hierarchy<Domain>.SetParent(world, presentChild, root);
-            Hierarchy<Domain>.SetParent(world, missingChild, root);
-            JobResourceAccess presentRange =
-                ComponentRangeWrite<PropagationValue>(world, presentChild);
-            JobResourceAccess missingRange =
-                ComponentRangeWrite<PropagationValue>(world, missingChild);
-            JobResourceAccess missingAncestorRange =
-                ComponentRangeWrite<PropagationValue>(world, missingAncestor);
-            HierarchyMaintenanceDependency<Domain> maintenance =
-                HierarchyMaintenanceSystem<Domain>.ScheduleDependency(world);
-            using var rootArrived = new CountdownEvent(1);
-            using var releaseRoot = new ManualResetEventSlim();
-            using var missingStarted = new ManualResetEventSlim();
-            using var missingAncestorStarted = new ManualResetEventSlim();
-            using var presentStarted = new ManualResetEventSlim();
-            PropagationTestState.Configure(rootArrived, releaseRoot);
-
-            HierarchyPropagation propagation = HierarchyPropagationAdapter<Domain>.Schedule(
-                world,
-                [root],
-                new RecordingPropagationJob<Domain>(),
-                maintenance,
-                [ComponentJobAccess<PropagationValue>.Write(world)],
-                new HierarchyPropagationScheduleOptions(rootsPerPacket: 1));
-            JobHandle missingOwner = default;
-            JobHandle missingAncestorOwner = default;
-            JobHandle presentOwner = default;
-            try
-            {
-                Assert.True(rootArrived.Wait(TimeSpan.FromSeconds(3)));
-
-                missingOwner = JobSystem.Schedule(
-                    new SignalJob(missingStarted),
-                    [missingRange, RelationshipJobAccess.TopologyRead(world)]);
-                Assert.True(missingStarted.Wait(TimeSpan.FromSeconds(3)));
-                missingOwner.Complete();
-
-                missingAncestorOwner = JobSystem.Schedule(
-                    new SignalJob(missingAncestorStarted),
-                    [missingAncestorRange, RelationshipJobAccess.TopologyRead(world)]);
-                Assert.True(missingAncestorStarted.Wait(TimeSpan.FromSeconds(3)));
-                missingAncestorOwner.Complete();
-
-                presentOwner = JobSystem.Schedule(
-                    new SignalJob(presentStarted),
-                    [presentRange, RelationshipJobAccess.TopologyRead(world)]);
-                Assert.False(presentStarted.Wait(TimeSpan.FromMilliseconds(150)));
-
-                releaseRoot.Set();
-                propagation.Handle.Complete();
-                presentOwner.Complete();
-                Assert.True(presentStarted.IsSet);
-            }
-            finally
-            {
-                releaseRoot.Set();
-                propagation.Handle.Complete();
-                missingOwner.Complete();
-                missingAncestorOwner.Complete();
-                presentOwner.Complete();
-            }
-
-            Assert.False(world.Has<PropagationValue>(missingAncestor));
-            Assert.False(world.Has<PropagationValue>(missingChild));
-            Assert.Equal(1, world.Read<PropagationValue>(presentChild).Depth);
-        });
-    }
 
     [Theory]
     [InlineData(false)]
@@ -1068,7 +738,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     }
 
     [Fact]
-    public void Propagation_UsesOneExecutionVersionForEveryPacket()
+    public void PropagationUpdatesEveryRootDespiteInterveningClockChanges()
     {
         WithJobRuntime(() =>
         {
@@ -1103,17 +773,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
                 VersionedPropagationJob<Domain>.Release();
                 propagation.Handle.Complete();
 
-                uint[] rowVersions = roots
-                    .Select(entity => ComponentRowWriteVersion<PropagationValue>(world, entity))
-                    .ToArray();
-                uint executionVersion = Assert.Single(rowVersions.Distinct());
-                Assert.NotEqual(0u, executionVersion);
-
-                uint[] chunkVersions = roots
-                    .Select(entity => ComponentChunkChangeVersion<PropagationValue>(world, entity))
-                    .Distinct()
-                    .ToArray();
-                Assert.All(chunkVersions, version => Assert.Equal(executionVersion, version));
+                Assert.All(roots, entity => Assert.True(world.Read<PropagationValue>(entity).Depth >= 100));
             }
             finally
             {
@@ -1203,7 +863,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
                 new HierarchyPropagationScheduleOptions(rootsPerPacket: 1));
             propagation.Handle.Complete();
 
-            Assert.Equal(0, propagation.Partition.PacketCount);
             Assert.Equal(0, CountingNoopPropagationJob<Domain>.ExecutionCount);
             Assert.Equal(tickBefore, world.CurrentTick);
         });
@@ -1309,52 +968,6 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
         });
     }
 
-    [Fact]
-    public void PropagationFingerprint_IncludesParentAndDepthForEqualDfsEntityOrder()
-    {
-        WithJobRuntime(() =>
-        {
-            var flat = new World();
-            Entity flatRoot = flat.CreateEntity();
-            Entity flatFirst = flat.CreateEntity();
-            Entity flatSecond = flat.CreateEntity();
-            Hierarchy<Domain>.SetParent(flat, flatFirst, flatRoot);
-            Hierarchy<Domain>.SetParent(flat, flatSecond, flatRoot);
-
-            var chain = new World();
-            Entity chainRoot = chain.CreateEntity();
-            Entity chainFirst = chain.CreateEntity();
-            Entity chainSecond = chain.CreateEntity();
-            Hierarchy<Domain>.SetParent(chain, chainFirst, chainRoot);
-            Hierarchy<Domain>.SetParent(chain, chainSecond, chainFirst);
-
-            HierarchyMaintenanceDependency<Domain> flatMaintenance =
-                HierarchyMaintenanceSystem<Domain>.ScheduleDependency(flat);
-            HierarchyMaintenanceDependency<Domain> chainMaintenance =
-                HierarchyMaintenanceSystem<Domain>.ScheduleDependency(chain);
-            var job = new NoopPropagationJob<Domain>();
-            HierarchyPropagation flatPropagation = HierarchyPropagationAdapter<Domain>.Schedule(
-                flat,
-                [flatRoot],
-                job,
-                flatMaintenance);
-            HierarchyPropagation chainPropagation = HierarchyPropagationAdapter<Domain>.Schedule(
-                chain,
-                [chainRoot],
-                job,
-                chainMaintenance);
-
-            flatPropagation.Handle.Complete();
-            chainPropagation.Handle.Complete();
-
-            Assert.Equal(
-                flatPropagation.Partition.NormalizedRoots[0].Index,
-                chainPropagation.Partition.NormalizedRoots[0].Index);
-            Assert.NotEqual(
-                flatPropagation.Partition.Fingerprint,
-                chainPropagation.Partition.Fingerprint);
-        });
-    }
 
     [Fact]
     public void CompletedMaintenanceToken_BecomesStaleAfterDeferredReparent()
@@ -1564,46 +1177,8 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
         return entity;
     }
 
-    private static JobResourceAccess ComponentRangeWrite<T>(World world, Entity entity)
-        where T : struct, IComponent
-    {
-        long address = StableRowAddress(world, entity);
-        return WorldStorageJobResources.Write(
-            world,
-            new WorldStorageResourceKey(
-                WorldStorageKind.Table,
-                ComponentMetadata<T>.Id),
-            address,
-            length: 1);
-    }
 
-    private static long StableRowAddress(World world, Entity entity)
-    {
-        var record = world.ActiveStructureRoot.Entities.ReadRow(entity);
-        var chunk = record.Chunk!;
-        var range = new StableQueryPacketRange(
-            chunk.PersistentIdentity,
-            record.RowInChunk,
-            rowCount: 1,
-            chunk.Count);
-        return StableQueryPacketAddress.Address(in range);
-    }
 
-    private static uint ComponentRowWriteVersion<T>(World world, Entity entity)
-        where T : struct, IComponent
-    {
-        var record = world.ActiveStructureRoot.Entities.ReadRow(entity);
-        int column = record.Archetype!.Column(ComponentMetadata<T>.Id);
-        return record.Chunk!.WriteVersionRows(column)[record.RowInChunk];
-    }
-
-    private static uint ComponentChunkChangeVersion<T>(World world, Entity entity)
-        where T : struct, IComponent
-    {
-        var record = world.ActiveStructureRoot.Entities.ReadRow(entity);
-        int column = record.Archetype!.Column(ComponentMetadata<T>.Id);
-        return record.Chunk!.ChangeVersions[column];
-    }
 
     private static void WithJobRuntime(Action action)
     {

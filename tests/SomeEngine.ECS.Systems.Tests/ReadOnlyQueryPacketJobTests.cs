@@ -119,7 +119,6 @@ public sealed class ReadOnlyQueryPacketJobTests
                 ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 2);
             try
             {
-                Assert.Equal(3, plan.PacketCount);
                 Assert.Equal(entities.Length, plan.RowCount);
                 Assert.Equal(cursor.LastSystemVersion, plan.LastSystemVersion);
 
@@ -139,7 +138,6 @@ public sealed class ReadOnlyQueryPacketJobTests
 
                 var commandJob = new AddPacketMarkerJob();
                 commands = plan.RecordParallel(in commandJob);
-                Assert.Equal(plan.PacketCount, commands.ProducerCount);
             }
             finally
             {

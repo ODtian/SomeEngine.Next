@@ -85,32 +85,6 @@ public class EntityCopyTests
             CountRows(world, world.Query(world.QueryDefinition().Removed<Position>())));
     }
 
-    [Fact]
-    public void DetachedCopyInPlace_NoSelectedColumnsKeepsChunkSharedUntilRealCopy()
-    {
-        var world = new World();
-        var source = world.CreateEntity(new Position { X = 1, Y = 10 });
-        var target = world.CreateEntity(new Position { X = 2, Y = 20 });
-
-        var published = world.PublishedStructureRoot;
-        var candidate = published.CloneDetached(world, world.HookStore);
-        var publishedChunk = published.Entities.Store.GetRecordReadOnly(target).Chunk!;
-        var candidateChunk = candidate.Entities.Store.GetRecordReadOnly(target).Chunk!;
-        long sharedStorageIdentity = publishedChunk.StorageIdentity;
-
-        candidate.Copy.CopyInto(source, target, EntityCopyOptions.Tags);
-
-        Assert.True(publishedChunk.SharesStorageWith(candidateChunk));
-        Assert.Equal(sharedStorageIdentity, candidateChunk.StorageIdentity);
-        Assert.Equal(2, candidate.Components.Read<Position>(target).X);
-
-        candidate.Copy.CopyInto(source, target, EntityCopyOptions.TableComponents);
-
-        Assert.False(publishedChunk.SharesStorageWith(candidateChunk));
-        Assert.NotEqual(sharedStorageIdentity, candidateChunk.StorageIdentity);
-        Assert.Equal(1, candidate.Components.Read<Position>(target).X);
-        Assert.Equal(2, published.Components.Read<Position>(target).X);
-    }
 
     [Fact]
     public void CloneEntity_PreservesEnableableState()

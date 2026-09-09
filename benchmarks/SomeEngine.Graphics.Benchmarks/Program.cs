@@ -11,7 +11,6 @@ internal static class Program
             {
                 BenchmarkCommand.Warp => BenchmarkController.RunWarp(options),
                 BenchmarkCommand.Diagnose => BenchmarkController.RunDiagnostic(options),
-                BenchmarkCommand.Certify => BenchmarkController.RunCertification(options),
                 BenchmarkCommand.Worker => BenchmarkWorker.Run(options),
                 BenchmarkCommand.Evaluate => BenchmarkController.EvaluateExisting(options),
                 BenchmarkCommand.Probe => BenchmarkController.RunProbe(options),

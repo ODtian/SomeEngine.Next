@@ -21,7 +21,7 @@ internal static class BenchmarkWorker
             options.OutputPath,
             options.Workloads.Length == 0 ? null : options.Workloads,
             options.DefaultDirectCalls);
-        SchedulingResult scheduling = BenchmarkEnvironment.EstablishScheduling(options.Profile);
+        SchedulingResult scheduling = BenchmarkEnvironment.CheckPlatform();
         ProcessRun run;
         if (!scheduling.Established)
         {
@@ -45,6 +45,6 @@ internal static class BenchmarkWorker
         }
         GraphicsBenchmarkReport.WriteProcess(options.OutputPath, run);
         Console.WriteLine($"{variant}: {run.Disposition} — {run.Reason}");
-        return run.Disposition is RunDisposition.Passed or RunDisposition.FunctionalOnly ? 0 : 3;
+        return run.Disposition == RunDisposition.FunctionalOnly ? 0 : 3;
     }
 }

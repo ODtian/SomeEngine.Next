@@ -29,7 +29,7 @@ public sealed class VulkanRenderingTests
             source,
             ("vertexMain", SlangStage.Vertex),
             ("pixelMain", SlangStage.Fragment));
-        using var backend = new VulkanBackend();
+        using var backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
         Queue queue = backend.GetQueue(device, QueueType.Graphics);

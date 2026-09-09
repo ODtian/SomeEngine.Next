@@ -712,7 +712,6 @@ public sealed class LifecycleClosureTests
             error.InnerExceptions,
             exception => exception.Message == "command-cleanup-fault");
         Assert.False(world.HookStore.Any);
-        Assert.Equal(0, world.PublishedStructureRoot.Entities.Count);
         world.Dispose();
     }
 

@@ -8,7 +8,7 @@
   <Project Path="tools\SomeEngine.AssetCook\SomeEngine.AssetCook.csproj" />
   <Project Path="tools\SomeEngine.Assets.AotSmoke\SomeEngine.Assets.AotSmoke.csproj" />
   <Project Path="tools\SomeEngine.Serialization.AotSmoke\SomeEngine.Serialization.AotSmoke.csproj" />
-  <Project Path="tools\SomeEngine.Serialization.PerformanceGate\SomeEngine.Serialization.PerformanceGate.csproj" />
+  <Project Path="tools\SomeEngine.Serialization.Benchmarks\SomeEngine.Serialization.Benchmarks.csproj" />
   <Project Path="tools\SomeEngine.ECS.AotSmoke\SomeEngine.ECS.AotSmoke.csproj" />
   <Project Path="src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
   <Project Path="src\SomeEngine.ECS.Systems\SomeEngine.ECS.Systems.csproj" />
@@ -27,7 +27,6 @@
   <Project Path="tests\SomeEngine.ECS.Tests\SomeEngine.ECS.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Systems.Tests\SomeEngine.ECS.Systems.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Serialization.Tests\SomeEngine.ECS.Serialization.Tests.csproj" />
-  <Project Path="tests\SomeEngine.ECS.Benchmarks.Tests\SomeEngine.ECS.Benchmarks.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.Fuzz.Tests\SomeEngine.ECS.Fuzz.Tests.csproj" />
   <Project Path="tests\SomeEngine.ECS.SourceGen.Tests\SomeEngine.ECS.SourceGen.Tests.csproj" />
   <Project Path="tests\SomeEngine.Job.Tests\SomeEngine.Job.Tests.csproj" />
@@ -48,7 +47,6 @@
   <Project Path="tests\SomeEngine.Graphics.Tests\SomeEngine.Graphics.Tests.csproj" />
   <Project Path="tests\SomeEngine.Graphics.Direct3D12.Tests\SomeEngine.Graphics.Direct3D12.Tests.csproj" />
   <Project Path="tests\SomeEngine.Graphics.Vulkan.Tests\SomeEngine.Graphics.Vulkan.Tests.csproj" />
-  <Project Path="tests\SomeEngine.Graphics.Benchmarks.Tests\SomeEngine.Graphics.Benchmarks.Tests.csproj" />
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />

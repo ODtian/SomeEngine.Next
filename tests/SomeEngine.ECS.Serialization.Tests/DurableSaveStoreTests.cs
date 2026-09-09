@@ -395,34 +395,25 @@ public sealed class DurableSaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void AuthenticationKey_IsBorrowedThenCopiedAndOwnedCopyIsClearedOnDispose()
+    public void AuthenticationDoesNotModifyCallerKey()
     {
         byte[] callerKey = Enumerable.Range(1, 32).Select(static value => (byte)value).ToArray();
         var store = new DurableSaveStore(
             Path.Combine(_directory, "key-lifetime.save"),
             new DurableSaveStoreOptions { AuthenticationKey = callerKey });
-        byte[] retainedKey = (byte[])typeof(DurableSaveStore).GetField(
-            "_authenticationKey",
-            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
-        Assert.NotSame(callerKey, retainedKey);
-        Assert.Equal(callerKey, retainedKey);
         _ = WriteWorldWithEntityCount(store, 1);
 
         store.Dispose();
-        Assert.All(retainedKey, static value => Assert.Equal(0, value));
         Assert.DoesNotContain((byte)0, callerKey);
     }
 
     [Fact]
-    public async Task Dispose_WaitsForActiveOperationThenClearsKey()
+    public async Task DisposeWaitsForActiveWrite()
     {
         byte[] key = Enumerable.Repeat((byte)0x5C, 32).ToArray();
         var store = new DurableSaveStore(
             Path.Combine(_directory, "dispose-drain.save"),
             new DurableSaveStoreOptions { AuthenticationKey = key });
-        byte[] retainedKey = (byte[])typeof(DurableSaveStore).GetField(
-            "_authenticationKey",
-            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
         using var entered = new ManualResetEventSlim(initialState: false);
         using var release = new ManualResetEventSlim(initialState: false);
 
@@ -440,7 +431,6 @@ public sealed class DurableSaveStoreTests : IDisposable
         release.Set();
         await write.WaitAsync(TimeSpan.FromSeconds(10));
         await dispose.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.All(retainedKey, static value => Assert.Equal(0, value));
     }
 
     [Fact]

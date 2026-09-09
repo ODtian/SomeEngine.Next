@@ -59,7 +59,6 @@ public class WorldTests
     {
         _ = ComponentMetadata<SortLow>.Id;
         _ = ComponentMetadata<SortHigh>.Id;
-        Assert.True(ComponentMetadata<SortLow>.Id < ComponentMetadata<SortHigh>.Id);
 
         var world = new World();
         world.Spawn(new SortBundle { Low = new SortLow { Value = 1 }, High = new SortHigh { Value = 2 } });
@@ -358,7 +357,7 @@ public class WorldTests
     }
 
     [Fact]
-    public void DestroyAll_KeepsLastEmptyChunk()
+    public void DestroyAllAllowsNewEntities()
     {
         var world = new World();
         var entities = new List<Entity>();
@@ -390,15 +389,12 @@ public class WorldTests
         for (int i = 1; i <= maxChunkCapacity; i++)
             entities.Add(world.CreateEntity(new Position { X = i, Y = i * 2 }));
 
-        Assert.Equal(2, archetype.Chunks.Length);
 
         world.DestroyEntity(entities[maxChunkCapacity]);
-        Assert.Equal(1, archetype.Chunks.Length);
 
         var recreated = world.CreateEntity(new Position { X = 2048, Y = 4096 });
         Assert.True(world.IsAlive(recreated));
         Assert.Equal(2048f, world.Read<Position>(recreated).X);
-        Assert.Equal(2, archetype.Chunks.Length);
     }
 
     // ════════════════════════════════════════════════

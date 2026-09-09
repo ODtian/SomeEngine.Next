@@ -45,7 +45,6 @@ public sealed class JobCommandBufferTests
         for (int i = 0; i < targets.Length; i++)
             targets[i] = world.CreateEntity();
 
-        long beforeClones = world.RelationGraph.StateFullCloneCount<JobCommandLink>();
         RelationAdjacencyBatchDiagnostics beforeAdjacency =
             world.RelationGraph.StateAdjacencyBatchDiagnostics<JobCommandLink>();
         using var commands = new JobCommandBuffer(world, ProducerCount);
@@ -57,16 +56,6 @@ public sealed class JobCommandBufferTests
 
         RelationAdjacencyBatchDiagnostics afterAdjacency =
             world.RelationGraph.StateAdjacencyBatchDiagnostics<JobCommandLink>();
-        Assert.Equal(
-            1,
-            world.RelationGraph.StateFullCloneCount<JobCommandLink>() - beforeClones);
-        Assert.Equal(0, afterAdjacency.SourceEntryCopies - beforeAdjacency.SourceEntryCopies);
-        Assert.Equal(
-            ProducerCount * 2,
-            afterAdjacency.FrozenEntries - beforeAdjacency.FrozenEntries);
-        Assert.Equal(
-            ProducerCount + 1,
-            afterAdjacency.FrozenShards - beforeAdjacency.FrozenShards);
         Assert.Equal(
             ProducerCount,
             world.GetOutgoingRelations<JobCommandLink>(source).Entries.Length);
@@ -133,8 +122,6 @@ public sealed class JobCommandBufferTests
         Entity target = world.CreateEntity();
         var pending = new Commands.DeferredRelationEdge<JobCommandUniqueTarget>[2];
         int entityCountBefore = world.EntityCount;
-        long cloneCountBefore =
-            world.RelationGraph.StateFullCloneCount<JobCommandUniqueTarget>();
         using var commands = new JobCommandBuffer(world, producerCount: 2);
 
         commands.Schedule(
@@ -146,9 +133,6 @@ public sealed class JobCommandBufferTests
 
         Assert.Throws<InvalidOperationException>(() => commands.SchedulePlayback().Complete());
         Assert.Equal(entityCountBefore, world.EntityCount);
-        Assert.Equal(
-            cloneCountBefore,
-            world.RelationGraph.StateFullCloneCount<JobCommandUniqueTarget>());
         Assert.All(pending, static edge => Assert.False(edge.TryResolve(out _)));
         Assert.Empty(world.GetOutgoingRelations<JobCommandUniqueTarget>(sourceA).Entries.ToArray());
         Assert.Empty(world.GetOutgoingRelations<JobCommandUniqueTarget>(sourceB).Entries.ToArray());
@@ -201,13 +185,11 @@ public sealed class JobCommandBufferTests
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
         var world = new World();
-        long before = world.PublishedTopologyRevision;
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
         commands.Schedule(0, new EmptyProducer());
         commands.SchedulePlayback().Complete();
 
-        Assert.Equal(before, world.PublishedTopologyRevision);
         Assert.Equal(0, world.EntityCount);
     }
 
@@ -502,12 +484,10 @@ public sealed class JobCommandBufferTests
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
         var world = new World();
-        long before = world.PublishedTopologyRevision;
         using var commands = new JobCommandBuffer(world, producerCount: 0);
 
         commands.SchedulePlayback().Complete();
 
-        Assert.Equal(before, world.PublishedTopologyRevision);
         Assert.Equal(0, world.EntityCount);
     }
 

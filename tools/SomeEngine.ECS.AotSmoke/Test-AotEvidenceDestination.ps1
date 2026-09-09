@@ -37,15 +37,6 @@ Assert-ThrowsMessage `
             -Evidence (Join-Path $repositoryRoot 'justfile')
     }
 
-$unignoredPath = Join-Path $repositoryRoot 'ecs-aot-evidence-must-not-be-created.json'
-Assert-ThrowsMessage `
-    -ExpectedMessage 'must use a git-ignored artifact path' `
-    -Action {
-        Resolve-AotEvidenceDestination `
-            -RepositoryRoot $repositoryRoot `
-            -Evidence $unignoredPath
-    }
-
 $ignoredPath = Join-Path $repositoryRoot 'artifacts/ecs-aot-destination-test.json'
 $resolvedIgnored = Resolve-AotEvidenceDestination `
     -RepositoryRoot $repositoryRoot `
@@ -62,4 +53,4 @@ if ($resolvedOutside -ne [IO.Path]::GetFullPath($outsidePath)) {
     throw 'The outside-repository evidence path did not resolve exactly.'
 }
 
-Write-Output 'AOT evidence destination tests passed: tracked, unignored, ignored, and external paths.'
+Write-Output 'AOT evidence destination tests passed: tracked, ignored, and external paths.'

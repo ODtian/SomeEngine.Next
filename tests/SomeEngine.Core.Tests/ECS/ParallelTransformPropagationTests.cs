@@ -44,13 +44,6 @@ public sealed class ParallelTransformPropagationTests
 
             propagation.Handle.Complete();
 
-            Assert.Equal(2, propagation.Partition.RootCount);
-            Assert.Equal(2, propagation.Partition.PacketCount);
-            Assert.Equal(1, propagation.Partition.RootsPerPacket);
-            Assert.True(propagation.Partition.ProvesNonOverlap(0, 1));
-            Assert.Equal(
-                new[] { orderedRoot, unorderedRoot },
-                propagation.Partition.NormalizedRoots.ToArray());
             Assert.Equal(
                 new Vector3(10, 0, 0),
                 world.Read<WorldTransform>(orderedRoot).Qvvs.Position);
@@ -163,7 +156,6 @@ public sealed class ParallelTransformPropagationTests
                 maintenance);
             propagation.Handle.Complete();
 
-            Assert.Equal([child], propagation.Partition.NormalizedRoots.ToArray());
             Assert.Equal(
                 new Vector3(11, 0, 0),
                 world.Read<WorldTransform>(child).Qvvs.Position);

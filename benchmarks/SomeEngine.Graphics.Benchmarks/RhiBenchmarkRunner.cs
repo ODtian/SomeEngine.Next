@@ -70,16 +70,6 @@ internal static partial class RhiBenchmarkRunner
             diagnostics.DebugLayerEnabled || diagnostics.GpuBasedValidationEnabled || diagnostics.SynchronizedQueueValidationEnabled,
             diagnostics.DredEnabled,
             System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription + " / Silk.NET 2.23.0");
-        if (configuration.Profile == BenchmarkProfile.VendorCertification &&
-            (environment.ValidationEnabled || environment.DredEnabled || environment.CaptureToolLoaded))
-        {
-            return new ProcessRun(
-                configuration.Variant,
-                RunDisposition.Unexecuted,
-                "Validation, DRED, or a capture tool is enabled.",
-                environment,
-                []);
-        }
         using BenchmarkShaderProgram shader = BenchmarkShaders.Open(configuration.ShaderDirectory);
         Format[] colorFormats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blendAttachments =
@@ -140,9 +130,7 @@ internal static partial class RhiBenchmarkRunner
                     workload),
             _ => throw new ArgumentOutOfRangeException(nameof(workload)),
         };
-        RunDisposition disposition = configuration.Profile == BenchmarkProfile.VendorCertification
-            ? RunDisposition.Passed
-            : RunDisposition.FunctionalOnly;
+        RunDisposition disposition = RunDisposition.FunctionalOnly;
         return new ProcessRun(
             configuration.Variant,
             disposition,
@@ -151,12 +139,11 @@ internal static partial class RhiBenchmarkRunner
                 BenchmarkProfile.WarpFunctional =>
                     "All reduced-count RHI workloads executed on WARP; not performance evidence.",
                 BenchmarkProfile.FastDiagnostic =>
-                    "The three draw-only RHI diagnostics executed; never vendor-certification evidence.",
+                    "The three draw-only RHI diagnostics executed; timings are diagnostic.",
                 BenchmarkProfile.DeveloperProbe =>
-                    "Selected RHI developer probe workloads executed; exploratory only and never certification evidence.",
+                    "Selected RHI developer probe workloads executed; timings are diagnostic.",
                 BenchmarkProfile.RepresentativeCpuFrame =>
                     "The public-source representative CPU frame workloads executed; non-rendering performance evidence.",
-                BenchmarkProfile.VendorCertification => "All fixed RHI workloads executed.",
                 _ => throw new ArgumentOutOfRangeException(nameof(configuration)),
             },
             environment,
@@ -234,8 +221,8 @@ internal static partial class RhiBenchmarkRunner
     {
         TextureDesc targetDescription = new(
             TextureDimension.Texture2D,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             1,
             1,
             1,
@@ -273,8 +260,8 @@ internal static partial class RhiBenchmarkRunner
         [
             new(targetView, LoadType.Clear, StoreType.Store, new Vector4(0.0625f, 0.125f, 0.25f, 1)),
         ];
-        Viewport[] viewports = [new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight)];
-        ScissorRect[] scissors = [new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight)];
+        Viewport[] viewports = [new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight)];
+        ScissorRect[] scissors = [new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight)];
         byte[] transientPackets = workload == GraphicsWorkload.TransientDraw10000
             ? new byte[checked(configuration.DrawCount * 16)]
             : [];
@@ -434,8 +421,8 @@ internal static partial class RhiBenchmarkRunner
             RenderingDesc rendering = new(
                 colors,
                 null,
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight);
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight);
             TDispatch.BeginRendering(receiver, context, rendering);
             switch (workload)
             {
@@ -672,8 +659,8 @@ internal static partial class RhiBenchmarkRunner
         using BenchmarkWindow window = new();
         using Surface surface = backend.CreateSurface(new SurfaceDesc(NativeWindowType.Win32, window.Handle));
         SwapchainConfig swapchainConfig = new(
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             Format.R8G8B8A8UNorm,
             ColorSpace.Srgb,
             PresentType.Mailbox,
@@ -688,8 +675,8 @@ internal static partial class RhiBenchmarkRunner
             device,
             new TextureDesc(
                 TextureDimension.Texture2D,
-                FixedGraphicsProtocol.RenderWidth,
-                FixedGraphicsProtocol.RenderHeight,
+                BenchmarkDefaults.RenderWidth,
+                BenchmarkDefaults.RenderHeight,
                 1,
                 1,
                 1,
@@ -735,8 +722,8 @@ internal static partial class RhiBenchmarkRunner
         using CommandContext computeContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Compute, 0, 2));
         using CommandContext graphicsContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Graphics, 0, 2));
         ColorAttachmentDesc[] colors = [new(targetView, LoadType.Clear, StoreType.Store, new Vector4(0.0625f, 0.125f, 0.25f, 1))];
-        Viewport[] viewports = [new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight)];
-        ScissorRect[] scissors = [new(0, 0, FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight)];
+        Viewport[] viewports = [new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight)];
+        ScissorRect[] scissors = [new(0, 0, BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight)];
         RecordedCommands[] copyCommands = new RecordedCommands[1];
         RecordedCommands[] computeCommands = new RecordedCommands[1];
         RecordedCommands[] graphicsCommands = new RecordedCommands[1];
@@ -959,8 +946,8 @@ internal static partial class RhiBenchmarkRunner
         TDispatch.BeginRendering(receiver, graphicsContext, new RenderingDesc(
             colors,
             null,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight));
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight));
         TDispatch.Draw(receiver, graphicsContext, new DrawArguments(3, 1, 0, 0));
         TDispatch.EndRendering(receiver, graphicsContext);
         TDispatch.Barrier(receiver, graphicsContext, new TextureBarrier(
@@ -984,7 +971,7 @@ internal static partial class RhiBenchmarkRunner
         TDispatch.CopyTexture(receiver, graphicsContext, new TextureCopy(
             target, 0, 0, TextureAspects.Color, 0, 0, 0,
             image.Texture, 0, 0, TextureAspects.Color, 0, 0, 0,
-            FixedGraphicsProtocol.RenderWidth, FixedGraphicsProtocol.RenderHeight, 1));
+            BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight, 1));
         TDispatch.Barrier(receiver, graphicsContext, new TextureBarrier(
             image.Texture,
             textureRange,
@@ -1044,7 +1031,7 @@ internal static partial class RhiBenchmarkRunner
         in TextureSubresourceRange range)
         where TDispatch : struct, IRhiDispatch<TReceiver>
     {
-        const ulong size = FixedGraphicsProtocol.RenderWidth * FixedGraphicsProtocol.RenderHeight * 4UL;
+        const ulong size = BenchmarkDefaults.RenderWidth * BenchmarkDefaults.RenderHeight * 4UL;
         using Buffer readback = backend.CreateBuffer(
             device,
             new BufferDesc(size, BufferUsages.CopyDestination),
@@ -1057,7 +1044,7 @@ internal static partial class RhiBenchmarkRunner
             readback,
             0,
             256,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderHeight,
             texture,
             0,
             0,
@@ -1065,8 +1052,8 @@ internal static partial class RhiBenchmarkRunner
             0,
             0,
             0,
-            FixedGraphicsProtocol.RenderWidth,
-            FixedGraphicsProtocol.RenderHeight,
+            BenchmarkDefaults.RenderWidth,
+            BenchmarkDefaults.RenderHeight,
             1));
         RecordedCommands recorded = TDispatch.End(receiver, context);
         OneCommands[0] = recorded;

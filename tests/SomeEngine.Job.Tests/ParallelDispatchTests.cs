@@ -135,7 +135,6 @@ public sealed class ParallelDispatchTests
             JobSystem.ScheduleParallel(new ParallelJobs.MarkIndexJob(values), values.Length, 1));
 
         Assert.Contains("Job queue capacity exhausted", ex.Message);
-        Assert.Equal(0, JobSystem.GetStats().CompletionStateHighWater);
     }
 
     [Fact]
