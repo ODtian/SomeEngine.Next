@@ -81,6 +81,8 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     return c;
 }
 
+#include "cluster_hiz_shared.slang"
+
 bool PassesLODFilter(
     PackedCluster cluster,
     RenderInstanceTransform t,
@@ -96,89 +98,6 @@ bool PassesLODFilter(
     float worldRadius = cluster.LODRadius * maxScale;
     float lodError = DecodeClusterLODError(cluster);
     return ClusterSphereError(worldCenter, worldRadius, lodError * maxScale, view) <= view.LodThreshold;
-}
-
-void BuildWorldAabbScreenBoundsAndNearDepth(
-    float3 worldMin,
-    float3 worldMax,
-    bool usePrev,
-    ClusterViewUniforms view,
-    out float2 minUv,
-    out float2 maxUv,
-    out float nearDepth,
-    out uint mipLevel)
-{
-    float4x4 viewProjMat = usePrev ? view.PrevViewProj : view.ViewProj;
-
-    float3 corners[8];
-    corners[0] = float3(worldMin.x, worldMin.y, worldMin.z);
-    corners[1] = float3(worldMax.x, worldMin.y, worldMin.z);
-    corners[2] = float3(worldMin.x, worldMax.y, worldMin.z);
-    corners[3] = float3(worldMax.x, worldMax.y, worldMin.z);
-    corners[4] = float3(worldMin.x, worldMin.y, worldMax.z);
-    corners[5] = float3(worldMax.x, worldMin.y, worldMax.z);
-    corners[6] = float3(worldMin.x, worldMax.y, worldMax.z);
-    corners[7] = float3(worldMax.x, worldMax.y, worldMax.z);
-
-    float2 ndcMin = 1e20.xx;
-    float2 ndcMax = -1e20.xx;
-    uint validCornerCount = 0;
-    bool touchesNearPlane = false;
-    nearDepth = 1.0;
-
-    [unroll]
-    for (uint i = 0; i < 8; i++)
-    {
-        float4 clip = mul(float4(corners[i], 1.0), viewProjMat);
-        if (clip.w <= 1e-5 || clip.z < 0.0)
-        {
-            touchesNearPlane = true;
-            continue;
-        }
-
-        float3 ndc = clip.xyz / clip.w;
-        ndcMin = min(ndcMin, ndc.xy);
-        ndcMax = max(ndcMax, ndc.xy);
-        nearDepth = min(nearDepth, saturate(ndc.z));
-        validCornerCount++;
-    }
-
-    if (touchesNearPlane || validCornerCount == 0)
-    {
-        minUv = 0.0.xx;
-        maxUv = 1.0.xx;
-        nearDepth = 0.0;
-    }
-    else
-    {
-        ndcMin = clamp(ndcMin, -1.0.xx, 1.0.xx);
-        ndcMax = clamp(ndcMax, -1.0.xx, 1.0.xx);
-        float2 uv1 = ndcMin * float2(0.5, -0.5) + 0.5.xx;
-        float2 uv2 = ndcMax * float2(0.5, -0.5) + 0.5.xx;
-        minUv = saturate(min(uv1, uv2));
-        maxUv = saturate(max(uv1, uv2));
-    }
-
-    float2 onePixel = float2(1.0 / view.ScreenWidth, 1.0 / view.ScreenHeight);
-    if (view.HiZMipCount > 0)
-        onePixel = max(view.HiZInvSize, 1e-6.xx);
-    maxUv = min(1.0.xx, max(maxUv, minUv + onePixel));
-
-    float pixelDiameterX = (maxUv.x - minUv.x) / onePixel.x;
-    float pixelDiameterY = (maxUv.y - minUv.y) / onePixel.y;
-    float pixelDiameter = max(1.0, max(pixelDiameterX, pixelDiameterY));
-
-    float mipF = max(0.0, ceil(log2(pixelDiameter)));
-    uint maxMip = view.HiZMipCount > 0 ? view.HiZMipCount - 1 : 0;
-    mipLevel = (uint)clamp((int)mipF, 0, (int)maxMip);
-
-    if (any(isnan(minUv)) || any(isnan(maxUv)) || isnan(nearDepth))
-    {
-        minUv = 0.0.xx;
-        maxUv = 1.0.xx;
-        nearDepth = 0.0;
-        mipLevel = 0;
-    }
 }
 
 void BuildClusterAabbScreenBoundsAndNearDepth(
@@ -234,42 +153,6 @@ void BuildClusterAabbScreenBoundsAndNearDepth(
         minUv, maxUv, nearDepth, mipLevel);
 }
 
-float SampleHiZMax(
-    float2 minUv,
-    float2 maxUv,
-    uint mipLevel,
-    uint viewIndex,
-    ClusterViewUniforms view)
-{
-    float2 fullSize = 1.0.xx / max(view.HiZInvSize, 1e-6.xx);
-    
-    // Scale UVs to exact pixel coordinates
-    float2 pxMin = minUv * fullSize;
-    float2 pxMax = maxUv * fullSize;
-
-    // The divisor maps pixels to texels exactly via integer truncation
-    float divisor = exp2((float)mipLevel);
-    
-    // Calculate the mip texture boundary using exact truncation matching GPU
-    float2 mipSize = max(1.0.xx, floor(fullSize / divisor));
-    float2 maxCoord = mipSize - 1.0.xx;
-
-    // Divide by 2^L and clamp to ensure we safely load within bounds.
-    // Since mipLevel = ceil(log2(pixelDiameter)), pxMax/D - pxMin/D is GUARANTEED <= 1.
-    // The 4 loaded texels are guaranteed to perfectly cover the whole cluster UV.
-    int2 p0 = int2(clamp(pxMin / divisor, 0.0.xx, maxCoord));
-    int2 p1 = int2(clamp(float2(pxMax.x, pxMin.y) / divisor, 0.0.xx, maxCoord));
-    int2 p2 = int2(clamp(float2(pxMin.x, pxMax.y) / divisor, 0.0.xx, maxCoord));
-    int2 p3 = int2(clamp(pxMax / divisor, 0.0.xx, maxCoord));
-
-    float d0 = HiZTexture.Load(int4(p0, viewIndex, mipLevel));
-    float d1 = HiZTexture.Load(int4(p1, viewIndex, mipLevel));
-    float d2 = HiZTexture.Load(int4(p2, viewIndex, mipLevel));
-    float d3 = HiZTexture.Load(int4(p3, viewIndex, mipLevel));
-
-    return max(max(d0, d1), max(d2, d3));
-}
-
 bool IsOccludedByHiZ(
     PackedCluster cluster,
     RenderInstanceTransform transform,
@@ -306,7 +189,7 @@ bool IsOccludedByHiZ(
             nearDepth,
             usePrev,
             view);
-    hizDepth = SampleHiZMax(minUv, maxUv, mipLevel, viewIndex, view);
+    hizDepth = SampleHiZMax(HiZTexture, minUv, maxUv, mipLevel, viewIndex, view);
     return nearDepth > (hizDepth + epsilon);
 }
 
@@ -437,7 +320,10 @@ bool LoadAndFilterCandidate(
     boundsExpansion = 0.0;
 
     uint count = CandidateCount[0];
-    if (threadId >= count)
+    uint capacity;
+    uint stride;
+    CandidateClusters.GetDimensions(capacity, stride);
+    if (threadId >= min(count, capacity))
         return false;
 
     DrawRequest candidate = CandidateClusters[threadId];

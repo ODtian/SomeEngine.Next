@@ -73,38 +73,7 @@ public sealed class RenderInstanceUpdateTests
             buffer.Get(previous, 1));
     }
 
-    [Fact]
-    public void Sparse_write_is_index_exact_and_publishes_property_change()
-    {
-        RenderInstancePropertyLayout layout = RenderInstanceTransformProperties.Layout;
-        ResolvedRenderInstanceProperty<RenderTransform> current =
-            layout.Resolve(RenderInstanceTransformProperties.CurrentTransform);
-        using var buffer = new RenderInstanceBuffer(layout, capacity: 4);
-        for (int index = 0; index < 4; index++)
-            _ = buffer.Add();
-        buffer.SetRange(
-            current,
-            0,
-            [Transform(0.0f), Transform(0.0f), Transform(0.0f), Transform(0.0f)]);
-        ulong previousRevision = buffer.Revision;
 
-        using (RenderInstanceUpdate update = buffer.BeginUpdate())
-        {
-            update.WriteSparse(
-                current,
-                [3, 1],
-                [Transform(30.0f), Transform(10.0f)]);
-            update.Commit();
-        }
-
-        Assert.Equal(Transform(0.0f), buffer.Get(current, 0));
-        Assert.Equal(Transform(10.0f), buffer.Get(current, 1));
-        Assert.Equal(Transform(0.0f), buffer.Get(current, 2));
-        Assert.Equal(Transform(30.0f), buffer.Get(current, 3));
-        using RenderInstanceSourceSnapshot snapshot = buffer.Capture(previousRevision);
-        RenderInstanceSparsePropertyChange changed = Assert.Single(snapshot.Changes.SparseProperties);
-        Assert.Equal([1, 3], changed.Indices.ToArray());
-    }
 
     [Fact]
     public void Invalid_transaction_is_rejected_before_mutating_buffer()

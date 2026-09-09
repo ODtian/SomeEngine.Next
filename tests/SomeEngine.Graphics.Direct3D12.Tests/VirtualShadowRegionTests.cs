@@ -41,7 +41,7 @@ public sealed class VirtualShadowRegionTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
             "shadow_regions", source, [new("CompactVirtualShadowViews", SlangStage.Compute), new("Reconstruct", SlangStage.Compute)],
             "sm_6_0", ShaderDirectory());
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var owned = new List<IDisposable>();
         try

@@ -18,6 +18,12 @@ internal sealed unsafe partial class VulkanBackend
         {
             (depth, stencil, hasDepth, hasStencil) = CreateDepthStencilAttachment(command, depthStencil);
         }
+        uint layers = uint.MaxValue;
+        foreach (ref readonly ColorAttachmentDesc color in desc.Colors)
+            layers = Math.Min(layers, LayerCount(color.View.Description.Texture, color.View.Description.Range));
+        if (desc.DepthStencil is DepthStencilAttachmentDesc attachment)
+            layers = Math.Min(layers, LayerCount(attachment.View.Description.Texture, attachment.View.Description.Range));
+        if (layers == uint.MaxValue) layers = 1;
         fixed (RenderingAttachmentInfo* colorPointer = colors)
         {
             RenderingFragmentShadingRateAttachmentInfoKHR shadingRate = default;
@@ -40,8 +46,8 @@ internal sealed unsafe partial class VulkanBackend
                 SType = StructureType.RenderingInfo,
                 PNext = next,
                 Flags = ToNative(desc.Options),
-                RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(desc.Width, desc.Height)),
-                LayerCount = 1,
+                RenderArea = new Rect2D(new Offset2D(checked((int)desc.X), checked((int)desc.Y)), new Extent2D(desc.Width, desc.Height)),
+                LayerCount = layers,
                 ColorAttachmentCount = checked((uint)colors.Length),
                 PColorAttachments = colorPointer,
                 PDepthAttachment = hasDepth ? &depth : null,
@@ -51,6 +57,11 @@ internal sealed unsafe partial class VulkanBackend
         }
         command.BeginRenderScope();
     }
+
+    private static uint LayerCount(RhiTexture texture, in TextureSubresourceRange range) =>
+        range.ArrayLayerCount == uint.MaxValue
+            ? texture.Info.ArrayLayerCount - range.FirstArrayLayer
+            : range.ArrayLayerCount;
 
     internal void EndRendering(CommandContext context)
     {
@@ -600,6 +611,7 @@ internal sealed unsafe partial class VulkanBackend
         private RenderingAttachmentInfo[] _colorAttachments = [];
         private VulkanPipeline? _currentPipeline;
         private bool _rendering;
+        internal bool IsRendering => _rendering;
 
         internal VulkanPipeline CurrentPipeline => _currentPipeline
             ?? throw new InvalidOperationException("No Vulkan Pipeline is currently bound.");

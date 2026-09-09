@@ -1,4 +1,4 @@
-using SomeEngine.Assets;
+﻿using SomeEngine.Assets;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Render.Cluster;
@@ -66,7 +66,9 @@ public sealed class ClusterAssetLoaderTests
             Enumerable.Repeat(valid, operationCount).ToArray());
         root.AssetGuid = clusterGuid.ToFlatString();
         root.Operations![^1].Shaders![0].AssetGuid = "not-a-guid";
-        AssetWriter.Write(BinaryDocumentWriter.Create(root), fullPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await using (FileStream stream = File.Create(fullPath))
+            await BinaryDocumentWriter.Create(root).WriteAsync(stream);
 
         var manifest = new AssetManifest();
         manifest.AddAsset(

@@ -40,6 +40,7 @@ public sealed class VulkanCoreFeatureTests
             device,
             new CommandContextDesc(QueueType.Graphics, 0, 1));
         backend.Begin(context);
+        backend.ResetQueries(context, queries, 0, 1);
         backend.WriteTimestamp(context, queries, 0);
         backend.ResolveQueries(context, queries, 0, 1, readback, BufferRange.Whole);
         using RecordedCommands commands = backend.End(context);

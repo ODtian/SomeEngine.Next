@@ -12,8 +12,8 @@ public sealed class WarpSubmissionPreflightTests
     public void Invalid_completion_wait_is_rejected_before_submission_acceptance(bool validated)
     {
         IGraphicsBackend backend = validated
-            ? new ValidationLayer(new D3D12Backend())
-            : new D3D12Backend();
+            ? new ValidationLayer(D3D12GraphicsBackend.Create())
+            : D3D12GraphicsBackend.Create();
         using (backend)
         using (Device device = D3D12TestSupport.CreateWarpDevice(backend))
         {
@@ -46,7 +46,7 @@ public sealed class WarpSubmissionPreflightTests
     [Fact]
     public void RepeatedSubmissionsWithCompletionWaitsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         Queue completionQueue = backend.GetQueue(device, QueueType.Compute);

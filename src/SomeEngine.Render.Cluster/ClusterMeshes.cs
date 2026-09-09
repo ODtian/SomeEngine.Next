@@ -28,7 +28,7 @@ internal sealed class ClusterPageSourceException : Exception
 }
 
 internal readonly record struct ClusterMeshRegistration(
-    Mesh Mesh,
+    MeshData Mesh,
     uint FirstPageId,
     uint PageCount,
     uint RootNode);
@@ -696,20 +696,11 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    public bool TryGetPublishedRoot(Mesh mesh, out uint root)
+    public bool TryGetPublishedRoot(MeshData mesh, out uint root)
     {
         lock (_gate)
         {
             ThrowIfDisposed();
-            if (_pages.TryRegistration(
-                    mesh,
-                    out _,
-                    out _,
-                    out _))
-            {
-                // The registration owns a retained payload source. A Mesh reload publishes a
-                // source for future epochs without invalidating readers of the current epoch.
-            }
             return _bvh.TryPublishedRoot(mesh, out root);
         }
     }

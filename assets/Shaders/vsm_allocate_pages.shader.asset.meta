@@ -2,7 +2,7 @@
   "asset_guid": "cdb38623-09dd-5e2f-a3fb-cf0b111eddd5",
   "source_guid": "4b56f367-0478-4db5-a557-add3a78e2bd9",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "cb0c9d0fe532b5f3e24047e1357c54099c1069d4e471b0fa9697d6927b61a9d3",
+  "content_fingerprint": "22c8eff6dc3af664b9270c9af38b0782ccb9d35152cf1ad13894bc61b31ae3eb",
   "dependencies": [
     {
       "path": "assets/Shaders/vsm_allocate_pages.slang",
@@ -10,7 +10,7 @@
     },
     {
       "path": "assets/Shaders/vsm_sampling.slang",
-      "hash": "f285536e76f922b82ed7b19e75213a39f7f10427636e84e3972b8ca69e7af0db"
+      "hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
     }
   ],
   "importer_version": 26

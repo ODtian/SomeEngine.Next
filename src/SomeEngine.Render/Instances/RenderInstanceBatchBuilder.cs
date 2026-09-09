@@ -530,15 +530,6 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         int entityCount = packets.RowCount;
-        if (entityCount == 0)
-        {
-            RenderInstanceBatches<TGroupKey>? previous = Current;
-            Current = new RenderInstanceBatches<TGroupKey>(0, [], [0], []);
-            if (previous is not null)
-                Retire(context, previous);
-            return;
-        }
-
         TGroupKey key = default!;
         RenderInstancePropertyLayout layout = composer.GetLayout(in key)
             ?? throw new InvalidOperationException(

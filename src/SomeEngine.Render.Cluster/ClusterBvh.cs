@@ -8,11 +8,11 @@ using SomeEngine.Core.Collections;
 
 namespace SomeEngine.Render.Cluster;
 
-internal readonly record struct ClusterMeshRoot(Mesh Mesh, uint NodeIndex);
+internal readonly record struct ClusterMeshRoot(MeshData Mesh, uint NodeIndex);
 internal readonly record struct ClusterRootState(uint NodeIndex, bool Published);
 
 internal readonly record struct ClusterBvhRegistration(
-    Mesh Mesh,
+    MeshData Mesh,
     uint FirstNode,
     uint FirstPage,
     uint Root,
@@ -38,7 +38,7 @@ internal readonly record struct ClusterBvhPatch(
 internal readonly record struct ClusterBvhCheckpoint(int PatchCount);
 internal sealed record ClusterBvhPublication(
     int PatchCount,
-    Mesh[] RootMeshes,
+    MeshData[] RootMeshes,
     ClusterStagedUpload[] Uploads);
 
 internal sealed class ClusterBvh
@@ -54,9 +54,9 @@ internal sealed class ClusterBvh
     private readonly IClusterBvhStorage _storage;
     private readonly List<ClusterBvhAllocation> _allocations = [];
     private readonly List<ClusterBvhPatch> _pendingPatches = [];
-    private readonly FlatDictionary<Mesh, ClusterRootState> _roots = new();
+    private readonly FlatDictionary<MeshData, ClusterRootState> _roots = new();
     private readonly List<ClusterBvhLeafIndex> _leafIndexes = [];
-    private readonly List<Mesh> _pendingRootMeshes = [];
+    private readonly List<MeshData> _pendingRootMeshes = [];
     private uint _count;
     private uint _registeredPageCount;
     private int _publishedCount;
@@ -73,10 +73,10 @@ internal sealed class ClusterBvh
         => _pendingPatches.Count != 0 ||
            _pendingRootMeshes.Count != 0;
 
-    public bool IsRegistered(Mesh mesh)
+    public bool IsRegistered(MeshData mesh)
         => _roots.ContainsKey(mesh);
 
-    public bool TryRegisteredRoot(Mesh mesh, out uint root)
+    public bool TryRegisteredRoot(MeshData mesh, out uint root)
     {
         if (_roots.TryGetValue(mesh, out ClusterRootState state))
         {
@@ -87,7 +87,7 @@ internal sealed class ClusterBvh
         return false;
     }
 
-    public bool TryPublishedRoot(Mesh mesh, out uint root)
+    public bool TryPublishedRoot(MeshData mesh, out uint root)
     {
         if (_roots.TryGetValue(mesh, out ClusterRootState state) && state.Published)
         {
@@ -147,7 +147,7 @@ internal sealed class ClusterBvh
     }
 
     public ClusterBvhRegistration Prepare(
-        Mesh mesh,
+        MeshData mesh,
         in ClusterBvhDestination destination,
         uint firstPage,
         IReadOnlyList<MeshPayloadPage> pages)
@@ -283,7 +283,7 @@ internal sealed class ClusterBvh
                 patch.Value);
             _storage.Stage(patch.Offset, sizeof(uint));
         }
-        foreach (Mesh mesh in _pendingRootMeshes)
+        foreach (MeshData mesh in _pendingRootMeshes)
         {
             if (!_roots.TryGetValue(mesh, out ClusterRootState root) || root.Published)
             {
@@ -306,7 +306,7 @@ internal sealed class ClusterBvh
         }
         for (int index = 0; index < publication.RootMeshes.Length; index++)
         {
-            Mesh mesh = publication.RootMeshes[index];
+            MeshData mesh = publication.RootMeshes[index];
             if (!ReferenceEquals(mesh, _pendingRootMeshes[index]))
                 throw new InvalidOperationException("The prepared Cluster BVH root publication is stale.");
             ClusterRootState root = _roots[mesh];

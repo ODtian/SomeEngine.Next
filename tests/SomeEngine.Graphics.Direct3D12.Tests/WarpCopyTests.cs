@@ -9,7 +9,7 @@ public sealed class WarpCopyTests
     [Fact]
     public void Copy_footprints_report_exact_uncompressed_and_block_rows()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         BufferTextureCopy rgbaCopy = new(
             null!,
@@ -111,7 +111,7 @@ public sealed class WarpCopyTests
     [Fact]
     public void Warp_roundtrips_rows_through_explicit_buffer_texture_footprints()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -227,7 +227,7 @@ public sealed class WarpCopyTests
     [Fact]
     public void Warp_copies_a_narrow_texture_region_with_its_own_row_pitch()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -334,7 +334,7 @@ public sealed class WarpCopyTests
     [Fact]
     public void Copy_context_rejects_a_first_use_texture_layout_transition()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Texture texture = backend.CreateTexture(
             device,
@@ -370,7 +370,7 @@ public sealed class WarpCopyTests
     [Fact]
     public void Warp_clear_texture_covers_every_selected_3D_slice()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Texture texture = backend.CreateTexture(
             device,

@@ -99,7 +99,7 @@ public sealed class TextureDisplacementTests
             """;
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
             "displacement_bounds", source, [new("CheckDisplacement", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device, new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
         using Buffer upload = backend.CreateBuffer(device, new BufferDesc(4096, BufferUsages.CopySource), MemoryType.Upload);

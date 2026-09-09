@@ -14,14 +14,15 @@ internal readonly record struct ClusterTessellationRasterPassData(
     int Height,
     bool UsesMesh)
 {
-    internal static void Declare(ref PassDefinition pass, ref ClusterTessellationRasterPassData data)
+    internal static GraphBufferAccessId Declare(ref PassDefinition pass, ref ClusterTessellationRasterPassData data)
     {
-        pass.Read(data.IndirectArguments, new BufferRange(data.IndirectOffset, data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : 8u * ClusterIndirectAbi.DrawIndexedBytes),
+        GraphBufferAccessId arguments = pass.Read(data.IndirectArguments, new BufferRange(data.IndirectOffset, data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : 8u * ClusterIndirectAbi.DrawIndexedBytes),
             PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument);
-        if (data.UsesMesh) return;
+        if (data.UsesMesh) return arguments;
         pass.Read(data.Indices, BufferRange.Whole, PipelineSync.IndexInput, ResourceAccess.IndexBuffer);
         pass.Read(data.PatchIndices, BufferRange.Whole, PipelineSync.VertexShading, ResourceAccess.VertexBuffer,
             contentScope: BufferContentScope.CountBoundedPrefix);
+        return arguments;
     }
 
     internal static void Record(ref RasterPassCommandScope commands, in ClusterTessellationRasterPassData data)

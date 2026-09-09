@@ -12,7 +12,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void Sparse_mapping_validates_heap_class_offset_and_ignored_linear_dimensions()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -54,7 +54,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void TextureSparseMappingCommandsAcceptBoxAndMipRegions()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -198,7 +198,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void RemappingOneTileChangesOnlyThatTilesReadback()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? sparse));
         Assert.NotNull(sparse);
@@ -229,7 +229,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void SparseMappingCopyCommandsCompleteWithSelfOverlap()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -297,7 +297,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void SubmittedSparseCommandsCompleteAfterUnmapAndHeapDisposal()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -340,7 +340,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void ConcurrentSparseMappingCommandsComplete()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -394,7 +394,7 @@ public sealed class WarpSparseGenerationTests
     [Fact]
     public void InvalidSparseMappingBatchIsRejectedAndCorrectedBatchCompletes()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out SparseResources? capability));
         Assert.NotNull(capability);
@@ -420,7 +420,7 @@ public sealed class WarpSparseGenerationTests
     }
 
     private static Buffer CreateSparseBuffer(
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         ulong tileSize,
         ulong tileCount) =>
@@ -431,7 +431,7 @@ public sealed class WarpSparseGenerationTests
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
 
     private static Heap CreateSparseHeap(
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         ulong size) =>
         backend.CreateHeap(
@@ -439,7 +439,7 @@ public sealed class WarpSparseGenerationTests
             new HeapDesc(size, 64 * 1024, MemoryType.DeviceLocal, HeapFlags.Buffers));
 
     private static Heap CreateSparseTextureHeap(
-        D3D12Backend backend,
+        IGraphicsBackend backend,
         Device device,
         ulong size) =>
         backend.CreateHeap(

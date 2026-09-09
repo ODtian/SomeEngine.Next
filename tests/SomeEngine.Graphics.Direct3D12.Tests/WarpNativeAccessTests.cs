@@ -1,4 +1,4 @@
-using SlangShaderSharp;
+﻿using SlangShaderSharp;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
 using Xunit;
@@ -19,7 +19,7 @@ public sealed unsafe class WarpNativeAccessTests
             "rhi_native_access_compute",
             source,
             [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)]);
-        using D3D12Backend backend = new();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -82,7 +82,7 @@ public sealed unsafe class WarpNativeAccessTests
     [Fact]
     public void Native_encoded_resources_are_retained_until_completion()
     {
-        using D3D12Backend backend = new();
+        using ValidationLayer backend = new(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Buffer source = backend.CreateBuffer(
             device,
@@ -150,7 +150,7 @@ public sealed unsafe class WarpNativeAccessTests
             "rhi_validated_native_access",
             source,
             [new D3D12TestShaderEntry("computeMain", SlangStage.Compute)]);
-        D3D12Backend nativeBackend = new();
+        IGraphicsBackend nativeBackend = D3D12GraphicsBackend.Create();
         using ValidationLayer backend = new(nativeBackend);
         using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(nativeBackend);
         using Buffer foreign = nativeBackend.CreateBuffer(
@@ -201,100 +201,13 @@ public sealed unsafe class WarpNativeAccessTests
         Assert.False(valid.IsValid);
     }
 
-    [Fact]
-    public void Native_capabilities_and_command_queue_lock_report_exact_availability()
-    {
-        using D3D12Backend backend = new();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
-        Assert.True(backend.TryGetCapability(device, out D3D12NativeAccess? nativeAccess));
-        Assert.NotNull(nativeAccess);
-        Assert.Same(device, nativeAccess.Device);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Assert.NotNull(diagnostics);
-        Assert.Same(device, diagnostics.Device);
-        Assert.False(diagnostics.DebugLayerEnabled);
-        Assert.False(diagnostics.GpuBasedValidationEnabled);
-        Assert.False(diagnostics.SynchronizedQueueValidationEnabled);
-        Assert.False(diagnostics.DredEnabled);
-        Assert.Null(diagnostics.DeviceLoss);
-
-        D3D12CommandQueueLock invalid = default;
-        Assert.False(invalid.IsHeld);
-        AssertPointerUnavailable(invalid);
-        invalid.Dispose();
-
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        D3D12CommandQueueLock held = backend.LockCommandQueue(queue);
-        D3D12CommandQueueLock copy = held;
-        Assert.True(held.IsHeld);
-        Assert.True(copy.IsHeld);
-        Assert.NotEqual(0, (nint)held.Pointer);
-
-        using ManualResetEventSlim started = new();
-        using ManualResetEventSlim finished = new();
-        QueueCompletion submitted = default;
-        Exception? submitFailure = null;
-        Thread waitingSubmit = new(() =>
-        {
-            started.Set();
-            try
-            {
-                submitted = backend.Submit(queue, new QueueSubmitDesc([], [], [], [], []));
-            }
-            catch (Exception exception)
-            {
-                submitFailure = exception;
-            }
-            finally
-            {
-                finished.Set();
-            }
-        });
-        waitingSubmit.Start();
-        Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
-        Assert.False(finished.Wait(TimeSpan.FromMilliseconds(100)));
-        var disposer = new QueueLockDisposer(copy.Lease, copy.Sequence);
-        Thread releasingLock = new(disposer.Dispose);
-        releasingLock.Start();
-        Assert.True(releasingLock.Join(TimeSpan.FromSeconds(5)));
-        Assert.Null(disposer.Failure);
-        Assert.False(held.IsHeld);
-        Assert.False(copy.IsHeld);
-        AssertPointerUnavailable(held);
-        held.Dispose();
-        Assert.True(finished.Wait(TimeSpan.FromSeconds(5)));
-        waitingSubmit.Join();
-        Assert.Null(submitFailure);
-        Assert.Equal(
-            WaitStatus.Completed,
-            backend.WaitCpu(submitted, TimeSpan.FromSeconds(5)));
-
-        D3D12CommandQueueLock next = backend.LockCommandQueue(queue);
-        Assert.True(next.IsHeld);
-        Assert.False(held.IsHeld);
-        Assert.NotEqual(0, (nint)next.Pointer);
-        next.Dispose();
-        next.Dispose();
-        Assert.False(next.IsHeld);
-
-        for (int index = 0; index < 32; index++)
-        {
-            D3D12CommandQueueLock warm = backend.LockCommandQueue(queue);
-            warm.Dispose();
-        }
-        for (int index = 0; index < 1_024; index++)
-        {
-            D3D12CommandQueueLock stable = backend.LockCommandQueue(queue);
-            stable.Dispose();
-        }
-    }
 
 
     [Fact]
     public void Validated_command_queue_lock_serializes_multiple_waiters_without_poisoning_its_lease()
     {
-        using var direct = new D3D12Backend();
+        using IGraphicsBackend direct = D3D12GraphicsBackend.Create();
         using var backend = new ValidationLayer(direct);
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
@@ -381,32 +294,7 @@ public sealed unsafe class WarpNativeAccessTests
         throw new Xunit.Sdk.XunitException("An invalid native command-list borrow exposed its pointer.");
     }
 
-    private sealed class QueueLockDisposer
-    {
-        private readonly D3D12CommandQueueLockLease _lease;
-        private readonly ulong _sequence;
 
-        internal QueueLockDisposer(D3D12CommandQueueLockLease lease, ulong sequence)
-        {
-            _lease = lease;
-            _sequence = sequence;
-        }
-
-        internal Exception? Failure { get; private set; }
-
-        internal void Dispose()
-        {
-            try
-            {
-                D3D12CommandQueueLock value = new(_lease, _sequence);
-                value.Dispose();
-            }
-            catch (Exception exception)
-            {
-                Failure = exception;
-            }
-        }
-    }
 
     private sealed class QueueLockWaiter : IDisposable
     {

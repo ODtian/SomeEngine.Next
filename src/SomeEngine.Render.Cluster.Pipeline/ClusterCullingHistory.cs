@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.RenderGraph;
+using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -14,14 +15,17 @@ internal sealed class ClusterCullingHistory : IDisposable
     private readonly Device _device;
     private readonly uint _viewCount;
     private readonly Texture[] _hiZ = new Texture[2];
-    private readonly TextureBoundaryState[] _hiZEndpoints = new TextureBoundaryState[2];
+    private readonly TextureBoundaryState[][] _hiZEndpoints = new TextureBoundaryState[2][];
     private readonly bool[] _slotContentsAvailable = new bool[2];
     private bool _disposed;
     private readonly bool[] _hasPreviousView;
+    private readonly bool[] _usePreviousView;
     private readonly Matrix4x4[] _previousViews;
     private readonly Matrix4x4[] _previousProjections;
     private readonly Matrix4x4[] _pendingViews;
     private readonly Matrix4x4[] _pendingProjections;
+    private readonly Entity[] _previousViewEntities;
+    private readonly Entity[] _pendingViewEntities;
     private bool _pending;
     private int _pendingViewCount;
     private int _writeIndex;
@@ -40,10 +44,13 @@ internal sealed class ClusterCullingHistory : IDisposable
         _viewCount = viewCount;
         int count = checked((int)viewCount);
         _hasPreviousView = new bool[count];
+        _usePreviousView = new bool[count];
         _previousViews = new Matrix4x4[count];
         _previousProjections = new Matrix4x4[count];
         _pendingViews = new Matrix4x4[count];
         _pendingProjections = new Matrix4x4[count];
+        _previousViewEntities = new Entity[count];
+        _pendingViewEntities = new Entity[count];
     }
 
     internal int HiZMipCount => _hiZMips;
@@ -53,9 +60,9 @@ internal sealed class ClusterCullingHistory : IDisposable
     internal bool CurrentContentsAvailable => _slotContentsAvailable[_writeIndex];
     internal bool RequiresInitialization => !PreviousContentsAvailable;
     internal ReadOnlySpan<TextureBoundaryState> PreviousHiZEndpoints =>
-        _hiZEndpoints.AsSpan(PreviousIndex, 1);
+        _hiZEndpoints[PreviousIndex];
     internal ReadOnlySpan<TextureBoundaryState> CurrentHiZEndpoints =>
-        _hiZEndpoints.AsSpan(_writeIndex, 1);
+        _hiZEndpoints[_writeIndex];
 
     private int PreviousIndex => 1 - _writeIndex;
 
@@ -66,29 +73,29 @@ internal sealed class ClusterCullingHistory : IDisposable
     internal void Prepare(
         int width,
         int height,
-        ReadOnlySpan<RenderView> views)
+        ReadOnlySpan<RenderView> views,
+        ReadOnlySpan<Entity> identities)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_pending)
             throw new InvalidOperationException("The previous Cluster history frame is still pending.");
         if (views.IsEmpty || views.Length > _hasPreviousView.Length)
             throw new ArgumentOutOfRangeException(nameof(views));
+        if (identities.Length != views.Length)
+            throw new ArgumentException("Each history view requires its corresponding identity.", nameof(identities));
         EnsureDimensions(width, height);
         for (int index = 0; index < views.Length; index++)
         {
             ref readonly RenderView view = ref views[index];
-            if (view.CameraCut)
-            {
-                _hasPreviousView[index] = false;
-                _previousViews[index] = default;
-                _previousProjections[index] = default;
-            }
+            _usePreviousView[index] = _hasPreviousView[index] && !view.CameraCut &&
+                identities[index] != Entity.Null && identities[index] == _previousViewEntities[index];
 
             _pendingViews[index] = view.View;
             _pendingProjections[index] = view.Projection;
+            _pendingViewEntities[index] = identities[index];
         }
         for (int index = views.Length; index < _hasPreviousView.Length; index++)
-            _hasPreviousView[index] = false;
+            _usePreviousView[index] = false;
         _pendingViewCount = views.Length;
         _pending = true;
     }
@@ -98,7 +105,8 @@ internal sealed class ClusterCullingHistory : IDisposable
         out Matrix4x4 view,
         out Matrix4x4 projection)
     {
-        if ((uint)viewIndex >= (uint)_hasPreviousView.Length || !_hasPreviousView[viewIndex])
+        if ((uint)viewIndex >= (uint)_hasPreviousView.Length ||
+            !(_pending ? _usePreviousView[viewIndex] : _hasPreviousView[viewIndex]))
         {
             view = default;
             projection = default;
@@ -118,7 +126,7 @@ internal sealed class ClusterCullingHistory : IDisposable
 
         int hiZMips = CalculateMipCount(width, height);
         var hiZ = new Texture[2];
-        var hiZEndpoints = new TextureBoundaryState[2];
+        var hiZEndpoints = new TextureBoundaryState[2][];
         try
         {
             for (int index = 0; index < 2; index++)
@@ -138,7 +146,7 @@ internal sealed class ClusterCullingHistory : IDisposable
             }
 
             for (int index = 0; index < 2; index++)
-                hiZEndpoints[index] = InitialEndpoint(hiZ[index], TextureAspects.Color);
+                hiZEndpoints[index] = [InitialEndpoint(hiZ[index], TextureAspects.Color)];
         }
         catch (Exception primary)
         {
@@ -170,11 +178,12 @@ internal sealed class ClusterCullingHistory : IDisposable
     }
 
     /// <summary>
-    /// Publishes camera state and rotates slots only after a successful graph execute. Stores the
-    /// frame completions as the physical readiness of both slots touched by the graph.
+    /// Retains actual resource states and advances camera history only after its final pass.
     /// </summary>
-    internal void Commit(
-        ReadOnlySpan<QueueCompletion> completions,
+    internal void FinishFrame(
+        RenderGraphFrameResult result,
+        GraphTextureId previousHiZ,
+        GraphTextureId currentHiZ,
         bool currentHiZWritten)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -182,25 +191,28 @@ internal sealed class ClusterCullingHistory : IDisposable
             throw new InvalidOperationException("Cluster history was not initialized.");
         if (!_pending)
             throw new InvalidOperationException("No authored Cluster history frame is waiting for commit.");
-        QueueCompletion graphicsCompletion = FindGraphicsCompletion(completions);
         int writeIndex = _writeIndex;
         int previousIndex = PreviousIndex;
-        TextureBoundaryState previousHiZ = ShaderReadEndpoint(
-            _hiZ[previousIndex], TextureAspects.Color, graphicsCompletion);
-
-        _hiZEndpoints[previousIndex] = previousHiZ;
-        _slotContentsAvailable[previousIndex] = true;
-        if (currentHiZWritten)
+        ReadOnlySpan<TextureBoundaryState> previousStates = result.GetTextureStates(previousHiZ);
+        ReadOnlySpan<TextureBoundaryState> currentStates = result.GetTextureStates(currentHiZ);
+        if (!previousStates.IsEmpty)
+            _hiZEndpoints[previousIndex] = previousStates.ToArray();
+        if (!currentStates.IsEmpty)
+            _hiZEndpoints[writeIndex] = currentStates.ToArray();
+        if (!currentHiZWritten)
         {
-            _hiZEndpoints[writeIndex] = ShaderReadEndpoint(
-                _hiZ[writeIndex], TextureAspects.Color, graphicsCompletion);
-            _slotContentsAvailable[writeIndex] = true;
+            if (!result.SubmittedCompletions.IsEmpty) _slotContentsAvailable[writeIndex] = false;
+            ClearPending();
+            return;
         }
+        _slotContentsAvailable[previousIndex] = true;
+        _slotContentsAvailable[writeIndex] = true;
         for (int index = 0; index < _pendingViewCount; index++)
         {
             _previousViews[index] = _pendingViews[index];
             _previousProjections[index] = _pendingProjections[index];
-            _hasPreviousView[index] = true;
+            _previousViewEntities[index] = _pendingViewEntities[index];
+            _hasPreviousView[index] = _pendingViewEntities[index] != Entity.Null;
         }
         for (int index = _pendingViewCount; index < _hasPreviousView.Length; index++)
             _hasPreviousView[index] = false;
@@ -221,6 +233,8 @@ internal sealed class ClusterCullingHistory : IDisposable
     {
         Array.Clear(_pendingViews);
         Array.Clear(_pendingProjections);
+        Array.Clear(_pendingViewEntities);
+        Array.Clear(_usePreviousView);
         _pendingViewCount = 0;
         _pending = false;
     }
@@ -233,31 +247,8 @@ internal sealed class ClusterCullingHistory : IDisposable
             texture.InitialLayout,
             ResourceContentState.Undefined);
 
-    private static TextureBoundaryState ShaderReadEndpoint(
-        Texture texture,
-        TextureAspects aspects,
-        QueueCompletion completion) =>
-        new(
-            FullRange(texture, aspects),
-            PipelineSync.ComputeShading,
-            ResourceAccess.ShaderResource,
-            TextureLayout.ShaderResource,
-            ResourceContentState.Defined,
-            completion.Queue,
-            completion);
-
     private static TextureSubresourceRange FullRange(Texture texture, TextureAspects aspects) =>
         new(0, texture.Info.MipLevelCount, 0, texture.Info.ArrayLayerCount, aspects);
-
-    private static QueueCompletion FindGraphicsCompletion(ReadOnlySpan<QueueCompletion> completions)
-    {
-        foreach (ref readonly QueueCompletion completion in completions)
-        {
-            if (completion.Queue.Type == QueueType.Graphics)
-                return completion;
-        }
-        throw new InvalidOperationException("Cluster history requires a Graphics Queue completion.");
-    }
 
     private Texture Create(in TextureDesc description)
         => _backend.CreateTexture(_device, description);

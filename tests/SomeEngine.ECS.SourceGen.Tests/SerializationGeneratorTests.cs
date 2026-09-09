@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SomeEngine.ECS.SourceGen;
 using Xunit;
@@ -58,7 +58,6 @@ public partial struct GeneratedNested : SomeEngine.ECS.IComponent
 public partial struct GeneratedPosition : SomeEngine.ECS.IComponent
 {
     public int X;
-    public string Name;
     public GeneratedNested Nested;
 }
 public static class Consumer
@@ -69,13 +68,13 @@ public static class Consumer
         global::GameSerializationModule.RegisterAll(registry);
         var world = new SomeEngine.ECS.World();
         var target = world.CreateEntity();
-        var entity = world.CreateEntity(new GeneratedPosition { X = 17, Name = "hello", Nested = new GeneratedNested { Target = target } });
+        var entity = world.CreateEntity(new GeneratedPosition { X = 17, Nested = new GeneratedNested { Target = target } });
         using var stream = new System.IO.MemoryStream();
         WorldSerializer.WriteCheckpointWorld(stream, world, registry);
         stream.Position = 0;
         var loaded = WorldSerializer.ReadCheckpointWorld(stream, registry);
         var value = loaded.Read<GeneratedPosition>(entity);
-        return value.X == 17 && value.Name == "hello" && value.Nested.Target == target && loaded.IsAlive(target);
+        return value.X == 17 && value.Nested.Target == target && loaded.IsAlive(target);
     }
 }
 """);

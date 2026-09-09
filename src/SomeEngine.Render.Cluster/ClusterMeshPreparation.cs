@@ -9,7 +9,7 @@ using SomeEngine.Render.Systems;
 namespace SomeEngine.Render.Cluster;
 
 /// <summary>
-/// Deduplicates Cluster geometry registration by asset object. It does not publish pending roots;
+/// Deduplicates Cluster geometry registration by immutable content version. It does not publish pending roots;
 /// publication remains an explicit operation on <see cref="ClusterResidency"/>.
 /// </summary>
 internal sealed class ClusterMeshCache
@@ -17,7 +17,6 @@ internal sealed class ClusterMeshCache
     private readonly ClusterResidency _residency;
     private readonly object _instanceGeometryGate = new();
     private RenderMesh[] _instanceGeometry = [];
-    private ulong[] _instanceMeshRevisions = [];
     private int[] _instanceEntityGenerations = [];
     private uint[] _instanceRoots = [];
 
@@ -34,11 +33,11 @@ internal sealed class ClusterMeshCache
 
     internal ClusterMeshesSnapshot CaptureSnapshot() => _residency.CaptureMeshesSnapshot();
 
-    internal bool IsRegistered(Mesh mesh)
+    internal bool IsRegistered(MeshData mesh)
         => _residency.IsMeshRegistered(mesh);
 
     internal async ValueTask<bool> PrepareAsync(
-        Mesh mesh,
+        MeshData mesh,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mesh);
@@ -48,7 +47,7 @@ internal sealed class ClusterMeshCache
         return result.Added;
     }
 
-    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
+    internal bool TryGetPublishedRoot(MeshData mesh, out uint root)
     {
         if (_residency.TryGetPublishedRoot(mesh, out root))
             return true;
@@ -77,27 +76,23 @@ internal sealed class ClusterMeshCache
                 required = Math.Max(required, checked(entities[row].Index + 1));
             EnsureInstanceGeometryCapacity(required);
 
-            Mesh? lastMesh = null;
-            ulong lastRevision = 0;
+            MeshData? lastMesh = null;
             uint lastRoot = ClusterRenderFeature.MissingBvhRoot;
             bool lastRootPublished = false;
             for (int row = 0; row < entities.Length; row++)
             {
                 Entity entity = entities[row];
                 RenderMesh geometry = meshes[row];
-                ulong revision = geometry.Mesh.Revision;
                 int index = entity.Index;
                 uint root;
                 bool published;
                 if (_instanceEntityGenerations[index] == entity.Generation &&
-                    _instanceMeshRevisions[index] == revision &&
                     _instanceGeometry[index] == geometry)
                 {
                     root = _instanceRoots[index];
                     published = true;
                 }
                 else if (lastRootPublished &&
-                    lastRevision == revision &&
                     lastMesh == geometry.Mesh)
                 {
                     root = lastRoot;
@@ -111,11 +106,9 @@ internal sealed class ClusterMeshCache
                 if (published)
                 {
                     _instanceGeometry[index] = geometry;
-                    _instanceMeshRevisions[index] = revision;
                     _instanceEntityGenerations[index] = entity.Generation;
                     _instanceRoots[index] = root;
                     lastMesh = geometry.Mesh;
-                    lastRevision = revision;
                     lastRoot = root;
                     lastRootPublished = true;
                 }
@@ -138,7 +131,6 @@ internal sealed class ClusterMeshCache
             return;
         int capacity = Math.Max(required, Math.Max(16, _instanceRoots.Length * 2));
         Array.Resize(ref _instanceGeometry, capacity);
-        Array.Resize(ref _instanceMeshRevisions, capacity);
         Array.Resize(ref _instanceEntityGenerations, capacity);
         Array.Resize(ref _instanceRoots, capacity);
     }
@@ -153,10 +145,11 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     private readonly RenderWorld _world;
     private readonly ClusterMeshCache _cache;
     private readonly QueryHandle _meshQuery;
-    private readonly HashSet<Mesh> _seen = [];
-    private readonly List<Mesh> _missing = [];
-    private long _topologyRevision = -1;
-    private int _referencedMeshCount;
+    private readonly EntityTableChanges _tableChanges;
+    private readonly Dictionary<Entity, MeshData> _entityMeshes = [];
+    private readonly Dictionary<MeshData, int> _meshReferences = [];
+    private readonly HashSet<MeshData> _missing = [];
+    private uint _lastVersion;
     private int _preparing;
     private int _disposed;
 
@@ -165,6 +158,8 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _meshQuery = world.Query(new QueryDefinitionBuilder().Read<RenderMesh>());
+        try { _tableChanges = world.ObserveEntityTables(); }
+        catch { world.ReleaseQuery(_meshQuery); throw; }
     }
 
     internal ValueTask<ClusterMeshPrepareResult> PrepareAsync(
@@ -180,94 +175,86 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
 
         try
         {
-            long topologyRevision = _world.PublishedTopologyRevision;
-            if (_topologyRevision == topologyRevision)
+            EntityTableChangeBatch membership = _tableChanges.Read();
+            foreach (Entity entity in membership.Entities)
             {
-                ClusterMeshesSnapshot snapshot = _cache.CaptureSnapshot();
-                if (!snapshot.HasPendingPublication
-                    && snapshot.RegisteredMeshCount == snapshot.PublishedMeshCount)
-                {
-                    Volatile.Write(ref _preparing, 0);
-                    return ValueTask.FromResult(
-                        new ClusterMeshPrepareResult(_referencedMeshCount, 0, 0));
-                }
+                if (!_world.IsAlive(entity) || !_world.Has<RenderMesh>(entity))
+                    SetMesh(entity, null);
+                else
+                    SetMesh(entity, _world.Read<RenderMesh>(entity).Mesh);
             }
-
-            _world.ExecuteQuery(_meshQuery, cursor =>
+            uint version = _lastVersion;
+            _world.ExecuteQuery(_meshQuery, _lastVersion, cursor =>
             {
+                version = cursor.CurrentSystemVersion;
                 foreach (QueryChunkView chunk in cursor.Chunks)
                 {
+                    if (!chunk.HasChangedSinceLastSystemVersion<RenderMesh>()) continue;
                     ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                     for (int row = 0; row < meshes.Length; row++)
-                    {
-                        Mesh mesh = meshes[row].Mesh;
-                        if (!_seen.Add(mesh) || _cache.IsRegistered(mesh))
-                            continue;
-                        _missing.Add(mesh);
-                    }
+                        if (chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row))
+                            SetMesh(chunk.Entities[row], meshes[row].Mesh);
                 }
             });
-            int referencedMeshCount = _seen.Count;
+            // These indexes describe observed input only. Registration obligations remain in
+            // _missing until each registration succeeds, even when a later operation fails.
+            _tableChanges.Accept(membership);
+            _lastVersion = version;
             if (_missing.Count == 0)
             {
-                _topologyRevision = topologyRevision;
-                _referencedMeshCount = referencedMeshCount;
-                ClearScratch();
                 Volatile.Write(ref _preparing, 0);
-                return ValueTask.FromResult(
-                    new ClusterMeshPrepareResult(referencedMeshCount, 0, 0));
+                return ValueTask.FromResult(new ClusterMeshPrepareResult(_meshReferences.Count, 0, 0));
             }
-            return PrepareMissingAsync(
-                topologyRevision,
-                referencedMeshCount,
-                cancellationToken);
+            return PrepareMissingAsync(cancellationToken);
         }
         catch
         {
-            ClearScratch();
             Volatile.Write(ref _preparing, 0);
             throw;
         }
     }
 
+    private void SetMesh(Entity entity, MeshData? mesh)
+    {
+        if (_entityMeshes.TryGetValue(entity, out MeshData? previous))
+        {
+            if (ReferenceEquals(previous, mesh)) return;
+            _entityMeshes.Remove(entity);
+            int count = _meshReferences[previous] - 1;
+            if (count == 0)
+            {
+                _meshReferences.Remove(previous);
+                _missing.Remove(previous);
+            }
+            else _meshReferences[previous] = count;
+        }
+        if (mesh is null) return;
+        _entityMeshes.Add(entity, mesh);
+        _meshReferences.TryGetValue(mesh, out int references);
+        _meshReferences[mesh] = references + 1;
+        if (references == 0 && !_cache.IsRegistered(mesh)) _missing.Add(mesh);
+    }
+
     private async ValueTask<ClusterMeshPrepareResult> PrepareMissingAsync(
-        long topologyRevision,
-        int referencedMeshCount,
         CancellationToken cancellationToken)
     {
         int registered = 0;
-        int unresolved = 0;
         try
         {
-            for (int index = 0; index < _missing.Count; index++)
+            while (_missing.Count != 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (await _cache
-                    .PrepareAsync(_missing[index], cancellationToken)
-                    .ConfigureAwait(false))
-                {
+                MeshData mesh = _missing.First();
+                if (await _cache.PrepareAsync(mesh, cancellationToken).ConfigureAwait(false))
                     registered++;
-                }
+                _missing.Remove(mesh);
             }
-
-            if (unresolved == 0 && _world.PublishedTopologyRevision == topologyRevision)
-            {
-                _topologyRevision = topologyRevision;
-                _referencedMeshCount = referencedMeshCount;
-            }
-            return new ClusterMeshPrepareResult(referencedMeshCount, registered, unresolved);
+            return new ClusterMeshPrepareResult(_meshReferences.Count, registered, 0);
         }
         finally
         {
-            ClearScratch();
             Volatile.Write(ref _preparing, 0);
         }
-    }
-
-    private void ClearScratch()
-    {
-        _missing.Clear();
-        _seen.Clear();
     }
 
     public void Dispose()
@@ -282,6 +269,10 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                     "Cannot dispose Cluster mesh preparation during an active scan.");
             }
             _world.ReleaseQuery(_meshQuery);
+            _tableChanges.Dispose();
+            _entityMeshes.Clear();
+            _meshReferences.Clear();
+            _missing.Clear();
             Volatile.Write(ref _disposed, 2);
         }
         catch

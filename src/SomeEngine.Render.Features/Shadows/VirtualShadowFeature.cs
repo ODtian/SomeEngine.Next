@@ -11,13 +11,14 @@ using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Shadows;
 using SomeEngine.RenderGraph;
+using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Render.Features.Shadows;
 
 /// <summary>
 /// Virtual-shadow page processing and generic virtual-depth geometry integration.
 /// </summary>
-public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDisposable
+public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, IRenderGraphFrameExecutionObserver
 {
     private readonly GraphBufferInput _initUniforms;
     private readonly GraphBufferInput _invalidationUniforms;
@@ -40,6 +41,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
 
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _renderGraph;
     private readonly VirtualShadowMap _shadowMap;
     private readonly ClusterPipelineSystem _geometry;
     private readonly LightingFeature _lighting;
@@ -95,6 +97,8 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
     private readonly GraphBufferInput _frameInvocationUniforms;
     private bool _frameHasPreviousHistory;
     private uint _frameIndex;
+    private uint _previousFrameIndex;
+    private bool _previousForceStateReset;
     private bool _forceStateReset;
     private int _viewCount;
     private bool _shadowFrameActive;
@@ -151,6 +155,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         ArgumentNullException.ThrowIfNull(shaders);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(graph);
+        _renderGraph = graph;
         _geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         if (!ReferenceEquals(graph.Device, device))
@@ -169,8 +174,6 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                     label: "Virtual shadow dispatch indirect layout"));
             _shadowMap = shadowMap;
             _dispatchLayout = dispatchLayout;
-            shadowMap = null;
-            dispatchLayout = null;
 
             RenderGraphEdit edit = graph.BeginEdit();
             try
@@ -546,14 +549,14 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
 
     private void BindRasterInvocationViews(
         ref RenderGraphEdit graph,
-        ref PassDefinition pass)
+        ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _rasterInvocationViews,
                 structureStride: 432,
                 label: "Virtual shadow raster invocation views"),
-            PipelineSync.AllShading,
+            sync,
             BufferContentScope.CountBoundedPrefix);
     }
 
@@ -566,43 +569,44 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
 
     private void BindRasterTargetInvocations(
         ref RenderGraphEdit graph,
-        ref PassDefinition pass)
+        ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _rasterTargetInvocations,
                 structureStride: 48,
                 label: "Virtual shadow raster regions"),
-            PipelineSync.AllShading,
+            sync,
             BufferContentScope.CountBoundedPrefix);
     }
 
     private void BindRasterPolicyFilterResources(
         ref RenderGraphEdit graph,
-        ref PassDefinition pass)
+        ref PassDefinition pass, PipelineSync sync)
     {
-        BindRasterTargetInvocations(ref graph, ref pass);
+        BindRasterTargetInvocations(ref graph, ref pass, sync);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _pageHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Virtual shadow current raster-target HiZ"),
-            PipelineSync.ComputeShading);
+            sync);
         _ = pass.Bind(
             graph.CreateTextureSrv(
                 _pageHiZ,
                 format: Format.R32Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Virtual shadow previous raster-target HiZ"),
-            PipelineSync.ComputeShading);
+            sync);
         _ = pass.Bind(graph.CreateBufferSrv(_rasterRegionGrid, structureStride: sizeof(uint),
-            label: "Virtual shadow dirty region grid"), PipelineSync.ComputeShading);
+            label: "Virtual shadow dirty region grid"), sync);
     }
 
     private void BindPageDepthAtlas(
         ref RenderGraphEdit graph,
-        ref PassDefinition pass)
+        ref PassDefinition pass,
+        PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateTextureUav(
@@ -610,7 +614,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 format: Format.R32UInt,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
                 label: "Virtual shadow raster depth atlas"),
-            PipelineSync.AllShading,
+            sync,
             GraphAccessMode.ReadWrite,
             WriteCoverage.Partial,
             unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
@@ -619,7 +623,8 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
     public void StageFrame(
         ref RenderGraphFrame graph,
         RenderLightSet lights,
-        in RenderView receiverView)
+        in RenderView receiverView,
+        Entity receiver = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(lights);
@@ -628,9 +633,9 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         if (!_shadowMap.Settings.Enabled)
             throw new InvalidOperationException("The virtual-shadow feature is disabled by its settings.");
 
+        _previousFrameIndex = _frameIndex;
+        _previousForceStateReset = _forceStateReset;
         int instanceCount = _geometry.CurrentInstanceCount;
-        if (instanceCount <= 0)
-            throw new InvalidOperationException("Virtual shadows require at least one render instance.");
         _frameInstances = _geometry.CurrentInstances;
         _frameInstanceRevision = _frameInstances!.ContentRevision;
         _forceStateReset |= !ReferenceEquals(_frameInstances, _committedInstances) || _invalidateAllCasters;
@@ -655,12 +660,8 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 _geometry.RasterRevision,
                 instanceCount);
             _viewCount = views.Length;
-            if (_viewCount == 0)
-                throw new InvalidOperationException("Virtual shadows require at least one shadowable light view.");
             VirtualShadowMapFrameResources resources =
-                _shadowMap.AcquireFrameResources(out SomeEngine.Graphics.Buffer? retiredPageTable);
-            if (retiredPageTable is not null)
-                graph.RetireAfterSubmittedFrames(retiredPageTable);
+                _shadowMap.AcquireFrameResources();
             graph.SetBufferInput(_framePageTable, new GraphBufferSlice(graph.Import(
                 resources.PageTable.Resource,
                 resources.PageTable.BoundaryStates.Span), BufferRange.Whole));
@@ -688,12 +689,12 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 (_shadowMap.Settings.VirtualPagesPerView +
                  _shadowMap.Settings.CoarsePagesPerView));
             graph.SetBufferInput(_requestedPages, new GraphBufferSlice(graph.CreateBuffer(new BufferDesc(
-                checked((ulong)activeTableEntryCount * sizeof(uint)),
+                checked(Math.Max(1ul, activeTableEntryCount) * sizeof(uint)),
                 BufferUsages.ShaderRead | BufferUsages.ShaderWrite |
                     BufferUsages.CopyDestination,
                 "Virtual shadow active-range request flags")), BufferRange.Whole));
             ulong previousPageTableBytes = checked(
-                (ulong)activeTableEntryCount * VirtualShadowView.PageTableEntrySizeInBytes);
+                Math.Max(1ul, activeTableEntryCount) * VirtualShadowView.PageTableEntrySizeInBytes);
             graph.SetBufferInput(_framePreviousPageTable, new GraphBufferSlice(graph.CreateBuffer(new BufferDesc(
                 previousPageTableBytes,
                 BufferUsages.ShaderRead | BufferUsages.CopyDestination,
@@ -711,7 +712,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
             graph.OrderAfter(_invalidatePass, geometry.Geometry.BoundsReady);
 
             graph.SetBufferInput(_frameShadowViews, graph.Upload(
-                views,
+                views.IsEmpty ? [default(VirtualShadowView)] : views,
                 BufferUsages.ShaderRead,
                 "Virtual shadow view parameters"));
             graph.SetBufferInput(_frameChangedInstances, graph.Upload<uint>(
@@ -719,9 +720,8 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 BufferUsages.ShaderRead,
                 "Virtual shadow changed caster indices"));
             graph.SetBufferInput(_framePreviousShadowViews, graph.Upload(
-                hasPreviousTargetHistory
-                    ? _previousShadowViews.AsSpan(0, _viewCount)
-                    : views,
+                views.IsEmpty ? [default(VirtualShadowView)] : hasPreviousTargetHistory
+                    ? _previousShadowViews.AsSpan(0, _viewCount) : views,
                 BufferUsages.ShaderRead,
                 "Virtual shadow previous view parameters"));
             var sampling = new VirtualShadowSamplingUniforms
@@ -746,14 +746,15 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 ref graph,
                 in sampling,
                 "Virtual shadow sampling uniforms"));
-            _geometry.StageViews([receiverView]);
+            _geometry.StageViews([receiverView], identities: [receiver]);
             int copied = _shadowMap.CopyPreparedRenderViews(_shadowViews);
-            _geometry.StageViews(
-                _shadowViews.AsSpan(0, copied),
-                policy: 1u,
-                previousViewProjections: hasPreviousTargetHistory
-                    ? _previousShadowViewProjections.AsSpan(0, copied)
-                    : default);
+            if (copied != 0)
+                _geometry.StageViews(
+                    _shadowViews.AsSpan(0, copied),
+                    policy: 1u,
+                    previousViewProjections: hasPreviousTargetHistory
+                        ? _previousShadowViewProjections.AsSpan(0, copied)
+                        : default);
 
             UpdatePassData(
                 ref graph,
@@ -762,29 +763,42 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 in resources,
                 instanceCount,
                 checked((uint)_viewCount));
+            graph.ObserveExecution(this);
             _frameActive = true;
         }
         catch
         {
             if (_shadowFrameActive)
             {
-                _shadowMap.Discard();
+                if (_shadowMap.Discard() is { } unusedTable) graph.RetireAfterFrame(unusedTable);
                 _shadowFrameActive = false;
             }
             _viewCount = 0;
 
             _frameHasPreviousHistory = false;
+            _frameIndex = _previousFrameIndex;
+            _forceStateReset = _previousForceStateReset;
             throw;
         }
     }
 
-    public void Commit(ReadOnlySpan<QueueCompletion> completions)
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_frameActive)
-            throw new InvalidOperationException("No virtual-shadow frame is active.");
-        if (_shadowFrameActive)
-            _shadowMap.Commit(completions);
+        if (!_frameActive || _disposed) return;
+        bool complete = result.TryGetPassCompletion(_frameCompletePass, out _);
+        if (_shadowFrameActive && _shadowMap.FinishFrame(result, complete) is { } retiredTable)
+            _renderGraph.RetireAfterSubmittedFrames(retiredTable);
+        if (!complete)
+        {
+            if (!result.SubmittedCompletions.IsEmpty) _forceStateReset = true;
+            else
+            {
+                _frameIndex = _previousFrameIndex;
+                _forceStateReset = _previousForceStateReset;
+            }
+            ClearFrame();
+            return;
+        }
         _committedInstances = _frameInstances;
         _committedInstanceRevision = _frameInstanceRevision;
         _deformedInstances.Clear();
@@ -793,18 +807,10 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         ClearFrame();
     }
 
-    public void Discard()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_shadowFrameActive)
-            _shadowMap.Discard();
-        ClearFrame();
-    }
-
     public bool TryResolve(
         string name,
         ResourceBindingType type,
-        out ClusterStageResourceBinder binder)
+        out GraphResourceBinder binder)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         binder = name switch
@@ -824,8 +830,8 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
     {
         if (_disposed)
             return;
-        if (_shadowFrameActive)
-            _shadowMap.Discard();
+        if (_frameActive || _shadowFrameActive)
+            throw new InvalidOperationException("Finish or cancel the active graph frame before disposing virtual shadows.");
         _dispatchLayout.Dispose();
         _shadowMap.Dispose();
         Array.Clear(_shadowViews);
@@ -858,7 +864,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
 
         var initUniforms = new VirtualShadowStateInitUniforms
         {
-            PageTableEntryCount = tableEntries,
+            PageTableEntryCount = Math.Max(1u, tableEntries),
             MaxPhysicalPages = maxPages,
         };
         GraphBufferSlice initUniformBuffer = FeatureUploads.UploadConstant(
@@ -1041,7 +1047,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         graph.SetPassEnabled(_compactViewsPass, true);
 
         graph.SetPassEnabled(_rasterCompletePass, viewCount != 0u);
-        graph.SetPassEnabled(_frameCompletePass, viewCount != 0u);
+        graph.SetPassEnabled(_frameCompletePass, true);
         graph.SetPassEnabled(_frameResetPass, true);
 
     }
@@ -1147,7 +1153,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         _ = pass.Bind(uniforms, PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateBufferSrv(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes,
             label: "Virtual shadow demand views"), PipelineSync.ComputeShading);
-        _lighting.BindVirtualShadowPageMarking(ref graph, ref pass);
+        _lighting.BindVirtualShadowPageMarking(ref graph, ref pass, PipelineSync.ComputeShading);
         _ = pass.Bind(graph.CreateTextureSrv(
             _receiverDepth,
             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Depth),
@@ -1311,7 +1317,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
 
     private void BindRasterInvocationCount(
         ref RenderGraphEdit graph,
-        ref PassDefinition pass)
+        ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
@@ -1319,7 +1325,7 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
                 range: new BufferRange(12u, 4u),
                 structureStride: sizeof(uint),
                 label: "Virtual shadow raster invocation count"),
-            PipelineSync.ComputeShading);
+            sync);
     }
 
     private void BindPageHiZInitialize(
@@ -1400,28 +1406,28 @@ public sealed class VirtualShadowFeature : IClusterStageResourceProvider, IDispo
         }
     }
 
-    private void BindShadeViews(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindShadeViews(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(graph.CreateBufferSrv(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes,
-            label: "Standard shade virtual shadow views"), PipelineSync.ComputeShading);
+            label: "Standard shade virtual shadow views"), sync);
     }
 
-    private void BindShadePageTable(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindShadePageTable(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(graph.CreateBufferSrv(_framePageTable, structureStride: 16,
-            label: "Standard shade virtual shadow page table"), PipelineSync.ComputeShading);
+            label: "Standard shade virtual shadow page table"), sync);
     }
 
-    private void BindShadeAtlas(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindShadeAtlas(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(graph.CreateTextureSrv(_atlas, format: Format.R32UInt,
             dimension: SomeEngine.Graphics.TextureViewDimension.Texture2D,
-            label: "Standard shade virtual shadow atlas"), PipelineSync.ComputeShading);
+            label: "Standard shade virtual shadow atlas"), sync);
     }
 
-    private void BindShadeSampling(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindShadeSampling(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
-        _ = pass.Bind(_frameSamplingUniforms, PipelineSync.ComputeShading);
+        _ = pass.Bind(_frameSamplingUniforms, sync);
     }
 
     private GraphPassId AddComputePass(

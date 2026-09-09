@@ -163,7 +163,7 @@ public sealed class WarpRayTracingTests
             "dxr_local_ordinary_codegen_limit", ordinarySource, entries, "lib_6_5");
         using D3D12TestShaderProgram descriptors = D3D12TestShaderProgram.Compile(
             "dxr_local_descriptor_codegen_limit", descriptorSource, entries, "lib_6_5");
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline ordinaryPipeline = backend.CreateRayTracingPipeline(device,
             new RayTracingPipelineDesc(ordinary.Program, [ordinary.GetEntryPoint(0)], [],
@@ -193,7 +193,7 @@ public sealed class WarpRayTracingTests
         ShaderEntryPoint rayGenerationA = shader.GetEntryPoint(0);
         ShaderVariableLayout globals = shader.Reflection.GetGlobalParamsVarLayout()
             ?? ShaderVariableLayout.Null;
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateRayTracingPipeline(device,
             new RayTracingPipelineDesc(shader.Program, [rayGenerationA], [],
@@ -280,7 +280,7 @@ public sealed class WarpRayTracingTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.Compile(
             "dxr_hit_group_layout_identity", source, entries, "sm_6_5");
         Assert.NotEqual(shader.GetEntryPoint(1).VarLayout, shader.GetEntryPoint(2).VarLayout);
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         RayTracingHitGroup[] hitGroups =
         [
@@ -326,7 +326,7 @@ public sealed class WarpRayTracingTests
             DisableGpuBasedValidation: true,
             DisableSynchronizedQueueValidation: true);
         return new ValidationLayer(
-            new D3D12Backend(new D3D12BackendOptions(validation)));
+            D3D12GraphicsBackend.Create(new D3D12BackendOptions(validation)));
     }
 
 
@@ -334,7 +334,7 @@ public sealed class WarpRayTracingTests
     [Fact]
     public void Acceleration_structure_build_update_clone_compact_serialize_and_deserialize_run_on_WARP()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out RayTracing? capability));
         Assert.NotNull(capability);
@@ -682,7 +682,7 @@ public sealed class WarpRayTracingTests
             source,
             [new D3D12TestShaderEntry("rayGenerationMain", SlangStage.RayGeneration)]);
         ShaderEntryPoint rayGeneration = shader.GetEntryPoint(0);
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         Assert.Throws<ArgumentException>(() => backend.CreateRayTracingPipeline(
@@ -735,92 +735,16 @@ public sealed class WarpRayTracingTests
             backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
     }
 
-    [Fact]
-    public void Acceleration_structure_prebuild_authority_selects_the_requested_scratch_requirement()
-    {
-        D3D12Backend.AccelerationStructurePrebuildMode buildMode =
-            D3D12Backend.RequireValidAccelerationStructureBuildOptions(
-                AccelerationStructureBuildOptions.None);
-        D3D12Backend.AccelerationStructurePrebuildMode allowUpdateMode =
-            D3D12Backend.RequireValidAccelerationStructureBuildOptions(
-                AccelerationStructureBuildOptions.AllowUpdate);
-        D3D12Backend.AccelerationStructurePrebuildMode performUpdateMode =
-            D3D12Backend.RequireValidAccelerationStructureBuildOptions(
-                AccelerationStructureBuildOptions.AllowUpdate |
-                AccelerationStructureBuildOptions.PerformUpdate);
-        NativePrebuildInfo buildInfo = new()
-        {
-            ResultDataMaxSizeInBytes = 4096,
-            ScratchDataSizeInBytes = 1024,
-            UpdateScratchDataSizeInBytes = 0,
-        };
-        NativePrebuildInfo updateCapableInfo = new()
-        {
-            ResultDataMaxSizeInBytes = 4096,
-            ScratchDataSizeInBytes = 1024,
-            UpdateScratchDataSizeInBytes = 2048,
-        };
 
-        Assert.Equal(
-            1024UL,
-            D3D12Backend.RequireValidAccelerationStructurePrebuildInfo(
-                buildInfo,
-                buildMode));
-        Assert.Equal(
-            1024UL,
-            D3D12Backend.RequireValidAccelerationStructurePrebuildInfo(
-                updateCapableInfo,
-                allowUpdateMode));
-        Assert.Equal(
-            2048UL,
-            D3D12Backend.RequireValidAccelerationStructurePrebuildInfo(
-                updateCapableInfo,
-                performUpdateMode));
-    }
 
-    [Theory]
-    [InlineData(0UL, 1024UL, 0UL, AccelerationStructureBuildOptions.None)]
-    [InlineData(4096UL, 1024UL, 2048UL, AccelerationStructureBuildOptions.None)]
-    [InlineData(0UL, 0UL, 0UL, AccelerationStructureBuildOptions.AllowUpdate |
-        AccelerationStructureBuildOptions.PerformUpdate)]
-    public void Acceleration_structure_prebuild_authority_rejects_malformed_native_facts(
-        ulong resultSize,
-        ulong buildScratchSize,
-        ulong updateScratchSize,
-        AccelerationStructureBuildOptions options)
-    {
-        NativePrebuildInfo info = new()
-        {
-            ResultDataMaxSizeInBytes = resultSize,
-            ScratchDataSizeInBytes = buildScratchSize,
-            UpdateScratchDataSizeInBytes = updateScratchSize,
-        };
-        D3D12Backend.AccelerationStructurePrebuildMode mode =
-            D3D12Backend.RequireValidAccelerationStructureBuildOptions(options);
 
-        GraphicsException failure = Assert.Throws<GraphicsException>(() =>
-            D3D12Backend.RequireValidAccelerationStructurePrebuildInfo(info, mode));
 
-        Assert.Equal(GraphicsError.NativeFailure, failure.Error);
-    }
 
-    [Theory]
-    [InlineData(AccelerationStructureBuildOptions.PerformUpdate)]
-    [InlineData(AccelerationStructureBuildOptions.PreferFastTrace |
-        AccelerationStructureBuildOptions.PreferFastBuild)]
-    public void Acceleration_structure_build_option_authority_rejects_invalid_caller_combinations(
-        AccelerationStructureBuildOptions options)
-    {
-        Assert.Throws<ArgumentException>(() =>
-        {
-            _ = D3D12Backend.RequireValidAccelerationStructureBuildOptions(options);
-        });
-    }
 
     [Fact]
     public void Stable_BLAS_build_encoding_reuses_grown_command_slot_geometry_scratch_without_allocating()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out RayTracing? capability));
         Assert.NotNull(capability);

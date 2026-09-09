@@ -70,23 +70,30 @@ bool GetClusteredLightTileBounds(
         return true;
     }
 
-    float inverseTangentDistance = rsqrt(max(
-        viewDepth * viewDepth - radius * radius,
-        1e-8));
-    float2 ndcCenter = float2(
-        viewPosition.x * parameters.P00 / viewDepth,
-        viewPosition.y * parameters.P11 / viewDepth);
-    float2 ndcRadius = abs(float2(
-        parameters.P00,
-        parameters.P11)) * radius * inverseTangentDistance;
-    float2 pixelCenter = float2(
-        (ndcCenter.x * 0.5 + 0.5) * float(parameters.ScreenWidth),
-        (1.0 - (ndcCenter.y * 0.5 + 0.5)) * float(parameters.ScreenHeight));
-    float2 pixelRadius = ndcRadius * 0.5 * float2(
-        parameters.ScreenWidth,
-        parameters.ScreenHeight);
-    float2 pixelMinimum = pixelCenter - pixelRadius;
-    float2 pixelMaximum = pixelCenter + pixelRadius;
+    // The projected box encloses the sphere for perspective, off-center and
+    // orthographic matrices. A box crossing the eye plane covers the screen.
+    float2 ndcMinimum = float2(1e30);
+    float2 ndcMaximum = float2(-1e30);
+    for (uint corner = 0u; corner < 8u; corner++)
+    {
+        float3 offset = float3(
+            (corner & 1u) != 0u ? radius : -radius,
+            (corner & 2u) != 0u ? radius : -radius,
+            (corner & 4u) != 0u ? radius : -radius);
+        float4 clip = mul(float4(viewPosition + offset, 1.0), parameters.Projection);
+        if (clip.w <= 0.0)
+        {
+            minimumTile = uint2(0u);
+            maximumTile = uint2(parameters.TileCountX - 1u, parameters.TileCountY - 1u);
+            return true;
+        }
+        float2 ndc = clip.xy / clip.w;
+        ndcMinimum = min(ndcMinimum, ndc);
+        ndcMaximum = max(ndcMaximum, ndc);
+    }
+    float2 screenSize = float2(parameters.ScreenWidth, parameters.ScreenHeight);
+    float2 pixelMinimum = float2(ndcMinimum.x + 1.0, 1.0 - ndcMaximum.y) * 0.5 * screenSize;
+    float2 pixelMaximum = float2(ndcMaximum.x + 1.0, 1.0 - ndcMinimum.y) * 0.5 * screenSize;
     if (pixelMaximum.x < 0.0 || pixelMaximum.y < 0.0 ||
         pixelMinimum.x >= float(parameters.ScreenWidth) ||
         pixelMinimum.y >= float(parameters.ScreenHeight))

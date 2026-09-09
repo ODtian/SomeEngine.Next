@@ -6,25 +6,28 @@ namespace SomeEngine.Render.Instances;
 /// </summary>
 public readonly struct RenderMeshInstanceHandle : IEquatable<RenderMeshInstanceHandle>
 {
-    internal RenderMeshInstanceHandle(int index, uint generation)
+    internal RenderMeshInstanceHandle(long collection, int index, uint generation)
     {
+        Collection = collection;
         Index = index;
         Generation = generation;
     }
+
+    internal long Collection { get; }
 
     internal int Index { get; }
 
     internal uint Generation { get; }
 
-    public bool IsValid => Index >= 0 && Generation != 0u;
+    public bool IsValid => Collection != 0 && Index >= 0 && Generation != 0u;
 
     public bool Equals(RenderMeshInstanceHandle other) =>
-        Index == other.Index && Generation == other.Generation;
+        Collection == other.Collection && Index == other.Index && Generation == other.Generation;
 
     public override bool Equals(object? obj) =>
         obj is RenderMeshInstanceHandle other && Equals(other);
 
-    public override int GetHashCode() => HashCode.Combine(Index, Generation);
+    public override int GetHashCode() => HashCode.Combine(Collection, Index, Generation);
 
     public static bool operator ==(
         RenderMeshInstanceHandle left,
@@ -45,6 +48,9 @@ public readonly struct RenderMeshInstanceHandle : IEquatable<RenderMeshInstanceH
 /// </summary>
 public sealed class RenderMeshInstanceCollection : IDisposable
 {
+    private static long s_nextCollection;
+    private readonly long _collection = Interlocked.Increment(ref s_nextCollection);
+    private readonly HashSet<RenderMeshInstanceSet> _sets = new(ReferenceEqualityComparer.Instance);
     private readonly object _gate = new();
     private readonly List<Entry> _entries = [];
     private readonly Stack<int> _free = [];
@@ -84,6 +90,8 @@ public sealed class RenderMeshInstanceCollection : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
+            if (_sets.Contains(set))
+                throw new ArgumentException("The instance set is already in this collection.", nameof(set));
             int index;
             Entry entry;
             if (_free.TryPop(out index))
@@ -100,9 +108,10 @@ public sealed class RenderMeshInstanceCollection : IDisposable
                 _entries.Add(entry);
             }
 
+            _sets.Add(set);
             _count++;
             _revision = NextRevision(_revision);
-            return new RenderMeshInstanceHandle(index, entry.Generation);
+            return new RenderMeshInstanceHandle(_collection, index, entry.Generation);
         }
     }
 
@@ -158,6 +167,7 @@ public sealed class RenderMeshInstanceCollection : IDisposable
                 Set: null,
                 OwnsSet: false,
                 Generation: entry.Generation);
+            _sets.Remove(entry.Set!);
             _free.Push(handle.Index);
             _count--;
             _revision = NextRevision(_revision);
@@ -185,12 +195,13 @@ public sealed class RenderMeshInstanceCollection : IDisposable
                     Entry entry = _entries[index];
                     if (entry.Set is null)
                         continue;
-                    var handle = new RenderMeshInstanceHandle(index, entry.Generation);
+                    var handle = new RenderMeshInstanceHandle(_collection, index, entry.Generation);
                     ulong previousRevision = 0ul;
                     _ = previousDataRevisions?.TryGetValue(handle, out previousRevision);
-                    snapshots[destination++] = new RenderMeshInstanceEntrySnapshot(
+                    snapshots[destination] = new RenderMeshInstanceEntrySnapshot(
                         handle,
                         entry.Set.Capture(previousRevision));
+                    destination++;
                 }
                 if (destination != snapshots.Length)
                     throw new InvalidOperationException("Instance collection membership accounting is inconsistent.");
@@ -222,7 +233,7 @@ public sealed class RenderMeshInstanceCollection : IDisposable
                 if (entry.Set is null)
                     continue;
                 entries[destination++] = new RenderMeshInstanceSharedEntrySnapshot(
-                    new RenderMeshInstanceHandle(index, entry.Generation),
+                    new RenderMeshInstanceHandle(_collection, index, entry.Generation),
                     entry.Set.CaptureShared());
             }
             if (destination != entries.Length)
@@ -246,6 +257,7 @@ public sealed class RenderMeshInstanceCollection : IDisposable
                 .Where(static entry => entry.OwnsSet && entry.Set is not null)
                 .Select(static entry => entry.Set!)];
             _entries.Clear();
+            _sets.Clear();
             _free.Clear();
             _count = 0;
         }
@@ -274,7 +286,7 @@ public sealed class RenderMeshInstanceCollection : IDisposable
 
     private bool TryGetEntry(RenderMeshInstanceHandle handle, out Entry entry)
     {
-        if (handle.IsValid && (uint)handle.Index < (uint)_entries.Count)
+        if (handle.Collection == _collection && handle.IsValid && (uint)handle.Index < (uint)_entries.Count)
         {
             entry = _entries[handle.Index];
             if (entry.Set is not null && entry.Generation == handle.Generation)

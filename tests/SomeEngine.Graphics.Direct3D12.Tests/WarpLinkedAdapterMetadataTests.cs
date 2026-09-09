@@ -8,7 +8,7 @@ public sealed class WarpLinkedAdapterMetadataTests
     [Fact]
     public void Single_node_objects_publish_resolved_node_provenance()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         using Buffer buffer = backend.CreateBuffer(
@@ -40,7 +40,7 @@ public sealed class WarpLinkedAdapterMetadataTests
     [Fact]
     public void Invalid_resource_node_masks_fail_before_native_creation()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         _ = Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -64,7 +64,7 @@ public sealed class WarpLinkedAdapterMetadataTests
     [Fact]
     public void Invalid_descriptor_table_and_query_nodes_fail_before_native_creation()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
 
         _ = Assert.Throws<ArgumentOutOfRangeException>(() =>

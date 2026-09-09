@@ -257,11 +257,9 @@ void SeedHierarchyRoots(
         uint ignored;
         NodeIndirectArgs.InterlockedMax(
             TraversalSeed.ArgsOffset,
-            groupCount,
+            min(groupCount, 65535u),
             ignored);
-        // Dispatch Y/Z are immutable for a hierarchy level. Every wave writes the
-        // same values, while X is accumulated with an atomic maximum.
-        NodeIndirectArgs.Store(TraversalSeed.ArgsOffset + 4u, 1u);
+        NodeIndirectArgs.InterlockedMax(TraversalSeed.ArgsOffset + 4u, (groupCount + 65534u) / 65535u, ignored);
         NodeIndirectArgs.Store(TraversalSeed.ArgsOffset + 8u, 1u);
         NodeIndirectArgs.Store(TraversalSeed.ArgsOffset + 16u, 0u);
     }

@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 public sealed partial class RenderGraph : IDisposable
 {
@@ -30,6 +30,7 @@ public sealed partial class RenderGraph : IDisposable
     private long _frameToken;
     private int _nextFrameSlot;
     private bool _disposed;
+    private bool _closing;
     private bool _lost;
 
     public RenderGraph(
@@ -89,16 +90,6 @@ public sealed partial class RenderGraph : IDisposable
     internal PersistentResourceAllocator PersistentResources => _persistentResources;
     internal HeapByteBudget HeapByteBudget => _heapByteBudget;
     internal int FrameSlotCount => _frameSlots.Length;
-    internal int InFlightCompletionCount
-    {
-        get
-        {
-            int count = 0;
-            foreach (FrameSlot slot in _frameSlots) count += slot.Completions.Count;
-            return count;
-        }
-    }
-
     public RenderGraphDesc Description { get; }
     public ulong StructureVersion { get; private set; }
     public string? Label => Description.Label;
@@ -150,13 +141,17 @@ public sealed partial class RenderGraph : IDisposable
                 _nextFrameSlot = (index + 1) % _frameSlots.Length;
                 ulong identity = AllocateOwnerIdentity();
                 _frameToken = checked((long)identity);
-                frame = new RenderGraphFrame(slot.BeginExecution(
-                    this,
-                    identity,
-                    options,
-                    _structureIndex,
-                    StructureVersion));
-                return true;
+                try
+                {
+                    frame = new RenderGraphFrame(slot.BeginExecution(
+                        this, identity, options, _structureIndex, StructureVersion));
+                    return true;
+                }
+                catch
+                {
+                    _frameToken = 0;
+                    throw;
+                }
             }
         }
 
@@ -201,22 +196,6 @@ public sealed partial class RenderGraph : IDisposable
             _persistentResources.CollectCompleted();
         foreach (FrameSlot slot in _frameSlots)
             slot.CollectCompleted(_backend);
-    }
-
-    internal bool TryGetTransientPlacement(
-        GraphBufferId buffer,
-        out Heap? heap,
-        out ulong offset)
-    {
-        if (!buffer.Value.IsValid || buffer.Value.Owner != Identity)
-            throw new ArgumentException("The Buffer identity belongs to another RenderGraph.", nameof(buffer));
-        foreach (FrameSlot slot in _frameSlots)
-            if (slot.TransientResources is not null &&
-                slot.TransientResources.TryGetPlacement(buffer.Value, out heap, out offset))
-                return true;
-        heap = null;
-        offset = 0;
-        return false;
     }
 
     /// <summary>
@@ -277,8 +256,8 @@ public sealed partial class RenderGraph : IDisposable
             }
             foreach (FrameSlot slot in _frameSlots)
             {
-                slot.TransientResources?.Compact();
                 slot.ApplyEdit(changes);
+                slot.TransientResources?.Compact();
             }
 
         }
@@ -529,7 +508,7 @@ public sealed partial class RenderGraph : IDisposable
 
     private void EnsureAvailable()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed || _closing, this);
         if (_lost) throw new GraphicsException(GraphicsError.DeviceLost, "The RenderGraph Device is lost.");
     }
 
@@ -550,7 +529,7 @@ public sealed partial class RenderGraph : IDisposable
             throw new InvalidOperationException("A render graph edit or frame is active.");
         if (!_lost)
             WaitForSubmittedWork();
-        _disposed = true;
+        _closing = true;
         foreach (FrameSlot slot in _frameSlots)
             slot.Dispose();
         _commandContexts.Dispose();
@@ -571,6 +550,7 @@ public sealed partial class RenderGraph : IDisposable
         }
         _persistentResources.Dispose();
         foreach (GraphPass pass in _structure.Passes.Rows) pass.CallbackStorage.ClearData();
+        _disposed = true;
     }
 
     private void WaitForSubmittedWork()
@@ -588,7 +568,8 @@ public sealed partial class RenderGraph : IDisposable
                 if (endpoint.ReadyAfter.HasValue)
                     AddCompletion(completions, endpoint.ReadyAfter.Value);
         foreach (QueueCompletion completion in completions)
-            _ = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
+            if (_backend.WaitCpu(completion, Timeout.InfiniteTimeSpan) != WaitStatus.Completed)
+                throw new TimeoutException("Graph shutdown could not confirm submitted work completion.");
     }
 
     private void CollectRangeCompletions(

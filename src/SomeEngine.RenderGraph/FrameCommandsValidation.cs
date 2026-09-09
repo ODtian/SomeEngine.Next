@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 
 namespace SomeEngine.RenderGraph;
 
@@ -333,10 +333,12 @@ internal sealed partial class FrameExecutor
 
     private static bool Contains(in BufferRange container, in BufferRange value) =>
         value.Offset >= container.Offset &&
+        value.Offset - container.Offset <= container.Size &&
         value.Size <= container.Size - (value.Offset - container.Offset);
 
     private static bool Contains(in QueryRange container, in QueryRange value) =>
         value.FirstQuery >= container.FirstQuery &&
+        value.FirstQuery - container.FirstQuery <= container.QueryCount &&
         value.QueryCount <= container.QueryCount -
             (value.FirstQuery - container.FirstQuery);
 
@@ -345,9 +347,11 @@ internal sealed partial class FrameExecutor
         in TextureSubresourceRange value)
     {
         return value.FirstMipLevel >= container.FirstMipLevel &&
+               value.FirstMipLevel - container.FirstMipLevel <= container.MipLevelCount &&
                value.MipLevelCount <= container.MipLevelCount -
                    (value.FirstMipLevel - container.FirstMipLevel) &&
                value.FirstArrayLayer >= container.FirstArrayLayer &&
+               value.FirstArrayLayer - container.FirstArrayLayer <= container.ArrayLayerCount &&
                value.ArrayLayerCount <= container.ArrayLayerCount -
                    (value.FirstArrayLayer - container.FirstArrayLayer) &&
                (value.Aspects & ~container.Aspects) == 0;

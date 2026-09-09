@@ -15,7 +15,7 @@ public sealed class ClusterTessellationBinningTests
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
             "tessellation_bins", "#include \"cluster_tessellation_bin.slang\"",
             entries.Select(name => new D3D12TestShaderEntry(name, SlangStage.Compute)).ToArray(), "sm_6_0", ShaderDirectory());
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var owned = new List<IDisposable>();
         try

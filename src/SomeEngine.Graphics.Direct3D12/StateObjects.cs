@@ -7,7 +7,6 @@ namespace SomeEngine.Graphics.Direct3D12;
 
 internal sealed unsafe partial class D3D12Backend
 {
-    private static readonly byte[] StateObjectReplayMagic = "SERHISO1"u8.ToArray();
 
     private static CompiledProgramLibrary CompileProgramLibrary(
         ShaderProgram program,
@@ -30,10 +29,7 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        return new CompiledProgramLibrary(
-            libraries,
-            HashProgramLibraries(libraries),
-            SHA256.HashData(program.ToArray()));
+        return new CompiledProgramLibrary(libraries);
     }
 
     private static int GetStateObjectEntryPointIndex(
@@ -50,177 +46,11 @@ internal sealed unsafe partial class D3D12Backend
             nameof(entry));
     }
 
-    private static byte[] HashProgramLibraries(ReadOnlySpan<byte[]> libraries)
-    {
-        using MemoryStream stream = new();
-        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
-        {
-            writer.Write(checked((uint)libraries.Length));
-            foreach (byte[] library in libraries)
-            {
-                writer.Write(checked((uint)library.Length));
-                writer.Write(library);
-            }
-        }
-        return SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
-    }
-
     internal static string GetStableEntryPointName(ShaderEntryPoint entryPoint) =>
         WorkGraphValidation.GetEffectiveEntryPointName(entryPoint);
 
     internal static string GetStableEntryPointName(string name, string? nameOverride) =>
         WorkGraphValidation.GetEffectiveEntryPointName(name, nameOverride);
-
-    private static void WriteCompiledProgramIdentity(
-        BinaryWriter writer,
-        CompiledProgramLibrary library)
-    {
-        WriteCanonicalBytes(writer, library.ProgramIdentity);
-        WriteCanonicalBytes(writer, library.CodeHash);
-    }
-
-    private static byte[][] ResolveStateObjectReplayCode(
-        D3D12PipelineCache? cache,
-        byte family,
-        ReadOnlySpan<byte> key,
-        CompiledProgramLibrary library)
-    {
-        if (cache is null ||
-            !cache.TryGet(
-                family,
-                key,
-                out D3D12PipelineCache.CacheCandidate? candidate) ||
-            candidate is null)
-        {
-            return library.Libraries;
-        }
-        D3D12PipelineCache.CacheCandidate validCandidate = candidate.Value;
-
-        try
-        {
-            ReadOnlySpan<byte> source = validCandidate.Payload;
-            int minimumLength = checked(
-                StateObjectReplayMagic.Length + sizeof(uint) + sizeof(byte) +
-                32 + 32 + 32 + sizeof(uint));
-            if (source.Length < minimumLength ||
-                !source[..StateObjectReplayMagic.Length].SequenceEqual(StateObjectReplayMagic))
-            {
-                throw new InvalidDataException("The state-object replay magic is invalid.");
-            }
-
-            int offset = StateObjectReplayMagic.Length;
-            uint version = ReadReplayUInt32(source, ref offset);
-            if (version != StateObjectReplaySchemaVersion)
-                throw new InvalidDataException("The state-object replay schema is unsupported.");
-            if (ReadReplayByte(source, ref offset) != family)
-                throw new InvalidDataException("The state-object replay family is invalid.");
-            if (!ReadReplayBytes(source, ref offset, 32).SequenceEqual(key))
-                throw new InvalidDataException("The state-object replay key is invalid.");
-            if (!ReadReplayBytes(source, ref offset, 32).SequenceEqual(library.ProgramIdentity))
-                throw new InvalidDataException("The state-object Slang program identity is invalid.");
-            ReadOnlySpan<byte> expectedCodeHash = ReadReplayBytes(source, ref offset, 32);
-            uint libraryCount = ReadReplayUInt32(source, ref offset);
-            if (libraryCount != library.Libraries.Length)
-                throw new InvalidDataException("The state-object replay library count is invalid.");
-            for (int index = 0; index < library.Libraries.Length; index++)
-            {
-                uint codeLength = ReadReplayUInt32(source, ref offset);
-                byte[] current = library.Libraries[index];
-                if (codeLength != current.Length ||
-                    !ReadReplayBytes(source, ref offset, current.Length).SequenceEqual(current))
-                {
-                    throw new InvalidDataException("The state-object replay library code is invalid.");
-                }
-            }
-            if (offset != source.Length ||
-                !expectedCodeHash.SequenceEqual(library.CodeHash))
-            {
-                throw new InvalidDataException("The state-object replay code is invalid.");
-            }
-
-            return library.Libraries;
-        }
-        catch (Exception exception) when (exception is
-            InvalidDataException or
-            EndOfStreamException or
-            OverflowException)
-        {
-            _ = validCandidate.Owner.Reject(validCandidate);
-            return library.Libraries;
-        }
-    }
-
-    private static void StoreStateObjectReplay(
-        D3D12PipelineCache? cache,
-        byte family,
-        ReadOnlySpan<byte> key,
-        CompiledProgramLibrary library)
-    {
-        if (cache is null)
-            return;
-
-        D3D12PipelineCache.CacheAdmission? admission;
-        try
-        {
-            using MemoryStream stream = new();
-            using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
-            {
-                writer.Write(StateObjectReplayMagic);
-                writer.Write(StateObjectReplaySchemaVersion);
-                writer.Write(family);
-                writer.Write(key);
-                writer.Write(library.ProgramIdentity);
-                writer.Write(library.CodeHash);
-                writer.Write(checked((uint)library.Libraries.Length));
-                foreach (byte[] code in library.Libraries)
-                {
-                    writer.Write(checked((uint)code.Length));
-                    writer.Write(code);
-                }
-            }
-            admission = cache.PrepareAdmission(
-                family,
-                key,
-                stream.GetBuffer().AsSpan(0, checked((int)stream.Length)),
-                CancellationToken.None);
-        }
-        catch (Exception exception) when (exception is
-            OutOfMemoryException or
-            OverflowException or
-            IOException)
-        {
-            return;
-        }
-        _ = cache.CommitAdmission(admission);
-    }
-
-    private static uint ReadReplayUInt32(ReadOnlySpan<byte> source, ref int offset)
-    {
-        if (source.Length - offset < sizeof(uint))
-            throw new EndOfStreamException();
-        uint value = BinaryPrimitives.ReadUInt32LittleEndian(source[offset..]);
-        offset += sizeof(uint);
-        return value;
-    }
-
-    private static byte ReadReplayByte(ReadOnlySpan<byte> source, ref int offset)
-    {
-        if ((uint)offset >= (uint)source.Length)
-            throw new EndOfStreamException();
-        return source[offset++];
-    }
-
-    private static ReadOnlySpan<byte> ReadReplayBytes(
-        ReadOnlySpan<byte> source,
-        ref int offset,
-        int length)
-    {
-        if (length < 0 || source.Length - offset < length)
-            throw new EndOfStreamException();
-        ReadOnlySpan<byte> value = source.Slice(offset, length);
-        offset += length;
-        return value;
-    }
 
     private static string ValidateStateObjectEntryPoint(
         ShaderProgramLayout reflection,
@@ -262,18 +92,12 @@ internal sealed unsafe partial class D3D12Backend
     private sealed class CompiledProgramLibrary
     {
         internal CompiledProgramLibrary(
-            byte[][] libraries,
-            byte[] codeHash,
-            byte[] programIdentity)
+            byte[][] libraries)
         {
             Libraries = libraries;
-            CodeHash = codeHash;
-            ProgramIdentity = programIdentity;
         }
 
         internal byte[][] Libraries { get; }
-        internal byte[] CodeHash { get; }
-        internal byte[] ProgramIdentity { get; }
     }
 
     private sealed class NativeStateObjectArena : IDisposable

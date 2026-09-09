@@ -1649,6 +1649,7 @@ public sealed partial class ValidationLayer
 
         var result = new RayTracingPipelineValidationState();
         var names = new HashSet<string>(StringComparer.Ordinal);
+        var shaders = new Dictionary<string, SlangShaderSharp.ShaderEntryPoint>(StringComparer.Ordinal);
         AddEntries(
             desc.RayGeneration,
             SlangShaderSharp.SlangStage.RayGeneration,
@@ -1725,12 +1726,13 @@ public sealed partial class ValidationLayer
             if (entry == SlangShaderSharp.ShaderEntryPoint.Null ||
                 entry.Stage != expectedStage ||
                 string.IsNullOrWhiteSpace(entry.Name) ||
-                !names.Add(entry.Name))
+                (shaders.TryGetValue(entry.Name, out var existing) ? existing != entry : !names.Add(entry.Name)))
             {
                 Reject(
                     "RayTracing",
                     $"A ray-tracing export is not a unique {expectedStage} Slang entry point.");
             }
+            shaders[entry.Name] = entry;
         }
     }
 

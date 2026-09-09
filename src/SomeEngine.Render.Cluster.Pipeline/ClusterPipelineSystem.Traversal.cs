@@ -1,4 +1,4 @@
-using SomeEngine.Graphics;
+﻿using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -7,6 +7,7 @@ public sealed partial class ClusterPipelineSystem
 {
     private void ReconcileTraversal()
     {
+        _geometryPassesEnabled = null;
         ClusterFrameUploads uploads = _uploads ?? throw new InvalidOperationException("Cluster uploads are unavailable.");
         int previousCount = _traversalLevelPasses.Count;
         GraphPassId primary = _traversalPass;
@@ -35,8 +36,6 @@ public sealed partial class ClusterPipelineSystem
                 _continuationPostTraversalPass = Extend(ref edit, _continuationPostTraversalLevelPasses, continuationPost,
                     _continuationPostCullPass, 2u, "continuation post-HiZ");
             }
-            uploads.RemoveUnusedDeclarations(ref edit);
-            RecordUploadFinalization(ref edit);
             edit.Commit();
             uploads.CompleteDeclarations(_graph);
         }

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Silk.NET.Direct3D12;
 
 namespace SomeEngine.Graphics.Direct3D12;
@@ -11,11 +11,14 @@ internal sealed unsafe partial class D3D12Backend
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         command.RequireRenderingClosed();
         ValidateRenderingDescription(desc);
+        command.RenderingArea = new Silk.NET.Maths.Box2D<int>(checked((int)desc.X), checked((int)desc.Y),
+            checked((int)(desc.X + desc.Width)), checked((int)(desc.Y + desc.Height)));
         if (CanBeginSingleColorRendering(desc))
         {
             BeginSingleColorRendering(command, desc.Colors[0]);
             return;
         }
+        var area = command.RenderingArea;
         int attachmentCount = PrepareRenderingDescription(command, desc);
         command.PrepareCaptures(attachmentCount, attachmentCount, attachmentCount);
         command.PrepareSwapchainUses(attachmentCount);
@@ -65,10 +68,8 @@ internal sealed unsafe partial class D3D12Backend
                         clearValues[1] = clear.Y;
                         clearValues[2] = clear.Z;
                         clearValues[3] = clear.W;
-                        D3D12CommandListFastCalls.ClearRenderTargetView(
-                            command.List,
-                            colors[index],
-                            clearValues);
+                        CommandExecutionTrace.ClearRenderTargetView(
+                            command.List, colors[index], clearValues, 1, &area);
                         break;
                     case LoadType.Discard:
                         EmitDiscardResource(
@@ -82,7 +83,7 @@ internal sealed unsafe partial class D3D12Backend
             }
 
             if (desc.DepthStencil is DepthStencilAttachmentDesc depthStencilAttachment)
-                ApplyDepthStencilLoad(command, depthStencilAttachment, depthStencil);
+                ApplyDepthStencilLoad(command, depthStencilAttachment, depthStencil, &area);
 
             command.CommitRenderingState();
         }
@@ -96,7 +97,7 @@ internal sealed unsafe partial class D3D12Backend
     private void ApplyDepthStencilLoad(
         D3D12CommandContext command,
         in DepthStencilAttachmentDesc attachment,
-        CpuDescriptorHandle descriptor)
+        CpuDescriptorHandle descriptor, Silk.NET.Maths.Box2D<int>* area)
     {
         ClearFlags clearFlags = 0;
         TextureSubresourceRange range = command.RenderingDepthStencilRange;
@@ -123,8 +124,8 @@ internal sealed unsafe partial class D3D12Backend
                     clearFlags,
                     attachment.ClearDepth,
                     attachment.ClearStencil,
-                    0,
-                    null);
+                    1,
+                    area);
     }
 
     private int PrepareRenderingDescription(
@@ -175,7 +176,10 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static bool CanBeginSingleColorRendering(in RenderingDesc desc) =>
+        desc.X == 0 && desc.Y == 0 &&
         desc.Colors.Length == 1 &&
+        desc.Width == MipDimension(desc.Colors[0].View.Description.Texture.Info.Width, desc.Colors[0].View.Description.Range.FirstMipLevel) &&
+        desc.Height == MipDimension(desc.Colors[0].View.Description.Texture.Info.Height, desc.Colors[0].View.Description.Range.FirstMipLevel) &&
         desc.DepthStencil is null &&
         desc.Colors[0].ResolveView is null &&
         desc.Colors[0].Store == StoreType.Store;
@@ -399,6 +403,7 @@ internal sealed unsafe partial class D3D12Backend
             command.RenderingColorSourceRange(index);
         TextureSubresourceRange destinationRange =
             command.RenderingColorDestinationRange(index);
+        var area = command.RenderingArea;
         for (uint layer = 0; layer < sourceRange.ArrayLayerCount; layer++)
         {
             CommandTransferTrace.ResolveSubresourceRegion(
@@ -408,15 +413,15 @@ internal sealed unsafe partial class D3D12Backend
                                 destinationRange.FirstMipLevel,
                                 checked(destinationRange.FirstArrayLayer + layer),
                                 destinationRange.Aspects),
-                            0,
-                            0,
+                            checked((uint)area.Min.X),
+                            checked((uint)area.Min.Y),
                             source.Native,
                             NativeSubresource(
                                 source.Info,
                                 sourceRange.FirstMipLevel,
                                 checked(sourceRange.FirstArrayLayer + layer),
                                 sourceRange.Aspects),
-                            null,
+                            &area,
                             FormatMappings.ToDxgi(command.RenderingColorFormat(index)),
                             command.RenderingColorResolveMode(index));
         }
@@ -451,6 +456,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12TextureResource native,
         in TextureSubresourceRange range)
     {
+        var area = command.RenderingArea;
         if (native.Info.Dimension == TextureDimension.Texture3D)
         {
             for (uint mip = range.FirstMipLevel;
@@ -458,8 +464,8 @@ internal sealed unsafe partial class D3D12Backend
                  mip++)
             {
                 DiscardRegion nativeRange = new(
-                    0,
-                    null,
+                    1,
+                    &area,
                     NativeSubresource(native.Info, mip, 0, range.Aspects),
                     1);
                 CommandExecutionTrace.DiscardResource(command.List, native.Native, &nativeRange);
@@ -477,8 +483,8 @@ internal sealed unsafe partial class D3D12Backend
                 layer * native.Info.MipLevelCount +
                 plane * native.Info.MipLevelCount * native.Info.ArrayLayerCount);
             DiscardRegion nativeRange = new(
-                0,
-                null,
+                1,
+                &area,
                 first,
                 range.MipLevelCount);
             CommandExecutionTrace.DiscardResource(command.List, native.Native, &nativeRange);
@@ -508,6 +514,7 @@ internal sealed unsafe partial class D3D12Backend
         private bool _renderingPrepared;
         private bool _renderingOpen;
 
+        internal Silk.NET.Maths.Box2D<int> RenderingArea { get; set; }
         internal int RenderingColorCount => _renderingColorCount;
         internal D3D12TextureResource? RenderingDepthStencilResource =>
             _renderingDepthStencilResource;

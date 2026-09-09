@@ -6,10 +6,47 @@ namespace SomeEngine.Assets.Schema;
 
 public partial class Texture : IDisposable, IAsyncDisposable
 {
+    private static long _nextContentIdentity;
+    private readonly long _contentIdentity = Interlocked.Increment(ref _nextContentIdentity);
+    private readonly object _contentGate = new();
+    private TextureData? _data;
+    private readonly List<(WeakReference<TextureData> Data, Texture Content)> _retiredContents = [];
+    internal long ContentIdentity => _contentIdentity;
+    public event Action<Texture>? Changed;
+
+    internal void RequireContentAccess() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+    public TextureData CaptureData()
+    {
+        lock (_contentGate)
+        {
+            RequireContentAccess();
+            if (_data is not null) return _data;
+            var content = new Texture
+            {
+                AssetGuid = AssetGuid, Name = Name, Dimension = Dimension,
+                Width = Width, Height = Height, Depth = Depth, MipLevelCount = MipLevelCount,
+                ArrayLayerCount = ArrayLayerCount, Format = Format,
+                SampledFormat = SampledFormat, SampledDimension = SampledDimension,
+                Revision = Revision, _scheduler = _scheduler, _document = _document, _bootstrap = _bootstrap,
+                MipTiles = MipTiles?.Select(static tile => new TextureMipTile
+                {
+                    MipLevel = tile.MipLevel, TileX = tile.TileX, TileY = tile.TileY,
+                    ArrayLayer = tile.ArrayLayer, Face = tile.Face, DepthSlice = tile.DepthSlice,
+                    Width = tile.Width, Height = tile.Height, RowPitch = tile.RowPitch,
+                    SlicePitch = tile.SlicePitch, ChunkKey = tile.ChunkKey,
+                    DecodedLength = tile.DecodedLength,
+                }).ToArray(),
+            };
+            return _data = new TextureData(this, content);
+        }
+    }
+
     private ChunkRequestScheduler? _scheduler;
     private BinaryDocument<Texture>? _document;
     private ResidentChunkLease[] _bootstrap = [];
     private int _disposed;
+    private readonly SemaphoreSlim _disposal = new(1, 1);
 
     [SomeEngine.Serialization.BinaryIgnore]
     public ulong Revision { get; private set; } = 1;
@@ -132,49 +169,57 @@ public partial class Texture : IDisposable, IAsyncDisposable
     }
 
     internal static async ValueTask ApplyReloadAsync(
-        Texture current,
-        Texture replacement,
-        CancellationToken cancellationToken)
+        Texture current, Texture replacement, AssetUpdate update, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(current);
-        ArgumentNullException.ThrowIfNull(replacement);
         cancellationToken.ThrowIfCancellationRequested();
         ValidateRoot(replacement);
-        ulong nextRevision = checked(current.Revision + 1);
-
-        ChunkRequestScheduler? previousScheduler = null;
-        BinaryDocument<Texture>? previousDocument = null;
-        ResidentChunkLease[] previousBootstrap = [];
-        ChunkRequestScheduler? nextScheduler = Interlocked.Exchange(ref replacement._scheduler, null);
-        BinaryDocument<Texture>? nextDocument = Interlocked.Exchange(ref replacement._document, null);
-        ResidentChunkLease[] nextBootstrap = Interlocked.Exchange(
-            ref replacement._bootstrap,
-            []);
-        previousScheduler = Interlocked.Exchange(ref current._scheduler, nextScheduler);
-        previousDocument = Interlocked.Exchange(ref current._document, nextDocument);
-        previousBootstrap = Interlocked.Exchange(
-            ref current._bootstrap,
-            nextBootstrap);
-
-        current.AssetGuid = replacement.AssetGuid;
-        current.Name = replacement.Name;
-        current.Dimension = replacement.Dimension;
-        current.Width = replacement.Width;
-        current.Height = replacement.Height;
-        current.Depth = replacement.Depth;
-        current.MipLevelCount = replacement.MipLevelCount;
-        current.ArrayLayerCount = replacement.ArrayLayerCount;
-        current.Format = replacement.Format;
-        current.SampledFormat = replacement.SampledFormat;
-        current.SampledDimension = replacement.SampledDimension;
-        current.MipTiles = replacement.MipTiles;
-        current.Revision = nextRevision;
-
-        DisposeLeases(previousBootstrap);
-        if (previousScheduler is not null)
-            await previousScheduler.DisposeAsync().ConfigureAwait(false);
-        if (previousDocument is not null)
-            await previousDocument.DisposeAsync().ConfigureAwait(false);
+        await current._disposal.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            current.RequireContentAccess();
+            for (int index = current._retiredContents.Count - 1; index >= 0; index--)
+            {
+                var retired = current._retiredContents[index];
+                if (retired.Data.TryGetTarget(out _)) continue;
+                await retired.Content.DisposeAsync().ConfigureAwait(false);
+                current._retiredContents.RemoveAt(index);
+            }
+            lock (current._contentGate)
+            {
+                ulong revision = checked(current.Revision + 1);
+                ChunkRequestScheduler? oldScheduler = current._scheduler;
+                BinaryDocument<Texture>? oldDocument = current._document;
+                ResidentChunkLease[] oldBootstrap = current._bootstrap;
+                if (current._data is { } data)
+                {
+                    current._retiredContents.Add((new WeakReference<TextureData>(data), data.Content));
+                    oldScheduler = null; oldDocument = null; oldBootstrap = [];
+                }
+                current._scheduler = replacement._scheduler;
+                current._document = replacement._document;
+                current._bootstrap = replacement._bootstrap;
+                replacement._scheduler = oldScheduler;
+                replacement._document = oldDocument;
+                replacement._bootstrap = oldBootstrap;
+                current.AssetGuid = replacement.AssetGuid;
+                current.Name = replacement.Name;
+                current.Dimension = replacement.Dimension;
+                current.Width = replacement.Width;
+                current.Height = replacement.Height;
+                current.Depth = replacement.Depth;
+                current.MipLevelCount = replacement.MipLevelCount;
+                current.ArrayLayerCount = replacement.ArrayLayerCount;
+                current.Format = replacement.Format;
+                current.SampledFormat = replacement.SampledFormat;
+                current.SampledDimension = replacement.SampledDimension;
+                current.MipTiles = replacement.MipTiles;
+                current.Revision = revision;
+                current._data = null;
+            }
+            update.Accept();
+        }
+        finally { current._disposal.Release(); }
+        AssetUpdate.Notify(current.Changed, current);
     }
 
     public void Dispose()
@@ -182,17 +227,33 @@ public partial class Texture : IDisposable, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-
-        ChunkRequestScheduler? scheduler = Interlocked.Exchange(ref _scheduler, null);
-        BinaryDocument<Texture>? document = Interlocked.Exchange(ref _document, null);
-        ResidentChunkLease[] bootstrap = Interlocked.Exchange(ref _bootstrap, []);
-        DisposeLeases(bootstrap);
-        if (scheduler is not null)
-            await scheduler.DisposeAsync().ConfigureAwait(false);
-        if (document is not null)
-            await document.DisposeAsync().ConfigureAwait(false);
+        await _disposal.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            lock (_contentGate)
+            {
+                Volatile.Write(ref _disposed, 1);
+                _data = null;
+            }
+            for (int index = _retiredContents.Count - 1; index >= 0; index--)
+            {
+                await _retiredContents[index].Content.DisposeAsync().ConfigureAwait(false);
+                _retiredContents.RemoveAt(index);
+            }
+            DisposeLeases(_bootstrap);
+            _bootstrap = [];
+            if (_scheduler is not null)
+            {
+                await _scheduler.DisposeAsync().ConfigureAwait(false);
+                _scheduler = null;
+            }
+            if (_document is not null)
+            {
+                await _document.DisposeAsync().ConfigureAwait(false);
+                _document = null;
+            }
+        }
+        finally { _disposal.Release(); }
     }
 
     private static async ValueTask<ResidentChunkLease[]> AcquireBootstrapAsync(

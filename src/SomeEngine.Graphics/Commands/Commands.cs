@@ -290,8 +290,12 @@ internal abstract class RecordedCommandsLease
 
     private void NotifyDiscarded(ulong sequence)
     {
-        try { Discarded?.Invoke(this, sequence); }
-        catch { }
+        if (Discarded is not { } discarded) return;
+        foreach (Action<RecordedCommandsLease, ulong> observer in discarded.GetInvocationList())
+        {
+            try { observer(this, sequence); }
+            catch { }
+        }
     }
 
     protected abstract void DiscardUnsubmitted(ulong sequence);
@@ -694,17 +698,22 @@ public readonly ref struct RenderingDesc
         DepthStencilAttachmentDesc? depthStencil,
         uint width,
         uint height,
-        RenderingOptions options = RenderingOptions.None)
+        RenderingOptions options = RenderingOptions.None,
+        uint x = 0, uint y = 0)
     {
         Colors = colors;
         DepthStencil = depthStencil;
         Width = width;
         Height = height;
         Options = options;
+        X = x;
+        Y = y;
     }
 
     public ReadOnlySpan<ColorAttachmentDesc> Colors { get; }
     public DepthStencilAttachmentDesc? DepthStencil { get; }
+    public uint X { get; }
+    public uint Y { get; }
     public uint Width { get; }
     public uint Height { get; }
     public RenderingOptions Options { get; }

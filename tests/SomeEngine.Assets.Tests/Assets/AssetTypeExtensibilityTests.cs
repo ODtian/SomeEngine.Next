@@ -431,12 +431,14 @@ public partial class ProbeAsset
     internal static ValueTask ApplyReloadAsync(
         ProbeAsset current,
         ProbeAsset replacement,
+        AssetUpdate update,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         current.AssetGuid = replacement.AssetGuid;
         current.Name = replacement.Name;
         current.Value = replacement.Value;
+        update.Accept();
         return ValueTask.CompletedTask;
     }
 }

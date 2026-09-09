@@ -20,13 +20,18 @@ public sealed class VirtualShadowMap : IDisposable
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private Buffer? _pageTable;
+    private Buffer? _previousPageTable;
+    private BufferBoundaryState[] _previousPageTableEndpoint = [];
+    private bool _previousPageTableInitialized;
+    private bool _pageTableChanged;
+    private bool _frameResourcesAcquired;
     private readonly Buffer _physicalPageOwners;
     private readonly Texture _atlas;
     private VirtualShadowPageCacheResources? _pageCache;
     private VirtualShadowPageCacheFrameResources? _pendingPageCacheResources;
     private BufferBoundaryState[] _pageTableEndpoint = [];
-    private readonly BufferBoundaryState[] _physicalPageOwnersEndpoint;
-    private readonly TextureBoundaryState[] _atlasEndpoint;
+    private BufferBoundaryState[] _physicalPageOwnersEndpoint;
+    private TextureBoundaryState[] _atlasEndpoint;
     private VirtualShadowView[] _views = [];
     private VirtualShadowView[] _committedViews = [];
     private Matrix4x4[] _preparedLightViews = [];
@@ -534,19 +539,18 @@ public sealed class VirtualShadowMap : IDisposable
         _pending = true;
     }
 
-    public VirtualShadowMapFrameResources AcquireFrameResources(out Buffer? retiredPageTable)
+    public VirtualShadowMapFrameResources AcquireFrameResources()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_pending || _pendingPageCacheResources is not { } cache)
             throw new InvalidOperationException("Begin and prepare the virtual-shadow frame first.");
-        if (_pendingViewCount <= 0)
-            throw new InvalidOperationException("Virtual-shadow frame resources require active views.");
 
         ulong requiredSize = checked(
-            (ulong)_pendingViewCount *
-            (Settings.VirtualPagesPerView + Settings.CoarsePagesPerView) *
+            Math.Max(1ul, (ulong)_pendingViewCount *
+            (Settings.VirtualPagesPerView + Settings.CoarsePagesPerView)) *
             VirtualShadowView.PageTableEntrySizeInBytes);
-        retiredPageTable = null;
+        if (_frameResourcesAcquired)
+            throw new InvalidOperationException("Virtual-shadow frame resources were already acquired.");
         if (_pageTable is null || _pageTable.Info.Size != requiredSize)
         {
             Buffer replacement = _backend.CreateBuffer(
@@ -557,7 +561,10 @@ public sealed class VirtualShadowMap : IDisposable
                         BufferUsages.CopySource | BufferUsages.CopyDestination,
                     "Virtual shadow active-view page table"),
                 MemoryType.DeviceLocal);
-            retiredPageTable = _pageTable;
+            _previousPageTable = _pageTable;
+            _previousPageTableEndpoint = _pageTableEndpoint;
+            _previousPageTableInitialized = _pageTableInitialized;
+            _pageTableChanged = true;
             _pageTable = replacement;
             _pageTableEndpoint = [Initial(replacement)];
             _pageTableInitialized = false;
@@ -566,6 +573,7 @@ public sealed class VirtualShadowMap : IDisposable
 
         Buffer pageTable = _pageTable ??
             throw new InvalidOperationException("The virtual-shadow page table was not allocated.");
+        _frameResourcesAcquired = true;
         return new VirtualShadowMapFrameResources(
             new VirtualShadowBufferResource(pageTable, _pageTableEndpoint),
             new VirtualShadowBufferResource(_physicalPageOwners, _physicalPageOwnersEndpoint),
@@ -578,41 +586,37 @@ public sealed class VirtualShadowMap : IDisposable
             !_pageTableInitialized);
     }
 
-    public void Commit(ReadOnlySpan<QueueCompletion> completions)
+    /// <summary>Accepts actual GPU work and returns a replaced page table for retirement.</summary>
+    public Buffer? FinishFrame(RenderGraphFrameResult result, bool contentComplete)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_pending)
-            throw new InvalidOperationException("No virtual-shadow frame is waiting for commit.");
-        QueueCompletion computeCompletion = FindCompletion(completions, QueueType.Compute);
-        QueueCompletion graphicsCompletion = FindCompletion(completions, QueueType.Graphics);
-        _pageCache?.Commit(
-            completions,
-            poolProcessed: _pendingViewCount != 0,
-            metadataInitialized: _pendingCacheReset);
-        Buffer pageTable = _pageTable ??
-            throw new InvalidOperationException("The virtual-shadow page table was not allocated.");
-        _pageTableEndpoint[0] = new BufferBoundaryState(
-            new BufferRange(0, pageTable.Info.Size),
-            PipelineSync.AllShading,
-            ResourceAccess.ShaderResource,
-            ResourceContentState.Defined,
-            graphicsCompletion.Queue,
-            graphicsCompletion);
-        _physicalPageOwnersEndpoint[0] = new BufferBoundaryState(
-            new BufferRange(0, _physicalPageOwners.Info.Size),
-            PipelineSync.ComputeShading,
-            ResourceAccess.UnorderedAccess,
-            ResourceContentState.Defined,
-            computeCompletion.Queue,
-            computeCompletion);
-        _atlasEndpoint[0] = new TextureBoundaryState(
-            new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
-            PipelineSync.AllShading,
-            ResourceAccess.ShaderResource,
-            TextureLayout.ShaderResource,
-            ResourceContentState.Defined,
-            graphicsCompletion.Queue,
-            graphicsCompletion);
+        if (!_pending) throw new InvalidOperationException("No virtual-shadow frame is active.");
+        if (result.SubmittedCompletions.IsEmpty) return Discard();
+        Buffer? retiredPageTable = _pageTableChanged ? _previousPageTable : null;
+        _pageTableChanged = false;
+        _previousPageTable = null;
+        _previousPageTableEndpoint = [];
+        _frameResourcesAcquired = false;
+        _pageCache?.FinishFrame(result);
+        if (_pageTable is { } table)
+        {
+            ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(table);
+            if (!states.IsEmpty) _pageTableEndpoint = states.ToArray();
+        }
+        ReadOnlySpan<BufferBoundaryState> owners = result.GetBufferStates(_physicalPageOwners);
+        if (!owners.IsEmpty) _physicalPageOwnersEndpoint = owners.ToArray();
+        ReadOnlySpan<TextureBoundaryState> atlas = result.GetTextureStates(_atlas);
+        if (!atlas.IsEmpty) _atlasEndpoint = atlas.ToArray();
+        if (!contentComplete)
+        {
+            if (!result.SubmittedCompletions.IsEmpty)
+            {
+                _initialized = false;
+                _pageTableInitialized = false;
+            }
+            _ = Discard();
+            return retiredPageTable;
+        }
         _initialized = true;
         _pageTableInitialized = true;
         _committedCacheGeneration = _pendingCacheGeneration;
@@ -631,10 +635,24 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingCacheGeneration = 0u;
         _pendingPageCacheResources = null;
         _pending = false;
+        return retiredPageTable;
     }
 
-    public void Discard()
+    /// <summary>Cancels unpublished CPU changes and returns an unused new page table for disposal.</summary>
+    public Buffer? Discard()
     {
+        Buffer? discardedPageTable = null;
+        if (_pageTableChanged)
+        {
+            discardedPageTable = _pageTable;
+            _pageTable = _previousPageTable;
+            _pageTableEndpoint = _previousPageTableEndpoint;
+            _pageTableInitialized = _previousPageTableInitialized;
+            _previousPageTable = null;
+            _previousPageTableEndpoint = [];
+            _pageTableChanged = false;
+        }
+        _frameResourcesAcquired = false;
         _pageCache?.Discard();
         ObjectDisposedException.ThrowIf(_disposed, this);
         _pendingCacheReset = false;
@@ -645,6 +663,7 @@ public sealed class VirtualShadowMap : IDisposable
         _pendingCacheGeneration = 0u;
         _pendingPageCacheResources = null;
         _pending = false;
+        return discardedPageTable;
     }
 
     private static BufferBoundaryState Initial(Buffer buffer) => new(
@@ -668,17 +687,6 @@ public sealed class VirtualShadowMap : IDisposable
         texture.InitialAccess,
         texture.InitialLayout,
         ResourceContentState.Undefined);
-
-    private static QueueCompletion FindCompletion(
-        ReadOnlySpan<QueueCompletion> completions,
-        QueueType queueType)
-    {
-        foreach (ref readonly QueueCompletion completion in completions)
-            if (completion.Queue.Type == queueType)
-                return completion;
-        throw new InvalidOperationException(
-            $"Virtual shadows require a {queueType} Queue completion.");
-    }
 
     private static Vector3 NormalizeOrZero(Vector3 value)
         => value.LengthSquared() > 1e-12f ? Vector3.Normalize(value) : Vector3.Zero;
@@ -812,6 +820,8 @@ public sealed class VirtualShadowMap : IDisposable
         _pageCache = null;
         TryDispose(_atlas, ref failures);
         TryDispose(_physicalPageOwners, ref failures);
+        if (_previousPageTable is not null) TryDispose(_previousPageTable, ref failures);
+        _previousPageTable = null;
         if (_pageTable is not null)
             TryDispose(_pageTable, ref failures);
         _pageTable = null;

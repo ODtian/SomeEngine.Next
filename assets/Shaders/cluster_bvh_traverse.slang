@@ -7,5 +7,5 @@ void TraverseHierarchyLevel(
     uint3 groupID : SV_GroupID,
     uint groupThreadIndex : SV_GroupThreadID)
 {
-    ProcessTraversalLevel(groupID.x, groupThreadIndex);
+    ProcessTraversalLevel(groupID.x + groupID.y * 65535u, groupThreadIndex);
 }

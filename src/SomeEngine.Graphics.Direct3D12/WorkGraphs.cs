@@ -41,20 +41,11 @@ internal sealed unsafe partial class D3D12Backend
         D3D12WorkGraphPipeline? result = null;
         try
         {
-            byte[] key = CreateWorkGraphPipelineKey(
-                nativeDevice,
-                global,
-                library,
-                desc);
-            byte[][] replayLibraries = ResolveStateObjectReplayCode(
-                nativeCache,
-                5,
-                key,
-                library);
+            byte[][] libraries = library.Libraries;
             stateObject = CreateNativeWorkGraphStateObject(
                 nativeDevice,
                 global,
-                replayLibraries,
+                libraries,
                 workGraphEntryPoints,
                 desc.NodeMask);
             SetNativeName(stateObject, desc.Label ?? "Work Graph State Object");
@@ -106,7 +97,6 @@ internal sealed unsafe partial class D3D12Backend
             globalToRelease = null;
             retainedProgram = null;
             nativeDevice.RegisterChild(result);
-            StoreStateObjectReplay(nativeCache, 5, key, library);
             return result;
         }
         catch
@@ -211,15 +201,15 @@ internal sealed unsafe partial class D3D12Backend
     private ID3D12StateObject* CreateNativeWorkGraphStateObject(
         D3D12Device nativeDevice,
         D3D12RootSignatureState global,
-        byte[][] replayLibraries,
+        byte[][] libraries,
         ShaderEntryPoint[] entryPoints,
         uint nodeMask)
     {
         using NativeStateObjectArena arena = new();
-        int subobjectCount = checked(replayLibraries.Length + 3);
+        int subobjectCount = checked(libraries.Length + 3);
         StateSubobject* subobjects = arena.Allocate<StateSubobject>(subobjectCount);
-        AddWorkGraphLibraries(arena, replayLibraries, entryPoints, subobjects);
-        int ordinal = replayLibraries.Length;
+        AddWorkGraphLibraries(arena, libraries, entryPoints, subobjects);
+        int ordinal = libraries.Length;
         GlobalRootSignature* globalDescription = arena.Allocate<GlobalRootSignature>();
         globalDescription->PGlobalRootSignature = global.Native;
         subobjects[ordinal++] = new StateSubobject(
@@ -261,16 +251,16 @@ nativeDevice.Native, &native,
 
     private static void AddWorkGraphLibraries(
         NativeStateObjectArena arena,
-        byte[][] replayLibraries,
+        byte[][] libraries,
         ShaderEntryPoint[] entryPoints,
         StateSubobject* subobjects)
     {
-        for (int index = 0; index < replayLibraries.Length; index++)
+        for (int index = 0; index < libraries.Length; index++)
         {
             string name = GetStableEntryPointName(entryPoints[index]);
             ExportDesc* export = arena.Allocate<ExportDesc>();
             *export = new ExportDesc(arena.String(name), null, ExportFlags.None);
-            byte[] code = replayLibraries[index];
+            byte[] code = libraries[index];
             DxilLibraryDesc* libraryDescription = arena.Allocate<DxilLibraryDesc>();
             *libraryDescription = new DxilLibraryDesc(
                 new ShaderBytecode(arena.Bytes(code), (nuint)code.Length),
@@ -922,38 +912,6 @@ stateObject, &graphPropertiesIid,
         ProgramIdentifier copy = identifier;
         return new ReadOnlySpan<byte>(&copy, sizeof(ProgramIdentifier))
             .IndexOfAnyExcept((byte)0) < 0;
-    }
-
-    private static byte[] CreateWorkGraphPipelineKey(
-        D3D12Device device,
-        D3D12RootSignatureState global,
-        CompiledProgramLibrary library,
-        in WorkGraphPipelineDesc desc)
-    {
-        uint nodeMask = desc.NodeMask;
-        return CreateCanonicalPipelineKey(
-            device,
-            5,
-            writer =>
-            {
-                writer.Write(1u);
-                writer.Write(true);
-                WriteCompiledProgramIdentity(writer, library);
-            },
-            writer =>
-            {
-                writer.Write(1u);
-                WriteCanonicalBytes(writer, global.Serialized);
-                writer.Write(0u);
-            },
-            writer =>
-            {
-                // Node identities and grid metadata are already part of the compiled-library
-                // identity. D3D12 is the authority for the materialized graph topology.
-                writer.Write(nodeMask);
-                WriteCanonicalString(writer, WorkGraphProgramName);
-                writer.Write((byte)WorkGraphFlags.IncludeAllAvailableNodes);
-            });
     }
 
     private readonly record struct WorkGraphEntryPointState(

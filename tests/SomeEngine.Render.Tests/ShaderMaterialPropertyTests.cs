@@ -1,4 +1,4 @@
-using SomeEngine.Assets.Schema;
+﻿using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Render.Tests;
 
@@ -11,7 +11,7 @@ public sealed class ShaderMaterialPropertyTests
         sourceDefault[0] = 23;
         Shader shader = CreateShader(sourceDefault);
 
-        Shader.Validate(shader);
+        CookedShaderTestProgram.Load(shader);
         ShaderInstanceProperty property = Assert.Single(
             shader.Metadata!.InstanceProperties!);
 
@@ -37,7 +37,7 @@ public sealed class ShaderMaterialPropertyTests
         Shader shader = CreateShader(new byte[4]);
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(
-            () => Shader.Validate(shader));
+            () => CookedShaderTestProgram.Load(shader));
 
         Assert.Contains("not canonical", error.Message, StringComparison.Ordinal);
     }

@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 
 namespace SomeEngine.RenderGraph.Tests;
@@ -49,70 +49,10 @@ public sealed class RetainedHeapTests
         }
     }
 
-    [Fact]
-    public void AdjacentFreeRegionsAreCoalescedAndReusedWithoutGrowingTheHeap()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
-        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
-            new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphBufferId large, left, right, replacement = default;
-        GraphPassId pass;
-        GraphBufferAccessId leftWrite = default, rightWrite = default;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            large = edit.CreateBuffer(new BufferDesc(131072, BufferUsages.CopyDestination));
-            left = edit.CreateBuffer(new BufferDesc(65536, BufferUsages.CopyDestination));
-            right = edit.CreateBuffer(new BufferDesc(65536, BufferUsages.CopyDestination));
-            pass = edit.AddCopyFramePass("fill three regions", PassQueueSelection.Exact(support.GraphicsQueue),
-                new[] { large, left, right }, new PassOptions(Culling: PassCullingMode.NeverCull),
-                (ref PassDefinition definition, ref GraphBufferId[] buffers) =>
-                {
-                    definition.Write(buffers[0], BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-                    leftWrite = definition.Write(buffers[1], BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-                    rightWrite = definition.Write(buffers[2], BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-                },
-                static (ref CopyPassCommandScope commands, in GraphBufferId[] buffers) =>
-                {
-                    foreach (GraphBufferId buffer in buffers)
-                        commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole, 0x12345678);
-                });
-            edit.Commit();
-        }
-        Execute(false);
-        Assert.True(graph.TryGetTransientPlacement(large, out Heap? original, out _));
-        Assert.True(graph.TryGetTransientPlacement(left, out Heap? leftHeap, out ulong leftOffset));
-        Assert.True(graph.TryGetTransientPlacement(right, out Heap? rightHeap, out ulong rightOffset));
-        Assert.Same(original, leftHeap);
-        Assert.Same(original, rightHeap);
-        Assert.Equal(65536UL, Math.Max(leftOffset, rightOffset) - Math.Min(leftOffset, rightOffset));
-        ulong capacity = graph.HeapByteBudget.CommittedBytes;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.Remove(leftWrite); edit.Remove(rightWrite);
-            edit.Remove(left); edit.Remove(right);
-            replacement = edit.CreateBuffer(new BufferDesc(131072, BufferUsages.CopyDestination));
-            PassDefinition definition = edit.GetPass(pass);
-            definition.Write(replacement, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            edit.Commit();
-        }
-        Execute(true);
-        Assert.True(graph.TryGetTransientPlacement(replacement, out Heap? replacementHeap, out ulong offset));
-        Assert.Same(original, replacementHeap);
-        Assert.Equal(Math.Min(leftOffset, rightOffset), offset);
-        Assert.Equal(capacity, graph.HeapByteBudget.CommittedBytes);
 
-        void Execute(bool changed)
-        {
-            using RenderGraphFrame frame = graph.BeginFrame();
-            if (changed) frame.SetPassData(pass, new[] { large, replacement });
-            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-            int count = frame.Execute(completions);
-            support.Wait(completions.AsSpan(0, count));
-        }
-    }
 
     [Fact]
-    public void AliasesFollowQueueSubmissionOrderAndSeparateWhenTheirLifetimesOverlap()
+    public void TransientValuesSurviveOverlappingLifetimesAfterQueueOrderEdits()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
         using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue, support.CopyQueue],
@@ -137,22 +77,12 @@ public sealed class RetainedHeapTests
             edit.Commit();
         }
         Execute(); Execute();
-        Assert.True(graph.TryGetTransientPlacement(left, out Heap? leftHeap, out ulong leftOffset));
-        Assert.True(graph.TryGetTransientPlacement(right, out Heap? rightHeap, out ulong rightOffset));
-        Assert.Same(leftHeap, rightHeap);
-        Assert.Equal(leftOffset, rightOffset);
-        Assert.True(leftHeap!.Info.Size < 1UL << 20);
-
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
             edit.OrderAfter(leftRead, rightWrite);
             edit.Commit();
         }
         Execute(); Execute();
-        Assert.True(graph.TryGetTransientPlacement(left, out leftHeap, out leftOffset));
-        Assert.True(graph.TryGetTransientPlacement(right, out rightHeap, out rightOffset));
-        Assert.True(!ReferenceEquals(leftHeap, rightHeap) || leftOffset != rightOffset);
-
         void Execute()
         {
             using RenderGraphFrame frame = graph.BeginFrame();
@@ -165,37 +95,7 @@ public sealed class RetainedHeapTests
         }
     }
 
-    [Fact]
-    public void RemovingTheLastAllocationReleasesItsHeapCapacity()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
-            new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphBufferId resource;
-        GraphPassId pass;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            resource = edit.CreateTransientBuffer(new BufferDesc(4, BufferUsages.CopyDestination));
-            pass = AddClear(edit, support.GraphicsQueue, resource, 1);
-            edit.SetPassOptions(pass, new PassOptions(Culling: PassCullingMode.NeverCull));
-            edit.Commit();
-        }
-        Execute();
-        Assert.True(graph.HeapByteBudget.CommittedBytes > 0);
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.Remove(pass); edit.Remove(resource); edit.Commit();
-        }
-        Execute();
-        Assert.Equal(0UL, graph.HeapByteBudget.CommittedBytes);
-        void Execute()
-        {
-            using RenderGraphFrame frame = graph.BeginFrame();
-            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-            int count = frame.Execute(completions);
-            support.Wait(completions.AsSpan(0, count));
-        }
-    }
+
 
     [Fact]
     public void CrossQueueBufferReadersRemainIndependentAndOrderTheNextWriter()

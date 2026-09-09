@@ -12,6 +12,7 @@ namespace SomeEngine.Assets.Pipeline;
 /// </summary>
 internal sealed class MeshPayloadSource : IDisposable
 {
+    private readonly object _gate = new();
     private SharedState? _state;
 
     internal MeshPayloadSource(
@@ -38,16 +39,12 @@ internal sealed class MeshPayloadSource : IDisposable
 
     internal MeshPayloadSource Retain()
     {
-        SharedState state = State;
-        state.AddReference();
-        try
+        lock (_gate)
         {
-            return new MeshPayloadSource(state);
-        }
-        catch
-        {
-            state.Release();
-            throw;
+            SharedState state = State;
+            state.AddReference();
+            try { return new MeshPayloadSource(state); }
+            catch { state.Release(); throw; }
         }
     }
 
@@ -110,7 +107,13 @@ internal sealed class MeshPayloadSource : IDisposable
     }
 
     public void Dispose()
-        => Interlocked.Exchange(ref _state, null)?.Release();
+    {
+        lock (_gate)
+        {
+            _state?.Release();
+            _state = null;
+        }
+    }
 
     private SharedState State
         => Volatile.Read(ref _state)
@@ -135,7 +138,7 @@ internal sealed class MeshPayloadSource : IDisposable
             Payload = payload;
             BvhOffset = bvhOffset;
             BvhLength = bvhLength;
-            _bvhSha256 = bvhSha256;
+            _bvhSha256 = bvhSha256.ToArray();
             Pages = new AuthenticatedPageList(pageDigests);
         }
 
@@ -165,53 +168,44 @@ internal sealed class MeshPayloadSource : IDisposable
 
         internal void Release()
         {
-            bool dispose;
             lock (_gate)
             {
-                if (_references == 0)
+                if (_references == 0) return;
+                if (_references > 1)
+                {
+                    _references--;
                     return;
-                _references--;
-                dispose = _references == 0;
+                }
+                // Keep the final reference until both underlying disposals finish. A caller
+                // whose cleanup failed can retry without losing the only source record.
+                Payload.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                _document.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                _bvhSha256 = default;
+                _references = 0;
             }
-
-            if (!dispose)
-                return;
-
-            _bvhSha256 = default;
-            Payload.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            _document.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
 
-    private sealed class AuthenticatedPageList(IList<MeshPayloadPageDigest> digests)
-        : IReadOnlyList<MeshPayloadPage>
+    private sealed class AuthenticatedPageList : IReadOnlyList<MeshPayloadPage>
     {
-        public int Count => digests.Count;
-
-        public MeshPayloadPage this[int index]
+        private readonly MeshPayloadPage[] _pages;
+        internal AuthenticatedPageList(IList<MeshPayloadPageDigest> digests)
         {
-            get
+            _pages = new MeshPayloadPage[digests.Count];
+            for (int index = 0; index < _pages.Length; index++)
             {
                 MeshPayloadPageDigest digest = digests[index]
                     ?? throw new InvalidDataException($"Mesh page digest {index} is null.");
                 ReadOnlyMemory<byte> sha256 = digest.Sha256
                     ?? throw new InvalidDataException($"Mesh page digest {index} has no SHA-256 digest.");
-                return new MeshPayloadPage(
-                    checked((long)digest.Offset),
-                    checked((int)digest.Length),
-                    digest.ClusterCount,
-                    digest.VertexEncodingHash,
-                    sha256);
+                _pages[index] = new MeshPayloadPage(
+                    checked((long)digest.Offset), checked((int)digest.Length),
+                    digest.ClusterCount, digest.VertexEncodingHash, sha256.ToArray());
             }
         }
-
-        public IEnumerator<MeshPayloadPage> GetEnumerator()
-        {
-            for (int index = 0; index < Count; index++)
-                yield return this[index];
-        }
-
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
-            => GetEnumerator();
+        public int Count => _pages.Length;
+        public MeshPayloadPage this[int index] => _pages[index];
+        public IEnumerator<MeshPayloadPage> GetEnumerator() => ((IEnumerable<MeshPayloadPage>)_pages).GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

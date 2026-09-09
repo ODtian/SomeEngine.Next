@@ -1138,8 +1138,12 @@ public sealed partial class ValidationLayer
     {
         switch (operation)
         {
+            case QueryValidationEventType.Reset:
+                if (phase == QueryValidationPhase.Active)
+                    Reject("Queries", "An active query cannot be reset.", slot.Pool.Label);
+                return QueryValidationPhase.Reset;
             case QueryValidationEventType.Begin:
-                if (phase is QueryValidationPhase.Active or QueryValidationPhase.Ready)
+                if (phase != QueryValidationPhase.Reset)
                     Reject("Queries", "Query index was reused before its prior result was resolved.", slot.Pool.Label);
                 return QueryValidationPhase.Active;
             case QueryValidationEventType.End:
@@ -1147,7 +1151,7 @@ public sealed partial class ValidationLayer
                     Reject("Queries", "EndQuery has no matching BeginQuery in Queue execution order.", slot.Pool.Label);
                 return QueryValidationPhase.Ready;
             case QueryValidationEventType.Write:
-                if (phase is QueryValidationPhase.Active or QueryValidationPhase.Ready)
+                if (phase != QueryValidationPhase.Reset)
                     Reject("Queries", "Timestamp query index was reused before resolve.", slot.Pool.Label);
                 return QueryValidationPhase.Ready;
             case QueryValidationEventType.Resolve:

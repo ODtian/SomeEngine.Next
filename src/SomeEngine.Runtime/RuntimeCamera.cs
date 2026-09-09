@@ -67,7 +67,7 @@ internal sealed class RuntimeCamera
             Rotate(input.MouseDelta * new Vector2(0.0035f, -0.0035f));
     }
 
-    private Vector3 Right => Vector3.Normalize(Vector3.Cross(_worldUp, _forward));
+    private Vector3 Right => Vector3.Normalize(Vector3.Cross(_forward, _worldUp));
 
     private void Rotate(Vector2 radians)
     {

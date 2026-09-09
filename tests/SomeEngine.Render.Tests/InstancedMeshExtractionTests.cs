@@ -12,7 +12,7 @@ using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Tests;
 
-public sealed class InstancedMeshExtractionTests
+public sealed class InstancedMeshExtractionTests(RenderTestDevice graphics) : IClassFixture<RenderTestDevice>
 {
     [Fact]
     public void ExtractionPublishesStableResourceIdentityAndTransformWithoutMeshPrototype()
@@ -33,7 +33,7 @@ public sealed class InstancedMeshExtractionTests
         });
         mainWorld.Add(source, new InstancedMesh(firstHandle));
 
-        ExtractAndApply(extraction, mainWorld);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
         Entity mirror = FindMirror(renderWorld, source);
         Assert.False(renderWorld.Has<RenderMesh>(mirror));
         Assert.False(renderWorld.Has<RenderInstance>(mirror));
@@ -45,7 +45,7 @@ public sealed class InstancedMeshExtractionTests
         {
             Qvvs = new TransformQvvs(new Vector3(4, 5, 6), Quaternion.Identity),
         });
-        ExtractAndApply(extraction, mainWorld);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
 
         Assert.Equal(secondHandle, renderWorld.Read<RenderInstancedMesh>(mirror).Resource);
         Assert.Equal(new Vector3(4, 5, 6), renderWorld.Read<RenderTransform>(mirror).Position);
@@ -64,29 +64,26 @@ public sealed class InstancedMeshExtractionTests
         mainWorld.Add(source, new WorldTransform { Qvvs = TransformQvvs.Identity });
         mainWorld.Add(source, new InstancedMesh(handle));
 
-        ExtractAndApply(extraction, mainWorld);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
         Entity mirror = FindMirror(renderWorld, source);
         mainWorld.Remove<InstancedMesh>(source);
-        ExtractAndApply(extraction, mainWorld);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
 
         Assert.False(renderWorld.IsAlive(mirror));
     }
 
-    private static void ExtractAndApply(RenderExtractionSystems extraction, World mainWorld)
+    private void ExtractAndApply(RenderExtractionSystems extraction, World mainWorld, RenderWorld renderWorld)
     {
         extraction.Extract(mainWorld);
-        Assert.True(extraction.ApplyPendingCandidate());
+        Assert.True(graphics.Apply(extraction, renderWorld));
     }
 
-    private static RenderMeshInstanceSet CreateSet(int count) => new(
-        TestAssets.Mesh(101),
-        [TestAssets.Material(102)],
-        count,
-        static (_, current, previous) =>
-        {
-            current.Clear();
-            previous.Clear();
-        });
+    private static RenderMeshInstanceSet CreateSet(int count)
+    {
+        var set = RenderMeshInstanceSet.CreateBuffered(TestAssets.Mesh(101), [TestAssets.Material(102)], count);
+        set.Buffer!.SetCount(count);
+        return set;
+    }
 
     private static Entity FindMirror(RenderWorld world, Entity source)
     {

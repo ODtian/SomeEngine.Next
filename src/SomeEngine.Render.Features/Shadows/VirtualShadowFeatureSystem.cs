@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
+using SomeEngine.ECS.Entities;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
@@ -39,7 +40,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
             throw new InvalidOperationException("Virtual shadows require exactly one receiver RenderView.");
 
         var graph = context.Graph;
-        _feature.StageFrame(ref graph, _lights.RequireCurrent(), receiver);
+        _feature.StageFrame(ref graph, _lights.RequireCurrent(), receiver, collector.Entity);
     }
 
     public void OnDestroy(ref RenderFrameSystemContext context)
@@ -52,6 +53,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
     private struct ReceiverCollector
     {
         internal RenderView View;
+        internal Entity Entity;
         internal int Count;
 
         internal void Collect(QueryCursor cursor)
@@ -61,6 +63,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
                 if (++Count > 1)
                     return;
                 View = row.Read<RenderView>();
+                Entity = row.Entity;
             }
         }
     }

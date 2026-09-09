@@ -71,6 +71,17 @@ internal sealed unsafe partial class D3D12Backend
         return result;
     }
 
+    public void ResetQueries(CommandContext context, QueryPool pool, uint firstQuery, uint queryCount)
+    {
+        D3D12CommandContext command = RequireCommandContext(context, nameof(context));
+        D3D12QueryPool native = RequireQueryPool(pool);
+        native.RequireQueue(command);
+        native.CheckIndex(firstQuery);
+        if (queryCount == 0 || queryCount > native.Description.Count - firstQuery)
+            throw new ArgumentOutOfRangeException(nameof(queryCount));
+        // D3D12 initializes a query on BeginQuery/EndQuery; no native reset is needed.
+    }
+
     public void BeginQuery(CommandContext context, QueryPool pool, uint queryIndex)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);

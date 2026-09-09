@@ -121,8 +121,21 @@ StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
     float uvStep = asfloat(ctx.pageHeap.Load(ctx.vertexBlobAddress + 48u));
 
     StaticVertexAttributes attrs;
-    attrs.worldNormal = normalize(RotateByTransform(normal, ctx.transform));
-    attrs.worldTangent = float4(normalize(RotateByTransform(tangent.xyz, ctx.transform)), tangent.w);
+    float3 scale = ctx.transform.Scale * ctx.transform.Stretch;
+    float3 inverseScale = float3(
+        scale.x == 0.0 ? 0.0 : 1.0 / scale.x,
+        scale.y == 0.0 ? 0.0 : 1.0 / scale.y,
+        scale.z == 0.0 ? 0.0 : 1.0 / scale.z);
+    float3 transformedNormal = RotateByTransform(normal * inverseScale, ctx.transform);
+    attrs.worldNormal = dot(transformedNormal, transformedNormal) > 0.0
+        ? normalize(transformedNormal) : normalize(RotateByTransform(normal, ctx.transform));
+    float3 transformedTangent = RotateByTransform(tangent.xyz * scale, ctx.transform);
+    transformedTangent -= attrs.worldNormal * dot(attrs.worldNormal, transformedTangent);
+    float handedness = scale.x * scale.y * scale.z < 0.0 ? -tangent.w : tangent.w;
+    attrs.worldTangent = float4(
+        dot(transformedTangent, transformedTangent) > 0.0
+            ? normalize(transformedTangent) : normalize(RotateByTransform(tangent.xyz, ctx.transform)),
+        handedness);
     attrs.uv0 = uvOrigin + float2(u, v) * uvStep;
     return attrs;
 }

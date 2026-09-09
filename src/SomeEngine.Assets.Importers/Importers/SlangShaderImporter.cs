@@ -134,7 +134,7 @@ public static partial class SlangShaderImporter
             existingAsset,
             profile,
             source,
-            writeCache);
+            writeCache && source is null);
 
         string importSource = context.Source ?? File.ReadAllText(context.FilePath);
         using var lifetime = new SlangImportLifetime(trackObserver);
@@ -175,7 +175,7 @@ public static partial class SlangShaderImporter
             existingAsset,
             profile,
             source,
-            writeCache);
+            writeCache && source is null);
     }
 
     private static ShaderImportState CreateImportState(
@@ -203,7 +203,10 @@ public static partial class SlangShaderImporter
         string fingerprint = SlangDeps.Fingerprint(
             dependencies,
             ImporterVersion,
-            context.Profile.FingerprintPart);
+            context.Source is null
+                ? context.Profile.FingerprintPart
+                : context.Profile.FingerprintPart + ":source:" +
+                    Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))));
         ShaderMetadata metadata = CreateMetadata();
         Schema.Shader asset = CreateShaderAsset(context, name, fingerprint, dependencies, metadata);
         return new ShaderImportState(

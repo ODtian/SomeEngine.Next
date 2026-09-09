@@ -1,4 +1,4 @@
-using SlangShaderSharp;
+﻿using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
 
@@ -22,50 +22,46 @@ internal sealed unsafe partial class VulkanBackend
             reflection,
             entries.ToArray(),
             desc.StaticSamplers);
-        var shaders = new List<MeshShaderStage>
-        {
-            new(CompileSpirv(
-                desc.Program,
-                reflection,
-                layout,
-                desc.Mesh,
-                SlangStage.Mesh,
-                "mesh"), ShaderStageFlags.MeshBitExt, desc.Mesh),
-        };
-        if (desc.Amplification != ShaderEntryPoint.Null)
-        {
-            shaders.Insert(0, new MeshShaderStage(
-                CompileSpirv(
-                    desc.Program,
-                    reflection,
-                    layout,
-                    desc.Amplification,
-                    SlangStage.Amplification,
-                    "task"),
-                ShaderStageFlags.TaskBitExt,
-                desc.Amplification));
-        }
-        if (desc.Pixel != ShaderEntryPoint.Null)
-        {
-            shaders.Add(new MeshShaderStage(
-                CompileSpirv(
-                    desc.Program,
-                    reflection,
-                    layout,
-                    desc.Pixel,
-                    SlangStage.Fragment,
-                    "fragment"),
-                ShaderStageFlags.FragmentBit,
-                desc.Pixel));
-        }
-        layout.ActivateEntryBindings(
-            shaders.Select(static value => new VulkanSpirvEntryBindings(
-                value.Entry,
-                value.Shader.ActiveBindings)).ToArray());
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
         try
         {
+            var shaders = new List<MeshShaderStage>
+            {
+                new(CompileSpirv(
+                    desc.Program,
+                    reflection,
+                    layout,
+                    desc.Mesh,
+                    SlangStage.Mesh,
+                    "mesh"), ShaderStageFlags.MeshBitExt, desc.Mesh),
+            };
+            if (desc.Amplification != ShaderEntryPoint.Null)
+            {
+                shaders.Insert(0, new MeshShaderStage(
+                    CompileSpirv(
+                        desc.Program,
+                        reflection,
+                        layout,
+                        desc.Amplification,
+                        SlangStage.Amplification,
+                        "task"),
+                    ShaderStageFlags.TaskBitExt,
+                    desc.Amplification));
+            }
+            if (desc.Pixel != ShaderEntryPoint.Null)
+            {
+                shaders.Add(new MeshShaderStage(
+                    CompileSpirv(
+                        desc.Program,
+                        reflection,
+                        layout,
+                        desc.Pixel,
+                        SlangStage.Fragment,
+                        "fragment"),
+                    ShaderStageFlags.FragmentBit,
+                    desc.Pixel));
+            }
             if (nativeCache is null)
                 native = CreateMeshPipelineNative(nativeDevice, layout, shaders, desc, default);
             else

@@ -31,19 +31,19 @@ internal sealed partial class ClusterMeshes
     }
 
     internal async ValueTask<ClusterMeshRegistration> AddMeshAsync(
-        Mesh mesh,
+        MeshData mesh,
         CancellationToken cancellationToken = default)
         => (await RegisterMeshAsync(mesh, cancellationToken).ConfigureAwait(false)).Registration;
 
     internal async ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        Mesh mesh,
+        MeshData mesh,
         CancellationToken cancellationToken = default)
         => await RegisterMeshCoreAsync(
             mesh,
             cancellationToken).ConfigureAwait(false);
 
     private async ValueTask<ClusterMeshRegistrationResult> RegisterMeshCoreAsync(
-        Mesh mesh,
+        MeshData mesh,
         CancellationToken cancellationToken)
     {
         bool operationEntered = false;
@@ -83,8 +83,7 @@ internal sealed partial class ClusterMeshes
                 bool pagesRegistered = _pages.TryRegistration(
                     mesh,
                     out uint existingFirstPage,
-                    out uint existingPageCount,
-                    out _);
+                    out uint existingPageCount);
                 bool rootRegistered = _bvh.TryRegisteredRoot(mesh, out uint existingRoot);
                 if (pagesRegistered != rootRegistered)
                 {
@@ -227,14 +226,13 @@ internal sealed partial class ClusterMeshes
         return idle;
     }
 
-    internal bool IsMeshRegistered(Mesh mesh)
+    internal bool IsMeshRegistered(MeshData mesh)
     {
         lock (_gate)
         {
             ThrowIfDisposed();
             bool pagesRegistered = _pages.TryRegistration(
                 mesh,
-                out _,
                 out _,
                 out _);
             bool rootRegistered = _bvh.IsRegistered(mesh);

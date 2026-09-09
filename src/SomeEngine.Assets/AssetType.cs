@@ -60,7 +60,7 @@ public sealed class AssetTypeDescriptor<T>
         Func<T, string, IReadOnlyList<AssetGuid>> getDependencies,
         Func<T, BinaryDocumentWriter> createWriter,
         Func<AssetLoadContext, CancellationToken, ValueTask<T>> load,
-        Func<T, T, CancellationToken, ValueTask>? applyReload)
+        Func<T, T, AssetUpdate, CancellationToken, ValueTask>? applyReload)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetType);
         ArgumentNullException.ThrowIfNull(getAssetGuid);
@@ -91,7 +91,7 @@ public sealed class AssetTypeDescriptor<T>
     public Func<T, string, IReadOnlyList<AssetGuid>> GetDependencies { get; }
     public Func<T, BinaryDocumentWriter> CreateWriter { get; }
     public Func<AssetLoadContext, CancellationToken, ValueTask<T>> Load { get; }
-    public Func<T, T, CancellationToken, ValueTask>? ApplyReload { get; }
+    public Func<T, T, AssetUpdate, CancellationToken, ValueTask>? ApplyReload { get; }
 
     internal bool MatchesPath(string path)
         => PathSuffix.Length != 0

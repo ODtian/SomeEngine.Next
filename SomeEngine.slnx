@@ -54,4 +54,5 @@
   <Project Path="samples\SomeEngine.RenderGraph.Sample\SomeEngine.RenderGraph.Sample.csproj" />
   <Project Path="benchmarks\SomeEngine.Graphics.Benchmarks\SomeEngine.Graphics.Benchmarks.csproj" />
   <Project Path="benchmarks\SomeEngine.ECS.Benchmarks\SomeEngine.ECS.Benchmarks.csproj" />
+  <Project Path="src\SomeEngine.Graphics.Direct3D12.Validation\SomeEngine.Graphics.Direct3D12.Validation.csproj" />
 </Solution>

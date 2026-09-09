@@ -16,11 +16,11 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
     private readonly Buffer _pageMetadata;
     private readonly Buffer _evictionPages;
     private readonly Buffer _evictionBucketCounts;
-    private readonly BufferBoundaryState[] _freePagesEndpoint;
-    private readonly BufferBoundaryState[] _freePageCountEndpoint;
-    private readonly BufferBoundaryState[] _pageMetadataEndpoint;
-    private readonly BufferBoundaryState[] _evictionPagesEndpoint;
-    private readonly BufferBoundaryState[] _evictionBucketCountsEndpoint;
+    private BufferBoundaryState[] _freePagesEndpoint;
+    private BufferBoundaryState[] _freePageCountEndpoint;
+    private BufferBoundaryState[] _pageMetadataEndpoint;
+    private BufferBoundaryState[] _evictionPagesEndpoint;
+    private BufferBoundaryState[] _evictionBucketCountsEndpoint;
     private bool _inFlight;
     private bool _disposed;
 
@@ -93,28 +93,21 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
             new VirtualShadowBufferResource(_evictionBucketCounts, _evictionBucketCountsEndpoint));
     }
 
-    internal void Commit(
-        ReadOnlySpan<QueueCompletion> completions,
-        bool poolProcessed,
-        bool metadataInitialized)
+    internal void FinishFrame(RenderGraphFrameResult result)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inFlight)
-            throw new InvalidOperationException("No virtual-shadow page-cache frame is active.");
-        QueueCompletion computeCompletion = FindCompletion(completions, QueueType.Compute);
-        if (poolProcessed)
-        {
-            SetEndpoint(_freePagesEndpoint, _freePages, computeCompletion);
-            SetEndpoint(_freePageCountEndpoint, _freePageCount, computeCompletion);
-            SetEndpoint(_evictionPagesEndpoint, _evictionPages, computeCompletion);
-            SetEndpoint(
-                _evictionBucketCountsEndpoint,
-                _evictionBucketCounts,
-                computeCompletion);
-        }
-        if (poolProcessed || metadataInitialized)
-            SetEndpoint(_pageMetadataEndpoint, _pageMetadata, computeCompletion);
+        Store(_freePages, ref _freePagesEndpoint, result);
+        Store(_freePageCount, ref _freePageCountEndpoint, result);
+        Store(_pageMetadata, ref _pageMetadataEndpoint, result);
+        Store(_evictionPages, ref _evictionPagesEndpoint, result);
+        Store(_evictionBucketCounts, ref _evictionBucketCountsEndpoint, result);
         _inFlight = false;
+    }
+
+    private static void Store(Buffer buffer, ref BufferBoundaryState[] states, RenderGraphFrameResult result)
+    {
+        ReadOnlySpan<BufferBoundaryState> current = result.GetBufferStates(buffer);
+        if (!current.IsEmpty) states = current.ToArray();
     }
 
     internal void Discard()
@@ -154,28 +147,6 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
         buffer.InitialSync,
         buffer.InitialAccess,
         ResourceContentState.Undefined);
-
-    private static void SetEndpoint(
-        BufferBoundaryState[] endpoint,
-        Buffer buffer,
-        QueueCompletion completion)
-        => endpoint[0] = new BufferBoundaryState(
-            new BufferRange(0, buffer.Info.Size),
-            PipelineSync.ComputeShading,
-            ResourceAccess.UnorderedAccess,
-            ResourceContentState.Defined,
-            completion.Queue,
-            completion);
-
-    private static QueueCompletion FindCompletion(
-        ReadOnlySpan<QueueCompletion> completions,
-        QueueType type)
-    {
-        foreach (ref readonly QueueCompletion completion in completions)
-            if (completion.Queue.Type == type)
-                return completion;
-        throw new InvalidOperationException($"Virtual shadow page cache requires a {type} queue completion.");
-    }
 
     private static void Dispose(IDisposable value, ref List<Exception>? failures)
     {

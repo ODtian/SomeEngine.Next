@@ -506,7 +506,5 @@ internal readonly record struct PassRenderingRegion(
     uint X,
     uint Y,
     uint Width,
-    uint Height,
-    uint FirstArrayLayer,
-    uint ArrayLayerCount);
+    uint Height);
 

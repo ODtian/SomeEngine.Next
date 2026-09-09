@@ -153,13 +153,13 @@ public sealed class ScalarLayout
     internal void Write(string name, int value, Span<byte> payload)
     {
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
-            WriteIntegerField(fieldBytes, field, unchecked((uint)value));
+            WriteIntegerField(fieldBytes, field, value);
     }
 
     internal void Write(string name, bool value, Span<byte> payload)
     {
         if (TryField(name, payload, out ScalarFieldLayout field, out Span<byte> fieldBytes))
-            WriteIntegerField(fieldBytes, field, value ? 1u : 0u);
+            WriteIntegerField(fieldBytes, field, value ? 1 : 0);
     }
 
     internal void Write(string name, Vector2 value, Span<byte> payload)
@@ -180,10 +180,10 @@ public sealed class ScalarLayout
             WriteFloatField(fieldBytes, field.ComponentCount, value);
     }
 
-    internal ScalarMaterialLayout Resolve(Material material)
+    internal ScalarMaterialLayout Resolve(MaterialData material)
     {
         ArgumentNullException.ThrowIfNull(material);
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Slots;
+        IReadOnlyList<MaterialSlotDefinition> definitions = material.Properties;
         var bindings = new List<ScalarMaterialBinding>(_fields.Count);
         for (int fieldIndex = 0; fieldIndex < _fields.Count; fieldIndex++)
         {
@@ -207,7 +207,7 @@ public sealed class ScalarLayout
         return new ScalarMaterialLayout(this, [.. bindings]);
     }
 
-    private byte[] Encode(Material material, ReadOnlySpan<ScalarMaterialBinding> bindings)
+    private byte[] Encode(MaterialData material, ReadOnlySpan<ScalarMaterialBinding> bindings)
     {
         var result = new byte[ByteSize];
         WriteHeader(result);
@@ -216,7 +216,7 @@ public sealed class ScalarLayout
         {
             ScalarFieldLayout field = binding.Field;
             Span<byte> fieldBytes = payload.Slice((int)field.Offset, (int)field.Size);
-            object? value = material.GetSlotValue(binding.MaterialSlot);
+            object? value = material.GetValue(binding.MaterialSlot);
             switch (value)
             {
                 case null:
@@ -225,10 +225,10 @@ public sealed class ScalarLayout
                     WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(scalar));
                     break;
                 case int scalar:
-                    WriteIntegerField(fieldBytes, field, unchecked((uint)scalar));
+                    WriteIntegerField(fieldBytes, field, scalar);
                     break;
                 case bool scalar:
-                    WriteIntegerField(fieldBytes, field, scalar ? 1u : 0u);
+                    WriteIntegerField(fieldBytes, field, scalar ? 1 : 0);
                     break;
                 case Vector2 vector:
                     WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(vector, 0f, 0f));
@@ -262,7 +262,7 @@ public sealed class ScalarLayout
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
-        internal byte[] Encode(Material material) => _layout.Encode(material, _bindings);
+        internal byte[] Encode(MaterialData material) => _layout.Encode(material, _bindings);
     }
 
     internal readonly record struct ScalarMaterialBinding(
@@ -290,7 +290,7 @@ public sealed class ScalarLayout
         return false;
     }
 
-    private static void WriteIntegerField(Span<byte> fieldBytes, ScalarFieldLayout field, uint raw)
+    private static void WriteIntegerField(Span<byte> fieldBytes, ScalarFieldLayout field, int raw)
     {
         switch (field.ScalarType)
         {
@@ -298,7 +298,7 @@ public sealed class ScalarLayout
             case ScalarInt32:
             case ScalarUInt32:
                 if (fieldBytes.Length >= sizeof(uint))
-                    BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, raw);
+                    BinaryPrimitives.WriteUInt32LittleEndian(fieldBytes, unchecked((uint)raw));
                 break;
             case ScalarFloat32:
                 WriteFloatField(fieldBytes, field.ComponentCount, new Vector4(raw, 0, 0, 0));

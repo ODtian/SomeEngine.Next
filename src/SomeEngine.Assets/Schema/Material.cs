@@ -21,6 +21,14 @@ public abstract partial class Material : IBinaryContract<Material>
     private static readonly object TypeGate = new();
     private static readonly Dictionary<Guid, MaterialTypeRegistration> TypesById = [];
     private static readonly Dictionary<Type, MaterialTypeRegistration> TypesByClr = [];
+    private static long _nextMaterialId;
+
+    private readonly long _materialId = Interlocked.Increment(ref _nextMaterialId);
+    private readonly object _valuesGate = new();
+    private MaterialData? _capturedData;
+    private ulong _capturedSourceRevision;
+    private string? _name;
+    private string? _shaderGuid;
 
     private MaterialSlotDefinition[]? _slotDefinitions;
     private object?[]? _slotValues;
@@ -29,9 +37,36 @@ public abstract partial class Material : IBinaryContract<Material>
 
     public string? AssetGuid { get; set; }
 
-    public string? Name { get; set; }
+    public string? Name
+    {
+        get => _name;
+        set
+        {
+            lock (_valuesGate)
+            {
+                if (_name == value) return;
+                _name = value;
+                Revision = checked(Revision + 1);
+            }
+            AssetUpdate.Notify(Changed, this);
+        }
+    }
 
-    public string? ShaderGuid { get; set; }
+    public string? ShaderGuid
+    {
+        get => _shaderGuid;
+        set
+        {
+            lock (_valuesGate)
+            {
+                if (_shaderGuid == value) return;
+                _shaderGuid = value;
+                ShaderAsset = null;
+                Revision = checked(Revision + 1);
+            }
+            AssetUpdate.Notify(Changed, this);
+        }
+    }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     public Shader? ShaderAsset { get; private set; }
@@ -52,6 +87,49 @@ public abstract partial class Material : IBinaryContract<Material>
 
     protected Material()
     {
+    }
+
+    /// <summary>Captures values for transfer through the Game World to Render World boundary.</summary>
+    public MaterialData CaptureData()
+    {
+        lock (_valuesGate)
+        {
+            MaterialSlotDefinition[] properties = EnsureSlots();
+            MaterialData? previous = _capturedData;
+            bool changed = previous is null || _capturedSourceRevision != Revision;
+            object?[]? values = changed ? (object?[])_slotValues!.Clone() : null;
+            for (int index = 0; index < properties.Length; index++)
+            {
+                if (_slotValues![index] is not Texture texture) continue;
+                TextureData data = texture.CaptureData();
+                if (!changed && ReferenceEquals(previous!.GetValue((uint)index), data)) continue;
+                if (values is null) values = (object?[])_slotValues.Clone();
+                changed = true;
+                values[index] = data;
+            }
+            if (!changed) return previous!;
+            // Once a texture changed, convert any earlier texture properties as well.
+            for (int index = 0; index < values!.Length; index++)
+                if (values[index] is Texture texture) values[index] = texture.CaptureData();
+            ulong revision = checked((previous?.Revision ?? 0) + 1);
+            var propertyRevisions = new ulong[properties.Length];
+            for (int index = 0; index < properties.Length; index++)
+                propertyRevisions[index] = previous is not null && Equals(previous.GetValue((uint)index), values[index])
+                    ? previous.GetPropertyRevision((uint)index) : revision;
+            _capturedData = new MaterialData(_materialId, revision, Name, ShaderGuid, ShaderAsset,
+                [.. properties], values, propertyRevisions);
+            _capturedSourceRevision = Revision;
+            return _capturedData;
+        }
+    }
+
+    internal Texture[] CaptureTextureReferences()
+    {
+        lock (_valuesGate)
+        {
+            _ = EnsureSlots();
+            return _slotValues!.OfType<Texture>().Distinct().ToArray();
+        }
     }
 
     public object? GetSlotValue(uint slot)
@@ -75,28 +153,32 @@ public abstract partial class Material : IBinaryContract<Material>
 
     protected void SetSlot<T>(uint slot, T value)
     {
-        EnsureSlot(slot);
-        int index = checked((int)slot);
-        MaterialSlotDefinition definition = _slotDefinitions![index];
-        if (!definition.ValueType.IsAssignableFrom(typeof(T)) &&
-            (value is not null && !definition.ValueType.IsInstanceOfType(value)))
+        lock (_valuesGate)
         {
-            throw new ArgumentException(
-                $"Material slot {slot} expects '{definition.ValueType.FullName}'.",
-                nameof(value));
-        }
+            EnsureSlot(slot);
+            int index = checked((int)slot);
+            MaterialSlotDefinition definition = _slotDefinitions![index];
+            if (!definition.ValueType.IsAssignableFrom(typeof(T)) &&
+                (value is not null && !definition.ValueType.IsInstanceOfType(value)))
+            {
+                throw new ArgumentException(
+                    $"Material slot {slot} expects '{definition.ValueType.FullName}'.",
+                    nameof(value));
+            }
 
-        object? current = _slotValues![index];
-        if (typeof(T).IsValueType
-            ? EqualityComparer<T>.Default.Equals(current is null ? default! : (T)current, value)
-            : ReferenceEquals(current, value))
-        {
-            return;
-        }
+            object? current = _slotValues![index];
+            if (typeof(T).IsValueType
+                ? EqualityComparer<T>.Default.Equals(current is null ? default! : (T)current, value)
+                : ReferenceEquals(current, value))
+            {
+                return;
+            }
 
-        _slotValues[index] = value;
-        _pendingTextureReferences?.Remove(slot);
-        MarkSlotChanged(index);
+            _slotValues[index] = value;
+            _pendingTextureReferences?.Remove(slot);
+            AdvancePropertyRevision(index);
+        }
+        AssetUpdate.Notify(Changed, this);
     }
 
     protected virtual MaterialSlotDefinition[] CreateSlots() => [];
@@ -244,6 +326,7 @@ public abstract partial class Material : IBinaryContract<Material>
     internal static ValueTask ApplyReloadAsync(
         Material current,
         Material replacement,
+        AssetUpdate update,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(current);
@@ -252,26 +335,30 @@ public abstract partial class Material : IBinaryContract<Material>
         if (current.MaterialTypeId != replacement.MaterialTypeId)
             throw new InvalidDataException("A material reload cannot change its concrete material type.");
 
-        MaterialSlotDefinition[] currentSlots = current.EnsureSlots();
-        MaterialSlotDefinition[] replacementSlots = replacement.EnsureSlots();
-        if (!currentSlots.AsSpan().SequenceEqual(replacementSlots))
-            throw new InvalidDataException("A material reload cannot change its generated slot contract.");
-
-        current.AssetGuid = replacement.AssetGuid;
-        current.Name = replacement.Name;
-        current.ShaderGuid = replacement.ShaderGuid;
-        current.ShaderAsset = replacement.ShaderAsset;
-        for (int index = 0; index < currentSlots.Length; index++)
+        lock (current._valuesGate)
         {
-            object? next = replacement._slotValues![index];
-            if (Equals(current._slotValues![index], next))
-                continue;
-            current._slotValues[index] = next;
-            current._slotRevisions![index] = checked(current._slotRevisions[index] + 1);
+            MaterialSlotDefinition[] currentSlots = current.EnsureSlots();
+            MaterialSlotDefinition[] replacementSlots = replacement.EnsureSlots();
+            if (!currentSlots.AsSpan().SequenceEqual(replacementSlots))
+                throw new InvalidDataException("A material reload cannot change its generated slot contract.");
+
+            ulong revision = checked(current.Revision + 1);
+            object?[] values = (object?[])replacement._slotValues!.Clone();
+            ulong[] revisions = (ulong[])current._slotRevisions!.Clone();
+            for (int index = 0; index < currentSlots.Length; index++)
+                if (!Equals(current._slotValues![index], values[index]))
+                    revisions[index] = checked(revisions[index] + 1);
+            current.AssetGuid = replacement.AssetGuid;
+            current._name = replacement.Name;
+            current._shaderGuid = replacement.ShaderGuid;
+            current.ShaderAsset = replacement.ShaderAsset;
+            current._slotValues = values;
+            current._slotRevisions = revisions;
+            current._pendingTextureReferences = null;
+            current.Revision = revision;
         }
-        current._pendingTextureReferences = null;
-        current.Revision = checked(current.Revision + 1);
-        current.Changed?.Invoke(current);
+        update.Accept();
+        AssetUpdate.Notify(current.Changed, current);
         return ValueTask.CompletedTask;
     }
 
@@ -409,9 +496,14 @@ public abstract partial class Material : IBinaryContract<Material>
 
     private void MarkSlotChanged(int slot)
     {
-        _slotRevisions![slot] = checked(_slotRevisions[slot] + 1);
+        AdvancePropertyRevision(slot);
+        AssetUpdate.Notify(Changed, this);
+    }
+
+    private void AdvancePropertyRevision(int property)
+    {
+        _slotRevisions![property] = checked(_slotRevisions[property] + 1);
         Revision = checked(Revision + 1);
-        Changed?.Invoke(this);
     }
 
     private static MaterialTypeRegistration Registration(Guid id)

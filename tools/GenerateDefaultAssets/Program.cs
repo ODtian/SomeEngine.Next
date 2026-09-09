@@ -97,6 +97,11 @@ RemoveObsoleteAsset(
     project,
     "assets/Shaders/vsm_page_coverage.slang",
     "assets/Shaders/vsm_page_coverage.shader.asset");
+RemoveObsoleteAsset(
+    projectRoot,
+    project,
+    "assets/Shaders/depth_merge.slang",
+    "assets/Shaders/depth_merge.shader.asset");
 RemoveGeneratedTestPublications(project);
 
 if (args.Contains("--stamp-vertex-layout-abi", StringComparer.Ordinal))

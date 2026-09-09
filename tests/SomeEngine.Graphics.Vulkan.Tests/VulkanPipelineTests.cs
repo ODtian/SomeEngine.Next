@@ -803,6 +803,7 @@ public sealed class VulkanPipelineTests
                     StoreType.Discard,
                     System.Numerics.Vector4.Zero),
             ];
+            backend.ResetQueries(context, query, 0, 1);
             backend.BeginRendering(context, new RenderingDesc(colors, null, 4, 4));
             backend.BeginQuery(context, query, 0);
             backend.SetPipeline(context, pipeline);

@@ -372,32 +372,32 @@ internal sealed unsafe partial class D3D12Backend
             DescriptorRecord[] descriptorRecords = CreateDescriptorRecords(
                 resourcesCopy,
                 slots);
-            uint visibleNodeMask = uint.MaxValue;
-            foreach (DescriptorRecord descriptor in descriptorRecords)
-                visibleNodeMask &= descriptor.VisibleNodeMask;
-            byte[] ordinaryDataCopy = ordinaryData.ToArray();
-            D3D12SwapchainImageLease[] swapchainImages =
-                CaptureSwapchainBindings(resourcesCopy);
             NativeLease? lifetime = null;
-            ulong address = 0;
-            if (createOrdinaryBuffer && ordinaryDataCopy.Length != 0)
-            {
-                NativeResource* native = CreateOrdinaryDataResource(
-                    device,
-                    ordinaryDataCopy,
-                    out address);
-                try
-                {
-                    lifetime = new NativeLease((IUnknown*)native, ownsReference: true);
-                }
-                catch
-                {
-                    _ = ResourceTrace.Release(native);
-                    throw;
-                }
-            }
             try
             {
+                uint visibleNodeMask = uint.MaxValue;
+                foreach (DescriptorRecord descriptor in descriptorRecords)
+                    visibleNodeMask &= descriptor.VisibleNodeMask;
+                byte[] ordinaryDataCopy = ordinaryData.ToArray();
+                D3D12SwapchainImageLease[] swapchainImages =
+                    CaptureSwapchainBindings(resourcesCopy);
+                ulong address = 0;
+                if (createOrdinaryBuffer && ordinaryDataCopy.Length != 0)
+                {
+                    NativeResource* native = CreateOrdinaryDataResource(
+                        device,
+                        ordinaryDataCopy,
+                        out address);
+                    try
+                    {
+                        lifetime = new NativeLease((IUnknown*)native, ownsReference: true);
+                    }
+                    catch
+                    {
+                        _ = ResourceTrace.Release(native);
+                        throw;
+                    }
+                }
                 D3D12PersistentParameterData result =
                     new(
                         version,

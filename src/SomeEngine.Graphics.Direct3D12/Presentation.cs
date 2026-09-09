@@ -107,7 +107,7 @@ internal sealed unsafe partial class D3D12Backend
                 nativeDevice,
                 surface,
                 queue,
-                native,
+                ref native,
                 info,
                 desc.ImageUsages,
                 desc.Label);
@@ -146,13 +146,6 @@ internal sealed unsafe partial class D3D12Backend
                     "IDXGIFactory6::CreateSwapChainForHwnd");
             }
 
-            IDXGISwapChain4* result = null;
-            Guid iid = IDXGISwapChain4.Guid;
-            ThrowIfFailed(
-                device,
-                    PresentationTrace.QueryInterface(initial, &iid, (void**)&result),
-                NativeOperationType.Ordinary,
-                "IDXGISwapChain1::QueryInterface(IDXGISwapChain4)");
             ThrowIfFailed(
                 device,
                     PresentationTrace.MakeWindowAssociation(
@@ -160,6 +153,13 @@ internal sealed unsafe partial class D3D12Backend
                     DxgiMakeWindowAssociationNoAltEnter),
                 NativeOperationType.Ordinary,
                 "IDXGIFactory::MakeWindowAssociation");
+            IDXGISwapChain4* result = null;
+            Guid iid = IDXGISwapChain4.Guid;
+            ThrowIfFailed(
+                device,
+                    PresentationTrace.QueryInterface(initial, &iid, (void**)&result),
+                NativeOperationType.Ordinary,
+                "IDXGISwapChain1::QueryInterface(IDXGISwapChain4)");
             return result;
         }
         finally
@@ -198,7 +198,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device device,
         D3D12Surface surface,
         D3D12Queue queue,
-        IDXGISwapChain4* native,
+        ref IDXGISwapChain4* native,
         SwapchainInfo info,
         TextureUsages imageUsages,
         string? label)
@@ -211,6 +211,7 @@ internal sealed unsafe partial class D3D12Backend
             info,
             imageUsages,
             label);
+        native = null;
         try
         {
             result.InitializeBackBuffers();

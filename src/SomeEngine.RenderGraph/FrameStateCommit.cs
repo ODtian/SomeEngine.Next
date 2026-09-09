@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
@@ -433,6 +433,8 @@ internal sealed partial class FrameExecutor
         {
             BufferBoundaryState state = current[item] with { ReadyAfter = null };
             update.Before[item] = state;
+            state = state with { Range = GraphStructureIndex.ResolveRange(state.Range,
+                _buffers[update.ResourceIndex].Description.Size) };
             _bufferBoundaryScratch.Add(new(state, item));
         }
         foreach (BufferStateStep step in update.Steps)

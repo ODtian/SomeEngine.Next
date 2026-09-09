@@ -5,6 +5,7 @@ namespace SomeEngine.RenderGraph;
 internal sealed partial class FrameExecutor
 {
     private readonly RenderGraphFrameState _frame;
+    private readonly bool _shadingRateImages;
     private List<FrameBuffer> _buffers = [];
     private List<FrameTexture> _textures = [];
     private List<FrameQueryPool> _queryPools = [];
@@ -58,6 +59,8 @@ internal sealed partial class FrameExecutor
     internal FrameExecutor(RenderGraphFrameState frame)
     {
         _frame = frame;
+        _shadingRateImages = frame.Backend.TryGetCapability(frame.Graph.Device, out VariableRateShading? shading) &&
+            shading is { ShadingRateImage: true };
     }
 
     internal void ApplyEdit(GraphEditChanges changes)
@@ -83,6 +86,12 @@ internal sealed partial class FrameExecutor
 
     internal void Reset()
     {
+        if ((_executionDebug & RenderGraphDebugOptions.DeclarationOrderScheduling) !=
+            (_frame.Options.Debug & RenderGraphDebugOptions.DeclarationOrderScheduling))
+        {
+            _scheduleInitialized = false;
+            for (int pass = 0; pass < _passes.Count; pass++) _scheduleSeeds.Add(pass);
+        }
         if (_rowsReady && (_submissionMode != _frame.Options.SubmissionMode ||
             _executionDebug != _frame.Options.Debug))
         {
@@ -653,10 +662,7 @@ internal sealed partial class FrameExecutor
 
     private void EndRows()
     {
-        _nextDynamicValueEdges.Clear();
-        foreach (ExplicitPassOrder order in _frame.DynamicOrders)
-            _nextDynamicValueEdges.Add(new(ResolvePass(order.Predecessor), ResolvePass(order.Consumer)));
-        if (!_nextDynamicValueEdges.SetEquals(_dynamicValueEdges)) _analysisChanged = true;
+        if (_dynamicOrderChanges.Count != 0) _analysisChanged = true;
 
         GraphStructure structure = _frame.StructureIndex.Structure;
         _staticBufferCount = structure.Buffers.Count;

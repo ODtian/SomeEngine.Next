@@ -108,7 +108,12 @@ public abstract class GraphicsObject : IDisposable
         {
             try
             {
-                Disposed?.Invoke(this);
+                if (Disposed is { } disposed)
+                    foreach (Action<GraphicsObject> observer in disposed.GetInvocationList())
+                    {
+                        try { observer(this); }
+                        catch { }
+                    }
             }
             catch
             {

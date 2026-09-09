@@ -28,7 +28,6 @@ public sealed partial class RenderDevice : IDisposable
         _disposeTimeout = disposeTimeout ?? DefaultDisposeTimeout;
         if (_disposeTimeout <= TimeSpan.Zero || _disposeTimeout == Timeout.InfiniteTimeSpan)
             throw new ArgumentOutOfRangeException(nameof(disposeTimeout));
-        CreateMissingTexture();
     }
 
     public IGraphicsBackend Backend => _backend;

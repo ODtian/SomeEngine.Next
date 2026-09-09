@@ -136,9 +136,8 @@ public sealed class AssetLoadContext
 
     internal async ValueTask DisposeAsync()
     {
-        object? owner = Interlocked.Exchange(ref _transferredOwner, null);
-        object? document = Interlocked.Exchange(ref _document, null);
-        Interlocked.Exchange(ref _openedRoot, null);
+        object? owner = _transferredOwner;
+        object? document = _document;
         if (owner is IAsyncDisposable asyncOwner)
             await asyncOwner.DisposeAsync().ConfigureAwait(false);
         else if (owner is IDisposable disposableOwner)
@@ -147,6 +146,9 @@ public sealed class AssetLoadContext
             await asyncDocument.DisposeAsync().ConfigureAwait(false);
         else if (document is IDisposable disposableDocument)
             disposableDocument.Dispose();
+        _transferredOwner = null;
+        _document = null;
+        _openedRoot = null;
     }
 
     internal void Seal() => Volatile.Write(ref _active, 0);

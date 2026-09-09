@@ -76,11 +76,23 @@ internal sealed partial class FrameExecutor
                 texture.LastPass < 0 ? -1 : positions[texture.LastPass]);
         }
 
-        var accesses = new RenderGraphAccessDiagnostic[_accesses.Count];
+        var queryPools = new RenderGraphQueryPoolDiagnostic[_queryPools.Count];
+        for (int index = 0; index < queryPools.Length; index++)
+        {
+            FrameQueryPool pool = _queryPools[index];
+            queryPools[index] = new(new GraphQueryPoolId(pool.Identity), pool.Resource.Label,
+                pool.Resource.Description.Count, pool.Resource.Description.Type);
+        }
+        var shaderTables = new RenderGraphShaderTableDiagnostic[_shaderTables.Count];
+        for (int index = 0; index < shaderTables.Length; index++)
+            shaderTables[index] = new(new GraphRayTracingShaderTableId(_shaderTables[index].Identity),
+                _shaderTables[index].Resource.Label);
+        var accesses = new List<RenderGraphAccessDiagnostic>(_accesses.Count);
         for (int index = 0; index < _accesses.Count; index++)
         {
             FrameResourceAccess access = _accesses[index];
-            accesses[index] = new RenderGraphAccessDiagnostic(
+            if (!access.Connected) continue;
+            accesses.Add(new RenderGraphAccessDiagnostic(
                 new GraphPassId(_passes[access.PassIndex].Identity),
                 access.TargetKind,
                 access.ResourceIndex,
@@ -92,7 +104,7 @@ internal sealed partial class FrameExecutor
                 access.TextureRange,
                 access.TextureLayout,
                 access.ResultContents,
-                access.BufferContentScope);
+                access.BufferContentScope, access.QueryRange));
         }
 
         var dependencies = new List<RenderGraphDependencyDiagnostic>();
@@ -135,7 +147,7 @@ internal sealed partial class FrameExecutor
             _executionOrder.Count,
             _buffers.Count,
             _textures.Count,
-            _accesses.Count,
+            accesses.Count,
             dependencies.Count,
             barriers.Count,
             _queuePasses.Count,
@@ -151,10 +163,10 @@ internal sealed partial class FrameExecutor
             passes,
             buffers,
             textures,
-            accesses,
+            CollectionsMarshal.AsSpan(accesses),
             CollectionsMarshal.AsSpan(dependencies),
             CollectionsMarshal.AsSpan(barriers),
-            statistics);
+            statistics, queryPools, shaderTables);
         handler(in view);
         return;
 

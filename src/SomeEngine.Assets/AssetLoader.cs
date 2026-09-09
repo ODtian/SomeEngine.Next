@@ -14,6 +14,7 @@ public sealed class AssetLoader : IAsyncDisposable
     private readonly object _dependencyGate = new();
     private readonly Dictionary<AssetGuid, Dictionary<AssetGuid, int>> _dependencies = [];
     private int _disposed;
+    private readonly SemaphoreSlim _disposal = new(1, 1);
 
     public AssetLoader(IAssetStorage storage, AssetLoaderOptions? options = null)
     {
@@ -46,7 +47,7 @@ public sealed class AssetLoader : IAsyncDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(asset);
         AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        Func<T, T, CancellationToken, ValueTask> apply = descriptor.ApplyReload
+        Func<T, T, AssetUpdate, CancellationToken, ValueTask> apply = descriptor.ApplyReload
             ?? throw new NotSupportedException(
                 $"Asset type '{typeof(T).FullName}' does not support in-place reload.");
         if (!_assets.TryGetAssetGuid(asset, out AssetGuid guid))
@@ -67,7 +68,7 @@ public sealed class AssetLoader : IAsyncDisposable
         ThrowIfDisposed();
         ValidateAssetId(asset);
         AssetTypeDescriptor<T> descriptor = AssetType<T>.Descriptor;
-        Func<T, T, CancellationToken, ValueTask> apply = descriptor.ApplyReload
+        Func<T, T, AssetUpdate, CancellationToken, ValueTask> apply = descriptor.ApplyReload
             ?? throw new NotSupportedException(
                 $"Asset type '{typeof(T).FullName}' does not support in-place reload.");
         AssetGuid guid = asset.Value;
@@ -141,25 +142,21 @@ public sealed class AssetLoader : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-
+        await _disposal.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (Volatile.Read(ref _disposed) == 2) return;
+            Volatile.Write(ref _disposed, 1);
             await _assets.DisposeAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (_dependencyGate)
-                _dependencies.Clear();
-            lock (_admissionGate)
-                _admissions.Clear();
-
+            lock (_dependencyGate) _dependencies.Clear();
+            lock (_admissionGate) _admissions.Clear();
             if (_storage is IAsyncDisposable asyncDisposable)
                 await asyncDisposable.DisposeAsync().ConfigureAwait(false);
             else if (_storage is IDisposable disposable)
                 disposable.Dispose();
+            Volatile.Write(ref _disposed, 2);
         }
+        finally { _disposal.Release(); }
     }
 
     private async Task<AssetPublication<T>> LoadValueAsync<T>(
@@ -180,18 +177,28 @@ public sealed class AssetLoader : IAsyncDisposable
             await context.DisposeAsync().ConfigureAwait(false);
             return new AssetPublication<T>(result);
         }
-        catch
+        catch (Exception failure)
         {
             bool contextOwnsResult = result is not null && context.Owns(result);
-            try
+            List<Exception>? cleanupFailures = null;
+            try { await context.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception cleanupFailure)
             {
-                await context.DisposeAsync().ConfigureAwait(false);
+                _assets.RetainCleanup(context.DisposeAsync);
+                (cleanupFailures ??= []).Add(cleanupFailure);
             }
-            finally
+            if (result is not null && !contextOwnsResult)
             {
-                if (result is not null && !contextOwnsResult)
-                    await DisposeUnpublishedAsync(result).ConfigureAwait(false);
+                T retained = result;
+                try { await DisposeUnpublishedAsync(retained).ConfigureAwait(false); }
+                catch (Exception cleanupFailure)
+                {
+                    _assets.RetainCleanup(() => DisposeUnpublishedAsync(retained));
+                    (cleanupFailures ??= []).Add(cleanupFailure);
+                }
             }
+            if (cleanupFailures is not null)
+                throw new AggregateException(new[] { failure }.Concat(cleanupFailures));
             throw;
         }
         finally

@@ -10,9 +10,6 @@
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="SomeEngine.Runtime.Tests" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />

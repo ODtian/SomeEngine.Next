@@ -451,6 +451,8 @@ public ref partial struct PassDefinition
         AddQueryAccess(pool, GraphAccessMode.Read, WriteCoverage.Partial,
             range, null);
 
+    /// <summary>Declares query results written by this pass. Complete coverage resets the range
+    /// before recording begins; use Partial when continuing queries begun by a prior pass.</summary>
     public void Write(
         GraphQueryPoolId pool,
         in QueryRange range,
@@ -484,22 +486,18 @@ public ref partial struct PassDefinition
         uint x,
         uint y,
         uint width,
-        uint height,
-        uint firstArrayLayer = 0,
-        uint arrayLayerCount = 1)
+        uint height)
     {
         EnsureKind(GraphPassKind.General);
-        return AddRenderingRegion(x, y, width, height, firstArrayLayer, arrayLayerCount);
+        return AddRenderingRegion(x, y, width, height);
     }
 
     public void DefineRasterExtent(
         uint width,
-        uint height,
-        uint firstArrayLayer = 0,
-        uint arrayLayerCount = 1)
+        uint height)
     {
         EnsureKind(GraphPassKind.Raster);
-        _ = AddRenderingRegion(0, 0, width, height, firstArrayLayer, arrayLayerCount);
+        _ = AddRenderingRegion(0, 0, width, height);
     }
 
     public void ColorAttachment(
@@ -524,7 +522,7 @@ public ref partial struct PassDefinition
         in Vector4 clearValue,
         GraphColorAttachmentViewId resolveView = default,
         ResolveType resolveType = ResolveType.Average) =>
-        AddColorAttachment(region.Value.Slot, slot, view, load, store, coverage,
+        AddColorAttachment(ResolveRegion(region), slot, view, load, store, coverage,
             clearValue, resolveView, resolveType);
 
     public void DepthStencilAttachment(
@@ -551,7 +549,7 @@ public ref partial struct PassDefinition
         StoreType stencilStore,
         WriteCoverage stencilCoverage,
         byte clearStencil) =>
-        AddDepthStencilAttachment(region.Value.Slot, view, depthLoad, depthStore,
+        AddDepthStencilAttachment(ResolveRegion(region), view, depthLoad, depthStore,
             depthCoverage, clearDepth, stencilLoad, stencilStore, stencilCoverage,
             clearStencil);
 
@@ -919,26 +917,31 @@ public ref partial struct PassDefinition
             Frame.AddShaderTableAccess(_pass, table, mode, coverage, resultContents);
     }
 
+    private int ResolveRegion(PassRenderingRegionId region)
+    {
+        if (region.Pass != _pass)
+            throw new ArgumentException("The rendering region belongs to another pass.", nameof(region));
+        return region.Value.Slot;
+    }
+
     private PassRenderingRegionId AddRenderingRegion(
         uint x,
         uint y,
         uint width,
-        uint height,
-        uint firstArrayLayer,
-        uint arrayLayerCount)
+        uint height)
     {
         if (_frame is null)
         {
             return _edit.AddRenderingRegion(
-                _pass, x, y, width, height, firstArrayLayer, arrayLayerCount);
+                _pass, x, y, width, height);
         }
 
         int region = Frame.AddRenderingRegion(
-            _pass, x, y, width, height, firstArrayLayer, arrayLayerCount);
+            _pass, x, y, width, height);
         return new PassRenderingRegionId(new GraphIdentity(
             Frame.Identity,
             region,
-            checked((uint)_pass.Slot + 1)));
+            checked((uint)_pass.Slot + 1)), _pass);
     }
 
     private void PublishColorAttachment(in GraphColorAttachment attachment)

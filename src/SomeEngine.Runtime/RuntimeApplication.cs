@@ -375,10 +375,12 @@ internal static class RuntimeApplication
             backend,
             device,
             renderGraph,
-            outputDescription,
+            outputDescription.Width,
+            outputDescription.Height,
+            outputDescription.ViewCount,
             lightingShader,
             boot.LightingEntryPoint);
-        var stageResources = new ClusterStageResourceGroup();
+        var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         var lightSystem = new RenderLightSetSystem();
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
@@ -549,6 +551,12 @@ internal static class RuntimeApplication
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
+                // Shared asset content can change only after the Game World extraction reader exits.
+                if (nextGameUpdate is not null)
+                {
+                    RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                    nextGameUpdate = null;
+                }
                 RuntimeWait.Task(
                     assets.ApplyUpdatesAsync().AsTask(),
                     window,
@@ -639,11 +647,6 @@ internal static class RuntimeApplication
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
-                if (nextGameUpdate is not null)
-                {
-                    RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
-                    nextGameUpdate = null;
-                }
                 if (options.SynchronousFrames)
                 {
                     if (animateScene && options.ScenePlayback is null)
@@ -761,6 +764,7 @@ internal static class RuntimeApplication
                     window,
                     reportMilestones,
                     cameraCut,
+                    viewEntity,
                     outputVerifier,
                     options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
                     options.SynchronousFrames);
@@ -962,6 +966,7 @@ internal static class RuntimeApplication
         NativeWindow window,
         bool reportMilestones,
         bool cameraCut,
+        Entity viewEntity,
         FrameOutputVerifier? outputVerifier,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
         bool synchronousFrames)
@@ -981,10 +986,6 @@ internal static class RuntimeApplication
         using (frame)
         {
             FrameOutputMetrics? frameOutput = null;
-            bool pipelineCommitted = false;
-            bool virtualShadowsCommitted = false;
-            bool uiCommitted = false;
-            bool temporalCommitted = false;
             completionSlots.AsSpan().Clear();
             try
             {
@@ -1008,7 +1009,8 @@ internal static class RuntimeApplication
                         motion,
                         TemporalResolveSettings.Default,
                         enabled: true,
-                        cameraCut: cameraCut);
+                        cameraCut: cameraCut,
+                        view: viewEntity);
                     translucency.Record(
                         ref graphFrame,
                         temporal.Output.ResolvedColor,
@@ -1029,14 +1031,6 @@ internal static class RuntimeApplication
                         completions,
                         submittedQueueCount);
                     ReadOnlySpan<QueueCompletion> execution = completions.AsSpan(0, completionCount);
-                    pipeline.Commit(execution);
-                    pipelineCommitted = true;
-                    virtualShadows.Commit(execution);
-                    virtualShadowsCommitted = true;
-                    ui.Commit(execution);
-                    uiCommitted = true;
-                    temporal.Commit();
-                    temporalCommitted = true;
                     frame.Complete(execution);
                     if (synchronousFrames && outputVerifier is null)
                         Wait(backend, execution, window, synchronousFrames);
@@ -1063,26 +1057,6 @@ internal static class RuntimeApplication
                     if (completionCount != 0)
                     {
                         ReadOnlySpan<QueueCompletion> accepted = completions.AsSpan(0, completionCount);
-                        if (!pipelineCommitted)
-                        {
-                            pipeline.Commit(accepted);
-                            pipelineCommitted = true;
-                        }
-                        if (!virtualShadowsCommitted)
-                        {
-                            virtualShadows.Commit(accepted);
-                            virtualShadowsCommitted = true;
-                        }
-                        if (!uiCommitted)
-                        {
-                            ui.Commit(accepted);
-                            uiCommitted = true;
-                        }
-                        if (!temporalCommitted)
-                        {
-                            temporal.Commit();
-                            temporalCommitted = true;
-                        }
                         if (!frame.IsClosed) frame.Complete(accepted);
                     }
                 }
@@ -1097,10 +1071,7 @@ internal static class RuntimeApplication
             }
             finally
             {
-                if (!pipelineCommitted) pipeline.Discard();
-                if (!virtualShadowsCommitted) virtualShadows.Discard();
-                if (!uiCommitted) ui.Discard();
-                if (!temporalCommitted) temporal.Discard();
+                ui.Discard();
             }
         }
     }

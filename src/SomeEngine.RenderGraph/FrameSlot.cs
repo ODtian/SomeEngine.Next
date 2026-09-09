@@ -40,10 +40,19 @@ internal sealed class FrameSlot : IDisposable
         ulong structureVersion)
     {
         _state ??= new RenderGraphFrameState(graph, this);
-        TransientResources!.Reset(
-            options.SubmissionMode,
-            options.Debug);
+        bool compacted = TransientResources!.Reset(options.SubmissionMode, options.Debug);
         _state.Begin(identity, options, structureIndex, structureVersion);
+        if (compacted)
+        {
+            var changes = new GraphEditChanges { CompactTransientPlacements = true };
+            foreach (GraphIdentity resource in structureIndex.TransientResources)
+            {
+                if (resource.Domain == GraphIdentityDomain.Buffer) changes.Buffers.Add(resource);
+                else if (resource.Domain == GraphIdentityDomain.Texture) changes.Textures.Add(resource);
+                changes.Views.UnionWith(structureIndex.ResourceViews.GetValueOrDefault(resource, []));
+            }
+            _state.ApplyEdit(changes);
+        }
         foreach (GraphEditChanges changes in _edits) _state.ApplyEdit(changes);
         _edits.Clear();
         return _state;
@@ -60,8 +69,11 @@ internal sealed class FrameSlot : IDisposable
     {
         if (!IsReady(backend))
             throw new InvalidOperationException("The frame slot is still in flight.");
-        for (int i = _objects.Count - 1; i >= 0; i--) _objects[i].Dispose();
-        _objects.Clear();
+        for (int i = _objects.Count - 1; i >= 0; i--)
+        {
+            _objects[i].Dispose();
+            _objects.RemoveAt(i);
+        }
         _completions.Clear();
     }
 
@@ -92,8 +104,11 @@ internal sealed class FrameSlot : IDisposable
     public void Dispose()
     {
         _state?.ReleaseRecordingContexts();
-        for (int i = _objects.Count - 1; i >= 0; i--) _objects[i].Dispose();
-        _objects.Clear();
+        for (int i = _objects.Count - 1; i >= 0; i--)
+        {
+            _objects[i].Dispose();
+            _objects.RemoveAt(i);
+        }
         _completions.Clear();
         TransientResources?.Dispose();
     }

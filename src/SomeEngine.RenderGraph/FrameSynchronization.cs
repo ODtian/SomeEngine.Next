@@ -379,12 +379,6 @@ internal sealed partial class FrameExecutor
         if (!resource.Placement.Aliases) ResumeTextureTransfers(resource, texture);
         bool aliasActivated = resource.Placement.Aliases;
         InitialTextureStates(resource, texture, aliasActivated);
-        if (!aliasActivated)
-        {
-            AddInitialCompletions(resource.EntryBoundaryStates,
-                _passes[_accesses[accesses[0]].PassIndex].Queue!,
-                _accesses[accesses[0]].PassIndex);
-        }
 
         for (int first = 0; first < accesses.Count;)
         {
@@ -434,6 +428,7 @@ internal sealed partial class FrameExecutor
                 {
                     if (!aliasActivated)
                     {
+                        AddInitialCompletions(resource.EntryBoundaryStates, targetQueue, pass);
                         initialQueueTransfer = ResolveInitialTextureTransfers(
                             resource.EntryBoundaryStates,
                             texture,
@@ -1106,6 +1101,7 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _changedBoundaryResources = [];
     private readonly List<int> _previousPhysicalPredecessors = [];
     private ResourceSynchronization _collectSynchronization = null!;
+    private ResourceSynchronization _synchronizationScratch = new();
     private int _synchronizationPassCount;
 
     private PassSynchronization Synchronization(int pass)
@@ -1143,37 +1139,45 @@ internal sealed partial class FrameExecutor
         foreach (var key in _changedSynchronizationResources)
         {
             _stateUpdateResourcesChanged.Add(key);
-            if (!_synchronizationByResource.TryGetValue(key, out ResourceSynchronization? value))
-            {
-                value = new();
-                _synchronizationByResource.Add(key, value);
-            }
-            foreach (int pass in value.Passes.Keys)
-            {
-                _changedSynchronizationPasses.Add(pass);
-                _synchronizationByPass[pass].Remove(key);
-            }
-            foreach (int pass in value.WaitPasses) _initialWaitResources[pass].Remove(key);
-            foreach (PendingQueueRelease release in value.LateReleases) _lateReleases.Remove(release);
+            _synchronizationByResource.TryGetValue(key, out ResourceSynchronization? previous);
+            ResourceSynchronization value = _synchronizationScratch;
             value.Clear();
-            if (!ResourceExists(key))
+            bool exists = ResourceExists(key);
+            if (exists)
+            {
+                _collectSynchronization = value;
+                _pendingBarrierTransitions.Clear();
+                _textureQueueTransfers.Clear();
+                ResolveAliasingBarrier(key);
+                switch (key.Kind)
+                {
+                    case GraphAccessTargetKind.Buffer: ResolveBufferSynchronization(key.Index); break;
+                    case GraphAccessTargetKind.Texture: ResolveTextureSynchronization(key.Index); break;
+                    case GraphAccessTargetKind.QueryPool: ResolveQuerySynchronization(key.Index); break;
+                    case GraphAccessTargetKind.RayTracingShaderTable: ResolveShaderTableSynchronization(key.Index); break;
+                }
+                PlacePendingBarrierTransitions();
+                CompactTextureBarriers();
+            }
+            // Derivation may reject a boundary. Do not detach the previous result until every
+            // barrier and transfer for this resource has been constructed successfully.
+            if (previous is not null)
+            {
+                foreach (int pass in previous.Passes.Keys)
+                {
+                    _changedSynchronizationPasses.Add(pass);
+                    _synchronizationByPass[pass].Remove(key);
+                }
+                foreach (int pass in previous.WaitPasses) _initialWaitResources[pass].Remove(key);
+                foreach (PendingQueueRelease release in previous.LateReleases) _lateReleases.Remove(release);
+            }
+            if (!exists)
             {
                 _synchronizationByResource.Remove(key);
                 continue;
             }
-            _collectSynchronization = value;
-            _pendingBarrierTransitions.Clear();
-            _textureQueueTransfers.Clear();
-            ResolveAliasingBarrier(key);
-            switch (key.Kind)
-            {
-                case GraphAccessTargetKind.Buffer: ResolveBufferSynchronization(key.Index); break;
-                case GraphAccessTargetKind.Texture: ResolveTextureSynchronization(key.Index); break;
-                case GraphAccessTargetKind.QueryPool: ResolveQuerySynchronization(key.Index); break;
-                case GraphAccessTargetKind.RayTracingShaderTable: ResolveShaderTableSynchronization(key.Index); break;
-            }
-            PlacePendingBarrierTransitions();
-            CompactTextureBarriers();
+            _synchronizationByResource[key] = value;
+            _synchronizationScratch = previous ?? new ResourceSynchronization();
             foreach (int pass in value.Passes.Keys)
             {
                 _changedSynchronizationPasses.Add(pass);
@@ -1253,11 +1257,11 @@ internal sealed partial class FrameExecutor
     }
 
 
-    private static ReadOnlySpan<BufferBoundaryState> BufferEntryStates(in FrameBuffer buffer) =>
+    private static ReadOnlySpan<BufferBoundaryState> BufferEntryStates(scoped in FrameBuffer buffer) =>
         buffer.Lifetime == RenderGraphResourceLifetime.Persistent
             ? buffer.Definition?.BoundaryStates ?? buffer.EntryBoundaryStates : buffer.EntryBoundaryStates;
 
-    private static ReadOnlySpan<TextureBoundaryState> TextureEntryStates(in FrameTexture texture) =>
+    private static ReadOnlySpan<TextureBoundaryState> TextureEntryStates(scoped in FrameTexture texture) =>
         texture.Lifetime == RenderGraphResourceLifetime.Persistent
             ? texture.Definition?.BoundaryStates ?? texture.EntryBoundaryStates : texture.EntryBoundaryStates;
 

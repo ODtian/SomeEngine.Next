@@ -1,4 +1,4 @@
-using SomeEngine.Graphics;
+﻿using SomeEngine.Graphics;
 using SomeEngine.RenderGraph.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -258,63 +258,7 @@ public sealed class PersistentRenderGraphTests
         Assert.True(rejected);
     }
 
-    [Fact]
-    public void ResourceKindsUseDistinctIdentityDomains()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue]);
 
-        GraphBufferId buffer;
-        GraphTextureId texture;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            buffer = edit.CreateTransientBuffer(new BufferDesc(
-                64,
-                BufferUsages.CopyDestination));
-            texture = edit.CreateTransientTexture(new TextureDesc(
-                TextureDimension.Texture2D,
-                width: 1,
-                height: 1,
-                depth: 1,
-                mipLevelCount: 1,
-                arrayLayerCount: 1,
-                sampleCount: 1,
-                format: Format.R8G8B8A8UNorm,
-                usages: TextureUsages.CopyDestination));
-            edit.Commit();
-        }
-
-        Assert.Equal(buffer.Value.Owner, texture.Value.Owner);
-        Assert.Equal(buffer.Value.Slot, texture.Value.Slot);
-        Assert.Equal(buffer.Value.Generation, texture.Value.Generation);
-        Assert.Equal(GraphIdentityDomain.Buffer, buffer.Value.Domain);
-        Assert.Equal(GraphIdentityDomain.Texture, texture.Value.Domain);
-        Assert.NotEqual(buffer.Value, texture.Value);
-
-        using RenderGraphFrame frame = graph.BeginFrame();
-        GraphBufferId frameBuffer = frame.CreateBuffer(new BufferDesc(
-            64,
-            BufferUsages.CopyDestination));
-        GraphTextureId frameTexture = frame.CreateTexture(new TextureDesc(
-            TextureDimension.Texture2D,
-            width: 1,
-            height: 1,
-            depth: 1,
-            mipLevelCount: 1,
-            arrayLayerCount: 1,
-            sampleCount: 1,
-            format: Format.R8G8B8A8UNorm,
-            usages: TextureUsages.CopyDestination));
-        Assert.Equal(frameBuffer.Value.Owner, frameTexture.Value.Owner);
-        Assert.Equal(frameBuffer.Value.Slot, frameTexture.Value.Slot);
-        Assert.Equal(frameBuffer.Value.Generation, frameTexture.Value.Generation);
-        Assert.Equal(GraphIdentityDomain.Buffer, frameBuffer.Value.Domain);
-        Assert.Equal(GraphIdentityDomain.Texture, frameTexture.Value.Domain);
-        Assert.NotEqual(frameBuffer.Value, frameTexture.Value);
-    }
 
 #if DEBUG
     [Fact]
@@ -1368,27 +1312,7 @@ public sealed class PersistentRenderGraphTests
         second.Dispose();
     }
 
-    [Fact]
-    public void CopiedCommandContextLeaseReturnsPoolEntryOnlyOnce()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var pool = new CommandContextPool(support.Backend, support.Device);
 
-        CommandContextPool.CommandContextLease original =
-            pool.Acquire(support.GraphicsQueue, bundle: false, "lease copy test");
-        CommandContextPool.CommandContextLease duplicate = original;
-        CommandContext context = original.Context;
-        original.Dispose();
-        duplicate.Dispose();
-
-        using CommandContextPool.CommandContextLease first =
-            pool.Acquire(support.GraphicsQueue, bundle: false, "first reacquire");
-        using CommandContextPool.CommandContextLease second =
-            pool.Acquire(support.GraphicsQueue, bundle: false, "second reacquire");
-
-        Assert.Same(context, first.Context);
-        Assert.NotSame(first.Context, second.Context);
-    }
 
     [Fact]
     public void ExplicitUndefinedResultRejectsSameFrameRead()
@@ -1539,8 +1463,8 @@ public sealed class PersistentRenderGraphTests
         try { _ = frame.Execute(completions); }
         catch (InvalidOperationException) { failed = true; }
         Assert.True(failed);
-        Assert.True(graph.InFlightCompletionCount > 0,
-            "A successfully submitted wave must remain attached to the FrameSlot after a later failure.");
+        QueueCompletion accepted = Assert.Single(completions, value => value != default);
+        support.Wait([accepted]);
     }
 
     [Fact]

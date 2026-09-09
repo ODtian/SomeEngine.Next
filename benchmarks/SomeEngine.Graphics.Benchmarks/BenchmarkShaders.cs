@@ -121,7 +121,7 @@ internal static class BenchmarkShaders
             ShaderManifest manifest = new(
                 BenchmarkEnvironment.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(Source)),
                 ProfileName,
-                "repository-pinned SlangShaderSharp/Slang 2026.4.2",
+                compiled.Compiler,
                 hashes);
             byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
                 manifest,
@@ -349,7 +349,7 @@ internal static class BenchmarkShaders
             }
             string backend = target == SlangCompileTarget.Spirv ? "spirv" : "dxil";
             ShaderProgram cooked = ShaderProgram.Capture(linked, 0, backend);
-            return new Compiled(owned, cooked, code);
+            return new Compiled(owned, cooked, code, global.GetBuildTagString());
 
             T Track<T>(T value) where T : class
             {
@@ -407,5 +407,5 @@ internal static class BenchmarkShaders
     private sealed record Compiled(
         List<ComObject> Owned,
         ShaderProgram Program,
-        byte[][] Code);
+        byte[][] Code, string Compiler);
 }

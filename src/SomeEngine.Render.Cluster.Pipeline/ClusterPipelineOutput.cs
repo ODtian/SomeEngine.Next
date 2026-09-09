@@ -61,10 +61,10 @@ public readonly record struct ClusterPipelineOutputs(
 /// </summary>
 public readonly record struct ClusterRenderContext(
     uint PolicyId,
-    ClusterStageResourceBinder FilterResourcesBinder,
-    ClusterStageResourceBinder InvocationViewsBinder,
+    GraphResourceBinder FilterResourcesBinder,
+    GraphResourceBinder InvocationViewsBinder,
     ClusterInvocationSourceBinder InvocationSourceBinder,
-    ClusterStageResourceBinder InvocationCountBinder,
+    GraphResourceBinder InvocationCountBinder,
     GraphBufferId InvocationDispatchArguments,
     uint MaximumInvocationCount,
     uint RasterWidth,

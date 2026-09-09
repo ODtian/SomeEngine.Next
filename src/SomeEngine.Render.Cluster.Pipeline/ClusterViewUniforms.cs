@@ -58,7 +58,7 @@ internal struct ClusterViewUniforms
         ArgumentNullException.ThrowIfNull(options);
         if (source.ViewportWidth == 0 || source.ViewportHeight == 0)
             throw new ArgumentException("A render view requires a non-empty viewport.", nameof(source));
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(instanceCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(instanceCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageFaultCapacity);
         if (!IsFinite(source.View) || !IsFinite(source.Projection))
             throw new ArgumentException("Render-view matrices must be finite.", nameof(source));

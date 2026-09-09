@@ -16,6 +16,9 @@ internal sealed partial class EntityStore
         if (_serializationRestoreActive)
             throw new InvalidOperationException("A serialized entity-slot restore is already active.");
 
+        if (!_tableChanges.IsEmpty)
+            for (int index = 1; index <= _count; index++)
+                if (IsAliveIndex(index)) RecordTableChange(new Entity(index, GetGeneration(index)));
         _pages = CreatePages(Math.Max(64, slotCount + 1));
         MutableRecord(0).Generation = -1;
         _count = slotCount;

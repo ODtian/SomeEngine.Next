@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 public ref partial struct RenderGraphEdit
 {
@@ -243,10 +243,15 @@ public ref partial struct RenderGraphEdit
 
     public void Remove(GraphPassId pass)
     {
-        RemoveUnusedViews(pass);
         ValidateOwner(pass.Value);
         Changes.TouchPass(pass.Value, membership: true);
         GraphPass removed = Staging.Passes.Remove(pass.Value);
+        Changes.ReleasedViews.UnionWith(removed.ViewReferences);
+        foreach (GraphParameterResourceBinding binding in removed.ParameterBindings)
+        {
+            Changes.ReleasedViews.Add(binding.Value);
+            Changes.ReleasedViews.Add(binding.SecondaryValue);
+        }
         foreach (GraphIdentity access in removed.Accesses)
         {
             if (!Staging.Accesses.Contains(access)) continue;
@@ -313,8 +318,8 @@ public ref partial struct RenderGraphEdit
     {
         ValidateBuffer(buffer);
         GraphBuffer row = Staging.Buffers.Get(buffer.Value);
-        if (row.Ownership != RenderGraphResourceOwnership.GraphOwned)
-            throw new InvalidOperationException("A caller-owned Buffer description cannot be replaced.");
+        if (row.RegisteredResource is not null)
+            throw new InvalidOperationException("A registered Buffer description cannot be replaced.");
         if (row.Description == description && row.MemoryType == memoryType) return;
         row = Staging.Buffers.GetMutable(buffer.Value);
         row.Description = description;
@@ -329,8 +334,8 @@ public ref partial struct RenderGraphEdit
     {
         ValidateTexture(texture);
         GraphTexture row = Staging.Textures.Get(texture.Value);
-        if (row.Ownership != RenderGraphResourceOwnership.GraphOwned)
-            throw new InvalidOperationException("A caller-owned Texture description cannot be replaced.");
+        if (row.RegisteredResource is not null)
+            throw new InvalidOperationException("A registered Texture description cannot be replaced.");
         if (row.Dimension == description.Dimension && row.Width == description.Width &&
             row.Height == description.Height && row.Depth == description.Depth &&
             row.MipLevelCount == description.MipLevelCount && row.ArrayLayerCount == description.ArrayLayerCount &&
@@ -851,19 +856,18 @@ public ref partial struct RenderGraphEdit
         uint x,
         uint y,
         uint width,
-        uint height,
-        uint firstArrayLayer,
-        uint arrayLayerCount)
+        uint height)
     {
-        if (width == 0 || height == 0 || arrayLayerCount == 0)
+        if (width == 0 || height == 0)
             throw new ArgumentOutOfRangeException(nameof(width));
         GraphPass graphPass = Staging.Passes.GetMutable(pass);
+        Changes.TouchPass(pass);
         graphPass.RenderingRegions.Add(new PassRenderingRegion(
-            x, y, width, height, firstArrayLayer, arrayLayerCount));
+            x, y, width, height));
         return new PassRenderingRegionId(new GraphIdentity(
             Graph.Identity,
             graphPass.RenderingRegions.Count - 1,
-            checked((uint)Staging.Passes.DenseIndex(pass) + 1)));
+            checked((uint)pass.Slot + 1)), pass);
     }
 
     /// <summary>Edits the retained declaration of an existing pass.</summary>
@@ -1165,40 +1169,10 @@ public ref partial struct RenderGraphEdit
             "The texture input must belong to this graph.");
     }
 
-    private void RemoveUnusedViews(GraphPassId pass)
-    {
-        ValidatePass(pass);
-        var referenced = new HashSet<GraphIdentity>();
-        foreach (GraphIdentity identity in Staging.Passes.Identities)
-        {
-            if (identity == pass.Value) continue;
-            GraphPass other = Staging.Passes.Get(identity);
-            referenced.UnionWith(other.ViewReferences);
-            foreach (GraphParameterResourceBinding binding in other.ParameterBindings)
-                referenced.Add(binding.Value);
-        }
-        foreach (GraphPersistentParameterBindings value in Staging.PersistentBindings.Rows)
-            foreach (GraphParameterResourceBinding binding in value.Inventory)
-                referenced.Add(binding.Value);
-        foreach (GraphRayTracingShaderTable value in Staging.ShaderTables.Rows)
-            foreach (GraphParameterResourceBinding binding in value.Inventory)
-                referenced.Add(binding.Value);
-        GraphPass removed = Staging.Passes.Get(pass.Value);
-        var views = new HashSet<GraphIdentity>(removed.ViewReferences);
-        foreach (GraphParameterResourceBinding binding in removed.ParameterBindings) views.Add(binding.Value);
-        foreach (GraphIdentity view in views)
-        {
-            if (!Staging.Views.Contains(view) || referenced.Contains(view)) continue;
-            Changes.TouchView(view, membership: true);
-            _ = Staging.Views.Remove(view);
-        }
-    }
-
     internal GraphView UseView(GraphIdentity pass, GraphIdentity view)
     {
         GraphView result = ResolveView(view);
-        Staging.Passes.GetMutable(pass).ViewReferences.Add(view);
-        Changes.TouchPass(pass);
+        if (Staging.Passes.GetMutable(pass).ViewReferences.Add(view)) Changes.TouchPass(pass);
         return result;
     }
 

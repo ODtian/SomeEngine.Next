@@ -18,6 +18,7 @@ public sealed class RenderPrepareScope : IDisposable
     private readonly object _gate = new();
     private RenderFrameCoordinator? _owner;
     private int _state;
+    private int _activeOperations;
 
     internal RenderPrepareScope(RenderFrameCoordinator owner)
         => _owner = owner;
@@ -147,6 +148,20 @@ public sealed class RenderPrepareScope : IDisposable
         }
     }
 
+    internal void EnterOperation()
+    {
+        lock (_gate)
+        {
+            ThrowIfNotOpen();
+            _activeOperations = checked(_activeOperations + 1);
+        }
+    }
+
+    internal void ExitOperation()
+    {
+        lock (_gate) _activeOperations--;
+    }
+
     internal void ReleaseLease(in RenderTimelineClaim claim)
     {
         lock (_gate)
@@ -188,6 +203,8 @@ public sealed class RenderPrepareScope : IDisposable
 
     private void ThrowIfLeaseActive()
     {
+        if (_activeOperations != 0)
+            throw new InvalidOperationException("Render prepare systems are still updating in this scope.");
         if (_activeTimelines.Count != 0)
         {
             throw new InvalidOperationException(

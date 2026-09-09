@@ -402,8 +402,9 @@ public sealed class ClusterRenderResources : IDisposable
         }
     }
 
-    internal void CommitInstanceReadEndpoints(int generation, QueueCompletion completion)
-        => _instances.CommitReadEndpoints(generation, completion);
+    internal void StoreInstanceReadStates(int generation, ReadOnlySpan<BufferBoundaryState> properties,
+        ReadOnlySpan<BufferBoundaryState> metadata)
+        => _instances.StoreReadStates(generation, properties, metadata);
 
     /// <summary>Ingests all page-fault producers from one later host visit to a submitted frame.</summary>
     internal void IngestPageFaultReadbackBatch(

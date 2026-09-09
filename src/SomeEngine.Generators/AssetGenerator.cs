@@ -281,10 +281,11 @@ public sealed class AssetGenerator : IIncrementalGenerator
             .OfType<IMethodSymbol>()
             .Any(method => method.IsStatic
                 && IsAssemblyAccessible(method)
-                && method.Parameters.Length == 3
+                && method.Parameters.Length == 4
                 && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, type)
                 && SymbolEqualityComparer.Default.Equals(method.Parameters[1].Type, type)
-                && method.Parameters[2].Type.ToDisplayString() == "System.Threading.CancellationToken"
+                && method.Parameters[2].Type.ToDisplayString() == "SomeEngine.Assets.AssetUpdate"
+                && method.Parameters[3].Type.ToDisplayString() == "System.Threading.CancellationToken"
                 && method.ReturnType.ToDisplayString() == "System.Threading.Tasks.ValueTask");
 
     private static bool HasAttribute(ISymbol symbol, string metadataName)

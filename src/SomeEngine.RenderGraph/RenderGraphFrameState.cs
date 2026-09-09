@@ -789,7 +789,9 @@ internal sealed partial class RenderGraphFrameState
         EnsureAuthoring();
         ValidatePassIdentity(pass.Value);
         ValidatePassIdentity(predecessor.Value);
-        _dynamicOrders.Add(new ExplicitPassOrder(predecessor.Value, pass.Value));
+        var order = new ExplicitPassOrder(predecessor.Value, pass.Value);
+        _dynamicOrders.Add(order);
+        _executor.ChangeDynamicOrder(order, true);
     }
 
     internal int ResolveExtensionPoint(GraphExtensionPointId point)
@@ -962,9 +964,7 @@ internal sealed partial class RenderGraphFrameState
         uint x,
         uint y,
         uint width,
-        uint height,
-        uint firstArrayLayer,
-        uint arrayLayerCount)
+        uint height)
     {
         _ = ResolveDynamicPass(pass);
         if (!DynamicRenderingRegions.TryGetValue(pass, out List<PassRenderingRegion>? regions))
@@ -974,7 +974,7 @@ internal sealed partial class RenderGraphFrameState
         }
         int region = regions.Count;
         regions.Add(new PassRenderingRegion(
-            x, y, width, height, firstArrayLayer, arrayLayerCount));
+            x, y, width, height));
         return region;
     }
 
@@ -1120,6 +1120,7 @@ internal sealed partial class RenderGraphFrameState
             {
                 _dynamicAccesses.RemoveRange(firstAccess, _dynamicAccesses.Count - firstAccess);
             }
+            _bufferRangeReads.RemoveAll(read => read.Pass == identity);
             DynamicRenderingRegions.Remove(identity);
             DynamicColorAttachments.Remove(identity);
             DynamicDepthAttachments.Remove(identity);
@@ -1338,6 +1339,8 @@ internal sealed partial class RenderGraphFrameState
         _dynamicPasses.Clear();
         _dynamicAccesses.Clear();
         _bufferRangeReads.Clear();
+        foreach (ExplicitPassOrder order in _dynamicOrders)
+            _executor.ChangeDynamicOrder(order, false);
         _dynamicOrders.Clear();
         foreach (var image in _swapchainImages)
         {
@@ -1355,6 +1358,26 @@ internal sealed partial class RenderGraphFrameState
     }
 
     internal ReadOnlySpan<QueueCompletion> SubmittedCompletions => _executor.SubmittedCompletions;
+
+    internal ReadOnlySpan<BufferBoundaryState> GetBufferStates(GraphBufferId buffer) =>
+        _executor.GetBufferStates(buffer);
+
+    internal ReadOnlySpan<TextureBoundaryState> GetTextureStates(GraphTextureId texture) =>
+        _executor.GetTextureStates(texture);
+
+    internal ReadOnlySpan<BufferBoundaryState> GetBufferStates(Buffer buffer)
+    {
+        if (_importedBuffers.TryGetValue(buffer, out GraphBufferId id)) return GetBufferStates(id);
+        return StructureIndex.ResourceIdentities.TryGetValue(buffer, out GraphIdentity identity)
+            ? GetBufferStates(new GraphBufferId(identity)) : [];
+    }
+
+    internal ReadOnlySpan<TextureBoundaryState> GetTextureStates(Texture texture)
+    {
+        if (_importedTextures.TryGetValue(texture, out GraphTextureId id)) return GetTextureStates(id);
+        return StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity identity)
+            ? GetTextureStates(new GraphTextureId(identity)) : [];
+    }
 
     internal bool TryGetPassCompletion(GraphPassId pass, out QueueCompletion completion) =>
         _executor.TryGetPassCompletion(pass, out completion);

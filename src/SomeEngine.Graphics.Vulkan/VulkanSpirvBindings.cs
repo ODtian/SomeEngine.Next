@@ -424,12 +424,6 @@ internal sealed unsafe partial class VulkanBackend
             .Select(static values => values.First())
             .OrderBy(static target => target.Binding)
             .ToArray();
-        if (pending.Count == remaining.Length)
-        {
-            for (int index = 0; index < pending.Count; index++)
-                AssignSpirvTarget(words, pending[index], remaining[index], mapped);
-            return;
-        }
         foreach (IGrouping<uint, ResolvedSpirvBinding> sourceGroup in pending)
         {
             ResolvedSpirvBinding source = sourceGroup.First();

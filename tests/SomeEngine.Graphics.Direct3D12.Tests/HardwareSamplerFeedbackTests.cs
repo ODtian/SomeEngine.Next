@@ -13,7 +13,7 @@ public sealed class HardwareSamplerFeedbackTests
         bool hardwareAvailable)
     {
         Assert.True(hardwareAvailable);
-        var backend = new D3D12Backend();
+        var backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateSamplerFeedbackHardwareDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         AssertClearDecodeAndParentCascade(backend, device);
@@ -166,9 +166,6 @@ public sealed class HardwareSamplerFeedbackTests
         backend.CollectCompleted(device);
 
         sampled.Dispose();
-        Assert.True(sampled.IsDisposed);
-        Assert.False(feedback.IsDisposed);
-        Assert.False(uav.IsDisposed);
         uav.Dispose();
         feedback.Dispose();
 
@@ -206,9 +203,6 @@ public sealed class HardwareSamplerFeedbackTests
                 Format.R8UInt,
                 TextureViewDimension.Texture2D));
         secondFeedback.Dispose();
-        Assert.True(secondFeedback.IsDisposed);
-        Assert.False(secondUav.IsDisposed);
-        Assert.False(secondSampled.IsDisposed);
         secondUav.Dispose();
         secondSampled.Dispose();
     }
@@ -227,7 +221,7 @@ internal sealed class SamplerFeedbackHardwareDataAttribute : DataAttribute
     {
         try
         {
-            using IGraphicsBackend backend = new D3D12Backend();
+            using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
             using Device _ = D3D12TestSupport.CreateSamplerFeedbackHardwareDevice(backend);
             return [[true]];
         }

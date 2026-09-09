@@ -1,5 +1,3 @@
-using SomeEngine.Assets;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Render.Instances;
 
 namespace SomeEngine.Render.Tests;
@@ -7,68 +5,48 @@ namespace SomeEngine.Render.Tests;
 public sealed class RenderMeshInstanceCollectionTests
 {
     [Fact]
-    public void HandlesRemainStableAndSlotReuseChangesGeneration()
+    public void HandlesIdentifyTheirCollectionAndCannotReviveAfterRemoval()
     {
-        using var collection = new RenderMeshInstanceCollection();
-        using RenderMeshInstanceSet first = CreateSet(1);
-        using RenderMeshInstanceSet second = CreateSet(2);
-        RenderMeshInstanceHandle firstHandle = collection.Add(first);
-        RenderMeshInstanceHandle secondHandle = collection.Add(second);
-
-        Assert.True(collection.Contains(firstHandle));
-        Assert.Same(first, collection.GetRequired(firstHandle));
-        Assert.Equal(2, collection.Count);
-        Assert.True(collection.Remove(firstHandle));
-        Assert.False(collection.Contains(firstHandle));
-
-        using RenderMeshInstanceSet replacement = CreateSet(3);
-        RenderMeshInstanceHandle replacementHandle = collection.Add(replacement);
-        Assert.NotEqual(firstHandle, replacementHandle);
-        Assert.True(collection.Contains(replacementHandle));
-        Assert.True(collection.Contains(secondHandle));
+        using var left = new RenderMeshInstanceCollection();
+        using var right = new RenderMeshInstanceCollection();
+        using var first = RenderMeshInstanceSet.CreateBuffered(TestAssets.Mesh(1), []);
+        using var second = RenderMeshInstanceSet.CreateBuffered(TestAssets.Mesh(2), []);
+        var firstId = left.Add(first);
+        var rightId = right.Add(second);
+        Assert.NotEqual(firstId, rightId);
+        Assert.False(right.Contains(firstId));
+        Assert.False(right.Remove(firstId));
+        Assert.Same(second, right.GetRequired(rightId));
+        Assert.True(left.Remove(firstId));
+        var replacement = left.Add(second);
+        Assert.NotEqual(firstId, replacement);
+        Assert.False(left.TryGet(firstId, out _));
+        Assert.Same(second, left.GetRequired(replacement));
     }
 
     [Fact]
-    public void SnapshotFreezesMembershipAndOwnsSetSnapshots()
+    public void DuplicateSetIsRejectedAndBorrowedSetsSurviveCollectionDisposal()
     {
-        using var collection = new RenderMeshInstanceCollection();
-        using RenderMeshInstanceSet first = CreateSet(4);
-        RenderMeshInstanceHandle firstHandle = collection.Add(first);
-        using RenderMeshInstanceCollectionSnapshot snapshot = collection.Capture();
-
-        Assert.Equal(1, snapshot.Entries.Length);
-        Assert.Equal(firstHandle, snapshot.Entries[0].Handle);
-        Assert.Equal(4, snapshot.Entries[0].Snapshot.Count);
-
-        using RenderMeshInstanceSet second = CreateSet(2);
-        _ = collection.Add(second);
-        Assert.Equal(1, snapshot.Entries.Length);
-        Assert.Equal(2, collection.Count);
-    }
-
-    [Fact]
-    public void CollectionDisposesOnlyExplicitlyOwnedSets()
-    {
-        var owned = CreateSet(1);
-        using var external = CreateSet(1);
         var collection = new RenderMeshInstanceCollection();
-        RenderMeshInstanceHandle ownedHandle = collection.Add(owned, ownsSet: true);
-        _ = collection.Add(external);
-
-        Assert.True(collection.Remove(ownedHandle));
-        Assert.Throws<ObjectDisposedException>(() => _ = owned.Count);
-        Assert.Equal(1, external.Count);
+        using var set = RenderMeshInstanceSet.CreateBuffered(TestAssets.Mesh(3), []);
+        var id = collection.Add(set);
+        Assert.Throws<ArgumentException>(() => collection.Add(set));
+        Assert.Equal(1, collection.Count);
+        Assert.Same(set, collection.GetRequired(id));
         collection.Dispose();
-        Assert.Equal(1, external.Count);
+        set.Buffer!.Add();
+        Assert.Equal(1, set.Count);
     }
 
-    private static RenderMeshInstanceSet CreateSet(int count) => new(
-        TestAssets.Mesh(101),
-        [TestAssets.Material(102)],
-        count,
-        static (_, current, previous) =>
-        {
-            current.Clear();
-            previous.Clear();
-        });
+    [Fact]
+    public void RemovingAnOwnedSetClosesItsBuffer()
+    {
+        using var collection = new RenderMeshInstanceCollection();
+        var set = RenderMeshInstanceSet.CreateBuffered(TestAssets.Mesh(4), []);
+        var buffer = set.Buffer!;
+        var id = collection.Add(set, ownsSet: true);
+        Assert.True(collection.Remove(id));
+        Assert.Throws<ObjectDisposedException>(() => buffer.Add());
+        Assert.False(collection.Remove(id));
+    }
 }

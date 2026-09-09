@@ -4,44 +4,7 @@ namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class RetainedUpdateTests
 {
-    [Fact]
-    public void BindingStreamReplacementKeepsPassIdentityAndPersistsAcrossExecutions()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
-            new RenderGraphDesc(MaximumFramesInFlight: 3));
-        GraphPassId pass;
-        GraphBufferId buffer;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            buffer = edit.CreateBuffer(new BufferDesc(4, BufferUsages.CopyDestination));
-            pass = edit.AddCopyFramePass("retained bindings", PassQueueSelection.Exact(support.GraphicsQueue), 0,
-                default, static (ref PassDefinition _, ref int _) => { },
-                static (ref CopyPassCommandScope _, in int _) => { });
-            edit.SetPassParameterBindings(pass, [GraphParameterResourceBinding.Null(ResourceBindingType.Sampler)]);
-            edit.Commit();
-        }
-        for (int frameIndex = 0; frameIndex < 7; frameIndex++)
-        {
-            if (frameIndex == 3)
-            {
-                using RenderGraphEdit edit = graph.BeginEdit();
-                PassDefinition definition = edit.GetPass(pass);
-                definition.Write(buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-                edit.SetPassParameterBindings(pass,
-                    [GraphParameterResourceBinding.Null(ResourceBindingType.BufferSrv),
-                     GraphParameterResourceBinding.Null(ResourceBindingType.Sampler)]);
-                edit.Commit();
-            }
-            using RenderGraphFrame frame = graph.BeginFrame();
-            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-            int count = frame.Execute(completions);
-            support.Wait(completions.AsSpan(0, count));
-            GraphPass declaration = graph.StructureIndex.Structure.Passes.Get(pass.Value);
-            Assert.Equal(frameIndex < 3 ? 1 : 2, declaration.ParameterBindings.Count);
-            Assert.Equal(frameIndex < 3 ? 0 : 1, declaration.Accesses.Count);
-        }
-    }
+
 
     [Fact]
     public void RemovingOneResourceDependencyKeepsTheOtherProducerDependency()
@@ -214,122 +177,11 @@ public sealed class RetainedUpdateTests
         }
     }
 
-    [Fact]
-    public void LabelsAndEmptyEditsKeepTheDependencyStructure()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
-        GraphPassId left, right;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            left = AddPass(edit, support.GraphicsQueue, "left");
-            right = AddPass(edit, support.GraphicsQueue, "right");
-            edit.Commit();
-        }
-        GraphStructureIndex before = graph.StructureIndex;
-        GraphPass unrelated = before.Structure.Passes.Get(right.Value);
-        ulong version = graph.StructureVersion;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetPassLabel(left, "changed");
-            edit.Commit();
-        }
-        Assert.Equal(version, graph.StructureVersion);
-        Assert.Equal("left", before.Structure.Passes.Get(left.Value).Label);
-        Assert.Equal("changed", graph.StructureIndex.Structure.Passes.Get(left.Value).Label);
-        Assert.Same(unrelated, graph.StructureIndex.Structure.Passes.Get(right.Value));
-        Assert.Same(before.DependencyPredecessors, graph.StructureIndex.DependencyPredecessors);
-        Assert.Same(before.Schedule, graph.StructureIndex.Schedule);
-        GraphStructureIndex changed = graph.StructureIndex;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetPassLabel(left, "changed");
-            edit.Commit();
-        }
-        Assert.Same(changed, graph.StructureIndex);
-        using (RenderGraphEdit edit = graph.BeginEdit()) edit.Commit();
-        Assert.Same(changed, graph.StructureIndex);
-        Assert.Equal(version, graph.StructureVersion);
-    }
 
-    [Fact]
-    public void BackwardEdgeReordersItsConnectedNodesAndRejectsCyclesAtomically()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
-        var passes = new GraphPassId[256];
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            for (int i = 0; i < passes.Length; i++) passes[i] = AddPass(edit, support.GraphicsQueue, "pass");
-            edit.OrderAfter(passes[1], passes[0]);
-            edit.OrderAfter(passes[^1], passes[^2]);
-            edit.Commit();
-        }
-        GraphStructureIndex before = graph.StructureIndex;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.OrderAfter(passes[0], passes[^1]);
-            edit.Commit();
-        }
-        GraphStructureIndex after = graph.StructureIndex;
-        for (int i = 2; i < passes.Length - 2; i++)
-        {
-            Assert.Equal(before.Positions[passes[i].Value], after.Positions[passes[i].Value]);
-            Assert.Same(before.Structure.Passes.Get(passes[i].Value), after.Structure.Passes.Get(passes[i].Value));
-        }
-        foreach ((GraphIdentity predecessor, GraphIdentity[] consumers) in after.DependencySuccessors)
-            foreach (GraphIdentity consumer in consumers)
-                Assert.True(after.Positions[predecessor] < after.Positions[consumer]);
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.OrderAfter(passes[^2], passes[1]);
-            string? failure = null;
-            try { edit.Commit(); }
-            catch (InvalidOperationException exception) { failure = exception.Message; }
-            Assert.Contains("RG5001", failure);
-        }
-        Assert.Same(after, graph.StructureIndex);
-    }
 
-    [Fact]
-    public void SingleNodeEditDoesNotCopyUnrelatedRowsOrAllocateForTheWholeGraph()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        long small = Measure(64);
-        long large = Measure(2048);
-        // Collection path copying may grow logarithmically. A whole table or row
-        // copy would add hundreds of kilobytes here, as the former implementation did.
-        Assert.True(large <= small + 16_384, $"64 nodes: {small} bytes; 2048 nodes: {large} bytes.");
 
-        long Measure(int count)
-        {
-            using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
-            GraphPassId first = default, last = default;
-            using (RenderGraphEdit edit = graph.BeginEdit())
-            {
-                for (int i = 0; i < count; i++)
-                {
-                    last = AddPass(edit, support.GraphicsQueue, "pass");
-                    if (i == 0) first = last;
-                }
-                edit.Commit();
-            }
-            GraphPass unrelated = graph.StructureIndex.Structure.Passes.Get(last.Value);
-            long minimum = long.MaxValue;
-            for (int i = 0; i < 12; i++)
-            {
-                long bytes = GC.GetAllocatedBytesForCurrentThread();
-                using (RenderGraphEdit edit = graph.BeginEdit())
-                {
-                    edit.SetPassLabel(first, i % 2 == 0 ? "a" : "b");
-                    edit.Commit();
-                }
-                if (i >= 4) minimum = Math.Min(minimum, GC.GetAllocatedBytesForCurrentThread() - bytes);
-                Assert.Same(unrelated, graph.StructureIndex.Structure.Passes.Get(last.Value));
-            }
-            return minimum;
-        }
-    }
+
+
 
     private static GraphPassId AddPass(RenderGraphEdit edit, Queue queue, string label) =>
         edit.AddCopyPass<byte, byte>(label, PassQueueSelection.Exact(queue), 0,

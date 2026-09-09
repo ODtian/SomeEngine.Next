@@ -8,7 +8,6 @@ namespace SomeEngine.Render.Components;
 public readonly record struct MeshMaterialBinding(Material Material) : IBufferElement;
 
 /// <summary>
-/// One ordered material snapshot on a render-world mesh entity. Keeping this distinct from the
-/// authoring element lets render systems evolve their ECS composition independently.
+/// One ordered set of extracted material values on a render-world mesh entity.
 /// </summary>
-public readonly record struct RenderMaterialBinding(Material Material) : IBufferElement;
+public readonly record struct RenderMaterialBinding(MaterialData Material) : IBufferElement;

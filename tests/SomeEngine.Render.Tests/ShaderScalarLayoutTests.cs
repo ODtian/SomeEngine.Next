@@ -1,4 +1,5 @@
-using SomeEngine.Assets.Schema;
+﻿using SomeEngine.Assets.Schema;
+using SomeEngine.Render.Materials;
 
 namespace SomeEngine.Render.Tests;
 
@@ -11,7 +12,7 @@ public sealed class ShaderScalarLayoutTests
         ShaderMaterialScalarLayout second = Layout("SecondScalars", "EmissiveFactor", 0);
         Shader shader = CreateShader(first, second);
 
-        Shader.Validate(shader);
+        CookedShaderTestProgram.Load(shader);
 
         IList<ShaderMaterialScalarLayout> layouts = shader.Metadata!.MaterialScalarLayouts!;
         Assert.Equal(2, layouts.Count);
@@ -48,7 +49,7 @@ public sealed class ShaderScalarLayoutTests
         };
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(
-            () => Shader.Validate(CreateShader(layout)));
+            () => CookedShaderTestProgram.Load(CreateShader(layout)));
 
         Assert.Contains("not canonical and ordered", error.Message, StringComparison.Ordinal);
     }
@@ -69,6 +70,18 @@ public sealed class ShaderScalarLayoutTests
             static slot => slot.Name == nameof(StandardMaterial.BaseColorTint));
         Assert.Equal(typeof(System.Numerics.Vector4), slot.ValueType);
         Assert.Equal(value, Assert.IsType<System.Numerics.Vector4>(material.GetSlotValue(slot.Slot)));
+    }
+
+    [Fact]
+    public void EquivalentFieldOrdersProduceTheSameLayoutIdentity()
+    {
+        var first = new ScalarFieldLayout("Tint", 0, 16, 1, 4, 8);
+        var second = new ScalarFieldLayout("Roughness", 16, 4, 1, 1, 8);
+        ScalarLayout left = ScalarLayout.FromFields("Surface", [first, second], 32);
+        ScalarLayout right = ScalarLayout.FromFields("Surface", [second, first], 32);
+        Assert.Equal(left.LayoutHash, right.LayoutHash);
+        Assert.Equal(left.Fields, right.Fields);
+        Assert.Equal(left.ByteSize, right.ByteSize);
     }
 
     private static ShaderMaterialScalarLayout Layout(

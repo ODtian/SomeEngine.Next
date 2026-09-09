@@ -99,11 +99,9 @@ public ref struct RasterPassCommandScope
     public void SetShadingRate(ShadingRate rate, ShadingRateCombiner primitiveCombiner,
         ShadingRateCombiner imageCombiner) =>
         _frame.Backend.SetShadingRate(_context, rate, primitiveCombiner, imageCombiner);
-    public void SetShadingRateImage(Texture? texture)
-    {
-        if (texture is not null) _frame.Executor.ValidateTexture(_passIndex, texture, null, false);
-        _frame.Backend.SetShadingRateImage(_context, texture);
-    }
+    /// <summary>The raster declaration selects this image before rendering begins.</summary>
+    public void SetShadingRateImage(Texture? texture) =>
+        _frame.Executor.ValidateShadingRateImage(_passIndex, texture);
     public void BeginEvent(ReadOnlySpan<byte> utf8Label)
     {
         _frame.Backend.BeginEvent(_context, utf8Label);

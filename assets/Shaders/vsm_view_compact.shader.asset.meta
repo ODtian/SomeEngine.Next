@@ -2,15 +2,15 @@
   "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
   "source_guid": "0abbdf59-7a4c-44ab-bfbd-4d042e9e65b3",
   "sub_asset_key": "shader:main",
-  "content_fingerprint": "ef5b7ee2877006309a0b5992773668b5d775de11c0f5144c8f762494209ae93e",
+  "content_fingerprint": "23992fc1a4e933098bde7dc22ab0f17d22a924a0896953bf1b452bd684b1656f",
   "dependencies": [
     {
       "path": "assets/Shaders/cluster_raster_target_invocation.slang",
-      "hash": "c45df1260db8140f87f274759b2df9026be0b1ded4b987409a937ec9f4e742c6"
+      "hash": "201330a784b91cde38cb9b16cf169e73d5352cdc251fec33d35cca4592cfa8ec"
     },
     {
       "path": "assets/Shaders/cluster_view.slang",
-      "hash": "4699d687ae7979c3fcb7e2259078db2521f81a88320a2693a15dd198ed84c64e"
+      "hash": "4bae0a993c28e15d3fbc009ba3bc8f4b3c8291314d63cf70efddfd372c0c07c2"
     },
     {
       "path": "assets/Shaders/resource_effects.slang",
@@ -18,11 +18,11 @@
     },
     {
       "path": "assets/Shaders/vsm_sampling.slang",
-      "hash": "f285536e76f922b82ed7b19e75213a39f7f10427636e84e3972b8ca69e7af0db"
+      "hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
     },
     {
       "path": "assets/Shaders/vsm_view_compact.slang",
-      "hash": "e23974d5c51af9437f2b168d1f7d5e6ba3864bd2f0b85a537f14c2dcf3d2f524"
+      "hash": "6e26b40096fe62cf81794bb243b190e4d00a5ca002917b074ba248811844af62"
     }
   ],
   "importer_version": 26

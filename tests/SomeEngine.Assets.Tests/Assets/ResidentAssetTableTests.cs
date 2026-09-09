@@ -38,6 +38,8 @@ public sealed class ResidentAssetTableTests
         fixture.Write(37);
         ProbeAsset updated = await fixture.Loader.ReloadAsync(original);
         Assert.Same(original, updated);
+        Assert.Equal(7, original.Value);
+        await fixture.Loader.ApplyUpdatesAsync();
         Assert.Equal(37, original.Value);
         Assert.Equal<ulong>(2, fixture.Loader.GetRevision(original));
     }
@@ -53,7 +55,20 @@ public sealed class ResidentAssetTableTests
         fixture.Storage.Fail = false;
         fixture.Write(41);
         Assert.Same(original, await fixture.Loader.ReloadAsync(original));
+        Assert.Equal(7, original.Value);
+        await fixture.Loader.ApplyUpdatesAsync();
         Assert.Equal(41, original.Value);
+    }
+    [Fact]
+    public async Task InitialLoadFailureDoesNotPreventRetryAfterStorageRecovers()
+    {
+        await using var fixture = new Fixture();
+        fixture.Storage.Fail = true;
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Loader.LoadAsync(fixture.Id).AsTask());
+        fixture.Storage.Fail = false;
+        ProbeAsset loaded = await fixture.Loader.LoadAsync(fixture.Id);
+        Assert.Equal(7, loaded.Value);
+        Assert.Same(loaded, await fixture.Loader.LoadAsync(fixture.Id));
     }
     [Fact]
     public async Task ClosedLoaderRejectsNewRequests()

@@ -12,7 +12,9 @@ public readonly ref struct RenderGraphDiagnosticsView
         ReadOnlySpan<RenderGraphAccessDiagnostic> accesses,
         ReadOnlySpan<RenderGraphDependencyDiagnostic> dependencies,
         ReadOnlySpan<RenderGraphBarrierDiagnostic> barriers,
-        in RenderGraphStatistics statistics)
+        in RenderGraphStatistics statistics,
+        ReadOnlySpan<RenderGraphQueryPoolDiagnostic> queryPools,
+        ReadOnlySpan<RenderGraphShaderTableDiagnostic> shaderTables)
     {
         StructureVersion = structureVersion;
         Passes = passes;
@@ -22,8 +24,12 @@ public readonly ref struct RenderGraphDiagnosticsView
         Dependencies = dependencies;
         Barriers = barriers;
         Statistics = statistics;
+        QueryPools = queryPools;
+        ShaderTables = shaderTables;
     }
 
+    public ReadOnlySpan<RenderGraphQueryPoolDiagnostic> QueryPools { get; }
+    public ReadOnlySpan<RenderGraphShaderTableDiagnostic> ShaderTables { get; }
     public ulong StructureVersion { get; }
     public ReadOnlySpan<RenderGraphPassDiagnostic> Passes { get; }
     public ReadOnlySpan<RenderGraphBufferDiagnostic> Buffers { get; }
@@ -68,6 +74,9 @@ public readonly record struct RenderGraphTextureDiagnostic(
     int FirstScheduledUse,
     int LastScheduledUse);
 
+public readonly record struct RenderGraphQueryPoolDiagnostic(GraphQueryPoolId Id, string? Label, uint Count, QueryType Type);
+public readonly record struct RenderGraphShaderTableDiagnostic(GraphRayTracingShaderTableId Id, string? Label);
+
 public readonly record struct RenderGraphAccessDiagnostic(
     GraphPassId Pass,
     GraphAccessTargetKind TargetKind,
@@ -80,7 +89,8 @@ public readonly record struct RenderGraphAccessDiagnostic(
     TextureSubresourceRange TextureRange,
     TextureLayout TextureLayout,
     ResourceContentState? ResultContents,
-    BufferContentScope BufferContentScope);
+    BufferContentScope BufferContentScope,
+    QueryRange QueryRange = default);
 
 public enum RenderGraphDependencyKind : byte
 {

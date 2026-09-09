@@ -1,9 +1,8 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
-using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
 using SomeEngine.RenderGraph;
@@ -32,9 +31,9 @@ public readonly record struct LightingFeatureResources(
 /// <summary>
 /// Owns light conversion, fixed-capacity spatial assignment resources, and retained graph passes.
 /// Standard shade discovers these resources from its final linked program through the generic
-/// Cluster shade-resource boundary.
+/// graph resource boundary.
 /// </summary>
-public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
+public sealed class LightingFeature : IGraphResourceProvider, IDisposable
 {
     private const uint ThreadCount = 64;
     private readonly LinkedComputePipeline _pipeline;
@@ -59,7 +58,9 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
         IGraphicsBackend backend,
         Device device,
         global::SomeEngine.RenderGraph.RenderGraph graph,
-        in ClusterPipelineOutputDescription output,
+        int width,
+        int height,
+        uint viewCount,
         Shader shader,
         string entryPoint,
         ClusteredLightGridSettings? settings = null)
@@ -72,9 +73,12 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
             throw new ArgumentException("Lighting and RenderGraph must use the same Device.", nameof(graph));
         ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
 
-        _width = output.Width;
-        _height = output.Height;
-        _viewCount = output.ViewCount;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        ArgumentOutOfRangeException.ThrowIfZero(viewCount);
+        _width = width;
+        _height = height;
+        _viewCount = viewCount;
         _settings = settings ?? new ClusteredLightGridSettings();
         _settings.Validate();
         _gpuLights = new List<GpuLight>(_settings.MaxLights);
@@ -168,36 +172,51 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                 {
                     bool clear = assignment == 0;
                     PassDefinition pass = edit.GetPass(clear ? _clearPass : _buildPass);
-                    _ = pass.Bind(
-                        edit.CreateBufferSrv(
-                            _frameViews,
-                            structureStride: ClusteredLightGridParameters.SizeInBytes,
-                            label: "Lighting view parameters"),
-                        PipelineSync.ComputeShading);
-                    _ = pass.Bind(
-                        edit.CreateBufferSrv(
-                            _frameLights,
-                            structureStride: GpuLight.SizeInBytes,
-                            label: "Lighting lights"),
-                        PipelineSync.ComputeShading);
-                    _ = pass.Bind(
-                        edit.CreateBufferUav(
-                            _grid,
-                            structureStride: 2 * sizeof(uint),
-                            label: "Lighting grid output"),
-                        PipelineSync.ComputeShading,
-                        clear ? GraphAccessMode.Write : GraphAccessMode.ReadWrite,
-                        clear ? WriteCoverage.Complete : WriteCoverage.Partial);
-                    _ = pass.Bind(
-                        edit.CreateBufferUav(
-                            _lightIndices,
-                            structureStride: sizeof(uint),
-                            label: "Lighting index output"),
-                        PipelineSync.ComputeShading,
-                        GraphAccessMode.Write,
-                        WriteCoverage.Partial,
-                        resultContents: ResourceContentState.Defined,
-                        contentScope: BufferContentScope.CountBoundedPrefix);
+                    int[] resources = FeatureResourceLayout.Resolve<int>(
+                        clear ? clearPipeline.ParameterLayout : pipeline.ParameterLayout,
+                        static (name, type) => (name, type) switch
+                        {
+                            ("LightingViews", ResourceBindingType.BufferSrv) => 0,
+                            ("LightBuffer", ResourceBindingType.BufferSrv) => 1,
+                            ("ClusteredLightGrid", ResourceBindingType.BufferUav) => 2,
+                            ("LightIndexList", ResourceBindingType.BufferUav) => 3,
+                            _ => null,
+                        });
+                    foreach (int resource in resources)
+                        switch (resource)
+                        {
+                            case 0:
+                                _ = pass.Bind(edit.CreateBufferSrv(_frameViews,
+                                    structureStride: ClusteredLightGridParameters.SizeInBytes,
+                                    label: "Lighting view parameters"), PipelineSync.ComputeShading);
+                                break;
+                            case 1:
+                                _ = pass.Bind(edit.CreateBufferSrv(_frameLights,
+                                    structureStride: GpuLight.SizeInBytes, label: "Lighting lights"),
+                                    PipelineSync.ComputeShading);
+                                break;
+                            case 2:
+                                _ = pass.Bind(edit.CreateBufferUav(_grid,
+                                    structureStride: 2 * sizeof(uint), label: "Lighting grid output"),
+                                    PipelineSync.ComputeShading,
+                                    clear ? GraphAccessMode.Write : GraphAccessMode.ReadWrite,
+                                    clear ? WriteCoverage.Complete : WriteCoverage.Partial);
+                                break;
+                            case 3:
+                                _ = pass.Bind(edit.CreateBufferUav(_lightIndices,
+                                    structureStride: sizeof(uint), label: "Lighting index output"),
+                                    PipelineSync.ComputeShading, GraphAccessMode.Write,
+                                    WriteCoverage.Partial, resultContents: ResourceContentState.Defined,
+                                    contentScope: BufferContentScope.CountBoundedPrefix);
+                                break;
+                        }
+                    // Clearing every cell count establishes an empty valid index prefix even
+                    // when the compiled clear entry has no index-list descriptor.
+                    if (clear && !resources.Contains(3))
+                        pass.Write(_lightIndices, BufferRange.Whole, PipelineSync.ComputeShading,
+                            ResourceAccess.UnorderedAccess, WriteCoverage.Partial,
+                            resultContents: ResourceContentState.Defined,
+                            contentScope: BufferContentScope.CountBoundedPrefix);
                 }
                 edit.Commit();
             }
@@ -298,7 +317,7 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
     public bool TryResolve(
         string name,
         ResourceBindingType type,
-        out ClusterStageResourceBinder binder)
+        out GraphResourceBinder binder)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         binder = name switch
@@ -313,48 +332,48 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
         return binder is not null;
     }
 
-    private void BindLightingViews(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindLightingViews(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameViews,
                 structureStride: ClusteredLightGridParameters.SizeInBytes,
                 label: "Standard shade lighting views"),
-            PipelineSync.ComputeShading);
+            sync);
     }
 
-    private void BindLights(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindLights(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameLights,
                 structureStride: GpuLight.SizeInBytes,
                 label: "Standard shade lights"),
-            PipelineSync.ComputeShading);
+            sync);
     }
 
-    private void BindGrid(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindGrid(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _grid,
                 structureStride: 2 * sizeof(uint),
                 label: "Standard shade clustered grid"),
-            PipelineSync.ComputeShading);
+            sync);
     }
 
-    private void BindIndices(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindIndices(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _lightIndices,
                 structureStride: sizeof(uint),
                 label: "Standard shade light indices"),
-            PipelineSync.ComputeShading,
+            sync,
             BufferContentScope.CountBoundedPrefix);
     }
 
-    private void BindCookieAtlas(ref RenderGraphEdit graph, ref PassDefinition pass)
+    private void BindCookieAtlas(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateTextureSrv(
@@ -362,31 +381,31 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
                 format: Format.R8G8B8A8UNorm,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Standard shade lighting cookie atlas"),
-            PipelineSync.ComputeShading);
+            sync);
     }
 
     internal void BindVirtualShadowPageMarking(
         ref RenderGraphEdit graph,
-        ref PassDefinition pass)
+        ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _frameViews,
                 structureStride: ClusteredLightGridParameters.SizeInBytes,
                 label: "Virtual shadow lighting views"),
-            PipelineSync.ComputeShading);
+            sync);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _grid,
                 structureStride: 2 * sizeof(uint),
                 label: "Virtual shadow clustered light grid"),
-            PipelineSync.ComputeShading);
+            sync);
         _ = pass.Bind(
             graph.CreateBufferSrv(
                 _lightIndices,
                 structureStride: sizeof(uint),
                 label: "Virtual shadow clustered light indices"),
-            PipelineSync.ComputeShading,
+            sync,
             BufferContentScope.CountBoundedPrefix);
     }
 
@@ -474,9 +493,10 @@ public sealed class LightingFeature : IClusterStageResourceProvider, IDisposable
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = SizeInBytes)]
 internal struct ClusteredLightGridParameters
 {
-    internal const int SizeInBytes = 144;
+    internal const int SizeInBytes = 192;
 
     internal Matrix4x4 View;
+    internal Matrix4x4 Projection;
     internal uint TileSizeX;
     internal uint TileSizeY;
     internal uint TileCountX;
@@ -486,14 +506,10 @@ internal struct ClusteredLightGridParameters
     internal uint MaxLightsPerCluster;
     internal uint DirectionalCount;
     internal uint NonDirectionalCount;
-    internal float P00;
-    internal float P11;
     internal uint ScreenWidth;
     internal uint ScreenHeight;
     internal uint CellCountPerView;
     internal uint Pad0;
-    internal uint Pad1;
-    internal uint Pad2;
 
     internal static ClusteredLightGridParameters Create(
         in RenderView view,
@@ -522,8 +538,7 @@ internal struct ClusteredLightGridParameters
             MaxLightsPerCluster = settings.MaxLightsPerCell,
             DirectionalCount = directionalCount,
             NonDirectionalCount = nonDirectionalCount,
-            P00 = view.Projection.M11,
-            P11 = view.Projection.M22,
+            Projection = view.Projection,
             ScreenWidth = view.ViewportWidth,
             ScreenHeight = view.ViewportHeight,
             CellCountPerView = cellCountPerView,

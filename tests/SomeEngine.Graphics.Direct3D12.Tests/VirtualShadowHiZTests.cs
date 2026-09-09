@@ -16,7 +16,7 @@ public sealed class VirtualShadowHiZTests
         using D3D12TestShaderProgram reduce = D3D12TestShaderProgram.CompileWithSearchPaths(
             "shadow_hiz_reduce", "#include \"vsm_page_hiz_reduce.slang\"",
             [new("ReduceVirtualShadowPageHiZ", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline first = backend.CreateComputePipeline(device, new ComputePipelineDesc(initialize.Program, initialize.GetEntryPoint(0)));
         using Pipeline second = backend.CreateComputePipeline(device, new ComputePipelineDesc(reduce.Program, reduce.GetEntryPoint(0)));

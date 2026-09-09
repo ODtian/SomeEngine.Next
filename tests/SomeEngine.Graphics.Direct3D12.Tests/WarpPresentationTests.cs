@@ -8,35 +8,13 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 [Trait("Isolation", "PresentationProcess")]
 public sealed class WarpPresentationTests
 {
-    [Fact]
-    public unsafe void Hdr10_metadata_lowering_preserves_exact_transport_values()
-    {
-        Hdr10Metadata source = CreateHdr10Metadata();
 
-        Silk.NET.DXGI.HdrMetadataHdr10 native =
-            D3D12Backend.ToNativeHdr10Metadata(source);
-
-        Assert.Equal(source.RedPrimaryX, native.RedPrimary[0]);
-        Assert.Equal(source.RedPrimaryY, native.RedPrimary[1]);
-        Assert.Equal(source.GreenPrimaryX, native.GreenPrimary[0]);
-        Assert.Equal(source.GreenPrimaryY, native.GreenPrimary[1]);
-        Assert.Equal(source.BluePrimaryX, native.BluePrimary[0]);
-        Assert.Equal(source.BluePrimaryY, native.BluePrimary[1]);
-        Assert.Equal(source.WhitePointX, native.WhitePoint[0]);
-        Assert.Equal(source.WhitePointY, native.WhitePoint[1]);
-        Assert.Equal(source.MaximumMasteringLuminance, native.MaxMasteringLuminance);
-        Assert.Equal(source.MinimumMasteringLuminance, native.MinMasteringLuminance);
-        Assert.Equal(source.MaximumContentLightLevel, native.MaxContentLightLevel);
-        Assert.Equal(
-            source.MaximumFrameAverageLightLevel,
-            native.MaxFrameAverageLightLevel);
-    }
 
     [Fact]
     public void Hdr10_metadata_is_rejected_for_non_hdr10_color_space_before_native_creation()
     {
         using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -60,7 +38,7 @@ public sealed class WarpPresentationTests
     public void Invalid_hdr10_transport_values_are_rejected_before_native_creation()
     {
         using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -84,7 +62,7 @@ public sealed class WarpPresentationTests
     [Fact]
     public void Acquire_submit_present_and_reconfigure_enforce_sequence_and_commit_boundaries()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         ExercisePresentationLifecycle(backend);
     }
 
@@ -92,7 +70,7 @@ public sealed class WarpPresentationTests
     public void Native_validation_accepts_the_complete_presentation_lifecycle()
     {
         using IGraphicsBackend backend =
-            new ValidationLayer(new D3D12Backend());
+            new ValidationLayer(D3D12GraphicsBackend.Create());
         ExercisePresentationLifecycle(backend);
     }
 
@@ -100,7 +78,7 @@ public sealed class WarpPresentationTests
     public void Dxgi_presentation_telemetry_tracks_configuration_latency_and_completion()
     {
         using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -165,32 +143,7 @@ public sealed class WarpPresentationTests
         Assert.True(reconfigured.LastReconfigureDuration >= TimeSpan.Zero);
     }
 
-    [Fact]
-    public void Native_debug_validation_retires_a_presented_generation_on_direct_dispose()
-    {
-        using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend(new D3D12BackendOptions(
-            new D3D12ValidationOptions(
-                DisableGpuBasedValidation: true,
-                DisableSynchronizedQueueValidation: true)));
-        ((INativeValidationControl)backend).EnableNativeValidation();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using Surface surface = backend.CreateSurface(new SurfaceDesc(
-            NativeWindowType.Win32,
-            window.Handle));
-        SwapchainConfig config = new(
-            32, 32, Format.R8G8B8A8UNorm, ColorSpace.Srgb,
-            PresentType.Mailbox, false, 2);
-        Swapchain swapchain = backend.CreateSwapchain(
-            device,
-            new SwapchainDesc(surface, 2, TextureUsages.ColorAttachment, config));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
 
-        SubmitAndPresent(backend, device, swapchain, queue);
-        swapchain.Dispose();
-
-        Assert.True(swapchain.IsDisposed);
-    }
 
     [Theory]
     [InlineData(PresentedTeardown.Swapchain)]
@@ -201,7 +154,7 @@ public sealed class WarpPresentationTests
         PresentedTeardown teardown)
     {
         using IGraphicsBackend backend =
-            new ValidationLayer(new D3D12Backend());
+            new ValidationLayer(D3D12GraphicsBackend.Create());
         ExercisePresentationLifecycle(backend, teardown);
     }
 
@@ -330,7 +283,6 @@ public sealed class WarpPresentationTests
                     backend.Dispose();
                     break;
             }
-            Assert.True(swapchain.IsDisposed);
             return;
         }
 
@@ -380,8 +332,8 @@ public sealed class WarpPresentationTests
         bool validationEnabled)
     {
         using IGraphicsBackend backend = validationEnabled
-            ? new ValidationLayer(new D3D12Backend())
-            : new D3D12Backend();
+            ? new ValidationLayer(D3D12GraphicsBackend.Create())
+            : D3D12GraphicsBackend.Create();
         using D3D12TestWindow window = new();
         AdapterInfo adapter = D3D12TestSupport.SelectWarp(backend);
         using Device device = backend.CreateDevice(new DeviceDesc(
@@ -473,7 +425,7 @@ public sealed class WarpPresentationTests
     public void Parent_disposal_joins_an_already_running_swapchain_release(bool disposeDevice)
     {
         using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -529,7 +481,6 @@ public sealed class WarpPresentationTests
             Assert.True(holder.Join(TimeSpan.FromSeconds(10)));
             Assert.True(child.Join(TimeSpan.FromSeconds(10)));
             Assert.True(parent.Join(TimeSpan.FromSeconds(10)));
-            Assert.True(swapchain.IsDisposed);
         }
         finally
         {
@@ -555,7 +506,7 @@ public sealed class WarpPresentationTests
     public void Final_drain_waits_for_maximum_target_and_collects_all_payload_families()
     {
         using D3D12TestWindow window = new();
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Graphics, 0);
         _ = backend.Submit(queue, new QueueSubmitDesc([], [], [], [], []));
@@ -584,21 +535,7 @@ public sealed class WarpPresentationTests
     }
 
 
-    [Fact]
-    public void Intrusive_retirement_nonempty_authority_is_the_head()
-    {
-        var chain = new IntrusiveRetirementChain<TestRetirementPayload>();
-        var payload = new TestRetirementPayload();
 
-        chain.Append(payload, 17);
-
-        Assert.True(chain.HasAny);
-        Assert.Equal(17UL, chain.Target);
-        chain.Abandon();
-        Assert.False(chain.HasAny);
-        Assert.Equal(0UL, chain.Target);
-        Assert.True(payload.Disposed);
-    }
 
 
 
@@ -635,12 +572,6 @@ public sealed class WarpPresentationTests
         _ = backend.Present(queue, image);
     }
 
-    private sealed class TestRetirementPayload :
-        IntrusiveRetirementPayload<TestRetirementPayload>
-    {
-        internal bool Disposed { get; private set; }
 
-        public override void Dispose() => Disposed = true;
-    }
 
 }

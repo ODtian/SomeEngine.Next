@@ -2,7 +2,7 @@
   "asset_guid": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
   "sub_asset_key": "material:0:Default",
-  "content_fingerprint": "b48c23e965f7f3c57dbc7d888b28629d31866162fcdc1f4a27fc1a7cfe1e99f1",
+  "content_fingerprint": "e117532eb9e7bfde6276c986f85ad4c9d16cc1b5b348bbee56d9c128b37e62f5",
   "dependencies": [
     {
       "path": "assets/Materials/Standard.material.asset",
