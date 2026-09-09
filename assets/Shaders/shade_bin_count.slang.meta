@@ -5,7 +5,7 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "9f95663835d755f1537865d754e47bb8a80ab8befdf8c3b060dc9487d8fdc720",
+  "input_hash": "855678bf9a374a0b6959edcf30b4016c4d3b516d144ce8b2ec6959a7b4811e4b",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_bin_io.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/cluster_instance_properties.slang",
-      "content_hash": "ba3fa8bcbef6cc98a007b09cd82563cc2e1840a51041a02b4d805950abb074d8"
+      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
     },
     {
       "relative_path": "assets/Shaders/cluster_structures.slang",
@@ -25,15 +25,15 @@
     },
     {
       "relative_path": "assets/Shaders/render_instance_properties.slang",
-      "content_hash": "33eb01451d41f3ff6649fdd438a416ca212ec3c0128e9d36e20ac5c374234f54"
+      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
     },
     {
       "relative_path": "assets/Shaders/render_instance_transform.slang",
-      "content_hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
+      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/shade_bin_common.slang",
@@ -56,7 +56,7 @@
     {
       "asset_guid": "2bb497ab-fcf4-5fb5-88e9-a510d278a6fb",
       "sub_asset_key": "shader:main",
-      "input_hash": "9f95663835d755f1537865d754e47bb8a80ab8befdf8c3b060dc9487d8fdc720",
+      "input_hash": "855678bf9a374a0b6959edcf30b4016c4d3b516d144ce8b2ec6959a7b4811e4b",
       "dependencies": [],
       "asset_path": "shade_bin_count.shader.asset"
     }

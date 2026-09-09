@@ -5,7 +5,7 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "6223932e134f84cac3171a6941f4f6224cc3aa5dc5dbdece25664483d9175618",
+  "input_hash": "1acc37f3244c92e0a1c6ba463df4a347b6365c94d5a37acd8a9efdaa10800d0e",
   "inputs": [
     {
       "relative_path": "assets/Shaders/hiz_common.slang",
@@ -17,14 +17,14 @@
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     }
   ],
   "outputs": [
     {
       "asset_guid": "a22ae123-2398-52e0-996a-fcdeba6165f1",
       "sub_asset_key": "shader:main",
-      "input_hash": "6223932e134f84cac3171a6941f4f6224cc3aa5dc5dbdece25664483d9175618",
+      "input_hash": "1acc37f3244c92e0a1c6ba463df4a347b6365c94d5a37acd8a9efdaa10800d0e",
       "dependencies": [],
       "asset_path": "hiz_reduce.shader.asset"
     }

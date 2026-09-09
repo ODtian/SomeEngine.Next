@@ -5,11 +5,11 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "b52e78c74b0cc48c0276933de9129a8d0b72ecb0ace7b68358db6eaa21407605",
+  "input_hash": "adfe99b08b2b3208e6e0de8c39f83cef7e5b99ecd9462836f4829cbb764e5ecd",
   "inputs": [
     {
       "relative_path": "assets/Shaders/fullscreen_triangle.slang",
-      "content_hash": "e169a7c879d8de35ba80401c35c223b8371bf9f428b3050ad488b2545891e202"
+      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
     },
     {
       "relative_path": "assets/Shaders/translucency_composite.slang",
@@ -20,7 +20,7 @@
     {
       "asset_guid": "d1a4dd79-a52d-5819-b62c-65200b625726",
       "sub_asset_key": "shader:main",
-      "input_hash": "b52e78c74b0cc48c0276933de9129a8d0b72ecb0ace7b68358db6eaa21407605",
+      "input_hash": "adfe99b08b2b3208e6e0de8c39f83cef7e5b99ecd9462836f4829cbb764e5ecd",
       "dependencies": [],
       "asset_path": "translucency_composite.shader.asset"
     }

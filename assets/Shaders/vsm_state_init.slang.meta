@@ -5,11 +5,11 @@
     "cook_profile": "d3d12-sm6.2"
   },
   "importer_version": 26,
-  "input_hash": "9885f8dc8e8403a811671974ddef3983cde441dbb856bc0263f6607bdc5002b1",
+  "input_hash": "06ed760f64fa63e4edecaff8157cf7464b0c4fb20344dd276de536b4986333a9",
   "inputs": [
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/vsm_sampling.slang",
@@ -24,7 +24,7 @@
     {
       "asset_guid": "1e7496e8-29c3-5314-93f3-b651809d52cc",
       "sub_asset_key": "shader:main",
-      "input_hash": "9885f8dc8e8403a811671974ddef3983cde441dbb856bc0263f6607bdc5002b1",
+      "input_hash": "06ed760f64fa63e4edecaff8157cf7464b0c4fb20344dd276de536b4986333a9",
       "dependencies": [],
       "asset_path": "vsm_state_init.shader.asset"
     }

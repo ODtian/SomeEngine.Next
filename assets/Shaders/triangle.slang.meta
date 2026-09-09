@@ -5,18 +5,18 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "2aca16f58d464556ff73bec7e14aead8b198ce2147396ba9786ec4ce9427225e",
+  "input_hash": "70aadaba8d6d57f22f37599529e62c5300152b2770e8de420cdfff87a44bb114",
   "inputs": [
     {
       "relative_path": "assets/Shaders/triangle.slang",
-      "content_hash": "73c1db9073b2ebf36bb2d52e5f6d29f07e7f2b6b1e34460273112e4452f8add7"
+      "content_hash": "c0a4d76f9f6b31b7a81ff7a585d897ebfc71ff50487d80d4a2271c0746571396"
     }
   ],
   "outputs": [
     {
       "asset_guid": "84c8c701-58c5-5649-b2b5-dab23410d667",
       "sub_asset_key": "shader:main",
-      "input_hash": "2aca16f58d464556ff73bec7e14aead8b198ce2147396ba9786ec4ce9427225e",
+      "input_hash": "70aadaba8d6d57f22f37599529e62c5300152b2770e8de420cdfff87a44bb114",
       "dependencies": [],
       "asset_path": "triangle.shader.asset"
     }

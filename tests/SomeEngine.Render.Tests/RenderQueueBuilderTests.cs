@@ -12,7 +12,7 @@ public sealed class RenderQueueBuilderTests
     [Fact]
     public void PipelineKeysGroupStateWhileTransparentWorkPreservesDepth()
     {
-        var world = new RenderWorld();
+        using var world = new RenderWorld(execution: new WorldJobs(SomeEngine.Job.JobSystem.Default));
         Entity first = Create(
             world,
             new QueueInput(10, 5.0f, 0b11),

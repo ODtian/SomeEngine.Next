@@ -5,7 +5,7 @@
     "cook_profile": "d3d12-sm6.2"
   },
   "importer_version": 26,
-  "input_hash": "8651a27aa5c769a1f20978c925af29ff0cb476979dbe183cde3f6d90a6e8d00b",
+  "input_hash": "f4568f77ae4be74b49f1dbb95a1fa4fe4ed043b9686a3600fa44ac81f5c412bd",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_bvh_cull_common.slang",
@@ -21,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/cluster_instance_properties.slang",
-      "content_hash": "ba3fa8bcbef6cc98a007b09cd82563cc2e1840a51041a02b4d805950abb074d8"
+      "content_hash": "a881c699f3ae666c6d0cda6a391ac173605c29c5f87cb028185a5d57b4726a01"
     },
     {
       "relative_path": "assets/Shaders/cluster_raster_region_access.slang",
@@ -61,15 +61,15 @@
     },
     {
       "relative_path": "assets/Shaders/render_instance_properties.slang",
-      "content_hash": "33eb01451d41f3ff6649fdd438a416ca212ec3c0128e9d36e20ac5c374234f54"
+      "content_hash": "d63867a87e179b0b11ab4cd4a06b5a8f937f1d219d2816853db156eef7c14b8a"
     },
     {
       "relative_path": "assets/Shaders/render_instance_transform.slang",
-      "content_hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
+      "content_hash": "bee8de55a909be0fe22219acb566c9275974e7a7e2f42966b3452cbb5d979927"
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/wave_aggregation.slang",
@@ -80,7 +80,7 @@
     {
       "asset_guid": "19abbdb4-f384-584b-8118-add494eefec6",
       "sub_asset_key": "shader:main",
-      "input_hash": "8651a27aa5c769a1f20978c925af29ff0cb476979dbe183cde3f6d90a6e8d00b",
+      "input_hash": "f4568f77ae4be74b49f1dbb95a1fa4fe4ed043b9686a3600fa44ac81f5c412bd",
       "dependencies": [],
       "asset_path": "cluster_cull_phase1.shader.asset"
     }

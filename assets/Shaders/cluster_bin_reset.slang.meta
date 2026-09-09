@@ -5,7 +5,7 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "88b5c5a7e72cabf7e71671fa66f819d65d8e417ca04bc6311cc34e625fa40b91",
+  "input_hash": "146be9fa84a11d4e2576390e9ec80b7131f659c3507798ad6625fd6329821731",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_bin_common.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/wave_aggregation.slang",
@@ -36,7 +36,7 @@
     {
       "asset_guid": "6c6e4f69-98e7-5b37-b30d-7c13f7b9e043",
       "sub_asset_key": "shader:main",
-      "input_hash": "88b5c5a7e72cabf7e71671fa66f819d65d8e417ca04bc6311cc34e625fa40b91",
+      "input_hash": "146be9fa84a11d4e2576390e9ec80b7131f659c3507798ad6625fd6329821731",
       "dependencies": [],
       "asset_path": "cluster_bin_reset.shader.asset"
     }

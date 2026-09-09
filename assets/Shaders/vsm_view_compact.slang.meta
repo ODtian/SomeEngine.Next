@@ -5,7 +5,7 @@
     "cook_profile": "d3d12-sm6.2"
   },
   "importer_version": 26,
-  "input_hash": "23992fc1a4e933098bde7dc22ab0f17d22a924a0896953bf1b452bd684b1656f",
+  "input_hash": "b8dd7b59bc5ef5bf5a75e974952a6d5af636967eb2340cfdd13776d6c2e31189",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_raster_target_invocation.slang",
@@ -17,7 +17,7 @@
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/vsm_sampling.slang",
@@ -32,7 +32,7 @@
     {
       "asset_guid": "5610ce5e-dcec-5518-affa-7a9efe3ce939",
       "sub_asset_key": "shader:main",
-      "input_hash": "23992fc1a4e933098bde7dc22ab0f17d22a924a0896953bf1b452bd684b1656f",
+      "input_hash": "b8dd7b59bc5ef5bf5a75e974952a6d5af636967eb2340cfdd13776d6c2e31189",
       "dependencies": [],
       "asset_path": "vsm_view_compact.shader.asset"
     }

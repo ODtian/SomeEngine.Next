@@ -5,7 +5,7 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "c75fab1dd4ab9786d3448d8af473ba3735508760580ac9f567a2f64d6c71fa87",
+  "input_hash": "bdb56db06f66434530a999a3a8af59cd6e2a4b1ce7af45063322270b9888319d",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_deferred_resume.slang",
@@ -17,7 +17,7 @@
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/wave_aggregation.slang",
@@ -28,7 +28,7 @@
     {
       "asset_guid": "1c40ffb4-67dc-523b-bc03-c033d51f1c86",
       "sub_asset_key": "shader:main",
-      "input_hash": "c75fab1dd4ab9786d3448d8af473ba3735508760580ac9f567a2f64d6c71fa87",
+      "input_hash": "bdb56db06f66434530a999a3a8af59cd6e2a4b1ce7af45063322270b9888319d",
       "dependencies": [],
       "asset_path": "cluster_deferred_resume.shader.asset"
     }

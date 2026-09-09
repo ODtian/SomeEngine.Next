@@ -5,11 +5,11 @@
     "cook_profile": "default"
   },
   "importer_version": 26,
-  "input_hash": "0a24d9b25f1c43d92bb5e993ae84069249e6d4e6f6c1e8f2beb6b1505707453a",
+  "input_hash": "7d69e91e6b05dd52bc2d30fb58b190b1d357ab95905fe4e130bb0f70f4601488",
   "inputs": [
     {
       "relative_path": "assets/Shaders/fullscreen_triangle.slang",
-      "content_hash": "e169a7c879d8de35ba80401c35c223b8371bf9f428b3050ad488b2545891e202"
+      "content_hash": "a379eb11e577feb64d5fa47621d9ecad73fc1708619af7c527677c7f53055e1c"
     },
     {
       "relative_path": "assets/Shaders/render_debug_overlay.slang",
@@ -20,7 +20,7 @@
     {
       "asset_guid": "451577f6-27d5-553a-a428-ec2d950deca0",
       "sub_asset_key": "shader:main",
-      "input_hash": "0a24d9b25f1c43d92bb5e993ae84069249e6d4e6f6c1e8f2beb6b1505707453a",
+      "input_hash": "7d69e91e6b05dd52bc2d30fb58b190b1d357ab95905fe4e130bb0f70f4601488",
       "dependencies": [],
       "asset_path": "render_debug_overlay.shader.asset"
     }

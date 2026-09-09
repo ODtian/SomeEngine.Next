@@ -5,7 +5,7 @@
     "cook_profile": "d3d12-sm6.2"
   },
   "importer_version": 26,
-  "input_hash": "640c9b0f83a3326dee7287bef387adbeaa6fbae38077bad2f68c741cfdd7cb56",
+  "input_hash": "11220d0ab70b0be9b1ba106d604b4c63599d2740f987420e2f63fa43e750c734",
   "inputs": [
     {
       "relative_path": "assets/Shaders/cluster_structures.slang",
@@ -21,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
     },
     {
       "relative_path": "assets/Shaders/wave_aggregation.slang",
@@ -32,7 +32,7 @@
     {
       "asset_guid": "ab50e035-870d-5e6b-9ecc-0d7325cb6f49",
       "sub_asset_key": "shader:main",
-      "input_hash": "640c9b0f83a3326dee7287bef387adbeaa6fbae38077bad2f68c741cfdd7cb56",
+      "input_hash": "11220d0ab70b0be9b1ba106d604b4c63599d2740f987420e2f63fa43e750c734",
       "dependencies": [],
       "asset_path": "cluster_tessellation_bin.shader.asset"
     }
