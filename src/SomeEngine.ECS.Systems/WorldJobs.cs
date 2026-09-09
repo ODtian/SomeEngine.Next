@@ -8,23 +8,17 @@ namespace SomeEngine.ECS.Systems;
 /// Per-thread nesting keeps compound owner operations admitted without reacquiring resources that
 /// the active owner already covers.
 /// </summary>
-internal sealed class WorldJobAdmission : IWorldJobAdmission
+public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
 {
-    internal static WorldJobAdmission Instance { get; } = new();
-
     [ThreadStatic]
     private static Dictionary<World, AdmissionFrame>? s_frames;
 
     [ThreadStatic]
     private static Stack<AdmissionFrame>? s_framePool;
 
-    private WorldJobAdmission()
-    {
-    }
+    internal override bool HasCurrentJobScope => JobExecutionContext.IsActive;
 
-    public bool HasCurrentJobScope => JobExecutionContext.IsActive;
-
-    public bool HasCurrentThreadScope(World world)
+    internal override bool HasCurrentThreadScope(World world)
     {
         ArgumentNullException.ThrowIfNull(world);
         return s_frames is { } frames &&
@@ -32,7 +26,7 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
             frame.Depth > 0;
     }
 
-    public void Enter(World world, in WorldJobAdmissionRequest request)
+    internal override void Enter(World world, in WorldJobAdmissionRequest request)
     {
         RequestedStorage[]? rented = null;
         int scratchLength = Math.Max(1, request.QueryStorageAccesses.Length);
@@ -40,10 +34,23 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
             ? stackalloc RequestedStorage[scratchLength]
             : (rented = ArrayPool<RequestedStorage>.Shared.Rent(scratchLength))
                 .AsSpan(0, scratchLength);
+        bool countUse = !JobExecutionContext.IsActive && !HasCurrentThreadScope(world);
+        bool begun = false;
         try
         {
+            if (countUse)
+            {
+                BeginUse();
+                begun = true;
+            }
             int storageCount = CollectStorage(in request, scratch);
             EnterCore(world, in request, scratch[..storageCount]);
+        }
+        catch
+        {
+            if (begun)
+                EndUse();
+            throw;
         }
         finally
         {
@@ -52,7 +59,7 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
         }
     }
 
-    public void Exit(World world, in WorldJobAdmissionRequest request)
+    internal override void Exit(World world, in WorldJobAdmissionRequest request)
     {
         Dictionary<World, AdmissionFrame>? frames = s_frames;
         if (frames is null || !frames.TryGetValue(world, out AdmissionFrame? frame))
@@ -76,6 +83,7 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
             int storageCount = CollectStorage(in request, scratch);
             RemoveStorage(frame, scratch[..storageCount]);
 
+            bool endUse = frame.Depth == 1 && !JobExecutionContext.IsActive;
             SynchronousResourceOwner owner = frame.Owners.Pop();
             frame.Depth--;
             if (frame.Depth == 0)
@@ -86,7 +94,12 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
                 ReturnFrame(frame);
             }
 
-            owner.Dispose();
+            try { owner.Dispose(); }
+            finally
+            {
+                if (endUse)
+                    EndUse();
+            }
         }
         finally
         {
@@ -95,7 +108,7 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
         }
     }
 
-    public void ValidateCommandBufferAccess(World world)
+    internal override void ValidateCommandBufferAccess(World world)
     {
         ArgumentNullException.ThrowIfNull(world);
         if (!JobExecutionContext.IsActive)
@@ -107,7 +120,7 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
             "job adapter that owns its producer storage.");
     }
 
-    private static void EnterCore(
+    private void EnterCore(
         World world,
         in WorldJobAdmissionRequest request,
         ReadOnlySpan<RequestedStorage> storage)
@@ -146,14 +159,14 @@ internal sealed class WorldJobAdmission : IWorldJobAdmission
                     request.CanWrite;
                 for (int i = 0; i < required.Length; i++)
                 {
-                    JobSystem.RequireCurrentAccess(
+                    Scheduler.RequireCurrentAccess(
                         required[i],
                         requireSingleWorkItem);
                 }
             }
             else
             {
-                owner = JobSystem.AcquireSynchronousAccess(required);
+                owner = Scheduler.AcquireSynchronousAccess(required);
             }
 
             CommitOwner(frames, world, frame, in request, storage, owner);

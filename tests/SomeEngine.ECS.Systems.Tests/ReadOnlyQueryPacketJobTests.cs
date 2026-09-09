@@ -11,7 +11,7 @@ public sealed class ReadOnlyQueryPacketJobTests
     public void RowFiltersBecomeDenseContiguousPacketsWithDisjointOutputRanges()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity[] source = new Entity[6];
         for (int index = 0; index < source.Length; index++)
         {
@@ -69,7 +69,7 @@ public sealed class ReadOnlyQueryPacketJobTests
     public void PacketReadRejectsComponentsNotDeclaredByTheQuery()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new PacketValue(7));
         world.Add(entity, new UndeclaredValue(9));
         QueryHandle query = world.Query(
@@ -100,7 +100,7 @@ public sealed class ReadOnlyQueryPacketJobTests
     public void PreparedPlanReusesPacketsForSeveralPassesAndCommandRecording()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity[] entities = new Entity[5];
         for (int index = 0; index < entities.Length; index++)
             entities[index] = world.CreateEntity(new PacketValue(index + 20));

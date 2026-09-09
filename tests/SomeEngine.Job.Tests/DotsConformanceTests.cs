@@ -6,7 +6,7 @@ public sealed class DotsConformanceTests
 {
     public DotsConformanceTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ConformanceJobs.Reset();
     }
 
@@ -85,7 +85,7 @@ public sealed class DotsConformanceTests
     [Fact]
     public void AdapterManagedPayloadsExecute()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         var log = new List<string>();
 
         new ConformanceJobs.ManagedJob(log, "single").Schedule().Complete();

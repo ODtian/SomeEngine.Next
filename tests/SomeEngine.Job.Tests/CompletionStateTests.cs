@@ -4,7 +4,7 @@ public sealed class CompletionStateTests
 {
     public CompletionStateTests()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
     }
 
     [Fact]

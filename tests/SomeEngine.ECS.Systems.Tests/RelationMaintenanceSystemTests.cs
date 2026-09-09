@@ -12,7 +12,7 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity source = world.CreateEntity();
             Entity oldTarget = world.CreateEntity();
             Entity newTarget = world.CreateEntity();
@@ -87,7 +87,7 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             using var readerStarted = new ManualResetEventSlim();
             using var releaseReader = new ManualResetEventSlim();
             JobHandle reader = default;
@@ -117,8 +117,8 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var worldA = new World();
-            var worldB = new World();
+            var worldA = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var worldB = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
             JobHandle blocker = default;
@@ -153,7 +153,7 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity source = world.CreateEntity();
             Entity oldTarget = world.CreateEntity();
             Entity newTarget = world.CreateEntity();
@@ -189,7 +189,7 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity source = world.CreateEntity();
             Entity oldTarget = world.CreateEntity();
             Entity newTarget = world.CreateEntity();
@@ -216,7 +216,7 @@ public sealed class RelationMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity endpoint = world.CreateEntity();
             var capture = new EdgeCapture<DirectedA>();
 
@@ -229,18 +229,23 @@ public sealed class RelationMaintenanceSystemTests
     }
 
     [Fact]
-    public void ContainerKeys_RebindAfterJobRuntimeGenerationChanges()
+    public void ReplacingTheDefaultSchedulerDoesNotRebindAnExplicitWorld()
     {
         ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = JobSystem.SafetyMode;
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity source = world.CreateEntity();
+        Entity target = world.CreateEntity();
         try
         {
-            var world = new World();
+            world.CreateRelation(source, target, new DirectedA(), timing: RelationMaintenanceTiming.Deferred);
             InitializeJobRuntime(previousSafety);
             RelationMaintenanceSystem<DirectedA>.Schedule(world).Complete();
-
+            Assert.Equal(1, world.GetOutgoingRelations<DirectedA>(source).Count);
             InitializeJobRuntime(previousSafety);
             RelationMaintenanceSystem<DirectedA>.Schedule(world).Complete();
+            Assert.Equal(1, world.GetOutgoingRelations<DirectedA>(source).Count);
         }
         finally
         {
@@ -255,7 +260,7 @@ public sealed class RelationMaintenanceSystemTests
         try
         {
             JobSystem.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
             var error = Assert.Throws<InvalidOperationException>(
                 () => RelationMaintenanceSystem<DirectedA>.Schedule(world));

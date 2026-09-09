@@ -389,6 +389,13 @@ internal sealed class WorkQueue : IWorkQueue
 
     public void Dispose()
     {
+        // A caller helping Complete may still be draining its last ticket. It must finish
+        // before wait handles are released, even when no dedicated worker threads exist.
+        while (Volatile.Read(ref _queuedWorkItemCount) != 0 || Volatile.Read(ref _activeDrainerCount) != 0)
+        {
+            if (!TryExecuteOne(wait: false))
+                Thread.Yield();
+        }
         lock (_stateLock)
         {
             if (Interlocked.Exchange(ref _disposeState, 1) != 0)

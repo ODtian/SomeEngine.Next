@@ -8,6 +8,7 @@ public sealed class QueryDefinition
     private readonly QueryTerm[] _terms;
     private readonly QueryAccessEntry[] _accesses;
     private readonly WorldJobStorageAccess[] _jobStorageAccesses;
+    private readonly QueryDataAccess[] _dataAccesses;
 
     private QueryDefinition(QueryTerm[] ownedTerms)
     {
@@ -28,8 +29,19 @@ public sealed class QueryDefinition
         _accesses = accesses.Count == 0
             ? Array.Empty<QueryAccessEntry>()
             : accesses.ToArray();
-        (_jobStorageAccesses, HasRelationshipWrite, CanWrite) =
-            CompileJobStorageAccesses(_terms);
+        _dataAccesses = CompileDataAccess(_terms);
+        var jobStorage = new List<WorldJobStorageAccess>(_dataAccesses.Length);
+        foreach (QueryDataAccess access in _dataAccesses)
+        {
+            CanWrite |= access.Access.CanWrite();
+            ref readonly ComponentInfo info = ref ComponentRegistry.Get(access.ComponentId);
+            HasRelationshipWrite |= access.Access.CanWrite() &&
+                (info.IsRelationshipSource || info.IsRelationshipTarget);
+            if (access.Access != QueryAccess.None || access.Filters != QueryTermFilter.None)
+                jobStorage.Add(new WorldJobStorageAccess(access.Storage, access.ComponentId,
+                    access.Access.CanWrite() ? WorldStorageAccess.Write : WorldStorageAccess.Read));
+        }
+        _jobStorageAccesses = jobStorage.ToArray();
     }
 
     public static QueryDefinition Empty { get; } = new(Array.Empty<QueryTerm>());
@@ -42,6 +54,8 @@ public sealed class QueryDefinition
 
     internal ReadOnlyMemory<WorldJobStorageAccess> JobStorageAccesses =>
         _jobStorageAccesses;
+
+    internal ReadOnlySpan<QueryDataAccess> DataAccesses => _dataAccesses;
 
     internal bool HasRelationshipWrite { get; }
 
@@ -158,83 +172,54 @@ public sealed class QueryDefinition
         internal QueryTermFilter Filters;
     }
 
-    private static (
-        WorldJobStorageAccess[] accesses,
-        bool relationshipWrite,
-        bool canWrite) CompileJobStorageAccesses(QueryTerm[] terms)
+    private static QueryDataAccess[] CompileDataAccess(ReadOnlySpan<QueryTerm> terms)
     {
-        if (terms.Length == 0)
-            return (Array.Empty<WorldJobStorageAccess>(), false, false);
-
-        var storage = new List<WorldJobStorageAccess>(terms.Length);
-        bool relationshipWrite = false;
-        bool canWrite = false;
-        for (int i = 0; i < terms.Length; i++)
+        var data = new Dictionary<(WorldStorageKind Storage, int ComponentId), QueryDataAccess>();
+        foreach (QueryTerm term in terms)
         {
-            QueryTerm term = terms[i];
-            bool readsFilterData = term.Filters != QueryTermFilter.None;
-            if (term.Access == QueryAccess.None && !readsFilterData)
-                continue;
-
-            bool write = term.Access.CanWrite();
-            canWrite |= write;
-
             ref readonly ComponentInfo info = ref ComponentRegistry.Get(term.ComponentId);
-            relationshipWrite |= write &&
-                (info.IsRelationshipSource || info.IsRelationshipTarget);
-
-            WorldStorageKind kind;
-            int componentId;
-            if (BufferRegistry.TryGetHeaderComponentId(term.ComponentId, out int headerId))
+            int componentId = term.ComponentId;
+            WorldStorageKind storage;
+            if (BufferRegistry.TryGetHeaderComponentId(componentId, out int headerId))
             {
-                kind = WorldStorageKind.Buffer;
                 componentId = headerId;
-            }
-            else if (info.Storage == StoragePath.Table)
-            {
-                kind = WorldStorageKind.Table;
-                componentId = term.ComponentId;
+                storage = WorldStorageKind.Buffer;
             }
             else
             {
-                continue;
+                if (info.Storage == StoragePath.Tag)
+                    continue;
+                storage = info.Storage switch
+                {
+                    StoragePath.Table => WorldStorageKind.Table,
+                    StoragePath.Sparse => WorldStorageKind.Sparse,
+                    StoragePath.Shared => WorldStorageKind.Shared,
+                    _ => throw new InvalidOperationException("The query storage kind is unsupported."),
+                };
             }
 
-            WorldStorageAccess access = write
-                ? WorldStorageAccess.Write
-                : WorldStorageAccess.Read;
-            int existing = FindStorage(storage, kind, componentId);
-            if (existing < 0)
-            {
-                storage.Add(new WorldJobStorageAccess(kind, componentId, access));
-            }
-            else if (access == WorldStorageAccess.Write &&
-                     storage[existing].Access != WorldStorageAccess.Write)
-            {
-                storage[existing] = new WorldJobStorageAccess(kind, componentId, access);
-            }
+            var key = (storage, componentId);
+            if (data.TryGetValue(key, out QueryDataAccess existing))
+                data[key] = existing with
+                {
+                    Access = QueryAccessExtensions.Merge(existing.Access, term.Access),
+                    Filters = existing.Filters | term.Filters,
+                };
+            else
+                data.Add(key, new QueryDataAccess(info.Type, storage, componentId, term.Access, term.Filters));
         }
-
-        return (
-            storage.Count == 0 ? Array.Empty<WorldJobStorageAccess>() : storage.ToArray(),
-            relationshipWrite,
-            canWrite);
+        return data.Values.OrderBy(static access => access.Storage)
+            .ThenBy(static access => access.ComponentId).ToArray();
     }
-
-    private static int FindStorage(
-        List<WorldJobStorageAccess> storage,
-        WorldStorageKind kind,
-        int componentId)
-    {
-        for (int i = 0; i < storage.Count; i++)
-        {
-            WorldJobStorageAccess access = storage[i];
-            if (access.Kind == kind && access.ComponentId == componentId)
-                return i;
-        }
-
-        return -1;
-    }
-
 }
 
+/// <summary>
+/// One normalized meaning for access to a data family. Matching still uses query terms;
+/// scheduling and generated access both consume these same merged modes and filters.
+/// </summary>
+internal readonly record struct QueryDataAccess(
+    Type ValueType,
+    WorldStorageKind Storage,
+    int ComponentId,
+    QueryAccess Access,
+    QueryTermFilter Filters);

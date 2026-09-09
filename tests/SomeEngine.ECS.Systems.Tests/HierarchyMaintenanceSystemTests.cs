@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.Job;
 
@@ -11,7 +12,7 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity child = world.CreateEntity();
@@ -65,8 +66,8 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var worldA = new World();
-            var worldB = new World();
+            var worldA = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var worldB = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
 
@@ -93,7 +94,7 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             var mutation = new SetParentJob<DomainA>(world, child, parent);
@@ -127,7 +128,7 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             JobResourceAccess[] accesses =
@@ -152,7 +153,7 @@ public sealed class HierarchyMaintenanceSystemTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             var capture = new ChildrenCapture();
 
@@ -165,18 +166,25 @@ public sealed class HierarchyMaintenanceSystemTests
     }
 
     [Fact]
-    public void ContainerKeys_RebindAfterJobRuntimeGenerationChanges()
+    public void ReplacingTheDefaultSchedulerDoesNotRebindAnExplicitWorld()
     {
         ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = JobSystem.SafetyMode;
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity parent = world.CreateEntity();
+        Entity child = world.CreateEntity();
         try
         {
-            var world = new World();
+            Hierarchy<DomainA>.SetParentDeferred(world, child, parent);
             InitializeJobRuntime(previousSafety);
             HierarchyMaintenanceSystem<DomainA>.Schedule(world).Complete();
-
+            Assert.Equal(parent, Hierarchy<DomainA>.GetParent(world, child));
+            Assert.Contains(child, Hierarchy<DomainA>.GetChildren(world, parent).Span.ToArray());
             InitializeJobRuntime(previousSafety);
             HierarchyMaintenanceSystem<DomainA>.Schedule(world).Complete();
+            Assert.Equal(parent, Hierarchy<DomainA>.GetParent(world, child));
+            Assert.Contains(child, Hierarchy<DomainA>.GetChildren(world, parent).Span.ToArray());
         }
         finally
         {
@@ -191,7 +199,7 @@ public sealed class HierarchyMaintenanceSystemTests
         try
         {
             JobSystem.ManagedPayloadPolicy = ManagedPayloadPolicy.Reject;
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
             var error = Assert.Throws<InvalidOperationException>(
                 () => HierarchyMaintenanceSystem<DomainA>.Schedule(world));

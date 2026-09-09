@@ -120,6 +120,10 @@ public readonly struct JobResourceAccess
         return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Read);
     }
 
+    public static JobResourceAccess Read(JobResourceToken token, long start, long length) =>
+        CreateRange(ResourceKind.Token, token.Id, token.Version, token.Generation,
+            JobAccessMode.Read, new IndexRange(start, length));
+
     public static JobResourceAccess Read<T>(T[] array)
     {
         return CreateContainerAccess(array, JobAccessMode.Read);
@@ -238,6 +242,10 @@ public readonly struct JobResourceAccess
     {
         return Create(ResourceKind.Token, token.Id, token.Version, token.Generation, JobAccessMode.Write);
     }
+
+    public static JobResourceAccess Write(JobResourceToken token, long start, long length) =>
+        CreateRange(ResourceKind.Token, token.Id, token.Version, token.Generation,
+            JobAccessMode.Write, new IndexRange(start, length));
 
     public static JobResourceAccess Write<T>(T[] array)
     {

@@ -138,7 +138,7 @@ internal static partial class EcsBenchmarkSuite
     {
         if ((uint)capturedEntityCount > (uint)entityCount)
             throw new ArgumentOutOfRangeException(nameof(capturedEntityCount));
-        var world = new World(entityCount);
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
         entities = new Entity[capturedEntityCount];
         var state = new EntityCaptureState(world, entities, entityCount);
         world.ExecuteBundleSpawnBatch(
@@ -162,7 +162,7 @@ internal static partial class EcsBenchmarkSuite
         internal ParallelIntegrateExecution(int entityCount)
         {
             _entityCount = entityCount;
-            World = new World(entityCount);
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
             World.ExecuteBundleSpawnBatch(
                 JobComponents,
                 entityCount,
@@ -245,7 +245,7 @@ internal static partial class EcsBenchmarkSuite
         {
             _entityCount = entityCount;
             _queryIterations = queryIterations;
-            World = new World(entityCount);
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
             var entities = new Entity[entityCount];
             var capture = new FilterPopulateState(entities);
             World.ExecuteBundleSpawnBatch(
@@ -333,7 +333,7 @@ internal static partial class EcsBenchmarkSuite
         {
             _entityCount = entityCount;
             _bufferEntityCount = Math.Min(entityCount, 4_096);
-            World = new World(entityCount);
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
             var bufferState = new StoragePopulateState(offset: 0, includeBuffer: true);
             World.ExecuteBundleSpawnBatch(
                 StorageBufferComponents,
@@ -460,7 +460,7 @@ internal static partial class EcsBenchmarkSuite
 
         internal RelationMaintenanceExecution(int topologyCount)
         {
-            World = new World(checked(topologyCount * 2));
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(checked(topologyCount * 2));
             _source = World.CreateEntity();
             _targets = new Entity[Math.Max(0, topologyCount - 1)];
             _edges = new RelationEdge<BenchmarkRelation>[_targets.Length];
@@ -524,7 +524,7 @@ internal static partial class EcsBenchmarkSuite
 
         internal HierarchyMaintenanceExecution(int topologyCount)
         {
-            World = new World(topologyCount);
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(topologyCount);
             _nodes = new Entity[topologyCount];
             for (int i = 0; i < _nodes.Length; i++)
                 _nodes[i] = World.CreateEntity();
@@ -757,7 +757,7 @@ internal static partial class EcsBenchmarkSuite
         internal MixedRenderGraphFrameState(int entityCount)
         {
             _entityCount = entityCount;
-            World = new World(entityCount);
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
             World.ExecuteBundleSpawnBatch(
                 JobComponents,
                 entityCount,
@@ -850,7 +850,7 @@ internal static partial class EcsBenchmarkSuite
             _registry = new SerializationRegistry().RegisterCanonical<
                 BenchmarkDurablePosition,
                 BenchmarkDurablePositionCodec>(DurablePositionTypeKey);
-            World = new World(entityCount);
+            World = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld(entityCount);
             World.ExecuteBundleSpawnBatch(
                 DurablePositionComponents,
                 entityCount,

@@ -13,7 +13,7 @@ public sealed class JobCommandBufferTests
     public void ParallelProducersMergeByStableLogicalIndex()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 32);
 
         commands.ScheduleParallel(new CreateByIndexProducer(), batchSize: 1);
@@ -38,7 +38,7 @@ public sealed class JobCommandBufferTests
     {
         const int ProducerCount = 1024;
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity source = world.CreateEntity();
         var targets = new Entity[ProducerCount];
         var pending = new Commands.DeferredRelationEdge<JobCommandLink>[ProducerCount];
@@ -66,7 +66,7 @@ public sealed class JobCommandBufferTests
     public void DeferredUniqueTargetSwapAcrossSegmentsValidatesTheMergedFinalImage()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity sourceA = world.CreateEntity();
         Entity sourceB = world.CreateEntity();
         Entity targetA = world.CreateEntity();
@@ -116,7 +116,7 @@ public sealed class JobCommandBufferTests
     public void RelationshipFaultInLaterSegmentRollsBackWholeMergedBatch()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity sourceA = world.CreateEntity();
         Entity sourceB = world.CreateEntity();
         Entity target = world.CreateEntity();
@@ -143,7 +143,7 @@ public sealed class JobCommandBufferTests
     public void ProducerFaultInvalidatesEverySegmentWithoutPublishing()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         var deferred = new Commands.DeferredEntity[8];
         using var commands = new JobCommandBuffer(world, deferred.Length);
 
@@ -164,7 +164,7 @@ public sealed class JobCommandBufferTests
     public void PlaybackFaultRollsBackEarlierProducerSegments()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity target = world.CreateEntity();
         var deferred = new Commands.DeferredEntity[1];
         using var commands = new JobCommandBuffer(world, producerCount: 2);
@@ -184,7 +184,7 @@ public sealed class JobCommandBufferTests
     public void EmptyBatchConsumesNoTopologyRevision()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
         commands.Schedule(0, new EmptyProducer());
@@ -197,7 +197,7 @@ public sealed class JobCommandBufferTests
     public void ProducerScopeDoesNotAuthorizeWorldSharedCommandBuffer()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
         commands.Schedule(0, new SharedBufferEscapeProducer(world));
@@ -215,7 +215,7 @@ public sealed class JobCommandBufferTests
     public void ProducerCannotSynchronouslyPlaybackItsOwningBatch()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
         commands.Schedule(0, new OwningPlaybackEscapeProducer(commands));
@@ -233,7 +233,7 @@ public sealed class JobCommandBufferTests
     public void ProducerCannotSchedulePlaybackForItsOwningBatch()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
         commands.Schedule(0, new OwningSchedulePlaybackEscapeProducer(commands));
@@ -251,7 +251,7 @@ public sealed class JobCommandBufferTests
     public void FaultedProducerDependencyStillRunsCleanupAndReleasesPlaybackOwnership()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         var commands = new JobCommandBuffer(world, producerCount: 1);
         JobHandle dependency = JobSystem.Schedule(new ThrowingDependencyJob());
 
@@ -276,7 +276,7 @@ public sealed class JobCommandBufferTests
         {
             using var release = new ManualResetEventSlim();
             using var started = new ManualResetEventSlim();
-            using var world = new World();
+            using var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             var commands = new JobCommandBuffer(world, producerCount: 1);
             JobHandle predecessor = JobSystem.Schedule(
                 new BlockingTopologyFaultJob(release, started),
@@ -334,7 +334,7 @@ public sealed class JobCommandBufferTests
         using var runtime = new JobRuntimeScope(
             workerCount: 0,
             maxCompletionStates: 1);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         var deferred = new Commands.DeferredEntity[1];
         var commands = new JobCommandBuffer(world, producerCount: 1);
         JobHandle producer = commands.Schedule(0, new CaptureCreateProducer(deferred));
@@ -358,7 +358,7 @@ public sealed class JobCommandBufferTests
         {
             using var start = new Barrier(participantCount: 2);
             using var producerRelease = new ManualResetEventSlim();
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             var commands = new JobCommandBuffer(world, producerCount: 1);
             JobHandle producer = default;
             JobHandle playback = default;
@@ -424,7 +424,7 @@ public sealed class JobCommandBufferTests
         {
             using var start = new Barrier(participantCount: 2);
             using var producerRelease = new ManualResetEventSlim();
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             var commands = new JobCommandBuffer(world, producerCount: 1);
             JobHandle producer = default;
             Exception? producerScheduleFault = null;
@@ -483,7 +483,7 @@ public sealed class JobCommandBufferTests
     public void ZeroProducerBatchIsAValidTopologyFreeNoOp()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 0);
 
         commands.SchedulePlayback().Complete();
@@ -495,7 +495,7 @@ public sealed class JobCommandBufferTests
     public void ZeroProducerParallelSchedulePreservesItsExplicitDependency()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         var visits = new int[1];
         var commands = new JobCommandBuffer(world, producerCount: 0);
         JobHandle dependency = JobSystem.Schedule(new ThrowingDependencyJob());

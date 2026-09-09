@@ -13,7 +13,7 @@ public partial class World
                 "World cannot be disposed from inside one of its active callbacks.");
         }
 
-        IWorldJobAdmission? admission = Volatile.Read(ref _jobAdmission);
+        WorldExecution? admission = _execution;
         if (admission?.HasCurrentThreadScope(this) == true)
         {
             throw new InvalidOperationException(
@@ -23,10 +23,10 @@ public partial class World
 
     private void WaitForUnboundJobAdmissionsToDrain()
     {
-        lock (_jobAdmissionBindingGate)
+        lock (_unboundAccessGate)
         {
             while (_unboundJobAdmissionCount != 0)
-                Monitor.Wait(_jobAdmissionBindingGate);
+                Monitor.Wait(_unboundAccessGate);
         }
     }
 }

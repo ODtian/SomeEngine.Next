@@ -18,7 +18,7 @@ public sealed class WorldJobAdmissionTests
     {
         EnsureAmbientAdmissionInstalled();
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
         world.Replace(entity, new AdmissionProbe { Value = 5 });
@@ -36,7 +36,7 @@ public sealed class WorldJobAdmissionTests
     {
         EnsureAmbientAdmissionInstalled();
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 11 });
         int entityCount = world.EntityCount;
 
@@ -53,7 +53,7 @@ public sealed class WorldJobAdmissionTests
     {
         EnsureAmbientAdmissionInstalled();
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         int entityCount = world.EntityCount;
         s_escapedWorld = world;
         try
@@ -74,7 +74,7 @@ public sealed class WorldJobAdmissionTests
     {
         EnsureAmbientAdmissionInstalled();
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         using var commands = new CommandBuffer(world);
 
@@ -89,117 +89,61 @@ public sealed class WorldJobAdmissionTests
     }
 
     [Fact]
-    public async Task FirstJobBindingFailsFastForAnInFlightUnboundWorldOperation()
+    public async Task SynchronousWorldRejectsSchedulingDuringAndAfterAQuery()
     {
-        EnsureAmbientAdmissionInstalled();
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        using var jobs = new JobRuntimeScope(workerCount: 2);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var world = new World();
+        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
+        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
+        Task reading = Task.Run(() => world.ExecuteQuery(query, _ =>
         {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-
-        using var queryEntered = new ManualResetEventSlim();
-        using var releaseQuery = new ManualResetEventSlim();
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Query was not released.");
+        }));
         try
         {
-            var world = new World();
-            world.CreateEntity(new AdmissionProbe { Value = 1 });
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Read<AdmissionProbe>());
-
-            Task reader = Task.Run(() =>
-                world.ExecuteQuery(query, _ =>
-                {
-                    queryEntered.Set();
-                    if (!releaseQuery.Wait(TimeSpan.FromSeconds(5)))
-                        throw new TimeoutException("Unbound query release timed out.");
-                }));
-            Assert.True(queryEntered.Wait(TimeSpan.FromSeconds(3)));
-
-            Task firstBinding = Task.Run(() =>
-                _ = ComponentJobAccess<AdmissionProbe>.Write(world));
-            InvalidOperationException error =
-                await Assert.ThrowsAsync<InvalidOperationException>(() => firstBinding);
-            Assert.Contains("retry", error.Message, StringComparison.OrdinalIgnoreCase);
-
-            releaseQuery.Set();
-            await reader;
-            _ = ComponentJobAccess<AdmissionProbe>.Write(world);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Write(world));
         }
         finally
         {
-            releaseQuery.Set();
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
+            release.Set();
+            await reading.WaitAsync(TimeSpan.FromSeconds(5));
         }
+        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Write(world));
+        world.Replace(entity, new AdmissionProbe { Value = 2 });
+        Assert.Equal(2, world.Read<AdmissionProbe>(entity).Value);
     }
 
     [Fact]
-    public void UnboundCallbackCompletingAFirstUseRawJobFailsInsteadOfDeadlocking()
+    public void SynchronousQueryCannotMakeRawJobsUseItsWorld()
     {
-        EnsureAmbientAdmissionInstalled();
-        using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        using var jobs = new JobRuntimeScope(workerCount: 2);
+        using var world = new World();
         world.CreateEntity(new AdmissionProbe { Value = 1 });
         QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
-        InvalidOperationException? jobFault = null;
-
         world.ExecuteQuery(query, _ =>
         {
-            JobHandle handle = JobSystem.Schedule(new ReadEntityCountJob(world));
-            jobFault = Assert.Throws<InvalidOperationException>(() => handle.Complete());
+            JobHandle task = JobSystem.Schedule(new ReadEntityCountJob(world));
+            Assert.Throws<InvalidOperationException>(task.Complete);
         });
-
-        Assert.NotNull(jobFault);
-        Assert.Contains("retry", jobFault.Message, StringComparison.OrdinalIgnoreCase);
-        _ = ComponentJobAccess<AdmissionProbe>.Read(world);
+        Assert.Equal(1, world.EntityCount);
     }
 
     [Fact]
-    public void FirstJobBindingInsideAnUnboundWorldCallbackFailsInsteadOfDeadlocking()
+    public void SynchronousQueryCannotChangeItsWorldExecutionMode()
     {
-        EnsureAmbientAdmissionInstalled();
-        ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
-        {
-            WorkerCount = 2,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-        try
-        {
-            var world = new World();
-            world.CreateEntity(new AdmissionProbe { Value = 1 });
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Read<AdmissionProbe>());
-
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
-                world.ExecuteQuery(
-                    query,
-                    cursor =>
-                    {
-                        _ = cursor;
-                        _ = ComponentJobAccess<AdmissionProbe>.Read(world);
-                    }));
-
-            Assert.Contains("before entering", error.Message, StringComparison.OrdinalIgnoreCase);
-            _ = ComponentJobAccess<AdmissionProbe>.Read(world);
-        }
-        finally
-        {
-            JobSystem.Initialize(new JobRuntimeConfig
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        using var jobs = new JobRuntimeScope(workerCount: 2);
+        using var world = new World();
+        Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
+        QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
+        Assert.Throws<InvalidOperationException>(() => world.ExecuteQuery(query, cursor =>
+            _ = ComponentJobAccess<AdmissionProbe>.Read(world)));
+        Assert.Equal(1, world.Read<AdmissionProbe>(entity).Value);
+        Assert.Throws<InvalidOperationException>(() => ComponentJobAccess<AdmissionProbe>.Read(world));
     }
 
     [Fact]
@@ -215,7 +159,7 @@ public sealed class WorldJobAdmissionTests
         });
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity entity = world.CreateEntity();
             var commands = world.Commands();
             commands.Add(entity, new AdmissionProbe { Value = 17 });
@@ -257,7 +201,7 @@ public sealed class WorldJobAdmissionTests
         });
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity entity = world.CreateEntity();
             var commands = new CommandBuffer(world);
             commands.Add(entity, new AdmissionProbe { Value = 29 });
@@ -300,7 +244,7 @@ public sealed class WorldJobAdmissionTests
         });
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity entity = world.CreateEntity();
             var commands = world.Commands();
 
@@ -328,7 +272,7 @@ public sealed class WorldJobAdmissionTests
     public void MultiWorkItemOwnerCannotUseOrdinaryTopologyWriteApis()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         int entityCount = world.EntityCount;
 
         JobHandle writer = JobSystem.ScheduleParallel(
@@ -345,7 +289,7 @@ public sealed class WorldJobAdmissionTests
     public void MultiWorkItemOwnerCannotUseOrdinaryComponentWriteApis()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
         JobResourceAccess[] accesses =
         [
@@ -367,7 +311,7 @@ public sealed class WorldJobAdmissionTests
     public void MultiWorkItemReadOnlyWorldAccessRemainsAvailable()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 13 });
         var values = new int[4];
         JobResourceAccess[] accesses =
@@ -389,7 +333,7 @@ public sealed class WorldJobAdmissionTests
     public void SingleWorkItemParallelOwnerCanUseOrdinaryTopologyWriteApis()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
         JobSystem.ScheduleParallel(
             new ParallelCreateEntityJob(world),
@@ -404,7 +348,7 @@ public sealed class WorldJobAdmissionTests
     public void SerialTopologyWriteJobCanRecordNextWaveFromImmediateHook()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         world.Hooks<AdmissionProbe>().OnAdd(
@@ -431,7 +375,7 @@ public sealed class WorldJobAdmissionTests
     public void ImmediateHookCannotEscapeThroughCapturedWorldCommands()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         CommandBuffer exactWorldBuffer = world.Commands();
@@ -456,7 +400,7 @@ public sealed class WorldJobAdmissionTests
     public void ImmediateHookCannotRecordIntoAnotherPrebuiltCommandBuffer()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         using var other = new CommandBuffer(world);
@@ -479,7 +423,7 @@ public sealed class WorldJobAdmissionTests
     public void LeakedDeferredWorldCannotMintACommandWriterAfterItsHookReturns()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         var capture = new DeferredWorldCapture();
@@ -513,7 +457,7 @@ public sealed class WorldJobAdmissionTests
     public void RawDeferredOverloadsRejectJobAccessBeforeReadingInvalidHandles()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         CommandBuffer commands = world.Commands();
         JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
 
@@ -537,7 +481,7 @@ public sealed class WorldJobAdmissionTests
     public void HookFaultPreservesOriginalExceptionAndDiscardsOwnedOverlayInsideJob()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         world.Hooks<AdmissionProbe>().OnAdd(
@@ -567,7 +511,7 @@ public sealed class WorldJobAdmissionTests
         using var allowHookRecord = new ManualResetEventSlim();
         using var hookRecorded = new ManualResetEventSlim();
         using var releaseHook = new ManualResetEventSlim();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity earlierDestination = world.CreateEntity();
         Entity laterDestination = world.CreateEntity();
         Entity trigger = world.CreateEntity();
@@ -654,7 +598,7 @@ public sealed class WorldJobAdmissionTests
         using var runtime = new JobRuntimeScope(workerCount: 2);
         using var writerMinted = new ManualResetEventSlim();
         using var allowRecord = new ManualResetEventSlim();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
         world.Hooks<AdmissionProbe>().OnAdd(
@@ -727,7 +671,7 @@ public sealed class WorldJobAdmissionTests
         Exception? mutationFault = null;
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
 
@@ -794,7 +738,7 @@ public sealed class WorldJobAdmissionTests
         Exception? mutationFault = null;
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity entity = world.CreateEntity();
 
             // Declaring the resource installs the optional ECS -> Job coordinator on this World.

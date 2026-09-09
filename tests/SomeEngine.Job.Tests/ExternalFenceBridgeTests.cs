@@ -7,7 +7,7 @@ public sealed class ExternalFenceBridgeTests
 
     public ExternalFenceBridgeTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ExternalFenceJobs.Reset();
     }
 
@@ -159,7 +159,7 @@ public sealed class ExternalFenceBridgeTests
     [Fact]
     public void ThrowingExternalContinuationDoesNotBlockCleanupOrOtherCallbacks()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 2,
             MaxCompletionStates = 4,
@@ -198,7 +198,7 @@ public sealed class ExternalFenceBridgeTests
     [Fact]
     public void ExternalContinuationStateIsReclaimedWithCompletionState()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 2,
             MaxCompletionStates = 4,
@@ -462,19 +462,30 @@ public sealed class ExternalFenceBridgeTests
     }
 
     [Fact]
-    public void FenceSignalAfterSchedulerShutdownStillRunsExternalObserver()
+    public async Task ShutdownWaitsForExplicitExternalWorkAndDeliversItsObservers()
     {
         var fence = new FakeExternalFence();
         using var observed = new ManualResetEventSlim();
-        var handle = JobSystem.CreateExternalFenceHandle(fence);
+        JobHandle handle = JobSystem.CreateExternalFenceHandle(fence);
         JobSystem.OnCompleted(handle, static (_, state) => ((ManualResetEventSlim)state!).Set(), observed);
-
-        JobSystem.ShutdownForTesting();
-        AssertNotSignaled(observed);
-
-        fence.Signal();
-
-        AssertSignaled(observed);
+        Task closing = Task.Run(JobSystem.Shutdown);
+        try
+        {
+            Assert.True(SpinWait.SpinUntil(() =>
+            {
+                try { _ = JobSystem.Default; return false; }
+                catch (InvalidOperationException) { return true; }
+            }, TimeSpan.FromSeconds(5)));
+            Assert.False(closing.IsCompleted);
+            Assert.False(observed.IsSet);
+        }
+        finally
+        {
+            fence.Signal();
+            await closing.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.True(handle.IsCompleted);
+        Assert.True(observed.IsSet);
     }
 
     private static void AssertSignaled(ManualResetEventSlim signal)

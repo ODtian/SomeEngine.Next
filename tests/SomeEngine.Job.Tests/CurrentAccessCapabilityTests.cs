@@ -4,7 +4,7 @@ public sealed class CurrentAccessCapabilityTests
 {
     public CurrentAccessCapabilityTests()
     {
-        JobSystem.ResetForTesting(workerCount: 4);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
         JobSystem.SafetyMode = JobSafetyMode.Checked;
     }
 
@@ -154,7 +154,7 @@ public sealed class CurrentAccessCapabilityTests
                 old)
             .Complete();
 
-        JobSystem.ResetForTesting(workerCount: 4);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
         JobSystem.SafetyMode = JobSafetyMode.Checked;
 
         Assert.Throws<JobResourceSafetyException>(() =>

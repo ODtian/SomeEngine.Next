@@ -25,8 +25,8 @@ public sealed class RelationshipJobAccessTests
         JobHandle blocker = default;
         try
         {
-            var world = new World();
-            var otherWorld = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var otherWorld = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             blocker = HierarchyJobAccess<Domain>.ScheduleParentWrite(
                 world,
                 new BlockingJob(started, release));
@@ -71,7 +71,7 @@ public sealed class RelationshipJobAccessTests
         JobHandle blocker = default;
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity child = world.CreateEntity();
             var capture = new ParentCapture();
 

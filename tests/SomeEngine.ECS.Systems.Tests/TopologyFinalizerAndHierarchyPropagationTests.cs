@@ -18,7 +18,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity first = world.CreateEntity();
@@ -65,7 +65,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity competingParent = world.CreateEntity();
             Entity child = world.CreateEntity();
@@ -100,7 +100,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity stagedParent = world.CreateEntity();
             Entity abaParent = world.CreateEntity();
@@ -166,7 +166,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity first = world.CreateEntity();
@@ -205,7 +205,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity();
             Entity first = world.CreateEntity();
             Entity second = world.CreateEntity();
@@ -241,7 +241,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);
@@ -273,7 +273,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity dependencyParent = world.CreateEntity();
             Entity finalParent = world.CreateEntity();
@@ -322,7 +322,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity stagedParent = world.CreateEntity();
             Entity competingParent = world.CreateEntity();
@@ -365,7 +365,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity stagedParent = world.CreateEntity();
             Entity unrelatedParent = world.CreateEntity();
@@ -402,7 +402,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity originalParent = world.CreateEntity();
             Entity intermediateParent = world.CreateEntity();
             Entity stagedParent = world.CreateEntity();
@@ -436,7 +436,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity stagedParent = world.CreateEntity();
             Entity selected = world.CreateEntity();
@@ -559,7 +559,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity orderedRoot = CreateValueNode(world);
             Entity orderedChild = CreateValueNode(world);
             Entity organization = world.CreateEntity();
@@ -649,7 +649,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateValueNode(world);
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
@@ -686,7 +686,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity();
             HierarchyMaintenanceDependency<Domain> maintenance =
                 HierarchyMaintenanceSystem<Domain>.ScheduleDependency(world);
@@ -713,7 +713,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity ancestor = CreateValueNode(world);
             Entity root = CreateValueNode(world);
             Entity child = CreateValueNode(world);
@@ -742,7 +742,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity[] roots = Enumerable.Range(0, 12)
                 .Select(_ => CreateValueNode(world))
                 .ToArray();
@@ -789,7 +789,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateValueNode(world);
             Entity child = CreateValueNode(world);
             Hierarchy<Domain>.SetParent(world, child, root);
@@ -818,7 +818,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateValueNode(world);
             Entity child = CreateValueNode(world);
             Hierarchy<Domain>.SetParent(world, child, root);
@@ -847,7 +847,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             HierarchyMaintenanceDependency<Domain> maintenance =
                 HierarchyMaintenanceSystem<Domain>.ScheduleDependency(world);
             maintenance.Handle.Complete();
@@ -873,7 +873,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity firstRoot = CreateValueNode(world);
             Entity secondRoot = CreateValueNode(world);
             HierarchyMaintenanceDependency<Domain> maintenance =
@@ -898,7 +898,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity newOrganizationParent = world.CreateEntity();
             Entity child = CreateValueNode(world);
@@ -932,8 +932,8 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
-            var otherWorld = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+            var otherWorld = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity();
             Entity otherRoot = otherWorld.CreateEntity();
             var job = new NoopPropagationJob<Domain>();
@@ -974,7 +974,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity child = world.CreateEntity();
@@ -1014,7 +1014,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity();
             world.Add(root, new PropagationValue { Depth = 7 });
             world.Add(root, new ManagedPropagationValue { Text = "shared" });
@@ -1048,7 +1048,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateValueNode(world);
             world.Hooks<UnrelatedHookValue>().OnReplace(IgnoreUnrelatedHook);
             HierarchyMaintenanceDependency<Domain> maintenance =
@@ -1071,7 +1071,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateValueNode(world);
             world.Hooks<PropagationValue>()
                 .OnAdd(IgnorePropagationHook)
@@ -1099,7 +1099,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity(new PropagationValue { Depth = 7 });
             ComponentHooks<PropagationValue> hooks = world.Hooks<PropagationValue>();
             if (insertHook)
@@ -1136,7 +1136,7 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests
         });
         try
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateValueNode(world);
             using var arrived = new CountdownEvent(1);
             using var release = new ManualResetEventSlim();

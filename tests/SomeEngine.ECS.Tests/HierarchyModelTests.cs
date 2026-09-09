@@ -119,12 +119,12 @@ public class HierarchyModelTests
         for (int i = 0; i < unrelated.Length; i++)
             unrelated[i] = world.CreateEntity();
 
-        var store = world.Hierarchy.Domain<SceneDomain>();
-
         for (int i = 0; i < unrelated.Length; i++)
             world.DestroyEntity(unrelated[i]);
 
-        Assert.Equal(0, store.DirtyParentLookupEntityVisits - lookupVisitsBefore);
+        Hierarchy<SceneDomain>.Maintain(world);
+        Assert.Equal(DirtyCount, Hierarchy<SceneDomain>.GetChildren(world, dirtyParent).Count);
+        Assert.Equal(DirtyCount + 1, world.EntityCount);
         Assert.True(world.IsAlive(dirtyParent));
     }
 

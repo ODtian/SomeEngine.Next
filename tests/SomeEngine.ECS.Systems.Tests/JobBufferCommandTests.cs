@@ -10,7 +10,7 @@ public sealed class JobBufferCommandTests
     [Fact]
     public void CommandBufferOwnsAddReplaceAndRemovePayloads()
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         BufferItem[] source = [new(1), new(2), new(3)];
         using var commands = new CommandBuffer(world);
@@ -39,7 +39,7 @@ public sealed class JobBufferCommandTests
     [Fact]
     public void FailedBufferCommandRollsBackTheCompleteStructuralImage()
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity first = world.CreateEntity();
         Entity duplicate = world.CreateEntity();
         world.AddBuffer<BufferItem>(duplicate);
@@ -58,7 +58,7 @@ public sealed class JobBufferCommandTests
     public void ParallelJobSegmentsPublishPipelineOwnedBuffersByStableProducerKey()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity[] entities = new Entity[8];
         BufferItem[] items = new BufferItem[entities.Length * 2];
         for (int index = 0; index < entities.Length; index++)

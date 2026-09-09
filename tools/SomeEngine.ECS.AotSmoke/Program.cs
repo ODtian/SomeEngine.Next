@@ -88,7 +88,7 @@ internal static class Program
             Stamp = unchecked((long)0x13579BDF2468ACE0),
         };
 
-        var source = new World();
+        var source = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity root = source.CreateEntity(rootInitial);
         source.Add(root, new AotVelocity { Value = 2 });
         Entity child = source.CreateEntity(childInitial);
@@ -234,7 +234,7 @@ internal static class Program
 
     private static void ExerciseRelationCleanupDispatch()
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity first = world.CreateEntity();
         Entity second = world.CreateEntity();
 

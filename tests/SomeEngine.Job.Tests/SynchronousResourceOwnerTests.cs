@@ -5,7 +5,7 @@ public sealed class SynchronousResourceOwnerTests
 {
     public SynchronousResourceOwnerTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         JobSystem.SafetyMode = JobSafetyMode.Checked;
     }
 
@@ -92,7 +92,7 @@ public sealed class SynchronousResourceOwnerTests
     [Fact]
     public void ZeroWorkerCallerPumpsThePriorOwnerBeforeAdmission()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         JobResource resource = JobSystem.CreateResource("synchronous-owner-zero-worker");
         using var priorRan = new ManualResetEventSlim();
         JobHandle prior = JobSystem.Schedule(

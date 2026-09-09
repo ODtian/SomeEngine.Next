@@ -240,6 +240,7 @@ public ref struct ReadOnlyQueryPacketPlan
         ReadOnlyPacketRange[] packets = _packets
             ?? throw new InvalidOperationException("A non-empty packet plan lost its packet storage.");
         return ReadOnlyQueryPacketJobs.ExecutePrepared(
+            _owner,
             packets.AsMemory(0, PacketCount),
             PacketCount,
             RowCount,
@@ -405,6 +406,7 @@ public static class ReadOnlyQueryPacketJobs
     }
 
     internal static int ExecutePrepared<TJob>(
+        World world,
         ReadOnlyMemory<ReadOnlyPacketRange> packets,
         int packetCount,
         int outputCount,
@@ -417,33 +419,12 @@ public static class ReadOnlyQueryPacketJobs
         if (packetCount == 0)
             return 0;
 
-        JobResourceAccess[]? accesses = null;
-        try
-        {
-            int accessCount = checked(externalAccesses.Length + 1);
-            accesses = ArrayPool<JobResourceAccess>.Shared.Rent(accessCount);
-            accesses[0] = JobResourceAccess.Read(packets);
-            externalAccesses.CopyTo(accesses.AsSpan(1, externalAccesses.Length));
-
-            var adapter = new PacketJob<TJob>(
-                packets,
-                lastSystemVersion,
-                job);
-            JobSystem.ScheduleParallel(
-                adapter,
-                packetCount,
-                batchSize: 1,
-                accesses.AsSpan(0, accessCount),
-                options).Complete();
-        }
-        finally
-        {
-            if (accesses is not null)
-            {
-                accesses.AsSpan().Clear();
-                ArrayPool<JobResourceAccess>.Shared.Return(accesses);
-            }
-        }
+        // Packet descriptors are immutable and private to this synchronous execution. The
+        // surrounding query already keeps their ECS columns alive; only external data need
+        // resource declarations. Do not register this private array in a global resource table.
+        var adapter = new PacketJob<TJob>(packets, lastSystemVersion, job);
+        WorldStorageJobResources.RequireJobs(world).Scheduler.ScheduleParallel(
+            adapter, packetCount, batchSize: 1, externalAccesses, options).Complete();
         return outputCount;
     }
 
@@ -670,8 +651,6 @@ public static class ReadOnlyQueryPacketJobs
 
         public void Execute(int index)
         {
-            JobSystem.RequireCurrentAccess(
-                JobResourceAccess.Read(_packets, index, 1));
             ReadOnlyPacketRange range = _packets.Span[index];
             var context = new ReadOnlyQueryPacketContext(
                 index,

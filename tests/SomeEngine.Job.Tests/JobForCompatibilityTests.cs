@@ -4,7 +4,7 @@ public sealed class JobForCompatibilityTests
 {
     public JobForCompatibilityTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         JobForJobs.Reset();
     }
 
@@ -52,7 +52,7 @@ public sealed class JobForCompatibilityTests
     [Fact]
     public void JobForAdapterExecutesManagedAndUnmanagedJobs()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         JobForJobs.StaticValues = new int[5];
         var managedLog = new List<int>();
 

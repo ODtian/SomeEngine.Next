@@ -4,7 +4,7 @@ public sealed class ChunkAdapterTests
 {
     public ChunkAdapterTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ChunkAdapterJobs.Reset();
     }
 

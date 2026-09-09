@@ -2,426 +2,251 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class RuntimeSafetyTests
 {
-    public RuntimeSafetyTests()
-    {
-        JobSystem.ResetForTesting(workerCount: 2);
-        SafetyJobs.Reset();
-    }
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
     public void ConcurrentSchedulingFromMultipleThreadsIsSafe()
     {
-        const int threadCount = 4;
-        const int jobsPerThread = 100;
-        var handles = new List<JobHandle>(threadCount * jobsPerThread);
-        var handlesLock = new Lock();
-        var threads = new Thread[threadCount];
-
-        for (var i = 0; i < threads.Length; i++)
-        {
-            threads[i] = new Thread(() =>
-            {
-                for (var j = 0; j < jobsPerThread; j++)
-                {
-                    var handle = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-                    lock (handlesLock)
-                    {
-                        handles.Add(handle);
-                    }
-                }
-            });
-            threads[i].Start();
-        }
-
-        foreach (var thread in threads)
-        {
-            thread.Join();
-        }
-
-        JobSystem.CombineDependencies(handles.ToArray()).Complete();
-
-        Assert.Equal(threadCount * jobsPerThread, SafetyJobs.Counter);
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        int[] counts = new int[400];
+        JobHandle[] handles = new JobHandle[counts.Length];
+        Parallel.For(0, counts.Length, index =>
+            handles[index] = scheduler.Schedule(new Increment(counts, index)));
+        scheduler.CombineDependencies(handles).Complete();
+        Assert.All(counts, count => Assert.Equal(1, count));
     }
 
     [Fact]
-    public void ConcurrentCompleteOnSameHandleIsSafe()
+    public async Task ConcurrentCompleteOnSameHandleIsSafe()
     {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
         using var gate = new ManualResetEventSlim();
-        var handle = JobSystem.Schedule(new SafetyJobs.GatedIncrementJob(gate));
-        var errors = new List<Exception>();
-        var errorsLock = new Lock();
-        var threads = new Thread[4];
-
-        for (var i = 0; i < threads.Length; i++)
-        {
-            threads[i] = new Thread(() =>
-            {
-                try
-                {
-                    handle.Complete();
-                }
-                catch (Exception ex)
-                {
-                    lock (errorsLock)
-                    {
-                        errors.Add(ex);
-                    }
-                }
-            });
-            threads[i].Start();
-        }
-
+        int[] counts = [0];
+        JobHandle handle = scheduler.Schedule(new WaitAndIncrement(gate, counts));
+        Task[] readers = Enumerable.Range(0, 4)
+            .Select(_ => Task.Run(handle.Complete)).ToArray();
         gate.Set();
+        await Task.WhenAll(readers).WaitAsync(Timeout);
+        Assert.Equal(1, counts[0]);
+        Assert.True(handle.IsCompleted);
+    }
 
-        foreach (var thread in threads)
+    [Fact]
+    public void RootAndChildFailuresAreObservableThroughTheirHandles()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        JobHandle root = scheduler.Schedule(new ThrowingJob());
+        Assert.Equal("job failed", Assert.Throws<InvalidOperationException>(root.Complete).Message);
+        JobHandle parent = scheduler.Schedule(new SpawnFailingChild());
+        Assert.Equal("job failed", Assert.Throws<InvalidOperationException>(parent.Complete).Message);
+    }
+
+    [Fact]
+    public void SchedulersDoNotExecuteEachOthersWork()
+    {
+        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        int[] counts = [0, 0];
+        JobHandle a = first.Schedule(new Increment(counts, 0));
+        JobHandle b = second.Schedule(new Increment(counts, 1));
+        b.Complete();
+        Assert.Equal(new[] { 0, 1 }, counts);
+        Assert.False(a.IsCompleted);
+        a.Complete();
+        Assert.Equal(new[] { 1, 1 }, counts);
+    }
+
+    [Fact]
+    public void CrossSchedulerDependenciesAreRejectedWithoutExecutingWork()
+    {
+        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        int[] counts = [0];
+        JobHandle dependency = first.Schedule(new Increment(counts, 0));
+        Assert.Throws<ArgumentException>(() => second.Schedule(new Increment(counts, 0), dependency));
+        Assert.Throws<ArgumentException>(() => second.CombineDependencies([dependency]));
+        Assert.Equal(0, counts[0]);
+        dependency.Complete();
+        Assert.Equal(1, counts[0]);
+    }
+
+    [Fact]
+    public void DisposeDrainsAcceptedWorkWithoutDedicatedWorkers()
+    {
+        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        int[] counts = [0];
+        JobHandle parent = scheduler.Schedule(new SpawnChild(counts));
+        scheduler.Dispose();
+        Assert.True(parent.IsCompleted);
+        parent.Complete();
+        Assert.Equal(1, counts[0]);
+        Assert.Throws<ObjectDisposedException>(() => scheduler.Schedule(new Increment(counts, 0)));
+        scheduler.Dispose();
+    }
+
+    [Fact]
+    public async Task ClosingWaitsForRunningParentsAndTheirLaterChildren()
+    {
+        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        using var started = new ManualResetEventSlim();
+        using var gate = new ManualResetEventSlim();
+        int[] counts = [0];
+        JobHandle parent = scheduler.Schedule(new WaitAndSpawn(started, gate, counts));
+        Task? closing = null;
+        try
         {
-            thread.Join();
+            Assert.True(started.Wait(Timeout));
+            closing = Task.Run(scheduler.Dispose);
+            Assert.True(SpinWait.SpinUntil(() => RejectsNewResource(scheduler), Timeout));
+            Assert.False(parent.IsCompleted);
+            Assert.False(closing.IsCompleted);
         }
-
-        Assert.Empty(errors);
-        Assert.Equal(1, SafetyJobs.Counter);
+        finally
+        {
+            gate.Set();
+            if (closing is not null)
+                await closing.WaitAsync(Timeout);
+            else
+                scheduler.Dispose();
+        }
+        parent.Complete();
+        Assert.Equal(1, counts[0]);
     }
 
     [Fact]
-    public void RootJobExceptionIsObservableFromComplete()
+    public void ShutdownReportsUnobservedFailuresAfterDrainingOtherWork()
     {
-        var handle = JobSystem.Schedule(new SafetyJobs.ThrowingRootJob());
-
-        var ex = Assert.Throws<InvalidOperationException>(() => handle.Complete());
-
-        Assert.Equal("root failed", ex.Message);
+        var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        int[] counts = [0];
+        _ = scheduler.Schedule(new ThrowingJob());
+        _ = scheduler.Schedule(new Increment(counts, 0));
+        AggregateException error = Assert.Throws<AggregateException>(scheduler.Dispose);
+        Assert.Contains(error.InnerExceptions, exception => exception.Message == "job failed");
+        Assert.Equal(1, counts[0]);
+        scheduler.Dispose();
     }
 
     [Fact]
-    public void ChildJobExceptionIsObservableFromParentComplete()
+    public void AJobCannotDisposeItsOwnScheduler()
     {
-        var handle = JobSystem.Schedule(new SafetyJobs.ParentSchedulesThrowingChildJob());
-
-        var ex = Assert.Throws<InvalidOperationException>(() => handle.Complete());
-
-        Assert.Equal("child failed", ex.Message);
-    }
-
-
-    [Fact]
-    public void OldRuntimeHandleIsCompletedAndCannotCompleteNewRuntimeState()
-    {
-        JobSystem.ResetForTesting(workerCount: 0);
-        var old = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-        old.Complete();
-        SafetyJobs.Counter = 0;
-
-        JobSystem.ResetForTesting(workerCount: 0);
-        var current = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-
-        Assert.True(old.IsCompleted);
-
-        old.Complete();
-
-        Assert.False(current.IsCompleted);
-        Assert.Equal(0, SafetyJobs.Counter);
-
-        current.Complete();
-        Assert.Equal(1, SafetyJobs.Counter);
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        JobHandle handle = scheduler.Schedule(new StopScheduler(scheduler));
+        Assert.Throws<InvalidOperationException>(handle.Complete);
     }
 
     [Fact]
-    public void InitializeCreatesNewRuntimeGenerationForHandles()
+    public void ReplacingTheDefaultDoesNotReinterpretOldHandles()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
-        var old = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-        old.Complete();
-        SafetyJobs.Counter = 0;
-
         JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
-        var current = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-
-
-        old.Complete();
-
-        Assert.False(current.IsCompleted);
-        Assert.Equal(0, SafetyJobs.Counter);
-
-        current.Complete();
-        Assert.Equal(1, SafetyJobs.Counter);
+        int[] counts = [0, 0];
+        JobHandle old = JobSystem.Schedule(new Increment(counts, 0));
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        try
+        {
+            Assert.Equal(1, counts[0]);
+            JobHandle current = JobSystem.Schedule(new Increment(counts, 1));
+            old.Complete();
+            Assert.True(old.IsCompleted);
+            Assert.False(current.IsCompleted);
+            Assert.Equal(0, counts[1]);
+            current.Complete();
+            Assert.Equal(1, counts[1]);
+        }
+        finally { JobSystem.Shutdown(); }
     }
 
     [Fact]
-    public void ShutdownCreatesNewRuntimeGenerationForHandles()
+    public void DefaultShutdownRequiresExplicitRestart()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
-        var old = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-        old.Complete();
-        SafetyJobs.Counter = 0;
-
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        int[] counts = [0];
+        JobHandle handle = JobSystem.Schedule(new Increment(counts, 0));
         JobSystem.Shutdown();
-        var current = JobSystem.Schedule(new SafetyJobs.IncrementJob());
-
-
-        old.Complete();
-
-        Assert.False(current.IsCompleted);
-        Assert.Equal(0, SafetyJobs.Counter);
-
-        current.Complete();
-        Assert.Equal(1, SafetyJobs.Counter);
+        Assert.Equal(1, counts[0]);
+        handle.Complete();
+        Assert.Throws<InvalidOperationException>(() => JobSystem.Schedule(new Increment(counts, 0)));
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        try
+        {
+            JobSystem.Schedule(new Increment(counts, 0)).Complete();
+            Assert.Equal(2, counts[0]);
+        }
+        finally { JobSystem.Shutdown(); }
     }
 
     [Fact]
-    public void OldRuntimeResourceIsRejectedAndDoesNotAliasReusedResource()
+    public void ResourcesAndTokensFromAnotherSchedulerAreRejected()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
-        var old = JobSystem.CreateResource("old-runtime-resource");
-
-        JobSystem.ResetForTesting(workerCount: 0);
-        JobSystem.SafetyMode = JobSafetyMode.Strict;
-        var current = JobSystem.CreateResource("new-runtime-resource");
-
-        Assert.Equal(old.Id, current.Id);
-
-        var ex = Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Read(old)));
-
-        Assert.Null(ex.ResourceName);
-        Assert.Equal(old.Id, ex.ResourceId);
-        Assert.Throws<JobResourceSafetyException>(() => JobSystem.ReleaseResource(old));
-
-        JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Read(current)).Complete();
-        Assert.Equal(1, SafetyJobs.Counter);
-        JobSystem.ReleaseResource(current);
+        using var first = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Strict });
+        using var second = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Strict });
+        JobResource resource = first.CreateResource("first data");
+        JobResourceToken token = first.CreateResourceToken("first token");
+        int[] counts = [0];
+        Assert.Throws<JobResourceSafetyException>(() =>
+            second.Schedule(new Increment(counts, 0), JobResourceAccess.Read(resource), default));
+        Assert.Throws<JobResourceSafetyException>(() =>
+            second.Schedule(new Increment(counts, 0), JobResourceAccess.Write(token), default));
+        Assert.Throws<JobResourceSafetyException>(() => second.ReleaseResource(resource));
+        Assert.Throws<JobResourceSafetyException>(() => second.ReleaseResourceToken(token));
+        first.Schedule(new Increment(counts, 0), JobResourceAccess.Read(resource), default).Complete();
+        Assert.Equal(1, counts[0]);
+        first.ReleaseResource(resource);
+        first.ReleaseResourceToken(token);
     }
 
-    [Fact]
-    public void OldRuntimeTokenIsRejectedAndDoesNotAliasReusedToken()
+    private static bool RejectsNewResource(Scheduler scheduler)
     {
-        JobSystem.ResetForTesting(workerCount: 0);
-        var old = JobSystem.CreateResourceToken("old-runtime-token");
-
-        JobSystem.ResetForTesting(workerCount: 0);
-        JobSystem.SafetyMode = JobSafetyMode.Strict;
-        var current = JobSystem.CreateResourceToken("new-runtime-token");
-
-        Assert.Equal(old.Id, current.Id);
-
-        var ex = Assert.Throws<JobResourceSafetyException>(() =>
-            JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Write(old)));
-
-        Assert.Null(ex.ResourceName);
-        Assert.Equal(old.Id, ex.ResourceId);
-        Assert.Throws<JobResourceSafetyException>(() => JobSystem.ReleaseResourceToken(old));
-
-        JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Write(current)).Complete();
-        Assert.Equal(1, SafetyJobs.Counter);
-        JobSystem.ReleaseResourceToken(current);
+        try
+        {
+            JobResource resource = scheduler.CreateResource("shutdown probe");
+            scheduler.ReleaseResource(resource);
+            return false;
+        }
+        catch (ObjectDisposedException) { return true; }
     }
 
-    [Fact]
-    public void FastModeIgnoresOldRuntimeResourceAndTokenAccesses()
+    private readonly struct Increment(int[] counts, int index) : IJob
     {
-        JobSystem.ResetForTesting(workerCount: 0);
-        var oldResource = JobSystem.CreateResource("fast-old-resource");
-        var oldToken = JobSystem.CreateResourceToken("fast-old-token");
-
-        JobSystem.ResetForTesting(workerCount: 0);
-        JobSystem.SafetyMode = JobSafetyMode.Fast;
-        var current = JobSystem.CreateResource("fast-current-resource");
-
-        JobSystem.ReleaseResource(oldResource);
-        JobSystem.ReleaseResourceToken(oldToken);
-        JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Read(oldResource)).Complete();
-        JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Write(oldToken)).Complete();
-        JobSystem.Schedule(new SafetyJobs.IncrementJob(), JobResourceAccess.Read(current)).Complete();
-
-        Assert.Equal(3, SafetyJobs.Counter);
-        JobSystem.ReleaseResource(current);
+        public void Execute() => Interlocked.Increment(ref counts[index]);
     }
 
-    [Fact]
-    public void LiveOldRuntimeJobCannotScheduleChildIntoNewRuntime()
+    private readonly struct WaitAndIncrement(ManualResetEventSlim gate, int[] counts) : IJob
     {
-        using var started = new ManualResetEventSlim();
-        using var gate = new ManualResetEventSlim();
-        using var observed = new ManualResetEventSlim();
-        JobSystem.ResetForTesting(workerCount: 1);
-
-        var old = JobSystem.Schedule(new SafetyJobs.ScheduleAfterRuntimeSwapJob(started, gate, observed));
-
-        Assert.True(started.Wait(1_000));
-
-        var resetThread = new Thread(() => JobSystem.ResetForTesting(workerCount: 2));
-        resetThread.Start();
-        Assert.True(WaitUntilPublishedToNewRuntime(old));
-
-        gate.Set();
-
-        Assert.True(resetThread.Join(TimeSpan.FromSeconds(2)));
-        Assert.True(observed.Wait(1_000));
-        Assert.IsType<InvalidOperationException>(SafetyJobs.CapturedException);
-        Assert.Equal(0, SafetyJobs.Counter);
+        public void Execute()
+        {
+            if (!gate.Wait(Timeout)) throw new TimeoutException("Job gate was not released.");
+            Interlocked.Increment(ref counts[0]);
+        }
     }
 
-    [Fact]
-    public void LiveOldRuntimeJobCannotCreateScopeResourceInNewRuntime()
+    private readonly struct SpawnChild(int[] counts) : IJob
     {
-        using var started = new ManualResetEventSlim();
-        using var gate = new ManualResetEventSlim();
-        using var observed = new ManualResetEventSlim();
-        JobSystem.ResetForTesting(workerCount: 1);
-
-        var old = JobSystem.Schedule(new SafetyJobs.CreateScopeResourceAfterRuntimeSwapJob(started, gate, observed));
-
-        Assert.True(started.Wait(1_000));
-
-        var resetThread = new Thread(() => JobSystem.ResetForTesting(workerCount: 2));
-        resetThread.Start();
-        Assert.True(WaitUntilPublishedToNewRuntime(old));
-
-        gate.Set();
-
-        Assert.True(resetThread.Join(TimeSpan.FromSeconds(2)));
-        Assert.True(observed.Wait(1_000));
-        Assert.IsType<InvalidOperationException>(SafetyJobs.CapturedException);
-        Assert.Equal(0, SafetyJobs.Counter);
+        public void Execute() => JobSystem.Schedule(new Increment(counts, 0));
     }
 
-    private static bool WaitUntilPublishedToNewRuntime(JobHandle old)
+    private readonly struct WaitAndSpawn(
+        ManualResetEventSlim started, ManualResetEventSlim gate, int[] counts) : IJob
     {
-        var deadline = DateTime.UtcNow.AddSeconds(2);
-        var spin = new SpinWait();
-        while (DateTime.UtcNow < deadline)
+        public void Execute()
         {
-            if (old.IsCompleted)
-            {
-                return true;
-            }
-
-            spin.SpinOnce();
+            started.Set();
+            if (!gate.Wait(Timeout)) throw new TimeoutException("Parent gate was not released.");
+            JobSystem.Schedule(new Increment(counts, 0));
         }
-
-        return false;
     }
 
-    private static class SafetyJobs
+    private readonly struct StopScheduler(Scheduler scheduler) : IJob
     {
-        internal static int Counter;
-        internal static Exception? CapturedException;
+        public void Execute() => scheduler.Dispose();
+    }
 
-        internal static void Reset()
-        {
-            Counter = 0;
-            CapturedException = null;
-        }
+    private readonly struct SpawnFailingChild : IJob
+    {
+        public void Execute() => JobSystem.Schedule(new ThrowingJob());
+    }
 
-        internal struct IncrementJob : IJob
-        {
-            public void Execute()
-            {
-                Interlocked.Increment(ref Counter);
-            }
-        }
-
-        internal readonly struct GatedIncrementJob : IJob
-        {
-            private readonly ManualResetEventSlim _gate;
-
-            internal GatedIncrementJob(ManualResetEventSlim gate)
-            {
-                _gate = gate;
-            }
-
-            public void Execute()
-            {
-                _gate.Wait();
-                Interlocked.Increment(ref Counter);
-            }
-        }
-
-        internal struct ThrowingRootJob : IJob
-        {
-            public void Execute()
-            {
-                throw new InvalidOperationException("root failed");
-            }
-        }
-
-        internal struct ParentSchedulesThrowingChildJob : IJob
-        {
-            public void Execute()
-            {
-                JobSystem.Schedule(new ThrowingChildJob());
-            }
-        }
-
-        internal readonly struct ScheduleAfterRuntimeSwapJob : IJob
-        {
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
-            private readonly ManualResetEventSlim _observed;
-
-            internal ScheduleAfterRuntimeSwapJob(
-                ManualResetEventSlim started,
-                ManualResetEventSlim gate,
-                ManualResetEventSlim observed)
-            {
-                _started = started;
-                _gate = gate;
-                _observed = observed;
-            }
-
-            public void Execute()
-            {
-                _started.Set();
-                _gate.Wait();
-                try
-                {
-                    JobSystem.Schedule(new IncrementJob());
-                }
-                catch (Exception ex)
-                {
-                    CapturedException = ex;
-                    _observed.Set();
-                }
-            }
-        }
-
-        internal readonly struct CreateScopeResourceAfterRuntimeSwapJob : IJob
-        {
-            private readonly ManualResetEventSlim _started;
-            private readonly ManualResetEventSlim _gate;
-            private readonly ManualResetEventSlim _observed;
-
-            internal CreateScopeResourceAfterRuntimeSwapJob(
-                ManualResetEventSlim started,
-                ManualResetEventSlim gate,
-                ManualResetEventSlim observed)
-            {
-                _started = started;
-                _gate = gate;
-                _observed = observed;
-            }
-
-            public void Execute()
-            {
-                _started.Set();
-                _gate.Wait();
-                try
-                {
-                    _ = JobSystem.CreateScopeResource("stale-scope-resource");
-                }
-                catch (Exception ex)
-                {
-                    CapturedException = ex;
-                    _observed.Set();
-                }
-            }
-        }
-
-        private struct ThrowingChildJob : IJob
-        {
-            public void Execute()
-            {
-                throw new InvalidOperationException("child failed");
-            }
-        }
+    private readonly struct ThrowingJob : IJob
+    {
+        public void Execute() => throw new InvalidOperationException("job failed");
     }
 }

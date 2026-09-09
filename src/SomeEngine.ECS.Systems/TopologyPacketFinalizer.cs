@@ -138,14 +138,14 @@ public static class TopologyPacketFinalizer<TDomain>
             job,
             options,
             state);
-        JobHandle operation = JobSystem.Schedule(
+        JobHandle operation = WorldStorageJobResources.RequireJobs(world).Scheduler.Schedule(
             captureJob,
             BuildCaptureAccesses(world, definition),
             options.JobOptions,
             dependency);
         try
         {
-            JobHandle terminal = JobSystem.ScheduleFinally(
+            JobHandle terminal = WorldStorageJobResources.RequireJobs(world).Scheduler.ScheduleFinally(
                 new TopologyCompletionAdapter(state, operation),
                 options.JobOptions,
                 operation);

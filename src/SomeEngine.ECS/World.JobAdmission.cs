@@ -163,30 +163,17 @@ internal readonly struct WorldJobAdmissionRequest
             bumpsTopologyRevision: topology == WorldTopologyAccess.Write);
 }
 
-internal interface IWorldJobAdmission
-{
-    bool HasCurrentJobScope { get; }
-
-    bool HasCurrentThreadScope(World world);
-
-    void Enter(World world, in WorldJobAdmissionRequest request);
-
-    void Exit(World world, in WorldJobAdmissionRequest request);
-
-    void ValidateCommandBufferAccess(World world);
-}
-
 internal readonly struct WorldJobAdmissionScope : IDisposable
 {
     private readonly World? _world;
-    private readonly IWorldJobAdmission? _admission;
+    private readonly WorldExecution? _admission;
     private readonly WorldJobAdmissionRequest _request;
     private readonly bool _unboundAdmission;
     private readonly bool _unboundMutationGate;
 
     internal WorldJobAdmissionScope(
         World world,
-        IWorldJobAdmission admission,
+        WorldExecution admission,
         in WorldJobAdmissionRequest request)
     {
         _world = world;
@@ -291,11 +278,11 @@ public partial class World
     [ThreadStatic]
     private static CommandBuffer? s_jobCommandProducerBuffer;
 
-    private static IWorldJobAdmission? s_defaultJobAdmission;
-
-    private readonly object _jobAdmissionBindingGate = new();
+    private readonly object _unboundAccessGate = new();
     private readonly object _unboundMutationGate = new();
-    private IWorldJobAdmission? _jobAdmission;
+    private readonly WorldExecution? _execution;
+
+    internal WorldExecution? Execution => _execution;
     private int _unboundJobAdmissionCount;
 
     internal static RestrictedWorldApiScope EnterRestrictedWorldApi(
@@ -409,7 +396,7 @@ public partial class World
     internal void RequireJobSharedRead<T>(string operation)
         where T : struct, ISharedComponent
     {
-        IWorldJobAdmission? admission = ResolveJobAdmissionForCurrentScope();
+        WorldExecution? admission = ResolveJobAdmissionForCurrentScope();
         if (admission is null || !admission.HasCurrentJobScope)
             return;
 
@@ -453,82 +440,14 @@ public partial class World
         s_restrictedWorldApiContext = default;
     }
 
-    internal void BindJobAdmission(IWorldJobAdmission admission)
+    private WorldExecution? ResolveJobAdmissionForCurrentScope()
     {
-        ArgumentNullException.ThrowIfNull(admission);
-        ThrowIfUnavailable();
-        lock (_jobAdmissionBindingGate)
-        {
-            IWorldJobAdmission? current = Volatile.Read(ref _jobAdmission);
-            if (current is not null)
-            {
-                if (!ReferenceEquals(current, admission))
-                {
-                    throw new InvalidOperationException(
-                        "World is already bound to a different Job admission coordinator.");
-                }
-                return;
-            }
-
-            // Waiting here can deadlock when an unbound callback schedules a first-use Job and
-            // then completes it synchronously: the Job waits for the callback to leave while the
-            // callback waits for the Job. Binding is therefore an explicit fail/retry boundary.
-            if (_unboundJobAdmissionCount != 0)
-            {
-                throw new InvalidOperationException(
-                    "Cannot install the Job admission coordinator while an unbound World " +
-                    "operation is active. Bind typed Job access before entering the callback, " +
-                    "or retry after the operation returns.");
-            }
-
-            Volatile.Write(ref _jobAdmission, admission);
-        }
-    }
-
-    internal static void InstallDefaultJobAdmission(IWorldJobAdmission admission)
-    {
-        ArgumentNullException.ThrowIfNull(admission);
-        IWorldJobAdmission? current = Interlocked.CompareExchange(
-            ref s_defaultJobAdmission,
-            admission,
-            comparand: null);
-        if (current is not null && !ReferenceEquals(current, admission))
-        {
+        if (_execution is not null)
+            return _execution;
+        if (JobExecutionContext.IsActive)
             throw new InvalidOperationException(
-                "A different default World Job admission coordinator is already installed.");
-        }
-    }
-
-    private IWorldJobAdmission? ResolveJobAdmissionForCurrentScope()
-    {
-        IWorldJobAdmission? admission = Volatile.Read(ref _jobAdmission);
-        if (admission is not null)
-            return admission;
-
-        IWorldJobAdmission? defaultAdmission = Volatile.Read(ref s_defaultJobAdmission);
-        if (defaultAdmission is null)
-        {
-            // A project reference does not force an optional integration assembly to load. ECS
-            // therefore consults the guaranteed Job scope sentinel itself and fails closed when
-            // no coordinator has been installed, instead of silently treating a worker as an
-            // ordinary synchronous caller.
-            if (JobExecutionContext.IsActive)
-            {
-                throw new InvalidOperationException(
-                    "A Job attempted to access World before ECS Job admission was installed. " +
-                    "Use a typed SomeEngine.ECS.Systems Job access/scheduling API so the World is " +
-                    "bound before execution.");
-            }
-
-            return null;
-        }
-        if (!defaultAdmission.HasCurrentJobScope)
-            return null;
-
-        // Binding uses the same gate as explicit typed-access binding. An active unbound caller
-        // produces a deterministic fail/retry error rather than a cross-thread wait cycle.
-        BindJobAdmission(defaultAdmission);
-        return defaultAdmission;
+                "This World was created for synchronous use. Create it with WorldJobs to schedule ECS work.");
+        return null;
     }
 
     private WorldJobAdmissionScope EnterUnboundJobAdmission(bool mutationGateHeld)
@@ -551,7 +470,7 @@ public partial class World
     {
         try
         {
-            lock (_jobAdmissionBindingGate)
+            lock (_unboundAccessGate)
             {
                 Dictionary<World, int>? admissions = s_unboundJobAdmissions;
                 if (admissions is null ||
@@ -569,7 +488,7 @@ public partial class World
                     admissions[this] = depth - 1;
 
                 _unboundJobAdmissionCount--;
-                Monitor.PulseAll(_jobAdmissionBindingGate);
+                Monitor.PulseAll(_unboundAccessGate);
             }
         }
         finally
@@ -688,52 +607,35 @@ public partial class World
             !hookSafeDirectStorageWrite &&
             !admittedJobStorageWrite);
         _bundles.ThrowIfReentrantWorldMutation(request.CanWrite);
-        IWorldJobAdmission? admission = ResolveJobAdmissionForCurrentScope();
+        WorldExecution? admission = ResolveJobAdmissionForCurrentScope();
         if (admission is null)
         {
-            WorldJobAdmissionScope unboundScope;
             bool mutationGateHeld = request.RequiresUnboundMutationGate;
             if (mutationGateHeld)
                 Monitor.Enter(_unboundMutationGate);
+            WorldJobAdmissionScope scope;
             try
             {
-                lock (_jobAdmissionBindingGate)
-                {
-                    admission = Volatile.Read(ref _jobAdmission);
-                    if (admission is null)
-                    {
-                        unboundScope = EnterUnboundJobAdmission(mutationGateHeld);
-                        // Ownership of this monitor recursion now belongs to unboundScope.
-                        mutationGateHeld = false;
-                    }
-                    else
-                    {
-                        unboundScope = default;
-                    }
-                }
+                lock (_unboundAccessGate)
+                    scope = EnterUnboundJobAdmission(mutationGateHeld);
             }
-            finally
+            catch
             {
-                // Binding may have won while the prospective unbound writer waited. In that case
-                // preserve the coordinator's normal admission path and release the unused gate.
                 if (mutationGateHeld)
                     Monitor.Exit(_unboundMutationGate);
+                throw;
             }
-
-            if (admission is null)
+            try
             {
-                try
-                {
-                    ThrowIfUnavailable();
-                    if (request.BumpsTopologyRevision)
-                        BumpTopologyRevision();
-                    return unboundScope;
-                }
-                catch
-                {
-                    unboundScope.Dispose();
-                    throw;
-                }
+                ThrowIfUnavailable();
+                if (request.BumpsTopologyRevision)
+                    BumpTopologyRevision();
+                return scope;
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
             }
         }
 

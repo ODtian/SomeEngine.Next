@@ -11,8 +11,8 @@ namespace SomeEngine.Render.Systems;
 /// </summary>
 public sealed class RenderWorld : World
 {
-    public RenderWorld(int initialEntityCapacity = 256)
-        : base(initialEntityCapacity)
+    public RenderWorld(int initialEntityCapacity = 256, WorldExecution? execution = null)
+        : base(initialEntityCapacity, execution)
     {
     }
 

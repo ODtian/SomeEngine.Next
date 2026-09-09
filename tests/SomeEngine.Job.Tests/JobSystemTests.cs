@@ -7,7 +7,7 @@ public class JobSystemTests
 {
     public JobSystemTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
     }
 
 

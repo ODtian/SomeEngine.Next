@@ -6,41 +6,24 @@ using System.Runtime.CompilerServices;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed partial class Components
+internal readonly partial struct Components
 {
-    private World _world = null!;
-    private Entities _entities = null!;
-    private Tables _tables = null!;
-    private Indices _indices = null!;
-    private Hooks _hooks = null!;
-    private Clock _clock = null!;
-    private Iteration _iteration = null!;
-    private Hierarchy _hierarchy = null!;
-    private RelationGraph _relationGraph = null!;
+    private readonly WorldStructureRoot _structure;
+
+    internal Components(WorldStructureRoot structure) => _structure = structure;
+
+    private World _world => _structure.World;
+    private Entities _entities => _structure.Entities;
+    private Tables _tables => _structure.Tables;
+    private Indices _indices => _structure.Indices;
+    private Hooks _hooks => _structure.Hooks;
+    private Clock _clock => _structure.Clock;
+    private Iteration _iteration => _structure.Iteration;
+    private Hierarchy _hierarchy => _structure.Hierarchy;
+    private RelationGraph _relationGraph => _structure.RelationGraph;
 
     internal bool HasHooks => _hooks.Any;
 
-    internal void Bind(
-        World world,
-        Entities entities,
-        Tables tables,
-        Indices indices,
-        RelationGraph relationGraph,
-        Hooks hooks,
-        Clock clock,
-        Iteration iteration,
-        Hierarchy hierarchy)
-    {
-        _world = world;
-        _entities = entities;
-        _tables = tables;
-        _indices = indices;
-        _relationGraph = relationGraph;
-        _hooks = hooks;
-        _clock = clock;
-        _iteration = iteration;
-        _hierarchy = hierarchy;
-    }
 
     internal void Add<T>(Entity entity, in T value)
         where T : struct, IComponent
@@ -242,7 +225,7 @@ internal sealed partial class Components
     }
 }
 
-internal sealed partial class Components
+internal readonly partial struct Components
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void CommitAdd<T>(
@@ -526,7 +509,7 @@ internal sealed partial class Components
     }
 }
 
-internal sealed partial class Components
+internal readonly partial struct Components
 {
     internal void ClearRemoved<T>(uint throughVersion)
         where T : struct, IComponent

@@ -15,7 +15,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void DistinctReadQueriesRemainExactUnderConcurrentRepeatedLookup()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity first = world.CreateEntity(new ComponentA { Value = 1 });
         Entity second = world.CreateEntity(new ComponentB { Value = 2 });
         QueryHandle firstQuery = world.Query(world.QueryDefinition().Read<ComponentA>());
@@ -36,7 +36,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void DifferentTableComponents_EnterQueryCallbacksConcurrently()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         _ = world.CreateEntity(new ComponentA { Value = 1 });
         _ = world.CreateEntity(new ComponentB { Value = 2 });
         QueryHandle firstQuery = world.Query(
@@ -75,7 +75,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void SameTableComponent_WriteQueryBlocksReadQueryAtResourceFrontier()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         _ = world.CreateEntity(new ComponentA { Value = 1 });
         QueryHandle writeQuery = world.Query(
             world.QueryDefinition().ReadWrite<ComponentA>());
@@ -116,8 +116,8 @@ public sealed class QueryRuntimeOwnershipTests
     public void SameTableComponent_InDifferentWorldsDoesNotShareQueryOwner()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var firstWorld = new World();
-        var secondWorld = new World();
+        var firstWorld = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        var secondWorld = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         _ = firstWorld.CreateEntity(new ComponentA { Value = 1 });
         _ = secondWorld.CreateEntity(new ComponentA { Value = 2 });
         QueryHandle firstQuery = firstWorld.Query(
@@ -156,7 +156,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void ReadonlyRelationshipQuery_CanOverlapUnrelatedTableQuery()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -198,7 +198,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void WritableRelationshipQuery_BlocksOrdinaryQueryAtTopologyFrontier()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -243,7 +243,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void WritableRelationshipOwner_DefensivelyRejectsNestedOrdinaryQuery()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -266,7 +266,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void FaultedOrdinaryQuery_ReleasesBorrowAndSynchronousResourceOwner()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new ComponentA { Value = 1 });
         QueryHandle query = world.Query(
             world.QueryDefinition().ReadWrite<ComponentA>());
@@ -289,7 +289,7 @@ public sealed class QueryRuntimeOwnershipTests
     public void WritableRelationshipQuery_BodyFaultStillRollsBackCanonicalValue()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity oldParent = world.CreateEntity();
         Entity newParent = world.CreateEntity();
         Entity child = world.CreateEntity();

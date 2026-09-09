@@ -4,7 +4,7 @@ public sealed class SchedulerKernelTests
 {
     public SchedulerKernelTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
     }
 
     [Fact]
@@ -20,7 +20,7 @@ public sealed class SchedulerKernelTests
     [Fact]
     public void WaitingThreadHelpsDrainWork()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         SchedulerJobs.Counter = 0;
 
         JobSystem.Schedule(new SchedulerJobs.IncrementJob()).Complete();
@@ -50,8 +50,8 @@ public sealed class SchedulerKernelTests
         SchedulerJobs.Counter = 0;
 
         JobSystem.Schedule(new SchedulerJobs.IncrementJob()).Complete();
-        JobSystem.ShutdownForTesting();
-        JobSystem.ResetForTesting(workerCount: 1);
+        JobSystem.Shutdown();
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 1 });
         JobSystem.Schedule(new SchedulerJobs.IncrementJob()).Complete();
 
         Assert.Equal(2, SchedulerJobs.Counter);

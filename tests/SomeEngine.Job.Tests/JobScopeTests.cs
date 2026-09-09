@@ -4,7 +4,7 @@ public sealed class JobScopeTests
 {
     public JobScopeTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ScopeJobs.Reset();
     }
 

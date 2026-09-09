@@ -9,19 +9,8 @@ public partial class World
     private const int LifetimeClosed = 2;
 
     private readonly object _lifetimeGate = new();
-    private readonly JobLifetime _jobLifetime = new(nameof(World));
     private int _lifetimeState;
     private int _lifetimeOwnerThreadId;
-
-    internal IJobSubmissionObserver JobSubmissionObserver => _jobLifetime;
-
-    internal int TrackedJobRootCount => _jobLifetime.TrackedRootCount;
-
-    internal JobSubmissionScope EnterJobSubmissionScope()
-    {
-        ThrowIfUnavailable();
-        return _jobLifetime.EnterSubmissionScope();
-    }
 
     internal void ThrowIfUnavailable()
     {
@@ -33,7 +22,7 @@ public partial class World
         // full scheduler scope. Unrelated roots cannot reach execution because submission
         // ownership rejects them before a scheduler state is published.
         if (state == LifetimeClosing &&
-            (_jobLifetime.OwnsCurrentScope() ||
+            (_execution?.IsExecutingCurrentScope == true ||
              OwnsCurrentSerializationWriteLifetime() ||
              Volatile.Read(ref _lifetimeOwnerThreadId) == Environment.CurrentManagedThreadId))
             return;
@@ -83,18 +72,17 @@ public partial class World
         var exceptions = new List<Exception>();
         try
         {
-            _jobLifetime.CloseAndComplete(exceptions);
+            _execution?.Close();
             WaitForSerializationWriteLifetimesToDrain();
             WaitForUnboundJobAdmissionsToDrain();
 
             try
             {
-                using WorldJobAdmissionScope admission = EnterJobAdmission(
-                    WorldJobAdmissionRequest.ForTopologyControlPlane(),
-                    allowClosing: true);
                 CaptureTeardownFailure(_commands.Dispose, exceptions);
                 CaptureTeardownFailure(_hooks.Clear, exceptions);
                 CaptureTeardownFailure(ReleasePublishedStorage, exceptions);
+                if (_execution is not null)
+                    CaptureTeardownFailure(_execution.Release, exceptions);
             }
             catch (Exception exception)
             {
