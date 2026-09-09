@@ -118,10 +118,8 @@ public ref struct JobEntityRow
         where T : struct
     {
         int componentId = ComponentMetadata<T>.Id;
-        _descriptor.RequireDirectAccess(
-            GeneratedQueryStorage.Table,
-            componentId,
-            write);
+        // The descriptor was checked against the normalized query once on construction.
+        // The bound match is the sole authority for a table column during execution.
         if (!_match.TryGetAccess(componentId, out QueryColumnAccess access) ||
             (read && !access.Access.CanRead()) ||
             (write && !access.Access.CanWrite()))
@@ -167,7 +165,7 @@ public static class JobEntityRuntime
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(descriptor);
-        WorldStorageJobResources.Bind(world);
+        WorldStorageJobResources.RequireJobs(world);
         descriptor = descriptor.WithFilter(options.Filter);
         var capture = new SerialQueryCaptureJob<TJob, TAdapter>(
             world,
@@ -175,7 +173,7 @@ public static class JobEntityRuntime
             adapter,
             descriptor,
             options);
-        return JobSystem.Schedule(
+        return WorldStorageJobResources.RequireJobs(world).Scheduler.Schedule(
             capture,
             RelationshipJobAccess.TopologyRead(world),
             options.JobOptions,
@@ -194,7 +192,7 @@ public static class JobEntityRuntime
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(descriptor);
-        WorldStorageJobResources.Bind(world);
+        WorldStorageJobResources.RequireJobs(world);
         descriptor = descriptor.WithFilter(options.Filter);
         if (!descriptor.SupportsParallel)
         {
@@ -212,7 +210,7 @@ public static class JobEntityRuntime
             adapter,
             descriptor,
             options);
-        return JobSystem.Schedule(
+        return WorldStorageJobResources.RequireJobs(world).Scheduler.Schedule(
             capture,
             RelationshipJobAccess.TopologyRead(world),
             options.JobOptions,
@@ -249,7 +247,7 @@ public static class JobEntityRuntime
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(descriptor);
-        WorldStorageJobResources.Bind(world);
+        WorldStorageJobResources.RequireJobs(world);
         descriptor = descriptor.WithFilter(filter);
         if (!descriptor.SupportsParallel)
         {

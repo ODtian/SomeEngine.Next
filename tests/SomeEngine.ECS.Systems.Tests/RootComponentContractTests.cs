@@ -10,7 +10,7 @@ public sealed class RootComponentContractTests
     public void RootOnlyComponent_WorksWithComponentJobAccessAndJobCommandBuffer()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        using var world = new World();
+        using var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
         Assert.NotEqual(
             default(JobResourceAccess),
@@ -42,7 +42,7 @@ public sealed class RootComponentContractTests
     public void GeneratedJobEntity_AcceptsRootOnlyComponentAtCompileAndRuntime()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        using var world = new World();
+        using var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new RootOnlyGeneratedValue { Value = 3 });
 
         GeneratedQueryAccessDescriptor descriptor =
@@ -59,7 +59,7 @@ public sealed class RootComponentContractTests
     [Fact]
     public void CanonicalComponentContract_IsAcceptedBySystemsAccess()
     {
-        using var world = new World();
+        using var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Assert.NotEqual(
             default(JobResourceAccess),
             ComponentJobAccess<CanonicalJobValue>.Read(world));

@@ -4,7 +4,7 @@ public sealed class ParallelDispatchTests
 {
     public ParallelDispatchTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ParallelJobs.Reset();
     }
 
@@ -61,7 +61,7 @@ public sealed class ParallelDispatchTests
     [Fact]
     public void AutomaticBatchSizeUsesBoundedTileDensity()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 2,
             MaxQueuedWorkItems = 8,
@@ -122,7 +122,7 @@ public sealed class ParallelDispatchTests
     [Fact]
     public void ParallelBatchCountExceedingQueueCapacityFailsBeforePreparingState()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 0,
             MaxQueuedWorkItems = 4,

@@ -11,7 +11,7 @@ public sealed class BufferJobAccessTests
     public void BufferCallbackInsideJob_RejectsMissingLogicalResource()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
 
         // Bind the optional World coordinator, but deliberately omit the logical buffer resource.
@@ -27,7 +27,7 @@ public sealed class BufferJobAccessTests
     public void SameWorldSameBuffer_ReadOwnersCanRunConcurrently()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
@@ -57,7 +57,7 @@ public sealed class BufferJobAccessTests
     public void SameWorldSameBuffer_WriteOwnerBlocksReadersAndWriters()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var writerStarted = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
@@ -97,8 +97,8 @@ public sealed class BufferJobAccessTests
     public void DifferentBufferTypesAndWorlds_DoNotShareLogicalResource()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
-        var otherWorld = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        var otherWorld = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         Entity otherTypeEntity = CreateBufferEntity<OtherElement>(world);
         Entity otherWorldEntity = CreateBufferEntity<Element>(otherWorld);
@@ -137,7 +137,7 @@ public sealed class BufferJobAccessTests
     public void FaultedBufferBody_ReleasesIterationAndSynchronousResourceOwner()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Write(world);
 
@@ -166,7 +166,7 @@ public sealed class BufferJobAccessTests
         for (int i = 0; i < 1_000; i++)
             ExecuteCountedRead(unboundWorld, unboundEntity, ref unboundCallbacks);
 
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Read(world);
         int callbacks = 0;
@@ -188,7 +188,7 @@ public sealed class BufferJobAccessTests
     public void TopologyWriteHook_CanBorrowBufferAfterLaterBufferOwnerWasRegistered()
     {
         using var runtime = new JobRuntimeScope(workerCount: 4);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Write(world);
         using var hookStarted = new ManualResetEventSlim();

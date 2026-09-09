@@ -15,27 +15,18 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed class Buffers
+internal readonly struct Buffers
 {
-    private Entities _entities = null!;
-    private Components _components = null!;
-    private Bundles _bundles = null!;
-    private Clock _clock = null!;
-    private Iteration _iteration = null!;
+    private readonly WorldStructureRoot _structure;
 
-    internal void Bind(
-        Entities entities,
-        Components components,
-        Bundles bundles,
-        Clock clock,
-        Iteration iteration)
-    {
-        _entities = entities;
-        _components = components;
-        _bundles = bundles;
-        _clock = clock;
-        _iteration = iteration;
-    }
+    internal Buffers(WorldStructureRoot structure) => _structure = structure;
+
+    private Entities _entities => _structure.Entities;
+    private Components _components => _structure.Components;
+    private Bundles _bundles => _structure.Bundles;
+    private Clock _clock => _structure.Clock;
+    private Iteration _iteration => _structure.Iteration;
+
 
     internal DynamicBuffer<T> BorrowWrite<T>(Entity entity)
         where T : struct, IBufferElement

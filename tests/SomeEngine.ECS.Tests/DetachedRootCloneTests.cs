@@ -25,7 +25,7 @@ public sealed class DetachedRootCloneTests
             for (int i = 0; i < 40; i++) buffer.Add(new Element(100 + i));
         });
         world.AddTag<Marker>(copy);
-        world.Remove<Marker>(copy);
+        world.RemoveTag<Marker>(copy);
         Assert.Equal(Enumerable.Range(0, 32), Read(world, source).Select(x => x.Value));
         Assert.Equal(Enumerable.Range(100, 40), Read(world, copy).Select(x => x.Value));
         world.DestroyEntity(copy);

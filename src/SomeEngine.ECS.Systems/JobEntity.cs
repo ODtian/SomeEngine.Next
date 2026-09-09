@@ -365,44 +365,28 @@ public sealed class GeneratedQueryAccessDescriptor
         }
 
         var logical = new Dictionary<
-            (GeneratedQueryStorage Storage, int ComponentId),
-            LogicalQueryAccess>();
-        for (int i = 0; i < query.Terms.Length; i++)
+            (GeneratedQueryStorage Storage, int ComponentId), QueryDataAccess>();
+        foreach (QueryDataAccess access in query.DataAccesses)
         {
-            QueryTerm term = query.Terms[i];
-            ref readonly ComponentInfo info = ref ComponentRegistry.Get(term.ComponentId);
-            if (!TryLogicalStorage(
-                    term.ComponentId,
-                    in info,
-                    out GeneratedQueryStorage storage,
-                    out int componentId))
+            if (access.Storage is not (WorldStorageKind.Table or WorldStorageKind.Buffer or WorldStorageKind.Sparse))
             {
-                if (term.Access != QueryAccess.None)
-                {
+                if (access.Access != QueryAccess.None)
                     throw new InvalidOperationException(
-                        $"Generated IJobEntity query access to {info.Type.Name} has no supported scoped storage adapter.");
-                }
+                        $"Generated IJobEntity has no scoped adapter for {access.ValueType.Name}.");
                 continue;
             }
-
-            var key = (storage, componentId);
-            if (logical.TryGetValue(key, out LogicalQueryAccess existing))
+            GeneratedQueryStorage storage = access.Storage switch
             {
-                existing.Access = QueryAccessExtensions.Merge(existing.Access, term.Access);
-                existing.Filters |= term.Filters;
-                logical[key] = existing;
-            }
-            else
-            {
-                logical.Add(
-                    key,
-                    new LogicalQueryAccess(info.Type, term.Access, term.Filters));
-            }
+                WorldStorageKind.Table => GeneratedQueryStorage.Table,
+                WorldStorageKind.Buffer => GeneratedQueryStorage.Buffer,
+                _ => GeneratedQueryStorage.Sparse,
+            };
+            logical.Add((storage, access.ComponentId), access);
         }
 
         foreach (var pair in logical)
         {
-            LogicalQueryAccess queryAccess = pair.Value;
+            QueryDataAccess queryAccess = pair.Value;
             bool hasValueAccess = queryAccess.Access != QueryAccess.None;
             if (hasValueAccess)
             {
@@ -452,7 +436,7 @@ public sealed class GeneratedQueryAccessDescriptor
             GeneratedQueryAccess access = accesses[pair.Value];
             if (!access.HasDirectAccess || access.Storage == GeneratedQueryStorage.Sparse)
                 continue;
-            if (!logical.TryGetValue(pair.Key, out LogicalQueryAccess queryAccess) ||
+            if (!logical.TryGetValue(pair.Key, out QueryDataAccess queryAccess) ||
                 queryAccess.Access == QueryAccess.None)
             {
                 throw new InvalidOperationException(
@@ -463,46 +447,6 @@ public sealed class GeneratedQueryAccessDescriptor
         return accesses.Count == 0
             ? Array.Empty<GeneratedQueryAccess>()
             : accesses.ToArray();
-    }
-
-    private static bool TryLogicalStorage(
-        int termComponentId,
-        in ComponentInfo info,
-        out GeneratedQueryStorage storage,
-        out int componentId)
-    {
-        if (BufferRegistry.TryGetHeaderComponentId(termComponentId, out int headerId))
-        {
-            storage = GeneratedQueryStorage.Buffer;
-            componentId = headerId;
-            return true;
-        }
-        if (info.Storage == StoragePath.Table)
-        {
-            storage = GeneratedQueryStorage.Table;
-            componentId = termComponentId;
-            return true;
-        }
-        storage = default;
-        componentId = 0;
-        return false;
-    }
-
-    private struct LogicalQueryAccess
-    {
-        internal LogicalQueryAccess(
-            Type valueType,
-            QueryAccess access,
-            QueryTermFilter filters)
-        {
-            ValueType = valueType;
-            Access = access;
-            Filters = filters;
-        }
-
-        internal Type ValueType;
-        internal QueryAccess Access;
-        internal QueryTermFilter Filters;
     }
 
     internal QueryHandle Resolve(World world)

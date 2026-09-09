@@ -342,7 +342,7 @@ public sealed class SparseJobAccessTests
     private static World CreateWorldWith<T>()
         where T : struct, ISparseComponent
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         AddSparse<T>(world);
         return world;
     }

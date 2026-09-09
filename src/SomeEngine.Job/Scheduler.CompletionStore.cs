@@ -3,7 +3,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private readonly struct CompletionLease
     {
@@ -28,6 +28,7 @@ internal sealed partial class Scheduler
 
         private readonly RuntimeCounters _counters;
         private readonly long _generation;
+        private readonly Scheduler _scheduler;
         private readonly int _maxCompletionStates;
         private readonly Lock _stateLock = new();
         private readonly CompletionState?[] _states;
@@ -35,8 +36,9 @@ internal sealed partial class Scheduler
         private readonly Stack<int> _observedFaultedStates = new();
         private int _nextStateIndex;
 
-        internal CompletionStore(JobRuntimeConfig config, RuntimeCounters counters, long generation)
+        internal CompletionStore(Scheduler scheduler, JobRuntimeConfig config, RuntimeCounters counters, long generation)
         {
+            _scheduler = scheduler;
             _counters = counters;
             _generation = generation;
             _maxCompletionStates = config.MaxCompletionStates;
@@ -151,7 +153,7 @@ internal sealed partial class Scheduler
                     }
 
                     index = _nextStateIndex++;
-                    state = new CompletionState();
+                    state = new CompletionState(this);
                     _states[index] = state;
                     _counters.CompletionStateHighWater(index);
                 }
@@ -159,7 +161,7 @@ internal sealed partial class Scheduler
                 lock (state.Sync)
                 {
                     state.Reset(pendingWork, pendingDependencies, scheduleDependenciesSealed);
-                    return new JobHandle(index, state.Version, _generation);
+                    return new JobHandle(index, state.Version, _generation, _scheduler);
                 }
             }
         }
@@ -267,7 +269,7 @@ internal sealed partial class Scheduler
                 return true;
             }
 
-            if (Volatile.Read(ref state.Completed) && Volatile.Read(ref state.Fault) is null)
+            if (Volatile.Read(ref state.Completed) && state.Fault is null)
             {
                 return true;
             }
@@ -293,6 +295,7 @@ internal sealed partial class Scheduler
                         return true;
                     }
                     state.FaultObserved = true;
+                    state.ReportFailure();
                 }
 
                 return true;
@@ -314,7 +317,7 @@ internal sealed partial class Scheduler
                     return false;
 
                 return !state.Completed ||
-                    (state.Fault is not null && !state.FaultObserved);
+                    (state.Fault is not null && !state.FailureReported);
             }
         }
 
@@ -412,6 +415,27 @@ internal sealed partial class Scheduler
                     }
 
                     candidate.QueuedForFaultReuse = false;
+                    candidate.Release();
+                    index = candidateIndex;
+                    state = candidate;
+                    return true;
+                }
+            }
+
+            // A dependency may be observed through a downstream handle. Its originating
+            // completion record then has no direct waiter to enqueue it for reuse. Derive
+            // eligibility from the shared failure only when ordinary free records run out.
+            for (int candidateIndex = 1; candidateIndex < _nextStateIndex; candidateIndex++)
+            {
+                CompletionState? candidate = _states[candidateIndex];
+                if (candidate is null)
+                    continue;
+                lock (candidate.Sync)
+                {
+                    if (!candidate.InUse || !candidate.Completed || !candidate.FailureReported ||
+                        candidate.ActiveCompleters != 0 || candidate.CompletionDispatchInProgress ||
+                        candidate.WorkDependencyReleaseInProgress)
+                        continue;
                     candidate.Release();
                     index = candidateIndex;
                     state = candidate;

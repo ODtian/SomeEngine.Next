@@ -16,7 +16,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity(new EscapeValue());
             using var blockerStarted = new ManualResetEventSlim();
             using var releaseBlocker = new ManualResetEventSlim();
@@ -50,7 +50,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             HierarchyMaintenanceDependency<EscapeDomain> maintenance =
                 HierarchyMaintenanceSystem<EscapeDomain>.ScheduleDependency(world);
             maintenance.Handle.Complete();
@@ -87,7 +87,7 @@ public sealed class HierarchyPropagationRestrictedApiTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity firstRoot = world.CreateEntity(new EscapeValue { Value = 11 });
             Entity secondRoot = world.CreateEntity(new EscapeValue { Value = 22 });
             QueryHandle query = world.Query(

@@ -3,9 +3,9 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
-    private sealed class CompletionState
+    private sealed class CompletionState(CompletionStore completion)
     {
         internal readonly Lock Sync = new();
         internal int Version;
@@ -16,7 +16,11 @@ internal sealed partial class Scheduler
         internal int PendingChildren;
         internal int ActiveCompleters;
         internal ScopeToken Parent;
-        internal ExceptionDispatchInfo? Fault;
+        internal HashSet<IJobSubmissionObserver>? Users;
+        private JobFailure? _failure;
+        internal ExceptionDispatchInfo? Fault => Volatile.Read(ref _failure)?.DispatchInfo;
+        internal bool FailureReported => Volatile.Read(ref _failure)?.Reported == true;
+        internal void ReportFailure() => Volatile.Read(ref _failure)?.Report();
         internal bool FaultObserved;
         internal bool QueuedForFaultReuse;
         internal List<DependencyContinuation> Continuations { get; } = [];
@@ -37,7 +41,7 @@ internal sealed partial class Scheduler
         internal void RecordFirstFault(ExceptionDispatchInfo fault)
         {
             ArgumentNullException.ThrowIfNull(fault);
-            Interlocked.CompareExchange(ref Fault, fault, null);
+            Interlocked.CompareExchange(ref _failure, completion.Failure(fault), null);
         }
 
         internal void Reset(int pendingWork, int pendingDependencies, bool scheduleDependenciesSealed)
@@ -50,7 +54,8 @@ internal sealed partial class Scheduler
             PendingChildren = 0;
             ActiveCompleters = 0;
             Parent = default;
-            Fault = null;
+            Users?.Clear();
+            _failure = null;
             FaultObserved = false;
             QueuedForFaultReuse = false;
             ClearIfNotEmpty(Continuations);
@@ -78,7 +83,8 @@ internal sealed partial class Scheduler
             PendingChildren = 0;
             ActiveCompleters = 0;
             Parent = default;
-            Fault = null;
+            Users?.Clear();
+            _failure = null;
             FaultObserved = false;
             QueuedForFaultReuse = false;
             ClearIfNotEmpty(Continuations);

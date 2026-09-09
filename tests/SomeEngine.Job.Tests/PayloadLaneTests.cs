@@ -6,7 +6,7 @@ public sealed class PayloadLaneTests
 {
     public PayloadLaneTests()
     {
-        JobSystem.ResetForTesting();
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
     }
 
 
@@ -43,7 +43,7 @@ public sealed class PayloadLaneTests
     [Fact]
     public void CompletedJobReleasesManagedPayload()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var weak = CreateScheduledPayloadWeakReference();
 
@@ -55,7 +55,7 @@ public sealed class PayloadLaneTests
     [Fact]
     public void CompletedParallelJobReleasesManagedPayload()
     {
-        JobSystem.ResetForTesting(workerCount: 0);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var weak = CreateScheduledParallelPayloadWeakReference();
 

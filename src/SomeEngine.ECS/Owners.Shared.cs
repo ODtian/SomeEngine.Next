@@ -17,24 +17,27 @@ namespace SomeEngine.ECS.Owners;
 
 internal sealed class Shared
 {
-    private const int MaximumStackSharedValues = 256;
-    private Entities _entities = null!;
-    private Tables _tables = null!;
-    private Iteration _iteration = null!;
+    private readonly WorldStructureRoot _structure;
 
-    internal Shared()
-        : this(new SharedStores())
+    private const int MaximumStackSharedValues = 256;
+    private Entities _entities => _structure.Entities;
+    private Tables _tables => _structure.Tables;
+    private Iteration _iteration => _structure.Iteration;
+
+    internal Shared(WorldStructureRoot structure)
+        : this(structure, new SharedStores())
     {
     }
 
-    internal Shared(SharedStores stores)
+    internal Shared(WorldStructureRoot structure, SharedStores stores)
     {
+        _structure = structure;
         _stores = stores ?? throw new ArgumentNullException(nameof(stores));
     }
 
     private readonly SharedStores _stores;
 
-    internal Shared CloneDetached() => new(_stores.CloneExact());
+    internal Shared CloneDetached(WorldStructureRoot structure) => new(structure, _stores.CloneExact());
 
     internal int StoreDetachCount<T>(int componentId)
         where T : struct =>
@@ -58,15 +61,6 @@ internal sealed class Shared
             other._stores.Store<T>(componentId).BackingIdentity);
     }
 
-    internal void Bind(
-        Entities entities,
-        Tables tables,
-        Iteration iteration)
-    {
-        _entities = entities;
-        _tables = tables;
-        _iteration = iteration;
-    }
 
     internal void Add<T>(Entity entity, in T value)
         where T : struct, ISharedComponent

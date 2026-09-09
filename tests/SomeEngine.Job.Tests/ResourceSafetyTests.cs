@@ -4,7 +4,7 @@ public sealed class ResourceSafetyTests
 {
     public ResourceSafetyTests()
     {
-        JobSystem.ResetForTesting(workerCount: 4);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
         JobSystem.SafetyMode = JobSafetyMode.Checked;
         ResourceJobs.Reset();
     }
@@ -1205,7 +1205,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void TypedListAccessesParticipateInResourceOrdering()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         ResourceJobs.Reset();
         var values = new List<int> { 0 };
 
@@ -1225,7 +1225,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void TypedContainerAccessesSupportStackDictionaryQueueAndArrayRanges()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ResourceJobs.Reset();
         var stack = new Stack<int>();
         var dictionary = new Dictionary<string, int> { ["value"] = 0 };
@@ -1283,7 +1283,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void MemoryAccessesUseArrayBackedSliceRanges()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ResourceJobs.Reset();
         var array = new int[3];
         using var firstStarted = new ManualResetEventSlim();
@@ -1316,7 +1316,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void SpanAccessesUseExplicitArrayOwner()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         ResourceJobs.Reset();
         var array = new int[2];
         var other = new int[1];
@@ -1352,7 +1352,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void CustomStructContainerProviderUsesTypedStaticAccess()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         ResourceJobs.Reset();
         var container = new ResourceJobs.CustomCounterContainer(
             [0],

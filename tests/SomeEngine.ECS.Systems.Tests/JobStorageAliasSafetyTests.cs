@@ -12,7 +12,7 @@ public sealed class JobStorageAliasSafetyTests
     [Fact]
     public void ReadAccessRejectsReferenceBearingTableBufferSparseAndSharedStorage()
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
         AssertAliasRejection(() => ComponentJobAccess<ReferenceTable>.Read(world));
         AssertAliasRejection(() => BufferJobAccess<ReferenceElement>.Read(world));
@@ -24,7 +24,7 @@ public sealed class JobStorageAliasSafetyTests
     public void TypedScheduleRejectsAliasBearingStorageBeforeJobCallback()
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         var counter = new Counter();
         var job = new CountJob(counter);
 
@@ -39,7 +39,7 @@ public sealed class JobStorageAliasSafetyTests
     [Fact]
     public void NativeSizedHandleTableIsRejectedByOrdinaryAndGeneratedAccesses()
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
 
         AssertAliasRejection(() => ComponentJobAccess<NativeHandleTable>.Read(world));
         AssertAliasRejection(() => ComponentJobAccess<NestedNativeHandleTable>.Read(world));
@@ -58,7 +58,7 @@ public sealed class JobStorageAliasSafetyTests
     public void EmptyPropagationRejectsNativeSizedHandleAccessBeforeSchedulingCallback()
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         HierarchyMaintenanceDependency<Domain> maintenance =
             HierarchyMaintenanceSystem<Domain>.ScheduleDependency(world);
         JobResourceAccess forgedAccess = WorldStorageJobResources.Read(
@@ -90,7 +90,7 @@ public sealed class JobStorageAliasSafetyTests
     public void RecursivelyAliasFreeStorageKeepsOrdinaryTypedSchedulingAvailable()
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         var counter = new Counter();
         var job = new CountJob(counter);
 
@@ -112,7 +112,7 @@ public sealed class JobStorageAliasSafetyTests
     public void SharedValueAliasesAreRejectedOnlyWhenAJobBorrowsTheValue()
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         world.AddShared(entity, new AliasShared { Value = "scene" });
         world.AddShared(entity, new SafeShared { Value = 17 });
@@ -154,7 +154,7 @@ public sealed class JobStorageAliasSafetyTests
     public void SharedReadCapabilityIsExactByComponentType()
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         world.AddShared(entity, new SafeShared { Value = 17 });
 
@@ -184,7 +184,7 @@ public sealed class JobStorageAliasSafetyTests
         SharedFilterPath path)
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         var filter = new SafeShared { Value = 17 };
         world.AddShared(entity, filter);
@@ -207,7 +207,7 @@ public sealed class JobStorageAliasSafetyTests
     public void SharedPresenceAndPrecomputedIndexFilterRemainTopologyOnlyForManagedValue()
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         var value = new AliasShared { Value = "scene" };
         world.AddShared(entity, value);
@@ -239,7 +239,7 @@ public sealed class JobStorageAliasSafetyTests
         SharedFilterPath path)
     {
         using var runtime = new JobRuntimeScope();
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         var filter = new AliasShared { Value = "scene" };
         world.AddShared(entity, filter);

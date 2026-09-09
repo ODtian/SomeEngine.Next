@@ -1,6 +1,6 @@
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     private const string NestedSynchronousAccessMessage =
         "A running Job cannot acquire a nested synchronous Resource Owner. Declare the resource on the " +
@@ -9,6 +9,7 @@ internal sealed partial class Scheduler
     internal SynchronousResourceOwner AcquireSynchronousAccess(
         ReadOnlySpan<JobResourceAccess> accesses)
     {
+        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
         if (s_currentScope.Index != 0)
             throw new InvalidOperationException(NestedSynchronousAccessMessage);

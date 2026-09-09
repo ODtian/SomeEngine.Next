@@ -15,7 +15,7 @@ public sealed class GameWorldLifecycleTests
     {
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingState();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         ComponentJobAccess<LocalTransform>.ScheduleRead(
             gameWorld.World,
             new BlockingJob(state));
@@ -45,7 +45,7 @@ public sealed class GameWorldLifecycleTests
     {
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingDestroyState();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         gameWorld.Systems.Add(new BlockingDestroySystem(state));
         gameWorld.Update(0);
 
@@ -76,7 +76,7 @@ public sealed class GameWorldLifecycleTests
     public void Dispose_StillClosesWorldWhenSystemDestroyFaults()
     {
         using var runtime = new JobRuntimeScope();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         gameWorld.Systems.Add(new FaultingDestroySystem());
         gameWorld.Update(0);
 
@@ -91,7 +91,7 @@ public sealed class GameWorldLifecycleTests
     public void DisposeFromJobCallback_RejectsBeforeMutatingGameWorldState()
     {
         using var runtime = new JobRuntimeScope();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
 
         JobHandle disposer = JobSystem.Schedule(new DisposeGameWorldJob(gameWorld));
         InvalidOperationException error =
@@ -107,7 +107,7 @@ public sealed class GameWorldLifecycleTests
     public void DisposeFromSystemCallback_RejectsBeforeMutatingGameWorldState()
     {
         using var runtime = new JobRuntimeScope();
-        var gameWorld = new GameWorld();
+        var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
         var state = new ReentrantDisposeState();
         gameWorld.Systems.Add(new DisposeGameWorldSystem(gameWorld, state));
 

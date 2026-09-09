@@ -7,7 +7,7 @@ public sealed class PerformanceHardeningTests
 {
     public PerformanceHardeningTests()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         HardeningJobs.Reset();
     }
 
@@ -64,7 +64,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void QueueAndResourceCapacityExhaustionAreExplicit()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 0,
             MaxQueuedWorkItems = 1,
@@ -89,7 +89,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void CompletionStateCapacityExhaustionIsExplicit()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 0,
             MaxQueuedWorkItems = 8,
@@ -109,7 +109,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void DependencyQueueCapacityFailureFaultsDependentHandleInsteadOfHanging()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 0,
             MaxQueuedWorkItems = 1,
@@ -131,7 +131,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void ObservedFaultedHandlesDoNotExhaustCompletionStatePool()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 0,
             MaxQueuedWorkItems = 4,
@@ -149,7 +149,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void UnobservedFaultedHandleRetainsFaultUnderCompletionStatePressure()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig
+        JobSystem.Initialize(new JobRuntimeConfig
         {
             WorkerCount = 1,
             MaxQueuedWorkItems = 4,
@@ -173,7 +173,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void IndexedRangeFrontierRetainsSingleOverlapDependency()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         var resource = JobSystem.CreateResource("indexed-range-overlap");
         const int rangeCount = 256;
         using var firstStarted = new ManualResetEventSlim();
@@ -220,7 +220,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void DeferredIndexedRangeActivationRetainsSingleOverlapDependency()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         var resource = JobSystem.CreateResource("deferred-indexed-range-overlap");
         const int rangeCount = 256;
         var fence = new ControlledFence();
@@ -269,7 +269,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void RangeDependencyDedupeBeyondInlineCapacityPreservesEveryOwner()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
         var resource = JobSystem.CreateResource("range-dependency-dedupe");
         const int ownerCount = 8;
         var fences = new ControlledFence[ownerCount];
@@ -305,7 +305,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void HighPriorityJobsRunBeforeEarlierLowPriorityJobs()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var low = JobSystem.Schedule(
             new HardeningJobs.ManagedJob(HardeningJobs.ManagedLog, "low"),
@@ -322,7 +322,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void InvalidJobPriorityIsRejected()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         var invalid = new JobScheduleOptions((JobPriority)99);
 
@@ -341,7 +341,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void RefFreePressureAndLargePayloadsExecuteCorrectly()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         var handles = new JobHandle[512];
 
         for (var i = 0; i < handles.Length; i++)
@@ -358,7 +358,7 @@ public sealed class PerformanceHardeningTests
     [Fact]
     public void ContinuationAndScopeStateAreReclaimedUnderPressure()
     {
-        JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
 
         for (var i = 0; i < 256; i++)
         {
@@ -377,14 +377,14 @@ public sealed class PerformanceHardeningTests
     {
         RunWithTimeout(static () =>
         {
-            JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 4 });
+            JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
             JobSystem.Schedule(new HardeningJobs.RecursiveFanout(128)).Complete();
             Assert.Equal(129, HardeningJobs.Counter);
         });
 
         RunWithTimeout(static () =>
         {
-            JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 4 });
+            JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
             const int threads = 4;
             const int jobsPerThread = 128;
             var handles = new List<JobHandle>(threads * jobsPerThread);
@@ -418,7 +418,7 @@ public sealed class PerformanceHardeningTests
 
         RunWithTimeout(static () =>
         {
-            JobSystem.ResetForTesting(new JobRuntimeConfig { WorkerCount = 4 });
+            JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
             using var gate = new ManualResetEventSlim();
             var handle = JobSystem.Schedule(new HardeningJobs.GatedIncrementJob(gate));
             var completers = new Thread[4];

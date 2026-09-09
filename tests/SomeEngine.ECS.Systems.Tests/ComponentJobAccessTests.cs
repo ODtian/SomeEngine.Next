@@ -439,7 +439,7 @@ public sealed class ComponentJobAccessTests
     public void RelationshipSchedulers_UseTheSameTableComponentKeys()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
         Entity target = world.CreateEntity();
@@ -483,7 +483,7 @@ public sealed class ComponentJobAccessTests
     [Fact]
     public void Clock_AcquireIsUniqueAndMonotonicAcrossThreads()
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         const int threadCount = 8;
         const int ticksPerThread = 4_096;
         var ticks = new uint[threadCount * ticksPerThread];
@@ -514,7 +514,7 @@ public sealed class ComponentJobAccessTests
 
     private static World CreateWorld(out Entity entity)
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         entity = world.CreateEntity(new TableA { Value = 1 });
         world.Add(entity, new TableB { Value = 2 });
         world.Add(entity, new EnabledA { Value = 3 });

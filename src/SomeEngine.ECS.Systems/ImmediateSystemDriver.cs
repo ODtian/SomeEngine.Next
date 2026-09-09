@@ -28,5 +28,11 @@ public sealed class ImmediateSystemDriver : ISystemDriver<ImmediateSystemContext
             slot.LastSystemVersion,
             slot.CurrentSystemVersion);
     }
+
+    public void CreateContext(ref SystemSlot slot, ref ImmediateSystemContext context)
+    {
+        context = new ImmediateSystemContext(
+            _world, slot.LastSystemVersion, slot.CurrentSystemVersion, context.DeltaTime);
+    }
 }
 

@@ -17,7 +17,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity orderedRoot = CreateTransform(world, new Vector3(10, 0, 0));
             Entity orderedChild = CreateTransform(world, new Vector3(1, 0, 0));
             Entity organization = world.CreateEntity();
@@ -69,7 +69,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = CreateTransform(world, new Vector3(10, 0, 0));
             Entity organization = world.CreateEntity();
             world.Add(organization, new WorldTransform
@@ -104,7 +104,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldRoot = CreateTransform(world, new Vector3(100, 0, 0));
             Entity newRoot = CreateTransform(world, new Vector3(10, 0, 0));
             Entity organization = world.CreateEntity();
@@ -139,7 +139,7 @@ public sealed class ParallelTransformPropagationTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = CreateTransform(world, new Vector3(10, 0, 0));
             Entity child = CreateTransform(world, new Vector3(1, 0, 0));
             Hierarchy.SetParent(world, child, parent);

@@ -295,7 +295,7 @@ public static partial class WorldSerializer
 
         if (options.IdentityMode == EntityIdentityMode.Preserve)
         {
-            var loadedWorld = new World();
+            var loadedWorld = new World(execution: options.Execution);
             try
             {
                 WorldRestorer.Restore(
@@ -313,7 +313,7 @@ public static partial class WorldSerializer
             }
         }
 
-        var importedWorld = new World();
+        var importedWorld = new World(execution: options.Execution);
         try
         {
             WorldImporter.Restore(

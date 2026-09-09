@@ -4,7 +4,7 @@ public sealed class DependencyTests
 {
     public DependencyTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         DependencyJobs.Reset();
     }
 
@@ -84,7 +84,7 @@ public sealed class DependencyTests
     }
 
     [Fact]
-    public void InternalFinalizerRunsAfterFaultedDependencyAndCanRethrowIt()
+    public void CleanupRunsAfterFaultedDependencyAndCanRethrowIt()
     {
         var dependency = JobSystem.Schedule(new DependencyJobs.ThrowingJob());
         var finalizer = JobSystem.ScheduleFinally(
@@ -96,6 +96,25 @@ public sealed class DependencyTests
 
         Assert.Equal("dependency failed", ex.Message);
         Assert.True(DependencyJobs.FinalizerRan);
+    }
+
+    [Fact]
+    public void ObservingDependencyFailuresAllowsFurtherWorkAndCleanShutdown()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig
+        {
+            WorkerCount = 0,
+            MaxCompletionStates = 4,
+        });
+        for (int i = 0; i < 32; i++)
+        {
+            JobHandle input = scheduler.Schedule(new DependencyJobs.ThrowingJob());
+            JobHandle output = scheduler.Schedule(new DependencyJobs.DependentJob(), input);
+            Assert.Equal("dependency failed", Assert.Throws<InvalidOperationException>(output.Complete).Message);
+        }
+        Assert.False(DependencyJobs.DependentRan);
+        scheduler.Schedule(new DependencyJobs.IncrementJob()).Complete();
+        Assert.Equal(1, DependencyJobs.Counter);
     }
 
     private static class DependencyJobs

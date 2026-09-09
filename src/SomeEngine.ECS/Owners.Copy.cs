@@ -6,39 +6,22 @@ using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Owners;
 
-internal sealed class Copy
+internal readonly struct Copy
 {
-    private Entities _entities = null!;
-    private Tables _tables = null!;
-    private Components _components = null!;
-    private Buffers _buffers = null!;
-    private Sparse _sparse = null!;
-    private Indices _indices = null!;
-    private Clock _clock = null!;
-    private Iteration _iteration = null!;
-    private Hierarchy _hierarchy = null!;
+    private readonly WorldStructureRoot _structure;
 
-    internal void Bind(
-        Entities entities,
-        Tables tables,
-        Components components,
-        Buffers buffers,
-        Sparse sparse,
-        Indices indices,
-        Clock clock,
-        Iteration iteration,
-        Hierarchy hierarchy)
-    {
-        _entities = entities;
-        _tables = tables;
-        _components = components;
-        _buffers = buffers;
-        _sparse = sparse;
-        _indices = indices;
-        _clock = clock;
-        _iteration = iteration;
-        _hierarchy = hierarchy;
-    }
+    internal Copy(WorldStructureRoot structure) => _structure = structure;
+
+    private Entities _entities => _structure.Entities;
+    private Tables _tables => _structure.Tables;
+    private Components _components => _structure.Components;
+    private Buffers _buffers => _structure.Buffers;
+    private Sparse _sparse => _structure.Sparse;
+    private Indices _indices => _structure.Indices;
+    private Clock _clock => _structure.Clock;
+    private Iteration _iteration => _structure.Iteration;
+    private Hierarchy _hierarchy => _structure.Hierarchy;
+
 
     /// <summary>
     /// Creates a new entity in this world and shallow-copies the source entity's standard logical storage surface.
@@ -118,7 +101,8 @@ internal sealed class Copy
             targetRow,
             destinationArchetype,
             destinationSharedValues,
-            surface); 
+            surface);
+ 
 
         CopyExtraSurfaces(source, target, sourceArchetype, targetArchetype, destinationArchetype, surface);
     }

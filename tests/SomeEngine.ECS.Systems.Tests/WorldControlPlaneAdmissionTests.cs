@@ -13,7 +13,7 @@ public sealed class WorldControlPlaneAdmissionTests
     public void AcquireSystemTickWaitsForCandidatePublicationAndCannotBeLost()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         _ = RelationshipJobAccess.TopologyWrite(world);
         using var hookStarted = new ManualResetEventSlim();
@@ -86,7 +86,7 @@ public sealed class WorldControlPlaneAdmissionTests
     public void ConvenienceQueryCapturesCurrentTickFromItsAdmittedPublishedRoot()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         QueryHandle query = world.Query(world.QueryDefinition().Read<QueryTickTrigger>());
         _ = RelationshipJobAccess.TopologyWrite(world);

@@ -4,7 +4,7 @@ public sealed class AsyncJobRejectionTests
 {
     public AsyncJobRejectionTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
     }
 
     [Fact]

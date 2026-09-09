@@ -14,7 +14,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity oldParent = world.CreateEntity();
             Entity newParent = world.CreateEntity();
             Entity childA = world.CreateEntity();
@@ -56,7 +56,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity root = world.CreateEntity();
             Entity first = world.CreateEntity();
             Entity second = world.CreateEntity();
@@ -92,7 +92,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Entity markerOnly = world.CreateEntity();
@@ -142,7 +142,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity sourceA = world.CreateEntity();
             Entity sourceB = world.CreateEntity();
             Entity targetA = world.CreateEntity();
@@ -198,7 +198,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity endpointA = world.CreateEntity();
             Entity oldEndpointB = world.CreateEntity();
             Entity newEndpointB = world.CreateEntity();
@@ -244,7 +244,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);
@@ -303,7 +303,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);
@@ -347,7 +347,7 @@ public sealed class RelationshipChunkJobTests
     {
         WithJobRuntime(() =>
         {
-            var world = new World();
+            var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
             Entity parent = world.CreateEntity();
             Entity child = world.CreateEntity();
             Hierarchy<Domain>.SetParent(world, child, parent);

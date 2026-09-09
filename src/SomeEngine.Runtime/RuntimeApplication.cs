@@ -1,3 +1,5 @@
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using System.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
@@ -232,8 +234,8 @@ internal static class RuntimeApplication
         BootConfiguration boot,
         bool forceHardwareRaster)
     {
-        using var mainWorld = new World(initialEntityCapacity: 2048);
-        using var renderWorld = new RenderWorld(initialEntityCapacity: 2048);
+        using var mainWorld = new World(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
+        using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld);
 
         RuntimeScene scene = RuntimeWait.Task(

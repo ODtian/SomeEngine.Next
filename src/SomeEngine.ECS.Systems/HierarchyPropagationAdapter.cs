@@ -329,7 +329,7 @@ public static partial class HierarchyPropagationAdapter<TDomain>
         Span<JobResourceAccess> ownerAccesses = stackalloc JobResourceAccess[2];
         ownerAccesses[0] = HierarchyJobAccess<TDomain>.ParentRead(world);
         ownerAccesses[1] = RelationshipJobAccess.TopologyRead(world);
-        JobHandle handle = JobSystem.Schedule(
+        JobHandle handle = WorldStorageJobResources.RequireJobs(world).Scheduler.Schedule(
             owner,
             ownerAccesses,
             options.JobOptions,

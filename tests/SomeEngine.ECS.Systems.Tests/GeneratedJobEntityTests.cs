@@ -18,7 +18,7 @@ public sealed class GeneratedJobEntityTests
     public void RuntimeBoundaryHoist_StillRejectsAnUndeclaredSparseBorrow()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity(new GeneratedPosition { Value = 4 });
         world.AddSparse(entity, new GeneratedSparse { Value = 9 });
         var descriptor = new GeneratedQueryAccessDescriptor(
@@ -165,7 +165,7 @@ public sealed class GeneratedJobEntityTests
     public void EmptySerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         uint tickBefore = world.CurrentTick;
 
         new IntegrateGeneratedJob().Schedule(world).Complete();
@@ -597,7 +597,7 @@ public sealed class GeneratedJobEntityTests
         Assert.Equal(1, descriptor.AccessCount);
         Assert.Equal(GeneratedQueryStorage.Buffer, descriptor.GetAccess(0).Storage);
 
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity entity = world.CreateEntity();
         world.AddBuffer<GeneratedColdBufferElement>(entity);
         world.ExecuteBufferWrite<GeneratedColdBufferElement>(
@@ -617,7 +617,7 @@ public sealed class GeneratedJobEntityTests
     public void SerialCanonicalParentWriter_UsesWorldFinalizerAndHasNoParallelSurface()
     {
         using var runtime = new JobRuntimeScope(workerCount: 2);
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity firstParent = world.CreateEntity();
         Entity secondParent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -642,7 +642,7 @@ public sealed class GeneratedJobEntityTests
 
     private static World CreateMovingWorld(int count, out Entity[] entities)
     {
-        var world = new World();
+        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         entities = new Entity[count];
         for (int i = 0; i < count; i++)
         {

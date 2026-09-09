@@ -4,7 +4,7 @@ public sealed class DotsExtensionTests
 {
     public DotsExtensionTests()
     {
-        JobSystem.ResetForTesting(workerCount: 2);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
         DotsExtensionJobs.Reset();
     }
 
