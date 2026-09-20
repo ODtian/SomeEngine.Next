@@ -31,7 +31,7 @@ D01–D04 有独立公共 API 运行证据；D05–D10 是源码确认的能力�
 
 | 区域 | 实际代码依据 | 决定 |
 | --- | --- | --- |
-| 静态编码 | [Contracts.cs](../../../src/SomeEngine.Serialization/Contracts.cs)、[BinaryContractSerializer.cs](../../../src/SomeEngine.Serialization/BinaryContractSerializer.cs)：静态 Read / Write、现有严格 schema 检查、一次写入调用方目标 | 保持架构和编码规则；资产 Duplicate 不调用编码后解码的 Copy |
+| 静态编码 | [Contracts.cs](../../../src/SomeEngine.Serialization/Contracts.cs)、[BinarySerializer.cs](../../../src/SomeEngine.Serialization/BinarySerializer.cs)：静态 Read / Write、现有严格 schema 检查、一次写入调用方目标 | 保持架构和编码规则；资产 Duplicate 不调用编码后解码的 Copy |
 | 类型身份与注册 | [BinaryContractCatalog.cs](../../../src/SomeEngine.Serialization/BinaryContractCatalog.cs)：显式 Register、TryGet、Freeze；Contracts 中已有独立文件类型名到类型 ID 的计算 | 复用已有能力，不另造同义二进制类型目录；资产实例目录及创建能力只保存自己新增的事实 |
 | 源码生成 | [BinaryContractGenerator.cs](../../../src/SomeEngine.Generators/BinaryContractGenerator.cs)：增量生成、字段分类、集合 / 字典、闭合分派、编码视图和程序集本地注册 | 保留有效静态生成；修正资产注入、字段排列、视图扫描并补足分页声明接入 |
 | 二进制容器 | [BinaryDocumentFormat.cs](../../../src/SomeEngine.Serialization/Containers/BinaryDocumentFormat.cs)：SEBDOC03、固定头、类型目录、根、块目录、压缩与摘要 | 作为修正基础；B08 核对明确根类型所需的最小协议变化，其余有效结构沿用 |

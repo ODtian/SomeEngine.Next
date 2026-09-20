@@ -36,9 +36,12 @@ public readonly record struct AssetEntry
     public string Path { get; init; } = "";
     public string AssetType { get; init; }
     public ulong SchemaFingerprint { get; init; }
+    /// <summary>Storage-selected version used to open and cache this entry; a pack uses its own generation.</summary>
     public Guid Version { get; init; }
     public SourceGuid SourceGuid { get; init; }
     public string SubAssetKey { get; init; } = "";
+    /// <summary>Editable native definition, when this entry is its built output. Independent of imported source metadata.</summary>
+    public string DefinitionPath { get; init; } = "";
     public IReadOnlyList<Guid> Dependencies { get; init; } = [];
 }
 
@@ -50,6 +53,7 @@ public interface IAssetStorage
 {
     bool TryFind(Guid assetGuid, out AssetEntry entry);
 
+    /// <summary>Opens the selected entry and rejects a changed storage version before returning its bytes.</summary>
     ValueTask<IRangeSource> OpenAsync(
         AssetEntry entry,
         CancellationToken cancellationToken = default);
@@ -77,12 +81,7 @@ public sealed class LooseAssetStorage : IAssetStorage
     {
         if (_entries.TryGetValue(assetGuid, out AssetEntry record))
         {
-            entry = new AssetEntry(
-                assetGuid,
-                record.AssetType,
-                record.SchemaFingerprint,
-                ComputeVersion(record.Path))
-            { Name = record.Name, Path = record.Path, Dependencies = record.Dependencies };
+            entry = record with { Version = ComputeVersion(record.Path) };
             return true;
         }
 

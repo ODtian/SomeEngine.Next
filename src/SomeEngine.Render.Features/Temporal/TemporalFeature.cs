@@ -1,6 +1,7 @@
 using SomeEngine.ECS.Entities;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Frame;

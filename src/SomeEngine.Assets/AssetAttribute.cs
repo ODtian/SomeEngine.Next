@@ -1,6 +1,6 @@
 namespace SomeEngine.Assets;
 
-/// <summary>Generates editable asset fields from a domain type's declared data properties.</summary>
+/// <summary>Generates identity, block directory and file operations. Content belongs to separately declared typed blocks.</summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class AssetAttribute : Attribute
 {
@@ -9,9 +9,3 @@ public sealed class AssetAttribute : Attribute
     public string? SchemaName { get; set; }
 }
 
-/// <summary>Marks a GUID that identifies another asset, rather than an ordinary GUID value.</summary>
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class AssetReferenceAttribute(Type type) : Attribute
-{
-    public Type Type { get; } = type;
-}

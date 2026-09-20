@@ -1,7 +1,8 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
-using EngineTexture = SomeEngine.Assets.Schema.TextureData;
+using EngineTexture = SomeEngine.Resources.Texture;
 
 namespace SomeEngine.Render;
 

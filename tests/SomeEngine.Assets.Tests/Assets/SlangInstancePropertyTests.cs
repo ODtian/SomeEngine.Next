@@ -2,6 +2,7 @@ using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -18,13 +19,14 @@ public sealed class SlangInstancePropertyTests
         File.WriteAllText(sourcePath, ValidSource);
         try
         {
-            Shader.Asset imported = SlangShaderImporter.ImportTransient(sourcePath);
+            using ShaderAsset imported = ShaderTestCompilation.Compile(sourcePath);
             string cookedPath = Path.Combine(directory, "instance_property.shader.asset");
-            ((imported)).SaveAsync(cookedPath).AsTask().GetAwaiter().GetResult();
-            using Shader.Asset cooked = await Shader.Asset.OpenAsync(cookedPath);
+            await imported.SaveAsync(cookedPath);
+            using ShaderAsset cooked = await ShaderAsset.OpenAsync(cookedPath);
 
-            ShaderInstanceProperty property = Assert.Single(
-                cooked.Metadata!.InstanceProperties!);
+            var metadata = cooked.GetBlock<ShaderBlock>().Metadata;
+            Assert.NotNull(metadata);
+            ShaderInstanceProperty property = Assert.Single(metadata.InstanceProperties!);
             Assert.Equal("test.material.tint", property.CanonicalId);
             Assert.Equal("TestScalars", property.MaterialScalarLayoutName);
             Assert.Equal("ArbitraryColor", property.MaterialScalarName);
@@ -33,10 +35,10 @@ public sealed class SlangInstancePropertyTests
             Assert.True(property.Alignment > 0);
             Assert.Equal(4u, Math.Max(1u, property.RowCount) * Math.Max(1u, property.ColumnCount));
             Assert.Equal((byte)SlangScalarType.Float32, property.ScalarType);
-            Assert.True(property.DefaultValue!.Value.Span.SequenceEqual(new byte[16]));
+            Assert.True(property.DefaultValue!.Value.AsSpan().SequenceEqual(new byte[16]));
 
             Assert.DoesNotContain(
-                cooked.Metadata.InstanceProperties!,
+                metadata.InstanceProperties!,
                 candidate => string.Equals(
                     candidate.MaterialScalarName,
                     "NotDeclared",
@@ -60,7 +62,7 @@ public sealed class SlangInstancePropertyTests
         try
         {
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-                () => SlangShaderImporter.ImportTransient(sourcePath));
+                () => ShaderTestCompilation.Compile(sourcePath));
             Assert.Contains("canonical id", error.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
@@ -80,8 +82,8 @@ public sealed class SlangInstancePropertyTests
         File.WriteAllText(sourcePath, MultiLayoutSource);
         try
         {
-            Shader.Asset imported = SlangShaderImporter.ImportTransient(sourcePath);
-            List<ShaderInstanceProperty> properties = imported.Metadata!
+            using ShaderAsset imported = ShaderTestCompilation.Compile(sourcePath);
+            List<ShaderInstanceProperty> properties = imported.GetBlock<ShaderBlock>().Metadata!
                 .InstanceProperties!
                 .OrderBy(static property => property.MaterialScalarLayoutName, StringComparer.Ordinal)
                 .ToList();
@@ -120,9 +122,9 @@ public sealed class SlangInstancePropertyTests
         File.WriteAllText(sourcePath, conflictingSource);
         try
         {
-            Shader.Asset imported = SlangShaderImporter.ImportTransient(sourcePath);
+            using ShaderAsset imported = ShaderTestCompilation.Compile(sourcePath);
             IList<ShaderInstanceProperty> properties =
-                imported.Metadata!.InstanceProperties!;
+                imported.GetBlock<ShaderBlock>().Metadata!.InstanceProperties!;
             Assert.Contains(properties, static property =>
                 string.Equals(property.Accessor, "LoadTestColor", StringComparison.Ordinal));
             Assert.Contains(properties, static property =>

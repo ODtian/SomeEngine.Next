@@ -2,120 +2,73 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Serialization;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
-using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Assets;
 
-/// <summary>A World file uses the ECS component and topology codecs supplied by its caller.</summary>
-public sealed class WorldAsset : Asset<World>
+/// <summary>A scene identity whose ECS content is an independently acquired block.</summary>
+[BinarySerializable(LogicalName = "SomeEngine.Assets.WorldFile")]
+[BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
+public sealed partial class WorldAsset : Asset
 {
     public const string FileType = "SomeEngine.ECS.World";
     public const string PathSuffix = ".scene.asset";
-    public static ulong SchemaHash => WorldFile.SchemaFingerprint;
-    public static BinaryWireTypeDescriptor WireType => new(WorldFile.TypeId, SchemaHash, WorldFile.Compatibility, WorldFile.SchemaEpoch);
-    private static readonly ulong ContentKey = BinaryFieldKey.FromName("SomeEngine.ECS.World.Content");
-    private SharedBytes? _content;
-    private ulong _contentLength;
-    private Guid[] _references = [];
-
-    public WorldAsset(AssetId<World> id = default) : base(id) { }
-    private WorldAsset(WorldAsset source, AssetId<World> id) : base(source, id)
+    public static ulong SchemaHash => AssetHeader.SchemaFingerprint;
+    public static BinaryWireTypeDescriptor WireType => AssetHeader.WireType;
+    [BinaryIgnore] public AssetId<WorldAsset> Reference => new(Id);
+    public new ImmutableArray<AssetBlockDescription> BlockDescriptions
     {
-        _content = source._content?.Retain();
-        _contentLength = source._contentLength;
-        _references = source._references;
+        get => base.BlockDescriptions;
+        private set => base.BlockDescriptions = value;
     }
-    public WorldAsset Duplicate(AssetId<World> id = default)
+    [BinaryIgnore] public ulong ContentLength => GetBlock<WorldBlock>().ContentLength;
+    [BinaryIgnore] public ImmutableArray<AssetId<Asset>> ExternalReferences => GetBlock<WorldBlock>().ExternalReferences;
+    public WorldAsset() : this(PageArena.Shared) { }
+    public WorldAsset(PageArena pages, Guid id = default) : base(pages, id)
     {
-        lock (Access) { RequireIdle(); return new(this, id); }
+        AssetType = FileType;
+        using var world = new WorldBlock(pages);
+        SetBlock(world);
     }
-    protected override void ReleaseFields() => _content?.Dispose();
-
-    /// <summary>Encodes an explicit World edit; it does not write to disk or change the supplied World.</summary>
+    private WorldAsset(WorldAsset source) : base(source) { }
+    public override WorldAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override WorldAsset CreateCopy(Guid id = default) => (WorldAsset)base.CreateCopy(id);
     public void WriteWorld(World world, SerializationRegistry registry, SerializeOptions options = default)
-    {
-        RequireOpen();
-        var references = new HashSet<ExternalReferenceKey>();
-        using var stream = new MemoryStream();
-        WorldSerializer.WriteDurableWorld(stream, world, registry, options with { ExternalReferences = references });
-        if (!stream.TryGetBuffer(out ArraySegment<byte> bytes)) throw new InvalidOperationException("World output has no byte storage.");
-        var content = new SharedBytes(bytes.AsMemory());
-        lock (Access)
-        {
-            try { RequireIdle(); }
-            catch { content.Dispose(); throw; }
-            SharedBytes? previous = _content;
-            _content = content;
-            _contentLength = checked((ulong)bytes.Count);
-            _references = references.Select(static reference => reference.Value).Order().ToArray();
-            previous?.Dispose();
-        }
-        if (options.ExternalReferences is { } output)
-            foreach (ExternalReferenceKey reference in references) output.Add(reference);
-    }
-
-    public async ValueTask<World> LoadAsync(SerializationRegistry registry, WorldLoadOptions options = default,
+        => GetBlock<WorldBlock>().WriteWorld(world, registry, options);
+    public ValueTask<World> LoadAsync(SerializationRegistry registry, WorldLoadOptions options = default,
         CancellationToken cancellationToken = default)
-    {
-        using WorldAsset copy = Duplicate();
-        cancellationToken.ThrowIfCancellationRequested();
-        await using IRangeSource source = copy._content is { } content
-            ? new MemoryRangeSource(content.Read)
-            : await (copy.Source ?? throw new InvalidOperationException("The asset has no World content."))
-                .OpenChunkRangeSourceAsync(new BinaryChunkRef(ContentKey, checked((long)copy._contentLength)), cancellationToken).ConfigureAwait(false);
-        using var stream = new RangeReadStream(source, cancellationToken);
-        return WorldSerializer.ReadWorld(stream, registry, options with { RequiredContract = SerializationContract.DurableSave });
-    }
-
-    public AssetEntry Describe()
-    {
-        lock (Access) { RequireIdle(); return Describe(FileType, SchemaHash, _references); }
-    }
+        => GetBlock<WorldBlock>().LoadAsync(registry, options, cancellationToken);
+    public AssetEntry Describe() => Describe(SchemaHash, BlockReferences());
     public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
         using WorldAsset copy = Duplicate();
-        if (copy._contentLength == 0) throw new InvalidOperationException("Write a World before saving this asset.");
-        var values = new WorldFile { AssetGuid = copy.Id.Value, Name = copy.Name,
-            ContentLength = copy._contentLength, References = copy._references };
-        BinaryDocumentWriter writer = BinaryDocumentWriter.Create(values);
-        if (copy._content is { } content) writer.AddChunk(ContentKey, content.Read, ByteSchema, alignment: 4096);
-        else await writer.AddChunkAsync(ContentKey, copy.Source!, cancellationToken).ConfigureAwait(false);
-        return await copy.SaveAsync(writer, path, PathSuffix, copy.Describe(), cancellationToken).ConfigureAwait(false);
+        return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false);
     }
-    public static async ValueTask<WorldAsset> OpenAsync(AssetLoader loader, AssetId<World> id,
+    public static async ValueTask<WorldAsset> OpenAsync(AssetLoader loader, AssetId<WorldAsset> id,
         CancellationToken cancellationToken = default)
     {
-        var source = await loader.OpenSourceAsync(id, FileType, WireType, cancellationToken).ConfigureAwait(false);
-        await using BinaryDocument document = source.Document;
-        return Read(document, source.Path, id);
+        await using AssetFile file = await loader.OpenFileAsync(id, FileType, WireType, cancellationToken).ConfigureAwait(false);
+        return await ReadFileAsync(file, id.Value, cancellationToken).ConfigureAwait(false);
     }
-    public static async ValueTask<WorldAsset> OpenAsync(string path, CancellationToken cancellationToken = default)
+    public static async ValueTask<WorldAsset> OpenAsync(string path, CancellationToken cancellationToken = default, PageArena? pages = null)
     {
-        await using var document = await OpenFileAsync(path, PathSuffix, WireType, cancellationToken).ConfigureAwait(false);
-        return Read(document, Path.GetFullPath(path));
+        if (!path.EndsWith(PathSuffix, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The World path has a different suffix.");
+        await using AssetFile file = await AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await ReadFileAsync(file, default, cancellationToken).ConfigureAwait(false);
     }
-    private static WorldAsset Read(BinaryDocument document, string path, AssetId<World> expected = default)
+    private static async ValueTask<WorldAsset> ReadFileAsync(AssetFile file, Guid expected, CancellationToken cancellationToken)
     {
-        WorldFile values = document.ReadRoot<WorldFile>();
-        if (values.AssetGuid == Guid.Empty || (!expected.IsEmpty && values.AssetGuid != expected.Value))
-            throw new InvalidDataException("The World file has a different or empty asset ID.");
-        if (values.ContentLength == 0) throw new InvalidDataException("The World file has no content.");
-        var asset = new WorldAsset(new AssetId<World>(values.AssetGuid))
+        AssetEntry entry = file.Describe();
+        if ((expected != Guid.Empty && entry.AssetGuid != expected) || entry.AssetType != FileType)
+            throw new InvalidDataException("The World file has a different identity or type.");
+        var asset = new WorldAsset(file.Pages, entry.AssetGuid);
+        try
         {
-            Name = values.Name, _contentLength = values.ContentLength, _references = values.References,
-        };
-        asset.AttachSource(document);
-        asset.SetSourcePath(path);
-        return asset;
+            asset.ReadBlockContent(file);
+            asset.AttachFile(file);
+            WorldBlock world = await asset.GetBlockAsync<WorldBlock>(cancellationToken).ConfigureAwait(false);
+            if (world.ContentLength == 0) throw new InvalidDataException("The World file has no content.");
+            return asset;
+        }
+        catch { asset.Dispose(); throw; }
     }
-}
-
-// Only file-level information lives here. Entity/component/topology data uses the ECS format.
-[BinaryContract(BinaryCompatibility.ExactSchema)]
-internal sealed partial class WorldFile
-{
-    public Guid AssetGuid { get; set; }
-    public string Name { get; set; } = "";
-    public ulong ContentLength { get; set; }
-    public Guid[] References { get; set; } = [];
 }

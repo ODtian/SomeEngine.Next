@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using static SomeEngine.Tests.TestProjectPaths;
 
 namespace SomeEngine.Tests.Assets;
@@ -25,9 +26,9 @@ public class AssetProjectValidatorTests
             CreateDummyFile(dir, "assets/Meshes/a.mesh.asset");
 
             AssetManifest manifest = new();
-            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/a.shader.asset", Shader.Asset.FileType, Shader.Asset.SchemaHash);
-            manifest.AddAsset(materialGuid, "MaterialA", "assets/Materials/a.material.asset", Material.Asset.FileType, Material.Asset.SchemaHash, dependencies: [shaderGuid]);
-            manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", Mesh.Asset.FileType, Mesh.Asset.SchemaHash, dependencies: [materialGuid]);
+            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/a.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash);
+            manifest.AddAsset(materialGuid, "MaterialA", "assets/Materials/a.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash, dependencies: [shaderGuid]);
+            manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", MeshAsset.FileType, MeshAsset.SchemaHash, dependencies: [materialGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, []);
@@ -55,8 +56,8 @@ public class AssetProjectValidatorTests
 
             AssetManifest manifest = new();
             manifest.AddSource(sourceGuid, "assets/Shaders/shared.slang");
-            manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", Shader.Asset.FileType, Shader.Asset.SchemaHash, sourceGuid, "shader:main");
-            manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", Shader.Asset.FileType, Shader.Asset.SchemaHash, sourceGuid, "shader:shadow");
+            manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash, sourceGuid, "shader:main");
+            manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash, sourceGuid, "shader:shadow");
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, []);

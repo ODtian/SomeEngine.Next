@@ -1,373 +1,95 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SomeEngine.Generators;
 
-#pragma warning disable RS2008
-
-/// <summary>
-/// Registers one closed generic descriptor for each concrete asset value. Generated calls target
-/// the concrete type directly; asset values never flow through an interface, object registry, or
-/// reflection-based loader.
-/// </summary>
+/// <summary>Generates identity and file access. Content codecs and page storage belong to AssetBlockGenerator.</summary>
 [Generator]
 public sealed class AssetGenerator : IIncrementalGenerator
 {
-    private const string AssetAttributeName = "SomeEngine.Assets.AssetAttribute";
-    private const string BinaryContractAttributeName = "SomeEngine.Serialization.BinaryContractAttribute";
-
-    private static readonly SymbolDisplayFormat QualifiedTypeFormat = new(
-        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
-        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
-        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
-        miscellaneousOptions:
-            SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers |
-            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
-            SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
-
-    private static readonly DiagnosticDescriptor InvalidAsset = new(
-        "SEAS001",
-        "Asset shape cannot be generated",
-        "Asset '{0}' cannot be generated: {1}",
-        "SomeEngine.Assets",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+    private static readonly DiagnosticDescriptor InvalidAsset = new("SEAS001", "Invalid asset declaration",
+        "Asset '{0}': {1}", "SomeEngine.Assets", DiagnosticSeverity.Error, true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        IncrementalValuesProvider<AssetCandidate> candidates =
-            context.SyntaxProvider.ForAttributeWithMetadataName(
-                AssetAttributeName,
-                static (node, _) => node is ClassDeclarationSyntax,
-                static (attributeContext, _) => CreateCandidate(attributeContext));
-
-        context.RegisterSourceOutput(
-            candidates.Collect(),
-            static (productionContext, discovered) => Generate(productionContext, discovered));
+        var types = context.SyntaxProvider.ForAttributeWithMetadataName("SomeEngine.Assets.AssetAttribute",
+            static (syntax, _) => syntax is ClassDeclarationSyntax,
+            static (attribute, _) => (INamedTypeSymbol)attribute.TargetSymbol);
+        context.RegisterSourceOutput(types, static (output, type) => Generate(output, type));
     }
 
-    private static AssetCandidate CreateCandidate(GeneratorAttributeSyntaxContext context)
+    private static void Generate(SourceProductionContext output, INamedTypeSymbol type)
     {
-        var type = (INamedTypeSymbol)context.TargetSymbol;
-        string pathSuffix = string.Empty;
-        AttributeData attribute = context.Attributes[0];
-        if (attribute.ConstructorArguments.Length == 1
-            && attribute.ConstructorArguments[0].Value is string configured)
-        {
-            pathSuffix = configured;
-        }
-
-        return new AssetCandidate(type, pathSuffix);
+        void Error(string reason) => output.ReportDiagnostic(Diagnostic.Create(InvalidAsset, type.Locations.FirstOrDefault(), type.Name, reason));
+        if (type.Arity != 0 || type.ContainingType is not null || type.IsRecord || type.IsAbstract
+            || type.BaseType?.ToDisplayString() != "SomeEngine.Assets.Asset"
+            || type.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is ClassDeclarationSyntax declaration
+                && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword)))
+        { Error("use a non-generic top-level partial class derived directly from Asset"); return; }
+        if (Attribute(type, "SomeEngine.Serialization.BinarySerializableAttribute") is null)
+        { Error("declare BinarySerializable for the asset's identity and block directory"); return; }
+        AttributeData? order = Attribute(type, "SomeEngine.Serialization.BinaryFieldsAttribute");
+        var names = order?.ConstructorArguments.FirstOrDefault().Values;
+        if (names is null || names.Value.Length != 4 || names.Value[0].Value as string != "Id"
+            || names.Value[1].Value as string != "Name" || names.Value[2].Value as string != "AssetType"
+            || names.Value[3].Value as string != "BlockDescriptions")
+        { Error("BinaryFields must contain only Id, Name, AssetType, BlockDescriptions; declare business data in typed blocks"); return; }
+        IPropertySymbol? directory = type.GetMembers("BlockDescriptions").OfType<IPropertySymbol>().SingleOrDefault();
+        if (directory?.DeclaredAccessibility != Accessibility.Public || directory.GetMethod is null || directory.SetMethod is null
+            || directory.Type.ToDisplayString() != "System.Collections.Immutable.ImmutableArray<SomeEngine.Assets.AssetBlockDescription>")
+        { Error("expose the base BlockDescriptions directory with a public new property and a private setter for its static codec"); return; }
+        if (type.GetMembers().Any(member => !member.IsStatic && !member.IsImplicitlyDeclared
+            && (member is IPropertySymbol property && property.Name != "BlockDescriptions" || member is IFieldSymbol)))
+        { Error("asset declarations contain identity and the block directory; move all content fields and properties into AssetBlock types"); return; }
+        string suffix = Attribute(type, "SomeEngine.Assets.AssetAttribute")!.ConstructorArguments[0].Value as string ?? "";
+        if (string.IsNullOrWhiteSpace(suffix) || !suffix.StartsWith(".", StringComparison.Ordinal))
+        { Error("provide a non-empty file suffix beginning with a period"); return; }
+        output.AddSource(type.ToDisplayString().Replace('.', '_') + ".Asset.g.cs", Emit(type, suffix));
     }
 
-    private static void Generate(
-        SourceProductionContext context,
-        ImmutableArray<AssetCandidate> discovered)
+    private static string Emit(INamedTypeSymbol type, string suffix)
     {
-        foreach (AssetCandidate candidate in discovered
-                     .GroupBy(static item => item.Type, SymbolEqualityComparer.Default)
-                     .Select(static group => group.First())
-                     .OrderBy(static item => item.Type.ToDisplayString(), StringComparer.Ordinal))
-        {
-            AssetModel? model = Validate(context, candidate);
-            if (model is null)
-                continue;
-
-            string hintName = Sanitize(candidate.Type.ToDisplayString()) + ".Asset.g.cs";
-            context.AddSource(hintName, Emit(model.Value));
-        }
+        string fullType = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        string name = "@" + type.Name;
+        string fileType = Attribute(type, "SomeEngine.Assets.AssetAttribute")!.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "SchemaName").Value.Value as string ?? type.ToDisplayString();
+        var code = new StringBuilder("// <auto-generated/>\n#nullable enable\n");
+        if (!type.ContainingNamespace.IsGlobalNamespace) code.Append("namespace ").Append(type.ContainingNamespace.ToDisplayString()).AppendLine(";");
+        code.Append(type.DeclaredAccessibility == Accessibility.Public ? "public " : "internal ").Append("partial class ").Append(name).AppendLine(" {");
+        code.Append("public const string FileType = ").Append(Literal(fileType)).AppendLine(";");
+        code.Append("public const string PathSuffix = ").Append(Literal(suffix)).AppendLine(";");
+        code.AppendLine("public static ulong SchemaHash => global::SomeEngine.Assets.AssetHeader.SchemaFingerprint;");
+        code.AppendLine("public static global::SomeEngine.Serialization.Containers.BinaryWireTypeDescriptor WireType => global::SomeEngine.Assets.AssetHeader.WireType;");
+        code.Append("[global::SomeEngine.Serialization.BinaryIgnore] public global::SomeEngine.Assets.AssetId<").Append(fullType).AppendLine("> Reference => new(Id);");
+        code.Append("public ").Append(name).AppendLine("() : this(global::SomeEngine.Serialization.Containers.PageArena.Shared) { }");
+        code.Append("public ").Append(name).AppendLine("(global::SomeEngine.Serialization.Containers.PageArena pages, global::System.Guid id = default) : this(pages, id, true) { }");
+        code.Append("private ").Append(name).AppendLine("(global::SomeEngine.Serialization.Containers.PageArena pages, global::System.Guid id, bool initialize) : base(pages, id) {");
+        code.AppendLine("try { AssetType = FileType; if (initialize) Initialize(); } catch (global::System.Exception error) { try { Dispose(); } catch (global::System.Exception cleanup) { throw new global::System.AggregateException(error, cleanup); } throw; } }");
+        code.AppendLine("partial void Initialize();");
+        code.Append(type.IsSealed ? "private " : "protected ").Append(name).Append('(').Append(fullType).AppendLine(" source) : base(source) { }");
+        code.Append("public override ").Append(fullType).AppendLine(" Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }");
+        code.Append("public override ").Append(fullType).Append(" CreateCopy(global::System.Guid id = default) => (").Append(fullType).AppendLine(")base.CreateCopy(id);");
+        code.AppendLine("public global::System.Collections.Generic.IEnumerable<global::System.Guid> References() => BlockReferences();");
+        code.AppendLine("public global::SomeEngine.Assets.AssetEntry Describe() => Describe(SchemaHash, References());");
+        code.AppendLine("public async global::System.Threading.Tasks.ValueTask<global::SomeEngine.Assets.AssetEntry> SaveAsync(string path, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("using var copy = Duplicate(); return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false); }");
+        code.Append("private static ").Append(fullType).AppendLine(" ReadFile(global::SomeEngine.Assets.AssetFile file, global::System.Guid expected = default) {");
+        code.AppendLine("var description = file.Describe(); if ((expected != global::System.Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType) throw new global::System.IO.InvalidDataException(\"The asset identity or type differs from the selected file.\");");
+        code.Append("var result = new ").Append(name).AppendLine("(file.Pages, description.AssetGuid, false);");
+        code.AppendLine("try { result.ReadBlockContent(file); result.AttachFile(file); return result; } catch (global::System.Exception error) { try { result.Dispose(); } catch (global::System.Exception cleanup) { throw new global::System.AggregateException(error, cleanup); } throw; } }");
+        code.Append("public static async global::System.Threading.Tasks.ValueTask<").Append(fullType).AppendLine("> OpenAsync(string path, global::SomeEngine.Serialization.Containers.PageArena? pages = null, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("if (!path.EndsWith(PathSuffix, global::System.StringComparison.OrdinalIgnoreCase)) throw new global::System.IO.InvalidDataException(\"The asset path has a different suffix.\");");
+        code.AppendLine("await using var file = await global::SomeEngine.Assets.AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false); return ReadFile(file); }");
+        code.Append("public static async global::System.Threading.Tasks.ValueTask<").Append(fullType).Append("> OpenAsync(global::SomeEngine.Assets.AssetLoader loader, global::SomeEngine.Assets.AssetId<").Append(fullType).AppendLine("> id, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("await using var file = await loader.OpenFileAsync(id, FileType, WireType, cancellationToken).ConfigureAwait(false); return ReadFile(file, id.Value); }");
+        code.AppendLine("}");
+        return code.ToString();
     }
 
-    private static AssetModel? Validate(
-        SourceProductionContext context,
-        AssetCandidate candidate)
-    {
-        INamedTypeSymbol type = candidate.Type;
-        List<string> reasons = new();
-        if (type.TypeKind != TypeKind.Class)
-            reasons.Add("only classes are supported");
-        if (type.IsStatic)
-            reasons.Add("the asset must be an instance class");
-        if (type.Arity != 0)
-            reasons.Add("generic asset declarations are not supported");
-        if (!IsAssemblyAccessible(type))
-            reasons.Add("the asset and its containing types must be assembly-accessible");
-
-        IPropertySymbol? assetGuid = null;
-        IPropertySymbol? name = null;
-        bool customWriter = false;
-        bool customLoader = false;
-        bool customDependencies = false;
-        bool customReload = false;
-        if (!candidate.PathSuffix.StartsWith(".", StringComparison.Ordinal))
-            reasons.Add("the required file suffix must start with '.'");
-        if (!HasAttribute(type, BinaryContractAttributeName) && !ImplementsBinaryContract(type))
-            reasons.Add("an asset must declare [BinaryContract] or directly implement IBinaryContract<T>");
-
-        assetGuid = FindStringProperty(type, "AssetGuid", requireSetter: true);
-        if (assetGuid is null)
-            reasons.Add("an asset must expose an assembly-accessible string AssetGuid property with get and set accessors");
-        name = FindStringProperty(type, "Name", requireSetter: false);
-        customWriter = HasCreateWriter(type);
-        customLoader = HasCustomLoader(type);
-        customDependencies = HasDependencies(type);
-        customReload = HasReload(type);
-
-        if (reasons.Count != 0)
-        {
-            context.ReportDiagnostic(Diagnostic.Create(
-                InvalidAsset,
-                SourceLocation(type),
-                type.ToDisplayString(),
-                string.Join("; ", reasons)));
-            return null;
-        }
-
-        return new AssetModel(
-            type,
-            candidate.PathSuffix,
-            assetGuid,
-            name,
-            customWriter,
-            customLoader,
-            customDependencies,
-            customReload);
-    }
-
-    private static string Emit(AssetModel model)
-    {
-        string asset = model.Type.ToDisplayString(QualifiedTypeFormat);
-        string namespaceName = model.Type.ContainingNamespace.IsGlobalNamespace
-            ? string.Empty
-            : model.Type.ContainingNamespace.ToDisplayString();
-        string registration = "__" + Sanitize(model.Type.ToDisplayString()) + "AssetRegistration";
-
-        StringBuilder source = new();
-        source.AppendLine("// <auto-generated/>");
-        source.AppendLine("#nullable enable");
-        source.AppendLine();
-        if (namespaceName.Length != 0)
-        {
-            source.Append("namespace ").Append(namespaceName).AppendLine(";");
-            source.AppendLine();
-        }
-
-        source.Append("internal static class ").Append(registration).AppendLine();
-        source.AppendLine("{");
-        source.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
-        source.AppendLine("    internal static void Register()");
-        source.AppendLine("    {");
-        source.Append("        global::SomeEngine.Assets.AssetType<").Append(asset)
-            .AppendLine(">.RegisterGenerated(");
-        source.Append("            new global::SomeEngine.Assets.AssetTypeDescriptor<").Append(asset)
-            .AppendLine(">(");
-        source.Append("                typeof(").Append(asset).AppendLine(").FullName!,");
-        source.Append("                ").Append(Literal(model.PathSuffix)).AppendLine(",");
-
-        source.AppendLine("                new global::SomeEngine.Serialization.Containers.BinaryWireTypeDescriptor(");
-        source.Append("                    ").Append(asset).AppendLine(".TypeId,");
-        source.Append("                    ").Append(asset).AppendLine(".SchemaFingerprint,");
-        source.Append("                    ").Append(asset).AppendLine(".Compatibility,");
-        source.Append("                    ").Append(asset).AppendLine(".SchemaEpoch),");
-        source.AppendLine("                static value => ParseGuid(value.AssetGuid),");
-        source.AppendLine("                static (value, guid) => value.AssetGuid = guid.ToFlatString(),");
-        if (model.Name is not null)
-            source.AppendLine("                static value => value.Name ?? string.Empty,");
-        else
-            source.Append("                static _ => nameof(").Append(asset).AppendLine("),");
-        if (model.CustomDependencies)
-            source.AppendLine("                static (value, path) => value.GetDependencies(path),");
-        else
-            source.AppendLine("                static (_, _) => global::System.Array.Empty<global::SomeEngine.Assets.AssetGuid>(),");
-        if (model.CustomWriter)
-            source.Append("                static value => ").Append(asset).AppendLine(".CreateWriter(value),");
-        else
-            source.AppendLine("                static value => global::SomeEngine.Serialization.Containers.BinaryDocumentWriter.Create(value),");
-        source.Append("                LoadAsync,").AppendLine();
-        if (model.CustomReload)
-            source.Append("                ").Append(asset).AppendLine(".ApplyReloadAsync));");
-        else
-            source.AppendLine("                null));");
-        source.AppendLine("    }");
-        source.AppendLine();
-        source.Append("    private static async global::System.Threading.Tasks.ValueTask<").Append(asset)
-            .AppendLine("> LoadAsync(");
-        source.AppendLine("        global::SomeEngine.Assets.AssetLoadContext context,");
-        source.AppendLine("        global::System.Threading.CancellationToken cancellationToken)");
-        source.AppendLine("    {");
-        if (model.CustomLoader)
-        {
-            source.Append("        ").Append(asset).Append(" value = await ").Append(asset)
-                .AppendLine(".LoadAssetAsync(context, cancellationToken).ConfigureAwait(false);");
-        }
-        else
-        {
-            source.Append("        global::SomeEngine.Serialization.Containers.BinaryDocument<")
-                .Append(asset).AppendLine("> document = await context");
-            source.Append("            .OpenAsync<").Append(asset).AppendLine(">()");
-            source.AppendLine("            .ConfigureAwait(false);");
-            source.Append("        ").Append(asset).AppendLine(" value = document.Root;");
-        }
-        source.AppendLine("        global::SomeEngine.Assets.AssetGuid guid = ParseGuid(value.AssetGuid);");
-        source.AppendLine("        if (guid != context.AssetGuid)");
-        source.AppendLine("        {");
-        source.AppendLine("            throw new global::System.IO.InvalidDataException(");
-        source.AppendLine("                $\"Asset {context.AssetGuid} root declares GUID {guid}.\");");
-        source.AppendLine("        }");
-        source.AppendLine("        return value;");
-        source.AppendLine("    }");
-        source.AppendLine();
-        source.AppendLine("    private static global::SomeEngine.Assets.AssetGuid ParseGuid(string? value)");
-        source.AppendLine("        => global::SomeEngine.Assets.AssetGuid.TryParse(value, out global::SomeEngine.Assets.AssetGuid guid)");
-        source.AppendLine("            ? guid");
-        source.AppendLine("            : global::SomeEngine.Assets.AssetGuid.Empty;");
-        source.AppendLine("}");
-        return source.ToString();
-    }
-
-    private static IPropertySymbol? FindStringProperty(
-        INamedTypeSymbol type,
-        string name,
-        bool requireSetter)
-        => type.GetMembers(name)
-            .OfType<IPropertySymbol>()
-            .FirstOrDefault(property =>
-                property.Type.SpecialType == SpecialType.System_String
-                && property.GetMethod is not null
-                && IsAssemblyAccessible(property.GetMethod)
-                && (!requireSetter
-                    || (property.SetMethod is not null && IsAssemblyAccessible(property.SetMethod))));
-
-    private static bool HasCreateWriter(INamedTypeSymbol type)
-        => type.GetMembers("CreateWriter")
-            .OfType<IMethodSymbol>()
-            .Any(method => method.IsStatic
-                && IsAssemblyAccessible(method)
-                && method.Parameters.Length == 1
-                && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, type));
-
-    private static bool ImplementsBinaryContract(INamedTypeSymbol type)
-        => type.AllInterfaces.Any(candidate =>
-            candidate.OriginalDefinition.MetadataName == "IBinaryContract`1"
-            && candidate.OriginalDefinition.ContainingNamespace.ToDisplayString() ==
-                "SomeEngine.Serialization"
-            && candidate.TypeArguments.Length == 1
-            && SymbolEqualityComparer.Default.Equals(candidate.TypeArguments[0], type));
-
-    private static bool HasCustomLoader(INamedTypeSymbol type)
-        => type.GetMembers("LoadAssetAsync")
-            .OfType<IMethodSymbol>()
-            .Any(method => method.IsStatic
-                && IsAssemblyAccessible(method)
-                && method.Parameters.Length == 2
-                && method.Parameters[0].Type.ToDisplayString() == "SomeEngine.Assets.AssetLoadContext"
-                && method.Parameters[1].Type.ToDisplayString() == "System.Threading.CancellationToken");
-
-    private static bool HasDependencies(INamedTypeSymbol type)
-        => type.GetMembers("GetDependencies")
-            .OfType<IMethodSymbol>()
-            .Any(method => !method.IsStatic
-                && IsAssemblyAccessible(method)
-                && method.Parameters.Length == 1
-                && method.Parameters[0].Type.SpecialType == SpecialType.System_String);
-
-    private static bool HasReload(INamedTypeSymbol type)
-        => type.GetMembers("ApplyReloadAsync")
-            .OfType<IMethodSymbol>()
-            .Any(method => method.IsStatic
-                && IsAssemblyAccessible(method)
-                && method.Parameters.Length == 4
-                && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, type)
-                && SymbolEqualityComparer.Default.Equals(method.Parameters[1].Type, type)
-                && method.Parameters[2].Type.ToDisplayString() == "SomeEngine.Assets.AssetUpdate"
-                && method.Parameters[3].Type.ToDisplayString() == "System.Threading.CancellationToken"
-                && method.ReturnType.ToDisplayString() == "System.Threading.Tasks.ValueTask");
-
-    private static bool HasAttribute(ISymbol symbol, string metadataName)
-        => symbol.GetAttributes().Any(attribute =>
-            string.Equals(attribute.AttributeClass?.ToDisplayString(), metadataName, StringComparison.Ordinal));
-
-    private static bool IsAssemblyAccessible(INamedTypeSymbol type)
-    {
-        for (INamedTypeSymbol? current = type; current is not null; current = current.ContainingType)
-        {
-            if (!IsAssemblyAccessible(current.DeclaredAccessibility))
-                return false;
-        }
-        return true;
-    }
-
-    private static bool IsAssemblyAccessible(ISymbol symbol)
-        => IsAssemblyAccessible(symbol.DeclaredAccessibility);
-
-    private static bool IsAssemblyAccessible(Accessibility accessibility)
-        => accessibility != Accessibility.Private
-            && accessibility != Accessibility.Protected
-            && accessibility != Accessibility.ProtectedAndInternal;
-
-    private static Location SourceLocation(INamedTypeSymbol type)
-        => type.Locations.FirstOrDefault(static location => location.IsInSource)
-           ?? Location.None;
-
-    private static string Literal(string value)
-        => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-
-    private static string Sanitize(string value)
-    {
-        StringBuilder result = new(value.Length);
-        foreach (char character in value)
-            result.Append(char.IsLetterOrDigit(character) ? character : '_');
-        return result.ToString();
-    }
-
-    private readonly struct AssetCandidate
-    {
-        internal AssetCandidate(INamedTypeSymbol type, string pathSuffix)
-        {
-            Type = type;
-            PathSuffix = pathSuffix;
-        }
-
-        internal INamedTypeSymbol Type { get; }
-        internal string PathSuffix { get; }
-    }
-
-    private readonly struct AssetModel
-    {
-        internal AssetModel(
-            INamedTypeSymbol type,
-            string pathSuffix,
-            IPropertySymbol? assetGuid,
-            IPropertySymbol? name,
-            bool customWriter,
-            bool customLoader,
-            bool customDependencies,
-            bool customReload)
-        {
-            Type = type;
-            PathSuffix = pathSuffix;
-            AssetGuid = assetGuid;
-            Name = name;
-            CustomWriter = customWriter;
-            CustomLoader = customLoader;
-            CustomDependencies = customDependencies;
-            CustomReload = customReload;
-        }
-
-        internal INamedTypeSymbol Type { get; }
-        internal string PathSuffix { get; }
-        internal IPropertySymbol? AssetGuid { get; }
-        internal IPropertySymbol? Name { get; }
-        internal bool CustomWriter { get; }
-        internal bool CustomLoader { get; }
-        internal bool CustomDependencies { get; }
-        internal bool CustomReload { get; }
-    }
+    private static AttributeData? Attribute(ISymbol type, string name) => type.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == name);
+    private static string Literal(string value) => Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(value, true);
 }
-
-#pragma warning restore RS2008

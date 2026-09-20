@@ -1,5 +1,5 @@
-﻿using SomeEngine.Assets.Schema;
-using SomeEngine.Render.Materials;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Tests;
 
@@ -122,7 +122,7 @@ public sealed class ShaderScalarLayoutTests
             ],
             Metadata = new ShaderMetadata
             {
-                MaterialScalarLayouts = layouts,
+                MaterialScalarLayouts = [.. layouts],
             },
         };
 }

@@ -1,6 +1,7 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
-using Texture = SomeEngine.Assets.Schema.Texture;
+using Texture = SomeEngine.Resources.Texture;
 using TextureViewDimension = SomeEngine.Graphics.TextureViewDimension;
 
 namespace SomeEngine.Assets.Tests.Assets;
@@ -10,18 +11,20 @@ public sealed class EditableAssetTests
     [Fact]
     public void MaterialDefaultsAndIndependentWritesUseTheDeclaredProperties()
     {
-        using var first = new StandardMaterial.Asset { Name = "first" };
+        using var first = new StandardMaterialAsset { Name = "first" };
         using var second = first.Duplicate();
-        Assert.Equal(0.5f, first.Roughness);
-        Assert.False(first.HasOverride(nameof(StandardMaterial.Roughness)));
-        second.Roughness = 0;
+        var firstValues = new StandardMaterialParameters(first.GetBlock<MaterialBlock>());
+        var secondValues = new StandardMaterialParameters(second.GetBlock<MaterialBlock>());
+        Assert.Equal(0.5f, firstValues.Roughness);
+        Assert.False(first.GetBlock<MaterialBlock>().HasOverride(nameof(StandardMaterial.Roughness)));
+        secondValues.Roughness = 0;
         second.Name = "second";
-        Assert.Equal(0.5f, first.Roughness);
+        Assert.Equal(0.5f, firstValues.Roughness);
         Assert.Equal("first", first.Name);
-        Assert.Equal(0, second.Roughness);
-        Assert.True(second.HasOverride(nameof(StandardMaterial.Roughness)));
-        Assert.True(second.Reset(nameof(StandardMaterial.Roughness)));
-        Assert.Equal(0.5f, second.Roughness);
+        Assert.Equal(0, secondValues.Roughness);
+        Assert.True(second.GetBlock<MaterialBlock>().HasOverride(nameof(StandardMaterial.Roughness)));
+        Assert.True(second.GetBlock<MaterialBlock>().Reset(nameof(StandardMaterial.Roughness)));
+        Assert.Equal(0.5f, secondValues.Roughness);
     }
 
     [Fact]
@@ -29,20 +32,23 @@ public sealed class EditableAssetTests
     {
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
-        using var parent = new StandardMaterial.Asset { Name = "parent", Roughness = 0.25f };
+        using var parent = new StandardMaterialAsset { Name = "parent" };
+        _ = new StandardMaterialParameters(parent.GetBlock<MaterialBlock>()) { Roughness = 0.25f };
         project.RegisterAsset(await parent.SaveAsync(directory.File("parent.material.asset")));
-        using var child = new StandardMaterial.Asset { Name = "child", Parent = parent.Id, Roughness = 0 };
+        using var child = new StandardMaterialAsset { Name = "child" };
+        child.GetBlock<MaterialBlock>().Parent = parent.Reference;
+        _ = new StandardMaterialParameters(child.GetBlock<MaterialBlock>()) { Roughness = 0 };
         project.RegisterAsset(await child.SaveAsync(directory.File("child.material.asset")));
         await using var loader = new AssetLoader(project.CreateStorage());
-        using var opened = await StandardMaterial.Asset.OpenAsync(loader, child.Id);
-        using var zero = await opened.LoadAsync(loader);
+        using var opened = await StandardMaterialAsset.OpenAsync(loader, child.Reference);
+        using var zero = await opened.CreateAsync(loader);
         Assert.Equal(0, zero.Roughness);
-        Assert.Equal(new[] { parent.Id.Value }, opened.Describe().Dependencies);
-        opened.Reset(nameof(StandardMaterial.Roughness));
+        Assert.Equal(new[] { parent.Id }, opened.Describe().Dependencies);
+        opened.GetBlock<MaterialBlock>().Reset(nameof(StandardMaterial.Roughness));
         opened.Name = "edited";
         AssetEntry saved = await opened.SaveAsync(directory.File("edited.material.asset"));
-        using var reloaded = await StandardMaterial.Asset.OpenAsync(saved.Path);
-        using var inherited = await reloaded.LoadAsync(loader);
+        using var reloaded = await StandardMaterialAsset.OpenAsync(saved.Path);
+        using var inherited = await reloaded.CreateAsync(loader);
         Assert.Equal(0.25f, inherited.Roughness);
         Assert.Equal("edited", reloaded.Name);
         Assert.Equal(reloaded.SourceVersion, saved.Version);
@@ -53,24 +59,27 @@ public sealed class EditableAssetTests
     public async Task TextureMetadataCanBeEditedAndSavedWhileItsPayloadStaysInTheSource()
     {
         using var directory = new AssetTestDirectory();
-        using var texture = new Texture.Asset
+        using var pixels = new TextureBlock
         {
-            Name = "before", Dimension = TextureDimension.Texture2D,
+            Dimension = TextureDimension.Texture2D,
             Width = 1, Height = 1, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
             Format = Format.R8UNorm, SampledFormat = Format.R8UNorm,
             SampledDimension = TextureViewDimension.Texture2D,
-            MipTiles = [new TextureMipTile { Width = 1, Height = 1, Payload = new byte[] { 37 } }],
+            MipTiles = [new TextureMipTile { Width = 1, Height = 1, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 1 }],
         };
+        pixels.Chunks.Set(pixels.MipTiles[0].ChunkKey, new byte[] { 37 });
+        using var texture = new TextureAsset { Name = "before" };
+        texture.SetBlock(pixels);
         AssetEntry original = await texture.SaveAsync(directory.File("pixels.texture.asset"));
-        using var opened = await Texture.Asset.OpenAsync(original.Path);
+        using var opened = await TextureAsset.OpenAsync(original.Path);
         using var branch = opened.Duplicate();
         branch.Name = "after";
-        Assert.Null(branch.MipTiles![0].Payload);
+        Assert.Empty(branch.GetBlock<TextureBlock>().Chunks.Keys);
         await branch.SaveAsync(directory.File("edited.texture.asset"));
-        using var reloaded = await Texture.Asset.OpenAsync(directory.File("edited.texture.asset"));
-        await using var value = await reloaded.LoadAsync();
-        using var bytes = await value.AcquireMipTileAsync(0, 0, 0);
-        Assert.Equal(new byte[] { 37 }, bytes.Memory.ToArray());
+        using var reloaded = await TextureAsset.OpenAsync(directory.File("edited.texture.asset"));
+        await using var value = await reloaded.GetBlock<TextureBlock>().CreateAsync(reloaded.Name);
+        Assert.True(value.TryRetainTile(TextureTiles.ChunkKey(0, 0, 0), out var bytes));
+        using (bytes) Assert.Equal(new byte[] { 37 }, bytes.ToArray());
         Assert.Equal("after", value.Name);
         Assert.Equal("before", opened.Name);
     }

@@ -1,46 +1,37 @@
-# 资产文件、分块与显式 I/O
+# 资产文件、Block 与显式 I/O
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16。资产持久化复用现有二进制文档、范围 I/O、压缩、摘要、包认证及页调度，不建立第二种容器。对象语义见 [Asset 与 Block](Asset-Objects.md)。
 
-资产文件访问建立在通用二进制容器上。容器负责字节和编码，具体 `.Asset` 负责可编辑字段；两者不再由旧字段包装层捆绑。归属见 [[Asset-Responsibilities]]。
+## 公共根和类型目录
 
-## 根数据与分块
+资产根是 `AssetHeader`，记录身份、名称、资产类型和 Block 描述。每个 Block 描述包含自己的持久类型、编码信息、元数据及负载位置。Asset 的业务字段不再平铺进根，也没有独立的 Asset 字节块存储。
 
-`BinaryDocument` 保留文件来源、文件结构、根编码及分块访问。具体资产显式解码根数据，较大的负载继续通过块引用访问。打开资产不意味着读取全部块，也不意味着创建应用对象。
+文档格式为 `SEBDOC04`，类型目录明确指出根类型。公共描述读取不需要安装业务类型；真正读取 Block 时由请求的强类型静态编码器核对类型和 schema。未知 Block 可以列目录，未修改内容也可以按原编码保留，不通过反射猜测实现。
 
-Serialization 仍可提供 `BinaryDocument<T>` 给其他使用者；资产 Loader 的缓存与来源保留使用不携带已解码字段的 `BinaryDocument`。这使保留来源不附带字段反序列化或字段复制。
+普通对象解码和编码视图共用文档结构、边界及认证。来源属于签名包时，内部摘要自洽不能替代包中已经认证的描述核对。详细字节协议继续由 [二进制文档说明](../../../docs/BinarySerialization.md) 维护。
 
-Texture 的 tile、Mesh 的大负载与 Shader 的后端代码并非同一种块语义，分别见 [[Asset-Textures]]、[[Asset-Meshes]]、[[Asset-Shaders]]。
+## 文本与其他内容表达
 
-## 哪些操作会做什么
+可读源格式为 `SomeEngine.AssetSource.2`。顶层身份与 Block 列表分离，每个可读 Block 使用自己的静态文本编码；大负载通过相对路径引用文件，不展开为 JSON 大数组。仅进程内 Block 不作为可重建磁盘数据写出。
 
-| 操作 | 根数据 | 负载与磁盘 |
-| --- | --- | --- |
-| `T.Asset.OpenAsync` | 明确读取并解码根字段 | 打开来源；不默认物化全部负载 |
-| `Duplicate()` | 建立分支并共享可保留数据 | 不重新解码，不读取整个文件 |
-| `RetainSource()` | 不附带字段 | 延长既有字节来源的访问期 |
-| 普通属性读取与赋值 | 访问或编辑当前字段 | 不自动进行磁盘同步 |
-| 显式读块、读范围 | 按调用所需使用元数据 | 读取指定内容 |
-| 显式创建或加载 `T` | 按类型建立应用数据 | 由类型决定所需块和依赖读取 |
-| `SaveAsync` | 编码所保留的当前内容 | 写出目标文件，可流式读取原块 |
-| `Dispose` | 释放当前持有的访问 | 不自动保存 |
+一种 Asset 可以包含文本字段、二进制、外部内容和延迟取得的 Block。是否支持文本由具体 Block 决定，不是 Asset 的二选一分类。旧平铺源格式已移除；已有生成产物从真实来源重建，不增加旧 schema 回退。
 
-显式读取和来源生命周期之间的关系见 [[Asset-Loading-and-Lifetime]]。
+## 保存与未加载内容
 
-## 保存流程
+保存先建立隔离的内容分支，再让各 Block 提供自己的元数据和负载。已修改页通过分段缓冲写出；尚未取得且未修改的 Block 或负载可以使用原文档的有界复制，不需要为了改名而解压全部内容。
 
-具体资产负责保留要保存的内容并建立对应 writer；公共保存实现负责同目录临时文件、写出、刷新、失败清理和成功替换。保存返回的条目对应实际写出结果，之后是否登记由 [[Asset-Import-and-Storage]] 的调用方决定。
+公共文件流程使用同目录临时文件，完成写出、刷新和目标身份检查后替换目标。失败或取消清理临时文件，保留已有成功内容。保存返回的 `AssetEntry` 描述本次实际输出；它不会暗中更新工程目录或把原对象绑定到新文件。
 
-保存需要保证所保留内容与后续编辑隔离。不能为了达到这一点默认复制整份资产，也不能先把所有未修改负载读入内存。当前来源块的写出能力保留原编码信息，验证并以有界缓冲流式复制；具体类型只提供块的位置和含义。
+二进制保存结果中的直接依赖来自实际写出的 Block 描述，与重开文件得到的依赖一致。仅进程内 Block 仍属于当前 Asset 的内存内容，可以参与分支和各自的生命周期，但其数据及专用引用不进入文件或保存返回的目录条目。未加载的持久 Block 则继续保留原文件描述中的引用，无需先执行其解码器。
 
-取消或写出失败必须清理本次临时文件，并保留已有目标文件。成功替换与索引登记是不同步骤；来源版本和输出版本的区别见 [[Asset-Identity-and-Dependencies]]。
+跨多个输出的保存、登记和回退属于 [工程导入流程](Asset-Import-and-Storage.md)。多个独立文件不被宣称具有断电时的整体原子替换保证。单文件已经替换后，先前打开的读者仍使用自己选择的旧文件内容，不拼接新旧版本。
 
-## 只读字节与编辑
+来源文件的通用复制限定在同一目录，复制后分配新的来源及元素身份。跨目录复制可能改变外部相对引用的含义，因此必须由认识来源格式的代码改写，不能直接复制字节并登记。拒绝请求时，来源、伴随文件、外部数据和目录均保持原样；同目录复制与强类型资产复制不受此限制影响。
 
-只读负载视图不授权调用方绕过写入入口修改共享底层内存。显式字节读取可以保留一个读取者；独立写入在需要时复制当前字节存储。详细规则与当前示例由 [[Asset-Sharing-and-Writes]] 维护。
+## 字节与页的边界
 
-World 用 `RangeReadStream` 将范围读取连接到已有 ECS 同步读取接口。它只借用来源并使用有界缓冲，释放 stream 不替调用方释放来源。失败读取不能把不完整缓冲标为有效。World 的整体写入内存成本另见 [[Asset-Worlds]]，不能由有界读取推导所有保存步骤都只用固定内存。
+Block 通过 `PageBufferMap` 保存可编辑负载，明确取得范围后使用 `ReadOnlySequence<byte>` 或页缓冲。文件 chunk、纹理 tile、Cluster 几何页和内存 COW 页分别有各自粒度；压缩块可能需要整体解压，不能根据内存页尺寸推导任意磁盘局部编辑。
 
-代码入口：[BinaryDocument](../../../src/SomeEngine.Serialization/Containers/BinaryDocument.cs)、[BinaryDocumentWriter](../../../src/SomeEngine.Serialization/Containers/BinaryDocumentWriter.cs)、[资产保存共同流程](../../../src/SomeEngine.Assets/Asset.cs)、[RangeReadStream](../../../src/SomeEngine.Serialization/IO/RangeReadStream.cs)。
+Texture 的 tile 是独立文件 chunk。ClusterMeshBlock 的多个几何页则是一个 payload chunk 内的范围，BVH 另有明确偏移。WorldBlock 通过既有 ECS 编码器与分页 Stream 读写完整存档。具体语义见各资产主题页。
 
-返回 [[Asset-Files]]；关联 [[Asset-Validation]]、[[Asset-Verification-2026-09-10]]。
+相关实现：[AssetHeader](../../../src/SomeEngine.Assets/AssetHeader.cs)、[AssetText](../../../src/SomeEngine.Assets/AssetText.cs)、[保存与 Block 写出](../../../src/SomeEngine.Assets/Asset.Blocks.cs)、[文档写入器](../../../src/SomeEngine.Serialization/Containers/BinaryDocumentWriter.cs)。

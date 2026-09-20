@@ -1,9 +1,33 @@
-﻿using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class MaterialReloadTests
 {
+    [Fact]
+    public async Task ReloadChangesTheExistingObjectAtTheExplicitUpdateBoundary()
+    {
+        using var directory = new AssetTestDirectory();
+        await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
+        using var current = new StandardMaterial { Name = "before" };
+        using MaterialAsset file = new StandardMaterialAsset { Name = "after" };
+        _ = new StandardMaterialParameters(file.GetBlock<MaterialBlock>()) { Roughness = 0.75f };
+        ulong revision = current.Revision;
+        int notifications = 0;
+        current.Changed += material =>
+        {
+            Assert.Same(current, material);
+            Assert.Equal("after", material.Name);
+            Assert.Equal(0.75f, current.Roughness);
+            notifications++;
+        };
+        await file.UpdateAsync(current, loader);
+        Assert.Equal("after", current.Name);
+        Assert.Equal(revision + 1, current.Revision);
+        Assert.Equal(1, notifications);
+    }
+
     [Fact]
     public void SlotWritesNotifyAfterTheValueChangesAndIgnoreEqualValues()
     {

@@ -1,51 +1,29 @@
-# World 资产与 ECS 序列化
+# WorldAsset、ECS 编码与语义引用
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
-
-World 资产使用已有 ECS 序列化保存实体、组件、缓冲区与已注册拓扑，不再使用固定 `SceneData` 复制一套场景组件结构。ECS 的总体设计见 [[ECS-Architecture]]，通用文件能力见 [[Asset-File-IO]]。
-
-## 集成位置
-
-当前集成类型是 `WorldAsset : Asset<World>`。World 定义在 ECS 程序集中，不能为了写成 `World.Asset` 让 ECS 反向依赖 Assets 并制造循环。集成类型仍代表原来的 ECS World，不建立另一个 World 实现。
-
-World 文件外层只记录资产 ID、名称、内容长度与引用等文件信息。实体、组件和拓扑内容继续使用 ECS 的格式与 codec。外层文件格式信息不能代替组件注册表。
-
-## 显式写入、保存与加载
+2026-09-16。WorldAsset 提供场景身份，WorldBlock 包含已有 ECS 格式编码的实体、组件、缓冲区与拓扑。它不建立固定 SceneData 或另一种 World；ECS 本身不反向依赖资产设施。
 
 ```csharp
-// world 和 registry 由调用方建立，registry 描述需要保存的组件与拓扑。
 using var asset = new WorldAsset { Name = "level" };
 asset.WriteWorld(world, registry);
 AssetEntry written = await asset.SaveAsync(path);
-
 using var opened = await WorldAsset.OpenAsync(written.Path);
 using World loaded = await opened.LoadAsync(registry);
 ```
 
-`WriteWorld` 显式编码当前 World 内容，不写磁盘，也不持续跟踪之后的 World 修改。`SaveAsync` 写出已编码内容；`LoadAsync` 使用调用方提供的注册表建立实际 World。需要保存后续变化时，再明确调用 `WriteWorld`。
+`world`、组件与拓扑的 `registry` 由调用方提供。WriteWorld 显式编码当前状态，不保存磁盘，也不持续监听后续修改。保存写出已编码的 Block；加载完成必要读取与 ECS 解码后返回独立 World。
 
-当前写入使用 ECS 的持久存档格式；读取要求对应格式。普通资产的浅复制规则不能被替换成“把对象序列化一遍来复制”：World 的这里是用户要求的显式存档操作。
+## 页与完整内容成本
 
-当前 `WriteWorld` 会构造一份完整的编码结果，这是明确的内存成本。保存已有文件而没有重新编码 World 时，可以流式复制原内容块。读取使用范围来源与 `RangeReadStream`，不先将整个内容块另读成一个大数组。
+编码使用现有 ECS 序列化器和 PageBufferStream，写入分页缓冲而不是先生成一份连续大数组。显式写入仍需要容纳完整编码内容；这不是常数空间的任意增量存档承诺。未重新编码的保存可以复制原内容块。
 
-## 引用收集
+加载明确取得存档内容并交给既有 ECS 解码器。在返回后，使用 World 不再通过 Asset 异步取得组件。页分支、保留、失败清理和取消沿共同机制处理，不用序列化往返代替通用 Duplicate。
 
-codec 调用 `DataWriter.WriteExternalReference` 时同时记录非空外部资产引用。依赖来自实际写入过程，覆盖组件、缓冲区以及拓扑 codec 的相关写入路径，再由资产公共信息规则输出。
+## 引用与同一个世界
 
-不遍历另一套 SceneData 图来猜测依赖，也不把任意 GUID 字段自动解释为资产引用。具体 codec 必须明确表达引用语义，见 [[Asset-Identity-and-Dependencies]]。
+codec 写入外部引用时收集直接资产依赖，覆盖组件、缓冲区和拓扑的相关编码。任意 GUID 不自动成为资产引用。Scene 中的几何引用是 MeshAsset，材质引用是 MaterialAsset，不绑定 Cluster 或其他管线 Block。
 
-## 示例场景与同一个 Game world
+项目加载后在同一个 Game world、同一批实体上解析这些语义引用，按具体系统取得 Block 并创建 Mesh、Material 等使用对象。来源组件与业务状态经明确步骤接入已有提取流程，最终进入 Rendering world；不重新搭建一套资产场景图。
 
-`SceneSerialization.CreateRegistry()` 提供当前示例场景使用的组件 codec：变换、MeshSource、MaterialSource 缓冲区、运动、相机和三种灯光。这是示例场景的注册集合，不是 World 资产只能包含这些组件的限制；自定义内容通过自己的注册表接入。
+SceneSerialization 的示例 codec 集合不是所有用户 World 的限制。外部项目可注册自己的组件和拓扑，继续使用既有 ECS 格式及类型注册。
 
-当前应用先从 WorldAsset 加载 Game world，再在**同一个 World、同一批实体**上解析 MeshSource 与 MaterialSource，建立实际 MeshInstance 和材质绑定。示例使用的来源组件、相机与运动数据在明确的接入步骤中消费，随后仍由现有提取流程产生 Rendering world。
-
-这种“存档引用到应用对象”的步骤不是第三条渲染数据通路，也不需要固定的场景 DTO。完整应用流程见 [[Asset-Application-and-Rendering]]。
-
-## 验证范围
-
-公开行为测试覆盖实体身份、变换、材料缓冲区、Mesh 引用、运动、相机、三种灯光、去重引用、独立分支及取消加载。它不替代全部 ECS 拓扑测试，也不证明所有自定义 codec 正确。实际结果见 [[Asset-Verification-2026-09-10]]。
-
-代码入口：[WorldAsset](../../../src/SomeEngine.Assets/WorldAsset.cs)、[ECS 序列化](../../../src/SomeEngine.ECS.Serialization/WorldSerializer.cs)、[引用写入](../../../src/SomeEngine.ECS.Serialization/DataWriter.cs)、[场景组件](../../../src/SomeEngine.Render/Components/SceneComponents.cs)、[场景 codec](../../../src/SomeEngine.Render/SceneSerialization.cs)。
-
-返回 [[Asset-Files]]；关联 [[Asset-Responsibilities]]、[[Asset-Sharing-and-Writes]]。
+验证覆盖身份、变换、缓冲区、材质和 Mesh 引用、相机、运动、灯光、分支和失败行为，以及独立模板的 1,024 个实例实际绘制。见 [本次验收](Asset-Verification-2026-09-16.md)。实现：[WorldAsset](../../../src/SomeEngine.Assets/WorldAsset.cs)、[WorldBlock](../../../src/SomeEngine.Assets/WorldBlock.cs)、[ECS 编码](../../../src/SomeEngine.ECS.Serialization/)、[场景集成](../../../src/SomeEngine.Render/SceneSerialization.cs)。

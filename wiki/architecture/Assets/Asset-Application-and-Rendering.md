@@ -1,54 +1,29 @@
-# 启动配置与渲染接入
+# 项目构建、启动配置与渲染接入
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16。应用选择资产并持有创建后的使用对象，渲染只消费就绪数据。数据流仍是 Game world 到 Rendering world 的既有提取，不增加资产直接提交路径。
 
-资产系统提供可编辑内容和显式加载能力；应用负责选择、持有和使用实际对象。渲染只沿 Game world 到 Rendering world 的既有提取流程运行，遵守 [[Render-Boundaries]] 与 [[Render-Graph]]。
+## 模板是项目自己的来源
 
-## 启动配置
+DefaultProject 安装到空目录，复制 C#、顶层 Shader、定义和模型来源，不复制构建资产、缓存或编译输出。安装不是更新命令，遇到非空目标明确拒绝；引擎更新不覆盖已安装项目的材质、源码或默认内容。
 
-当前 `ApplicationSettings` 通过单一声明生成 `.Asset`，文件后缀为 `.runtime.asset`。内容包括场景、Cluster shader 资源组、虚拟阴影 shader 资源组、UI 与各渲染功能使用的 Shader 引用及入口，以及窗口尺寸和名称。
+Game.Build 使用项目源码编译 Shader，创建纹理和材质，通过项目 Importer 能力导入 glTF，然后保存 WorldAsset 和 ApplicationSettingsAsset。引擎 Shader 库只作为 include 依赖。项目之外的引用路径保留相对关系，不能退化为可能冲突的文件名。
 
-这些 GUID 在声明中标记资产引用，使当前依赖可枚举；配置对象本身不自动创建所有资源。应用显式打开被选择的文件并创建所需对象。这是 [[Asset-Code-Generation]] 与 [[Asset-Identity-and-Dependencies]] 的一个具体用法。
+Game.App 只使用自身输出目录的 Manifest 和构建资产。缺少构建结果时明确失败，不搜索引擎仓库或其他缓存作为回退。默认内容生成工具调用这条项目构建入口，场景工具使用同样的 Block 与材质参数 API。
 
-当前示例应用要求目录中有一个启动配置。它是当前应用入口的要求，不是所有引擎使用者或所有 World 都必须遵守的资产模型限制。
+## 启动与实例化
 
-## 接入流程
+ApplicationSettingsAsset 的 ApplicationSettingsBlock 记录窗口配置、场景、Shader 资源组和各功能的明确引用。读取配置不自动实例化整张引用图；应用选择需要的资产并完成对应 Block 的转换。
 
-```mermaid
-flowchart TD
-    Settings[ApplicationSettings.Asset] --> Boot[应用读取启动值与引用]
-    Boot --> Scene[WorldAsset 显式加载]
-    Boot --> Shaders[显式加载所需 shader 资源]
-    Scene --> Game[同一个 Game world]
-    Game --> Resolve[在原实体上解析 Mesh 与 Material 引用]
-    Resolve --> Extract[现有提取流程]
-    Extract --> Render[Rendering world]
-    Shaders --> Execution[既有渲染执行配置]
-    Render --> Execution
-```
+WorldAsset 恢复真实 Game world。Mesh、Material 引用在原实体上解析，管线读取自己需要的 Block；同一 MeshAsset 中其他表示不会被错误地当作另一个场景身份。流送取得数据后再更新已有资源状态，渲染准备不隐藏 Asset 查询或文件 I/O。
 
-World 存档如何保存组件、通过注册表恢复，以及示例来源组件怎样消费，由 [[Asset-Worlds]] 说明。场景内可明确复用已创建的 Mesh 与 Material；这种局部资源持有不变成 Loader 的全局唯一对象缓存。
+## 生命周期与 Shader 解释
 
-Game world 与 Rendering world 中使用实际 Mesh、Material、Texture、Shader 对象及已有组件。资产文件不是渲染系统额外接收的一套场景提交数据。
+Texture 的设备关联、Mesh 的页、材质依赖及 Shader 代码分别由实际使用者保留。打开新资产、更新使用对象和旧 GPU 资源释放不是同一个时点。帧、队列和完成信号继续保护旧内容，不新增全局资产版本等待机制。
 
-## 更新与旧帧保护
+用户材质与 Shader 解释顶点和业务数据。默认项目的编码器不是引擎固定顶点布局。一个 Material 保持一个 Shader 引用，项目组合所需管线入口，不引入替换表、自动回退或根据类型名选择实现。
 
-应用在明确的 World 或资源更新边界调用对象更新。打开新资产来源、更新对象内容和释放旧 GPU 分配是不同阶段。
+## 已执行的端到端验证
 
-Texture 的设备关联、Mesh 页来源、材质引用和 Shader 后端代码分别由对应对象处理；RenderDevice、Cluster 和图形队列继续保留实际被旧帧使用的资源。资产迁移不得用一个全局版本或全局等待替换既有资源生命周期。
+模板本身以及安装在引擎目录外的新项目都从来源生成 63 个资产。D3D12 的 WARP 和 RTX 3080 均完成 30 帧输出校验；独立项目使用自己的 Manifest，场景 1,024 个实例、几何页全部就绪、非空着色结果、读取失败为零。
 
-文件监听、属性 getter 和 Dispose 不触发自动磁盘同步。渲染准备使用已取得的内容，不能隐藏文件读取。通用更新行为见 [[Asset-Loading-and-Lifetime]]，具体资源见 [[Asset-Textures]]、[[Asset-Meshes]]、[[Asset-Shaders]]。
-
-## shader 解释权
-
-管线依赖用户 shader 解释数据，不默认顶点属性布局，也不在运行路径记录并读取字段元数据进行动态多态。默认资产生成工具使用的某种顶点编码或材质，只是那组内容的选择，不扩大为引擎通用数据限制。
-
-资产依赖、材质语义和 ShaderRef 也不授权资产层组装 PSO、描述符布局或图形执行调度；这些边界继续由既有渲染与图形层负责。
-
-## 工具与当前状态
-
-默认资产生成工具创建实际 ECS World，再保存 WorldAsset 和启动配置；场景工具通过同样的组件与资产入口调整内容。完整生成与导入验证仍受 [[Asset-Open-Questions]] 中的嵌套元数据问题阻塞，历史检查范围见 [[Asset-Verification-2026-09-10]]。
-
-代码入口：[启动配置声明](../../../src/SomeEngine.Assets/Schema/ApplicationSettings.cs)、[应用打开与创建](../../../src/SomeEngine.Runtime/RuntimeApplication.cs)、[同一 World 的场景接入](../../../src/SomeEngine.Runtime/RuntimeScene.cs)、[默认资产生成](../../../tools/GenerateDefaultAssets/Program.cs)、[场景工具](../../../tools/SomeEngine.RenderScenarios/Scenarios.cs)。
-
-返回 [[Asset-Files]]；关联 [[Asset-Materials]]、[[Asset-Import-and-Storage]]、[[ECS-Architecture]]。
+Vulkan 的 43 项后端测试通过，但现有后端明确拒绝窗口呈现能力，本次未将其扩展成新平台功能。它不计为 Vulkan 应用多帧通过。完整命令、数量及边界见 [本次验收](Asset-Verification-2026-09-16.md)。模板使用说明见 [DefaultProject](../../../templates/DefaultProject/README.md)。

@@ -1,4 +1,5 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using SlangShaderSharp;

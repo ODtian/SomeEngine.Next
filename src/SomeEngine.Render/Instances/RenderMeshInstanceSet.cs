@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.ObjectModel;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Instances;

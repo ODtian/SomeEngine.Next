@@ -757,6 +757,128 @@ public sealed class ChunkRequestSchedulerTests
         Assert.Equal(0, snapshot.ResidentBytes);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SharedBudgetPressureReclaimsIdleContentWithoutManualTrimming(bool separateScheduler)
+    {
+        await using var document = await OpenDocumentAsync((1, new byte[] { 1, 1 }), (2, new byte[] { 2, 2 }));
+        var budget = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 4 });
+        using var external = budget.Reserve(ResidencyClass.DecodedCpu, 2);
+        await using var first = ChunkRequestScheduler.CreateForDocument(document, 4, residency: budget);
+        await using var second = separateScheduler
+            ? ChunkRequestScheduler.CreateForDocument(document, 4, residency: budget) : null;
+        ResidentChunkLease previous = await first.AcquireAsync(1);
+        previous.Dispose();
+
+        using ResidentChunkLease next = await (second ?? first).AcquireAsync(2).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(new byte[] { 2, 2 }, next.Memory.ToArray());
+        Assert.False(first.TryAcquireResident(1, out _));
+        Assert.Equal(4, budget.Used(ResidencyClass.DecodedCpu));
+        next.Dispose();
+        if (second is not null) await second.DisposeAsync();
+        await first.DisposeAsync();
+        external.Dispose();
+        Assert.Equal(0, budget.Used(ResidencyClass.DecodedCpu));
+        Assert.Equal(0, budget.Used(ResidencyClass.Compressed));
+    }
+
+    [Fact]
+    public async Task ReleasingAnotherSchedulersPinWakesSharedBudgetWaitersAndKeepsCancellationIndependent()
+    {
+        await using var document = await OpenDocumentAsync((1, new byte[] { 1, 1 }), (2, new byte[] { 2, 2 }));
+        var budget = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 4 });
+        using var external = budget.Reserve(ResidencyClass.DecodedCpu, 2);
+        await using var first = ChunkRequestScheduler.CreateForDocument(document, 4, residency: budget);
+        var estimated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var second = new ChunkRequestScheduler(document.AcquireChunkAsync, async (key, token) =>
+        {
+            ChunkLoadEstimate result = await EstimateAsync(document, key, token);
+            estimated.TrySetResult();
+            return result;
+        }, 4, residency: budget);
+        ResidentChunkLease active = await first.AcquireAsync(1);
+        using var cancellation = new CancellationTokenSource();
+        Task<ResidentChunkLease> canceled = second.AcquireAsync(2, cancellationToken: cancellation.Token).AsTask();
+        Task<ResidentChunkLease> waiting = second.AcquireAsync(2).AsTask();
+        await estimated.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceled);
+        Assert.False(waiting.IsCompleted);
+        Assert.Equal(new byte[] { 1, 1 }, active.Memory.ToArray());
+
+        active.Dispose();
+        using var result = await waiting.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(new byte[] { 2, 2 }, result.Memory.ToArray());
+        Assert.Equal(4, budget.Used(ResidencyClass.DecodedCpu));
+    }
+
+    [Fact]
+    public async Task FailedLoadReleasesSharedBudgetForAnotherScheduler()
+    {
+        await using var document = await OpenDocumentAsync((1, new byte[] { 1, 1 }), (2, new byte[] { 2, 2 }));
+        var budget = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 2 });
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var failing = new ChunkRequestScheduler(async (key, token) =>
+        {
+            started.TrySetResult();
+            await finish.Task.WaitAsync(token);
+            throw new IOException("The source failed after acquiring its budget.");
+        }, (key, token) => EstimateAsync(document, key, token), 2, residency: budget);
+        await using var following = ChunkRequestScheduler.CreateForDocument(document, 2, residency: budget);
+        Task<ResidentChunkLease> failure = failing.AcquireAsync(1).AsTask();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Task<ResidentChunkLease> waiting = following.AcquireAsync(2).AsTask();
+        finish.TrySetResult();
+        await Assert.ThrowsAsync<IOException>(() => failure);
+        using var result = await waiting.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(new byte[] { 2, 2 }, result.Memory.ToArray());
+        result.Dispose();
+        await following.DisposeAsync();
+        await failing.DisposeAsync();
+        Assert.Equal(0, budget.Used(ResidencyClass.DecodedCpu));
+        Assert.Equal(0, budget.Used(ResidencyClass.Compressed));
+    }
+
+    [Fact]
+    public async Task OneSharedBudgetReleaseWakesAllRequestsThatCanProceed()
+    {
+        await using var document = await OpenDocumentAsync((1, new byte[] { 1, 1 }), (2, new byte[] { 2, 2 }));
+        var budget = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 4 });
+        using var external = budget.Reserve(ResidencyClass.DecodedCpu, 4);
+        var estimated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int estimates = 0;
+        int loads = 0;
+        await using var scheduler = new ChunkRequestScheduler(async (key, token) =>
+        {
+            if (Interlocked.Increment(ref loads) == 2) started.TrySetResult();
+            await finish.Task.WaitAsync(token);
+            return await document.AcquireChunkAsync(key, token);
+        }, async (key, token) =>
+        {
+            ChunkLoadEstimate result = await EstimateAsync(document, key, token);
+            if (Interlocked.Increment(ref estimates) == 2) estimated.TrySetResult();
+            return result;
+        }, 4, maxConcurrency: 2, residency: budget);
+        Task<ResidentChunkLease> first = scheduler.AcquireAsync(1).AsTask();
+        Task<ResidentChunkLease> second = scheduler.AcquireAsync(2).AsTask();
+        try
+        {
+            await estimated.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            external.Dispose();
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally { finish.TrySetResult(); }
+        using var firstContent = await first.WaitAsync(TimeSpan.FromSeconds(10));
+        using var secondContent = await second.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(new byte[] { 1, 1 }, firstContent.Memory.ToArray());
+        Assert.Equal(new byte[] { 2, 2 }, secondContent.Memory.ToArray());
+    }
+
     private static async ValueTask<BinaryDocument<TestRoot>> OpenDocumentAsync(
         params (ulong Key, byte[] Payload)[] chunks)
     {

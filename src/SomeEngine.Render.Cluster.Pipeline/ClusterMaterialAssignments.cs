@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Immutable;
 using System.Buffers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;

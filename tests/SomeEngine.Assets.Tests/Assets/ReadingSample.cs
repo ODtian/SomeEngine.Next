@@ -12,17 +12,40 @@ public sealed partial class ReadingSample : IDisposable
     public ReadingSample(string name, int number) { Name = name; Number = number; Interlocked.Increment(ref Created); }
     public string Name { get; set; } = "sample";
     public int Number { get; set; }
-    [AssetReference(typeof(ReadingSample))]
-    public Guid Dependency { get; set; }
     public bool IsDisposed { get; private set; }
-    public static ReadingSample Create(Asset asset) => new(asset.Name, asset.Number);
-    public void Update(Asset asset)
+    public void Update(string name, int number)
     {
-        if (asset.Number < 0) throw new InvalidDataException("A sample number must be nonnegative.");
-        Name = asset.Name;
-        Number = asset.Number;
+        if (number < 0) throw new InvalidDataException("A sample number must be nonnegative.");
+        Name = name;
+        Number = number;
     }
     public void Dispose() => IsDisposed = true;
+}
+
+[Asset(".reading.asset"), BinarySerializable]
+[BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
+public sealed partial class ReadingSampleAsset : Asset
+{
+    public new System.Collections.Immutable.ImmutableArray<AssetBlockDescription> BlockDescriptions
+    { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
+    partial void Initialize() => Name = "sample";
+}
+
+[AssetBlock, BinarySerializable, BinaryFields(nameof(Number), nameof(Dependency))]
+public sealed partial class ReadingSampleBlock : AssetPageBlock
+{
+    public partial int Number { get; set; }
+    public partial AssetId<ReadingSampleAsset> Dependency { get; set; }
+    public ReadingSample Create(string name)
+    {
+        using var copy = Duplicate();
+        return new(name, copy.Number);
+    }
+    public void Update(ReadingSample value, string name)
+    {
+        using var copy = Duplicate();
+        value.Update(name, copy.Number);
+    }
 }
 
 internal sealed class AssetTestDirectory : IDisposable
@@ -33,7 +56,9 @@ internal sealed class AssetTestDirectory : IDisposable
     internal string WriteSample(Guid id, int number, string name = "sample")
     {
         string path = File(name + ".reading.asset");
-        using var asset = new ReadingSample.Asset(new(id)) { Name = name, Number = number };
+        using var asset = new ReadingSampleAsset(SomeEngine.Serialization.Containers.PageArena.Shared, id) { Name = name };
+        using var content = new ReadingSampleBlock { Number = number };
+        asset.SetBlock(content);
         asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return path;
     }
@@ -57,8 +82,8 @@ internal sealed class ReadingStorage : IAssetStorage, IAsyncDisposable
         Guid version = SomeEngine.Serialization.Containers.BinaryDocument.ReadVersionAsync(source).AsTask().GetAwaiter().GetResult();
         source.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (corrupt) bytes[0] ^= 0xFF;
-        _files[id] = (new AssetEntry(id, type ?? ReadingSample.Asset.FileType,
-            schema ?? ReadingSample.Asset.SchemaHash, version), bytes);
+        _files[id] = (new AssetEntry(id, type ?? ReadingSampleAsset.FileType,
+            schema ?? ReadingSampleAsset.SchemaHash, version), bytes);
     }
     public bool TryFind(Guid id, out AssetEntry entry)
     {

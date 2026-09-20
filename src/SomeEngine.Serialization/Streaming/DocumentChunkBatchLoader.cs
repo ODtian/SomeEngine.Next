@@ -12,22 +12,19 @@ internal sealed class DocumentChunkLoader
     private readonly object _gate = new();
     private readonly BinaryDocument _document;
     private readonly ChunkStreamingMetrics _metrics;
+    private readonly PageArena? _pages;
     private readonly Dictionary<ulong, BinaryChunkEntry> _descriptors = [];
 
     internal DocumentChunkLoader(
         BinaryDocument document,
-        ChunkStreamingMetrics metrics)
+        ChunkStreamingMetrics metrics,
+        PageArena? pages = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(metrics);
-        if (document.RetainsResidentBacking && !document.SourceLeasesAreImmutable)
-        {
-            throw new NotSupportedException(
-                "A resident document source must expose immutable borrowed leases; unknown resident " +
-                "wrappers fail closed before a streamed runtime cache is created.");
-        }
-        _document = document;
+        _document = pages is null ? document : document.Retain();
         _metrics = metrics;
+        _pages = pages;
     }
 
     internal async ValueTask<ChunkLoadEstimate> EstimateAsync(
@@ -39,11 +36,21 @@ internal sealed class DocumentChunkLoader
             ?? throw new KeyNotFoundException($"Chunk 0x{key:X16} was not found.");
         lock (_gate)
             _descriptors[key] = descriptor;
-        return new ChunkLoadEstimate(descriptor.StoredLength, descriptor.DecodedLength);
+        return new ChunkLoadEstimate(descriptor.StoredLength, descriptor.DecodedLength)
+        { BufferBytes = _pages?.BufferCapacity(descriptor.DecodedLength) };
     }
 
-    internal async ValueTask<ChunkLease> LoadAsync(
+    internal ValueTask<ChunkLease> LoadAsync(ulong key, CancellationToken cancellationToken)
+        => LoadCoreAsync(key, null, cancellationToken);
+
+    internal ValueTask<ChunkLease> LoadPagesAsync(ulong key, ResidencyReservation reservation,
+        CancellationToken cancellationToken) => LoadCoreAsync(key, reservation, cancellationToken);
+
+    internal ValueTask DisposeAsync() => _pages is null ? ValueTask.CompletedTask : _document.DisposeAsync();
+
+    private async ValueTask<ChunkLease> LoadCoreAsync(
         ulong key,
+        ResidencyReservation? reservation,
         CancellationToken cancellationToken)
     {
         BinaryChunkEntry descriptor;
@@ -57,8 +64,9 @@ internal sealed class DocumentChunkLoader
 
         try
         {
-            ChunkLease lease = await _document.AcquireChunkAsync(descriptor, cancellationToken)
-                .ConfigureAwait(false);
+            ChunkLease lease = reservation is null
+                ? await _document.AcquireChunkAsync(descriptor, cancellationToken).ConfigureAwait(false)
+                : await _document.AcquirePagesAsync(descriptor, _pages!, reservation, cancellationToken).ConfigureAwait(false);
             _metrics.StoredBytesRead(descriptor.StoredLength);
             return lease;
         }

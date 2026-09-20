@@ -1,59 +1,39 @@
-# 资产加载、更新与生命周期
+# 资产取得、对象创建与生命周期
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16。打开 Asset、取得 Block、创建使用对象和更新已有对象是不同的操作。对象关系见 [Asset 与 Block](Asset-Objects.md)，文件规则见 [文件读写](Asset-File-IO.md)。
 
-打开文件、创建应用对象和更新已有对象是三个明确操作。Loader 合并文件读取，不决定应用对象的唯一性。对象身份见 [[Asset-Objects]]，文件操作见 [[Asset-File-IO]]。
+## 打开不等于全部驻留
 
-## 打开到使用
+具体 `MeshAsset.OpenAsync` 或 `TextureAsset.OpenAsync` 通过共同文件入口取得身份和 Block 描述，并按类型需要取得小型元数据。大型负载和其他扩展的 Block 可以继续未加载。`ContainsBlock<T>()` 查询存在性，`GetBlock<T>()` 仅访问已取得的内容，`GetBlockAsync<T>()` 明确承担异步取得。
 
-```mermaid
-sequenceDiagram
-    participant App as 调用方
-    participant Asset as 具体 T.Asset
-    participant Loader as AssetLoader
-    participant Store as IAssetStorage
-    App->>Asset: OpenAsync(loader, id)
-    Asset->>Loader: 请求已知格式的来源
-    Loader->>Store: 定位条目并打开字节
-    Store-->>Loader: 字节范围来源
-    Loader-->>Asset: 保留的 BinaryDocument
-    Asset->>Asset: 显式解码根字段
-    Asset-->>App: 独立可关闭的资产对象
-    App->>Asset: LoadAsync / 类型的 CreateAsync
-    Asset-->>App: 独立的应用对象 T
-```
+一个 Block 内部还可以包含冷负载、外部来源或现有页机制提供的数据。因此 Block 对象存在也不是全部字节驻留的保证。同步字段访问不会为调用方隐藏文件读取。
 
-带路径的 `T.Asset.OpenAsync(path)` 通过基类共同文件流程直接打开。需要按 ID 查找时使用 Loader 与存储；两种入口最终都返回具体资产，不返回泛型字段包装。
+Loader 按资产 ID 和存储所选版本合并字节读取，缓存文档而不是唯一 Asset 或使用对象。调用方取得独立保留的文件访问，分别创建自己的内容分支；同一来源可以建立多个互不依赖关闭顺序的对象。存储回调和关闭操作在共同缓存锁之外执行。
 
-## Loader 持有的内容
+## 使用对象的保证
 
-同一 ID 和存储版本的并发请求共享一次文件读取。每个成功调用者取得独立保留的来源，之后分别解码和关闭自己的资产。缓存保留根编码及字节访问，不保留唯一应用对象或一套唯一编辑字段。
+具体系统请求认识的 Block，异步完成自己需要的读取、解码和资源创建。返回的对象直接持有当前已承诺可用的数据及必要保留，不再调用 Asset 异步访问模型。关闭 Asset、Loader 或可淘汰缓存，不破坏已创建对象的数据。
 
-当前 Loader 限制并行读取数量、排队与执行中的请求总数、缓存文件数及根编码字节量。这些不是 decoded chunk 或 GPU 显存预算；块驻留属于具体资源的流式系统。
+该保证不要求一次创建取得所有后端或全部细节级别。Texture 可先具备基础 mip，Mesh 可先具备必要空间索引和已取得几何页。后续内容通过明确的资产侧取得和既有页流送机制形成可用数据，再更新对象；渲染准备只消费就绪内容。
 
-存储读取可能执行外部 I/O，不能在 Loader 缓存锁下调用它。关闭来源也可能进入调用方存储代码，需要在共同锁外完成。
+## 取消、失败与释放
 
-## 取消与关闭
-
-| 事件 | 应保留的行为 |
+| 事件 | 可观察的行为 |
 | --- | --- |
-| 一个等待者取消打开 | 取消该等待，不取消其他等待同一读取的调用者 |
-| 一次文件读取失败 | 失败请求可观察，释放本次持有的来源，后续修复后可再打开 |
-| Loader 缓存淘汰 | 释放 Loader 自己的访问，不让已返回资产或应用对象失效 |
-| Loader 关闭 | 取消其读取，拒绝新请求，汇集清理结果；不关闭借入存储或应用对象 |
-| `.Asset` 关闭 | 释放该资产的字段与来源访问；其他分支及已保留读取者继续持有各自访问 |
-| 应用对象关闭 | 释放该对象拥有的内容与关联，不销毁另一个独立创建的对象 |
+| 一个并发等待者取消 | 结束该等待，不取消其他等待者共享的读取或 Importer 执行 |
+| 取得失败 | 清理本次未交付内容，错误可观察，修复来源后允许重新请求 |
+| 缓存淘汰 | 只释放缓存自己的保留，活跃页仍计费且不被复用 |
+| Asset 关闭 | 拒绝新操作，等待其实际取得结束，释放自己的 Block 和来源 |
+| Loader 关闭 | 结束自身读取和缓存，不销毁借入存储或已创建使用对象 |
+| Context 关闭 | 取消并等待本次执行结束，清理未转交结果和相关作用域 |
+| 使用对象关闭 | 释放自己的数据和设备关联，不销毁另一个独立实例 |
 
-保留、借用与独立写入的区别见 [[Asset-Sharing-and-Writes]]。关闭不是保存，也不是撤销已提交的对象内容。
+取消请求不是实际工作结束。即使某个来源不能即时取消，目标页也必须保留到真实读取停止。结束允许使用期间后继续保存 Span 或 Memory，并不能阻止池复用；需要自由保留的数据应明确复制。
 
-## 已有对象的内容更新
+## 显式更新
 
-需要更新时，调用方显式打开新的资产并调用对应类型的 `UpdateAsync`。普通文件变化、属性 getter 和 Dispose 不自动触发同步。打开新版本不等待旧渲染资源完全消失。
+更新保留同一个使用对象的身份。读取、解析或资源创建在内容切换前失败，旧内容继续可用。切换后通知或旧内容清理失败，不能误释放已经生效的新内容，也不能宣称新内容没有生效。
 
-更新保留同一个 `T` 的身份。失败或取消在内容提交前应保留旧内容；内容已经提交后，观察者通知或旧内容清理失败需要按该类型的公开行为报告，不能把“通知失败”误写成“新内容从未生效”。材质与 Shader 的现有行为测试覆盖这种区别。
+Shader、Material、Texture 和 Mesh 分别处理自己的业务依赖与设备资源，旧帧通过原有队列和完成信号保留内容。没有资产专用的全局 GPU 等待或旁路提交。文件监听、普通属性和 Dispose 不自动保存或更新对象。
 
-Mesh 的页来源、Texture 的设备分配、Material 拥有的加载资源和 Shader 的后端代码，各自按类型处理。它们与旧帧保留的衔接见 [[Asset-Application-and-Rendering]]，不能在资产加载层另造全局 GPU 等待策略。
-
-代码入口：[AssetLoader](../../../src/SomeEngine.Assets/AssetLoader.cs)、[Texture 加载](../../../src/SomeEngine.Assets/Schema/Texture.Loading.cs)、[Mesh 加载](../../../src/SomeEngine.Assets/Schema/Mesh.Loading.cs)、[Shader 加载](../../../src/SomeEngine.Assets/Schema/Shader.Loading.cs)。
-
-返回 [[Asset-Files]]；关联 [[Asset-Import-and-Storage]]、[[Asset-Materials]]、[[Asset-Validation]]。
+验证见 [本次验收](Asset-Verification-2026-09-16.md)。相关实现：[AssetLoader](../../../src/SomeEngine.Assets/AssetLoader.cs)、[Block 取得](../../../src/SomeEngine.Assets/Asset.Blocks.cs)、[导入 Context](../../../src/SomeEngine.Assets/Importing/ImportContext.cs)、[使用资源](../../../src/SomeEngine.Resources/)。

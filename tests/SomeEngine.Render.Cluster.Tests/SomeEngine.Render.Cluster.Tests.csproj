@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\external\SlangShaderSharp\src\SlangShaderSharp.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Direct3D12\SomeEngine.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Validation\SomeEngine.Graphics.Validation.csproj" />
     <ProjectReference Include="..\..\src\SomeEngine.Graphics.Vulkan\SomeEngine.Graphics.Vulkan.csproj" />
@@ -70,17 +71,24 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\assets\Shaders\hello_triangle.shader.asset">
+    <Content Include="..\..\templates\DefaultProject\assets\Shaders\hello_triangle.shader.asset">
       <Link>Content\Shaders\hello_triangle.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\assets\Shaders\cluster_shade_material.shader.asset">
-      <Link>Content\Shaders\cluster_shade_material.shader.asset</Link>
+    <Content Include="..\..\templates\DefaultProject\assets\Shaders\standard.shader.asset">
+      <Link>Content\Shaders\standard.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\assets\Shaders\cluster_shade_unlit.shader.asset">
-      <Link>Content\Shaders\cluster_shade_unlit.shader.asset</Link>
+    <Content Include="..\..\templates\DefaultProject\assets\Shaders\unlit.shader.asset">
+      <Link>Content\Shaders\unlit.shader.asset</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../templates/DefaultProject/Game/Game.csproj" />
+    <Using Include="Game.Content" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

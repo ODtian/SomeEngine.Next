@@ -46,7 +46,7 @@ public sealed class BinaryDocumentWriter
     }
 
     public static BinaryDocumentWriter Create<T>(T root)
-        where T : IBinaryContract<T>
+        where T : IBinarySerializable<T>
         => new(
             new ContractDocumentRoot<T>(root),
             T.TypeId,
@@ -80,7 +80,7 @@ public sealed class BinaryDocumentWriter
     public BinaryWireTypeDescriptor RootDescriptor => _rootDescriptor;
 
     public BinaryDocumentWriter AddContract<T>()
-        where T : IBinaryContract<T>
+        where T : IBinarySerializable<T>
     {
         return AddContract(new BinaryWireTypeDescriptor(
             T.TypeId, T.SchemaFingerprint, T.Compatibility, T.SchemaEpoch));
@@ -102,6 +102,19 @@ public sealed class BinaryDocumentWriter
     public BinaryDocumentWriter AddChunk(
         ulong key,
         ReadOnlyMemory<byte> decodedBytes,
+        ulong typeFingerprint = 0,
+        ChunkCompression compression = ChunkCompression.None,
+        int alignment = 16,
+        uint ordinal = 0)
+        => AddChunk(key, new ReadOnlySequence<byte>(decodedBytes), typeFingerprint, compression, alignment, ordinal);
+
+    /// <summary>
+    /// Borrows immutable segments until writing completes. Hashing and compression consume the
+    /// segments directly, using the same document format as continuous chunk memory.
+    /// </summary>
+    public BinaryDocumentWriter AddChunk(
+        ulong key,
+        ReadOnlySequence<byte> decodedBytes,
         ulong typeFingerprint = 0,
         ChunkCompression compression = ChunkCompression.None,
         int alignment = 16,
@@ -141,26 +154,26 @@ public sealed class BinaryDocumentWriter
     }
 
     public async ValueTask WriteAsync(
-        FileStream destination,
+        Stream destination,
         Guid? generation = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(destination);
-        if (!destination.CanWrite || !destination.CanSeek)
-            throw new ArgumentException("Binary documents require a writable, seekable destination.", nameof(destination));
-        if (destination.Position != 0)
-            throw new ArgumentException("Binary documents must be written at stream position zero.", nameof(destination));
-        if (generation == Guid.Empty)
-            throw new ArgumentOutOfRangeException(nameof(generation));
-
+        ValidateDestination(destination, generation);
         cancellationToken.ThrowIfCancellationRequested();
         _ = await WriteAsyncCore(destination, generation, cancellationToken).ConfigureAwait(false);
     }
 
     internal ValueTask<Digest256> WriteAuthenticatedAsync(
-        FileStream destination,
+        Stream destination,
         Guid? generation = null,
         CancellationToken cancellationToken = default)
+    {
+        ValidateDestination(destination, generation);
+        cancellationToken.ThrowIfCancellationRequested();
+        return WriteAsyncCore(destination, generation, cancellationToken);
+    }
+
+    internal static void ValidateDestination(Stream destination, Guid? generation = null)
     {
         ArgumentNullException.ThrowIfNull(destination);
         if (!destination.CanWrite || !destination.CanSeek)
@@ -170,15 +183,13 @@ public sealed class BinaryDocumentWriter
         if (generation == Guid.Empty)
             throw new ArgumentOutOfRangeException(nameof(generation));
 
-        cancellationToken.ThrowIfCancellationRequested();
-        return WriteAsyncCore(destination, generation, cancellationToken);
     }
 
-    private async ValueTask<Digest256> WriteAsyncCore(FileStream destination, Guid? requestedGeneration, CancellationToken cancellationToken)
+    private async ValueTask<Digest256> WriteAsyncCore(Stream destination, Guid? requestedGeneration, CancellationToken cancellationToken)
     {
         destination.SetLength(0);
         WriteZeroes(destination, BinaryDocumentFormat.HeaderSize);
-        byte[] catalog = BinaryDocumentFormat.WriteTypeCatalog(_contracts.Values);
+        byte[] catalog = BinaryDocumentFormat.WriteTypeCatalog(_rootDescriptor, _contracts.Values);
         destination.Write(catalog);
         Digest256 catalogHash = Digest256.ComputeSha256(catalog);
 
@@ -192,6 +203,7 @@ public sealed class BinaryDocumentWriter
             rootHash = rootWriter.CompleteDigest();
             rootLength = rootWriter.WrittenCount;
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         long directoryOffset = BinaryDocumentFormat.Align(destination.Position, 16);
         WriteZeroes(destination, directoryOffset - destination.Position);
@@ -243,6 +255,7 @@ public sealed class BinaryDocumentWriter
             catalogHash,
             rootHash,
             directoryHash);
+        cancellationToken.ThrowIfCancellationRequested();
         destination.Position = 0;
         destination.Write(headerBytes);
         destination.SetLength(totalLength);
@@ -267,16 +280,7 @@ public sealed class BinaryDocumentWriter
         if (source.Compression == ChunkCompression.None)
         {
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            ReadOnlyMemory<byte> remaining = source.DecodedBytes;
-            while (!remaining.IsEmpty)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int length = Math.Min(64 * 1024, remaining.Length);
-                ReadOnlySpan<byte> block = remaining.Span[..length];
-                destination.Write(block);
-                hash.AppendData(block);
-                remaining = remaining[length..];
-            }
+            WriteDecodedBytes(destination, source.DecodedBytes, hash, cancellationToken);
             contentHash = Digest256.Finish(hash);
             storedHash = contentHash;
             storedLength = source.DecodedBytes.Length;
@@ -287,16 +291,7 @@ public sealed class BinaryDocumentWriter
             using var storedWriter = new HashingWriteStream(destination);
             using (var compressor = new BrotliStream(storedWriter, CompressionLevel.Optimal, leaveOpen: true))
             {
-                ReadOnlyMemory<byte> remaining = source.DecodedBytes;
-                while (!remaining.IsEmpty)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    int length = Math.Min(64 * 1024, remaining.Length);
-                    ReadOnlySpan<byte> block = remaining.Span[..length];
-                    decodedHash.AppendData(block);
-                    compressor.Write(block);
-                    remaining = remaining[length..];
-                }
+                WriteDecodedBytes(compressor, source.DecodedBytes, decodedHash, cancellationToken);
             }
             contentHash = Digest256.Finish(decodedHash);
             storedHash = storedWriter.CompleteDigest();
@@ -323,6 +318,24 @@ public sealed class BinaryDocumentWriter
             contentHash,
             source.Ordinal);
         return new WrittenChunk(descriptor, storedHash);
+    }
+
+    private static void WriteDecodedBytes(Stream destination, ReadOnlySequence<byte> bytes,
+        IncrementalHash hash, CancellationToken cancellationToken)
+    {
+        foreach (ReadOnlyMemory<byte> segment in bytes)
+        {
+            ReadOnlySpan<byte> remaining = segment.Span;
+            while (!remaining.IsEmpty)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int length = Math.Min(64 * 1024, remaining.Length);
+                ReadOnlySpan<byte> block = remaining[..length];
+                destination.Write(block);
+                hash.AppendData(block);
+                remaining = remaining[length..];
+            }
+        }
     }
 
     private static (Digest256 DirectoryHash, Guid DerivedGeneration) WriteDirectory(
@@ -376,7 +389,7 @@ public sealed class BinaryDocumentWriter
     private sealed record ChunkData(
         ulong Key,
         ulong TypeFingerprint,
-        ReadOnlyMemory<byte> DecodedBytes,
+        ReadOnlySequence<byte> DecodedBytes,
         ChunkCompression Compression,
         int Alignment,
         uint Ordinal)

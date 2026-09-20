@@ -1,50 +1,48 @@
-# 资产对象与应用对象
+# Asset、Block 与使用对象
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-20：本页描述本次重构后的实现。总体原则见 [重构原则](Asset-Rebuild-Principles.md)，导入协作见 [导入与工程存储](Asset-Import-and-Storage.md)，验证范围见 [本次验收](Asset-Verification-2026-09-16.md)。
 
-`T.Asset` 是可编辑资产对象，`T` 是应用实际使用的对象。二者围绕同一类型声明生成数据映射，但各自有不同的身份、状态和生命周期。职责分配见 [[Asset-Responsibilities]]，磁盘身份见 [[Asset-Identity-and-Dependencies]]。
+## 身份和内容分开
 
-## 三种类型角色
+Asset 是身份、引用和生命周期单位。`MeshAsset`、`TextureAsset`、`ShaderAsset`、`MaterialAsset` 和 `WorldAsset` 是独立资产类型，不绑定某一种使用对象，也不从使用对象逐字段生成资产镜像。同一身份可以有多个独立打开的对象及内容分支。
 
-| 类型 | 表达什么 | 主要持有的数据 |
-| --- | --- | --- |
-| `Asset<T>` | 所有该家族资产共有的文件与生命周期能力 | 资产 ID、名称、来源版本与路径、保留的字节来源 |
-| `T.Asset` | 可编辑资产本身 | 生成的具体字段存储，以及类型需要的分块语义 |
-| `T` | 应用中的实际对象 | 应用值、已解析的资源引用、对象状态、事件和设备关联 |
+Block 是 Asset 内部开放、强类型的数据单位。一个 MeshAsset 可同时包含 `MeshBlock`、`MeshMaterialsBlock`、`ClusterMeshBlock`，以后也可加入其他管线的 Block。Scene 引用 `AssetId<MeshAsset>`，不引用某个管线的几何表示。添加一个 Block 不要求新增一个语义资产身份。
 
-不存在一个额外的“文件对象”再包住另一个“可编辑对象”。`.Asset` 自身就是编辑入口。生成器可以产生私有字段存储和内部编码类型，但不能让它们成为另一套公开资产模型。
+Asset 不分“文本资产”和“二进制资产”。Block 自己选择文本字段、二进制负载、外部来源、磁盘描述、延迟读取或仅在进程中存在的数据。一个逻辑资产可以组合多个不同存储方式的 Block；这不是“每个资产都有可读主文件，再引用二进制资产”的模型，也不要求每个资产都提供可读格式。现有文档容器可以同时包含文本编码元数据与二进制页，Block 的自定义读取也可以接入网络或生成内容。仅进程内 Block 不被伪装成可持久内容。
 
-## 对象身份与数据共享
+## 强类型查询与延迟取得
 
-普通 C# 引用赋值共享对象身份。执行 `var other = material` 后，两者指向同一个 `Material`；调用 setter 就修改该对象。不能为了隔离数据而偷偷复制整个 `T`，尤其不能复制事件、设备关联或 GPU 对象。
-
-资产分支通过显式 `Duplicate()` 建立。当前入口默认保留相同资产 ID，也可以传入新 ID 建立另一个资产身份。新分支先共享可保留的数据和来源；具体写入隔离规则由 [[Asset-Sharing-and-Writes]] 定义。**“建立分支”不代表任意裸嵌套赋值已经实现自动隔离。**
-
-同一文件可以创建多个独立的 `T`，同一 Loader 也可以返回多个可独立关闭的 `.Asset`。是否在某个场景中复用一个 `Mesh` 或 `Material`，由持有这些对象的应用代码明确决定，不是 Loader 的全局对象缓存策略。
-
-## 从资产到应用对象
-
-显式创建或加载时，小型值进入 `T` 自己的数据；需要对象的资产引用由对应类型或集成代码解析；大型只读内容保留共享访问。`T` 仍读取某份大数据时，它就是共享读取者，之后资产上的独立写入必须考虑它。
-
-解析规则由具体类型决定。例如，材质的 `AssetId<Texture>` 会解析为 `Texture`，而启动配置可以保留 GUID，由应用集中打开资源。生成器不能把所有 GUID 都当作需要立即实例化的对象。相关边界见 [[Asset-Code-Generation]] 和 [[Asset-Loading-and-Lifetime]]。
+Asset 打开时根据目录建立自己的持久类型 ID 索引，后续取得复用该目录，静态泛型入口选择读取代码；查询不遍历全部 Block，不通过字符串、行为枚举或类型名称解释业务内容。
 
 ```csharp
-using var asset = new StandardMaterial.Asset { Roughness = 0.25f };
-using var branch = asset.Duplicate();
-branch.Roughness = 0;
-
-// loader 由调用方提供，用于显式解析材质引用。
-using Material value = await branch.LoadAsync(loader);
-Material sameObject = value;
+using MeshAsset mesh = await MeshAsset.OpenAsync(path);
+if (mesh.ContainsBlock<ClusterMeshBlock>())
+{
+    ClusterMeshBlock clusters = await mesh.GetBlockAsync<ClusterMeshBlock>();
+    // 由 Cluster 集成读取自己需要的数据并建立使用对象。
+}
 ```
 
-此例只展示已确认的具体材质属性入口；不规定嵌套元数据的写法。材质覆盖与默认值的区别见 [[Asset-Materials]]。
+`ContainsBlock<T>()` 只查询类型是否存在。`GetBlock<T>()` 只返回已取得的 Block；不会把磁盘读取藏在同步 getter 内。`GetBlockAsync<T>()` 显式取得所需 Block；同一个打开对象内的并发取得合并，等待者取消互不取消。已发布的 Block 由 Asset 持有，调用方不能把借用结果当作独立实例释放；需要独立使用期限时建立其分支或保留所需数据。
 
-## 当前代码入口
+打开资产可取得少量元数据，但不保证所有 Block 或其全部负载驻留。已经取得一个 TextureBlock 也不等于已经解压所有 tile。未知 Block 的公共描述仍能被读取，未取得的内容可以原编码保存；真正请求它时才需要对应扩展的静态编解码能力。
 
-- [资产基类](../../../src/SomeEngine.Assets/Asset.cs)
-- [资产身份](../../../src/SomeEngine.Assets/AssetId.cs)
-- [具体资产生成](../../../src/SomeEngine.Generators/AssetGenerator.cs)
-- [材质资产家族](../../../src/SomeEngine.Assets/Schema/Material.Asset.cs)
+## 页、分支和释放
 
-返回 [[Asset-Files]]；继续阅读 [[Asset-Sharing-and-Writes]]、[[Asset-Application-and-Rendering]]。
+Block 可以使用现有 `PageArena`、`PageBuffer`、`PageList<T>`、`PageBufferMap`、范围来源与块调度器，不另建页池、预算或页生命周期。Asset 协调同一内容分支的访问边界，具体字段和字节存储属于 Block。
+
+`SetBlock` 将输入内容建立为该资产自己的分支，不偷走调用方的 Block。`Duplicate()` 保留资产 ID，隔离后续编辑；`CreateCopy()` 创建新的资产身份。普通 C# 引用赋值仍共享同一个对象。页级 COW 保证其他分支和保留读取者看到原内容，不深复制任意第三方可变对象。
+
+Asset 关闭会等待自己发起的实际取得结束，再释放自己的 Block 和来源。另一个资产分支、已保留范围或已经创建的使用对象继续遵守各自的使用期限。释放不是保存。
+
+固定字段布局由 SG 在声明端生成；变长数据的文件位置由现有文档与页目录在打开时解析并复用。不能把项目本次生成的 enum 下标当成跨文件持久位置。
+
+## 从 Block 到使用对象
+
+具体系统直接请求认识的 Block，以强类型代码完成必要读取、解码、依赖解析和资源创建。完成后的对象保证当前承诺可用的数据能够直接使用，不再通过 Asset 的异步接口访问这些数据。
+
+Asset 与使用对象共用底层序列化和页管理机制。当前约定是 Asset 可部分驻留，小字段在异步创建完成前就绪，大数据通过显式异步操作取得；使用对象在其约定的使用周期内保留全部必需内存，普通读取无需异步。这个区别是使用策略，不是底层页系统只能支持两种状态的限制；未来可按用途提供其他部分驻留模型。
+
+一个 CurveBlock 可以建立 Curve 或 CurveSamples；ConstantCurveBlock 也可建立 Curve。这种多对多关系不需要全局资产到对象转换表。业务对象保留普通属性、状态和设备资源，不反向引用资产设施。未来细节级别或新增后端内容仍通过明确的页流送或资产侧转换取得，再切换使用状态，而不是同步属性隐式读文件。
+
+源码：[Asset](../../../src/SomeEngine.Assets/Asset.cs)、[Block 索引与生命周期](../../../src/SomeEngine.Assets/Asset.Blocks.cs)、[Block 基础能力](../../../src/SomeEngine.Assets/AssetBlock.cs)、[外部 Curve 样例](../../../samples/SomeEngine.Curves.Assets/CurveAsset.cs)。

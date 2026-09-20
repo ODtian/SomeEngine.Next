@@ -30,6 +30,7 @@ public sealed class RenderWorld : World
 
     internal bool TryApplyExtractionChangesDirect(RenderExtractionSystems extraction) =>
         ExecuteValueMutation(
+            extraction.DestinationAccess,
             extraction,
             static systems => systems.TryApplyChangesDirect());
 

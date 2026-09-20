@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -98,6 +99,48 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         }
         ExtractAndApply(extraction, mainWorld, renderWorld);
         Assert.Equal(previous, renderWorld.Read<RenderPreviousTransform>(mirror).Value.Position);
+    }
+
+    [Fact]
+    public void IncrementalExtractionDeclaresDestinationStorageWhenWorldJobsAreEnabled()
+    {
+        using var mainWorld = new World(execution: new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default));
+        using var renderWorld = new RenderWorld(execution: new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default));
+        using var extraction = new RenderExtractionSystems(renderWorld);
+        using Mesh mesh = MeshAsset(812, 1);
+        Entity source = AddMeshSource(mainWorld, mesh, 0, Vector3.Zero);
+        ExtractAndApply(extraction, mainWorld);
+        Entity mirror = renderWorld.GetByIndex<RenderSource, Entity>(source)[0];
+        WorldTransform moved = mainWorld.Read<WorldTransform>(source);
+        moved.Qvvs.Position = new Vector3(3, 4, 5);
+        mainWorld.Replace(source, moved);
+        ExtractAndApply(extraction, mainWorld);
+        Assert.Equal(new Vector3(3, 4, 5), renderWorld.Read<RenderTransform>(mirror).Position);
+    }
+
+    [Fact]
+    public void ExplicitPageSourceTravelsThroughTheExistingWorldExtractionPath()
+    {
+        using var mesh = MeshAsset(901, 1);
+        using var first = SomeEngine.Assets.Pipeline.MeshPayloadSource.FromMesh(mesh);
+        using var second = first.Retain();
+        var game = new SomeEngine.ECS.World();
+        var render = new SomeEngine.Render.Systems.RenderWorld();
+        using var extraction = new SomeEngine.Render.Systems.RenderExtractionSystems(render);
+        var entity = game.CreateEntity();
+        game.Add(entity, new SomeEngine.Core.ECS.Components.WorldTransform
+        {
+            Qvvs = new SomeEngine.Core.Math.TransformQvvs(System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity),
+        });
+        game.Add(entity, new SomeEngine.Render.Components.MeshInstance { Mesh = mesh, PageSource = first });
+        extraction.Extract(game);
+        Assert.True(extraction.ApplyPendingCandidate());
+        var mirror = render.GetByIndex<SomeEngine.Render.Components.RenderSource, SomeEngine.ECS.Entities.Entity>(entity)[0];
+        Assert.Same(first, render.Read<SomeEngine.Render.Components.RenderMesh>(mirror).PageSource);
+        game.Replace(entity, new SomeEngine.Render.Components.MeshInstance { Mesh = mesh, PageSource = second });
+        extraction.Extract(game);
+        Assert.True(extraction.ApplyPendingCandidate());
+        Assert.Same(second, render.Read<SomeEngine.Render.Components.RenderMesh>(mirror).PageSource);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
-﻿using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Tests;
 
@@ -24,11 +25,11 @@ public sealed class ShaderMaterialPropertyTests
         Assert.Equal(1u, property.RowCount);
         Assert.Equal(4u, property.ColumnCount);
         Assert.Equal(8, property.ScalarType);
-        Assert.Equal(23, property.DefaultValue!.Value.Span[0]);
+        Assert.Equal(23, property.DefaultValue!.Value.AsSpan()[0]);
 
         sourceDefault[0] = 99;
-        Assert.Equal(99, property.DefaultValue.Value.Span[0]);
-        Assert.True(property.DefaultValue.Value.Equals((Memory<byte>)sourceDefault));
+        Assert.Equal(23, property.DefaultValue.Value.AsSpan()[0]);
+        Assert.Equal(99, sourceDefault[0]);
     }
 
     [Fact]
@@ -71,7 +72,7 @@ public sealed class ShaderMaterialPropertyTests
                         RowCount = 1,
                         ColumnCount = 4,
                         ScalarType = 8,
-                        DefaultValue = defaultValue,
+                        DefaultValue = System.Collections.Immutable.ImmutableArray.Create(defaultValue),
                     },
                 ],
             },

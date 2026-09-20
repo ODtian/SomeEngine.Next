@@ -6,14 +6,14 @@ namespace SomeEngine.Serialization.Containers;
 
 internal interface IBinaryDocumentRoot
 {
-    void WriteTo(IStreamingBinarySink destination);
+    void WriteTo(IBufferWriter<byte> destination);
 }
 
 internal sealed class ContractDocumentRoot<T>(T value) : IBinaryDocumentRoot
-    where T : IBinaryContract<T>
+    where T : IBinarySerializable<T>
 {
-    public void WriteTo(IStreamingBinarySink destination)
-        => BinaryContractSerializer.Write(destination, value);
+    public void WriteTo(IBufferWriter<byte> destination)
+        => BinarySerializer.Write(destination, value);
 }
 
 internal sealed class HashingBufferWriter : IStreamingBinarySink, IDisposable

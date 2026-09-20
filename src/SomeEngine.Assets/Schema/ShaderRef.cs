@@ -3,11 +3,36 @@ using SomeEngine.Serialization;
 namespace SomeEngine.Assets.Schema;
 
 /// <summary>Identifies one executable entry point in one shader asset.</summary>
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema), TextSerializable]
 public sealed partial record ShaderRef
 {
-    [AssetReference(typeof(Shader))]
-    public string? AssetGuid { get; init; }
+    internal ShaderEntry Resolve(IReadOnlyDictionary<Guid, Shader> shaders)
+        => new(shaders[Asset.Value], EntryPoint!, Stage);
+
+    internal static async ValueTask<Dictionary<Guid, Shader>> LoadAsync(IEnumerable<Guid> references,
+        AssetLoader loader, CancellationToken cancellationToken)
+    {
+        var shaders = new Dictionary<Guid, Shader>();
+        try
+        {
+            foreach (Guid id in references.Where(static id => id != Guid.Empty).Distinct())
+            {
+                await using ShaderAsset file = await ShaderAsset.OpenAsync(loader,
+                    new AssetId<ShaderAsset>(id), cancellationToken).ConfigureAwait(false);
+                ShaderBlock code = await file.GetBlockAsync<ShaderBlock>(cancellationToken).ConfigureAwait(false);
+                shaders.Add(id, await code.CreateAsync(file.Name, cancellationToken).ConfigureAwait(false));
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return shaders;
+        }
+        catch
+        {
+            foreach (Shader shader in shaders.Values) shader.Dispose();
+            throw;
+        }
+    }
+
+    public AssetId<ShaderAsset> Asset { get; init; }
 
     public string? EntryPoint { get; init; }
 
@@ -21,14 +46,8 @@ public sealed partial record ShaderRef
     {
         if (shader is null)
             throw new InvalidDataException($"{owner} field '{field}' is missing.");
-        if (!global::System.Guid.TryParse(
-                shader.AssetGuid,
-                out Guid guid)
-            || (guid == System.Guid.Empty))
-        {
-            throw new InvalidDataException(
-                $"{owner} field '{field}.AssetGuid' has invalid shader GUID '{shader.AssetGuid}'.");
-        }
+        if (shader.Asset.IsEmpty)
+            throw new InvalidDataException($"{owner} field '{field}.Asset' is missing.");
         if (string.IsNullOrWhiteSpace(shader.EntryPoint))
         {
             throw new InvalidDataException(
@@ -44,6 +63,6 @@ public sealed partial record ShaderRef
             throw new InvalidDataException(
                 $"{owner} field '{field}' must reference a {expectedStage.Value} shader entry.");
         }
-        return guid;
+        return shader.Asset.Value;
     }
 }

@@ -1,57 +1,39 @@
-# 数据共享与独立写入
+# 页共享、内容分支与独立写入
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16。Block 使用现有通用页管理，不维护逐字段的共享计数或另一套生命周期。数据类型与查询见 [Asset 与 Block](Asset-Objects.md)。
 
-独立写入以当前数据节点为单位。已经独占就直接写；仍被共享就浅复制当前节点，接回当前分支，然后修改。这个原则已经确认，**嵌套元数据的公开写入形式尚未确认**，见 [[Asset-Open-Questions]]。
+## 内容分支
 
-## 分离规则
+`PageBuffer`、`PageList<T>` 和 `PageBufferMap` 的分支共享索引根。建立分支不复制整份页引用数组；局部首写只分离受影响页及必要索引路径。即使叶页直接计数为一，祖先索引仍可能共享，不能据此错误地原地修改。
 
-```mermaid
-flowchart TD
-    Write[当前节点需要独立写入] --> Shared{当前节点是否共享}
-    Shared -->|否| Modify[直接修改当前节点]
-    Shared -->|是| Copy[浅复制当前节点]
-    Copy --> Attach[将新节点接回当前分支]
-    Attach --> Modify
-    Copy --> Children[子引用继续共享]
-    Children --> Next[子节点需要写入时再处理该层]
-```
+同一页已经独占后可直接写。其他 Asset 分支、保留范围、缓存中的原内容和使用对象都可能是仍需旧内容的读者。活跃读者结束前，页不能淘汰或回池。COW 不复制事件、设备资源或整个使用对象。
 
-值字段复制值，引用字段继续引用下层内容。不能默认深拷贝、用序列化往返实现复制，或遍历对象图判断共享与修改状态。分支根、共享存储和应用对象身份的关系见 [[Asset-Objects]]。
+## 公共写法与类型边界
 
-数组和连续缓冲区在分离时仍可能复制整个当前存储，成本可以是 O(n)。逐层浅复制不等于复制大数组中的单个元素只花一个元素的成本。增长、排序、增删继续复用现有集合算法，不另造一套集合库。
-
-## 共同能力与具体复制
-
-公共共享能力只承担保留、释放和独立写入所需的基础能力，具体节点怎样浅复制由生成代码负责。当前 `SharedData<T>` 只做引用计数与共享状态，不接收复制、编码或释放字段的回调；具体存储的复制和子数据释放由直接代码执行。
-
-共享字节使用 `SharedBytes`。只读借入的内存即使当前只有一个保留者，也不能擅自原地改写；独立写入需要先取得可写存储。`BufferRead` 保留读取访问，资产字节编辑入口提供有明确结束点的 `ByteEdit`。这些是当前字节能力，不是已定稿的嵌套对象 API。
-
-## 读取者也参与隔离
-
-读取者包括其他 `.Asset` 分支、显式保留的字节读取，以及已经创建且仍在使用这些数据的 `T`。只有编辑分支计数而忽略应用对象读取，会使编辑意外改变已有对象内容。
-
-小型应用值与 `T` 自身状态不参与整体对象复制。事件、设备关联和 GPU 对象也不参与 COW。渲染旧帧仍在使用的数据如何保留，由 [[Asset-Application-and-Rendering]] 和既有图形资源生命周期共同决定。
-
-## 当前字节编辑入口
+小型字段直接赋值；集合修改采用完整元素赋值。`PageList<T>` 中的普通可变对象引用不是自动深拷贝边界。声明端的安全值检查阻止把不能共享的内容误当作透明隔离数据；第三方可变对象需要明确适配，不能声称框架接管了任意赋值。
 
 ```csharp
-using var mesh = new Mesh.Asset { Payload = new byte[] { 1, 2, 3 } };
-using var branch = mesh.Duplicate();
-using var reader = mesh.ReadPayload()!;
-using (var edit = branch.WritePayload())
-    edit.Span[0] = 9;
-// reader 和 mesh 仍读取原来的内容。
+using var points = new PageList<Point>(arena);
+points.Add(new Point(1, 2));
+using var branch = points.Duplicate();
+branch[0] = new Point(3, 4);
+branch.Write(0, branch.Count, static (_, values) =>
+{
+    for (int i = 0; i < values.Length; i++)
+        values[i] = values[i] with { X = values[i].X * 2 };
+});
 ```
 
-文件中的负载未读取时，应通过明确的异步读取或写入入口取得字节，而不是由属性 getter 发起 I/O。字节编辑未结束时，当前资产实现拒绝继续保留、分支、保存或加载，避免这些操作与正在写入的内存并行。调用方也不能把可写 Span 带出约定的编辑边界继续使用。
+`Point` 是可安全复制的业务值。批量写提供同步 Span，在同一分支写入期间拒绝复制、重新共享、保存、重绑定及释放，也拒绝通过兄弟字段绕开边界。写回调不能跨 await；不返回长期可写 ref 或 Memory 来承诺透明 COW。
 
-## 尚未具备的保证
+## 读取范围与异步工作
 
-不能泄露共享的裸可变子对象、集合或可写内存，又声称任意嵌套赋值自动隔离。写入必须能定位当前分支；具体入口怎样表达仍待确认。第三方可变对象也需要明确适配，不能假设其任意写入可被接管。
+`PageRange<T>` 保留所需页并提供可复用的分段读取。小范围仍可能保留较大的底层数组；保留 1 字节不代表只占用 1 字节内存。释放范围后继续保存裸 CLR 引用不延长允许使用期间。
 
-先前自行引入的整片不可变记录与不可变集合方案未得到确认，不能作为上述原则的替代。当前的部分通过测试也不能证明任意嵌套写入已经正确，证据范围见 [[Asset-Verification-2026-09-10]]。
+调度器先取得预算和最终页目标，读取、解压以及无法即时取消的操作真实结束后才允许归还。缓存移除后仍由使用对象保留的页继续计费；最后一个读者结束才释放。预算不足时可以回收无活跃使用的清洁缓存，但不能丢弃未保存修改。
 
-代码入口：[SharedData](../../../src/SomeEngine.Serialization/Containers/SharedData.cs)、[SharedBytes](../../../src/SomeEngine.Serialization/Containers/SharedBytes.cs)、[BufferRead](../../../src/SomeEngine.Serialization/Containers/BufferRead.cs)、[资产字节编辑](../../../src/SomeEngine.Assets/Asset.cs)。
+## 首版参数与证据
 
-返回 [[Asset-Files]]；关联 [[Asset-File-IO]]、[[Asset-Code-Generation]]。
+当前默认最小页 256 B、最大页 64 KiB、底层数组 256 KiB，每个尺寸档位最多保留一组空数组。大型数据的页上限与小型字段的实际页尺寸不同。64 KiB 在本次大负载取得和异步周转测量中吞吐较高，16 KiB 在部分频繁编辑负载中复制量与中位延迟较低；调用方可以明确配置其竞技场。
+
+没有新建原生内存后端。当前测试和正式测量覆盖分支、共享祖先、首写、批量访问、混合生命周期、长期小范围和异步周转；结果及内存保留代价见 [本次验收](Asset-Verification-2026-09-16.md)。通用 API 说明见 [页与标准缓冲区](../../../docs/AssetPages.md)。

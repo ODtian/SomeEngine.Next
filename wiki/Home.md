@@ -11,10 +11,9 @@
 
 ## 资产架构图谱
 
-从 [[Asset-Files]] 进入完整导航。本次统一完成全部现有资产接入和已讨论的序列化不足修正，未涉及的业务架构保持：
+从 [[Asset-Files]] 进入完整导航。2026-09-12 起，以以下两份重建文件为有效依据：
 
-- [序列化能力审查](architecture/Assets/Asset-Serialization-Review.md)：现有能力、运行证据、成熟实现对比与十项不足。
-- [冻结概念与原则](architecture/Assets/Asset-Rebuild-Principles.md)：21 组原则，明确职责、数据、保证和修改边界。
-- [统一执行任务](architecture/Assets/Asset-Rebuild-Tasks.md)：按依赖完成 43 个任务，同时验收全部资产、序列化修正与有效能力回归。
+- [冻结概念与原则](architecture/Assets/Asset-Rebuild-Principles.md)：先固定职责、数据和保证。
+- [替换范围与执行任务](architecture/Assets/Asset-Rebuild-Tasks.md)：按依赖执行 34 个小任务并逐项验收。
 
-原主题页仅需更新与已讨论变化冲突的内容；未涉及架构继续有效。当前完成的是源码审查与文档范围修正，对应实现任务尚未执行。
+原资产主题页已标记为旧说明，不再约束新实现。当前完成的是文档冻结，生产代码尚未重建。

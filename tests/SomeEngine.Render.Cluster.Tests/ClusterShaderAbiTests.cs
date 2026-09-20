@@ -1,0 +1,739 @@
+using System.Numerics;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
+using SlangShaderSharp;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+using SomeEngine.Render.Cluster;
+using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Instances;
+using SlangShaderReflection = SlangShaderSharp.ShaderReflection;
+
+namespace SomeEngine.Render.Cluster.Tests;
+
+[Collection(SlangReflectionCollection.Name)]
+public sealed class ClusterShaderAbiTests : IDisposable
+{
+    private readonly List<ComObject> _compilerObjects = [];
+    private readonly HashSet<ComObject> _seen = new(ReferenceEqualityComparer.Instance);
+
+    private T Hold<T>(T value)
+    {
+        if (value is ComObject native && _seen.Add(native)) _compilerObjects.Add(native);
+        return value;
+    }
+
+    public void Dispose()
+    {
+        // Slang children can depend on their session. Release children before their parents,
+        // including on assertion failure, rather than relying on finalizer ordering.
+        List<Exception>? errors = null;
+        for (int index = _compilerObjects.Count - 1; index >= 0; index--)
+        {
+            try { _compilerObjects[index].FinalRelease(); }
+            catch (Exception error) { (errors ??= []).Add(error); }
+        }
+        _compilerObjects.Clear();
+        _seen.Clear();
+        if (errors is not null) throw new AggregateException("Shader test cleanup failed.", errors);
+    }
+
+    // Sorts before SomeEngine ids so the exact-layout probe exercises shifted Cluster ordinals.
+    private const string TestTintCanonicalId = "material.test.tint";
+
+    [Fact]
+    public void Hardware_indices_match_every_software_tessellation_pattern()
+    {
+        MethodInfo create = typeof(ClusterPipelineSystem).GetMethod("CreateTessellationPatternIndices",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        ushort[] indices = (ushort[])create.Invoke(null, null)!;
+        string shader = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "assets", "Shaders", "cluster_tessellation_types.slang"));
+        string table = System.Text.RegularExpressions.Regex.Match(shader,
+            @"TESS_PATTERN_TRIANGLES\[204\]\s*=\s*\{([^}]+)\}").Groups[1].Value;
+        uint[] triangles = System.Text.RegularExpressions.Regex.Matches(table, @"(\d+)u")
+            .Select(static match => uint.Parse(match.Groups[1].Value)).ToArray();
+        Assert.Equal(204, triangles.Length);
+        Assert.Equal(triangles.Length * 3, indices.Length);
+        for (int triangle = 0; triangle < triangles.Length; triangle++)
+        for (int corner = 0; corner < 3; corner++)
+            Assert.Equal((triangles[triangle] >> (corner * 6)) & 63u, indices[triangle * 3 + corner]);
+    }
+
+    [Fact]
+    public async Task Cooked_default_geometry_entries_retain_vertex_contract_attributes()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        (string AssetName, string EntryPoint, string Subject, ClusterConservativeBounds Bounds)[] geometryEntries =
+        [
+            ("sw_raster.shader.asset", "CSSWRasterBufferAtomic64", "software visibility raster", ClusterConservativeBounds.Finite),
+            ("cluster_draw.shader.asset", "VSVisBuffer", "hardware visibility raster", ClusterConservativeBounds.Finite),
+            ("cluster_tessellation_phong.shader.asset", "SeedPhongTessellation", "tessellation seed", ClusterConservativeBounds.Unbounded),
+            ("cluster_tessellation_phong.shader.asset", "ClusterTessellationHardwareVertex", "hardware tessellation raster", ClusterConservativeBounds.Unbounded),
+        ];
+        foreach ((string assetName, string entryPoint, string subject, ClusterConservativeBounds expectedBounds) in geometryEntries)
+        {
+            using Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(
+                repositoryRoot,
+                "templates",
+                "DefaultProject",
+                "assets",
+                "Shaders",
+                assetName));
+
+            Assert.Equal(
+                ClusterTestAssets.StandardVertexEncoding,
+                ClusterGeometryContracts.RequireVertexEncoding(shader, entryPoint, subject));
+            Assert.Equal(
+                expectedBounds,
+                ClusterGeometryContracts.RequireConservativeBounds(
+                    shader,
+                    entryPoint,
+                    subject));
+        }
+    }
+
+    [Fact]
+    public async Task SharedInstanceLayoutsMatchGeneratedContractAndConsumersCompile()
+    {
+        string shaderDirectory = Path.Combine(FindRepositoryRoot(), "assets", "Shaders");
+        RenderInstancePropertyLayout instanceLayout = ClusterRenderFeature.InstanceLayout;
+
+
+        RenderInstancePropertyLayout materialLayout = CreateTestTintMaterialLayout();
+        RenderInstancePropertyLayout composedLayout = RenderInstancePropertyLayout.Compose(
+            instanceLayout,
+            materialLayout);
+        RenderInstancePropertyKey tintKey = new(TestTintCanonicalId);
+        Assert.True(materialLayout.Contains(tintKey));
+        Assert.True(composedLayout.Contains(tintKey));
+        Assert.False(instanceLayout.Contains(tintKey));
+
+        SlangResult createResult = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession globalSession);
+        Hold(globalSession);
+        Assert.True(createResult.Succeeded, $"Failed to create the Slang global session: {createResult}.");
+
+        SlangProfileID spirvProfile = globalSession.FindProfile("glsl_460");
+        SlangProfileID dxilProfile = globalSession.FindProfile("sm_6_6");
+        Assert.NotEqual(SlangProfileID.Unknown, spirvProfile);
+        Assert.NotEqual(SlangProfileID.Unknown, dxilProfile);
+        TargetDesc[] targets = OperatingSystem.IsWindows() &&
+            RuntimeInformation.ProcessArchitecture == Architecture.X64
+            ?
+            [
+                new TargetDesc
+                    {
+                        Format = SlangCompileTarget.Spirv,
+                        Profile = spirvProfile,
+                    },
+                    new TargetDesc
+                    {
+                        Format = SlangCompileTarget.Dxil,
+                        Profile = dxilProfile,
+                    },
+            ]
+            :
+            [
+                new TargetDesc
+                    {
+                        Format = SlangCompileTarget.Spirv,
+                        Profile = spirvProfile,
+                    },
+            ];
+        var sessionDesc = new SessionDesc
+        {
+            Targets = targets,
+            SearchPaths = [shaderDirectory],
+        };
+        SlangResult sessionResult = globalSession.CreateSession(sessionDesc, out ISession session);
+        Hold(session);
+        Assert.True(sessionResult.Succeeded, $"Failed to create the Slang reflection session: {sessionResult}.");
+
+        const string transformReflectionSource = """
+                #include "render_instance_transform.slang"
+
+                StructuredBuffer<RenderInstanceTransform> ReflectedTransforms;
+
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void ReflectRenderInstanceTransform(uint3 dispatchThreadId : SV_DispatchThreadID)
+                {
+                }
+                """;
+        string sourcePath = Path.Combine(shaderDirectory, "render_instance_transform_reflection_test.slang");
+        IModule? module = session.LoadModuleFromSource(
+            "render_instance_transform_reflection_test",
+            sourcePath,
+            Hold(Slang.CreateBlob(transformReflectionSource)),
+            out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
+        Assert.True(module is not null, moduleDiagnostics?.AsString ?? "Slang did not return module diagnostics.");
+
+        Type renderInstanceTransform = typeof(SomeEngine.Render.Components.RenderTransform);
+        for (int targetIndex = 0; targetIndex < sessionDesc.Targets.Length; targetIndex++)
+        {
+            SlangShaderReflection reflection = module.GetLayout(
+                targetIndex,
+                out ISlangBlob? layoutDiagnostics);
+            Hold(layoutDiagnostics);
+            Assert.NotEqual(SlangShaderReflection.Null, reflection);
+            Assert.True(
+                layoutDiagnostics is null || string.IsNullOrWhiteSpace(layoutDiagnostics.AsString),
+                layoutDiagnostics?.AsString);
+
+            AssertStructuredBufferLayout(
+                reflection,
+                renderInstanceTransform,
+                "RenderInstanceTransform",
+                48);
+        }
+
+        AssertDirectPropertyAccessCompiles(
+            session,
+            shaderDirectory,
+            sessionDesc.Targets.Length);
+        AssertExactPipelineMaterialLayoutCompiles(
+            session,
+            shaderDirectory,
+            sessionDesc.Targets.Length,
+            composedLayout,
+            composedLayout.Resolve<Vector4>(tintKey));
+        AssertPipelineNeutralMaterialInterfaceCompiles(
+            session,
+            shaderDirectory,
+            sessionDesc.Targets.Length);
+        AssertTextureDisplacementDomainCompiles(
+            session,
+            shaderDirectory,
+            sessionDesc.Targets.Length);
+        await AssertConfiguredClusterOperationsCompile(
+            FindRepositoryRoot(),
+            sessionDesc.Targets.Length);
+    }
+
+    private void AssertExactPipelineMaterialLayoutCompiles(
+        ISession session,
+        string shaderDirectory,
+        int targetCount,
+        RenderInstancePropertyLayout composedLayout,
+        ResolvedRenderInstanceProperty<Vector4> materialTint)
+    {
+        ResolvedRenderInstanceProperty<uint> bvhRoot = composedLayout.Resolve<uint>(
+            ClusterRenderFeature.BvhRootKey);
+
+        string source = $$"""
+                #include "render_instance_properties.slang"
+
+                struct ExactRenderInstanceMetadata
+                {
+                    uint4 PackedWords[({{composedLayout.MetadataWordCount}} + 3) / 4];
+                };
+
+                uint LoadExactRenderInstanceMetadata(
+                    ExactRenderInstanceMetadata metadata,
+                    uint wordIndex)
+                {
+                    return metadata.PackedWords[wordIndex >> 2u][wordIndex & 3u];
+                }
+
+                ByteAddressBuffer ExactInstanceData;
+                ConstantBuffer<ExactRenderInstanceMetadata> ExactInstanceProperties;
+                RWByteAddressBuffer ExactLayoutProbeOutput;
+
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void ExactPipelineMaterialLayoutProbe(uint3 dispatchThreadId : SV_DispatchThreadID)
+                {
+                    uint instanceIndex = dispatchThreadId.x;
+                    uint root = RenderInstanceLoad<uint>(
+                        ExactInstanceData,
+                        LoadExactRenderInstanceMetadata(
+                            ExactInstanceProperties,
+                            {{bvhRoot.Descriptor.MetadataWordOffset}}u),
+                        instanceIndex,
+                        {{bvhRoot.Encoding.StorageStride}}u);
+                    float4 tint = RenderInstanceLoad<float4>(
+                        ExactInstanceData,
+                        LoadExactRenderInstanceMetadata(
+                            ExactInstanceProperties,
+                            {{materialTint.Descriptor.MetadataWordOffset}}u),
+                        instanceIndex,
+                        {{materialTint.Encoding.StorageStride}}u);
+                    ExactLayoutProbeOutput.Store(0u, root);
+                    ExactLayoutProbeOutput.Store4(4u, asuint(tint));
+                }
+                """;
+        const string shaderFile = "exact_pipeline_material_layout_probe.slang";
+        string shaderPath = Path.Combine(shaderDirectory, shaderFile);
+        IModule? module = session.LoadModuleFromSource(
+            "exact_pipeline_material_layout_probe",
+            shaderPath,
+            Hold(Slang.CreateBlob(source)),
+            out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
+        Assert.True(
+            module is not null,
+            $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
+
+        SlangResult entryPointResult = module.FindAndCheckEntryPoint(
+            "ExactPipelineMaterialLayoutProbe",
+            SlangStage.Compute,
+            out IEntryPoint entryPoint,
+            out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
+        Assert.True(
+            entryPointResult.Succeeded,
+            "Failed to check ExactPipelineMaterialLayoutProbe: "
+            + (entryPointDiagnostics?.AsString ?? entryPointResult.ToString()));
+        AssertEntryPointCompiles(
+            session,
+            module,
+            entryPoint,
+            shaderFile,
+            "ExactPipelineMaterialLayoutProbe",
+            targetCount);
+    }
+
+    private static RenderInstancePropertyLayout CreateTestTintMaterialLayout()
+    {
+        var builder = new RenderInstancePropertyLayoutBuilder();
+        _ = builder.Register<Vector4>(
+            "TestTintMaterial",
+            new RenderInstancePropertyKey(TestTintCanonicalId),
+            new RenderInstancePropertyEncoding(
+                "someengine.render.linear.float4.v1",
+                valueSize: 16,
+                storageAlignment: 16,
+                storageStride: 16,
+                metadataWordCount: 1));
+        return builder.Freeze();
+    }
+
+
+    private void AssertPipelineNeutralMaterialInterfaceCompiles(
+        ISession session,
+        string shaderDirectory,
+        int targetCount)
+    {
+        const string source = """
+                #include "material_interfaces.slang"
+
+                RWStructuredBuffer<float3> NeutralInterfaceProbeOutput;
+
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void NeutralMaterialInterfaceProbe(uint3 dispatchThreadId : SV_DispatchThreadID)
+                {
+                    NeutralInterfaceProbeOutput[dispatchThreadId.x] = float3(1.0, 2.0, 3.0);
+                }
+                """;
+        const string shaderFile = "material_interface_neutral_probe.slang";
+        string shaderPath = Path.Combine(shaderDirectory, shaderFile);
+        IModule? module = session.LoadModuleFromSource(
+            "material_interface_neutral_probe",
+            shaderPath,
+            Hold(Slang.CreateBlob(source)),
+            out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
+        Assert.True(
+            module is not null,
+            $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
+
+        SlangResult entryPointResult = module.FindAndCheckEntryPoint(
+            "NeutralMaterialInterfaceProbe",
+            SlangStage.Compute,
+            out IEntryPoint entryPoint,
+            out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
+        Assert.True(
+            entryPointResult.Succeeded,
+            "Failed to check NeutralMaterialInterfaceProbe: "
+            + (entryPointDiagnostics?.AsString ?? entryPointResult.ToString()));
+        AssertEntryPointCompiles(
+            session,
+            module,
+            entryPoint,
+            shaderFile,
+            "NeutralMaterialInterfaceProbe",
+            targetCount);
+    }
+
+    private void AssertTextureDisplacementDomainCompiles(
+        ISession session,
+        string shaderDirectory,
+        int targetCount)
+    {
+        const string source = """
+                #include "texture_displacement.slang"
+
+                Texture2D<float> ProbeDisplacementMap;
+                Texture2D<float2> ProbeDisplacementBoundsMap;
+                SamplerState ProbeLinearRepeatSampler;
+                RWStructuredBuffer<float4> ProbeDisplacementOutput;
+
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void TextureDisplacementDomainProbe(uint3 dispatchThreadId : SV_DispatchThreadID)
+                {
+                    TextureDisplacement domain = MakeTextureDisplacement(
+                        ProbeDisplacementMap,
+                        ProbeDisplacementBoundsMap,
+                        ProbeLinearRepeatSampler,
+                        float2(-2.0, 3.0),
+                        1.0,
+                        0.0);
+                    Triangle triangle = {};
+                    triangle.Normal0 = float3(0.0, 0.0, 1.0);
+                    triangle.Normal1 = triangle.Normal0;
+                    triangle.Normal2 = triangle.Normal0;
+                    float3 minimum;
+                    float3 maximum;
+                    domain.bounds(triangle, minimum, maximum);
+                    float3 bary0 = float3(1.0, 0.0, 0.0);
+                    float3 bary1 = float3(0.0, 1.0, 0.0);
+                    float3 bary2 = float3(0.0, 0.0, 1.0);
+                    float3 position0 = domain.position(triangle, bary0);
+                    float3 position1 = domain.position(triangle, bary1);
+                    float3 position2 = domain.position(triangle, bary2);
+                    DomainErrorBounds error = domain.errorBounds(
+                        triangle,
+                        bary0,
+                        bary1,
+                        bary2,
+                        position0,
+                        position1,
+                        position2);
+                    SurfaceEval evaluation = domain.eval(
+                        triangle,
+                        float3(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0));
+                    ProbeDisplacementOutput[dispatchThreadId.x] =
+                        float4(maximum - minimum + evaluation.Normal * 0.0, error.Interior);
+                }
+                """;
+        const string shaderFile = "texture_displacement_domain_probe.slang";
+        string shaderPath = Path.Combine(shaderDirectory, shaderFile);
+        IModule? module = session.LoadModuleFromSource(
+            "texture_displacement_domain_probe",
+            shaderPath,
+            Hold(Slang.CreateBlob(source)),
+            out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
+        Assert.True(
+            module is not null,
+            $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
+
+        SlangResult entryPointResult = module.FindAndCheckEntryPoint(
+            "TextureDisplacementDomainProbe",
+            SlangStage.Compute,
+            out IEntryPoint entryPoint,
+            out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
+        Assert.True(
+            entryPointResult.Succeeded,
+            "Failed to check TextureDisplacementDomainProbe: "
+            + (entryPointDiagnostics?.AsString ?? entryPointResult.ToString()));
+        AssertEntryPointCompiles(
+            session,
+            module,
+            entryPoint,
+            shaderFile,
+            "TextureDisplacementDomainProbe",
+            targetCount);
+    }
+
+    private static async Task AssertConfiguredClusterOperationsCompile(
+        string repositoryRoot,
+        int targetCount)
+    {
+        string projectRoot = Path.Combine(repositoryRoot, "templates", "DefaultProject");
+        AssetManifest manifest = AssetManifest.Load(
+            Path.Combine(projectRoot, "Library", "AssetManifest"));
+        AssetEntry configurationRecord = Assert.Single(
+            manifest.List(ClusterShadersAsset.FileType));
+        await using var loader = new AssetLoader(
+            new LooseAssetStorage(projectRoot, manifest));
+        await using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(loader, new AssetId<ClusterShadersAsset>(configurationRecord.AssetGuid));
+        using ClusterShaders configuration = await file.GetBlock<ClusterShadersBlock>().CreateAsync(file.Name, loader);
+        IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
+            file.GetBlock<ClusterShadersBlock>().Operations);
+        Assert.Equal(operations.Count, configuration.Operations.Count);
+        Assert.Equal(
+            Enum.GetValues<ClusterShaderOperationRole>()
+                .Count(static role => role != ClusterShaderOperationRole.None),
+            operations.Count);
+
+        var shaders = new Dictionary<Guid, Shader>();
+        try
+        {
+            foreach (ClusterShaderOperation operation in operations)
+            {
+                IList<ShaderRef> entries = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders);
+                Assert.NotEmpty(entries);
+                ShaderRef first = entries[0];
+                Guid shaderGuid = first.Asset.Value;
+                Assert.All(entries, entry => Assert.Equal(first.Asset, entry.Asset));
+                using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(loader, new(shaderGuid));
+                Assert.Equal(shaderFile.Name, configuration.Operations.Single(value => value.Role == operation.Role).Shaders[0].Shader.Name);
+                if (!shaders.TryGetValue(shaderGuid, out Shader? shader))
+                {
+                    Assert.True(manifest.TryGetAsset(shaderGuid, out AssetEntry description));
+                    Assert.NotEmpty(description.DefinitionPath);
+                    string path = Path.GetFullPath(Path.Combine(projectRoot, description.DefinitionPath));
+                    using ShaderAsset definition = await ShaderAsset.OpenSourceAsync(path);
+                    if (targetCount == 1) definition.GetBlock<ShaderSourceBlock>().Targets = [SomeEngine.Graphics.ShaderTarget.Spirv];
+                    using ShaderAsset compiled = SlangShaderImporter.CompileDefinition(definition, path,
+                        includeDirectories: [Path.Combine(repositoryRoot, "assets", "Shaders")]);
+                    shader = await compiled.GetBlock<ShaderBlock>().CreateAsync(compiled.Name);
+                    shaders.Add(shaderGuid, shader);
+                }
+                foreach (ShaderRef entry in entries)
+                    foreach (string backend in targetCount == 1 ? new[] { "spirv" } : new[] { "spirv", "dxil" })
+                    {
+                        Assert.True(shader.TryEntry(backend, Assert.IsType<string>(entry.EntryPoint), entry.Stage, out _, out var compiledEntry),
+                            $"Configured {operation.Role} entry {entry.EntryPoint} is missing from {backend} output.");
+                        Assert.False(compiledEntry.Code.IsEmpty);
+                    }
+            }
+        }
+        finally { foreach (Shader shader in shaders.Values) shader.Dispose(); }
+    }
+    private void AssertDirectPropertyAccessCompiles(
+        ISession session,
+        string shaderDirectory,
+        int targetCount)
+    {
+        const string source = """
+                #include "cluster_instance_properties.slang"
+
+                ByteAddressBuffer InstanceData;
+                ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
+                RWByteAddressBuffer PropertyProbeOutput;
+
+                [shader("compute")]
+                [numthreads(1, 1, 1)]
+                void DirectPropertyProbe(uint3 dispatchThreadId : SV_DispatchThreadID)
+                {
+                    uint instanceIndex = dispatchThreadId.x;
+                    PropertyProbeOutput.Store(
+                        0u,
+                        LoadClusterBvhRoot(
+                            InstanceData,
+                            LoadRenderInstanceMetadata(
+                                InstanceProperties,
+                                CLUSTER_BVH_ROOT_METADATA_WORD),
+                            instanceIndex));
+                    PropertyProbeOutput.Store(
+                        4u,
+                        LoadClusterMaterialSlotOffset(
+                            InstanceData,
+                            LoadRenderInstanceMetadata(
+                                InstanceProperties,
+                                CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
+                            instanceIndex));
+                    PropertyProbeOutput.Store(
+                        8u,
+                        asuint(LoadClusterBoundsExpansion(
+                            InstanceData,
+                            LoadRenderInstanceMetadata(
+                                InstanceProperties,
+                                CLUSTER_BOUNDS_EXPANSION_METADATA_WORD),
+                            instanceIndex)));
+                }
+                """;
+        const string shaderFile = "render_instance_direct_property_probe.slang";
+        string shaderPath = Path.Combine(shaderDirectory, shaderFile);
+        IModule? module = session.LoadModuleFromSource(
+            "render_instance_direct_property_probe",
+            shaderPath,
+            Hold(Slang.CreateBlob(source)),
+            out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
+        Assert.True(
+            module is not null,
+            $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
+
+        SlangResult entryPointResult = module.FindAndCheckEntryPoint(
+            "DirectPropertyProbe",
+            SlangStage.Compute,
+            out IEntryPoint entryPoint,
+            out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
+        Assert.True(
+            entryPointResult.Succeeded,
+            $"Failed to check DirectPropertyProbe: "
+            + (entryPointDiagnostics?.AsString ?? entryPointResult.ToString()));
+        AssertEntryPointCompiles(
+            session,
+            module,
+            entryPoint,
+            shaderFile,
+            "DirectPropertyProbe",
+            targetCount);
+    }
+
+    private void AssertEntryPointCompiles(
+        ISession session,
+        IModule module,
+        IEntryPoint entryPoint,
+        string shaderFile,
+        string entryPointName,
+        int targetCount)
+    {
+        IComponentType[] components = [module, entryPoint];
+        SlangResult composeResult = session.CreateCompositeComponentType(
+            components,
+            out IComponentType composedProgram,
+            out ISlangBlob? composeDiagnostics);
+        Hold(composedProgram);
+        Hold(composeDiagnostics);
+        Assert.True(
+            composeResult.Succeeded,
+            $"Failed to compose entry point {entryPointName} in {shaderFile}: "
+            + (composeDiagnostics?.AsString ?? composeResult.ToString()));
+
+        SlangResult linkResult = composedProgram.Link(
+            out IComponentType linkedProgram,
+            out ISlangBlob? linkDiagnostics);
+        Hold(linkedProgram);
+        Hold(linkDiagnostics);
+        Assert.True(
+            linkResult.Succeeded,
+            $"Failed to link entry point {entryPointName} in {shaderFile}: "
+            + (linkDiagnostics?.AsString ?? linkResult.ToString()));
+
+        for (int targetIndex = 0; targetIndex < targetCount; targetIndex++)
+        {
+            SlangResult compileResult = linkedProgram.GetEntryPointCode(
+                0,
+                targetIndex,
+                out ISlangBlob code,
+                out ISlangBlob? compileDiagnostics);
+            Hold(code);
+            Hold(compileDiagnostics);
+            Assert.True(
+                compileResult.Succeeded && code.GetBufferSize() > 0,
+                $"Failed to compile entry point {entryPointName} in {shaderFile} " +
+                $"for target {targetIndex}: " +
+                (compileDiagnostics?.AsString ?? compileResult.ToString()));
+        }
+    }
+
+    private static void AssertStructuredBufferLayout(
+        SlangShaderReflection reflection,
+        Type managedType,
+        string shaderTypeName,
+        int declaredManagedSize)
+    {
+
+        int managedSize = Marshal.SizeOf(managedType);
+        Assert.Equal(declaredManagedSize, managedSize);
+
+        TypeReflection? reflectedType = reflection.FindTypeByName(shaderTypeName);
+        Assert.True(reflectedType.HasValue, $"Slang did not reflect {shaderTypeName}.");
+
+        TypeLayoutReflection? reflectedLayout = reflection.GetTypeLayout(
+            reflectedType.Value,
+            LayoutRules.DefaultStructuredBuffer);
+        Assert.True(reflectedLayout.HasValue, $"Slang did not lay out {shaderTypeName} as a StructuredBuffer element.");
+
+        TypeLayoutReflection layout = reflectedLayout.Value;
+        Assert.Equal((nuint)managedSize, layout.GetSize(SlangParameterCategory.Uniform));
+        Assert.Equal((nuint)managedSize, layout.GetStride(SlangParameterCategory.Uniform));
+
+        FieldInfo[] managedFields = managedType.GetFields(
+            BindingFlags.Instance |
+            BindingFlags.Public |
+            BindingFlags.NonPublic |
+            BindingFlags.DeclaredOnly);
+
+        foreach (FieldInfo managedField in managedFields)
+        {
+            nuint managedOffset = checked((nuint)Marshal.OffsetOf(managedType, managedField.Name).ToInt64());
+            VariableLayoutReflection reflectedField = VariableLayoutReflection.Null;
+            for (uint index = 0; index < layout.FieldCount; index++)
+            {
+                VariableLayoutReflection candidate = layout.GetFieldByIndex(index);
+                if (candidate.GetOffset(SlangParameterCategory.Uniform) == managedOffset)
+                {
+                    reflectedField = candidate;
+                    break;
+                }
+            }
+            Assert.NotEqual(VariableLayoutReflection.Null, reflectedField);
+            AssertFieldType(managedField, reflectedField.Type);
+            Assert.Equal(
+                managedOffset,
+                reflectedField.GetOffset(SlangParameterCategory.Uniform));
+        }
+    }
+
+
+
+    private static void AssertFieldType(FieldInfo managedField, TypeReflection reflectedType)
+    {
+        Type managedType = managedField.FieldType;
+        if (managedType.IsEnum)
+            managedType = Enum.GetUnderlyingType(managedType);
+
+        if (managedType == typeof(uint))
+        {
+            Assert.Equal(SlangTypeKind.Scalar, reflectedType.Kind);
+            Assert.Equal(SlangScalarType.UInt32, reflectedType.ScalarType);
+            return;
+        }
+        if (managedType == typeof(float))
+        {
+            Assert.Equal(SlangTypeKind.Scalar, reflectedType.Kind);
+            Assert.Equal(SlangScalarType.Float32, reflectedType.ScalarType);
+            return;
+        }
+        if (managedType == typeof(Vector3)
+            || managedType == typeof(Vector4)
+            || managedType == typeof(Quaternion))
+        {
+            Assert.Equal(SlangTypeKind.Vector, reflectedType.Kind);
+            Assert.Equal(SlangScalarType.Float32, reflectedType.ScalarType);
+            Assert.Equal(
+                managedType == typeof(Vector3) ? (nuint)3 : 4,
+                reflectedType.ElementCount);
+            return;
+        }
+
+        Assert.Fail(
+            $"Cluster shader ABI test has no scalar/vector contract for " +
+            $"{managedField.DeclaringType?.Name}.{managedField.Name} ({managedType}).");
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException(
+            $"Could not find the SomeEngine repository above {AppContext.BaseDirectory}.");
+    }
+}
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class SlangReflectionCollection
+{
+    public const string Name = "Slang reflection";
+}

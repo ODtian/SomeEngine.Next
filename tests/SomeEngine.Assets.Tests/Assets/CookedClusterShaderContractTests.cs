@@ -1,5 +1,6 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Tests;
 
 namespace SomeEngine.Assets.Tests.Assets;
@@ -120,7 +121,7 @@ public sealed class CookedClusterShaderContractTests
     [Fact]
     public async Task StandardShadeEntryConsumesMaterialLightingAndVirtualShadowResources()
     {
-        Shader shader = await ReadCookedShader("cluster_shade_material.shader.asset");
+        Shader shader = await ReadTemplateShader("standard.shader.asset");
         string[] resources = ResourceNames(shader, "ClusterShade");
 
         Assert.Contains("AlbedoMap", resources);
@@ -139,9 +140,9 @@ public sealed class CookedClusterShaderContractTests
     }
 
     [Fact]
-    public async Task BuiltInMaterialShaderExposesAllFixedClusterEntries()
+    public async Task ProjectMaterialShaderExposesItsSupportedClusterEntries()
     {
-        Shader shader = await ReadCookedShader("cluster_shade_material.shader.asset");
+        Shader shader = await ReadTemplateShader("standard.shader.asset");
         (string Entry, ShaderStage Stage)[] entries =
         [
             ("ClusterRasterSoftwareImageAtomic64", ShaderStage.Compute),
@@ -219,23 +220,23 @@ public sealed class CookedClusterShaderContractTests
     private static async Task<(Shader Shader, string EntryPoint)> ConfiguredComputeOperation(
         ClusterShaderOperationRole role)
     {
-        string root = TestProjectPaths.ProjectRoot();
+        string root = TestProjectPaths.DefaultProjectRoot();
         string manifestDirectory = Path.Combine(root, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         AssetEntry configurationRecord = Assert.Single(
-            manifest.List(ClusterShaders.Asset.FileType));
-        using ClusterShaders.Asset configuration = await ClusterShaders.Asset.OpenAsync(
+            manifest.List(ClusterShadersAsset.FileType));
+        using ClusterShadersAsset configuration = await ClusterShadersAsset.OpenAsync(
             Path.Combine(root, configurationRecord.Path));
         ClusterShaderOperation operation = Assert.Single(
-            configuration.Operations!,
+            configuration.GetBlock<ClusterShadersBlock>().Operations,
             candidate => candidate.Role == role);
         ShaderRef shaderRef = Assert.Single(operation.Shaders!);
         Assert.Equal(ShaderStage.Compute, shaderRef.Stage);
         Assert.False(string.IsNullOrWhiteSpace(shaderRef.EntryPoint));
-        Assert.True(Guid.TryParse(shaderRef.AssetGuid, out Guid shaderGuid));
+        Guid shaderGuid = shaderRef.Asset.Value;
         Assert.True(manifest.TryGetAsset(shaderGuid, out AssetEntry shaderRecord));
-        using Shader.Asset file = await Shader.Asset.OpenAsync(Path.Combine(root, shaderRecord.Path));
-        Shader shader = await Shader.CreateAsync(file);
+        using ShaderAsset file = await ShaderAsset.OpenAsync(Path.Combine(root, shaderRecord.Path));
+        Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
         return (shader, shaderRef.EntryPoint!);
     }
 
@@ -253,9 +254,15 @@ public sealed class CookedClusterShaderContractTests
 
     private static async ValueTask<Shader> ReadCookedShader(string assetName)
     {
-        await using Shader.Asset file = await Shader.Asset.OpenAsync(Path.Combine(
-            TestProjectPaths.ProjectRoot(), "assets", "Shaders", assetName));
-        return await Shader.CreateAsync(file);
+        await using ShaderAsset file = await ShaderAsset.OpenAsync(TestProjectPaths.BuiltShaderPath(assetName));
+        return await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
+    }
+
+    private static async ValueTask<Shader> ReadTemplateShader(string assetName)
+    {
+        await using ShaderAsset file = await ShaderAsset.OpenAsync(Path.Combine(
+            TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", assetName));
+        return await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
     }
 
     private static string[] Sorted(params string[] names)

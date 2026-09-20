@@ -1,47 +1,27 @@
 # 资产架构导航
 
-资产重构于 2026-09-12 明确范围：**只修改已讨论的设计及必要接入，未讨论的架构保持。** 现有序列化、范围来源、读取调度和资产包继续使用。
+2026-09-16：Asset 重构的 A00–A33、B00–B08 共 43 项任务已按原范围完成实现与验收。重新核对原对话后，又补齐进程内 Block 的保存依赖及 Context 并发关闭等待两项公开行为，最终完整回归为 2625 项通过、0 失败、3 项原有条件跳过。新导入架构已同步原主题页；历史记录保留其当时范围，不再作为当前 API 示例。
 
-用户已将独立序列化审查及成熟实现对比中确认的全部不足纳入同一次重构。有效实现继续复用，认证、预算、写入边界、职责、公开 API、根描述、字段排列和视图访问必须完成修正。
+## 当前模型
 
-**全部现有资产及其消费者必须接入新体系。** 通用能力可以复用，已确认缺陷需要修正；任何现有资产都不能以“保持旧架构”为由留在旧流程。执行任务包含按资产家族登记的完整接入清单。
+Asset 是身份、引用和生命周期单位；Block 是 Asset 内开放、强类型的内容单位。Asset 按 Block 的持久类型身份直接索引，不保证全部数据驻留。Block 自己负责数据表达和取得，现有页管理负责底层分页、读取、预算与驻留；具体系统取得需要的 Block 后创建可直接使用的业务对象。
 
-## 当前有效的设计与执行依据
+项目引用决定可用 Block 与 Importer。SG 生成 Microsoft DI 注册与能力描述，来源设置决定本次启用项，Context 缓存依赖执行；完整来源读取、遍历、目标身份、保存登记、失败处理及重新导入由工程流程统一负责。Scene 引用语义 MeshAsset，而不是某个管线表示。
 
-- [序列化能力审查](Assets/Asset-Serialization-Review.md)：现有能力、149 个既有测试结果、四项探针证据，以及 D01–D10 的问题与对应任务。
-- [冻结概念与原则](Assets/Asset-Rebuild-Principles.md)：21 组原则，覆盖资产与序列化职责、API、数据、使用保证和渲染边界。
-- [统一执行任务](Assets/Asset-Rebuild-Tasks.md)：A00–A33 与 B00–B08 共 43 个任务，包含全部现有资产及全部审查不足的覆盖与验收。
+## 设计、任务和证据
 
-本次已修正文档范围和任务拆分，本文对应的生产实现任务尚未执行。实现前先核查现有能力，只有明确冲突才修改；新增概念或扩大范围必须先补充依据并更新原则。
+[重构原则](Assets/Asset-Rebuild-Principles.md) 包含既有边界和新导入架构；[统一任务](Assets/Asset-Rebuild-Tasks.md) 记录 43 项交付；[执行记录](Assets/Asset-Rebuild-Execution.md) 保留实施过程；[2026-09-16 验证](Assets/Asset-Verification-2026-09-16.md) 记录最终完整回归、额外 18 项图形测试、三套原生 AOT、独立来源构建、默认项目及六种真实渲染场景，并区分历史结果与平台边界。
 
-## 整体关系
+## 主题
 
-```mermaid
-flowchart LR
-    Source[源文件与资产定义] --> Build[发现、导入与构建]
-    Build --> Catalog[目录与 Manifest]
-    Catalog --> Storage[选定内容来源与版本]
-    Storage --> Binary[现有文档与范围读取]
-    Binary --> Asset[独立 Asset 类型]
-    Asset -->|显式创建或更新| Value[普通使用对象 T]
-    Asset --> Pages[通用页与 COW]
-    Value -->|保留使用所需数据| Pages
-    Value --> Game[Game world]
-    Game -->|既有提取流程| Render[Rendering world]
-    Types[类型与格式注册] --> Build
-    Types --> Asset
-```
+[对象模型](Assets/Asset-Objects.md) · [职责](Assets/Asset-Responsibilities.md) · [编译期生成](Assets/Asset-Code-Generation.md) · [导入与工程存储](Assets/Asset-Import-and-Storage.md) · [身份与引用](Assets/Asset-Identity-and-Dependencies.md)
 
-目录不持有内容页或业务对象。Asset 的普通引用不承诺全部内容驻留；T 在有效期间持有所需数据。字段写入不隐藏读盘，渲染不增加资产旁路。
+[文件读写](Assets/Asset-File-IO.md) · [取得和生命周期](Assets/Asset-Loading-and-Lifetime.md) · [共享与写入](Assets/Asset-Sharing-and-Writes.md) · [验证](Assets/Asset-Validation.md) · [已解决设计与边界](Assets/Asset-Open-Questions.md)
 
-## 原主题页的状态
+[Shader](Assets/Asset-Shaders.md) · [Texture](Assets/Asset-Textures.md) · [Mesh](Assets/Asset-Meshes.md) · [Material](Assets/Asset-Materials.md) · [World](Assets/Asset-Worlds.md) · [项目与渲染接入](Assets/Asset-Application-and-Rendering.md)
 
-Assets 中的其他主题页及 docs/AssetSystem.md 记录现有设计和历史验证。与上述明确变化冲突的段落需要更新，未涉及的架构继续适用；历史验证记录仅表示当时实际检查的结果。
+## 与其他系统的关系
 
-A32 按实际变更逐段更新说明，不整页宣布失效。嵌套资产、字段镜像和明确修正的序列化行为不作为兼容要求；有效编码、范围读取、包及未涉及业务能力继续使用。必要协议调整明确版本与消费者范围。
+沿用既有静态编码、文档、范围 I/O、调度、预算、包、签名、差分、原生布局与 ECS。使用对象不反向依赖资产设施。Game world 到 Rendering world 的数据通路和用户 Shader 解释权保持，未增加几何提交旁路或另一套页、GPU 生命周期。
 
-## 与其他架构的关系
-
-[[DRY]]、[[SRP]] 约束主要数据持有者及共同流程；[[ECS-Architecture]] 规定实际 World 和组件拓扑；[[Render-Boundaries]]、[[Render-Graph]] 规定 Game world 到 Rendering world 的既有路径及资源使用期限；[[Product-Boundary]] 规定工具和产品边界。
-
-所有新资产架构定义和任务继续集中在结构化 wiki。其他目录只放必要的导航，不再复制一套设计正文。
+Vulkan 非呈现回归通过，但现有呈现限制未改变；最新真实应用多帧验证覆盖硬件 D3D12 的独立项目和六种场景，未完成的 WARP 尝试不计成功。多个独立文件的导入回退不等于断电时整体原子性。具体边界与性能参数以当前验证记录为准。

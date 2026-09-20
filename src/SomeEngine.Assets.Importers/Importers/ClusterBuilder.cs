@@ -8,11 +8,12 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SharpGLTF.Schema2;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
-using MeshAsset = SomeEngine.Assets.Schema.Mesh.Asset;
-using ValueType = SomeEngine.Assets.Data.ValueType;
+using MeshAsset = SomeEngine.Assets.Schema.MeshAsset;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -508,8 +509,7 @@ public static partial class ClusterBuilder
         state.MaterialSlots.Add(
             primitiveIndex < materialSlots.Count
                 ? materialSlots[primitiveIndex]
-                : throw new InvalidDataException(
-                    $"MeshAsset primitive {primitiveIndex} has no material/deform cook slot."));
+                : default);
         AddMaterialIndices(state.MaterialIndices, primitiveIndex, positions.Length);
         return vertexOffset + (uint)positions.Length;
     }

@@ -1,41 +1,29 @@
-# Mesh 资产与负载范围
+# 语义 MeshAsset 与管线 Block
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16。Scene 引用 `AssetId<MeshAsset>`，不绑定 Cluster 或其他管线的具体表示。一个 MeshAsset 可以同时具有多个互相独立的强类型 Block。
 
-`Mesh.Asset` 持有可编辑的 Mesh 描述和负载来源；应用中的 `Mesh` 提供实际几何资源及按页读取能力。文件和对象的区别见 [[Asset-Objects]]，读取边界见 [[Asset-File-IO]]。
+`MeshBlock` 保存通用几何描述、边界和区域。`MeshMaterialsBlock` 保存区域直接引用的语义材质。`ClusterMeshBlock` 保存 Cluster 表示所需的顶点编码、payload 描述、BVH 和页摘要。将来其他扩展可添加自己的 Block，不更改 Scene 的 MeshAsset 身份。
 
-## 数据布局
+## 生产与查询
 
-Mesh 的元数据包括边界、顶点编码标识、区域、材质引用、负载位置与长度，以及页摘要等读取所需信息。
+通用 glTF 几何 Importer 只生产 MeshBlock；Cluster Importer 只生产 ClusterMeshBlock，并接收项目明确提供的顶点编码器。材质引用由独立 Importer 生产。无材质几何不被迫依赖 Standard 或 Unlit。
 
-**当前 Mesh 的 page 位于一个大的 payload chunk 内。** page 是该负载中的范围，不能在文档中把它说成与 Texture tile 相同的独立文件 chunk。BVH 与页布局也有明确位置关系。
+Importer 直接使用 glTF 库的 Mesh 对象；多个生产者在一次 Context 中写同一 Asset 的不同 Block。竞争同一种 Block 的生产者必须明确选择或报错，不依赖执行顺序覆盖。
 
-改变页布局可能同时影响页偏移、负载长度、摘要和 BVH。修改这些数据必须遵守 Mesh 的业务含义；通用字节编辑只保证字节分支隔离，不保证任意字节修改后仍是合法 Mesh。
+管线直接请求认识的 Block。取得是按持久类型 ID 的索引查询，不遍历全部块，也不通过行为枚举解释通用数据袋。
 
-## 顶点解释权
+## payload 与页
 
-渲染架构不预设一种顶点属性布局。Mesh 可以传输不透明的用户编码内容，材质与 shader 决定怎样解释。
+Cluster 的多个几何页是同一个 payload chunk 内的范围，BVH 有自己的偏移、长度和摘要。它们不是 Texture 的独立 tile chunk，内存 COW 页也不与几何页强制一一对应。既有页编码、BVH、完整性验证及流送机制继续使用。
 
-导入工具中的某个具体编码器可以选择自己的输出格式，但不能把该工具的格式升级为引擎管线的默认布局，也不能在运行路径读取字段元数据做动态多态。相关边界见 [[Asset-Shaders]] 和 [[Render-Boundaries]]。
+`ClusterMeshBlock.CreateAsync(geometry, name)` 完成 BVH 取得后创建 Mesh；已经声明就绪的数据在使用期间直接可读。后续几何页通过明确的 `LoadPagesAsync` 或保留的 `MeshPayloadSource` 接入既有页调度，不能在 Mesh 的普通属性中调用 Asset 查询。
 
-## 读取与保存
+只改名字或元数据的保存可以复制原有 payload 编码，不先解压完整几何。实际修改 payload 时，偏移、长度、页摘要与 BVH 必须继续相符，通用字节 COW 不替代几何合法性检查。
 
-打开文件取得根数据与负载来源；创建流式 Mesh 保留所需范围访问。页和 BVH 读取继续写入已有 Cluster 使用的目标缓冲并验证摘要，不要求先物化整份 Mesh。
+## 渲染连接
 
-根信息编辑后的保存可以复制来源中的原负载块。明确请求 `ReadPayloadAsync` 则会读取该负载，不能把这种显式全负载操作和页范围流式读取混为一谈。
+顶点数据解释由用户材质和 Shader 决定。某个导入编码器不是全引擎固定顶点布局。实际 Mesh、Material 进入同一个 Game world，通过已有提取进入 Rendering world，不增加资产直接提交几何的路径。
 
-已在内存的负载可以通过 `ReadPayload` 保留读取者，通过 `WritePayload` 进行独立写入；文件负载有对应异步入口。共享字节的成本与约束见 [[Asset-Sharing-and-Writes]]。
+验证覆盖冷读、共享和局部编辑、旧来源保留、页完整性、同 Mesh 多 Block、外部生产者、原生 AOT 及真实多帧绘制，见 [本次验收](Asset-Verification-2026-09-16.md)。
 
-## 更新和渲染接入
-
-显式更新同一个 Mesh 时，旧的页读取保留自己需要的来源；新内容的 revision 不替代实体身份或资产 ID。打开新文件版本也不要求先销毁旧 Cluster 数据。
-
-Game world 持有实际 Mesh 与材质绑定，通过现有提取进入 Rendering world。不能因资产迁移增加旁路提交接口、固定顶点布局或另一套几何对象。场景连接见 [[Asset-Worlds]]、[[Asset-Application-and-Rendering]]。
-
-## 当前限制与入口
-
-区域、材质列表、页摘要等嵌套元数据的公开写入形式仍在 [[Asset-Open-Questions]] 中。不能以目前的不可变集合改动代替最终决定。
-
-代码入口：[字段声明](../../../src/SomeEngine.Assets/Schema/Mesh.Fields.cs)、[创建与更新](../../../src/SomeEngine.Assets/Schema/Mesh.Loading.cs)、[流式处理](../../../src/SomeEngine.Assets/Schema/Mesh.Streaming.cs)、[负载来源](../../../src/SomeEngine.Assets/Pipeline/MeshPayloadSource.cs)。
-
-返回 [[Asset-Files]]；关联 [[Asset-Textures]]、[[Asset-Materials]]、[[Asset-Validation]]。
+实现：[MeshAsset](../../../src/SomeEngine.Assets/Schema/MeshAsset.cs)、[MeshBlock](../../../src/SomeEngine.Assets/Schema/MeshBlock.cs)、[ClusterMeshBlock](../../../src/SomeEngine.Assets/Schema/ClusterMeshBlock.cs)、[几何生产者](../../../src/SomeEngine.Assets.Importers/Importers/GltfMeshImporter.cs)、[Cluster 生产者](../../../src/SomeEngine.Assets.Importers/Importers/ClusterGltfMeshImporter.cs)。

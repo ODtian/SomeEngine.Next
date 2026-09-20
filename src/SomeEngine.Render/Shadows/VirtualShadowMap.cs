@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Components;
@@ -84,61 +85,51 @@ public sealed class VirtualShadowMap : IDisposable
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.MarkPages,
                 "Virtual shadow receiver page marking");
             markCoarsePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.MarkCoarsePages,
                 "Virtual shadow coarse page marking");
             allocatePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.AllocatePages,
                 "Virtual shadow physical-page allocation");
             clearPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.ClearPages,
                 "Virtual shadow active-page clear");
             initializeState = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.InitializeState,
                 "Virtual shadow state initialization");
             invalidateCasters = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.InvalidateCasters,
                 "Virtual shadow caster invalidation");
             buildPagePool = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.BuildPagePool,
                 "Virtual shadow page-pool build");
             compactViews = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.CompactViews,
                 "Virtual shadow active-view compaction");
             initializePageHiZ = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.InitializePageHiZ,
                 "Virtual shadow physical-page HiZ initialization");
             reducePageHiZ = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                shaders,
                 shaders.ReducePageHiZ,
                 "Virtual shadow physical-page HiZ reduction");
             dynamicResolution = LinkedComputePipeline.Create(

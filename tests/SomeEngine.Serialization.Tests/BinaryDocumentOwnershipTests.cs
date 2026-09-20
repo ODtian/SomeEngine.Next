@@ -94,7 +94,7 @@ public sealed class BinaryDocumentOwnershipTests
     }
 
     [Fact]
-    public async Task MemoryMappedDocumentRejectsSecondOwnedPayloadBacking()
+    public async Task MemoryMappedDocumentReadsIntoTheExplicitDestination()
     {
         string path = TemporaryPath();
         try
@@ -110,16 +110,20 @@ public sealed class BinaryDocumentOwnershipTests
                 MemoryMappedRangeSource.Open(path),
                 ownsSource: true);
             int factoryCalls = 0;
-            NotSupportedException error = await Assert.ThrowsAsync<NotSupportedException>(
-                () => document.TryReadChunkAsync(
+            byte[] destination = new byte[4096];
+            Array.Fill(destination, (byte)31);
+            Memory<byte>? result = await document.TryReadChunkAsync(
                     0xB002,
                     length =>
                     {
                         factoryCalls++;
-                        return new byte[length];
-                    }).AsTask());
+                        Assert.Equal(destination.Length, length);
+                        return destination;
+                    });
 
-            Assert.Equal(0, factoryCalls);
+            Assert.Equal(1, factoryCalls);
+            Assert.Equal(destination.AsMemory(), result);
+            Assert.All(destination, value => Assert.Equal(0, value));
         }
         finally
         {
@@ -130,7 +134,7 @@ public sealed class BinaryDocumentOwnershipTests
     private static string TemporaryPath()
         => Path.Combine(Path.GetTempPath(), $"SomeEngine-binary-document-{Guid.NewGuid():N}.bin");
 
-    private sealed class LargeRoot(ReadOnlyMemory<byte> data) : IBinaryContract<LargeRoot>
+    private sealed class LargeRoot(ReadOnlyMemory<byte> data) : IBinarySerializable<LargeRoot>
     {
         public ReadOnlyMemory<byte> Data { get; } = data;
         public static Guid TypeId { get; } = Guid.Parse("58aac27c-9d5c-4c21-9f5e-6b05a44de297");

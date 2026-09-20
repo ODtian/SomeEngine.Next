@@ -1,6 +1,8 @@
 using System.Numerics;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -13,7 +15,7 @@ namespace SomeEngine.Runtime;
 internal sealed class RuntimeScene : IDisposable
 {
     private readonly World _world;
-    private Mesh[] _meshes = [];
+    private (Mesh Mesh, MeshPayloadSource Source)[] _meshes = [];
     private readonly SceneMotion[] _motions;
     private readonly (Entity Entity, PointLight Value)[] _playbackLights;
     private readonly Material[] _playbackMaterials;
@@ -75,7 +77,7 @@ internal sealed class RuntimeScene : IDisposable
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
-        var meshes = new Dictionary<Guid, Mesh>();
+        var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source)>();
         var materials = new Dictionary<Guid, Material>();
         var motions = new List<SceneMotion>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
@@ -85,11 +87,20 @@ internal sealed class RuntimeScene : IDisposable
             foreach (Entity entity in instances)
             {
                 MeshSource source = world.Read<MeshSource>(entity);
-                if (!meshes.TryGetValue(source.Mesh.Value, out Mesh? mesh))
+                if (!meshes.TryGetValue(source.Mesh.Value, out var content))
                 {
-                    using Mesh.Asset file = await Mesh.Asset.OpenAsync(assets, source.Mesh).ConfigureAwait(false);
-                    mesh = await file.LoadAsync().ConfigureAwait(false);
-                    meshes.Add(source.Mesh.Value, mesh);
+                    using MeshAsset file = await MeshAsset.OpenAsync(assets, source.Mesh).ConfigureAwait(false);
+                    MeshBlock geometry = await file.GetBlockAsync<MeshBlock>().ConfigureAwait(false);
+                    ClusterMeshBlock clusters = await file.GetBlockAsync<ClusterMeshBlock>().ConfigureAwait(false);
+                    Mesh mesh = await clusters.CreateAsync(geometry, file.Name).ConfigureAwait(false);
+                    MeshPayloadSource? pages = null;
+                    try
+                    {
+                        pages = await clusters.OpenPayloadSourceAsync().ConfigureAwait(false);
+                        content = (mesh, pages);
+                        meshes.Add(source.Mesh.Value, content);
+                    }
+                    catch { try { pages?.Dispose(); } finally { mesh.Dispose(); } throw; }
                 }
                 MaterialSource[] sources = [];
                 world.ExecuteBufferRead<MaterialSource, MaterialSource[]>(entity, ref sources,
@@ -97,11 +108,11 @@ internal sealed class RuntimeScene : IDisposable
                 var bindings = new MeshMaterialBinding[sources.Length];
                 for (int index = 0; index < sources.Length; index++)
                 {
-                    AssetId<Material> id = sources[index].Material;
+                    AssetId<MaterialAsset> id = sources[index].Material;
                     if (!materials.TryGetValue(id.Value, out Material? material))
                     {
-                        using Material.Asset file = await Material.Asset.OpenAsync(assets, id).ConfigureAwait(false);
-                        material = await file.LoadAsync(assets).ConfigureAwait(false);
+                        using MaterialAsset file = await MaterialAsset.OpenAsync(assets, id).ConfigureAwait(false);
+                        material = await file.CreateAsync(assets).ConfigureAwait(false);
                         materials.Add(id.Value, material);
                     }
                     bindings[index] = new(material);
@@ -109,7 +120,8 @@ internal sealed class RuntimeScene : IDisposable
                 TransformQvvs transform = world.Read<WorldTransform>(entity).Qvvs;
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
-                world.Add(entity, new MeshInstance { Mesh = mesh, BoundsExpansion = source.BoundsExpansion });
+                world.Add(entity, new MeshInstance { Mesh = content.Mesh, PageSource = content.Source,
+                    BoundsExpansion = source.BoundsExpansion });
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 world.ExecuteBufferWrite<MeshMaterialBinding, MeshMaterialBinding[]>(entity, ref bindings,
                     static (DynamicBuffer<MeshMaterialBinding> buffer, ref MeshMaterialBinding[] values) =>
@@ -146,8 +158,11 @@ internal sealed class RuntimeScene : IDisposable
             var errors = new List<Exception> { failure };
             foreach (Material material in materials.Values)
                 try { material.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
-            foreach (Mesh mesh in meshes.Values)
-                try { mesh.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
+            foreach (var mesh in meshes.Values)
+            {
+                try { mesh.Mesh.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
+                try { mesh.Source.Dispose(); } catch (Exception cleanup) { errors.Add(cleanup); }
+            }
             if (errors.Count != 1) throw new AggregateException("Scene loading and cleanup failed.", errors);
             throw;
         }
@@ -191,7 +206,7 @@ internal sealed class RuntimeScene : IDisposable
     }
 
     // Reproducible input for renderer measurements; this is scene behavior, not trace policy.
-    internal void Play(float seconds, bool animateMaterials)
+    internal void Play(float seconds, bool animateMaterials, Func<Material, float, bool>? animateMaterial = null)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Playback);
         Update(seconds);
@@ -206,11 +221,7 @@ internal sealed class RuntimeScene : IDisposable
         int changingMaterials = 0;
         if (animateMaterials)
             foreach (Material material in _playbackMaterials)
-                if (material is StandardMaterial standard)
-                {
-                    standard.Roughness = 0.5f + MathF.Sin(seconds) * 0.2f;
-                    changingMaterials++;
-                }
+                if (animateMaterial?.Invoke(material, seconds) == true) changingMaterials++;
         SomeEngine.Diagnostics.EngineTrace.Counter(MovingLightsTrace, _playbackLights.Length);
         SomeEngine.Diagnostics.EngineTrace.Counter(ChangingMaterialsTrace, changingMaterials);
     }
@@ -301,9 +312,11 @@ internal sealed class RuntimeScene : IDisposable
         foreach (Material material in _playbackMaterials)
             try { material.Dispose(); }
             catch (Exception error) { errors.Add(error); }
-        foreach (Mesh mesh in _meshes)
-            try { mesh.Dispose(); }
-            catch (Exception error) { errors.Add(error); }
+        foreach (var mesh in _meshes)
+        {
+            try { mesh.Mesh.Dispose(); } catch (Exception error) { errors.Add(error); }
+            try { mesh.Source.Dispose(); } catch (Exception error) { errors.Add(error); }
+        }
         _meshes = [];
         if (errors.Count != 0)
             throw new AggregateException("Some scene resources could not be closed.", errors);

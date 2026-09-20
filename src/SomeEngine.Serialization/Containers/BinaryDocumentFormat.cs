@@ -47,9 +47,9 @@ internal static class BinaryDocumentFormat
 {
     internal const int HeaderSize = 128;
     internal const int DirectoryEntrySize = 96;
-    internal const ushort Version = 3;
+    internal const ushort Version = 4;
     internal const int HashSize = Digest256.Size;
-    private static ReadOnlySpan<byte> Magic => "SEBDOC03"u8;
+    private static ReadOnlySpan<byte> Magic => "SEBDOC04"u8;
 
     internal static void WriteHeader(Span<byte> destination, in BinaryDocumentHeader header)
     {
@@ -114,10 +114,12 @@ internal static class BinaryDocumentFormat
             Digest256.Read(source[88..120]));
     }
 
-    internal static byte[] WriteTypeCatalog(IEnumerable<BinaryWireTypeDescriptor> descriptors)
+    internal static byte[] WriteTypeCatalog(BinaryWireTypeDescriptor root, IEnumerable<BinaryWireTypeDescriptor> descriptors)
     {
         BinaryWireTypeDescriptor[] ordered = descriptors
+            .Where(descriptor => descriptor.TypeId != root.TypeId)
             .OrderBy(static descriptor => descriptor.TypeId)
+            .Prepend(root)
             .ToArray();
         int payloadLength = checked(4 + ordered.Length * 32);
         byte[] bytes = new byte[checked(payloadLength + HashSize)];
@@ -145,7 +147,7 @@ internal static class BinaryDocumentFormat
         if (bytes.Length < 4 + HashSize)
             throw new InvalidDataException("Binary type catalog is truncated.");
         int count = BinaryPrimitives.ReadInt32LittleEndian(bytes);
-        if (count < 0 || count > limits.MaxTypeCatalogEntries)
+        if (count <= 0 || count > limits.MaxTypeCatalogEntries)
             throw new InvalidDataException($"Binary type catalog count {count} exceeds configured limits.");
         int expected;
         try

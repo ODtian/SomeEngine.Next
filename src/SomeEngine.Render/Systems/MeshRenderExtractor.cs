@@ -1,5 +1,6 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -307,7 +308,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialOffset,
                     materialCount,
                     MeshChanged: true,
-                    MaterialsChanged: true));
+                    MaterialsChanged: true,
+                    meshes[row].PageSource));
                 _meshSources.Add(source);
             }
 
@@ -383,7 +385,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialOffset,
                     materialCount,
                     meshChanged,
-                    materialsChanged));
+                    materialsChanged,
+                    mesh.PageSource));
             }
 
             bool instancedChanged = instancedChunkChanged &&
@@ -410,10 +413,11 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             Entity entity = context.RetainMirror(snapshot.Source);
             if (snapshot.Transform is { } transform) context.RetainTransform(entity, transform);
             context.Upsert(entity, new RenderInstance());
-            if (snapshot.MeshChanged)
-                context.Upsert(entity, new RenderMesh(snapshot.Mesh, snapshot.BoundsExpansion));
-            if (snapshot.MaterialsChanged)
-                SyncMaterials(context.World, snapshot, entity, allowStructuralChanges: true);
+            context.Upsert(entity, new RenderMesh(
+                snapshot.Mesh,
+                snapshot.BoundsExpansion,
+                snapshot.PageSource));
+            SyncMaterials(context.World, snapshot, entity, allowStructuralChanges: true);
         }
 
         for (int index = 0; index < _instancedSnapshots.Count; index++)
@@ -454,7 +458,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     entity,
                     new RenderMesh(
                         snapshot.Mesh,
-                        snapshot.BoundsExpansion));
+                        snapshot.BoundsExpansion,
+                        snapshot.PageSource));
             }
             if (snapshot.MaterialsChanged)
             {
@@ -585,7 +590,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         int MaterialOffset,
         int MaterialCount,
         bool MeshChanged,
-        bool MaterialsChanged);
+        bool MaterialsChanged,
+        SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource);
 
     private readonly record struct InstancedSnapshot(
         Entity Source,

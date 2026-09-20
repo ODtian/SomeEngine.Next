@@ -1,8 +1,9 @@
 using System.Numerics;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.Collections;
 using SomeEngine.Serialization.Streaming;
 

@@ -1,50 +1,46 @@
 # 资产身份、版本与依赖
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16。资产身份、Block 类型身份、来源身份、内容版本和对象引用表达不同事实。
 
-资产身份、应用对象身份、来源版本和目录记录表达不同事实，不能互相替代。对象身份见 [[Asset-Objects]]，来源的打开与保留见 [[Asset-File-IO]]。
+## 身份和位置
 
-## 各项信息的含义
+`AssetId<TAsset>` 限定语义资产家族，例如 Scene 的 `AssetId<MeshAsset>`、材质引用的 `AssetId<MaterialAsset>`。它不是某个管线表示、使用对象或页的身份。空 ID 表示没有引用，不能用于文件打开。
 
-| 信息 | 表达的事实 | 变化方式 |
-| --- | --- | --- |
-| `AssetId<T>` | 某个资产家族中的资产身份 | 创建时确定；建立不同身份的分支时显式指定 |
-| 应用对象引用 | 某一个实际 `T` 实例 | 普通赋值共享它；显式创建得到另一个实例 |
-| `Name` | 当前资产的名称 | 编辑当前资产时修改 |
-| `SourceVersion` | 当前保留来源文档的版本 | 打开来源时取得；不是保存后自动追踪的版本 |
-| `SourcePath` | 当前打开来源的位置 | 来源信息；保存到另一位置不会悄悄重绑原对象 |
-| `Describe()` | 当前内容与当前来源组成的信息 | 每次从当前名称、引用等数据得到 |
-| `SaveAsync` 返回的 `AssetEntry` | 本次实际写出的名称、依赖、路径与版本 | 保存成功时返回，供调用方登记 |
-| 工程索引中的 `AssetEntry` | 最近一次明确登记的目录信息 | `AssetProject.RegisterAsset` 或导入流程更新 |
+移动、重命名及内容编辑保留资产 ID。`Duplicate()` 建立同一身份的内容分支，`CreateCopy()` 明确产生新身份。普通 C# 引用赋值仍指向同一对象。一个资产 ID 不要求对应唯一 CLR 对象，也不建立全局资产实例缓存。
 
-空 `AssetId<T>` 表示没有资产引用，不能作为文件打开的目标。材质家族统一使用 `AssetId<Material>`；具体 Standard / Unlit 类型不建立新的身份家族，见 [[Asset-Materials]]。
+Block 的持久类型 ID 用来在一个 Asset 内索引某一种内容，不是独立资产 ID。源文件的 SourceGuid 及持久子元素映射用于保持多输出身份；来源路径、内容摘要和临时遍历下标不能替代这些事实。
 
-## 版本与存储
+## 内容版本与条目
 
-Loader 以存储返回的资产 ID 和版本合并读取。散文件存储在打开时检查所选文件版本；资产包存储按包版本选择内容。**存储条目的版本不必等于包内资产文档的版本**，不能统一套上一个内部 GUID 比较。
+| 信息 | 含义 |
+| --- | --- |
+| Asset 当前名称及 Block 内容 | 当前编辑分支的内容 |
+| 来源路径与版本 | 这个对象实际打开并保留的文件 |
+| `Describe()` | 当前身份、名称、Block 引用及来源信息 |
+| 保存返回的 `AssetEntry` | 本次实际写出的文件、版本和引用 |
+| 目录条目 | 最近一次明确登记的内容 |
 
-保存返回本次输出版本；已经打开的资产仍保留其来源版本。重新打开可以得到新文件，旧对象和旧读取者保留已有访问。这一规则与对象显式更新相配合，见 [[Asset-Loading-and-Lifetime]]。
+保存到另一个路径不会悄悄重绑旧对象。新文件可以独立打开，旧读者继续使用其原有来源。存储所选版本和包内文档版本分别核对；包版本不冒充内部资产版本。
 
-## 依赖来自当前内容
+## 三种依赖
 
-普通资产的引用枚举由生成代码从实际资产引用产生，再由基类过滤空值、去重并输出。枚举只表达引用事实，不加载依赖，不实例化对象，不判断整张对象图是否变脏。
+构建依赖记录实际来源、工具与扩展版本、参数及影响解析的搜索配置。它决定何时重新导入，不改变资产身份。
 
-材质的直接依赖包括父材质、shader 和明确写入的纹理引用。父材质继承后使用的全部资源由加载时解析，不能据此把直接依赖目录和加载结果混成一种数据。
+资产引用由各 Block 的当前内容提供，公共描述过滤空值、去重。它表示直接引用，不创建依赖对象，也不扫描整个工程。未知但可保留的 Block 的已保存引用仍可参与描述。目录保存的是最近登记的引用，不反向覆盖未保存编辑。
 
-World 的引用由 ECS codec 在写入 `ExternalReferenceKey` 时收集，与实际编码内容一起形成依赖。该流程不扫描一套额外的场景对象图，见 [[Asset-Worlds]]。
+使用依赖是具体系统创建对象时真正取得的对象、页和设备资源。材质继承解析后的纹理集合与材质自身的直接引用不是同一项数据。
 
-普通信息 getter 不承载整套业务验证。外部文件格式与类型合法性属于输入边界，依赖枚举和业务校验各有职责，见 [[Asset-Validation]]。
+World 的引用由实际 ECS codec 写入外部引用时收集，不把任意 GUID 或另一套 Scene 图推导为依赖。来源 Importer 只负责自身转换所产生的直接引用；完整遍历和保存由工程流程负责。
 
-## 保存与登记分开
+## 保存与登记
 
 ```csharp
-using var asset = new StandardMaterial.Asset { Name = "stone", Roughness = 0.7f };
-AssetEntry written = await asset.SaveAsync(path);
+using var mesh = new MeshAsset { Name = "geometry" };
+// 在 Block 中写入当前几何及所需表示。
+AssetEntry written = await mesh.SaveAsync(path);
 project.RegisterAsset(written);
 ```
 
-`path` 和 `project` 由应用提供。保存不会更新外部工程目录。保存已经完成但尚未登记时，文件与索引可以暂时处于不同阶段；调用方应使用本次返回的条目完成登记，而不是复制旧来源条目。工程重建和导入关系见 [[Asset-Import-and-Storage]]。
+目录查询不触发扫描或编译。保存返回值与登记事实必须一致；遇到另一个有效资产占用目标路径应明确失败，不能通过路径悄悄更换身份。来源重命名、复制及伴随文件规则见 [导入流程](Asset-Import-and-Storage.md)。
 
-代码入口：[AssetId](../../../src/SomeEngine.Assets/AssetId.cs)、[AssetEntry 与存储](../../../src/SomeEngine.Assets/AssetStorage.cs)、[公共信息与保存](../../../src/SomeEngine.Assets/Asset.cs)、[工程登记](../../../src/SomeEngine.Assets/AssetProject.cs)。
-
-返回 [[Asset-Files]]；关联 [[Asset-Code-Generation]]、[[Asset-Materials]]。
+实现：[AssetId](../../../src/SomeEngine.Assets/AssetId.cs)、[公共描述](../../../src/SomeEngine.Assets/Asset.cs)、[Manifest](../../../src/SomeEngine.Assets/AssetManifest.cs)、[来源配置](../../../src/SomeEngine.Assets/MetaFiles.cs)。

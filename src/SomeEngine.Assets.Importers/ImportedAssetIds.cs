@@ -3,7 +3,8 @@ using System.Text;
 
 namespace SomeEngine.Assets.Importers;
 
-internal static class ImportedAssetIds
+/// <summary>Derives an output ID from source identity and a caller-managed persistent output key.</summary>
+public static class ImportedAssetIds
 {
     public static Guid Create(SourceGuid sourceGuid, string subAssetKey)
     {

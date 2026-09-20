@@ -1,134 +1,76 @@
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices.Marshalling;
-using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Graphics;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
-public sealed class SlangComLifetimeTests
+public sealed class SlangComLifetimeTests : IDisposable
 {
-
-
-
-    [Fact]
-    public void TrackedBlobIsInvalidAfterLifetimeDispose()
-    {
-        ISlangBlob blob = Slang.CreateBlob([0x5A]);
-        using (var lifetime = new SlangImportLifetime())
-            lifetime.Track(blob);
-
-        Assert.Throws<ObjectDisposedException>(() => blob.GetBufferSize());
-    }
-
-    [Fact]
-    public void TrackedSessionIsInvalidAfterLifetimeDispose()
-    {
-        IGlobalSession global = SlangShaderImporter.GlobalSession;
-        Assert.True(global.CreateSession(new SessionDesc(), out ISession session).Succeeded);
-        using (var lifetime = new SlangImportLifetime())
-            lifetime.Track(session);
-
-        Assert.Throws<ObjectDisposedException>(() => session.GetGlobalSession());
-    }
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "SomeEngine-SlangLifetime-" + Guid.NewGuid().ToString("N"));
+    private const string ValidSource = "[shader(\"compute\")][numthreads(1,1,1)] void Compute() {}";
+    public SlangComLifetimeTests() => Directory.CreateDirectory(_directory);
+    public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ImportPath_ReleasesTrackedSessionBeforeReturningOrThrowing(bool invalidSource)
+    [InlineData(ShaderTarget.Dxil, "dxil")]
+    [InlineData(ShaderTarget.Spirv, "spirv")]
+    public async Task CreatedShaderKeepsCompiledCodeAfterDefinitionsAndCompilerObjectsClose(ShaderTarget target, string backend)
     {
-        string directory = Path.Combine(
-            Path.GetTempPath(),
-            "SomeEngine-SlangLifetime-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        string sourcePath = Path.Combine(directory, "lifetime.slang");
-        File.WriteAllText(
-            sourcePath,
-            invalidSource
-                ? "[shader(\"compute\")] void CSMain( {"
-                : """
-                  [shader("compute")]
-                  [numthreads(1, 1, 1)]
-                  void CSMain()
-                  {
-                  }
-                  """);
-
-        ISession? sessionProbe = null;
-        IMetadata? metadataProbe = null;
-        var trackedWrappers = new List<WeakReference>();
-        try
+        string path = Path.Combine(_directory, "selected.slang");
+        File.WriteAllText(path, ValidSource);
+        Shader shader;
+        using (var definition = ShaderTestCompilation.Define(path))
         {
-            Action<object> observe = value =>
-            {
-                trackedWrappers.Add(new WeakReference(value));
-                if (value is ISession session)
-                    sessionProbe = session;
-                if (value is IMetadata metadata)
-                    metadataProbe = metadata;
-            };
-
-            if (invalidSource)
-            {
-                Exception failure = Assert.ThrowsAny<Exception>(() =>
-                    SlangShaderImporter.ImportTransientForLifetimeTest(sourcePath, observe));
-                Assert.Contains("Failed", failure.Message, StringComparison.OrdinalIgnoreCase);
-            }
-            else
-            {
-                _ = SlangShaderImporter.ImportTransientForLifetimeTest(sourcePath, observe);
-            }
-
-            Assert.NotEmpty(trackedWrappers);
-            AssertDisposedAndDrop(ref sessionProbe);
-            if (invalidSource)
-                Assert.Null(metadataProbe);
-            else
-                AssertDisposedAndDrop(ref metadataProbe);
-            CollectFinalizers();
-            Assert.All(trackedWrappers, reference => Assert.False(reference.IsAlive));
+            definition.GetBlock<ShaderSourceBlock>().Targets = [target];
+            using var result = ShaderTestCompilation.Compile(definition, path);
+            shader = await result.GetBlock<ShaderBlock>().CreateAsync(result.Name);
         }
-        finally
+        File.Delete(path);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        using (shader)
         {
-            Directory.Delete(directory, recursive: true);
+            Assert.True(shader.TryEntry(backend, "Compute", ShaderStage.Compute, out _, out var entry));
+            Assert.True(entry.Code.Length > 0);
         }
+        Assert.Empty(Directory.EnumerateFiles(_directory));
     }
 
-    private static void CollectFinalizers()
+    [Fact]
+    public async Task RepeatedFailuresDoNotPoisonFollowingCompilations()
     {
-        for (int i = 0; i < 3; i++)
+        string path = Path.Combine(_directory, "changing.slang");
+        using var definition = ShaderTestCompilation.Define(path);
+        for (int attempt = 0; attempt < 6; attempt++)
         {
+            File.WriteAllText(path, "[shader(\"compute\")] void Compute( {");
+            Assert.Throws<InvalidDataException>(() => ShaderTestCompilation.Compile(definition, path));
+            File.WriteAllText(path, ValidSource);
+            using var result = ShaderTestCompilation.Compile(definition, path);
+            using Shader shader = await result.GetBlock<ShaderBlock>().CreateAsync(result.Name);
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            GC.Collect();
+            Assert.Equal(definition.Id, result.Id);
+            Assert.True(shader.TryEntry("spirv", "Compute", ShaderStage.Compute, out _, out var entry));
+            Assert.True(entry.Code.Length > 0);
         }
+        Assert.Empty(Directory.EnumerateFiles(_directory, "*.meta"));
+        Assert.Empty(Directory.EnumerateFiles(_directory, "*.asset"));
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void AssertDisposedAndDrop(ref ISession? sessionProbe)
+    [Fact]
+    public void CancellationLeavesTheDefinitionAvailableForAnotherCompilation()
     {
-        ISession released = sessionProbe ??
-            throw new InvalidOperationException("The importer did not expose its tracked session.");
-        Assert.Throws<ObjectDisposedException>(() => released.GetGlobalSession());
-        sessionProbe = null;
+        string path = Path.Combine(_directory, "cancel.slang");
+        File.WriteAllText(path, ValidSource);
+        using var definition = ShaderTestCompilation.Define(path);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => SlangShaderImporter.CompileDefinition(definition,
+            Path.Combine(_directory, "selected.shader"), cancellation.Token));
+        using var result = ShaderTestCompilation.Compile(definition, path);
+        Assert.Equal(definition.Id, result.Id);
+        Assert.NotEmpty(result.GetBlock<ShaderBlock>().Programs);
     }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void AssertDisposedAndDrop(ref IMetadata? metadataProbe)
-    {
-        IMetadata released = metadataProbe ??
-            throw new InvalidOperationException("The importer did not track compiled metadata.");
-        Assert.Throws<ObjectDisposedException>(() =>
-            released.IsParameterLocationUsed(
-                SlangParameterCategory.DescriptorTableSlot,
-                0,
-                0,
-                out _));
-        metadataProbe = null;
-    }
-
-
-
-
-
 }

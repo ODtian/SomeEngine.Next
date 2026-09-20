@@ -57,7 +57,7 @@ public sealed class BinaryDocumentTests
     {
         using MappedTestDocument bytes = BinaryDocumentWriter.Create(TestRoots.Canonical()).BuildMapped();
 
-        Assert.True(bytes.AsSpan(0, 8).SequenceEqual("SEBDOC03"u8));
+        Assert.True(bytes.AsSpan(0, 8).SequenceEqual("SEBDOC04"u8));
         Assert.Equal(HeaderSize, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(10, 2)));
         uint catalogLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(120, 4));
         long rootOffset = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(48, 8));

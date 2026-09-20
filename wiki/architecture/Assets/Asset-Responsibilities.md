@@ -1,51 +1,27 @@
 # 资产职责与数据持有
 
-> **重构范围说明（2026-09-12）。** [冻结原则](Asset-Rebuild-Principles.md)与[执行任务](Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中与之冲突的段落待更新，未涉及的架构继续适用；历史验证仅代表当时结果。现有序列化与存储能力的保持依据见[源码审查](Asset-Serialization-Review.md)。
+2026-09-16：按独立事实划分职责，公共流程只维护一份。模型见 [对象](Asset-Objects.md)，导入协作见 [Importer 与 Context](Asset-Import-and-Storage.md)。
 
-每项数据或状态有一个主要持有者，共同流程只维护一份。拆分依据是变化原因，不是给旧包装换名字。对象定义见 [[Asset-Objects]]，这一原则与 [[DRY]]、[[SRP]] 一致。
-
-## 职责分配
-
-| 部分 | 负责的内容 | 边界 |
+| 部分 | 负责的内容 | 不负责的内容 |
 | --- | --- | --- |
-| `Asset<T>` | 公共身份与名称、来源保留与释放、文件打开共同流程、原子保存共同流程、依赖去重 | 不持有另一份具体类型字段表，不负责外部索引 |
-| 生成的 `T.Asset` | 具体字段、访问、浅复制、引用枚举、编码连接、返回具体类型的打开入口 | 编译期已知关系直接生成代码 |
-| 具体类型的业务代码 | 分块含义、依赖解析、应用对象创建、内容更新与释放 | 不重复实现公共文件保存流程 |
-| `AssetLoader` | 存储定位、并发读取合并、字节文档缓存、排队与并发限制 | 不创建、缓存或销毁唯一应用对象 |
-| `IAssetStorage` | 从资产 ID 和所选条目定位字节范围 | 不解码字段，不协调对象加载 |
-| `AssetProject` 与索引 | 源文件导入、输出登记、路径解析、目录依赖查询 | 不成为应用对象的持有者 |
-| `BinaryDocument` 与 writer | 文件结构、根编码、分块、压缩与完整性 | 不承担资产编辑对象语义 |
-| 应用与场景 | 持有实际资源对象，选择显式复用与更新边界 | 通过既有 Game world / Rendering world 通路使用资源 |
+| Asset | 身份、引用、Block 索引、当前内容分支及共同保存和释放边界 | 固定业务字段、文本或二进制分类、唯一业务对象 |
+| Block | 强类型数据、编解码、按需取得、自己的直接引用与负载描述 | 另建页池、工程遍历、全局输出登记 |
+| 现有页管理与调度 | 页分配、共享、COW、读取合并、驻留、预算和真实工作完成 | 资产 ID、材质选择、场景业务 |
+| 使用对象 | 当前可用的数据、普通业务状态、资源和使用期间的保留 | 异步资产查询、导入、保存 |
+| 局部 Importer | 本地格式转换、声明的 Block、自己直接负责的引用 | 整份来源遍历、输出文件提交、重新导入策略 |
+| Context | 同次调用缓存、生产者检查、依赖调用、结果清理 | SG 生成的固定业务流程、跨项目全局对象缓存 |
+| 来源与工程流程 | 来源读取、元素遍历、目标身份、保存登记、失败处理和重新导入 | 每种 Block 的字段解释 |
+| SG 与 Microsoft DI | 编译期扩展发现、静态调用与注册、编辑器能力描述 | 自动选择启用项、生成扩展之间的业务逻辑 |
+| Manifest 与目录 | 已登记身份、位置、版本、直接依赖及派生查询 | 当前未保存编辑、页缓存或业务对象 |
+| Loader 与存储 | 按所选条目打开和合并字节访问 | 隐式编译、唯一 Asset 或使用对象 |
+| 通用编码与文档 | 编码、根与块结构、压缩、范围、完整性、认证及有界保存 | Asset/Block 的业务内容含义 |
 
-## 数据只维护一次
+公共根、编辑 Block、构建记录和目录不是四份相互覆盖的主数据。公共根记录身份和块位置；Block 是当前内容；构建记录描述本次输入与产物；目录记录最近一次明确登记的结果。
 
-公共名称、ID、来源版本和来源路径由资产基类持有。生成的字段存储只保存具体类型数据，不能再维护一份独立名称、依赖缓存或修改状态。编码输出里出现 ID 和名称是文件表达，不是第二个编辑状态持有者。
+一个来源 ID、一个 Asset ID、一个 Block 类型 ID、一个文档内容版本和一个使用对象引用分别回答不同问题。不要以路径、内容摘要或 CLR 实例引用代替持久资产身份。
 
-Loader 缓存的是保留了根编码和字节访问的 `BinaryDocument`，不是资产字段副本。具体 `.Asset.OpenAsync` 显式解码；保留文件来源只延长字节访问。两者不能重新捆绑。详见 [[Asset-File-IO]]。
+编码、解码页、上传数据和 GPU 资源是不同的必要表示，分别纳入现有预算。它们并不授权增加第二份同义可写字段或新的页生命周期。Asset/Block 关闭、使用对象关闭和 GPU 使用完成也不是同一个时点。
 
-当前依赖来自当前编辑内容；工程索引保存最近一次明确登记的目录信息。它们回答不同时间点的问题，不能用旧索引反向覆盖资产当前内容。详见 [[Asset-Identity-and-Dependencies]]。
+业务类型集中于其业务程序集，例如 Resources；资产集成依赖它们而非反向依赖。World 使用既有 ECS 序列化和同一个 Game world。渲染继续经过既有提取进入 Rendering world，不接收另一个资产场景图。
 
-## 旧职责的迁移对照
-
-| 旧职责 | 已确认归属 |
-| --- | --- |
-| `AssetFile<TFields>` 的文件访问、分块来源、释放 | 资产基类直接管理，消除字段包装层 |
-| `AssetFile<TFields>` 的可编辑字段 | 生成的具体 `.Asset` |
-| `AssetWriter` 的临时文件、失败清理、成功替换 | 资产基类的公共保存实现 |
-| `AssetFormat<T>` 的格式信息 | 生成代码中的格式信息 |
-| `AssetFormat<T>` 的打开与读写衔接 | 资产基类共同流程与具体生成入口 |
-| 各 `XXData.GetDependencies` | 具体引用枚举与基类去重 |
-| `AssetFile.Entry` | 当前资产的公共信息入口，如 `Describe()` |
-| 各类型重复的文件打开、来源保留、writer 衔接 | 共同能力归基类，类型只保留分块业务语义 |
-
-不保留 `ToAsset` 转换桥、旧操作注册、泛型字段包装或同义别名。这里的删除要求针对旧资产模型，不要求删除 Serialization 中仍有独立用途的泛型文档能力。
-
-## 程序集边界
-
-Serialization 负责通用二进制能力；Assets 建立可编辑资产语义；Importers 负责源格式工具链；Render 和应用负责接入现有渲染系统。程序集的实际引用以项目文件为准，不能因为一个类型需要特殊处理就引入循环依赖。
-
-World 的集成采用 `WorldAsset : Asset<World>`，原因和范围见 [[Asset-Worlds]]。资源进入渲染后的职责继续遵守 [[Render-Boundaries]]，不在资产层另建提交路径。
-
-当前实现入口：[Asset](../../../src/SomeEngine.Assets/Asset.cs)、[AssetLoader](../../../src/SomeEngine.Assets/AssetLoader.cs)、[AssetStorage](../../../src/SomeEngine.Assets/AssetStorage.cs)、[AssetProject](../../../src/SomeEngine.Assets/AssetProject.cs)。
-
-返回 [[Asset-Files]]；关联 [[Asset-Code-Generation]]、[[Asset-Import-and-Storage]]。
+源码：[Asset](../../../src/SomeEngine.Assets/Asset.cs)、[Block](../../../src/SomeEngine.Assets/AssetBlock.cs)、[页管理](../../../src/SomeEngine.Serialization/Containers/PageArena.cs)、[导入](../../../src/SomeEngine.Assets/Importing/)、[资源类型](../../../src/SomeEngine.Resources/)。

@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 
@@ -9,11 +10,11 @@ namespace SomeEngine.Render.Components;
 /// <summary>Mesh identity in a saved Game world, resolved during explicit loading.</summary>
 public struct MeshSource : IComponent
 {
-    public AssetId<Mesh> Mesh;
+    public AssetId<MeshAsset> Mesh;
     public float BoundsExpansion;
 }
 
-public readonly record struct MaterialSource(AssetId<Material> Material) : IBufferElement;
+public readonly record struct MaterialSource(AssetId<MaterialAsset> Material) : IBufferElement;
 
 public struct MeshMotion : IComponent
 {

@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
-using SomeEngine.ECS.Entities;
+using SomeEngine.Resources;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;

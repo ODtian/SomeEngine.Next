@@ -1,4 +1,6 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 
 namespace SomeEngine.Render.Tests;

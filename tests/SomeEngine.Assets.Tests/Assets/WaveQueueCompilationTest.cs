@@ -3,6 +3,7 @@ using System.Linq;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Tests;
 
 namespace SomeEngine.Assets.Tests.Assets;
@@ -52,8 +53,8 @@ public class WaveQueueCompilationTest
 
         try
         {
-            using var assetFile = SlangShaderImporter.Import(slangFile, source);
-            Shader asset = await Shader.CreateAsync(assetFile);
+            using var assetFile = ShaderTestCompilation.Compile(slangFile);
+            using Shader asset = await assetFile.GetBlock<ShaderBlock>().CreateAsync(assetFile.Name);
 
             Assert.NotNull(asset);
             Assert.NotNull(asset.Programs);
@@ -86,8 +87,8 @@ public class WaveQueueCompilationTest
             foreach (var program in asset.Programs)
             {
                 Console.WriteLine(
-                    $"  {program.Backend}: {program.Data?.Length ?? 0} bytes, " +
-                    $"{program.Program?.EntryPoints.Count ?? 0} entries");
+                    $"  {program!.Backend}: {program.EntryPoints.Sum(static entry => entry.Code.Length)} code bytes, " +
+                    $"{program.EntryPoints.Count} entries");
             }
         }
         finally

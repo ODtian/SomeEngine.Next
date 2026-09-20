@@ -5,32 +5,36 @@ using System.Linq;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
+using SomeEngine.Assets.Importing;
 
 namespace SomeEngine.Assets;
 
 /// <summary>
-/// Authoring-only asset project. It imports, creates, indexes, and validates assets but never owns
-/// the runtime resident table.
+/// Imports, creates, indexes and validates project assets without managing rendering residency.
 /// </summary>
-public sealed class AssetProject
+public sealed partial class AssetProject
 {
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _importGate = new(1, 1);
     private readonly string _projectRoot;
     private readonly string _manifestDirectory;
-    private readonly IReadOnlyList<IAssetImporter> _importers;
+    private readonly IReadOnlyList<IAssetSourceImporter> _importers;
+    private readonly IReadOnlyList<IAssetSourceFormat> _sourceFormats;
 
     public AssetProject(
         string projectRoot,
-        IEnumerable<IAssetImporter> importers,
-        string? manifestDirectory = null)
+        IEnumerable<IAssetSourceImporter> importers,
+        string? manifestDirectory = null,
+        IEnumerable<IAssetSourceFormat>? sourceFormats = null)
     {
         _projectRoot = Path.GetFullPath(projectRoot);
-        _manifestDirectory = Path.GetFullPath(manifestDirectory ?? Path.Combine(_projectRoot, "Library", "AssetManifest"));
+        _manifestDirectory = RequireProjectPath(_projectRoot, manifestDirectory ?? Path.Combine(_projectRoot, "Library", "AssetManifest"), allowProjectRoot: true);
         _importers = importers?.ToArray() ?? throw new ArgumentNullException(nameof(importers));
+        _sourceFormats = sourceFormats?.ToArray() ?? [];
+        if (_sourceFormats.Select(format => format.SourceExtension).Distinct(StringComparer.OrdinalIgnoreCase).Count() != _sourceFormats.Count)
+            throw new ArgumentException("Each source suffix must select one format.", nameof(sourceFormats));
 
-        Manifest = File.Exists(Path.Combine(_manifestDirectory, AssetManifest.AssetIndexFileName))
-            ? AssetManifest.Load(_manifestDirectory)
-            : new AssetManifest();
+        Manifest = AssetManifest.Load(_manifestDirectory);
     }
 
     public string RootPath => _projectRoot;
@@ -45,13 +49,101 @@ public sealed class AssetProject
 
     public Guid RegisterAsset(AssetEntry entry)
     {
-        lock (_gate)
+        _importGate.Wait();
+        try
         {
-            string fullPath = FullPath(entry.Path);
-            if (Resolve(entry.Path) is Guid registered && registered != entry.AssetGuid)
-                throw new InvalidOperationException($"Asset '{entry.Path}' is already registered with a different ID.");
-            RegisterAssetFile(fullPath, entry);
-            return entry.AssetGuid;
+            lock (_gate)
+            {
+                string fullPath = RequireProjectPath(_projectRoot, entry.Path);
+                if (Resolve(entry.Path) is Guid registered && registered != entry.AssetGuid)
+                    throw new InvalidOperationException($"Asset '{entry.Path}' is already registered with a different ID.");
+                RegisterAssetFile(fullPath, entry);
+                return entry.AssetGuid;
+            }
+        }
+        finally { _importGate.Release(); }
+    }
+
+    /// <summary>Builds a native definition and registers only its successfully saved output.</summary>
+    public async ValueTask<Guid> BuildAsync(string sourcePath, string? outputPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        await _importGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        AssetImportFiles? files = null;
+        try
+        {
+            string fullPath = FullPath(sourcePath);
+            IAssetSourceFormat format = _sourceFormats.SingleOrDefault(format =>
+                fullPath.EndsWith(format.SourceExtension, StringComparison.OrdinalIgnoreCase))
+                ?? throw new NotSupportedException($"No native source format is registered for '{fullPath}'.");
+            byte[] sourceBytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+            AssetEntry description = AssetText.Describe(sourceBytes);
+            string targetPath = RequireProjectPath(_projectRoot, outputPath ?? fullPath + ".asset");
+            void CheckDestination()
+            {
+                if (Manifest.TryAssetPath(ToManifestPath(targetPath), out AssetEntry destination) && destination.AssetGuid != description.AssetGuid)
+                    throw new InvalidDataException($"The output path is already registered for asset {destination.AssetGuid}.");
+                if (Manifest.TryGetAsset(description.AssetGuid, out AssetEntry existing)
+                    && (existing.AssetType != description.AssetType || existing.DefinitionPath.Length != 0
+                        && !StringComparer.Ordinal.Equals(existing.DefinitionPath, ToManifestPath(fullPath))))
+                    throw new InvalidDataException($"Asset {description.AssetGuid} is already defined by '{existing.DefinitionPath}'.");
+            }
+            lock (_gate) CheckDestination();
+            string buildPath = SourceMeta.GetBuildPath(fullPath);
+            byte[]? previousBuild = ReadOptional(buildPath);
+            if (await CanReuseSourceAsync(format, fullPath, targetPath, description, previousBuild,
+                cancellationToken).ConfigureAwait(false)) return description.AssetGuid;
+            bool registered;
+            lock (_gate) registered = Manifest.TryGetAsset(description.AssetGuid, out AssetEntry previous)
+                && PathsEqual(FullPath(previous.Path), targetPath)
+                && PathsEqual(FullPath(previous.DefinitionPath), fullPath);
+            await CheckOutputFileAsync(targetPath, description.AssetGuid, cancellationToken, allowCorrupt: registered).ConfigureAwait(false);
+            files = new AssetImportFiles();
+            string stage = files.CreateStagePath(targetPath);
+            files.AddFile(targetPath, stage);
+            AssetSourceResult result = await format.BuildAsync(_projectRoot, fullPath, stage, cancellationToken).ConfigureAwait(false);
+            AssetEntry output = result.Asset;
+            if (output.AssetGuid != description.AssetGuid || output.AssetType != description.AssetType
+                || !PathsEqual(Path.GetFullPath(output.Path), stage))
+                throw new InvalidDataException("The built asset identity, type or path differs from its native definition.");
+            CheckUnchanged(fullPath, sourceBytes);
+            ImportInputs? finalInputs = await format.GetInputsAsync(_projectRoot, fullPath,
+                result.Inputs.Dependencies, cancellationToken).ConfigureAwait(false);
+            if (finalInputs is null || finalInputs.InputHash != result.Inputs.InputHash
+                || finalInputs.ImporterVersion != result.Inputs.ImporterVersion)
+                throw new IOException("Native definition inputs changed during the build.");
+            var build = new SourceBuildRecord
+            {
+                ImporterVersion = result.Inputs.ImporterVersion, InputHash = result.Inputs.InputHash,
+                Inputs = result.Inputs.Dependencies,
+                Outputs = [new SourceOutput
+                {
+                    AssetGuid = output.AssetGuid, SubAssetKey = "", InputHash = result.Inputs.InputHash,
+                    Dependencies = [], AssetPath = Path.GetRelativePath(Path.GetDirectoryName(fullPath)!, targetPath),
+                    Version = output.Version, ContentHash = await HashFileAsync(stage, cancellationToken).ConfigureAwait(false),
+                    AssetDependencies = output.Dependencies,
+                }],
+            };
+            files.AddWrite(buildPath, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(build,
+                SourceMetaJsonContext.Default.SourceBuildRecord));
+            lock (_gate)
+            {
+                CheckDestination();
+                CheckUnchanged(buildPath, previousBuild);
+                AssetManifest next = Manifest.Copy();
+                next.AddAsset(output.AssetGuid, output.Name, ToManifestPath(targetPath), output.AssetType,
+                    output.SchemaFingerprint, dependencies: output.Dependencies, definitionPath: ToManifestPath(fullPath), version: output.Version);
+                next.AddFiles(files, _manifestDirectory);
+                files.Commit(cancellationToken);
+                Manifest = next;
+                return output.AssetGuid;
+            }
+        }
+        catch (Exception error) { files?.RecordFailure(error); throw; }
+        finally
+        {
+            try { files?.Dispose(); }
+            finally { _importGate.Release(); }
         }
     }
 
@@ -61,20 +153,17 @@ public sealed class AssetProject
         CancellationToken cancellationToken = default)
     {
         string fullPath;
-        IAssetImporter? importer;
+        IAssetSourceImporter? importer;
         lock (_gate)
         {
-            fullPath = FullPath(sourcePath);
+            fullPath = RequireProjectPath(_projectRoot, sourcePath);
             importer = MatchImporter(fullPath);
         }
 
         if (importer is null)
             throw new NotSupportedException($"No source importer is registered for '{fullPath}'.");
 
-        return await ImportWithImporterAsync(
-            fullPath,
-            importer,
-            cancellationToken).ConfigureAwait(false);
+        return await importer.ImportAsync(this, fullPath, cancellationToken).ConfigureAwait(false);
     }
 
     // ── Resolve / Query ──
@@ -87,6 +176,9 @@ public sealed class AssetProject
             {
                 return assetRecord.AssetGuid;
             }
+
+            foreach (AssetEntry definition in Manifest.Assets.Values)
+                if (definition.DefinitionPath == manifestPath) return definition.AssetGuid;
 
             if (!Manifest.TrySourceGuid(manifestPath, out SourceGuid sourceGuid))
             {
@@ -140,59 +232,25 @@ public sealed class AssetProject
     private string FullPath(string path)
         => Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(_projectRoot, path));
 
+    internal static string RequireProjectPath(string projectRoot, string path, bool allowProjectRoot = false)
+    {
+        string fullPath = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(projectRoot, path));
+        string relative = Path.GetRelativePath(projectRoot, fullPath);
+        if ((!allowProjectRoot && relative == ".") || Path.IsPathRooted(relative) || relative == ".."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidDataException($"Project output or edit path '{fullPath}' is outside '{projectRoot}'.");
+        return fullPath;
+    }
+
+    internal static bool PathsEqual(string left, string right)
+        => string.Equals(left, right, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
     private string ToManifestPath(string path) => AssetIoHelpers.ToManifestPath(_projectRoot, path);
 
-    private IAssetImporter? MatchImporter(string path)
+    private IAssetSourceImporter? MatchImporter(string path)
     {
         string normalized = AssetIoHelpers.NormalizePath(path);
-        return _importers.FirstOrDefault(importer => importer.MatchesSourcePath(normalized));
-    }
-
-    private async ValueTask<IReadOnlyList<Guid>> ImportWithImporterAsync(
-        string fullPath,
-        IAssetImporter importer,
-        CancellationToken cancellationToken)
-    {
-        SourceMeta sourceMeta = SourceMeta.GetOrCreate(fullPath, importer.ImporterName);
-        ImportInputs? inputs = importer.GetInputs(_projectRoot, fullPath, sourceMeta);
-        if (inputs is not null && sourceMeta.ImporterVersion == inputs.ImporterVersion &&
-            sourceMeta.InputHash == inputs.InputHash && sourceMeta.Outputs.Count != 0 &&
-            sourceMeta.Outputs.All(output => File.Exists(output.AssetPath) && Manifest.Assets.ContainsKey(output.AssetGuid)))
-            return sourceMeta.Outputs.Select(static output => output.AssetGuid).ToArray();
-        IReadOnlyList<ImportedAsset> importedAssets = await importer
-            .ImportAsync(_projectRoot, fullPath, cancellationToken)
-            .ConfigureAwait(false);
-
-        lock (_gate)
-        {
-            // 直接注册进 manifest，不扫描
-            Manifest.AddSource(sourceMeta.SourceGuid, ToManifestPath(fullPath));
-            var outputIds = importedAssets.Select(static output => output.AssetGuid).ToHashSet();
-            foreach (Guid previous in Manifest.AssetsBySource(sourceMeta.SourceGuid).ToArray())
-                if (!outputIds.Contains(previous)) Manifest.RemoveAsset(previous);
-            List<Guid> result = [];
-            foreach (ImportedAsset imported in importedAssets)
-            {
-                if ((imported.AssetGuid == System.Guid.Empty))
-                    continue;
-
-                RegisterImportedData(imported, sourceMeta.SourceGuid);
-                result.Add(imported.AssetGuid);
-            }
-
-            Manifest.Save(_manifestDirectory);
-            return result;
-        }
-    }
-
-    private void RegisterImportedData(ImportedAsset imported, SourceGuid sourceGuid)
-    {
-        RegisterAssetFile(
-            imported.OutputPath,
-            imported.Info,
-            sourceGuid,
-            imported.SubAssetKey,
-            saveManifest: false);
+        return _importers.SingleOrDefault(importer => importer.MatchesSourcePath(normalized));
     }
 
     private void AddMissingSourceDiagnostics(List<AssetDiagnostic> diagnostics)
@@ -292,7 +350,8 @@ public sealed class AssetProject
         string subAssetKey = "",
         bool saveManifest = true)
     {
-        Manifest.AddAsset(
+        AssetManifest destination = saveManifest ? Manifest.Copy() : Manifest;
+        destination.AddAsset(
             info.AssetGuid,
             info.Name,
             ToManifestPath(fullPath),
@@ -300,11 +359,14 @@ public sealed class AssetProject
             info.SchemaFingerprint,
             sourceGuid,
             subAssetKey,
-            info.Dependencies);
+            info.Dependencies,
+            info.DefinitionPath,
+            info.Version);
 
         if (saveManifest)
         {
-            Manifest.Save(_manifestDirectory);
+            destination.Save(_manifestDirectory);
+            Manifest = destination;
         }
     }
 }

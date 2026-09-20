@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Serialization.Streaming;
 
 namespace SomeEngine.Render.Cluster;

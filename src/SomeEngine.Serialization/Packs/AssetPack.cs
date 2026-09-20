@@ -16,7 +16,7 @@ public sealed record AssetPackEntry(
     internal Digest256 DocumentAuthenticationDigest { get; init; }
 }
 
-internal sealed class AssetPackIndex : IBinaryContract<AssetPackIndex>
+internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
 {
     internal const ulong Fingerprint = 0x63EA1D127C5B449BUL;
     private static readonly Guid StableTypeId = new("bdb11d99-34cb-52ef-c55c-85bf52ac89db");
@@ -339,13 +339,13 @@ public sealed class AssetPackBuilder
         BinaryWireTypeDescriptor[] catalog = BinaryDocumentFormat.ReadTypeCatalog(
             document.Slice(BinaryDocumentFormat.HeaderSize, (int)header.CatalogLength),
             limits);
-        if (!catalog.Any(descriptor =>
-                descriptor.SchemaFingerprint == header.SchemaFingerprint
-                && descriptor.Compatibility == header.Compatibility
-                && descriptor.SchemaEpoch == header.SchemaEpoch))
+        BinaryWireTypeDescriptor rootType = catalog[0];
+        if (rootType.SchemaFingerprint != header.SchemaFingerprint
+            || rootType.Compatibility != header.Compatibility
+            || rootType.SchemaEpoch != header.SchemaEpoch)
         {
             throw new ArgumentException(
-                "Nested asset catalog has no descriptor matching its root header.",
+                "Nested asset root descriptor disagrees with its header.",
                 nameof(document));
         }
 
@@ -453,10 +453,11 @@ public sealed class AssetPackBuilder
     }
 
     public async ValueTask WriteAsync(
-        FileStream destination,
+        Stream destination,
         Guid? generation = null,
         CancellationToken cancellationToken = default)
     {
+        BinaryDocumentWriter.ValidateDestination(destination, generation);
         AssetBytes[] ordered = await SelectAssetsAsync(cancellationToken).ConfigureAwait(false);
         BinaryDocumentWriter builder = CreateDocumentBuilder(ordered);
         await builder.WriteAsync(destination, generation, cancellationToken).ConfigureAwait(false);
@@ -466,12 +467,12 @@ public sealed class AssetPackBuilder
     }
 
     public async ValueTask WriteSignedAsync(
-        FileStream destination,
+        Stream destination,
         RSA privateKey,
         Guid? generation = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(destination);
+        BinaryDocumentWriter.ValidateDestination(destination, generation);
         ArgumentNullException.ThrowIfNull(privateKey);
         AssetBytes[] ordered = await SelectAssetsAsync(cancellationToken).ConfigureAwait(false);
         Digest256 digest = await CreateDocumentBuilder(ordered)
@@ -489,45 +490,11 @@ public sealed class AssetPackBuilder
         _changedAssetIds = ordered.Select(static asset => asset.AssetId).ToArray();
     }
 
-    public async ValueTask PublishAsync(
+    public ValueTask PublishAsync(
         string path,
         Guid? generation = null,
         CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        string fullPath = Path.GetFullPath(path);
-        string? directory = Path.GetDirectoryName(fullPath);
-        if (string.IsNullOrEmpty(directory))
-            throw new InvalidOperationException("Asset pack path has no parent directory.");
-        Directory.CreateDirectory(directory);
-
-        string temporary = Path.Combine(
-            directory,
-            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
-        try
-        {
-            await using (var stream = new FileStream(
-                temporary,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 128 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan))
-            {
-                await WriteAsync(stream, generation, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-                stream.Flush(flushToDisk: true);
-            }
-
-            File.Move(temporary, fullPath, overwrite: true);
-        }
-        catch
-        {
-            if (File.Exists(temporary))
-                File.Delete(temporary);
-            throw;
-        }
-    }
+        => PublishCoreAsync(path, (stream, token) => WriteAsync(stream, generation, token), cancellationToken);
 
     public async ValueTask PublishSignedAsync(
         string path,
@@ -544,10 +511,11 @@ public sealed class AssetPackBuilder
 
     private async ValueTask PublishCoreAsync(
         string path,
-        Func<FileStream, CancellationToken, ValueTask> write,
+        Func<Stream, CancellationToken, ValueTask> write,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
         string fullPath = Path.GetFullPath(path);
         string? directory = Path.GetDirectoryName(fullPath);
         if (string.IsNullOrEmpty(directory))
@@ -572,7 +540,9 @@ public sealed class AssetPackBuilder
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(temporary, fullPath, overwrite: true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (File.Exists(fullPath)) File.Replace(temporary, fullPath, null);
+            else File.Move(temporary, fullPath);
         }
         catch
         {

@@ -1,0 +1,431 @@
+using System.Collections.Immutable;
+using SomeEngine.Assets.Importing;
+using SomeEngine.Serialization;
+using SomeEngine.Serialization.Containers;
+
+namespace SomeEngine.Assets.Tests;
+
+public sealed class AssetBlockBehaviorTests
+{
+    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(10);
+
+    [Fact]
+    public async Task ProcessOnlyBlocksDoNotAddReferencesToSavedContent()
+    {
+        using var files = new BlockFiles();
+        Guid materialId = Guid.NewGuid();
+        Guid sessionReference = Guid.NewGuid();
+        using var asset = CreateContent();
+        using var materials = new SomeEngine.Assets.Schema.MeshMaterialsBlock
+        {
+            Materials = [new(materialId)],
+        };
+        using var session = new BlockTestSessionData(sessionReference);
+        asset.SetBlock(materials);
+        asset.SetBlock(session);
+        using var branch = asset.Duplicate();
+
+        AssetEntry saved = await asset.SaveAsync(files.First);
+        Assert.Equal(new[] { materialId }, saved.Dependencies);
+        Assert.Equal(sessionReference, asset.GetBlock<BlockTestSessionData>().Reference.Value);
+        Assert.Equal(sessionReference, branch.GetBlock<BlockTestSessionData>().Reference.Value);
+        Assert.False(session.Disposed);
+
+        using AssetFile file = await AssetFile.OpenAsync(files.First, BlockTestAsset.WireType);
+        Assert.Equal(saved.Dependencies, file.Describe().Dependencies);
+        using var reopened = await BlockTestAsset.OpenAsync(files.First);
+        Assert.False(reopened.ContainsBlock<BlockTestSessionData>());
+        Assert.True(reopened.ContainsBlock<SomeEngine.Assets.Schema.MeshMaterialsBlock>());
+        AssetEntry copied = await reopened.SaveAsync(files.Second);
+        Assert.Equal(saved.Dependencies, copied.Dependencies);
+
+        BlockTestSessionData attached = asset.GetBlock<BlockTestSessionData>();
+        asset.Dispose();
+        Assert.True(attached.Disposed);
+        Assert.False(branch.GetBlock<BlockTestSessionData>().Disposed);
+        Assert.Equal(sessionReference, branch.GetBlock<BlockTestSessionData>().Reference.Value);
+    }
+
+    [Fact]
+    public async Task DifferentBlocksCanPersistTheSameLocalChunkKey()
+    {
+        using var files = new BlockFiles();
+        using (var asset = CreateContent()) await asset.SaveAsync(files.First);
+        using var opened = await BlockTestAsset.OpenAsync(files.First);
+        Assert.True(opened.ContainsBlock<BlockTestNumbers>());
+        Assert.True(opened.ContainsBlock<BlockTestText>());
+        BlockTestNumbers numbers = await opened.GetBlockAsync<BlockTestNumbers>();
+        BlockTestText text = await opened.GetBlockAsync<BlockTestText>();
+        using PageBuffer numberBytes = await numbers.AcquireBufferAsync(1);
+        using PageBuffer textBytes = await text.AcquireBufferAsync(1);
+        Assert.Equal(new byte[] { 1, 2, 3 }, Bytes(numberBytes));
+        Assert.Equal(new byte[] { 9, 8, 7, 6 }, Bytes(textBytes));
+        Assert.Equal(31, numbers.Value);
+        Assert.Equal("custom text metadata", text.Text);
+    }
+
+    [Fact]
+    public async Task ExtensionDefinedTextMetadataUsesItsOwnEncodingDescriptor()
+    {
+        using var files = new BlockFiles();
+        using (var asset = CreateContent()) await asset.SaveAsync(files.First);
+        using var opened = await BlockTestAsset.OpenAsync(files.First);
+        AssetBlockDescription description = Assert.Single(opened.BlockDescriptions, block => block.BlockTypeId == BlockTestText.BlockTypeId);
+        Assert.Equal(BlockTestText.TextEncoding.TypeId, description.EncodingTypeId);
+        Assert.NotEqual(description.BlockTypeId, description.EncodingTypeId);
+        Assert.Equal(BlockTestText.TextEncoding.SchemaFingerprint, description.SchemaHash);
+        Assert.Equal(BlockTestText.TextEncoding.SchemaEpoch, description.Epoch);
+        Assert.Equal(BlockTestText.TextEncoding.Compatibility, description.EncodingCompatibility);
+        Assert.Equal("custom text metadata", (await opened.GetBlockAsync<BlockTestText>()).Text);
+    }
+
+    [Fact]
+    public async Task SavingAnUnloadedBlockPreservesItsEncodingAndDoesNotInvokeItsCodec()
+    {
+        using var files = new BlockFiles();
+        using (var asset = CreateContent()) await asset.SaveAsync(files.First);
+        var read = new BlockReadControl { RejectRead = true };
+        BlockTestText.ReadControl = read;
+        try
+        {
+            using var opened = await BlockTestAsset.OpenAsync(files.First);
+            AssetBlockDescription original = Assert.Single(opened.BlockDescriptions, block => block.BlockTypeId == BlockTestText.BlockTypeId);
+            opened.Name = "renamed while extension is unopened";
+            await opened.SaveAsync(files.Second);
+            Assert.Equal(0, read.Calls);
+            using var saved = await BlockTestAsset.OpenAsync(files.Second);
+            AssetBlockDescription result = Assert.Single(saved.BlockDescriptions, block => block.BlockTypeId == BlockTestText.BlockTypeId);
+            Assert.Equal(original.EncodingTypeId, result.EncodingTypeId);
+            Assert.Equal(original.SchemaHash, result.SchemaHash);
+            Assert.Equal(original.Epoch, result.Epoch);
+            Assert.Equal(original.EncodingCompatibility, result.EncodingCompatibility);
+            Assert.Equal(original.ChunkKeys.ToArray(), result.ChunkKeys.ToArray());
+            Assert.Equal("renamed while extension is unopened", saved.Name);
+            Assert.Throws<InvalidOperationException>(() => saved.GetBlock<BlockTestText>());
+            BlockTestText.ReadControl = null;
+            BlockTestText text = await saved.GetBlockAsync<BlockTestText>();
+            Assert.Equal("custom text metadata", text.Text);
+            using PageBuffer bytes = await text.AcquireBufferAsync(1);
+            Assert.Equal(new byte[] { 9, 8, 7, 6 }, Bytes(bytes));
+        }
+        finally { BlockTestText.ReadControl = null; }
+    }
+
+    [Fact]
+    public void BlockWritesExcludeAssetAndOtherBlockAccessButAllowIndependentBranches()
+    {
+        using var asset = CreateContent();
+        using var duplicate = asset.Duplicate();
+        BlockTestNumbers numbers = asset.GetBlock<BlockTestNumbers>();
+        BlockTestText text = asset.GetBlock<BlockTestText>();
+        numbers.Chunks.Write(1, 0, 1, (_, bytes) =>
+        {
+            Assert.Throws<InvalidOperationException>(() => asset.Duplicate());
+            Assert.Throws<InvalidOperationException>(() => asset.Name);
+            Assert.Throws<InvalidOperationException>(() => asset.Name = "cannot change");
+            Assert.Throws<InvalidOperationException>(() => asset.Dispose());
+            Assert.Throws<InvalidOperationException>(() => text.Text);
+            Assert.Throws<InvalidOperationException>(() => text.Chunks.Write(1, 0, new byte[] { 0 }));
+            Assert.Throws<InvalidOperationException>(() => text.Duplicate());
+            duplicate.Name = "independent";
+            duplicate.GetBlock<BlockTestText>().Chunks.Write(1, 0, new byte[] { 55 });
+            bytes[0] = 44;
+        });
+        Assert.Equal("content", asset.Name);
+        Assert.Equal("independent", duplicate.Name);
+        using PageRange<byte> changed = numbers.Chunks.Retain(1);
+        using PageRange<byte> original = duplicate.GetBlock<BlockTestNumbers>().Chunks.Retain(1);
+        using PageRange<byte> textOriginal = text.Chunks.Retain(1);
+        using PageRange<byte> textChanged = duplicate.GetBlock<BlockTestText>().Chunks.Retain(1);
+        Assert.Equal(new byte[] { 44, 2, 3 }, changed.ToArray());
+        Assert.Equal(new byte[] { 1, 2, 3 }, original.ToArray());
+        Assert.Equal(new byte[] { 9, 8, 7, 6 }, textOriginal.ToArray());
+        Assert.Equal(new byte[] { 55, 8, 7, 6 }, textChanged.ToArray());
+    }
+
+    [Fact]
+    public async Task CancellingOneWaiterDoesNotCancelTheSharedBlockRead()
+    {
+        using var files = new BlockFiles();
+        using (var asset = CreateContent()) await asset.SaveAsync(files.First);
+        var read = new BlockReadControl();
+        BlockTestText.ReadControl = read;
+        try
+        {
+            await using var opened = await BlockTestAsset.OpenAsync(files.First);
+            using var cancel = new CancellationTokenSource();
+            Task<BlockTestText> first = opened.GetBlockAsync<BlockTestText>(cancel.Token).AsTask();
+            await read.Started.Task.WaitAsync(CompletionTimeout);
+            Task<BlockTestText> second = opened.GetBlockAsync<BlockTestText>().AsTask();
+            cancel.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first.WaitAsync(CompletionTimeout));
+            Assert.False(read.ReadCancellation.IsCancellationRequested);
+            Assert.False(second.IsCompleted);
+            read.Continue.TrySetResult();
+            BlockTestText content = await second.WaitAsync(CompletionTimeout);
+            Assert.Equal("custom text metadata", content.Text);
+            Assert.Same(content, await opened.GetBlockAsync<BlockTestText>());
+            Assert.Equal(1, read.Calls);
+        }
+        finally { read.Continue.TrySetResult(); BlockTestText.ReadControl = null; }
+    }
+
+    [Fact]
+    public async Task ClosingTheAssetCancelsTheCodecAndCompletesEveryWaiter()
+    {
+        using var files = new BlockFiles();
+        using (var asset = CreateContent()) await asset.SaveAsync(files.First);
+        var read = new BlockReadControl();
+        BlockTestText.ReadControl = read;
+        try
+        {
+            await using var opened = await BlockTestAsset.OpenAsync(files.First);
+            Task<BlockTestText> first = opened.GetBlockAsync<BlockTestText>().AsTask();
+            await read.Started.Task.WaitAsync(CompletionTimeout);
+            Task<BlockTestText> second = opened.GetBlockAsync<BlockTestText>().AsTask();
+            await opened.DisposeAsync().AsTask().WaitAsync(CompletionTimeout);
+            Assert.True(read.ReadCancellation.IsCancellationRequested);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first.WaitAsync(CompletionTimeout));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => second.WaitAsync(CompletionTimeout));
+            Assert.Equal(1, read.Calls);
+        }
+        finally { read.Continue.TrySetResult(); BlockTestText.ReadControl = null; }
+    }
+
+    [Fact]
+    public async Task CodecFailureAndThrowingCleanupFinishEveryWaiterAndAllowRetry()
+    {
+        using var files = new BlockFiles();
+        using (var asset = CreateContent()) await asset.SaveAsync(files.First);
+        var read = new BlockReadControl { RejectDecodedData = true, ThrowOnRelease = true };
+        BlockTestText.ReadControl = read;
+        try
+        {
+            await using var opened = await BlockTestAsset.OpenAsync(files.First);
+            Task<BlockTestText> first = opened.GetBlockAsync<BlockTestText>().AsTask();
+            await read.Started.Task.WaitAsync(CompletionTimeout);
+            Task<BlockTestText> second = opened.GetBlockAsync<BlockTestText>().AsTask();
+            read.Continue.TrySetResult();
+            AggregateException firstError = await Assert.ThrowsAsync<AggregateException>(() => first.WaitAsync(CompletionTimeout));
+            AggregateException secondError = await Assert.ThrowsAsync<AggregateException>(() => second.WaitAsync(CompletionTimeout));
+            Assert.Contains(firstError.InnerExceptions, error => error is InvalidDataException);
+            Assert.Contains(firstError.InnerExceptions, error => error is IOException);
+            Assert.Contains(secondError.InnerExceptions, error => error is InvalidDataException);
+            Assert.Contains(secondError.InnerExceptions, error => error is IOException);
+            Assert.Equal(1, read.Calls);
+            BlockTestText.ReadControl = null;
+            Assert.Equal("custom text metadata", (await opened.GetBlockAsync<BlockTestText>()).Text);
+        }
+        finally { read.Continue.TrySetResult(); BlockTestText.ReadControl = null; }
+    }
+
+    [Fact]
+    public async Task ImportGroupIsFullyVisibleEvenWhenRetiredBlockCleanupThrows()
+    {
+        await using var context = new ImportContext();
+        BlockTestAsset? target = null;
+        context.ConfigureAssets<object, BlockTestAsset>(_ => "group", (_, id) =>
+        {
+            target = CreateContent(id);
+            target.GetBlock<BlockTestText>().ThrowOnRelease = true;
+            return target;
+        }, (_, _) => "group.block-test.asset", static (asset, path, token) => asset.SaveAsync(path, token));
+        context.EnableImporter<object, BlockTestAsset>(new ConfiguredAssetImporter<object, int>(
+            new Guid("eef1c633-39c2-4556-8f6a-4e31f98e526c"),
+            [BlockTestNumbers.BlockTypeId, BlockTestText.BlockTypeId], new GroupImporter(), 72));
+        AggregateException error = await Assert.ThrowsAsync<AggregateException>(() => context.GetAssetAsync<object, BlockTestAsset>(new()).AsTask());
+        Assert.IsType<IOException>(Assert.Single(error.InnerExceptions));
+        Assert.Equal(72, target!.GetBlock<BlockTestNumbers>().Value);
+        Assert.Equal("replacement", target.GetBlock<BlockTestText>().Text);
+        Assert.Empty(context.Assets);
+    }
+
+    [Fact]
+    public async Task RemovingAnUnloadedBlockDoesNotDecodeItAndRemovesItFromTheFile()
+    {
+        using var files = new BlockFiles();
+        using (var original = CreateContent()) await original.SaveAsync(files.First);
+        using var asset = await BlockTestAsset.OpenAsync(files.First);
+        BlockTestText.ReadControl = new BlockReadControl { RejectRead = true };
+        try
+        {
+            Assert.Empty(asset.RemoveBlock<BlockTestText>());
+            Assert.False(asset.ContainsBlock<BlockTestText>());
+            Assert.Throws<KeyNotFoundException>(() => asset.GetBlock<BlockTestText>());
+            await asset.SaveAsync(files.Second);
+            using var reopened = await BlockTestAsset.OpenAsync(files.Second);
+            Assert.False(reopened.ContainsBlock<BlockTestText>());
+            Assert.Equal(31, (await reopened.GetBlockAsync<BlockTestNumbers>()).Value);
+            Assert.Equal(0, BlockTestText.ReadControl.Calls);
+        }
+        finally { BlockTestText.ReadControl = null; }
+    }
+
+    [Fact]
+    public void RemovingAndReplacingBlocksDoesNotChangeAnIndependentAsset()
+    {
+        using var asset = CreateContent();
+        using var copy = asset.Duplicate();
+        Assert.Empty(asset.RemoveBlock<BlockTestNumbers>());
+        Assert.False(asset.ContainsBlock<BlockTestNumbers>());
+        Assert.Equal(31, copy.GetBlock<BlockTestNumbers>().Value);
+        using var replacement = new BlockTestNumbers { Value = 67 };
+        Assert.Empty(asset.SetBlock(replacement));
+        Assert.Equal(67, asset.GetBlock<BlockTestNumbers>().Value);
+        Assert.Equal(31, copy.GetBlock<BlockTestNumbers>().Value);
+    }
+
+    private static BlockTestAsset CreateContent(Guid id = default)
+    {
+        var asset = new BlockTestAsset(PageArena.Shared, id) { Name = "content" };
+        try
+        {
+            using var numbers = new BlockTestNumbers { Value = 31 };
+            numbers.Chunks.Set(1, new byte[] { 1, 2, 3 });
+            using var text = new BlockTestText { Text = "custom text metadata" };
+            text.Chunks.Set(1, new byte[] { 9, 8, 7, 6 });
+            Assert.Empty(asset.SetBlock(numbers));
+            Assert.Empty(asset.SetBlock(text));
+            return asset;
+        }
+        catch { asset.Dispose(); throw; }
+    }
+
+    private static byte[] Bytes(PageBuffer buffer) { using PageRange<byte> read = buffer.Retain(); return read.ToArray(); }
+
+    private sealed class GroupImporter : IAssetImporter<object, int>
+    {
+        public ValueTask ImportAsync(object source, int settings, ImportContext context, ImportOutput output, CancellationToken cancellationToken)
+        {
+            output.SetBlock(new BlockTestText { Text = "replacement" });
+            output.SetBlock(new BlockTestNumbers { Value = settings });
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BlockFiles : IDisposable
+    {
+        private readonly string _directory = Path.Combine(Path.GetTempPath(), "asset-block-behavior-" + Guid.NewGuid().ToString("N"));
+        public string First => Path.Combine(_directory, "first.block-test.asset");
+        public string Second => Path.Combine(_directory, "second.block-test.asset");
+        public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true); }
+    }
+}
+
+[BinarySerializable]
+[BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
+internal sealed partial class BlockTestAsset : Asset
+{
+    public const string FileType = "SomeEngine.Tests.BlockAsset";
+    public static BinaryWireTypeDescriptor WireType => AssetHeader.WireType;
+    public new ImmutableArray<AssetBlockDescription> BlockDescriptions { get => base.BlockDescriptions; private set => base.BlockDescriptions = value; }
+
+    public BlockTestAsset() : this(PageArena.Shared) { }
+    public BlockTestAsset(PageArena pages, Guid id = default) : base(pages, id) => AssetType = FileType;
+    private BlockTestAsset(BlockTestAsset source) : base(source) { }
+    public override BlockTestAsset Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
+    {
+        using BlockTestAsset copy = Duplicate();
+        return await copy.SaveBlockContentAsync(path, ".block-test.asset", cancellationToken);
+    }
+    public static async ValueTask<BlockTestAsset> OpenAsync(string path)
+    {
+        using AssetFile file = await AssetFile.OpenAsync(path, WireType);
+        var asset = new BlockTestAsset(file.Pages, file.Describe().AssetGuid);
+        try { asset.ReadBlockContent(file); asset.AttachFile(file); return asset; }
+        catch { asset.Dispose(); throw; }
+    }
+}
+
+[AssetBlock, BinarySerializable, BinaryFields(nameof(Value))]
+internal sealed partial class BlockTestNumbers : AssetPageBlock
+{
+    public partial int Value { get; set; }
+}
+
+[AssetBlock("SomeEngine.Tests.SessionData")]
+internal sealed partial class BlockTestSessionData : AssetBlock
+{
+    public AssetId<Asset> Reference { get; }
+    public bool Disposed { get; private set; }
+
+    public BlockTestSessionData(Guid reference) => Reference = new(reference);
+    private BlockTestSessionData(BlockTestSessionData source, PageAccess? access = null)
+        : base(source, access) => Reference = source.Reference;
+    public override AssetBlock Duplicate() => new BlockTestSessionData(this);
+    public override AssetBlock Duplicate(PageAccess access) => new BlockTestSessionData(this, access);
+    public override IEnumerable<Guid> References() => [Reference.Value];
+    protected override void ReleaseContent() => Disposed = true;
+}
+
+internal sealed class BlockReadControl
+{
+    public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public CancellationToken ReadCancellation { get; set; }
+    public int Calls;
+    public bool RejectRead { get; init; }
+    public bool RejectDecodedData { get; init; }
+    public bool ThrowOnRelease { get; init; }
+}
+
+/// <summary>A genuine extension codec: UTF-8 metadata, with no BinarySerializable fields.</summary>
+[AssetBlock("SomeEngine.Tests.TextData")]
+internal sealed partial class BlockTestText : AssetPageBlock, IAssetBlockWriter
+{
+    public static BinaryWireTypeDescriptor TextEncoding => new(new("e9a6b638-a773-47bd-a61c-2f644aa8119e"), 0x74212b09, BinaryCompatibility.ExactSchema, 3);
+    public static BlockReadControl? ReadControl { get; set; }
+    public bool ThrowOnRelease { get; set; }
+    private string _text = "";
+    public string Text
+    {
+        get { lock (Access.SyncRoot) { RequireIdle(); return _text; } }
+        set { lock (Access.SyncRoot) { RequireIdle(); _text = value; } }
+    }
+    public BlockTestText(PageArena? pages = null) : base(pages) { }
+    private BlockTestText(BlockTestText source, PageAccess? access = null) : base(source, access)
+    { _text = source._text; ThrowOnRelease = source.ThrowOnRelease; }
+    public override BlockTestText Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }
+    public override BlockTestText Duplicate(PageAccess access) { lock (Access.SyncRoot) { RequireIdle(); return new(this, access); } }
+    public static async ValueTask<BlockTestText> ReadAsync(AssetBlockSource source, CancellationToken cancellationToken = default)
+    {
+        BlockReadControl? control = ReadControl;
+        if (control is not null)
+        {
+            Interlocked.Increment(ref control.Calls);
+            control.ReadCancellation = cancellationToken;
+            control.Started.TrySetResult();
+            if (control.RejectRead) throw new InvalidOperationException("An unopened block must not invoke its codec while saving.");
+            await control.Continue.Task.WaitAsync(cancellationToken);
+        }
+        if (source.Description.EncodingTypeId != TextEncoding.TypeId || source.Description.SchemaHash != TextEncoding.SchemaFingerprint)
+            throw new InvalidDataException("Unsupported text encoding.");
+        using PageBuffer bytes = await source.AcquireMetadataAsync(cancellationToken);
+        using PageRange<byte> read = bytes.Retain();
+        var block = new BlockTestText(source.Pages) { Text = System.Text.Encoding.UTF8.GetString(read.ToArray()) };
+        block.AttachSource(source);
+        block.ThrowOnRelease = control?.ThrowOnRelease ?? false;
+        if (control?.RejectDecodedData == true)
+        {
+            var failure = new InvalidDataException("The decoded text was rejected.");
+            try { block.Dispose(); }
+            catch (Exception cleanup) { throw new AggregateException(failure, cleanup); }
+            throw failure;
+        }
+        return block;
+    }
+    public async ValueTask WriteAsync(AssetBlockWriter writer, CancellationToken cancellationToken)
+    {
+        byte[] text = System.Text.Encoding.UTF8.GetBytes(Text);
+        using var metadata = new PageBuffer(Pages, text.Length);
+        metadata.Write(0, text);
+        writer.WriteMetadata(BlockTypeId, TextEncoding, metadata);
+        await WriteChunksAsync(writer, cancellationToken);
+    }
+    protected override void ReleaseContent()
+    {
+        try { if (ThrowOnRelease) throw new IOException("Extension content cleanup failed."); }
+        finally { base.ReleaseContent(); }
+    }
+}

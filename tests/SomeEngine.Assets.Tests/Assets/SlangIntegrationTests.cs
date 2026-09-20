@@ -3,6 +3,7 @@ using System.Linq;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 namespace SomeEngine.Assets.Tests.Assets;
 
 public class SlangIntegrationTests
@@ -30,8 +31,8 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetFile = SlangShaderImporter.Import(slangFile);
-            Shader asset = await Shader.CreateAsync(assetFile);
+            using var assetFile = ShaderTestCompilation.Compile(slangFile);
+            using Shader asset = await assetFile.GetBlock<ShaderBlock>().CreateAsync(assetFile.Name);
 
             Assert.NotNull(asset);
             Assert.Equal(Path.GetFileNameWithoutExtension(slangFile), asset.Name);
@@ -87,8 +88,8 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetFile = SlangShaderImporter.Import(tempFile);
-            Shader asset = await Shader.CreateAsync(assetFile);
+            using var assetFile = ShaderTestCompilation.Compile(tempFile);
+            using Shader asset = await assetFile.GetBlock<ShaderBlock>().CreateAsync(assetFile.Name);
 
             var reflection = asset.Reflections?.FirstOrDefault()?.Reflection;
             Assert.NotNull(reflection);
@@ -118,7 +119,7 @@ public class SlangIntegrationTests
     }
 
     [Fact]
-    public async Task TestSlangImport_GeneratesStableAssetGuidAndMeta()
+    public async Task NativeDefinitionRetainsIdentityWithoutCreatingSourceCompanions()
     {
         string source = @"
             [shader(""compute"")]
@@ -133,19 +134,23 @@ public class SlangIntegrationTests
 
         try
         {
-            using var asset1File = SlangShaderImporter.Import(slangFile);
-            Shader asset1 = await Shader.CreateAsync(asset1File);
-            using var asset2File = SlangShaderImporter.Import(slangFile);
-            Shader asset2 = await Shader.CreateAsync(asset2File);
+            string definitionPath = Path.Combine(dir, "selected.shader");
+            using var definition = ShaderTestCompilation.Define(slangFile);
+            await definition.SaveSourceAsync(definitionPath);
+            using var asset1File = SlangShaderImporter.CompileDefinition(definition, definitionPath);
+            using Shader asset1 = await asset1File.GetBlock<ShaderBlock>().CreateAsync(asset1File.Name);
+            using var reloaded = await ShaderAsset.OpenSourceAsync(definitionPath);
+            using var asset2File = SlangShaderImporter.CompileDefinition(reloaded, definitionPath);
+            using Shader asset2 = await asset2File.GetBlock<ShaderBlock>().CreateAsync(asset2File.Name);
 
-            Guid guid1 = asset1File.Id.Value;
-            Guid guid2 = asset2File.Id.Value;
+            Guid guid1 = asset1File.Id;
+            Guid guid2 = asset2File.Id;
             Assert.Equal(guid2, guid1);
-            Assert.True(File.Exists(SourceMeta.GetMetaPath(slangFile)));
-            string assetPath = Path.ChangeExtension(Path.GetFullPath(slangFile), ".shader.asset");
-            Assert.NotNull(SourceMeta.Load(slangFile).FindOutput(assetPath));
-            Assert.NotNull(asset1.ImportTrace);
-            Assert.False(string.IsNullOrEmpty(asset1.ImportTrace!.SourceGuid));
+            Assert.Equal(definition.Id, guid1);
+            Assert.Empty(Directory.EnumerateFiles(dir, "*.meta"));
+            Assert.Empty(Directory.EnumerateFiles(dir, "*.asset"));
+            Assert.NotNull(asset1File.GetBlock<ShaderBlock>().ImportTrace);
+            Assert.Equal(definitionPath, asset1File.GetBlock<ShaderBlock>().ImportTrace!.SourcePath);
         }
         finally
         {
@@ -170,28 +175,31 @@ public class SlangIntegrationTests
 
         try
         {
-            using var asset1File = SlangShaderImporter.Import(sourceFile);
-            Shader asset1 = await Shader.CreateAsync(asset1File);
-            Guid guid1 = asset1File.Id.Value;
-            Assert.NotNull(asset1.ImportTrace);
-            Assert.NotNull(asset1.ImportTrace!.Dependencies);
-            IList<DependencyEntry> dependencies1 = asset1.ImportTrace.Dependencies!;
+            using var definition = ShaderTestCompilation.Define(sourceFile);
+            using var asset1File = ShaderTestCompilation.Compile(definition, sourceFile);
+            using Shader asset1 = await asset1File.GetBlock<ShaderBlock>().CreateAsync(asset1File.Name);
+            Guid guid1 = asset1File.Id;
+            var trace1 = asset1File.GetBlock<ShaderBlock>().ImportTrace;
+            Assert.NotNull(trace1);
+            Assert.NotNull(trace1.Dependencies);
+            IList<DependencyEntry> dependencies1 = trace1.Dependencies;
             Assert.True(dependencies1.Count >= 2);
             Assert.Contains(dependencies1, d => d.Path == "common_inc.slang" || d.Path!.EndsWith("/common_inc.slang"));
 
-            string fingerprint1 = asset1.ImportTrace.ContentFingerprint!;
+            string inputHash1 = trace1.ContentFingerprint!;
 
             File.WriteAllText(includeFile, "float4 GetColor() { return float4(0, 1, 0, 1); }");
 
-            using var asset2File = SlangShaderImporter.Import(sourceFile);
+            using var asset2File = ShaderTestCompilation.Compile(definition, sourceFile);
 
-            Shader asset2 = await Shader.CreateAsync(asset2File);
-            Guid guid2 = asset2File.Id.Value;
+            using Shader asset2 = await asset2File.GetBlock<ShaderBlock>().CreateAsync(asset2File.Name);
+            Guid guid2 = asset2File.Id;
             Assert.Equal(guid1, guid2);
-            Assert.NotNull(asset2.ImportTrace);
-            Assert.NotEqual(fingerprint1, asset2.ImportTrace!.ContentFingerprint);
-            Assert.NotNull(asset2.ImportTrace.Dependencies);
-            IList<DependencyEntry> dependencies2 = asset2.ImportTrace.Dependencies!;
+            var trace2 = asset2File.GetBlock<ShaderBlock>().ImportTrace;
+            Assert.NotNull(trace2);
+            Assert.NotEqual(inputHash1, trace2.ContentFingerprint);
+            Assert.NotNull(trace2.Dependencies);
+            IList<DependencyEntry> dependencies2 = trace2.Dependencies;
             Assert.Contains(dependencies2, d => d.Path == "common_inc.slang" || d.Path!.EndsWith("/common_inc.slang"));
         }
         finally
@@ -227,20 +235,20 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA);
-            Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB);
-            Shader assetB = await Shader.CreateAsync(assetBFile);
+            using var assetAFile = ShaderTestCompilation.Compile(fileA);
+            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
+            using var assetBFile = ShaderTestCompilation.Compile(fileB);
+            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
 
             Assert.NotNull(assetA.Programs);
             Assert.NotNull(assetB.Programs);
 
             // 验证每个 backend 的 content hash 都一致
-            var hashesA = assetA.Programs!
+            var hashesA = assetA.Programs!.Select(program => { Assert.NotNull(program); return program; })
                 .ToDictionary(
                     program => program.Backend!,
                     program => EntryHash(assetA, program.Backend!, "CSMain", ShaderStage.Compute));
-            var hashesB = assetB.Programs!
+            var hashesB = assetB.Programs!.Select(program => { Assert.NotNull(program); return program; })
                 .ToDictionary(
                     program => program.Backend!,
                     program => EntryHash(assetB, program.Backend!, "CSMain", ShaderStage.Compute));
@@ -297,10 +305,10 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA);
-            Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB);
-            Shader assetB = await Shader.CreateAsync(assetBFile);
+            using var assetAFile = ShaderTestCompilation.Compile(fileA);
+            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
+            using var assetBFile = ShaderTestCompilation.Compile(fileB);
+            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
 
             string spirvA = EntryHash(assetA, "spirv", "CSMain", ShaderStage.Compute);
             string spirvB = EntryHash(assetB, "spirv", "CSMain", ShaderStage.Compute);
@@ -354,21 +362,23 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA);
-            Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB);
-            Shader assetB = await Shader.CreateAsync(assetBFile);
+            using var assetAFile = ShaderTestCompilation.Compile(fileA);
+            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
+            using var assetBFile = ShaderTestCompilation.Compile(fileB);
+            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
-                CookedShaderProgram programA = assetA.Programs!.Single(program =>
+                CookedShaderProgram programA = assetAFile.GetBlock<ShaderBlock>().Programs.Single(program =>
                     string.Equals(program.Backend, backend, StringComparison.Ordinal));
-                CookedShaderProgram programB = assetB.Programs!.Single(program =>
+                CookedShaderProgram programB = assetBFile.GetBlock<ShaderBlock>().Programs.Single(program =>
                     string.Equals(program.Backend, backend, StringComparison.Ordinal));
-                string hashA = Convert.ToHexString(
-                    System.Security.Cryptography.SHA256.HashData(programA.Data!.Value.Span));
-                string hashB = Convert.ToHexString(
-                    System.Security.Cryptography.SHA256.HashData(programB.Data!.Value.Span));
+                using var bytesA = await assetAFile.GetBlock<ShaderBlock>().AcquireBufferAsync(programA.DataChunkKey);
+                using var bytesB = await assetBFile.GetBlock<ShaderBlock>().AcquireBufferAsync(programB.DataChunkKey);
+                using var readA = bytesA.Retain();
+                using var readB = bytesB.Retain();
+                string hashA = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(readA.ToArray()));
+                string hashB = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(readB.ToArray()));
 
                 Console.WriteLine($"  [{backend}] A: {hashA}");
                 Console.WriteLine($"  [{backend}] B: {hashB}");
@@ -418,10 +428,10 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA);
-            Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB);
-            Shader assetB = await Shader.CreateAsync(assetBFile);
+            using var assetAFile = ShaderTestCompilation.Compile(fileA);
+            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
+            using var assetBFile = ShaderTestCompilation.Compile(fileB);
+            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {
@@ -480,10 +490,10 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA);
-            Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB);
-            Shader assetB = await Shader.CreateAsync(assetBFile);
+            using var assetAFile = ShaderTestCompilation.Compile(fileA);
+            using Shader assetA = await assetAFile.GetBlock<ShaderBlock>().CreateAsync(assetAFile.Name);
+            using var assetBFile = ShaderTestCompilation.Compile(fileB);
+            using Shader assetB = await assetBFile.GetBlock<ShaderBlock>().CreateAsync(assetBFile.Name);
 
             foreach (var backend in new[] { "spirv", "dxil" })
             {

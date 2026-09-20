@@ -1,7 +1,8 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
-using TextureAsset = SomeEngine.Assets.Schema.Texture.Asset;
+using SomeEngine.Resources;
+using TextureAsset = SomeEngine.Assets.Schema.TextureAsset;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -41,13 +42,21 @@ public static class DisplacementBoundsTexture
         }
         sourceRange = new Vector2(sourceMinimum, sourceMaximum);
 
+        using var pixels = new TextureBlock
+        {
+            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
+            Width = width, Height = height, Depth = 1, ArrayLayerCount = 1,
+            Format = SomeEngine.Graphics.Format.R32G32Float,
+            SampledFormat = SomeEngine.Graphics.Format.R32G32Float,
+            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
+        };
         var tiles = new List<TextureMipTile>();
         uint level = 0;
         uint currentWidth = width;
         uint currentHeight = height;
         while (true)
         {
-            tiles.Add(CreateTile(level, currentWidth, currentHeight, current));
+            tiles.Add(CreateTile(pixels, level, currentWidth, currentHeight, current));
             if (currentWidth == 1u && currentHeight == 1u)
                 break;
 
@@ -86,30 +95,22 @@ public static class DisplacementBoundsTexture
             level++;
         }
 
-        return new TextureAsset(new(assetGuid))
-        {
-            Name = name,
-            Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
-            Width = width,
-            Height = height,
-            Depth = 1,
-            MipLevelCount = checked((uint)tiles.Count),
-            ArrayLayerCount = 1,
-            Format = SomeEngine.Graphics.Format.R32G32Float,
-            SampledFormat = SomeEngine.Graphics.Format.R32G32Float,
-            SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
-            MipTiles = tiles.ToImmutableList(),
-        };
+        pixels.MipLevelCount = checked((uint)tiles.Count);
+        pixels.MipTiles = tiles;
+        var asset = new TextureAsset(SomeEngine.Serialization.Containers.PageArena.Shared, assetGuid) { Name = name };
+        try { asset.SetBlock(pixels); return asset; }
+        catch { asset.Dispose(); throw; }
     }
 
     private static TextureMipTile CreateTile(
+        TextureBlock pixels,
         uint level,
         uint width,
         uint height,
         Vector2[] ranges)
     {
-        byte[] payload = MemoryMarshal.AsBytes(ranges.AsSpan()).ToArray();
-        return new TextureMipTile
+        ReadOnlySpan<byte> payload = MemoryMarshal.AsBytes(ranges.AsSpan());
+        TextureMipTile tile = TextureTiles.Describe(new TextureMipTile
         {
             MipLevel = level,
             TileX = 0,
@@ -118,7 +119,8 @@ public static class DisplacementBoundsTexture
             Height = height,
             RowPitch = checked((ulong)width * 8u),
             SlicePitch = checked((ulong)width * height * 8u),
-            Payload = payload,
-        };
+        }, payload.Length);
+        pixels.Chunks.Set(tile.ChunkKey, payload);
+        return tile;
     }
 }

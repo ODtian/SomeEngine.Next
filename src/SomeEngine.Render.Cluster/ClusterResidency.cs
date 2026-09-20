@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Frame;
 
@@ -196,11 +197,12 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal bool IsDisposed => Volatile.Read(ref _lifecycleState) == 2;
 
     internal ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        MeshData mesh,
-        CancellationToken cancellationToken = default)
+        Mesh mesh,
+        CancellationToken cancellationToken = default,
+        SomeEngine.Assets.Pipeline.MeshPayloadSource? pageSource = null)
     {
         ThrowIfNotActive();
-        return _meshes.RegisterMeshAsync(mesh, cancellationToken);
+        return _meshes.RegisterMeshAsync(mesh, cancellationToken, pageSource);
     }
 
     internal bool IsMeshRegistered(MeshData mesh)

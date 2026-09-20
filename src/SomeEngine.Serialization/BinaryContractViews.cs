@@ -9,7 +9,7 @@ namespace SomeEngine.Serialization;
 /// strongly typed without reflection or runtime type discovery.
 /// </summary>
 public interface IBinaryViewContract<TSelf, TView>
-    where TSelf : IBinaryContract<TSelf>, IBinaryViewContract<TSelf, TView>
+    where TSelf : IBinarySerializable<TSelf>, IBinaryViewContract<TSelf, TView>
     where TView : struct
 {
     static abstract void ValidateCanonical(ReadOnlySpan<byte> source, BinaryReadLimits? limits = null);
@@ -20,11 +20,11 @@ public interface IBinaryViewContract<TSelf, TView>
 }
 
 /// <summary>
-/// Opt-in validation hook for hand-written contracts nested inside generated contracts. The hook
+/// Static validation hook for codecs nested inside generated codecs, including referenced assemblies. The hook
 /// must consume exactly one value from the supplied reader and must not materialize an object.
 /// </summary>
 public interface IBinaryCustomViewContract<TSelf>
-    where TSelf : IBinaryContract<TSelf>, IBinaryCustomViewContract<TSelf>
+    where TSelf : IBinarySerializable<TSelf>, IBinaryCustomViewContract<TSelf>
 {
     static abstract void ValidateView(ref BinaryViewReader reader);
 }

@@ -1,8 +1,9 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using SomeEngine.RenderGraph;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Materials;
 using SlangShaderSharp;
@@ -326,7 +327,7 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
         => new($"Material '{material.Name}' slot '{name}' is not a {expected}.");
 
     private readonly record struct BindingValue(ResourceBindingType Type, object? Value);
-    private readonly record struct TextureValue(SomeEngine.Assets.Schema.TextureData Texture);
+    private readonly record struct TextureValue(SomeEngine.Resources.Texture Texture);
     private readonly record struct AccelerationValue(AccelerationStructure Resource);
     private readonly record struct BufferSrvValue(
         SomeEngine.Graphics.Buffer Buffer,

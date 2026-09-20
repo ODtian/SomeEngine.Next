@@ -11,4 +11,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../templates/DefaultProject/Game.Importing/Game.Importing.csproj" />
+    <Using Include="Game.Content" />
+    <Using Include="Game.Assets" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
 </Project>
