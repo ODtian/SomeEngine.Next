@@ -14,37 +14,37 @@ public sealed class MaterialFileTests
     {
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
-        using Asset<Texture> textureFile = new TextureData
+        using Texture.Asset textureFile = new Texture.Asset
         {
             Name = "material texture", Dimension = TextureDimension.Texture2D,
             Width = 1, Height = 1, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
             Format = Format.R8UNorm, SampledFormat = Format.R8UNorm,
             SampledDimension = TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, Payload = new byte[] { 19 } }],
-        }.ToAsset();
-        Guid textureId = project.CreateAsset("color.texture.asset", textureFile);
-        using Asset<Material> parent = new StandardMaterialData
+        };
+        Guid textureId = project.RegisterAsset((textureFile).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "color.texture.asset")).AsTask().GetAwaiter().GetResult());
+        using Material.Asset parent = new StandardMaterial.Asset
         {
             Name = "parent", AlbedoMap = new(textureId), Roughness = 0.25f,
             BaseColorTint = new Vector4(0.2f, 0.4f, 0.6f, 1f),
-        }.ToAsset();
-        Guid parentId = project.CreateAsset("parent.material.asset", parent);
-        using Asset<Material> child = new MaterialData
+        };
+        Guid parentId = project.RegisterAsset((parent).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "parent.material.asset")).AsTask().GetAwaiter().GetResult());
+        using Material.Asset child = new StandardMaterial.Asset
         {
             Name = "child", Parent = new(parentId),
-            Parameters = [new("Roughness", MaterialParameterKind.Float) { Float = 0.8f }],
-        }.ToAsset();
-        Guid childId = project.CreateAsset("child.material.asset", child);
+            Roughness = 0.8f,
+        };
+        Guid childId = project.RegisterAsset((child).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "child.material.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(project.CreateStorage());
-        await using Asset<Material> opened = await loader.OpenAsync(new AssetId<Material>(childId));
-        Assert.Equal([parentId], opened.Dependencies);
+        await using Material.Asset opened = await Material.Asset.OpenAsync(loader, new AssetId<Material>(childId));
+        Assert.Equal([parentId], opened.Describe().Dependencies);
         Assert.Equal([childId], project.Manifest.GetReferencers(parentId));
-        Assert.Equal(new AssetId<Material>(parentId), opened.GetFieldsGenerated<MaterialData>().Parent);
+        Assert.Equal(new AssetId<Material>(parentId), opened.Parent);
         string copied = directory.File("copy.material.asset");
-        await AssetWriter.WriteAsync(opened, copied);
-        await using Asset<Material> copy = await AssetLoader.OpenFileAsync<Material>(copied);
+        await opened.SaveAsync(copied);
+        await using Material.Asset copy = await Material.Asset.OpenAsync(copied);
         Assert.Equal(opened.Id, copy.Id);
-        Assert.Equal([parentId], copy.Dependencies);
+        Assert.Equal([parentId], copy.Describe().Dependencies);
         using Material first = await Material.CreateAsync(opened, loader);
         using Material second = await Material.CreateAsync(copy, loader);
         StandardMaterial a = Assert.IsType<StandardMaterial>(first);
@@ -66,13 +66,13 @@ public sealed class MaterialFileTests
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
         Guid id = Guid.NewGuid();
-        using Asset<Material> file = new MaterialData
+        using Material.Asset file = new StandardMaterial.Asset(new(id))
         {
-            AssetGuid = id.ToString(), Name = "cycle", Parent = new(id),
-        }.ToAsset();
-        project.CreateAsset("cycle.material.asset", file);
+            Name = "cycle", Parent = new(id),
+        };
+        project.RegisterAsset((file).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "cycle.material.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(project.CreateStorage());
-        await using Asset<Material> opened = await loader.OpenAsync(new AssetId<Material>(id));
+        await using Material.Asset opened = await Material.Asset.OpenAsync(loader, new AssetId<Material>(id));
         using var material = new StandardMaterial { Name = "before", Roughness = 0.4f };
         await Assert.ThrowsAsync<InvalidDataException>(() => material.UpdateAsync(opened, loader).AsTask());
         Assert.Equal("before", material.Name);
@@ -84,19 +84,19 @@ public sealed class MaterialFileTests
     {
         using var directory = new AssetTestDirectory();
         var project = new AssetProject(directory.Path, []);
-        using Asset<Texture> pixels = new TextureData
+        using Texture.Asset pixels = new Texture.Asset
         {
             Name = "replacement pixels", Dimension = TextureDimension.Texture2D,
             Width = 1, Height = 1, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
             Format = Format.R8UNorm, SampledFormat = Format.R8UNorm,
             SampledDimension = TextureViewDimension.Texture2D,
             MipTiles = [new TextureMipTile { Width = 1, Height = 1, Payload = new byte[] { 73 } }],
-        }.ToAsset();
-        Guid id = project.CreateAsset("replacement.texture.asset", pixels);
-        using Asset<Material> file = new StandardMaterialData
+        };
+        Guid id = project.RegisterAsset((pixels).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "replacement.texture.asset")).AsTask().GetAwaiter().GetResult());
+        using Material.Asset file = new StandardMaterial.Asset
         {
             Name = "after", AlbedoMap = new(id), Roughness = 0.7f,
-        }.ToAsset();
+        };
         await using var loader = new AssetLoader(project.CreateStorage());
         using var material = new StandardMaterial { Name = "before" };
         int notifications = 0;

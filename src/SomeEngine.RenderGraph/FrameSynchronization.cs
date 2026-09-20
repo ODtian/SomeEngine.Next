@@ -1190,6 +1190,7 @@ internal sealed partial class FrameExecutor
             _lateReleases.AddRange(value.LateReleases);
             SaveSynchronizationInput(key);
         }
+        RefreshSynchronizationBindings();
         foreach (int pass in _changedSynchronizationPasses)
         {
             _beforeBufferBarriers[pass].Clear(); _afterBufferBarriers[pass].Clear();
@@ -1254,11 +1255,11 @@ internal sealed partial class FrameExecutor
 
 
     private static ReadOnlySpan<BufferBoundaryState> BufferEntryStates(in FrameBuffer buffer) =>
-        buffer.Lifetime == RenderGraphResourceLifetime.Persistent
+        buffer.Lifetime == RenderGraphResourceLifetime.Persistent || buffer.Ownership == RenderGraphResourceOwnership.CallerOwned
             ? buffer.Definition?.BoundaryStates ?? buffer.EntryBoundaryStates : buffer.EntryBoundaryStates;
 
     private static ReadOnlySpan<TextureBoundaryState> TextureEntryStates(in FrameTexture texture) =>
-        texture.Lifetime == RenderGraphResourceLifetime.Persistent
+        texture.Lifetime == RenderGraphResourceLifetime.Persistent || texture.Ownership == RenderGraphResourceOwnership.CallerOwned
             ? texture.Definition?.BoundaryStates ?? texture.EntryBoundaryStates : texture.EntryBoundaryStates;
 
     private bool BufferSynchronizationChanged(int index, in FrameBuffer row)
@@ -1267,8 +1268,7 @@ internal sealed partial class FrameExecutor
         ReadOnlySpan<BufferBoundaryState> states = BufferEntryStates(row);
         if (row.Resource?.Device.Capabilities.SupportsConcurrentBufferReads == true)
         {
-            if (!ReferenceEquals(input.Resource, row.Resource) ||
-                !ReferenceEquals(input.Alias, row.Placement.AliasingPredecessor)) return true;
+            if (!ReferenceEquals(input.Alias, row.Placement.AliasingPredecessor)) return true;
             int count = 0;
             foreach (BufferBoundaryState state in states)
             {
@@ -1279,7 +1279,7 @@ internal sealed partial class FrameExecutor
             }
             return count != (input.States?.Length ?? 0);
         }
-        if (!ReferenceEquals(input.Resource, row.Resource) || !ReferenceEquals(input.Alias, row.Placement.AliasingPredecessor) ||
+        if (!ReferenceEquals(input.Alias, row.Placement.AliasingPredecessor) ||
             input.States is null || input.States.Length != states.Length) return true;
         for (int item = 0; item < states.Length; item++)
             if (input.States[item] != new BufferSyncState(states[item].Range, states[item].Sync, states[item].Access,
@@ -1291,7 +1291,7 @@ internal sealed partial class FrameExecutor
     {
         TextureSyncInput input = _textures[index].Synchronization;
         ReadOnlySpan<TextureBoundaryState> states = TextureEntryStates(row);
-        if (!ReferenceEquals(input.Resource, row.Resource) || !ReferenceEquals(input.Alias, row.Placement.AliasingPredecessor) ||
+        if (!ReferenceEquals(input.Alias, row.Placement.AliasingPredecessor) ||
             input.States is null || input.States.Length != states.Length) return true;
         for (int item = 0; item < states.Length; item++)
             if (input.States[item] != new TextureSyncState(states[item].Range, states[item].Sync, states[item].Access,
@@ -1325,8 +1325,7 @@ internal sealed partial class FrameExecutor
                     row.Definition is not null)
                     row.EntryBoundaryStates = row.Definition.BoundaryStates;
                 ObserveBuffer(key.Index, ref row);
-                if (BufferSynchronizationChanged(key.Index, _buffers[key.Index]))
-                    _changedSynchronizationResources.Add(key);
+                ObserveBufferSynchronization(key.Index, row);
             }
             else if (key.Kind == GraphAccessTargetKind.Texture)
             {
@@ -1336,8 +1335,7 @@ internal sealed partial class FrameExecutor
                     row.Definition is not null)
                     row.EntryBoundaryStates = row.Definition.BoundaryStates;
                 ObserveTexture(key.Index, ref row);
-                if (TextureSynchronizationChanged(key.Index, _textures[key.Index]))
-                    _changedSynchronizationResources.Add(key);
+                ObserveTextureSynchronization(key.Index, row);
             }
             else if (key.Kind == GraphAccessTargetKind.QueryPool)
                 ObserveQueryContents(key.Index);

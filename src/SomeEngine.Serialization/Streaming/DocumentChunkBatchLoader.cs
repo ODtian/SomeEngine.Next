@@ -7,16 +7,15 @@ namespace SomeEngine.Serialization.Streaming;
 /// into the lease that will be published; stored-range coalescing is intentionally unsupported
 /// because a merged range plus per-chunk owners would retain duplicate payload backings.
 /// </summary>
-internal sealed class DocumentChunkLoader<T>
-    where T : IBinaryContract<T>
+internal sealed class DocumentChunkLoader
 {
     private readonly object _gate = new();
-    private readonly BinaryDocument<T> _document;
+    private readonly BinaryDocument _document;
     private readonly ChunkStreamingMetrics _metrics;
     private readonly Dictionary<ulong, BinaryChunkEntry> _descriptors = [];
 
     internal DocumentChunkLoader(
-        BinaryDocument<T> document,
+        BinaryDocument document,
         ChunkStreamingMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(document);

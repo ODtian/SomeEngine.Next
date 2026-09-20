@@ -217,7 +217,9 @@ public sealed class ClusterRegistrationTests
         incompatible.VertexEncoding = "test.vertex.other.v1";
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(incompatible.Payload!.Value.Span);
         header.VertexEncodingHash = VertexEncodingCompatibility.Hash(incompatible.VertexEncoding);
-        MemoryMarshal.Write(incompatible.Payload.Value.Span, in header);
+        byte[] payload = incompatible.Payload.Value.ToArray();
+        MemoryMarshal.Write(payload.AsSpan(), in header);
+        incompatible.Payload = payload;
 
         ClusterMeshRegistration incompatibleRegistration = await manager.AddAuthoredMeshAsync(incompatible);
         Assert.True(manager.IsMeshRegistered(standardRegistration.Mesh));

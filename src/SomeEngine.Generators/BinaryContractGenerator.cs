@@ -132,6 +132,24 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private sealed class BinaryOutput(SourceProductionContext output)
+    {
+        internal Dictionary<SyntaxTree, Location> Origins { get; } = new();
+        internal void AddSource(string name, string source) => output.AddSource(name, source);
+        internal void ReportDiagnostic(Diagnostic diagnostic)
+        {
+            if (diagnostic.Location.SourceTree is { } tree && Origins.TryGetValue(tree, out Location? origin))
+            {
+                DiagnosticDescriptor descriptor = diagnostic.Descriptor;
+                diagnostic = Diagnostic.Create(new DiagnosticDescriptor(descriptor.Id, descriptor.Title,
+                    diagnostic.GetMessage(), descriptor.Category, descriptor.DefaultSeverity,
+                    descriptor.IsEnabledByDefault, descriptor.Description, descriptor.HelpLinkUri,
+                    descriptor.CustomTags.ToArray()), origin);
+            }
+            output.ReportDiagnostic(diagnostic);
+        }
+    }
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<INamedTypeSymbol> candidates = context.SyntaxProvider.ForAttributeWithMetadataName(
@@ -145,10 +163,15 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void Generate(
-        SourceProductionContext context,
+        SourceProductionContext output,
         Compilation compilation,
         ImmutableArray<INamedTypeSymbol> discovered)
     {
+        var context = new BinaryOutput(output);
+        compilation = AssetGenerator.AddFieldDeclarations(output, compilation, context.Origins);
+        discovered = AssetGenerator.Types(compilation.Assembly.GlobalNamespace)
+            .Where(type => type.GetAttributes().Any(attribute => attribute.AttributeClass?.ToDisplayString() == ContractAttributeName))
+            .ToImmutableArray();
         string catalogNamespace =
             "SomeEngine.GeneratedContracts.Assembly_" +
             Sanitize(compilation.AssemblyName ?? "UnknownAssembly");
@@ -214,7 +237,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         }
     }
 
-    private static ContractModel CreateModel(SourceProductionContext context, INamedTypeSymbol type)
+    private static ContractModel CreateModel(BinaryOutput context, INamedTypeSymbol type)
     {
         AttributeData? attribute = FindAttribute(type, ContractAttributeName);
         uint epoch = 1;
@@ -296,7 +319,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static void ValidateContractType(SourceProductionContext context, ContractModel model)
+    private static void ValidateContractType(BinaryOutput context, ContractModel model)
     {
         INamedTypeSymbol type = model.Symbol;
         List<string> reasons = new();
@@ -389,7 +412,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         }
     }
 
-    private static void BuildChunkReferences(SourceProductionContext context, ContractModel model)
+    private static void BuildChunkReferences(BinaryOutput context, ContractModel model)
     {
         foreach (ISymbol payload in model.Symbol.GetMembers()
                      .Where(static member => !member.IsStatic && !member.IsImplicitlyDeclared))
@@ -445,7 +468,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void BuildMembers(
-        SourceProductionContext context,
+        BinaryOutput context,
         ContractModel model,
         Dictionary<INamedTypeSymbol, ContractModel> models)
     {
@@ -566,7 +589,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void BuildNativeLayouts(
-        SourceProductionContext context,
+        BinaryOutput context,
         Dictionary<INamedTypeSymbol, ContractModel> models)
     {
         ContractModel[] requested = models.Values
@@ -1411,13 +1434,19 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     {
         return type is INamedTypeSymbol named &&
                named.Arity == 1 &&
-               string.Equals(named.Name, "Memory", StringComparison.Ordinal) &&
+               named.Name is "Memory" or "ReadOnlyMemory" &&
                string.Equals(named.ContainingNamespace?.ToDisplayString(), "System", StringComparison.Ordinal) &&
                named.TypeArguments[0].SpecialType == SpecialType.System_Byte;
     }
 
     private static bool TryGetCollectionKind(INamedTypeSymbol type, out CollectionKind kind)
     {
+        if (type.Arity == 1 && type.Name == "ImmutableList" &&
+            type.ContainingNamespace.ToDisplayString() == "System.Collections.Immutable")
+        {
+            kind = CollectionKind.ImmutableList;
+            return true;
+        }
         if (type.Arity == 1 &&
             string.Equals(type.ContainingNamespace?.ToDisplayString(), "System.Collections.Generic", StringComparison.Ordinal))
         {
@@ -1459,7 +1488,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void RejectDuplicateLogicalTypeNames(
-        SourceProductionContext context,
+        BinaryOutput context,
         IEnumerable<ContractModel> models)
     {
         foreach (IGrouping<string, ContractModel> duplicate in models
@@ -1480,7 +1509,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void RejectDuplicateTypeIds(
-        SourceProductionContext context,
+        BinaryOutput context,
         IEnumerable<ContractModel> models)
     {
         foreach (IGrouping<string, ContractModel> collision in models
@@ -1501,7 +1530,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         }
     }
 
-    private static void RejectCycles(SourceProductionContext context, IEnumerable<ContractModel> source)
+    private static void RejectCycles(BinaryOutput context, IEnumerable<ContractModel> source)
     {
         List<ContractModel> models = source.ToList();
         Dictionary<ContractModel, VisitState> states = new();
@@ -1558,7 +1587,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
     }
 
     private static void RejectInvalidClosures(
-        SourceProductionContext context,
+        BinaryOutput context,
         IEnumerable<ContractModel> source)
     {
         List<ContractModel> models = source.ToList();
@@ -1702,7 +1731,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 descriptor.WriteUInt64(ComputeFingerprint(shape.NestedContract));
                 break;
             case ShapeKind.Collection:
-                descriptor.WriteByte((byte)shape.CollectionKind);
+                descriptor.WriteByte((byte)WireCollectionKind(shape.CollectionKind));
                 descriptor.WriteByte(shape.AllowsNull ? (byte)1 : (byte)0);
                 WriteShapeDescriptor(descriptor, shape.Element!);
                 break;
@@ -2116,13 +2145,9 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                     .Append(shape.CollectionKind == CollectionKind.Array ? ".Length" : ".Count").AppendLine(";");
                 AppendIndent(source, indent + 1).Append("writer.WriteInt32(__elementCount")
                     .Append(suffix).AppendLine(");");
-                AppendIndent(source, indent + 1).Append("for (int __elementIndex").Append(suffix)
-                    .Append(" = 0; __elementIndex").Append(suffix).Append(" < __elementCount").Append(suffix)
-                    .Append("; __elementIndex").Append(suffix).AppendLine("++)");
+                AppendIndent(source, indent + 1).Append("foreach (").Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat))
+                    .Append(" __element").Append(suffix).Append(" in ").Append(expression).AppendLine(")");
                 AppendIndent(source, indent + 1).AppendLine("{");
-                AppendIndent(source, indent + 2).Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat))
-                    .Append(" __element").Append(suffix).Append(" = ").Append(expression)
-                    .Append("[__elementIndex").Append(suffix).AppendLine("];");
                 EmitWriteValue(source, shape.Element!, "__element" + suffix, indent + 2, suffix + "Element");
                 AppendIndent(source, indent + 1).AppendLine("}");
                 AppendIndent(source, indent).AppendLine("}");
@@ -2242,6 +2267,12 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                         .Append(shape.ElementType.ToDisplayString(QualifiedTypeFormat)).Append("[__elementCount")
                         .Append(suffix).AppendLine("];");
                 }
+                else if (shape.CollectionKind == CollectionKind.ImmutableList)
+                {
+                    AppendIndent(source, indent + 1).Append("var __elements").Append(suffix)
+                        .Append(" = global::System.Collections.Immutable.ImmutableList.CreateBuilder<")
+                        .Append(shape.ElementType!.ToDisplayString(QualifiedTypeFormat)).AppendLine(">();");
+                }
                 else
                 {
                     AppendIndent(source, indent + 1)
@@ -2271,7 +2302,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 }
                 AppendIndent(source, indent + 1).AppendLine("}");
                 AppendIndent(source, indent + 1).Append(target).Append(" = __elements")
-                    .Append(suffix).AppendLine(";");
+                    .Append(suffix).Append(shape.CollectionKind == CollectionKind.ImmutableList ? ".ToImmutable()" : "").AppendLine(";");
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.Dictionary:
@@ -3148,7 +3179,7 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
                 break;
             case ShapeKind.Collection:
                 AppendIndent(source, indent).Append("__descriptor.WriteByte(")
-                    .Append(((byte)shape.CollectionKind).ToString(CultureInfo.InvariantCulture)).AppendLine(");");
+                    .Append(((byte)WireCollectionKind(shape.CollectionKind)).ToString(CultureInfo.InvariantCulture)).AppendLine(");");
                 AppendIndent(source, indent).Append("__descriptor.WriteByte(")
                     .Append(shape.AllowsNull ? "1" : "0").AppendLine(");");
                 EmitRuntimeShapeDescriptor(source, shape.Element!, indent);
@@ -3466,11 +3497,15 @@ public sealed class BinaryContractGenerator : IIncrementalGenerator
         NullableEnum = 11,
     }
 
+    private static CollectionKind WireCollectionKind(CollectionKind kind)
+        => kind == CollectionKind.ImmutableList ? CollectionKind.IList : kind;
+
     private enum CollectionKind : byte
     {
         Array = 1,
         List = 2,
         IList = 3,
+        ImmutableList = 4,
     }
 
     private enum DictionaryKind : byte

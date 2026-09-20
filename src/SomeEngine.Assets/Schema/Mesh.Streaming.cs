@@ -7,15 +7,11 @@ using System.Security.Cryptography;
 
 namespace SomeEngine.Assets.Schema;
 
-public partial class MeshData
+internal partial class MeshData
 {
-    private static async ValueTask<BinaryDocument<MeshData>> OpenDocumentAsync(
-        string path, CancellationToken cancellationToken)
-    {
-        await using Asset<Mesh> asset = await AssetLoader.OpenFileAsync<Mesh>(
-            path, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return asset.OpenDocumentGenerated<MeshData>()!;
-    }
+    private static ValueTask<BinaryDocument> OpenDocumentAsync(string path, CancellationToken cancellationToken)
+        => BinaryDocument.OpenAsync(SomeEngine.Serialization.IO.FileRangeSource.Open(path), Mesh.Asset.WireType,
+            ownsSource: true, cancellationToken: cancellationToken);
 
     internal static ulong PayloadChunkKey { get; }
         = BinaryFieldKey.FromName("SomeEngine.Assets.Schema.Mesh.Payload");
@@ -24,7 +20,7 @@ public partial class MeshData
         string path,
         CancellationToken cancellationToken = default)
     {
-        await using BinaryDocument<MeshData> document =
+        await using BinaryDocument document =
             await OpenDocumentAsync(path, cancellationToken)
                 .ConfigureAwait(false);
         return await MaterializeAsync(document, cancellationToken).ConfigureAwait(false);
@@ -38,7 +34,7 @@ public partial class MeshData
         string path,
         CancellationToken cancellationToken = default)
     {
-        BinaryDocument<MeshData> document = await OpenDocumentAsync(path, cancellationToken).ConfigureAwait(false);
+        BinaryDocument document = await OpenDocumentAsync(path, cancellationToken).ConfigureAwait(false);
         return await OpenStreamedCoreAsync(document, cancellationToken).ConfigureAwait(false);
     }
 
@@ -48,8 +44,8 @@ public partial class MeshData
         bool ownsSource = false,
         CancellationToken cancellationToken = default)
     {
-        BinaryDocument<MeshData> document = await BinaryDocument<MeshData>.OpenAsync(
-            source,
+        BinaryDocument document = await BinaryDocument.OpenAsync(
+            source, Mesh.Asset.WireType,
             ownsSource,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return await OpenStreamedCoreAsync(document, cancellationToken).ConfigureAwait(false);
@@ -60,16 +56,21 @@ public partial class MeshData
     /// is the runtime storage entry point and does not require a file path or source reopen.
     /// </summary>
     internal static ValueTask<Mesh> OpenStreamedAsync(
-        BinaryDocument<MeshData> document,
+        BinaryDocument document,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
         return OpenStreamedCoreAsync(document, cancellationToken);
     }
 
+    internal static ValueTask<Mesh> OpenStreamedAsync(BinaryDocument document,
+        MeshData fields, CancellationToken cancellationToken)
+        => OpenStreamedCoreAsync(document, cancellationToken, fields);
+
     internal static BinaryDocumentWriter CreateWriter(MeshData asset)
     {
-        Memory<byte>? payload = asset.Payload;
+        asset.ValidateMaterialReferences(asset.Name ?? "");
+        ReadOnlyMemory<byte>? payload = asset.Payload;
         if (!payload.HasValue || payload.Value.IsEmpty)
             throw new InvalidDataException("MeshData assets must provide one externalized payload.");
         PopulatePayloadIntegrity(asset, payload.Value.Span);
@@ -80,19 +81,30 @@ public partial class MeshData
         builder.AddChunk(
             asset.PayloadChunk.Key,
             payload.Value,
-            AssetWriter.RawBytesSchema,
+            global::SomeEngine.Assets.Asset<Mesh>.ByteSchema,
             ChunkCompression.None,
             alignment: 4096);
 
         return builder;
     }
 
+    internal static async ValueTask<BinaryDocumentWriter> CreateWriterAsync(MeshData asset,
+        BinaryDocument? source, CancellationToken cancellationToken)
+    {
+        if (asset.Payload.HasValue || source is null) return CreateWriter(asset);
+        ValidateExternalizedRoot(asset);
+        ValidatePayloadChunk(asset);
+        BinaryDocumentWriter writer = BinaryDocumentWriter.Create(asset);
+        await writer.AddChunkAsync(asset.PayloadChunk.Key, source, cancellationToken).ConfigureAwait(false);
+        return writer;
+    }
+
     private static async ValueTask<MeshData> MaterializeAsync(
-        BinaryDocument<MeshData> document,
+        BinaryDocument document,
         CancellationToken cancellationToken)
     {
-        ValidateExternalizedRoot(document.Root);
-        MeshData result = document.Root.CopyFields();
+        MeshData result = document.ReadRoot<MeshData>();
+        ValidateExternalizedRoot(result);
         Memory<byte>? payload = await document.TryReadChunkAsync(
             result.PayloadChunk,
             static length => GC.AllocateUninitializedArray<byte>(length),
@@ -104,16 +116,19 @@ public partial class MeshData
     }
 
     private static async ValueTask<Mesh> OpenStreamedCoreAsync(
-        BinaryDocument<MeshData> document,
-        CancellationToken cancellationToken)
+        BinaryDocument document,
+        CancellationToken cancellationToken,
+        MeshData? fields = null)
     {
         IRangeSource? payload = null;
+        MeshData? root = fields;
         try
         {
-            ValidateExternalizedRoot(document.Root);
-            ValidatePayloadChunk(document.Root);
+            root ??= document.ReadRoot<MeshData>();
+            ValidateExternalizedRoot(root);
+            ValidatePayloadChunk(root);
             payload = await document.OpenChunkRangeSourceAsync(
-                document.Root.PayloadChunk,
+                root.PayloadChunk,
                 cancellationToken).ConfigureAwait(false);
             if (payload.RetainsResidentBacking)
             {
@@ -121,7 +136,6 @@ public partial class MeshData
                     "Streamed meshes require a non-resident file or remote range source. A memory or " +
                     "memory-mapped source would remain as a second physical backing after page/BVH publication.");
             }
-            MeshData root = document.Root;
             ulong bvhOffsetValue = root.BvhOffset;
             if (bvhOffsetValue == 0 || bvhOffsetValue >= checked((ulong)payload.Length))
             {
@@ -193,6 +207,7 @@ public partial class MeshData
         }
         catch
         {
+            root?.Dispose();
             if (payload is not null)
                 await payload.DisposeAsync().ConfigureAwait(false);
             await document.DisposeAsync().ConfigureAwait(false);
@@ -212,6 +227,7 @@ public partial class MeshData
 
     private static void ValidateExternalizedRoot(MeshData root)
     {
+        root.ValidateMaterialReferences(root.Name ?? "");
         if (root.Payload.HasValue)
         {
             throw new InvalidDataException(
@@ -269,7 +285,7 @@ public partial class MeshData
         if (pageOffset != bvhOffset || pageDigests.Count == 0)
             throw new InvalidDataException("MeshData payload must contain at least one complete page before its BVH.");
 
-        root.PageDigests = pageDigests;
+        root.PageDigests = pageDigests.ToImmutableList();
         root.BvhLength = checked((ulong)bvhLength);
         root.BvhSha256 = SHA256.HashData(payload[bvhOffset..]);
     }
@@ -288,7 +304,7 @@ public partial class MeshData
         }
     }
 
-    private static ReadOnlyMemory<byte> RequireSha256(Memory<byte>? value, string subject)
+    private static ReadOnlyMemory<byte> RequireSha256(ReadOnlyMemory<byte>? value, string subject)
     {
         if (!value.HasValue || value.Value.Length != SHA256.HashSizeInBytes)
             throw new InvalidDataException($"{subject} must carry exactly one SHA-256 digest.");

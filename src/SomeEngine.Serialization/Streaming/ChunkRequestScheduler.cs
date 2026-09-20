@@ -140,14 +140,13 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
     /// </summary>
     public ResidencyBudgetLedger Residency => _residency;
 
-    public static ChunkRequestScheduler CreateForDocument<T>(
-        BinaryDocument<T> document,
+    public static ChunkRequestScheduler CreateForDocument(
+        BinaryDocument document,
         long decodedBudgetBytes,
         int maxConcurrency = 4,
         int maxQueuedRequests = 4096,
         ChunkStreamingMetrics? metrics = null,
         ResidencyBudgetLedger? residency = null)
-        where T : IBinaryContract<T>
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -157,7 +156,7 @@ public sealed class ChunkRequestScheduler : IAsyncDisposable
                 DecodedCpuBytes = decodedBudgetBytes,
             });
         ChunkStreamingMetrics sharedMetrics = metrics ?? new ChunkStreamingMetrics();
-        var loader = new DocumentChunkLoader<T>(document, sharedMetrics);
+        var loader = new DocumentChunkLoader(document, sharedMetrics);
 
         return new ChunkRequestScheduler(
             loader.LoadAsync,

@@ -11,6 +11,47 @@ public sealed class BinaryDocumentTests
     private const int HeaderSize = 128;
     private const int DirectoryEntrySize = 96;
 
+    [Theory]
+    [InlineData(ChunkCompression.None)]
+    [InlineData(ChunkCompression.Brotli)]
+    public async Task ExistingChunkCanBeSavedWithChangedRoot(ChunkCompression compression)
+    {
+        byte[] payload = new byte[256 * 1024];
+        new Random(42).NextBytes(payload);
+        using MappedTestDocument original = BinaryDocumentWriter.Create(TestRoots.Canonical(number: 1))
+            .AddChunk(12, payload, 123, compression, alignment: 64, ordinal: 7).BuildMapped();
+        await using var source = await BinaryDocument<TestRoot>.OpenAsync(new MemoryRangeSource(original), true);
+        await using var retained = source.Duplicate();
+        await source.DisposeAsync();
+
+        var writer = BinaryDocumentWriter.Create(TestRoots.Canonical(number: 2));
+        await writer.AddChunkAsync(12, retained);
+        using MappedTestDocument saved = writer.BuildMapped();
+        await using var reopened = await BinaryDocument<TestRoot>.OpenAsync(saved.DetachToFileRangeSource(), true);
+        using ChunkLease chunk = await reopened.AcquireChunkAsync(12);
+        Assert.Equal(2, reopened.Root.Int32Value);
+        Assert.Equal(payload, chunk.Memory.ToArray());
+        Assert.Equal(compression, chunk.Descriptor.Compression);
+        Assert.Equal(123UL, chunk.Descriptor.TypeFingerprint);
+        Assert.Equal(64, chunk.Descriptor.Alignment);
+        Assert.Equal(7U, chunk.Descriptor.Ordinal);
+    }
+
+    [Fact]
+    public async Task DuplicatedDocumentFieldsRemainIndependentWithoutSourceReads()
+    {
+        using MappedTestDocument bytes = BinaryDocumentWriter.Create(TestRoots.Canonical(number: 1)).BuildMapped();
+        var source = new CountingRangeSource(bytes);
+        await using var document = await BinaryDocument<TestRoot>.OpenAsync(source, true);
+        int reads = source.Operations.Length;
+        await using var duplicate = document.Duplicate();
+        document.Root.Data[0] = 2;
+        Assert.Equal(1, duplicate.Root.Data[0]);
+        duplicate.Root.Data[0] = 3;
+        Assert.Equal(2, document.Root.Data[0]);
+        Assert.Equal(reads, source.Operations.Length);
+    }
+
     [Fact]
     public async Task HeaderIsFixedAt128BytesAndOpenReadsItAsOneRange()
     {

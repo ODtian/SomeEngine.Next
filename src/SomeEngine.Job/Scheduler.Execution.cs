@@ -157,7 +157,7 @@ public sealed partial class Scheduler
             }
         }
 
-        _workQueue.Pulse();
+        _workQueue.NotifyCompletion();
 
         _counters.Completed();
 

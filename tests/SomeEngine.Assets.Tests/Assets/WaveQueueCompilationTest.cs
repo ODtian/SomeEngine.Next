@@ -52,7 +52,7 @@ public class WaveQueueCompilationTest
 
         try
         {
-            using var assetFile = SlangShaderImporter.Import(slangFile, source).ToAsset();
+            using var assetFile = SlangShaderImporter.Import(slangFile, source);
             Shader asset = await Shader.CreateAsync(assetFile);
 
             Assert.NotNull(asset);

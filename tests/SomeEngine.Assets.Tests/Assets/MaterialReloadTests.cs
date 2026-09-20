@@ -10,7 +10,7 @@ public sealed class MaterialReloadTests
         using var directory = new AssetTestDirectory();
         await using var loader = new AssetLoader(new LooseAssetStorage(directory.Path, new AssetManifest()));
         using var current = new StandardMaterial { Name = "before" };
-        using Asset<Material> file = new StandardMaterialData { Name = "after", Roughness = 0.75f }.ToAsset();
+        using Material.Asset file = new StandardMaterial.Asset { Name = "after", Roughness = 0.75f };
         ulong revision = current.Revision;
         int notifications = 0;
         current.Changed += material =>

@@ -41,20 +41,20 @@ internal static class RuntimeApplication
         string manifestDirectory = Path.Combine(contentRoot, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         IReadOnlyList<AssetEntry> runtimeRecords =
-            manifest.List(Asset<ApplicationSettings>.FileType);
+            manifest.List(ApplicationSettings.Asset.FileType);
         if (runtimeRecords.Count != 1)
         {
             throw new InvalidDataException(
-                $"The runtime publication must contain exactly one {Asset<ApplicationSettings>.FileType} " +
+                $"The runtime publication must contain exactly one {ApplicationSettings.Asset.FileType} " +
                 $"asset; found {runtimeRecords.Count}.");
         }
 
         await using var assets = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
-        await using Asset<ApplicationSettings> settings = await assets.OpenAsync(
+        await using ApplicationSettings.Asset settings = await ApplicationSettings.Asset.OpenAsync(assets,
             new AssetId<ApplicationSettings>(runtimeRecords[0].AssetGuid)).ConfigureAwait(false);
         ApplicationSettings boot = ApplicationSettings.Create(settings);
 
-        Task<Asset<World>> sceneTask = assets.OpenAsync(new AssetId<World>(boot.Scene)).AsTask();
+        Task<WorldAsset> sceneTask = WorldAsset.OpenAsync(assets, new AssetId<World>(boot.Scene)).AsTask();
         Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync();
         Task<VirtualShadowMapShaders> virtualShadowTask = CreateShadowShadersAsync();
         Task<Shader> uiShaderTask = CreateShaderAsync(boot.UiShader);
@@ -66,17 +66,17 @@ internal static class RuntimeApplication
 
         async Task<Shader> CreateShaderAsync(Guid id)
         {
-            await using Asset<Shader> file = await assets.OpenAsync(new AssetId<Shader>(id)).ConfigureAwait(false);
+            await using Shader.Asset file = await Shader.Asset.OpenAsync(assets, new AssetId<Shader>(id)).ConfigureAwait(false);
             return await Shader.CreateAsync(file).ConfigureAwait(false);
         }
         async Task<ClusterShaders> CreateClusterShadersAsync()
         {
-            await using Asset<ClusterShaders> file = await assets.OpenAsync(new AssetId<ClusterShaders>(boot.Pipeline)).ConfigureAwait(false);
+            await using ClusterShaders.Asset file = await ClusterShaders.Asset.OpenAsync(assets, new AssetId<ClusterShaders>(boot.Pipeline)).ConfigureAwait(false);
             return await ClusterShaders.CreateAsync(file, assets).ConfigureAwait(false);
         }
         async Task<VirtualShadowMapShaders> CreateShadowShadersAsync()
         {
-            await using Asset<VirtualShadowMapShaders> file = await assets.OpenAsync(new AssetId<VirtualShadowMapShaders>(boot.VirtualShadowMap)).ConfigureAwait(false);
+            await using VirtualShadowMapShaders.Asset file = await VirtualShadowMapShaders.Asset.OpenAsync(assets, new AssetId<VirtualShadowMapShaders>(boot.VirtualShadowMap)).ConfigureAwait(false);
             return await VirtualShadowMapShaders.CreateAsync(file, assets).ConfigureAwait(false);
         }
         try
@@ -125,7 +125,7 @@ internal static class RuntimeApplication
         using Shader temporalCode = temporalShaderTask.Result;
         using Shader translucencyCode = translucencyShaderTask.Result;
         using Shader debugCode = debugShaderTask.Result;
-        await using Asset<World> sceneFile = sceneTask.Result;
+        await using WorldAsset sceneFile = sceneTask.Result;
 
         using var window = new NativeWindow(boot.Title, boot.Width, boot.Height, visible: !options.HideWindow);
         if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
@@ -303,7 +303,7 @@ internal static class RuntimeApplication
         Swapchain swapchain,
         NativeWindow window,
         AssetLoader assets,
-        Asset<World> sceneAsset,
+        WorldAsset sceneAsset,
         ClusterShaders pipelineConfiguration,
         VirtualShadowMapShaders virtualShadowConfiguration,
         Shader uiShader,
@@ -315,12 +315,13 @@ internal static class RuntimeApplication
         ApplicationSettings boot,
         bool forceHardwareRaster)
     {
-        using var mainWorld = new World(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
+        using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
+            new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld);
 
         RuntimeScene scene = RuntimeWait.Task(
-            RuntimeScene.CreateAsync(mainWorld, assets, sceneAsset).AsTask(),
+            RuntimeScene.CreateAsync(mainWorld, assets).AsTask(),
             window,
             FrameTimeout);
 

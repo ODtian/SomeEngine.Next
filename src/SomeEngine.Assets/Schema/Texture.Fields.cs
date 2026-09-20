@@ -3,19 +3,18 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
 
+[Asset(".texture.asset")]
 public sealed partial class Texture
 {
-    private TextureData _content = new();
-
-    public string? Name { get => _content.Name; set => _content.Name = value; }
-    public TextureDimension Dimension { get => _content.Dimension; set => _content.Dimension = value; }
-    public uint Width { get => _content.Width; set => _content.Width = value; }
-    public uint Height { get => _content.Height; set => _content.Height = value; }
-    public uint Depth { get => _content.Depth; set => _content.Depth = value; }
-    public uint MipLevelCount { get => _content.MipLevelCount; set => _content.MipLevelCount = value; }
-    public uint ArrayLayerCount { get => _content.ArrayLayerCount; set => _content.ArrayLayerCount = value; }
-    public Format Format { get => _content.Format; set => _content.Format = value; }
-    public Format SampledFormat { get => _content.SampledFormat; set => _content.SampledFormat = value; }
-    public SomeEngine.Graphics.TextureViewDimension SampledDimension { get => _content.SampledDimension; set => _content.SampledDimension = value; }
-    public IList<TextureMipTile>? MipTiles { get => _content.MipTiles; set => _content.MipTiles = value; }
+    public partial string? Name { get; set; }
+    public partial TextureDimension Dimension { get; set; }
+    public partial uint Width { get; set; }
+    public partial uint Height { get; set; }
+    public partial uint Depth { get; set; }
+    public partial uint MipLevelCount { get; set; }
+    public partial uint ArrayLayerCount { get; set; }
+    public partial Format Format { get; set; }
+    public partial Format SampledFormat { get; set; }
+    public partial SomeEngine.Graphics.TextureViewDimension SampledDimension { get; set; }
+    public partial ImmutableList<TextureMipTile>? MipTiles { get; set; }
 }

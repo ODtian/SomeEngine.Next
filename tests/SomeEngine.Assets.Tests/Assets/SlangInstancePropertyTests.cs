@@ -18,10 +18,10 @@ public sealed class SlangInstancePropertyTests
         File.WriteAllText(sourcePath, ValidSource);
         try
         {
-            ShaderData imported = SlangShaderImporter.ImportTransient(sourcePath);
+            Shader.Asset imported = SlangShaderImporter.ImportTransient(sourcePath);
             string cookedPath = Path.Combine(directory, "instance_property.shader.asset");
-            AssetWriter.Write((imported).ToAsset(), cookedPath);
-            ShaderData cooked = await ShaderData.ReadAsync(cookedPath);
+            ((imported)).SaveAsync(cookedPath).AsTask().GetAwaiter().GetResult();
+            using Shader.Asset cooked = await Shader.Asset.OpenAsync(cookedPath);
 
             ShaderInstanceProperty property = Assert.Single(
                 cooked.Metadata!.InstanceProperties!);
@@ -80,7 +80,7 @@ public sealed class SlangInstancePropertyTests
         File.WriteAllText(sourcePath, MultiLayoutSource);
         try
         {
-            ShaderData imported = SlangShaderImporter.ImportTransient(sourcePath);
+            Shader.Asset imported = SlangShaderImporter.ImportTransient(sourcePath);
             List<ShaderInstanceProperty> properties = imported.Metadata!
                 .InstanceProperties!
                 .OrderBy(static property => property.MaterialScalarLayoutName, StringComparer.Ordinal)
@@ -120,7 +120,7 @@ public sealed class SlangInstancePropertyTests
         File.WriteAllText(sourcePath, conflictingSource);
         try
         {
-            ShaderData imported = SlangShaderImporter.ImportTransient(sourcePath);
+            Shader.Asset imported = SlangShaderImporter.ImportTransient(sourcePath);
             IList<ShaderInstanceProperty> properties =
                 imported.Metadata!.InstanceProperties!;
             Assert.Contains(properties, static property =>

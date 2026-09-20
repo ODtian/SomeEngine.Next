@@ -9,12 +9,16 @@ internal static class D3D12TestCompute
 {
     internal static uint[][] Execute(string file, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
+        => ExecuteSource($"#include \"{file}\"", entry, dispatch, inputs);
+
+    internal static uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
+        (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
     {
         string? directory = null;
         for (DirectoryInfo? current = new(AppContext.BaseDirectory); current is not null; current = current.Parent)
             if (Directory.Exists(Path.Combine(current.FullName, "assets", "Shaders")))
             { directory = Path.Combine(current.FullName, "assets", "Shaders"); break; }
-        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths("compute_test", $"#include \"{file}\"",
+        using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths("compute_test", source,
             [new(entry, SlangStage.Compute)], "sm_6_0", directory ?? throw new DirectoryNotFoundException());
         using var backend = new D3D12Backend();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);

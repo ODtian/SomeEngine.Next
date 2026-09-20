@@ -125,10 +125,10 @@ internal sealed partial class FrameExecutor
             view.Kind == kind && view.View is T,
             "The View identity has the wrong type.");
         if (view.Buffer.IsValid)
-            ValidateBuffer(pass, _buffers[ResolveBuffer(view.Buffer)].Resource!, view.BufferRange,
+            ValidateBuffer(pass, _buffers[view.BufferIndex].Resource!, view.BufferRange,
                 kind is GraphViewKind.BufferUav);
         if (view.Texture.IsValid)
-            ValidateTexture(pass, _textures[ResolveTexture(view.Texture)].Resource!, view.TextureRange,
+            ValidateTexture(pass, _textures[view.TextureIndex].Resource!, view.TextureRange,
                 kind is GraphViewKind.TextureUav or GraphViewKind.ColorAttachment or GraphViewKind.DepthStencil);
         return (T)view.View!;
     }

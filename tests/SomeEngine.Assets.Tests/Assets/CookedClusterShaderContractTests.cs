@@ -276,8 +276,8 @@ public sealed class CookedClusterShaderContractTests
         string manifestDirectory = Path.Combine(root, "Library", "AssetManifest");
         AssetManifest manifest = AssetManifest.Load(manifestDirectory);
         AssetEntry configurationRecord = Assert.Single(
-            manifest.List(Asset<ClusterShaders>.FileType));
-        ClusterShadersData configuration = await AssetTestFiles.ReadAsync<ClusterShaders, ClusterShadersData>(
+            manifest.List(ClusterShaders.Asset.FileType));
+        using ClusterShaders.Asset configuration = await ClusterShaders.Asset.OpenAsync(
             Path.Combine(root, configurationRecord.Path));
         ClusterShaderOperation operation = Assert.Single(
             configuration.Operations!,
@@ -287,7 +287,7 @@ public sealed class CookedClusterShaderContractTests
         Assert.False(string.IsNullOrWhiteSpace(shaderRef.EntryPoint));
         Assert.True(Guid.TryParse(shaderRef.AssetGuid, out Guid shaderGuid));
         Assert.True(manifest.TryGetAsset(shaderGuid, out AssetEntry shaderRecord));
-        using Asset<Shader> file = await AssetLoader.OpenFileAsync<Shader>(Path.Combine(root, shaderRecord.Path));
+        using Shader.Asset file = await Shader.Asset.OpenAsync(Path.Combine(root, shaderRecord.Path));
         Shader shader = await Shader.CreateAsync(file);
         return (shader, shaderRef.EntryPoint!);
     }
@@ -306,7 +306,7 @@ public sealed class CookedClusterShaderContractTests
 
     private static async ValueTask<Shader> ReadCookedShader(string assetName)
     {
-        await using Asset<Shader> file = await AssetLoader.OpenFileAsync<Shader>(Path.Combine(
+        await using Shader.Asset file = await Shader.Asset.OpenAsync(Path.Combine(
             TestProjectPaths.ProjectRoot(), "assets", "Shaders", assetName));
         return await Shader.CreateAsync(file);
     }

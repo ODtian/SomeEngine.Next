@@ -9,14 +9,14 @@ using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Assets.Data;
 using SomeEngine.Assets.Schema;
-using MeshData = SomeEngine.Assets.Schema.MeshData;
+using MeshAsset = SomeEngine.Assets.Schema.Mesh.Asset;
 using ValueType = SomeEngine.Assets.Data.ValueType;
 
 namespace SomeEngine.Assets.Importers;
 
 public static partial class ClusterBuilder
 {
-    private static MeshData ProcessRawCore(
+    private static MeshAsset ProcessRawCore(
         Vector3[] rawPos,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,
@@ -277,7 +277,7 @@ public static partial class ClusterBuilder
         return bvhOffset;
     }
 
-    private static MeshData CreateMeshAsset(
+    private static MeshAsset CreateMeshAsset(
         string name,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
         FileStream stream,
@@ -285,12 +285,15 @@ public static partial class ClusterBuilder
         string vertexEncoding,
         long bvhOffset)
     {
-        var meshAsset = new MeshData
+        byte[] payload = GC.AllocateUninitializedArray<byte>(checked((int)stream.Length));
+        stream.Seek(0, SeekOrigin.Begin);
+        stream.ReadExactly(payload);
+        var meshAsset = new MeshAsset
         {
             Name = name,
             Bounds = CreateBounds(bounds),
             VertexEncoding = vertexEncoding,
-            Payload = new byte[stream.Length],
+            Payload = payload,
             BvhOffset = (ulong)bvhOffset,
             Regions = CreateMeshRegions(materialSlots.Count),
             MaterialGuids = materialSlots
@@ -299,9 +302,6 @@ public static partial class ClusterBuilder
                 .Distinct(StringComparer.Ordinal)
                 .ToArray(),
         };
-        stream.Seek(0, SeekOrigin.Begin);
-        meshAsset.Payload!.Value.Span.Clear();
-        stream.ReadExactly(meshAsset.Payload.Value.Span);
         return meshAsset;
     }
 
@@ -392,7 +392,7 @@ public static partial class ClusterBuilder
         {
             Stream = stream;
             PageBuffer = pageBuffer;
-            MeshData = mesh;
+            MeshInput = mesh;
             MeshletBuild = meshletBuild;
             VertexEncoder = vertexEncoder;
             VertexEncodingHash = VertexEncodingCompatibility.Hash(vertexEncoder.Compatibility);
@@ -400,7 +400,7 @@ public static partial class ClusterBuilder
 
         private FileStream Stream { get; }
         private byte[] PageBuffer { get; }
-        private PreparedRawMesh MeshData { get; }
+        private PreparedRawMesh MeshInput { get; }
         private MeshletBuild MeshletBuild { get; }
         private IClusterVertexEncoder VertexEncoder { get; }
         private ulong VertexEncodingHash { get; }
@@ -469,8 +469,8 @@ public static partial class ClusterBuilder
             }
 
             EncodedClusterVertices output = VertexEncoder.Encode(
-                new ReadOnlySpan<Vector3>(MeshData.Positions, 0, MeshData.VertexCount),
-                MeshData.Attributes,
+                new ReadOnlySpan<Vector3>(MeshInput.Positions, 0, MeshInput.VertexCount),
+                MeshInput.Attributes,
                 CollectionsMarshal.AsSpan(LocalVertices));
             if (output.Blob.IsEmpty)
                 throw new InvalidDataException("A cluster vertex encoder returned an empty opaque blob.");

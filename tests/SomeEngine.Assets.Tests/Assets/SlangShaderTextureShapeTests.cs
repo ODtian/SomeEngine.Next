@@ -18,10 +18,10 @@ public sealed class SlangShaderTextureShapeTests
         File.WriteAllText(path, Source);
         try
         {
-            ShaderData imported = SlangShaderImporter.ImportTransient(path);
+            Shader.Asset imported = SlangShaderImporter.ImportTransient(path);
             string cookedPath = Path.Combine(directory, "texture_shape.shader.asset");
-            AssetWriter.Write((imported).ToAsset(), cookedPath);
-            ShaderData asset = await ShaderData.ReadAsync(cookedPath);
+            ((imported)).SaveAsync(cookedPath).AsTask().GetAwaiter().GetResult();
+            using Shader.Asset asset = await Shader.Asset.OpenAsync(cookedPath);
             Assert.Equal(imported.SchemaVersion, asset.SchemaVersion);
             Assert.Equal(SlangShaderImporter.ImporterVersion, asset.ImportTrace!.ImporterVersion);
             ShaderEntryPointReflection reflection = asset.EntryPointReflections!

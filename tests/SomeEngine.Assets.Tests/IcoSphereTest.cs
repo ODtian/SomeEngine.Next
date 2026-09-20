@@ -26,7 +26,7 @@ public class IcoSphereTest
         Assert.Equal(10242, vertices.Length);
 
         // Process through ClusterBuilder
-        var meshAsset = ClusterBuilder.ProcessRaw(
+        using var meshAsset = ClusterBuilder.ProcessRaw(
             vertices,
             attributes,
             indices,
@@ -66,9 +66,10 @@ public class IcoSphereTest
         using var directory = new SomeEngine.Assets.Tests.Assets.AssetTestDirectory();
         string outputPath = directory.File("icosphere.mesh.asset");
 
-        AssetWriter.Write(meshAsset.ToAsset(), outputPath);
-        MeshData roundTrip = await MeshData.ReadAsync(outputPath);
-        Assert.Equal(meshAsset.Payload.Value.ToArray(), roundTrip.Payload!.Value.ToArray());
+        (meshAsset).SaveAsync(outputPath).AsTask().GetAwaiter().GetResult();
+        using Mesh.Asset roundTrip = await Mesh.Asset.OpenAsync(outputPath);
+        using var reopenedBytes = await roundTrip.ReadPayloadAsync();
+        Assert.Equal(meshAsset.Payload.Value.ToArray(), reopenedBytes.Memory.ToArray());
     }
 
 }

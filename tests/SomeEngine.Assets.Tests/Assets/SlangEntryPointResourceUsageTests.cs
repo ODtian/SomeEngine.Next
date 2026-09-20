@@ -19,7 +19,7 @@ public sealed class SlangEntryPointResourceUsageTests
         File.WriteAllText(sourcePath, Source);
         try
         {
-            ShaderData shader = SlangShaderImporter.ImportTransient(sourcePath);
+            Shader.Asset shader = SlangShaderImporter.ImportTransient(sourcePath);
             AssertResources(shader, "FirstMain", "FirstInput", "Output");
             AssertResources(shader, "SecondMain", "SecondInput", "Output");
         }
@@ -30,7 +30,7 @@ public sealed class SlangEntryPointResourceUsageTests
     }
 
     private static void AssertResources(
-        ShaderData shader,
+        Shader.Asset shader,
         string entryPoint,
         string first,
         string second)

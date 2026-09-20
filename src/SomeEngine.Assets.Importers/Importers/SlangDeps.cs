@@ -5,15 +5,9 @@ namespace SomeEngine.Assets.Importers;
 
 internal static class SlangDeps
 {
-    public static bool Matches(Schema.ShaderData asset, SourceOutput existingAsset)
+    public static bool Matches(Schema.Shader.Asset asset, SourceOutput existingAsset)
     {
-        if (string.IsNullOrWhiteSpace(asset.AssetGuid))
-        {
-            return false;
-        }
-
-        return Guid.TryParse(asset.AssetGuid, out var assetGuid)
-            && assetGuid == existingAsset.AssetGuid
+        return asset.Id.Value == existingAsset.AssetGuid
             && asset.ImportTrace?.ContentFingerprint == existingAsset.InputHash
 ;
     }

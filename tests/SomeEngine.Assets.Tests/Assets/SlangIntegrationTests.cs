@@ -30,7 +30,7 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetFile = SlangShaderImporter.Import(slangFile).ToAsset();
+            using var assetFile = SlangShaderImporter.Import(slangFile);
             Shader asset = await Shader.CreateAsync(assetFile);
 
             Assert.NotNull(asset);
@@ -87,7 +87,7 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetFile = SlangShaderImporter.Import(tempFile).ToAsset();
+            using var assetFile = SlangShaderImporter.Import(tempFile);
             Shader asset = await Shader.CreateAsync(assetFile);
 
             var reflection = asset.Reflections?.FirstOrDefault()?.Reflection;
@@ -133,9 +133,9 @@ public class SlangIntegrationTests
 
         try
         {
-            using var asset1File = SlangShaderImporter.Import(slangFile).ToAsset();
+            using var asset1File = SlangShaderImporter.Import(slangFile);
             Shader asset1 = await Shader.CreateAsync(asset1File);
-            using var asset2File = SlangShaderImporter.Import(slangFile).ToAsset();
+            using var asset2File = SlangShaderImporter.Import(slangFile);
             Shader asset2 = await Shader.CreateAsync(asset2File);
 
             Guid guid1 = asset1File.Id.Value;
@@ -170,7 +170,7 @@ public class SlangIntegrationTests
 
         try
         {
-            using var asset1File = SlangShaderImporter.Import(sourceFile).ToAsset();
+            using var asset1File = SlangShaderImporter.Import(sourceFile);
             Shader asset1 = await Shader.CreateAsync(asset1File);
             Guid guid1 = asset1File.Id.Value;
             Assert.NotNull(asset1.ImportTrace);
@@ -183,7 +183,7 @@ public class SlangIntegrationTests
 
             File.WriteAllText(includeFile, "float4 GetColor() { return float4(0, 1, 0, 1); }");
 
-            using var asset2File = SlangShaderImporter.Import(sourceFile).ToAsset();
+            using var asset2File = SlangShaderImporter.Import(sourceFile);
 
             Shader asset2 = await Shader.CreateAsync(asset2File);
             Guid guid2 = asset2File.Id.Value;
@@ -227,9 +227,9 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            using var assetAFile = SlangShaderImporter.Import(fileA);
             Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            using var assetBFile = SlangShaderImporter.Import(fileB);
             Shader assetB = await Shader.CreateAsync(assetBFile);
 
             Assert.NotNull(assetA.Programs);
@@ -297,9 +297,9 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            using var assetAFile = SlangShaderImporter.Import(fileA);
             Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            using var assetBFile = SlangShaderImporter.Import(fileB);
             Shader assetB = await Shader.CreateAsync(assetBFile);
 
             string spirvA = EntryHash(assetA, "spirv", "CSMain", ShaderStage.Compute);
@@ -354,9 +354,9 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            using var assetAFile = SlangShaderImporter.Import(fileA);
             Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            using var assetBFile = SlangShaderImporter.Import(fileB);
             Shader assetB = await Shader.CreateAsync(assetBFile);
 
             foreach (var backend in new[] { "spirv", "dxil" })
@@ -418,9 +418,9 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            using var assetAFile = SlangShaderImporter.Import(fileA);
             Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            using var assetBFile = SlangShaderImporter.Import(fileB);
             Shader assetB = await Shader.CreateAsync(assetBFile);
 
             foreach (var backend in new[] { "spirv", "dxil" })
@@ -480,9 +480,9 @@ public class SlangIntegrationTests
 
         try
         {
-            using var assetAFile = SlangShaderImporter.Import(fileA).ToAsset();
+            using var assetAFile = SlangShaderImporter.Import(fileA);
             Shader assetA = await Shader.CreateAsync(assetAFile);
-            using var assetBFile = SlangShaderImporter.Import(fileB).ToAsset();
+            using var assetBFile = SlangShaderImporter.Import(fileB);
             Shader assetB = await Shader.CreateAsync(assetBFile);
 
             foreach (var backend in new[] { "spirv", "dxil" })

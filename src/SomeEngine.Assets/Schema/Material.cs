@@ -8,7 +8,7 @@ namespace SomeEngine.Assets.Schema;
 /// <summary>A material has concrete properties and actual shader and texture references.</summary>
 public abstract partial class Material : IDisposable
 {
-    private static readonly Dictionary<Guid, Func<Material>> Types = [];
+    private static readonly Dictionary<Guid, (Func<Material> Value, Func<AssetId<Material>, Asset> Asset)> Types = [];
     private static readonly object TypeGate = new();
     private ulong[]? _changes;
     private bool _changingProperties;
@@ -63,14 +63,15 @@ public abstract partial class Material : IDisposable
     protected abstract void CopyProperties(Material source);
 
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public static void RegisterGeneratedType<T>(string name) where T : Material, new()
+    public static void RegisterGeneratedType<T>(string name,
+        Func<AssetId<Material>, Asset> createAsset) where T : Material, new()
     {
         lock (TypeGate)
-            if (!Types.TryAdd(BinaryTypeId.FromLogicalName(name), static () => new T()))
+            if (!Types.TryAdd(BinaryTypeId.FromLogicalName(name), (static () => new T(), createAsset)))
                 throw new InvalidOperationException($"Material type '{name}' is already registered.");
     }
 
-    public static async ValueTask<Material> CreateAsync(Asset<Material> asset, AssetLoader loader,
+    public static async ValueTask<Material> CreateAsync(Asset asset, AssetLoader loader,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(asset);
@@ -84,7 +85,7 @@ public abstract partial class Material : IDisposable
             result.Name = fields.Name;
             if (!fields.Shader.IsEmpty)
             {
-                await using Asset<Shader> shader = await loader.OpenAsync(fields.Shader, cancellationToken).ConfigureAwait(false);
+                await using Shader.Asset shader = await Shader.Asset.OpenAsync(loader, fields.Shader, cancellationToken).ConfigureAwait(false);
                 result._createdShader = await Shader.CreateAsync(shader, cancellationToken).ConfigureAwait(false);
                 result.Shader = result._createdShader;
             }
@@ -95,7 +96,7 @@ public abstract partial class Material : IDisposable
                 {
                     if (!textures.TryGetValue(parameter.Texture.Value, out texture))
                     {
-                        await using Asset<Texture> data = await loader.OpenAsync(parameter.Texture, cancellationToken).ConfigureAwait(false);
+                        await using Texture.Asset data = await Texture.Asset.OpenAsync(loader, parameter.Texture, cancellationToken).ConfigureAwait(false);
                         texture = await Texture.CreateAsync(data, cancellationToken).ConfigureAwait(false);
                         textures.Add(parameter.Texture.Value, texture);
                     }
@@ -116,14 +117,14 @@ public abstract partial class Material : IDisposable
         finally { result._changingProperties = false; }
     }
 
-    private static async ValueTask<MaterialData> ReadFieldsAsync(Asset<Material> asset, AssetLoader loader,
+    private static async ValueTask<MaterialData> ReadFieldsAsync(Asset asset, AssetLoader loader,
         HashSet<Guid> ancestors, CancellationToken cancellationToken)
     {
         if (!ancestors.Add(asset.Id.Value))
             throw new InvalidDataException("Material parent references contain a cycle.");
-        MaterialData fields = asset.GetFieldsGenerated<MaterialData>();
+        MaterialData fields = asset.CopyValues();
         if (fields.Parent.IsEmpty) return fields;
-        await using Asset<Material> parent = await loader.OpenAsync(fields.Parent, cancellationToken).ConfigureAwait(false);
+        await using Asset parent = await Asset.OpenAsync(loader, fields.Parent, cancellationToken).ConfigureAwait(false);
         MaterialData inherited = await ReadFieldsAsync(parent, loader, ancestors, cancellationToken).ConfigureAwait(false);
         if (fields.MaterialType != Guid.Empty && fields.MaterialType != inherited.MaterialType)
             throw new InvalidDataException("A material override cannot change the parent's material type.");
@@ -134,7 +135,7 @@ public abstract partial class Material : IDisposable
     }
 
     /// <summary>Applies new fields at the caller's update boundary. Observers run only after commit.</summary>
-    public async ValueTask UpdateAsync(Asset<Material> asset, AssetLoader loader,
+    public async ValueTask UpdateAsync(Asset asset, AssetLoader loader,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -194,7 +195,7 @@ public abstract partial class Material : IDisposable
     private static Material CreateEmpty(Guid type)
     {
         lock (TypeGate)
-            return Types.TryGetValue(type, out Func<Material>? create) ? create()
+            return Types.TryGetValue(type, out var constructors) ? constructors.Value()
                 : throw new InvalidDataException($"Unknown material type '{type}'.");
     }
 

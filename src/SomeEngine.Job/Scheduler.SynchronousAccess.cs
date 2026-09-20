@@ -63,8 +63,10 @@ public sealed partial class Scheduler
     {
         bool waited = false;
         SpinWait spinWait = new();
-        while (!_execution.CanExecute(handle))
+        while (true)
         {
+            long changeVersion = _workQueue.ChangeVersion;
+            if (_execution.CanExecute(handle)) return;
             if (_completion.IsCompleted(handle))
             {
                 // Complete rethrows the dependency fault and marks it observed.
@@ -91,8 +93,7 @@ public sealed partial class Scheduler
                 continue;
             }
 
-            if (!_workQueue.TryExecuteOne(wait: true))
-                Thread.Yield();
+            _workQueue.WaitForChange(changeVersion);
 
             spinWait = new SpinWait();
         }

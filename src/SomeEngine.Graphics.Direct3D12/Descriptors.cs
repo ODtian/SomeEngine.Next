@@ -1706,7 +1706,8 @@ internal sealed unsafe partial class D3D12Backend
                         bindings.Resources,
                         NativeLayout.Slots,
                         bindings.OrdinaryData,
-                        NativeLayout.OrdinaryRoot is { UsesRootConstants: false });
+                        NativeLayout.OrdinaryRoot is { UsesRootConstants: false },
+                        _current);
                 D3D12PersistentParameterData? previous = _current;
                 Volatile.Write(ref _current, candidate);
                 _nextVersion++;

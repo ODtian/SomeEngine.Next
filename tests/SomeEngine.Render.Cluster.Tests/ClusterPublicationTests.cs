@@ -768,9 +768,11 @@ public sealed class ClusterPublicationTests
             asset.Payload!.Value.Span.Slice(0, MeshPageHeader.Size));
 
     private static void WriteCluster(Mesh asset, in PackedCluster cluster)
-        => MemoryMarshal.Write(
-            asset.Payload!.Value.Span.Slice(MeshPageHeader.Size, PackedCluster.SizeInBytes),
-            in cluster);
+    {
+        byte[] payload = asset.Payload!.Value.ToArray();
+        MemoryMarshal.Write(payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes), in cluster);
+        asset.Payload = payload;
+    }
 
     private static Mesh MeshWithBvh(string name, params ClusterBVHNode[] nodes)
         => MeshWithPagesAndBvh(name, [PageData()], nodes);

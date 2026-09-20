@@ -2,14 +2,13 @@ namespace SomeEngine.Assets.Schema;
 
 internal partial class ClusterShadersData
 {
-    internal IReadOnlyList<Guid> GetDependencies(string path)
+    internal void Validate(string path)
     {
         IList<ClusterShaderOperation> operations = Operations
             ?? throw Invalid(path, "Operations is missing.");
         if (operations.Count == 0)
             throw Invalid(path, "Operations is empty.");
 
-        var result = new List<Guid>();
         var roles = new HashSet<ClusterShaderOperationRole>();
         for (int index = 0; index < operations.Count; index++)
         {
@@ -55,8 +54,6 @@ internal partial class ClusterShadersData
                         $"{field}.Shaders must reference entry points from one shader asset.");
                 }
                 operationShader = shader;
-                if (!result.Contains(shader))
-                    result.Add(shader);
             }
         }
 
@@ -66,8 +63,12 @@ internal partial class ClusterShadersData
                 throw Invalid(path, $"Operations has no '{role}' role.");
         }
 
-        result.Sort(static (left, right) => left.CompareTo(right));
-        return result;
+    }
+
+    internal static SomeEngine.Serialization.Containers.BinaryDocumentWriter CreateWriter(ClusterShadersData fields)
+    {
+        fields.Validate(fields.Name ?? "");
+        return SomeEngine.Serialization.Containers.BinaryDocumentWriter.Create(fields);
     }
 
     private static InvalidDataException Invalid(string path, string message)

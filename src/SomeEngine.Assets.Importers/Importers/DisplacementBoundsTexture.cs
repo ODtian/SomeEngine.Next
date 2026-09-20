@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
-using TextureData = SomeEngine.Assets.Schema.TextureData;
+using TextureAsset = SomeEngine.Assets.Schema.Texture.Asset;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -13,7 +13,7 @@ namespace SomeEngine.Assets.Importers;
 /// </summary>
 public static class DisplacementBoundsTexture
 {
-    public static TextureData Create(
+    public static TextureAsset Create(
         Guid assetGuid,
         string name,
         uint width,
@@ -86,9 +86,8 @@ public static class DisplacementBoundsTexture
             level++;
         }
 
-        return new TextureData
+        return new TextureAsset(new(assetGuid))
         {
-            AssetGuid = assetGuid.ToString(),
             Name = name,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
             Width = width,
@@ -99,7 +98,7 @@ public static class DisplacementBoundsTexture
             Format = SomeEngine.Graphics.Format.R32G32Float,
             SampledFormat = SomeEngine.Graphics.Format.R32G32Float,
             SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
-            MipTiles = tiles,
+            MipTiles = tiles.ToImmutableList(),
         };
     }
 

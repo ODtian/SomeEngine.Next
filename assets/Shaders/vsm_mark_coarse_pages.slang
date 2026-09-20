@@ -32,19 +32,26 @@ void MarkVirtualShadowCoarsePages(uint3 dispatchThreadId : SV_DispatchThreadID)
         return;
 
     VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
-    uint center = shadowView.VirtualResolution >> 1u;
-    int2 centerPage = VirtualShadowCoarseWorldPage(
-        shadowView,
-        uint2(center, center));
-
-    // Local-light maps need one lowest-mip representative. Directional clipmaps retain a
-    // two-by-two central footprint so clipmap scrolling never leaves the camera-side seam
-    // without coarse coverage.
-    PublishCoarsePage(shadowView, centerPage);
     if (shadowView.LightKind != VSM_LIGHT_DIRECTIONAL)
+    {
+        PublishCoarsePage(shadowView, int2(0));
         return;
+    }
 
-    PublishCoarsePage(shadowView, centerPage + int2(-1, 0));
-    PublishCoarsePage(shadowView, centerPage + int2(0, -1));
-    PublishCoarsePage(shadowView, centerPage + int2(-1, -1));
+    // Directional resolution comes from larger clipmaps, not a second mip in each view.
+    // Keep the pages surrounding the camera's projected position available at each level.
+    float3 ndc;
+    float2 uv;
+    if (!ProjectVirtualShadowPosition(shadowView, shadowView.ClipmapWorldOrigin, ndc, uv))
+        return;
+    uint dimension = VirtualShadowPagesPerRow(shadowView);
+    float2 pagePosition = uv * float(dimension) - 0.5;
+    int2 firstPage = max(int2(floor(pagePosition)), int2(0));
+    int2 lastPage = min(int2(ceil(pagePosition)), int2(dimension - 1u));
+    for (int y = firstPage.y; y <= lastPage.y; y++)
+        for (int x = firstPage.x; x <= lastPage.x; x++)
+        {
+            uint tableIndex = VirtualShadowPageTableIndex(shadowView, uint2(x, y));
+            RequestedShadowPages[tableIndex] = CoarsePageDemand.FrameIndex;
+        }
 }

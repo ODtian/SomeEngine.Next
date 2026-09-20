@@ -24,12 +24,12 @@ public sealed class AssetProjectTests
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             await project.ImportAsync("assets/Shaders/simple.slang");
 
-            ShaderData? first = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/simple.slang", "shader:main");
-            ShaderData? second = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/simple.slang", "shader:main");
+            Shader.Asset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/simple.slang", "shader:main");
+            Shader.Asset? second = await OpenResolvedShaderAsync(project, "assets/Shaders/simple.slang", "shader:main");
 
             Assert.NotNull(first);
             Assert.NotNull(second);
-            Assert.Equal(first!.AssetGuid, second!.AssetGuid);
+            Assert.Equal(first!.Id, second!.Id);
             Assert.True(File.Exists(SourceMeta.GetMetaPath(Path.Combine(dir, "assets", "Shaders", "simple.slang"))));
             Assert.NotNull(SourceMeta.Load(Path.Combine(dir, "assets", "Shaders", "simple.slang")).FindOutput(Path.Combine(dir, "assets", "Shaders", "simple.shader.asset")));
         }
@@ -49,7 +49,7 @@ public sealed class AssetProjectTests
         {
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
 
-            ShaderData? loaded = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/not_imported.slang", "shader:main");
+            Shader.Asset? loaded = await OpenResolvedShaderAsync(project, "assets/Shaders/not_imported.slang", "shader:main");
 
             Assert.Null(loaded);
             Assert.Null(project.Resolve("assets/Shaders/not_imported.slang", "shader:main"));
@@ -72,7 +72,7 @@ public sealed class AssetProjectTests
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             await project.ImportAsync("assets/Shaders/up_to_date.slang");
 
-            ShaderData? first = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/up_to_date.slang", "shader:main");
+            Shader.Asset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/up_to_date.slang", "shader:main");
             Assert.NotNull(first);
 
             string manifestPath = Path.Combine(dir, "Library", "AssetManifest", AssetManifest.AssetIndexFileName);
@@ -80,11 +80,11 @@ public sealed class AssetProjectTests
             File.SetLastWriteTimeUtc(manifestPath, before);
             before = File.GetLastWriteTimeUtc(manifestPath);
 
-            ShaderData? second = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/up_to_date.slang", "shader:main");
+            Shader.Asset? second = await OpenResolvedShaderAsync(project, "assets/Shaders/up_to_date.slang", "shader:main");
             DateTime after = File.GetLastWriteTimeUtc(manifestPath);
 
             Assert.NotNull(second);
-            Assert.Equal(first!.AssetGuid, second!.AssetGuid);
+            Assert.Equal(first!.Id, second!.Id);
             Assert.Equal(before, after);
         }
         finally
@@ -104,7 +104,7 @@ public sealed class AssetProjectTests
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             await project.ImportAsync("assets/Shaders/reimport.slang");
 
-            ShaderData? first = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/reimport.slang", "shader:main");
+            Shader.Asset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/reimport.slang", "shader:main");
             Assert.NotNull(first);
 
             string sourcePath = Path.Combine(dir, "assets", "Shaders", "reimport.slang");
@@ -116,11 +116,11 @@ public sealed class AssetProjectTests
             File.AppendAllText(sourcePath, "\n// force reimport");
             await project.ImportAsync("assets/Shaders/reimport.slang");
 
-            ShaderData? second = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/reimport.slang", "shader:main");
+            Shader.Asset? second = await OpenResolvedShaderAsync(project, "assets/Shaders/reimport.slang", "shader:main");
             DateTime after = File.GetLastWriteTimeUtc(manifestPath);
 
             Assert.NotNull(second);
-            Assert.Equal(first!.AssetGuid, second!.AssetGuid);
+            Assert.Equal(first!.Id, second!.Id);
             Assert.True(after > before);
         }
         finally
@@ -139,7 +139,7 @@ public sealed class AssetProjectTests
         {
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             await project.ImportAsync("assets/Shaders/deterministic.slang");
-            ShaderData? first = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/deterministic.slang", "shader:main");
+            Shader.Asset? first = await OpenResolvedShaderAsync(project, "assets/Shaders/deterministic.slang", "shader:main");
             Assert.NotNull(first);
 
             string importedPath = Path.Combine(dir, "assets", "Shaders", "deterministic.shader.asset");
@@ -147,10 +147,10 @@ public sealed class AssetProjectTests
             Assert.NotNull(SourceMeta.Load(Path.Combine(dir, "assets", "Shaders", "deterministic.slang")).FindOutput(importedPath));
 
             await project.ImportAsync("assets/Shaders/deterministic.slang");
-            ShaderData? second = await OpenResolvedAsync<Shader, ShaderData>(project, "assets/Shaders/deterministic.slang", "shader:main");
+            Shader.Asset? second = await OpenResolvedShaderAsync(project, "assets/Shaders/deterministic.slang", "shader:main");
 
             Assert.NotNull(second);
-            Assert.Equal(first!.AssetGuid, second!.AssetGuid);
+            Assert.Equal(first!.Id, second!.Id);
         }
         finally
         {
@@ -168,19 +168,18 @@ public sealed class AssetProjectTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "test.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = materialGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(materialGuid)) {
                 Name = "TestMaterial",
-            }).ToAsset(), materialPath);
+            })).SaveAsync(materialPath).AsTask().GetAwaiter().GetResult();
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            await project.RegisterAssetAsync<Material>("assets/Materials/test.material.asset");
-            MaterialData? asset = await OpenAsync<Material, MaterialData>(project, materialGuid);
+            using var materialFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/test.material.asset"));
+            project.RegisterAsset(materialFile.Describe());
+            Material.Asset? asset = await OpenMaterialAsync(project, materialGuid);
 
             Assert.NotNull(asset);
             Assert.Equal("TestMaterial", asset!.Name);
-            Assert.Equal(materialGuid.ToString(), asset.AssetGuid);
+            Assert.Equal(materialGuid, asset.Id.Value);
         }
         finally
         {
@@ -200,25 +199,23 @@ public sealed class AssetProjectTests
             const string path = "assets/Materials/mismatch.material.asset";
             string fullPath = Path.Combine(dir, path.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = payloadGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(payloadGuid)) {
                 Name = "MismatchMaterial",
-            }).ToAsset(), fullPath);
+            })).SaveAsync(fullPath).AsTask().GetAwaiter().GetResult();
 
             AssetManifest manifest = new();
             manifest.AddAsset(
                 manifestGuid,
                 "MismatchMaterial",
                 path,
-                Asset<Material>.FileType,
-                MaterialData.SchemaFingerprint);
+                Material.Asset.FileType,
+                Material.Asset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
 
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
-                await OpenAsync<Material, MaterialData>(project, manifestGuid));
+                await OpenMaterialAsync(project, manifestGuid));
         }
         finally
         {
@@ -239,9 +236,7 @@ public sealed class AssetProjectTests
             string shaderAssetPath = Path.Combine(dir, "assets", "Shaders", "stale.shader.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(shaderAssetPath)!);
             File.WriteAllText(sourcePath, "[shader(\"compute\")] [numthreads(1,1,1)] void CSMain() {}");
-            AssetWriter.Write((new ShaderData
-            {
-                AssetGuid = shaderGuid.ToString(),
+            ((new Shader.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Shader>(shaderGuid)) {
                 Name = "stale",
                 ImportTrace = new ImportTrace
                 {
@@ -262,22 +257,22 @@ public sealed class AssetProjectTests
                     MaterialBindings = [],
                     MaterialScalarLayouts = [],
                 },
-            }).ToAsset(), shaderAssetPath);
+            })).SaveAsync(shaderAssetPath).AsTask().GetAwaiter().GetResult();
 
             AssetManifest manifest = new();
             manifest.AddAsset(
                 shaderGuid,
                 "stale",
                 "assets/Shaders/stale.shader.asset",
-                Asset<Shader>.FileType,
-                ShaderData.SchemaFingerprint,
+                Shader.Asset.FileType,
+                Shader.Asset.SchemaHash,
                 sourceGuid,
                 "shader:main");
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
 
-            ShaderData? root = await OpenAsync<Shader, ShaderData>(project, shaderGuid);
+            Shader.Asset? root = await OpenShaderAsync(project, shaderGuid);
             Assert.NotNull(root);
             Assert.Empty(root!.EntryPointReflections!);
         }
@@ -297,26 +292,26 @@ public sealed class AssetProjectTests
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             const string path = "assets/Materials/created.material.asset";
 
-            Guid firstGuid = project.CreateAsset<Material>(path,( new StandardMaterialData
+            using var first = new StandardMaterial.Asset
             {
                 Name = "CreatedMaterial",
-            }).ToAsset());
+            };
+            Guid firstGuid = project.RegisterAsset(await first.SaveAsync(Path.Combine(dir, path)));
 
             Assert.NotEqual(Guid.Empty, firstGuid);
             Assert.Equal(firstGuid, project.Resolve(path));
-            MaterialData? firstLoad = await OpenAsync<Material, MaterialData>(project, firstGuid);
+            Material.Asset? firstLoad = await OpenMaterialAsync(project, firstGuid);
             Assert.NotNull(firstLoad);
-            Assert.Equal(firstGuid.ToString(), firstLoad!.AssetGuid);
+            Assert.Equal(firstGuid, firstLoad!.Id.Value);
             Assert.Equal("CreatedMaterial", firstLoad.Name);
 
-            Guid secondGuid = project.CreateAsset<Material>(path,( new StandardMaterialData
-            {
-                AssetGuid = firstGuid.ToString(),
+            using var second = new StandardMaterial.Asset(new(firstGuid)) {
                 Name = "UpdatedMaterial",
-            }).ToAsset());
+            };
+            Guid secondGuid = project.RegisterAsset(await second.SaveAsync(Path.Combine(dir, path)));
 
             Assert.Equal(firstGuid, secondGuid);
-            MaterialData? secondLoad = await OpenAsync<Material, MaterialData>(project, firstGuid);
+            Material.Asset? secondLoad = await OpenMaterialAsync(project, firstGuid);
             Assert.NotNull(secondLoad);
             Assert.Equal("UpdatedMaterial", secondLoad!.Name);
         }
@@ -327,7 +322,7 @@ public sealed class AssetProjectTests
     }
 
     [Fact]
-    public void CreateAsset_UsesRegisteredGuid_WhenExistingFileGuidDiffers()
+    public async Task CreateAsset_UsesRegisteredGuid_WhenExistingFileGuidDiffers()
     {
         string dir = CreateTempDir();
 
@@ -339,31 +334,28 @@ public sealed class AssetProjectTests
 
             Guid staleGuid = Guid.NewGuid();
             Guid fileGuid = Guid.NewGuid();
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = fileGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(fileGuid)) {
                 Name = "ExistingFile",
-            }).ToAsset(), fullPath);
+            })).SaveAsync(fullPath).AsTask().GetAwaiter().GetResult();
 
             AssetManifest manifest = new();
             manifest.AddAsset(
                 staleGuid,
                 "Stale",
                 path,
-                Asset<Material>.FileType,
-                MaterialData.SchemaFingerprint);
+                Material.Asset.FileType,
+                Material.Asset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            Guid createdGuid = project.CreateAsset<Material>(path,( new StandardMaterialData
-            {
-                AssetGuid = staleGuid.ToString(),
+            using var replacement = new StandardMaterial.Asset(new(staleGuid)) {
                 Name = "Reconciled",
-            }).ToAsset());
+            };
+            Guid createdGuid = project.RegisterAsset(await replacement.SaveAsync(fullPath));
 
             Assert.Equal(staleGuid, createdGuid);
             Assert.Equal(staleGuid, project.Resolve(path));
-            Assert.DoesNotContain(project.List(Asset<Material>.FileType), record => record.AssetGuid == fileGuid);
+            Assert.DoesNotContain(project.List(Material.Asset.FileType), record => record.AssetGuid == fileGuid);
         }
         finally
         {
@@ -383,13 +375,13 @@ public sealed class AssetProjectTests
             Guid meshGuid = Guid.NewGuid();
 
             AssetManifest manifest = new();
-            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/a.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint);
-            manifest.AddAsset(materialGuid, "MaterialA", "assets/Materials/a.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [shaderGuid]);
-            manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", Asset<Mesh>.FileType, MeshData.SchemaFingerprint, dependencies: [materialGuid]);
+            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/a.shader.asset", Shader.Asset.FileType, Shader.Asset.SchemaHash);
+            manifest.AddAsset(materialGuid, "MaterialA", "assets/Materials/a.material.asset", Material.Asset.FileType, Material.Asset.SchemaHash, dependencies: [shaderGuid]);
+            manifest.AddAsset(meshGuid, "MeshA", "assets/Meshes/a.mesh.asset", Mesh.Asset.FileType, Mesh.Asset.SchemaHash, dependencies: [materialGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            IReadOnlyList<AssetEntry> materials = project.List(Asset<Material>.FileType);
+            IReadOnlyList<AssetEntry> materials = project.List(Material.Asset.FileType);
 
             Assert.Single(materials);
             Assert.Equal(materialGuid, materials[0].AssetGuid);
@@ -418,9 +410,7 @@ public sealed class AssetProjectTests
             // 创建 valid shader .asset 文件和 material .asset 文件
             string shaderAssetPath = Path.Combine(dir, "assets", "Shaders", "valid.shader.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(shaderAssetPath)!);
-            AssetWriter.Write((new ShaderData
-            {
-                AssetGuid = shaderGuid.ToString(),
+            ((new Shader.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Shader>(shaderGuid)) {
                 Name = "ShaderA",
                 Metadata = new ShaderMetadata { Tags = [], MaterialBindings = [] },
                 Programs = [],
@@ -434,16 +424,14 @@ public sealed class AssetProjectTests
                     Dependencies = [],
                     ImporterVersion = 1,
                 },
-            }).ToAsset(), shaderAssetPath);
+            })).SaveAsync(shaderAssetPath).AsTask().GetAwaiter().GetResult();
 
             string materialAssetPath = Path.Combine(dir, "assets", "Materials", "dangling.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialAssetPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = materialGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(materialGuid)) {
                 Name = "DanglingMaterial",
                 AlbedoMap = new(missingTextureGuid),
-            }).ToAsset(), materialAssetPath);
+            })).SaveAsync(materialAssetPath).AsTask().GetAwaiter().GetResult();
 
             // valid source 实际存在
             string validSourceFile = Path.Combine(dir, "assets", "Shaders", "valid.slang");
@@ -453,8 +441,8 @@ public sealed class AssetProjectTests
             AssetManifest manifest = new();
             manifest.AddSource(orphanSourceGuid, "assets/Shaders/orphan.slang");
             manifest.AddSource(validSourceGuid, "assets/Shaders/valid.slang");
-            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/valid.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, validSourceGuid, "shader:main");
-            manifest.AddAsset(materialGuid, "DanglingMaterial", "assets/Materials/dangling.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [missingTextureGuid]);
+            manifest.AddAsset(shaderGuid, "ShaderA", "assets/Shaders/valid.shader.asset", Shader.Asset.FileType, Shader.Asset.SchemaHash, validSourceGuid, "shader:main");
+            manifest.AddAsset(materialGuid, "DanglingMaterial", "assets/Materials/dangling.material.asset", Material.Asset.FileType, Material.Asset.SchemaHash, dependencies: [missingTextureGuid]);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
@@ -485,14 +473,13 @@ public sealed class AssetProjectTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "imported.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = materialGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(materialGuid)) {
                 Name = "ImportedMaterial",
-            }).ToAsset(), materialPath);
+            })).SaveAsync(materialPath).AsTask().GetAwaiter().GetResult();
 
-            Guid imported = await project.RegisterAssetAsync<Material>(
-                "assets/Materials/imported.material.asset");
+            using var materialFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/imported.material.asset"));
+
+            Guid imported = project.RegisterAsset(materialFile.Describe());
 
             Assert.Equal(materialGuid, imported);
             Assert.Equal(materialGuid, project.Resolve("assets/Materials/imported.material.asset"));
@@ -513,14 +500,12 @@ public sealed class AssetProjectTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "lazy.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = materialGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(materialGuid)) {
                 Name = "LazyMaterial",
-            }).ToAsset(), materialPath);
+            })).SaveAsync(materialPath).AsTask().GetAwaiter().GetResult();
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            MaterialData? loaded = await OpenResolvedAsync<Material, MaterialData>(project, "assets/Materials/lazy.material.asset");
+            Material.Asset? loaded = await OpenResolvedMaterialAsync(project, "assets/Materials/lazy.material.asset");
 
             Assert.Null(loaded);
             Assert.Null(project.Resolve("assets/Materials/lazy.material.asset"));
@@ -537,8 +522,8 @@ public sealed class AssetProjectTests
         try
         {
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            Assert.Empty(project.List(Asset<Material>.FileType));
-            Assert.Empty(project.List(Asset<Shader>.FileType));
+            Assert.Empty(project.List(Material.Asset.FileType));
+            Assert.Empty(project.List(Shader.Asset.FileType));
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -550,7 +535,7 @@ public sealed class AssetProjectTests
         try
         {
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            MaterialData? result = await OpenAsync<Material, MaterialData>(project, Guid.NewGuid());
+            Material.Asset? result = await OpenMaterialAsync(project, Guid.NewGuid());
             Assert.Null(result);
         }
         finally { Directory.Delete(dir, true); }
@@ -601,17 +586,17 @@ public sealed class AssetProjectTests
             Guid guid = Guid.NewGuid();
             string path = Path.Combine(dir, "assets", "Materials", "dup.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = guid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(guid)) {
                 Name = "Dup",
-            }).ToAsset(), path);
+            })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            await project.RegisterAssetAsync<Material>("assets/Materials/dup.material.asset");
-            await project.RegisterAssetAsync<Material>("assets/Materials/dup.material.asset");
+            using var firstFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/dup.material.asset"));
+            project.RegisterAsset(firstFile.Describe());
+            using var secondFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/dup.material.asset"));
+            project.RegisterAsset(secondFile.Describe());
 
-            Assert.Single(project.List(Asset<Material>.FileType));
+            Assert.Single(project.List(Material.Asset.FileType));
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -627,14 +612,16 @@ public sealed class AssetProjectTests
             string p2 = Path.Combine(dir, "assets", "Materials", "b.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(p1)!);
 
-            AssetWriter.Write<Material>((new StandardMaterialData { AssetGuid = g1.ToString(), Name = "A" }).ToAsset(), p1);
-            AssetWriter.Write<Material>((new StandardMaterialData { AssetGuid = g2.ToString(), Name = "B" }).ToAsset(), p2);
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(g1)) { Name = "A" })).SaveAsync(p1).AsTask().GetAwaiter().GetResult();
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(g2)) { Name = "B" })).SaveAsync(p2).AsTask().GetAwaiter().GetResult();
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            await project.RegisterAssetAsync<Material>("assets/Materials/a.material.asset");
-            await project.RegisterAssetAsync<Material>("assets/Materials/b.material.asset");
+            using var firstFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/a.material.asset"));
+            project.RegisterAsset(firstFile.Describe());
+            using var secondFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/b.material.asset"));
+            project.RegisterAsset(secondFile.Describe());
 
-            Assert.Equal(2, project.List(Asset<Material>.FileType).Count);
+            Assert.Equal(2, project.List(Material.Asset.FileType).Count);
             Assert.Equal(g1, project.Resolve("assets/Materials/a.material.asset"));
             Assert.Equal(g2, project.Resolve("assets/Materials/b.material.asset"));
         }
@@ -653,8 +640,8 @@ public sealed class AssetProjectTests
                 guid,
                 "Ghost",
                 "assets/Materials/ghost.material.asset",
-                Asset<Material>.FileType,
-                MaterialData.SchemaFingerprint);
+                Material.Asset.FileType,
+                Material.Asset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
@@ -677,12 +664,12 @@ public sealed class AssetProjectTests
                 guid,
                 "Pre",
                 "assets/Materials/pre.material.asset",
-                Asset<Material>.FileType,
-                MaterialData.SchemaFingerprint);
+                Material.Asset.FileType,
+                Material.Asset.SchemaHash);
             manifest.Save(Path.Combine(dir, "Library", "AssetManifest"));
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            Assert.Single(project.List(Asset<Material>.FileType));
+            Assert.Single(project.List(Material.Asset.FileType));
             Assert.Equal(guid, project.Resolve("assets/Materials/pre.material.asset"));
         }
         finally { Directory.Delete(dir, true); }
@@ -697,46 +684,57 @@ public sealed class AssetProjectTests
             Guid guid = Guid.NewGuid();
             string path = Path.Combine(dir, "assets", "Materials", "lazy2.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = guid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(guid)) {
                 Name = "Lazy2",
-            }).ToAsset(), path);
+            })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
             Assert.Null(project.Resolve("assets/Materials/lazy2.material.asset"));
 
-            MaterialData? loaded = await OpenResolvedAsync<Material, MaterialData>(project, "assets/Materials/lazy2.material.asset");
+            Material.Asset? loaded = await OpenResolvedMaterialAsync(project, "assets/Materials/lazy2.material.asset");
             Assert.Null(loaded);
             Assert.Null(project.Resolve("assets/Materials/lazy2.material.asset"));
 
-            await project.RegisterAssetAsync<Material>("assets/Materials/lazy2.material.asset");
+            using var materialFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/lazy2.material.asset"));
 
-            loaded = await OpenResolvedAsync<Material, MaterialData>(project, "assets/Materials/lazy2.material.asset");
+            project.RegisterAsset(materialFile.Describe());
+
+            loaded = await OpenResolvedMaterialAsync(project, "assets/Materials/lazy2.material.asset");
             Assert.NotNull(loaded);
             Assert.Equal(guid, project.Resolve("assets/Materials/lazy2.material.asset"));
         }
         finally { Directory.Delete(dir, true); }
     }
 
-    private static async ValueTask<TFields?> OpenResolvedAsync<T, TFields>(AssetProject project,
-        string sourcePath, string? subAssetKey = null)
-        where T : class where TFields : class, IBinaryContract<TFields>
+    private static async ValueTask<Shader.Asset?> OpenResolvedShaderAsync(AssetProject project,
+        string path, string? subAssetKey = null)
     {
-        Guid? id = project.Resolve(sourcePath, subAssetKey);
-        return id.HasValue ? await OpenAsync<T, TFields>(project, id.Value) : null;
+        Guid? id = project.Resolve(path, subAssetKey);
+        return id.HasValue ? await OpenShaderAsync(project, id.Value) : null;
     }
 
-    private static async ValueTask<TFields?> OpenAsync<T, TFields>(AssetProject project, Guid id)
-        where T : class where TFields : class, IBinaryContract<TFields>
+    private static async ValueTask<Material.Asset?> OpenResolvedMaterialAsync(AssetProject project,
+        string path, string? subAssetKey = null)
+    {
+        Guid? id = project.Resolve(path, subAssetKey);
+        return id.HasValue ? await OpenMaterialAsync(project, id.Value) : null;
+    }
+
+    private static async ValueTask<Shader.Asset?> OpenShaderAsync(AssetProject project, Guid id)
     {
         IAssetStorage storage = project.CreateStorage();
         if (!storage.TryFind(id, out _)) return null;
         await using var loader = new AssetLoader(storage);
-        await using Asset<T> file = await loader.OpenAsync(new AssetId<T>(id));
-        return file.GetFieldsGenerated<TFields>();
+        return await Shader.Asset.OpenAsync(loader, new(id));
     }
 
+    private static async ValueTask<Material.Asset?> OpenMaterialAsync(AssetProject project, Guid id)
+    {
+        IAssetStorage storage = project.CreateStorage();
+        if (!storage.TryFind(id, out _)) return null;
+        await using var loader = new AssetLoader(storage);
+        return await Material.Asset.OpenAsync(loader, new(id));
+    }
     private static void WriteSimpleShader(string dir, string relativePath)
     {
         string fullPath = Path.Combine(dir, relativePath.Replace('/', Path.DirectorySeparatorChar));

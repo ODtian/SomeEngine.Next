@@ -1,3 +1,4 @@
+using Texture = SomeEngine.Assets.Schema.Texture;
 using Material = SomeEngine.Assets.Schema.Material;
 using System.Text.Json;
 using System.Runtime.InteropServices;
@@ -8,8 +9,7 @@ using SomeEngine.Assets.Schema;
 using GltfMaterial = SharpGLTF.Schema2.Material;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
 using GltfTexture = SharpGLTF.Schema2.Texture;
-using MaterialData = SomeEngine.Assets.Schema.MaterialData;
-using MeshData = SomeEngine.Assets.Schema.MeshData;
+using MeshAsset = SomeEngine.Assets.Schema.Mesh.Asset;
 using TextureData = SomeEngine.Assets.Schema.TextureData;
 
 namespace SomeEngine.Assets.Importers;
@@ -55,7 +55,7 @@ public sealed partial class GltfSourceImporter : IAssetImporter
         ModelRoot model = ModelRoot.Load(fullPath);
         var context = new GltfImportContext(projectRoot, fullPath, sourceMeta, fingerprint);
 
-        MaterialTemplates templates = await LoadMaterialTemplatesAsync(
+        using MaterialTemplates templates = await LoadMaterialTemplatesAsync(
             context.ProjectRoot,
             settings,
             cancellationToken).ConfigureAwait(false);
@@ -134,11 +134,11 @@ public sealed partial class GltfSourceImporter : IAssetImporter
         GltfImporterSettings settings,
         CancellationToken cancellationToken)
     {
-        await using Asset<Material> lit = await AssetLoader.OpenFileAsync<Material>(
+        await using StandardMaterial.Asset lit = await StandardMaterial.Asset.OpenAsync(
             GltfDeps.FullPath(projectRoot, settings.LitMaterialTemplate), cancellationToken: cancellationToken).ConfigureAwait(false);
-        await using Asset<Material> unlit = await AssetLoader.OpenFileAsync<Material>(
+        await using UnlitMaterial.Asset unlit = await UnlitMaterial.Asset.OpenAsync(
             GltfDeps.FullPath(projectRoot, settings.UnlitMaterialTemplate), cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new MaterialTemplates(lit.GetFieldsGenerated<MaterialData>(), unlit.GetFieldsGenerated<MaterialData>());
+        return new MaterialTemplates(lit.Duplicate(), unlit.Duplicate());
     }
 
     private static ImportedMaterialInfo ImportMaterial(
@@ -152,49 +152,42 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             ? $"Material_{index}"
             : material.Name;
         ExportPath exportPath = MaterialExportPath(context, index, materialName);
-        MaterialData asset = CreateMaterialAsset(context, templates, material, materialName, exportPath);
+        using Material.Asset asset = CreateMaterialAsset(context, templates, material, materialName, exportPath);
 
         ApplyMaterialSemantics(asset, material, context, importedTextures);
-        SaveMaterialAsset(context, asset, exportPath);
-        return CreateImportedMaterialInfo(index, asset, exportPath);
+        AssetEntry entry = SaveMaterialAsset(context, asset, exportPath);
+        return new ImportedMaterialInfo(index, new MeshMaterialSlot(asset.Id.Value),
+            ImportedAsset.Create(entry, exportPath.SubAssetKey, exportPath.OutputPath));
     }
 
-    private static MaterialData CreateMaterialAsset(
+    private static Material.Asset CreateMaterialAsset(
         GltfImportContext context,
         MaterialTemplates templates,
         GltfMaterial material,
         string materialName,
         ExportPath exportPath)
     {
-        MaterialData template = material.Unlit ? templates.Unlit : templates.Lit;
+        Material.Asset template = material.Unlit ? templates.Unlit : templates.Lit;
         Guid assetGuid = ImportedAssetIds.Create(context.SourceMeta.SourceGuid, exportPath.SubAssetKey);
-        return CloneMaterial(template, materialName, assetGuid);
+        var asset = template.Duplicate(new(assetGuid));
+        asset.Name = materialName;
+        return asset;
     }
 
-    private static void SaveMaterialAsset(
+    private static AssetEntry SaveMaterialAsset(
         GltfImportContext context,
-        MaterialData asset,
+        Material.Asset asset,
         ExportPath exportPath)
     {
-        AssetWriter.Write(asset.ToAsset(), exportPath.OutputPath);
+        AssetEntry entry = asset.SaveAsync(exportPath.OutputPath).AsTask().GetAwaiter().GetResult();
         GltfDeps.SaveMeta(
             exportPath.OutputPath,
-            asset.AssetGuid,
+            asset.Id.Value.ToString(),
             context.SourceMeta,
             context.FullSourcePath,
             exportPath.SubAssetKey,
             context.Fingerprint);
-    }
-
-    private static ImportedMaterialInfo CreateImportedMaterialInfo(
-        int index,
-        MaterialData asset,
-        ExportPath exportPath)
-    {
-        return new ImportedMaterialInfo(
-            index,
-            new MeshMaterialSlot(Guid.Parse(asset.AssetGuid!)),
-            ImportedAsset.Create(asset.ToAsset(), exportPath.SubAssetKey, exportPath.OutputPath));
+        return entry;
     }
 
     private static ExportPath MaterialExportPath(
@@ -239,19 +232,19 @@ public sealed partial class GltfSourceImporter : IAssetImporter
             : mesh.Name;
         ExportPath exportPath = MeshExportPath(context, meshIndex, meshName);
         var request = new MeshImportRequest(context, settings, mesh, importedMaterials, meshName, exportPath);
-        MeshData meshAsset = CreateMeshAsset(request);
-        SaveMeshAsset(context, meshAsset, exportPath);
-        return CreateImportedMeshAsset(meshAsset, exportPath);
+        using MeshAsset meshAsset = CreateMeshAsset(request);
+        AssetEntry entry = SaveMeshAsset(context, meshAsset, exportPath);
+        return ImportedAsset.Create(entry, exportPath.SubAssetKey, exportPath.OutputPath);
     }
 
-    private static MeshData CreateMeshAsset(MeshImportRequest request)
+    private static MeshAsset CreateMeshAsset(MeshImportRequest request)
     {
-        MeshData meshAsset = BuildClusterMeshAsset(request);
-        AssignMeshGuid(request, meshAsset);
-        return meshAsset;
+        using MeshAsset meshAsset = BuildClusterMeshAsset(request);
+        Guid id = ImportedAssetIds.Create(request.Context.SourceMeta.SourceGuid, request.ExportPath.SubAssetKey);
+        return meshAsset.Duplicate(new(id));
     }
 
-    private static MeshData BuildClusterMeshAsset(MeshImportRequest request)
+    private static MeshAsset BuildClusterMeshAsset(MeshImportRequest request)
     {
         return ClusterBuilder.ProcessMesh(
             request.Mesh,
@@ -268,39 +261,27 @@ public sealed partial class GltfSourceImporter : IAssetImporter
         };
     }
 
-    private static void AssignMeshGuid(MeshImportRequest request, MeshData meshAsset)
-    {
-        Guid assetGuid = ImportedAssetIds.Create(
-            request.Context.SourceMeta.SourceGuid,
-            request.ExportPath.SubAssetKey);
-        meshAsset.AssetGuid = assetGuid.ToString();
-    }
+
 }
 
 public sealed partial class GltfSourceImporter
 {
 
 
-    private static void SaveMeshAsset(
+    private static AssetEntry SaveMeshAsset(
         GltfImportContext context,
-        MeshData meshAsset,
+        MeshAsset meshAsset,
         ExportPath exportPath)
     {
-        AssetWriter.Write(meshAsset.ToAsset(), exportPath.OutputPath);
+        AssetEntry entry = meshAsset.SaveAsync(exportPath.OutputPath).AsTask().GetAwaiter().GetResult();
         GltfDeps.SaveMeta(
             exportPath.OutputPath,
-            meshAsset.AssetGuid,
+            meshAsset.Id.Value.ToString(),
             context.SourceMeta,
             context.FullSourcePath,
             exportPath.SubAssetKey,
             context.Fingerprint);
-    }
-
-    private static ImportedAsset CreateImportedMeshAsset(
-        MeshData meshAsset,
-        ExportPath exportPath)
-    {
-        return ImportedAsset.Create(meshAsset.ToAsset(), exportPath.SubAssetKey, exportPath.OutputPath);
+        return entry;
     }
 
     private static IReadOnlyList<MeshMaterialSlot> MeshMaterialSlots(
@@ -331,121 +312,57 @@ public sealed partial class GltfSourceImporter
             safeName);
     }
 
-    private static MaterialData CloneMaterial(
-        MaterialData template,
-        string materialName,
-        Guid assetGuid
-    ) => template.Copy(
-        materialName,
-        (assetGuid == System.Guid.Empty) ? Guid.NewGuid() : assetGuid);
-
-    private static void ApplyMaterialSemantics(
-        MaterialData asset,
-        GltfMaterial material,
-        GltfImportContext context,
-        List<ImportedAsset> importedTextures)
-    {
-        if (asset.MaterialType == SomeEngine.Serialization.BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.StandardMaterial"))
-            ApplyStandardMaterial(asset, material, context, importedTextures);
-        else if (asset.MaterialType == SomeEngine.Serialization.BinaryTypeId.FromLogicalName("SomeEngine.Assets.Schema.UnlitMaterial"))
-            ApplyUnlitMaterial(asset, material, context, importedTextures);
-        else
-            throw new InvalidDataException($"Unsupported GLTF material type '{asset.MaterialType}'.");
-    }
-
-    private static void ApplyStandardMaterial(
-        MaterialData asset,
-        GltfMaterial material,
-        GltfImportContext context,
-        List<ImportedAsset> importedTextures)
+    private static void ApplyMaterialSemantics(Material.Asset asset, GltfMaterial material,
+        GltfImportContext context, List<ImportedAsset> importedTextures)
     {
         var baseColor = material.FindChannel("BaseColor");
-        var metallicRoughness = material.FindChannel("MetallicRoughness");
-        var emissive = material.FindChannel("Emissive");
-        asset.Set(new("BaseColorTint", MaterialParameterKind.Vector4) { Vector4 = new System.Numerics.Vector4(
-            baseColor?.Parameter.X ?? 1.0f,
-            baseColor?.Parameter.Y ?? 1.0f,
-            baseColor?.Parameter.Z ?? 1.0f,
-            baseColor?.Parameter.W ?? 1.0f) });
-        asset.Set(new("MetallicFactor", MaterialParameterKind.Float) { Float = metallicRoughness?.Parameter.X ?? 1.0f });
-        asset.Set(new("Roughness", MaterialParameterKind.Float) { Float = metallicRoughness?.Parameter.Y ?? 1.0f });
-        asset.Set(new("EmissiveFactor", MaterialParameterKind.Vector3) { Vector3 = new System.Numerics.Vector3(
-            emissive?.Parameter.X ?? 0.0f,
-            emissive?.Parameter.Y ?? 0.0f,
-            emissive?.Parameter.Z ?? 0.0f) });
-        ApplyTextureBinding(asset, "AlbedoMap", material.FindChannel("BaseColor")?.Texture, context, importedTextures);
-        ApplyTextureBinding(asset, "NormalMap", material.FindChannel("Normal")?.Texture, context, importedTextures);
-        ApplyArmTextureBinding(asset, material, context, importedTextures);
-    }
-
-    private static void ApplyUnlitMaterial(
-        MaterialData asset,
-        GltfMaterial material,
-        GltfImportContext context,
-        List<ImportedAsset> importedTextures)
-    {
-        var baseColor = material.FindChannel("BaseColor");
-        asset.Set(new("BaseColorTint", MaterialParameterKind.Vector4) { Vector4 = new System.Numerics.Vector4(
-            baseColor?.Parameter.X ?? 1.0f,
-            baseColor?.Parameter.Y ?? 1.0f,
-            baseColor?.Parameter.Z ?? 1.0f,
-            baseColor?.Parameter.W ?? 1.0f) });
-        ApplyTextureBinding(asset, "AlbedoMap", baseColor?.Texture, context, importedTextures);
-    }
-
-    private static void ApplyArmTextureBinding(
-        MaterialData asset,
-        GltfMaterial material,
-        GltfImportContext context,
-        List<ImportedAsset> importedTextures)
-    {
-        string? armGuid = ResolveTextureAsset(
-            material.FindChannel("MetallicRoughness")?.Texture,
-            context,
-            importedTextures)
-            ?? ResolveTextureAsset(
-                material.FindChannel("Occlusion")?.Texture,
-                context,
-                importedTextures);
-        if (!string.IsNullOrWhiteSpace(armGuid))
+        var tint = new System.Numerics.Vector4(baseColor?.Parameter.X ?? 1, baseColor?.Parameter.Y ?? 1,
+            baseColor?.Parameter.Z ?? 1, baseColor?.Parameter.W ?? 1);
+        AssetId<Texture> albedo = ResolveTextureAsset(baseColor?.Texture, context, importedTextures);
+        switch (asset)
         {
-            SetTexture(asset, "ARMMap", armGuid);
-        }
-    }
-
-    private static void ApplyTextureBinding(
-        MaterialData asset,
-        string name,
-        GltfTexture? texture,
-        GltfImportContext context,
-        List<ImportedAsset> importedTextures)
-    {
-        string? textureGuid = ResolveTextureAsset(texture, context, importedTextures);
-        if (!string.IsNullOrWhiteSpace(textureGuid))
-        {
-            SetTexture(asset, name, textureGuid);
+            case StandardMaterial.Asset standard:
+                var metallicRoughness = material.FindChannel("MetallicRoughness");
+                var emissive = material.FindChannel("Emissive");
+                standard.BaseColorTint = tint;
+                standard.MetallicFactor = metallicRoughness?.Parameter.X ?? 1;
+                standard.Roughness = metallicRoughness?.Parameter.Y ?? 1;
+                standard.EmissiveFactor = new(emissive?.Parameter.X ?? 0, emissive?.Parameter.Y ?? 0, emissive?.Parameter.Z ?? 0);
+                if (!albedo.IsEmpty) standard.AlbedoMap = albedo;
+                AssetId<Texture> normal = ResolveTextureAsset(material.FindChannel("Normal")?.Texture, context, importedTextures);
+                if (!normal.IsEmpty) standard.NormalMap = normal;
+                AssetId<Texture> arm = ResolveTextureAsset(metallicRoughness?.Texture, context, importedTextures);
+                if (arm.IsEmpty) arm = ResolveTextureAsset(material.FindChannel("Occlusion")?.Texture, context, importedTextures);
+                if (!arm.IsEmpty) standard.ARMMap = arm;
+                break;
+            case UnlitMaterial.Asset unlit:
+                unlit.BaseColorTint = tint;
+                if (!albedo.IsEmpty) unlit.AlbedoMap = albedo;
+                break;
+            default:
+                throw new InvalidDataException($"Unsupported GLTF material type '{asset.MaterialTypeId}'.");
         }
     }
 
     /// <summary>
     /// Extract texture from GLTF, produce a .texture.asset file, return the Guid string.
     /// </summary>
-    private static string? ResolveTextureAsset(
+    private static AssetId<Texture> ResolveTextureAsset(
         GltfTexture? texture,
         GltfImportContext context,
         List<ImportedAsset> importedTextures)
     {
         if (texture?.PrimaryImage == null)
         {
-            return null;
+            return default;
         }
 
         Image image = texture.PrimaryImage;
         ExportPath exportPath = TextureExportPath(context, texture, image);
-        TextureData textureAsset = CreateTextureAsset(context, exportPath, image);
-        SaveTextureAsset(context, textureAsset, exportPath);
-        importedTextures.Add(CreateImportedTextureAsset(textureAsset, exportPath));
-        return textureAsset.AssetGuid;
+        using Texture.Asset textureAsset = CreateTextureAsset(context, exportPath, image);
+        AssetEntry entry = SaveTextureAsset(context, textureAsset, exportPath);
+        importedTextures.Add(ImportedAsset.Create(entry, exportPath.SubAssetKey, exportPath.OutputPath));
+        return textureAsset.Id;
     }
 
     private static ExportPath TextureExportPath(
@@ -462,7 +379,7 @@ public sealed partial class GltfSourceImporter
             imageName);
     }
 
-    private static TextureData CreateTextureAsset(
+    private static Texture.Asset CreateTextureAsset(
         GltfImportContext context,
         ExportPath exportPath,
         Image image)
@@ -474,9 +391,8 @@ public sealed partial class GltfSourceImporter
         byte[] pixels = decoded.Data;
         uint width = checked((uint)decoded.Width);
         uint height = checked((uint)decoded.Height);
-        return new TextureData
+        return new Texture.Asset(new AssetId<Texture>(assetGuid))
         {
-            AssetGuid = assetGuid.ToString(),
             Name = exportPath.SafeName,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
             Width = width,
@@ -504,26 +420,20 @@ public sealed partial class GltfSourceImporter
         };
     }
 
-    private static void SaveTextureAsset(
+    private static AssetEntry SaveTextureAsset(
         GltfImportContext context,
-        TextureData textureAsset,
+        Texture.Asset textureAsset,
         ExportPath exportPath)
     {
-        AssetWriter.Write(textureAsset.ToAsset(), exportPath.OutputPath);
+        AssetEntry entry = textureAsset.SaveAsync(exportPath.OutputPath).AsTask().GetAwaiter().GetResult();
         GltfDeps.SaveMeta(
             exportPath.OutputPath,
-            textureAsset.AssetGuid,
+            textureAsset.Id.Value.ToString(),
             context.SourceMeta,
             context.FullSourcePath,
             exportPath.SubAssetKey,
             context.Fingerprint);
-    }
-
-    private static ImportedAsset CreateImportedTextureAsset(
-        TextureData textureAsset,
-        ExportPath exportPath)
-    {
-        return ImportedAsset.Create(textureAsset.ToAsset(), exportPath.SubAssetKey, exportPath.OutputPath);
+        return entry;
     }
 
     private static Memory<byte> ReadImageBytes(Image image)
@@ -541,13 +451,6 @@ public sealed partial class GltfSourceImporter
         }
 
         return bytes.Array.AsMemory(bytes.Offset, bytes.Count);
-    }
-
-    private static void SetTexture(MaterialData asset, string name, string textureGuid)
-    {
-        if (!Guid.TryParse(textureGuid, out Guid guid) || (guid == System.Guid.Empty))
-            throw new InvalidDataException($"TextureData slot '{name}' contains invalid GUID '{textureGuid}'.");
-        asset.Set(new(name, MaterialParameterKind.Texture) { Texture = new(guid) });
     }
 
     private static string SanitizeSegment(string? value, string fallback)
@@ -583,9 +486,10 @@ public sealed partial class GltfSourceImporter
         public string SourceDirectory => Path.GetDirectoryName(FullSourcePath)!;
     }
 
-    private readonly record struct MaterialTemplates(
-        MaterialData Lit,
-        MaterialData Unlit);
+    private sealed record MaterialTemplates(StandardMaterial.Asset Lit, UnlitMaterial.Asset Unlit) : IDisposable
+    {
+        public void Dispose() { Lit.Dispose(); Unlit.Dispose(); }
+    }
 
     private readonly record struct ExportPath(
         string OutputPath,

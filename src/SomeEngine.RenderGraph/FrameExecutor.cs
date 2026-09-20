@@ -256,6 +256,7 @@ internal sealed partial class FrameExecutor
             ChangeAnalysisResource(GraphAccessTargetKind.RayTracingShaderTable, i);
         }
 
+        UpdateInputConnections();
         PrepareRows(_views, staticViewCount + _frame.DynamicViews.Count);
         foreach (int i in ChangedRows(structureIndex.Structure.Views, _viewIndices, _rowChanges.Views))
         {
@@ -556,15 +557,11 @@ internal sealed partial class FrameExecutor
     internal void ChangeBuffer(GraphIdentity identity)
     {
         _rowChanges.Buffers.Add(identity);
-        foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(identity, []))
-            _rowChanges.Views.Add(view);
     }
 
     internal void ChangeTexture(GraphIdentity identity)
     {
         _rowChanges.Textures.Add(identity);
-        foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(identity, []))
-            _rowChanges.Views.Add(view);
     }
 
     internal void ChangeView(GraphIdentity identity) => _rowChanges.Views.Add(identity);
@@ -692,14 +689,18 @@ internal sealed partial class FrameExecutor
         row.LastPass = previous.LastPass;
         ObserveBuffer(index, ref row);
         row.Synchronization = previous.Synchronization;
-        if (BufferSynchronizationChanged(index, row)) _changedSynchronizationResources.Add((GraphAccessTargetKind.Buffer, index));
+        ObserveBufferSynchronization(index, row);
         if (previous.AllocationIdentity != row.AllocationIdentity) _allocationRows.Remove(previous.AllocationIdentity);
         _allocationRows[row.AllocationIdentity] = (GraphAccessTargetKind.Buffer, index);
         _buffers[index] = row;
         if (previous.Resource is not null && !ReferenceEquals(previous.Resource, row.Resource)) _resourceRows.Remove(previous.Resource);
         if (row.Resource is not null) _resourceRows[row.Resource] = (GraphAccessTargetKind.Buffer, index);
         if (!retained || !ReferenceEquals(previous.Resource, row.Resource))
+        {
+            if (!retained) ChangeResourceViews((GraphAccessTargetKind.Buffer, index), row.Identity);
+            else InvalidateResourceViews((GraphAccessTargetKind.Buffer, index));
             MaterializationChanged((GraphAccessTargetKind.Buffer, index));
+        }
         if (!retained)
             foreach (GraphIdentity access in _frame.StructureIndex.ResourceAccesses.GetValueOrDefault(row.Identity, []))
                 _rowChanges.Accesses.Add(access);
@@ -733,17 +734,39 @@ internal sealed partial class FrameExecutor
         row.LastPass = previous.LastPass;
         ObserveTexture(index, ref row);
         row.Synchronization = previous.Synchronization;
-        if (TextureSynchronizationChanged(index, row)) _changedSynchronizationResources.Add((GraphAccessTargetKind.Texture, index));
+        ObserveTextureSynchronization(index, row);
         if (previous.AllocationIdentity != row.AllocationIdentity) _allocationRows.Remove(previous.AllocationIdentity);
         _allocationRows[row.AllocationIdentity] = (GraphAccessTargetKind.Texture, index);
         _textures[index] = row;
         if (previous.Resource is not null && !ReferenceEquals(previous.Resource, row.Resource)) _resourceRows.Remove(previous.Resource);
         if (row.Resource is not null) _resourceRows[row.Resource] = (GraphAccessTargetKind.Texture, index);
         if (!retained || !ReferenceEquals(previous.Resource, row.Resource))
+        {
+            if (!retained) ChangeResourceViews((GraphAccessTargetKind.Texture, index), row.Identity);
+            else InvalidateResourceViews((GraphAccessTargetKind.Texture, index));
             MaterializationChanged((GraphAccessTargetKind.Texture, index));
+        }
         if (!retained)
             foreach (GraphIdentity access in _frame.StructureIndex.ResourceAccesses.GetValueOrDefault(row.Identity, []))
                 _rowChanges.Accesses.Add(access);
+    }
+
+    private void ChangeResourceViews((GraphAccessTargetKind Kind, int Index) resource, GraphIdentity identity)
+    {
+        _rowChanges.Views.UnionWith(_frame.StructureIndex.ResourceViews.GetValueOrDefault(identity, []));
+        if (_resourceViewRows.TryGetValue(resource, out HashSet<int>? views))
+            foreach (int view in views)
+                if (_views[view].Definition is not null) _rowChanges.Views.Add(_views[view].Identity);
+    }
+
+    private void InvalidateResourceViews((GraphAccessTargetKind Kind, int Index) resource)
+    {
+        if (_resourceViewRows.TryGetValue(resource, out HashSet<int>? views))
+            foreach (int view in views)
+                CollectionsMarshal.AsSpan(_views)[view].View = null;
+        if (resource.Kind == GraphAccessTargetKind.Texture &&
+            _resourceAccessLists.TryGetValue(resource, out List<int>? accesses))
+            foreach (int access in accesses) InvalidateRasterRendering(_accesses[access].PassIndex);
     }
 
     private void SetViewRow(int index, FrameView row)

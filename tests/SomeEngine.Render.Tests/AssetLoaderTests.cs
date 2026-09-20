@@ -26,10 +26,10 @@ public sealed class AssetLoaderTests
         using var directory = new TemporaryDirectory();
         Guid id = Guid.NewGuid();
         string path = directory.File("shader.sepack");
-        await new AssetPackBuilder().AddAsset(id, Asset<Shader>.FileType, CookShader(id, false), Asset<Shader>.SchemaHash).PublishAsync(path);
+        await new AssetPackBuilder().AddAsset(id, Shader.Asset.FileType, CookShader(id, false), Shader.Asset.SchemaHash).PublishAsync(path);
         await using var storage = new AssetPackStorage([await AssetPack.OpenAsync(path)]);
         await using var loader = new AssetLoader(storage);
-        await using Asset<Shader> file = await loader.OpenAsync(new AssetId<Shader>(id));
+        await using Shader.Asset file = await Shader.Asset.OpenAsync(loader, new AssetId<Shader>(id));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => Shader.CreateAsync(file).AsTask());
         Assert.Contains("serialized entry-point reflection", error.Message);
     }
@@ -40,15 +40,15 @@ public sealed class AssetLoaderTests
         using var directory = new TemporaryDirectory();
         Guid id = Guid.NewGuid();
         string path = directory.File("textures.sepack");
-        await new AssetPackBuilder().AddAsset(id, Asset<Texture>.FileType, CookTexture(id, [1, 2, 3, 4], [5, 6]), Asset<Texture>.SchemaHash).PublishAsync(path);
+        await new AssetPackBuilder().AddAsset(id, Texture.Asset.FileType, CookTexture(id, [1, 2, 3, 4], [5, 6]), Texture.Asset.SchemaHash).PublishAsync(path);
         await using var storage = new CountingStorage(new AssetPackStorage([await AssetPack.OpenAsync(path)]));
         await using var loader = new AssetLoader(storage);
-        Asset<Texture>[] files = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => loader.OpenAsync(new AssetId<Texture>(id)).AsTask()));
+        Texture.Asset[] files = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Texture.Asset.OpenAsync(loader, new AssetId<Texture>(id)).AsTask()));
         Assert.Equal(32, files.Distinct(ReferenceEqualityComparer.Instance).Count());
         Assert.Equal(1, storage.OpenCount);
         await using Texture first = await Texture.CreateAsync(files[0]);
         await using Texture second = await Texture.CreateAsync(files[1]);
-        foreach (Asset<Texture> file in files) await file.DisposeAsync();
+        foreach (Texture.Asset file in files) await file.DisposeAsync();
         await loader.DisposeAsync();
         await storage.DisposeAsync();
         using ResidentChunkLease bytes = await first.AcquireMipTileAsync(0, 0, 0);
@@ -65,26 +65,26 @@ public sealed class AssetLoaderTests
         Guid textureId = Guid.NewGuid(), shaderId = Guid.NewGuid(), meshId = Guid.NewGuid(), materialId = Guid.NewGuid();
         string path = directory.File("all.sepack");
         await new AssetPackBuilder()
-            .AddAsset(textureId, Asset<Texture>.FileType, CookTexture(textureId, [1, 3, 3, 7], [9, 2]), Asset<Texture>.SchemaHash)
-            .AddAsset(shaderId, Asset<Shader>.FileType, CookShader(shaderId), Asset<Shader>.SchemaHash)
-            .AddAsset(meshId, Asset<Mesh>.FileType, CookMesh(meshId), Asset<Mesh>.SchemaHash)
-            .AddAsset(materialId, Asset<Material>.FileType, CookMaterial(materialId, textureId), Asset<Material>.SchemaHash)
+            .AddAsset(textureId, Texture.Asset.FileType, CookTexture(textureId, [1, 3, 3, 7], [9, 2]), Texture.Asset.SchemaHash)
+            .AddAsset(shaderId, Shader.Asset.FileType, CookShader(shaderId), Shader.Asset.SchemaHash)
+            .AddAsset(meshId, Mesh.Asset.FileType, CookMesh(meshId), Mesh.Asset.SchemaHash)
+            .AddAsset(materialId, Material.Asset.FileType, CookMaterial(materialId, textureId), Material.Asset.SchemaHash)
             .PublishAsync(path);
         await using var storage = new AssetPackStorage([await AssetPack.OpenAsync(path)]);
         await using var loader = new AssetLoader(storage);
-        await using Asset<Texture> textureFile = await loader.OpenAsync(new AssetId<Texture>(textureId));
+        await using Texture.Asset textureFile = await Texture.Asset.OpenAsync(loader, new AssetId<Texture>(textureId));
         var residency = new ResidencyBudgetLedger(new ResidencyBudgets { DecodedCpuBytes = 1024 * 1024 });
         await using Texture texture = await Texture.CreateAsync(textureFile, options: new TextureLoadOptions(1024 * 1024, residency));
         Assert.Same(residency, texture.Residency);
         Assert.All(texture.MipTiles!, tile => Assert.Null(tile.Payload));
-        await using Asset<Shader> shaderFile = await loader.OpenAsync(new AssetId<Shader>(shaderId));
+        await using Shader.Asset shaderFile = await Shader.Asset.OpenAsync(loader, new AssetId<Shader>(shaderId));
         Shader shader = await Shader.CreateAsync(shaderFile);
         Assert.True(shader.TryEntry("spirv", "VSMain", ShaderStage.Vertex, out _, out var entry));
         Assert.False(entry.Code.IsEmpty);
-        await using Asset<Mesh> meshFile = await loader.OpenAsync(new AssetId<Mesh>(meshId));
+        await using Mesh.Asset meshFile = await Mesh.Asset.OpenAsync(loader, new AssetId<Mesh>(meshId));
         await using Mesh mesh = await Mesh.CreateAsync(meshFile);
         Assert.True(mesh.IsStreamed);
-        await using Asset<Material> materialFile = await loader.OpenAsync(new AssetId<Material>(materialId));
+        await using Material.Asset materialFile = await Material.Asset.OpenAsync(loader, new AssetId<Material>(materialId));
         using Material material = await Material.CreateAsync(materialFile, loader);
         StandardMaterial standard = Assert.IsType<StandardMaterial>(material);
         Assert.NotNull(standard.AlbedoMap);
@@ -103,9 +103,7 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.texture.asset");
-        AssetWriter.Write((new TextureData
-        {
-            AssetGuid = guid.ToString(),
+        ((new Texture.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Texture>(guid)) {
             Name = "stored-texture",
             Width = 2,
             Height = 2,
@@ -164,7 +162,7 @@ public sealed class AssetLoaderTests
                     Payload = mipOne,
                 },
             ],
-        }).ToAsset(), path);
+        })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
@@ -172,13 +170,11 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.material.asset");
-        MaterialData material = new StandardMaterialData
-        {
-            AssetGuid = guid.ToString(),
+        using var material = new StandardMaterial.Asset(new AssetId<Material>(guid)) {
             Name = "stored-material",
             AlbedoMap = new(textureGuid),
         };
-        AssetWriter.Write((material).ToAsset(), path);
+        ((material)).SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
@@ -186,9 +182,7 @@ public sealed class AssetLoaderTests
     {
         using var directory = new TemporaryDirectory();
         string path = directory.File("stored.shader.asset");
-        AssetWriter.Write((new ShaderData
-        {
-            AssetGuid = guid.ToString(),
+        ((new Shader.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Shader>(guid)) {
             Name = "stored-shader",
             Programs = [CookedShaderTestProgram.Create()],
             EntryPointReflections = includeReflection
@@ -202,7 +196,7 @@ public sealed class AssetLoaderTests
                     },
                 ]
                 : [],
-        }).ToAsset(), path);
+        })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 
@@ -241,15 +235,13 @@ public sealed class AssetLoaderTests
         MemoryMarshal.Write(
             payload.AsSpan(MeshPageHeader.Size, PackedCluster.SizeInBytes),
             in cluster);
-        AssetWriter.Write((new MeshData
-        {
-            AssetGuid = guid.ToString(),
+        ((new Mesh.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Mesh>(guid)) {
             Name = "stored-mesh",
             BvhOffset = checked((ulong)pageSize),
             Payload = payload,
             VertexEncoding = vertexEncoding,
             Regions = [],
-        }).ToAsset(), path);
+        })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return File.ReadAllBytes(path);
     }
 

@@ -1,5 +1,6 @@
 namespace SomeEngine.Assets.Schema;
 
+[Asset(".virtualshadow.asset")]
 public sealed partial class VirtualShadowMapShaders : IDisposable
 {
     private readonly Dictionary<Guid, Shader> _shaders = [];
@@ -14,24 +15,25 @@ public sealed partial class VirtualShadowMapShaders : IDisposable
         if (errors.Count != 0)
             throw new AggregateException("Some virtual shadow map shaders could not be closed.", errors);
     }
-    public string? Name { get; set; }
-    public ShaderRef? MarkPages { get; set; }
-    public ShaderRef? MarkCoarsePages { get; set; }
-    public ShaderRef? AllocatePages { get; set; }
-    public ShaderRef? ClearPages { get; set; }
-    public ShaderRef? InitializeState { get; set; }
-    public ShaderRef? InvalidateCasters { get; set; }
-    public ShaderRef? BuildPagePool { get; set; }
-    public ShaderRef? CompactViews { get; set; }
-    public ShaderRef? InitializePageHiZ { get; set; }
-    public ShaderRef? ReducePageHiZ { get; set; }
+    public partial string? Name { get; set; }
+    public partial ShaderRef? MarkPages { get; set; }
+    public partial ShaderRef? MarkCoarsePages { get; set; }
+    public partial ShaderRef? AllocatePages { get; set; }
+    public partial ShaderRef? ClearPages { get; set; }
+    public partial ShaderRef? InitializeState { get; set; }
+    public partial ShaderRef? InvalidateCasters { get; set; }
+    public partial ShaderRef? BuildPagePool { get; set; }
+    public partial ShaderRef? CompactViews { get; set; }
+    public partial ShaderRef? InitializePageHiZ { get; set; }
+    public partial ShaderRef? ReducePageHiZ { get; set; }
     public Shader GetShader(ShaderRef reference) => _shaders[Guid.Parse(reference.AssetGuid!)];
-    public static async ValueTask<VirtualShadowMapShaders> CreateAsync(Asset<VirtualShadowMapShaders> asset, AssetLoader loader, CancellationToken cancellationToken = default)
+    public static async ValueTask<VirtualShadowMapShaders> CreateAsync(VirtualShadowMapShaders.Asset asset, AssetLoader loader, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(asset);
         ArgumentNullException.ThrowIfNull(loader);
         cancellationToken.ThrowIfCancellationRequested();
-        VirtualShadowMapShadersData fields = asset.GetFieldsGenerated<VirtualShadowMapShadersData>();
+        VirtualShadowMapShadersData fields = asset.CopyValues();
+        fields.Validate(asset.SourcePath);
         var result = new VirtualShadowMapShaders
         {
             Name = fields.Name,
@@ -48,9 +50,9 @@ public sealed partial class VirtualShadowMapShaders : IDisposable
         };
         try
         {
-            foreach (Guid id in asset.Dependencies)
+            foreach (Guid id in asset.Describe().Dependencies)
             {
-                await using Asset<Shader> shader = await loader.OpenAsync(new AssetId<Shader>(id), cancellationToken).ConfigureAwait(false);
+                await using Shader.Asset shader = await Shader.Asset.OpenAsync(loader, new AssetId<Shader>(id), cancellationToken).ConfigureAwait(false);
                 result._shaders.Add(id, await Shader.CreateAsync(shader, cancellationToken).ConfigureAwait(false));
             }
             cancellationToken.ThrowIfCancellationRequested();

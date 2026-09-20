@@ -124,8 +124,10 @@ public sealed partial class Scheduler
         {
             bool waited = false;
             SpinWait spinWait = new();
-            while (!_completion.IsCompleted(lease))
+            while (true)
             {
+                long changeVersion = _workQueue.ChangeVersion;
+                if (_completion.IsCompleted(lease)) break;
                 if (!waited)
                 {
                     _counters.Waited();
@@ -144,10 +146,7 @@ public sealed partial class Scheduler
                     continue;
                 }
 
-                if (!_workQueue.TryExecuteOne(wait: true))
-                {
-                    Thread.Yield();
-                }
+                _workQueue.WaitForChange(changeVersion);
 
                 spinWait = new SpinWait();
             }

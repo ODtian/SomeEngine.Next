@@ -52,15 +52,12 @@ public sealed class SlangSourceImporter : IAssetImporter
         SourceMeta sourceMeta = SourceMeta.GetOrCreate(fullPath, ImporterName);
         SlangShaderCookProfile profile = ResolveProfile(sourceMeta, fullPath);
         string outputPath = Path.ChangeExtension(fullPath, ".shader.asset");
-        ShaderData asset = SlangShaderImporter.Import(
+        using Shader.Asset asset = SlangShaderImporter.ImportFile(
             fullPath,
             sourceMeta,
             sourceMeta.FindOutput(outputPath),
-            profile);
-        IReadOnlyList<ImportedAsset> result =
-            Guid.TryParse(asset.AssetGuid, out Guid guid) && (guid != System.Guid.Empty)
-                ? [ImportedAsset.Create(asset.ToAsset(), "shader:main", outputPath)]
-                : [];
+            profile, out AssetEntry output);
+        IReadOnlyList<ImportedAsset> result = [ImportedAsset.Create(output, "shader:main", outputPath)];
         return ValueTask.FromResult(result);
     }
 

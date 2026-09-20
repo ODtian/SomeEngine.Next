@@ -44,28 +44,32 @@ public partial class Mesh : IDisposable, IAsyncDisposable
         }
     }
 
-    public static async ValueTask<Mesh> CreateAsync(Asset<Mesh> asset,
+    public static async ValueTask<Mesh> CreateAsync(Mesh.Asset asset,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(asset);
         cancellationToken.ThrowIfCancellationRequested();
-        BinaryDocument<MeshData>? document = asset.OpenDocumentGenerated<MeshData>();
-        if (document is null)
+        MeshData fields = asset.CopyValues();
+        fields.ValidateMaterialReferences(asset.SourcePath);
+        if (fields.Payload is { } payload)
         {
-            MeshData fields = asset.GetFieldsGenerated<MeshData>();
-            Memory<byte> payload = fields.Payload
-                ?? throw new InvalidDataException("Mesh file content has no payload.");
             MeshData.PopulatePayloadIntegrity(fields, payload.Span);
             fields.PayloadKey = MeshData.PayloadChunkKey;
             fields.PayloadLength = checked((ulong)payload.Length);
             fields.AssetGuid = null;
             return new Mesh { _content = fields };
         }
-        return await MeshData.OpenStreamedAsync(document, cancellationToken).ConfigureAwait(false);
+        BinaryDocument? document = asset.RetainSource();
+        if (document is null)
+        {
+            fields.Dispose();
+            throw new InvalidDataException("Mesh asset has no payload.");
+        }
+        return await MeshData.OpenStreamedAsync(document, fields, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Changes this mesh at the caller's world update boundary; existing page reads retain their bytes.</summary>
-    public async ValueTask UpdateAsync(Asset<Mesh> asset, CancellationToken cancellationToken = default)
+    public async ValueTask UpdateAsync(Mesh.Asset asset, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await using Mesh replacement = await CreateAsync(asset, cancellationToken).ConfigureAwait(false);
@@ -91,7 +95,9 @@ public partial class Mesh : IDisposable, IAsyncDisposable
             ulong revision = checked(current.Revision + 1);
             MeshPayloadSource? next = Interlocked.Exchange(ref replacement._payloadSource, null);
             previous = Interlocked.Exchange(ref current._payloadSource, next);
+            current._content.Dispose();
             current._content = replacement._content;
+            replacement._content = new();
             current.Revision = revision;
         }
         previous?.Dispose();
@@ -107,7 +113,8 @@ public partial class Mesh : IDisposable, IAsyncDisposable
             Volatile.Write(ref _disposed, 1);
             source = Interlocked.Exchange(ref _payloadSource, null);
         }
-        source?.Dispose();
+        try { source?.Dispose(); }
+        finally { _content.Dispose(); }
     }
 
     public ValueTask DisposeAsync()

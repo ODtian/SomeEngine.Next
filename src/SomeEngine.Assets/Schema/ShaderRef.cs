@@ -4,13 +4,14 @@ namespace SomeEngine.Assets.Schema;
 
 /// <summary>Identifies one executable entry point in one shader asset.</summary>
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class ShaderRef
+public sealed partial record ShaderRef
 {
-    public string? AssetGuid { get; set; }
+    [AssetReference(typeof(Shader))]
+    public string? AssetGuid { get; init; }
 
-    public string? EntryPoint { get; set; }
+    public string? EntryPoint { get; init; }
 
-    public ShaderStage Stage { get; set; }
+    public ShaderStage Stage { get; init; }
 
     internal static Guid Require(
         ShaderRef? shader,

@@ -37,7 +37,12 @@ public enum PassSchedulingMode : byte
 
 public enum PassRecordingMode : byte
 {
+    /// <summary>
+    /// The callback may record concurrently and before its GPU predecessors are submitted.
+    /// Resource dependencies order GPU execution, not host-side callback effects.
+    /// </summary>
     WorkerEligible,
+    /// <summary>The callback records on the thread that executes the frame.</summary>
     CallingThread,
 }
 

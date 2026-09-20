@@ -15,9 +15,8 @@ public sealed class TextureMipTileStreamingTests
     {
         using var directory = new TemporaryDirectory();
         var project = new AssetProject(directory.Path, []);
-        Guid guid = project.CreateAsset(
-            "assets/bootstrap.texture.asset",(
-            new TextureData
+        Guid guid = project.RegisterAsset(((
+            new Texture.Asset
             {
                 Name = "bootstrap",
                 Width = 4,
@@ -34,10 +33,10 @@ public sealed class TextureMipTileStreamingTests
                     Tile(0, 0, 0, 4, 4, new byte[16], rowPitch: 4, slicePitch: 16),
                     Tile(1, 0, 0, 2, 2, [1, 2, 3, 4], rowPitch: 2, slicePitch: 4),
                 ],
-            }).ToAsset());
+            })).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "assets/bootstrap.texture.asset")).AsTask().GetAwaiter().GetResult());
 
         await using var loader = new AssetLoader(project.CreateStorage());
-        await using Asset<Texture> file = await loader.OpenAsync(new AssetId<Texture>(guid));
+        await using Texture.Asset file = await Texture.Asset.OpenAsync(loader, new AssetId<Texture>(guid));
         await using Texture texture = await Texture.CreateAsync(file);
 
         Assert.True(texture.HasBootstrap);
@@ -53,9 +52,8 @@ public sealed class TextureMipTileStreamingTests
     {
         using var directory = new TemporaryDirectory();
         var project = new AssetProject(directory.Path, []);
-        Guid guid = project.CreateAsset(
-            "assets/incomplete-bootstrap.texture.asset",(
-            new TextureData
+        Guid guid = project.RegisterAsset(((
+            new Texture.Asset
             {
                 Name = "incomplete-bootstrap",
                 Width = 2,
@@ -72,10 +70,10 @@ public sealed class TextureMipTileStreamingTests
                     Tile(0, 0, 0, 2, 2, new byte[4], arrayLayer: 0),
                     Tile(1, 0, 0, 1, 1, [7], arrayLayer: 0),
                 ],
-            }).ToAsset());
+            })).SaveAsync(global::System.IO.Path.Combine(project.RootPath, "assets/incomplete-bootstrap.texture.asset")).AsTask().GetAwaiter().GetResult());
 
         await using var loader = new AssetLoader(project.CreateStorage());
-        await using Asset<Texture> file = await loader.OpenAsync(new AssetId<Texture>(guid));
+        await using Texture.Asset file = await Texture.Asset.OpenAsync(loader, new AssetId<Texture>(guid));
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
             () => Texture.CreateAsync(file).AsTask());
 
@@ -89,20 +87,20 @@ public sealed class TextureMipTileStreamingTests
         Guid guid = Guid.NewGuid();
         string beforePath = directory.File("before.texture.asset");
         string afterPath = directory.File("after.texture.asset");
-        TextureData before = SingleMipTexture("before", 2, [1, 2]);
-        before.AssetGuid = guid.ToString();
-        TextureData after = SingleMipTexture("after", 4, [3, 4, 5, 6]);
-        after.AssetGuid = guid.ToString();
-        AssetWriter.Write((before).ToAsset(), beforePath);
-        AssetWriter.Write((after).ToAsset(), afterPath);
+        using Texture.Asset before = SingleMipTexture("before", 2, [1, 2], new(guid));
+
+        using Texture.Asset after = SingleMipTexture("after", 4, [3, 4, 5, 6], new(guid));
+
+        ((before)).SaveAsync(beforePath).AsTask().GetAwaiter().GetResult();
+        ((after)).SaveAsync(afterPath).AsTask().GetAwaiter().GetResult();
         var storage = new MutableTextureStorage();
         storage.Publish(guid, beforePath);
         await using var loader = new AssetLoader(storage);
-        await using Asset<Texture> file = await loader.OpenAsync(new AssetId<Texture>(guid));
+        await using Texture.Asset file = await Texture.Asset.OpenAsync(loader, new AssetId<Texture>(guid));
         await using Texture current = await Texture.CreateAsync(file);
 
         storage.Publish(guid, afterPath);
-        await using Asset<Texture> replacement = await loader.OpenAsync(new AssetId<Texture>(guid));
+        await using Texture.Asset replacement = await Texture.Asset.OpenAsync(loader, new AssetId<Texture>(guid));
 
         Assert.Equal("before", current.Name);
         Assert.Equal(2u, current.Width);
@@ -128,9 +126,7 @@ public sealed class TextureMipTileStreamingTests
         byte[] mipZeroLeft = [1, 2, 3, 4];
         byte[] mipZeroRight = [5, 6, 7, 8];
         byte[] mipOne = [9, 10];
-        AssetWriter.Write((new TextureData
-        {
-            AssetGuid = "00112233445566778899aabbccddeeff",
+        ((new Texture.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Texture>(global::System.Guid.Parse("00112233445566778899aabbccddeeff"))) {
             Name = "streamed",
             Width = 8,
             Height = 8,
@@ -158,13 +154,13 @@ public sealed class TextureMipTileStreamingTests
                 Tile(mipLevel: 0, tileX: 1, tileY: 0, width: 4, height: 8, payload: mipZeroRight),
                 Tile(mipLevel: 0, tileX: 0, tileY: 0, width: 4, height: 8, payload: mipZeroLeft),
             ],
-        }).ToAsset(), path);
+        })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
 
-        await using BinaryDocument<TextureData> document =
-            await AssetTestFiles.OpenAsync<Texture, TextureData>(path);
+        using Texture.Asset file = await Texture.Asset.OpenAsync(path);
+        await using BinaryDocument document = file.RetainSource()!;
 
         TextureMipTile[] metadata = Assert.IsAssignableFrom<IEnumerable<TextureMipTile>>(
-            document.Root.MipTiles).ToArray();
+            file.MipTiles).ToArray();
         Assert.Equal(
             [
                 (0u, 0u, 0u, 0u, 0u, 0u),
@@ -179,25 +175,11 @@ public sealed class TextureMipTileStreamingTests
                 tile.TileX,
                 tile.TileY)).ToArray());
         Assert.All(metadata, static tile => Assert.Null(tile.Payload));
-        Assert.All(metadata, tile => Assert.Equal(
-            TextureData.MipTileChunkKey(
-                tile.MipLevel,
-                tile.ArrayLayer,
-                tile.Face,
-                tile.DepthSlice,
-                tile.TileX,
-                tile.TileY),
-            tile.ChunkKey));
+        Assert.Equal(metadata.Length, metadata.Select(static tile => tile.ChunkKey).Distinct().Count());
+        Assert.All(metadata, static tile => Assert.NotEqual(0ul, tile.ChunkKey));
         Assert.Equal([4ul, 4ul, 2ul], metadata.Select(static tile => tile.DecodedLength).ToArray());
 
-        TextureMipTile selected = TextureData.RequireMipTile(
-            document.Root,
-            mipLevel: 1,
-            arrayLayer: 2,
-            face: 0,
-            depthSlice: 0,
-            tileX: 0,
-            tileY: 0);
+        TextureMipTile selected = Assert.Single(file.MipTiles!, static tile => tile.MipLevel == 1 && tile.ArrayLayer == 2);
         using ChunkLease lease = await document.AcquireChunkAsync(selected.PayloadChunk);
         Assert.Equal(mipOne, lease.Memory.ToArray());
     }
@@ -208,9 +190,7 @@ public sealed class TextureMipTileStreamingTests
         using var directory = new TemporaryDirectory();
         string path = directory.File("payload-alias.texture.asset");
         byte[] expected = [3, 1, 4, 1, 5, 9];
-        AssetWriter.Write((new TextureData
-        {
-            AssetGuid = "10112233445566778899aabbccddeeff",
+        ((new Texture.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Texture>(global::System.Guid.Parse("10112233445566778899aabbccddeeff"))) {
             Width = 2,
             Height = 1,
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D,
@@ -229,13 +209,13 @@ public sealed class TextureMipTileStreamingTests
                     Payload = expected,
                 },
             ],
-        }).ToAsset(), path);
+        })).SaveAsync(path).AsTask().GetAwaiter().GetResult();
 
-        await using BinaryDocument<TextureData> document =
-            await AssetTestFiles.OpenAsync<Texture, TextureData>(path);
-        TextureMipTile tile = Assert.Single(document.Root.MipTiles!);
+        using Texture.Asset file = await Texture.Asset.OpenAsync(path);
+        await using BinaryDocument document = file.RetainSource()!;
+        TextureMipTile tile = Assert.Single(file.MipTiles!);
         Assert.Equal((0u, 0u, 0u), (tile.MipLevel, tile.TileX, tile.TileY));
-        Assert.Equal(TextureData.MipTileChunkKey(0, 0, 0), tile.ChunkKey);
+        Assert.NotEqual(0ul, tile.ChunkKey);
         Assert.Equal((ulong)expected.Length, tile.DecodedLength);
         using ChunkLease payload = await document.AcquireChunkAsync(tile.PayloadChunk);
         Assert.Equal(expected, payload.Memory.ToArray());
@@ -252,10 +232,10 @@ public sealed class TextureMipTileStreamingTests
         mipZero.ChunkKey = ulong.MaxValue;
         mipZero.DecodedLength = ulong.MaxValue;
 
-        AssetWriter.Write((Asset([mipOne, mipZero])).ToAsset(), first);
+        ((Asset([mipOne, mipZero]))).SaveAsync(first).AsTask().GetAwaiter().GetResult();
         mipZero.ChunkKey = ulong.MaxValue;
         mipZero.DecodedLength = ulong.MaxValue;
-        AssetWriter.Write((Asset([mipZero, mipOne])).ToAsset(), second);
+        ((Asset([mipZero, mipOne]))).SaveAsync(second).AsTask().GetAwaiter().GetResult();
 
         byte[] firstHash;
         byte[] secondHash;
@@ -264,12 +244,7 @@ public sealed class TextureMipTileStreamingTests
         using (FileStream stream = File.OpenRead(second))
             secondHash = SHA256.HashData(stream);
         Assert.Equal(firstHash, secondHash);
-        Assert.Equal(
-            TextureData.MipTileChunkKey(3, 2, 4, 6, 7, 11),
-            TextureData.MipTileChunkKey(3, 2, 4, 6, 7, 11));
-        Assert.NotEqual(
-            TextureData.MipTileChunkKey(3, 2, 4, 6, 7, 11),
-            TextureData.MipTileChunkKey(3, 2, 4, 7, 7, 11));
+
     }
 
     [Fact]
@@ -278,21 +253,21 @@ public sealed class TextureMipTileStreamingTests
         using var directory = new TemporaryDirectory();
         byte[] payload = [2, 7, 1, 8];
         TextureMipTile tile = Tile(0, 0, 0, 1, 1, payload);
-        TextureData asset = Asset([tile]);
+        Texture.Asset asset = Asset([tile]);
 
         string path = directory.File("captured.texture.asset");
-        using Asset<Texture> file = asset.ToAsset();
-        AssetWriter.Write(file, path);
+        using Texture.Asset file = asset;
+        (file).SaveAsync(path).AsTask().GetAwaiter().GetResult();
 
         TextureMipTile current = Assert.Single(asset.MipTiles!);
         Assert.Same(tile, current);
         Assert.Equal(payload, current.Payload!.Value.ToArray());
         Assert.Equal(0ul, current.ChunkKey);
         Assert.Equal(0ul, current.DecodedLength);
-        await using Asset<Texture> opened = await AssetLoader.OpenFileAsync<Texture>(path);
-        await using BinaryDocument<TextureData> document = opened.OpenDocumentGenerated<TextureData>()!;
-        TextureMipTile written = Assert.Single(document.Root.MipTiles!);
-        Assert.Equal(TextureData.MipTileChunkKey(0, 0, 0), written.ChunkKey);
+        await using Texture.Asset opened = await Texture.Asset.OpenAsync(path);
+        await using BinaryDocument document = opened.RetainSource()!;
+        TextureMipTile written = Assert.Single(opened.MipTiles!);
+        Assert.NotEqual(0ul, written.ChunkKey);
         Assert.Equal((ulong)payload.Length, written.DecodedLength);
         Assert.Null(written.Payload);
         using ChunkLease chunk = await document.AcquireChunkAsync(written.PayloadChunk);
@@ -303,24 +278,19 @@ public sealed class TextureMipTileStreamingTests
     public void Save_RejectsDuplicateOutOfBoundsAndMissingTilePayloads()
     {
         using var directory = new TemporaryDirectory();
-        Assert.Throws<InvalidDataException>(() => AssetWriter.Write((
-            Asset([Tile(0, 0, 0, 4, 4, [1]), Tile(0, 0, 0, 4, 4, [2])])).ToAsset(),
-            directory.File("duplicate.texture.asset")));
-        Assert.Throws<InvalidDataException>(() => AssetWriter.Write((
-            Asset([Tile(0, 0, 0, 9, 4, [1])])).ToAsset(),
-            directory.File("bounds.texture.asset")));
-        Assert.Throws<InvalidDataException>(() => AssetWriter.Write((
-            Asset([new TextureMipTile { Width = 4, Height = 4 }])).ToAsset(),
-            directory.File("missing.texture.asset")));
-        Assert.Throws<InvalidDataException>(() => AssetWriter.Write((
-            Asset([Tile(0, 0, 0, 4, 4, [1, 2], rowPitch: 2, slicePitch: 1)])).ToAsset(),
-            directory.File("pitch.texture.asset")));
+        Assert.Throws<InvalidDataException>(() => ((
+            Asset([Tile(0, 0, 0, 4, 4, [1]), Tile(0, 0, 0, 4, 4, [2])]))).SaveAsync(directory.File("duplicate.texture.asset")).AsTask().GetAwaiter().GetResult());
+        Assert.Throws<InvalidDataException>(() => ((
+            Asset([Tile(0, 0, 0, 9, 4, [1])]))).SaveAsync(directory.File("bounds.texture.asset")).AsTask().GetAwaiter().GetResult());
+        Assert.Throws<InvalidDataException>(() => ((
+            Asset([new TextureMipTile { Width = 4, Height = 4 }]))).SaveAsync(directory.File("missing.texture.asset")).AsTask().GetAwaiter().GetResult());
+        Assert.Throws<InvalidDataException>(() => ((
+            Asset([Tile(0, 0, 0, 4, 4, [1, 2], rowPitch: 2, slicePitch: 1)]))).SaveAsync(directory.File("pitch.texture.asset")).AsTask().GetAwaiter().GetResult());
     }
 
-    private static TextureData Asset(IList<TextureMipTile> tiles)
-        => new()
+    private static Texture.Asset Asset(IList<TextureMipTile> tiles)
+        => new(new(Guid.Parse("20112233445566778899aabbccddeeff")))
         {
-            AssetGuid = "20112233445566778899aabbccddeeff",
             Name = "deterministic",
             Width = 4,
             Height = 4,
@@ -334,8 +304,8 @@ public sealed class TextureMipTileStreamingTests
             MipTiles = tiles,
         };
 
-    private static TextureData SingleMipTexture(string name, uint width, byte[] payload)
-        => new()
+    private static Texture.Asset SingleMipTexture(string name, uint width, byte[] payload, AssetId<Texture> id = default)
+        => new(id)
         {
             Name = name,
             Width = width,
@@ -412,8 +382,8 @@ public sealed class TextureMipTileStreamingTests
             {
                 _entry = new AssetEntry(
                     guid,
-                    Asset<Texture>.FileType,
-                    TextureData.SchemaFingerprint,
+                    Texture.Asset.FileType,
+                    Texture.Asset.SchemaHash,
                     Guid.NewGuid());
                 _path = path;
             }

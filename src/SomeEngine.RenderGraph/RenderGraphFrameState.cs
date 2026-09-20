@@ -64,7 +64,11 @@ internal sealed partial class RenderGraphFrameState
     internal IReadOnlyList<BufferRangeRead> BufferRangeReads => _bufferRangeReads;
     internal IReadOnlyList<ExplicitPassOrder> DynamicOrders => _dynamicOrders;
     internal IReadOnlyList<(GraphIdentity Identity, SwapchainImage Image, Queue PresentQueue)> SwapchainImages => _swapchainImages;
-    internal void ReleaseRecordingContexts() => _executor.ReleaseRecordingContexts();
+    internal void ReleaseRecordingContexts()
+    {
+        _executor.ReleaseRecordingContexts();
+        _executor.ReleaseParameterBindings();
+    }
 
     internal FrameExecutor Executor => _executorActive
         ? _executor
@@ -1395,10 +1399,6 @@ internal sealed partial class RenderGraphFrameState
             "The buffer does not provide the input's declared usages.");
         BufferRange range = GraphStructureIndex.ResolveRange(value.Range, description.Size);
         _bufferInputs[input] = new GraphBufferSlice(value.Buffer, range);
-        foreach (GraphIdentity view in StructureIndex.BufferInputViews.GetValueOrDefault(input, []))
-            _executor.ChangeView(view);
-        foreach (GraphIdentity access in StructureIndex.BufferInputAccesses.GetValueOrDefault(input, []))
-            _executor.ChangeAccess(access);
         _executor.ChangeBufferInput(input);
     }
 
@@ -1418,10 +1418,7 @@ internal sealed partial class RenderGraphFrameState
             "The texture input must belong to this graph.");
         ValidateResourceIdentity(value.Value, buffer: false);
         _textureInputs[input] = value;
-        foreach (GraphIdentity view in StructureIndex.TextureInputViews.GetValueOrDefault(input, []))
-            _executor.ChangeView(view);
-        foreach (GraphIdentity access in StructureIndex.TextureInputAccesses.GetValueOrDefault(input, []))
-            _executor.ChangeAccess(access);
+        _executor.ChangeTextureInput(input);
     }
 
     internal GraphTextureId ResolveTextureInput(GraphTextureInput input)

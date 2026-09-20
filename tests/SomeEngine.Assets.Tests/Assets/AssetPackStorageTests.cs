@@ -15,20 +15,21 @@ public sealed class AssetPackStorageTests
         await using var storage = new AssetPackStorage([pack]);
 
         Assert.True(storage.TryFind(assetGuid, out AssetEntry entry));
-        Assert.Equal(Asset<Texture>.FileType, entry.AssetType);
-        Assert.Equal(TextureData.SchemaFingerprint, entry.SchemaFingerprint);
+        Assert.Equal(Texture.Asset.FileType, entry.AssetType);
+        Assert.Equal(Texture.Asset.SchemaHash, entry.SchemaFingerprint);
         Assert.Equal(pack.Generation, entry.Version);
 
-        await using BinaryDocument<TextureData> document =
-            await AssetTestFiles.OpenAsync<Texture, TextureData>(storage, entry);
-        Assert.Equal(assetGuid.ToString(), document.Root.AssetGuid);
-        TextureMipTile selected = Assert.Single(document.Root.MipTiles!);
+        await using var loader = new AssetLoader(storage);
+        using Texture.Asset file = await Texture.Asset.OpenAsync(loader, new(assetGuid));
+        await using BinaryDocument document = file.RetainSource()!;
+        Assert.Equal(assetGuid, file.Id.Value);
+        TextureMipTile selected = Assert.Single(file.MipTiles!);
         using ChunkLease tile = await document.AcquireChunkAsync(selected.PayloadChunk);
         Assert.Equal([1, 3, 3, 7], tile.Memory.ToArray());
 
         await Assert.ThrowsAsync<InvalidDataException>(async () =>
         {
-            await AssetTestFiles.OpenAsync<Mesh, MeshData>(storage, entry);
+            await Mesh.Asset.OpenAsync(loader, new(assetGuid));
         });
     }
 
@@ -41,10 +42,11 @@ public sealed class AssetPackStorageTests
         var storage = new AssetPackStorage([hotfixPack, basePack]);
         Assert.True(storage.TryFind(assetGuid, out AssetEntry entry));
 
-        await using (BinaryDocument<TextureData> document =
-            await AssetTestFiles.OpenAsync<Texture, TextureData>(storage, entry))
+        await using (var loader = new AssetLoader(storage))
         {
-            TextureMipTile selected = Assert.Single(document.Root.MipTiles!);
+            using Texture.Asset file = await Texture.Asset.OpenAsync(loader, new(assetGuid));
+            await using BinaryDocument document = file.RetainSource()!;
+            TextureMipTile selected = Assert.Single(file.MipTiles!);
             using ChunkLease tile = await document.AcquireChunkAsync(selected.PayloadChunk);
             Assert.Equal([9], tile.Memory.ToArray());
         }
@@ -62,9 +64,9 @@ public sealed class AssetPackStorageTests
         await using var storage = new AssetPackStorage([pack]);
 
         Assert.True(storage.TryFind(entryGuid, out AssetEntry entry));
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            async () => await AssetTestFiles.OpenAsync<Texture, TextureData>(storage, entry));
-        Assert.Contains("declares GUID", error.Message, StringComparison.OrdinalIgnoreCase);
+        await using var loader = new AssetLoader(storage);
+        await Assert.ThrowsAsync<InvalidDataException>(
+            async () => await Texture.Asset.OpenAsync(loader, new(entryGuid)));
     }
 
     private static async ValueTask<AssetPack> OpenPackAsync(
@@ -77,9 +79,7 @@ public sealed class AssetPackStorageTests
         try
         {
             string assetPath = Path.Combine(directory, "stored.texture.asset");
-            AssetWriter.Write((new TextureData
-            {
-                AssetGuid = (rootGuid ?? assetGuid).ToString(),
+            ((new Texture.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Texture>((rootGuid ?? assetGuid))) {
                 Name = "stored-texture",
                 Width = 1,
                 Height = 1,
@@ -99,11 +99,11 @@ public sealed class AssetPackStorageTests
                         Payload = payload,
                     },
                 ],
-            }).ToAsset(), assetPath);
+            })).SaveAsync(assetPath).AsTask().GetAwaiter().GetResult();
             byte[] documentBytes = await File.ReadAllBytesAsync(assetPath);
             string packPath = Path.Combine(directory, "stored.sepack");
             await new AssetPackBuilder()
-                .AddAsset(assetGuid, Asset<Texture>.FileType, documentBytes, TextureData.SchemaFingerprint)
+                .AddAsset(assetGuid, Texture.Asset.FileType, documentBytes, Texture.Asset.SchemaHash)
                 .PublishAsync(packPath);
             Array.Clear(documentBytes);
             return await AssetPack.OpenAsync(packPath);

@@ -1,13 +1,12 @@
 namespace SomeEngine.Assets.Schema;
 
-public partial class MeshData
+internal partial class MeshData
 {
-    internal IReadOnlyList<Guid> GetDependencies(string path)
+    internal void ValidateMaterialReferences(string path)
     {
         if (MaterialGuids is not { Count: > 0 })
-            return [];
+            return;
 
-        var result = new List<Guid>(MaterialGuids.Count);
         for (int index = 0; index < MaterialGuids.Count; index++)
         {
             string? value = MaterialGuids[index];
@@ -18,10 +17,6 @@ public partial class MeshData
                 throw new InvalidDataException(
                     $"Mesh asset '{path}' MaterialGuids[{index}] is invalid.");
             }
-            if (!result.Contains(material))
-                result.Add(material);
         }
-        result.Sort(static (left, right) => left.CompareTo(right));
-        return result;
     }
 }

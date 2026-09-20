@@ -8,7 +8,7 @@ namespace SomeEngine.Assets.Schema;
 public partial class Texture : IDisposable, IAsyncDisposable
 {
     private ChunkRequestScheduler? _scheduler;
-    private BinaryDocument<TextureData>? _document;
+    private BinaryDocument? _document;
     private ResidentChunkLease[] _bootstrap = [];
     private int _disposed;
 
@@ -89,14 +89,14 @@ public partial class Texture : IDisposable, IAsyncDisposable
             out lease);
     }
 
-    public static async ValueTask<Texture> CreateAsync(Asset<Texture> asset,
+    public static async ValueTask<Texture> CreateAsync(Texture.Asset asset,
         CancellationToken cancellationToken = default, TextureLoadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(asset);
         cancellationToken.ThrowIfCancellationRequested();
-        var result = new Texture { _content = asset.GetFieldsGenerated<TextureData>() };
+        var result = new Texture { _content = asset.CopyValues() };
         result._content.AssetGuid = null;
-        BinaryDocument<TextureData>? document = asset.OpenDocumentGenerated<TextureData>();
+        BinaryDocument? document = asset.RetainSource();
         if (document is null)
         {
             TextureData.InitializeTiles(result._content);
@@ -122,7 +122,7 @@ public partial class Texture : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Reads and validates replacement content before applying it at the caller's world update boundary.</summary>
-    public async ValueTask UpdateAsync(Asset<Texture> asset, CancellationToken cancellationToken = default,
+    public async ValueTask UpdateAsync(Texture.Asset asset, CancellationToken cancellationToken = default,
         TextureLoadOptions? options = null)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -155,10 +155,10 @@ public partial class Texture : IDisposable, IAsyncDisposable
         ulong nextRevision = checked(current.Revision + 1);
 
         ChunkRequestScheduler? previousScheduler = null;
-        BinaryDocument<TextureData>? previousDocument = null;
+        BinaryDocument? previousDocument = null;
         ResidentChunkLease[] previousBootstrap = [];
         ChunkRequestScheduler? nextScheduler = Interlocked.Exchange(ref replacement._scheduler, null);
-        BinaryDocument<TextureData>? nextDocument = Interlocked.Exchange(ref replacement._document, null);
+        BinaryDocument? nextDocument = Interlocked.Exchange(ref replacement._document, null);
         ResidentChunkLease[] nextBootstrap = Interlocked.Exchange(
             ref replacement._bootstrap,
             []);
@@ -186,7 +186,7 @@ public partial class Texture : IDisposable, IAsyncDisposable
         try { ReleaseDevices(); }
         catch (Exception error) { errors.Add(error); }
         ChunkRequestScheduler? scheduler = Interlocked.Exchange(ref _scheduler, null);
-        BinaryDocument<TextureData>? document = Interlocked.Exchange(ref _document, null);
+        BinaryDocument? document = Interlocked.Exchange(ref _document, null);
         ResidentChunkLease[] bootstrap = Interlocked.Exchange(ref _bootstrap, []);
         try { await CloseContentAsync(bootstrap, scheduler, document).ConfigureAwait(false); }
         catch (Exception error) { errors.Add(error); }
@@ -194,7 +194,7 @@ public partial class Texture : IDisposable, IAsyncDisposable
     }
 
     private static async ValueTask CloseContentAsync(ResidentChunkLease[] bootstrap,
-        ChunkRequestScheduler? scheduler, BinaryDocument<TextureData>? document)
+        ChunkRequestScheduler? scheduler, BinaryDocument? document)
     {
         var errors = new List<Exception>();
         foreach (ResidentChunkLease chunk in bootstrap)

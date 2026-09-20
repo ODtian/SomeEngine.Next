@@ -25,6 +25,10 @@ internal interface IWorkQueue : IDisposable
 
     bool TryExecuteOne(bool wait);
 
+    long ChangeVersion { get; }
+
+    void WaitForChange(long version);
+
     bool TryHandoffLatencyWork(
         object? state,
         Action<object?, int> action,
@@ -36,7 +40,7 @@ internal interface IWorkQueue : IDisposable
 
     bool TryReclaimLatencyWork(long sequence);
 
-    void Pulse();
+    void NotifyCompletion();
 }
 
 internal sealed class WorkQueue : IWorkQueue
@@ -386,9 +390,27 @@ internal sealed class WorkQueue : IWorkQueue
             WakeWorkers();
     }
 
-    public void Pulse()
+    public void NotifyCompletion()
     {
-        WakeWorkers();
+        // Completion can release a caller or a worker helping a nested Complete.
+        // Idle workers need waking only when a ready ticket is actually published.
+        Interlocked.Increment(ref _wakeEpoch);
+        lock (_stateLock) Monitor.PulseAll(_stateLock);
+    }
+
+    public long ChangeVersion => Volatile.Read(ref _wakeEpoch);
+
+    public void WaitForChange(long version)
+    {
+        lock (_stateLock)
+        {
+            // The caller reads the version before checking its completion condition.
+            // A notification between that check and this lock must not be lost.
+            if (Volatile.Read(ref _wakeEpoch) != version ||
+                Volatile.Read(ref _readyTicketCount) != 0 || IsDisposed)
+                return;
+            Monitor.Wait(_stateLock);
+        }
     }
 
     public void Dispose()
@@ -499,7 +521,8 @@ internal sealed class WorkQueue : IWorkQueue
         }
 
         long observedEpoch = Volatile.Read(ref _wakeEpoch);
-        object waitLock = workerThread ? _workerWaitLock : _stateLock;
+        bool waitingForWork = workerThread && waitIndefinitely;
+        object waitLock = waitingForWork ? _workerWaitLock : _stateLock;
         lock (waitLock)
         {
             if (Volatile.Read(ref _readyTicketCount) > 0 ||
@@ -507,7 +530,7 @@ internal sealed class WorkQueue : IWorkQueue
                 return true;
             if (IsDisposed) return false;
 
-            if (workerThread) Interlocked.Increment(ref _sleepingWorkerCount);
+            if (waitingForWork) Interlocked.Increment(ref _sleepingWorkerCount);
             try
             {
                 if (Volatile.Read(ref _wakeEpoch) != observedEpoch ||
@@ -522,7 +545,7 @@ internal sealed class WorkQueue : IWorkQueue
             }
             finally
             {
-                if (workerThread) Interlocked.Decrement(ref _sleepingWorkerCount);
+                if (waitingForWork) Interlocked.Decrement(ref _sleepingWorkerCount);
             }
         }
     }

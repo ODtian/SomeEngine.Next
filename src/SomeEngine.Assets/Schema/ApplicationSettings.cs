@@ -1,51 +1,42 @@
 namespace SomeEngine.Assets.Schema;
 
-public sealed record ApplicationSettings(
-        Guid Scene,
-        Guid Pipeline,
-        Guid VirtualShadowMap,
-        Guid UiShader,
-        string UiVertexEntry,
-        string UiPixelEntry,
-        Guid PresentationShader,
-        string PresentationVertexEntry,
-        string PresentationPixelEntry,
-        Guid LightingShader,
-        string LightingEntryPoint,
-        Guid TemporalShader,
-        string TemporalVertexEntry,
-        string TemporalPixelEntry,
-        Guid TranslucencyShader,
-        string TranslucencyVertexEntry,
-        string TranslucencyPixelEntry,
-        Guid DebugShader,
-        string DebugVertexEntry,
-        string DebugPixelEntry,
-        int Width,
-        int Height,
-        string Title)
-
+[Asset(".runtime.asset", SchemaName = "SomeEngine.Assets.Schema.RuntimeConfiguration")]
+public sealed partial class ApplicationSettings
 {
-    public static ApplicationSettings Create(Asset<ApplicationSettings> asset)
-    {
-        ApplicationData value = asset.GetFieldsGenerated<ApplicationData>();
-        (Guid id, string vertex, string pixel) Raster(IList<ShaderRef> refs)
-        {
-            ShaderRef vertex = refs.Single(r => r.Stage == ShaderStage.Vertex);
-            ShaderRef pixel = refs.Single(r => r.Stage == ShaderStage.Pixel);
-            return (Guid.Parse(vertex.AssetGuid!), vertex.EntryPoint!, pixel.EntryPoint!);
-        }
-        var ui = Raster(value.UiShaders!);
-        var presentation = Raster(value.PresentationShaders!);
-        var temporal = Raster(value.TemporalShaders!);
-        var translucency = Raster(value.TranslucencyShaders!);
-        var debug = Raster(value.DebugShaders!);
-        return new(Guid.Parse(value.SceneGuid!), Guid.Parse(value.ClusterPipelineGuid!),
-            Guid.Parse(value.VirtualShadowMapGuid!), ui.id, ui.vertex, ui.pixel,
-            presentation.id, presentation.vertex, presentation.pixel,
-            Guid.Parse(value.LightingShader!.AssetGuid!), value.LightingShader.EntryPoint!,
-            temporal.id, temporal.vertex, temporal.pixel, translucency.id, translucency.vertex, translucency.pixel,
-            debug.id, debug.vertex, debug.pixel, checked((int)value.WindowWidth), checked((int)value.WindowHeight),
-            value.Name ?? "SomeEngine");
-    }
+    public string Name { get; set; } = "SomeEngine";
+    [AssetReference(typeof(SomeEngine.ECS.World))]
+    public Guid Scene { get; set; }
+    [AssetReference(typeof(ClusterShaders))]
+    public Guid Pipeline { get; set; }
+    [AssetReference(typeof(VirtualShadowMapShaders))]
+    public Guid VirtualShadowMap { get; set; }
+    [AssetReference(typeof(Shader))]
+    public Guid UiShader { get; set; }
+    public string UiVertexEntry { get; set; } = "vertexMain";
+    public string UiPixelEntry { get; set; } = "fragmentMain";
+    [AssetReference(typeof(Shader))]
+    public Guid PresentationShader { get; set; }
+    public string PresentationVertexEntry { get; set; } = "vertexMain";
+    public string PresentationPixelEntry { get; set; } = "fragmentMain";
+    [AssetReference(typeof(Shader))]
+    public Guid LightingShader { get; set; }
+    public string LightingEntryPoint { get; set; } = "main";
+    [AssetReference(typeof(Shader))]
+    public Guid TemporalShader { get; set; }
+    public string TemporalVertexEntry { get; set; } = "vertexMain";
+    public string TemporalPixelEntry { get; set; } = "fragmentMain";
+    [AssetReference(typeof(Shader))]
+    public Guid TranslucencyShader { get; set; }
+    public string TranslucencyVertexEntry { get; set; } = "vertexMain";
+    public string TranslucencyPixelEntry { get; set; } = "fragmentMain";
+    [AssetReference(typeof(Shader))]
+    public Guid DebugShader { get; set; }
+    public string DebugVertexEntry { get; set; } = "vertexMain";
+    public string DebugPixelEntry { get; set; } = "fragmentMain";
+    public int Width { get; set; } = 1280;
+    public int Height { get; set; } = 720;
+    public string Title => Name;
+
+    public static ApplicationSettings Create(ApplicationSettings.Asset asset)
+        => CreateValueGenerated(asset.CopyValues());
 }

@@ -17,4 +17,6 @@ clock或journal control-plane 更新被候选提交覆盖。
 只接受显式稳定schema和canonical codec。完整决策见
 `docs/adr/0005-ecs-save-contracts.md`。
 
+World 资产在集成层使用 `WorldAsset : Asset<World>`，复用已有组件、缓冲区与拓扑序列化，不建立固定 SceneData。文件外层信息与 ECS 内容的边界见 [[Asset-Worlds]]；在同一个 Game world 上解析资源并进入既有提取流程的关系见 [[Asset-Application-and-Rendering]]。资产整体导航见 [[Asset-Files]]。
+
 参见 [[Engine-Goals]]。

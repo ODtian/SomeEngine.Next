@@ -5,10 +5,10 @@ namespace SomeEngine.Assets.Schema;
 public sealed partial class Texture
 {
     /// <summary>Reads a file's resource shape without creating a texture or reading pixel chunks.</summary>
-    public static TextureDesc ReadDescription(Asset<Texture> asset)
+    public static TextureDesc ReadDescription(Texture.Asset asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        TextureData fields = asset.GetFieldsGenerated<TextureData>();
+        TextureData fields = asset.CopyValues();
         bool cube = fields.SampledDimension is SomeEngine.Graphics.TextureViewDimension.Cube
             or SomeEngine.Graphics.TextureViewDimension.CubeArray;
         uint layers = cube ? checked(fields.ArrayLayerCount * 6) : fields.ArrayLayerCount;
@@ -18,10 +18,10 @@ public sealed partial class Texture
     }
 
     /// <summary>Returns detached file tile metadata. No runtime object or GPU allocation is created.</summary>
-    public static IReadOnlyList<TextureMipTile> ReadMipTiles(Asset<Texture> asset)
+    public static IReadOnlyList<TextureMipTile> ReadMipTiles(Texture.Asset asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        return Array.AsReadOnly((asset.GetFieldsGenerated<TextureData>().MipTiles ?? []).ToArray());
+        return asset.CopyValues().MipTiles ?? [];
     }
 
     /// <summary>Updates procedural content through the same device-safe boundary, without any disk asset.</summary>
@@ -52,7 +52,7 @@ public sealed partial class Texture
             ArrayLayerCount = cube ? description.ArrayLayerCount / 6 : description.ArrayLayerCount,
             Format = description.Format, SampledFormat = sampledFormat ?? description.Format,
             SampledDimension = sampledDimension,
-            MipTiles = tiles.Select(static tile => tile.CopyFields()).ToList(),
+            MipTiles = tiles.ToImmutableList(),
         };
         TextureData.InitializeTiles(content);
         var result = new Texture { _content = content };

@@ -4,21 +4,17 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Schema;
 
-public partial class ShaderData
+internal partial class ShaderData
 {
-    private static async ValueTask<BinaryDocument<ShaderData>> OpenDocumentAsync(
-        string path, CancellationToken cancellationToken)
-    {
-        await using Asset<Shader> asset = await AssetLoader.OpenFileAsync<Shader>(
-            path, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return asset.OpenDocumentGenerated<ShaderData>()!;
-    }
+    private static ValueTask<BinaryDocument> OpenDocumentAsync(string path, CancellationToken cancellationToken)
+        => BinaryDocument.OpenAsync(SomeEngine.Serialization.IO.FileRangeSource.Open(path), Shader.Asset.WireType,
+            ownsSource: true, cancellationToken: cancellationToken);
 
     internal static async ValueTask<ShaderData> ReadAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
-        await using BinaryDocument<ShaderData> document =
+        await using BinaryDocument document =
             await OpenDocumentAsync(path, cancellationToken)
                 .ConfigureAwait(false);
         return await MaterializeAsync(document, cancellationToken).ConfigureAwait(false);
@@ -33,70 +29,74 @@ public partial class ShaderData
     }
 
     internal static BinaryDocumentWriter CreateWriter(ShaderData asset)
+        => CreateWriterAsync(asset, null, default).GetAwaiter().GetResult();
+
+    internal static async ValueTask<BinaryDocumentWriter> CreateWriterAsync(ShaderData asset,
+        BinaryDocument? source, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(asset);
-        int programCount = asset.Programs?.Count ?? 0;
-        for (int index = 0; index < programCount; index++)
+        ImmutableList<CookedShaderProgram> codes = asset.Programs ?? [];
+        ImmutableList<CookedShaderProgram>.Builder? changed = null;
+        BinaryDocumentWriter writer = BinaryDocumentWriter.Create(asset);
+        int index = 0;
+        foreach (CookedShaderProgram code in codes)
         {
-            CookedShaderProgram program = asset.Programs![index];
-            Memory<byte>? payload = program.Data;
-            if (!payload.HasValue || payload.Value.IsEmpty)
+            ulong key = ProgramChunkKey(index);
+            ulong length = code.Data is { } bytes ? checked((ulong)bytes.Length) : code.DataDecodedLength;
+            if (code.Data is { IsEmpty: false } payload)
+                writer.AddChunk(key, payload, global::SomeEngine.Assets.Asset<Shader>.ByteSchema,
+                    ChunkCompression.Brotli, ordinal: checked((uint)index));
+            else if (source is not null && code.Data is null)
+                await writer.AddChunkAsync(key, source, cancellationToken,
+                    code.DataChunkKey, checked((uint)index)).ConfigureAwait(false);
+            else
+                throw new InvalidDataException($"Shader bytecode {index} has no payload.");
+            if (key != code.DataChunkKey || length != code.DataDecodedLength)
             {
-                throw new InvalidDataException(
-                    $"Cooked shader program {index} must provide one externalized payload.");
+                changed ??= codes.ToBuilder();
+                changed[index] = code with { DataChunkKey = key, DataDecodedLength = length };
             }
-            program.DataChunkKey = ProgramChunkKey(index);
-            program.DataDecodedLength = checked((ulong)payload.Value.Length);
+            index++;
         }
-
-        BinaryDocumentWriter builder = BinaryDocumentWriter.Create(asset);
-        for (int index = 0; index < programCount; index++)
-        {
-            builder.AddChunk(
-                asset.Programs![index].DataChunk.Key,
-                asset.Programs![index].Data!.Value,
-                AssetWriter.RawBytesSchema,
-                ChunkCompression.Brotli,
-                alignment: 16,
-                ordinal: checked((uint)index));
-        }
-
-        return builder;
+        if (changed is not null) asset.Programs = changed.ToImmutable();
+        return writer;
     }
 
     /// <summary>Reads every bytecode variant into its final managed backing.</summary>
     internal static async ValueTask<ShaderData> MaterializeAsync(
-        BinaryDocument<ShaderData> document,
+        BinaryDocument? document,
         CancellationToken cancellationToken,
-        string? backend = null)
+        string? backend = null,
+        ShaderData? fields = null)
     {
-        ArgumentNullException.ThrowIfNull(document);
-        ValidateExternalizedRoot(document.Root);
-        ShaderData result = document.Root.CopyFields();
-        int programCount = result.Programs?.Count ?? 0;
-        for (int index = 0; index < programCount; index++)
+        ShaderData result = fields?.CopyFields() ?? document!.ReadRoot<ShaderData>();
+        if (fields is null) ValidateExternalizedRoot(result);
+        ImmutableList<CookedShaderProgram> codes = result.Programs ?? [];
+        ImmutableList<CookedShaderProgram>.Builder? changed = null;
+        for (int index = 0; index < codes.Count; index++)
         {
-            if (backend is not null && result.Programs![index].Backend != backend) continue;
-            Memory<byte>? payload = await document.TryReadChunkAsync(
-                result.Programs![index].DataChunk,
-                static length => GC.AllocateUninitializedArray<byte>(length),
-                cancellationToken).ConfigureAwait(false);
+            CookedShaderProgram cooked = codes[index];
+            if (backend is not null && cooked.Backend != backend) continue;
+            if (cooked.Program is not null) continue;
+            ReadOnlyMemory<byte>? payload = cooked.Data;
+            if (!payload.HasValue && document is not null)
+                payload = await document.TryReadChunkAsync(cooked.DataChunk,
+                    static length => GC.AllocateUninitializedArray<byte>(length), cancellationToken).ConfigureAwait(false);
             if (!payload.HasValue)
             {
                 throw new InvalidDataException(
                     $"ShaderData document is missing required bytecode chunk {index}.");
             }
-            CookedShaderProgram cooked = result.Programs![index];
-            cooked.Data = payload;
-            cooked.Program = SlangShaderSharp.ShaderProgram.Read(payload.Value.Span);
-            if (!string.Equals(cooked.Backend, cooked.Program.Backend, StringComparison.Ordinal))
+            var decoded = SlangShaderSharp.ShaderProgram.Read(payload.Value.Span);
+            if (!string.Equals(cooked.Backend, decoded.Backend, StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
                     $"Cooked shader program {index} backend '{cooked.Backend}' does not match " +
-                    $"its detached payload backend '{cooked.Program.Backend}'.");
+                    $"its detached payload backend '{decoded.Backend}'.");
             }
+            changed ??= codes.ToBuilder();
+            changed[index] = cooked with { Data = payload, Program = decoded };
         }
-
+        if (changed is not null) result.Programs = changed.ToImmutable();
         return result;
     }
 

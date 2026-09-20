@@ -10,37 +10,35 @@ internal static class ClusterTestFiles
 
     internal static void WriteMesh(Mesh mesh, string path)
     {
-        using Asset<Mesh> file = new MeshData
-        {
-            AssetGuid = MeshId.ToString(), Name = mesh.Name, Bounds = mesh.Bounds,
+        using Mesh.Asset file = new Mesh.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Mesh>(MeshId)) { Name = mesh.Name, Bounds = mesh.Bounds,
             VertexEncoding = mesh.VertexEncoding, Payload = mesh.Payload, BvhOffset = mesh.BvhOffset,
             Regions = mesh.Regions, MaterialGuids = mesh.MaterialGuids,
-        }.ToAsset();
-        AssetWriter.Write(file, path);
+        };
+        (file).SaveAsync(path).AsTask().GetAwaiter().GetResult();
     }
 
     internal static async ValueTask<Mesh> OpenMeshAsync(string path)
     {
-        await using Asset<Mesh> file = await AssetLoader.OpenFileAsync<Mesh>(path);
+        await using Mesh.Asset file = await Mesh.Asset.OpenAsync(path);
         return await Mesh.CreateAsync(file);
     }
 
     internal static async ValueTask<Mesh> OpenMeshAsync(IRangeSource source, bool ownsSource)
     {
         await using var loader = new AssetLoader(new RangeStorage(source, ownsSource));
-        await using Asset<Mesh> file = await loader.OpenAsync(new AssetId<Mesh>(MeshId));
+        await using Mesh.Asset file = await Mesh.Asset.OpenAsync(loader, new AssetId<Mesh>(MeshId));
         return await Mesh.CreateAsync(file);
     }
 
     internal static async ValueTask<Shader> OpenShaderAsync(string path)
     {
-        await using Asset<Shader> file = await AssetLoader.OpenFileAsync<Shader>(path);
+        await using Shader.Asset file = await Shader.Asset.OpenAsync(path);
         return await Shader.CreateAsync(file);
     }
 
     private sealed class RangeStorage(IRangeSource source, bool ownsSource) : IAssetStorage
     {
-        private readonly AssetEntry _entry = new(MeshId, Asset<Mesh>.FileType, Asset<Mesh>.SchemaHash, Guid.NewGuid());
+        private readonly AssetEntry _entry = new(MeshId, Mesh.Asset.FileType, Mesh.Asset.SchemaHash, Guid.NewGuid());
         public bool TryFind(Guid id, out AssetEntry entry) { entry = _entry; return id == MeshId; }
         public ValueTask<IRangeSource> OpenAsync(AssetEntry entry, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(ownsSource ? source : new BorrowedBytes(source));

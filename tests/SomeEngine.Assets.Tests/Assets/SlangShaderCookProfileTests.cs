@@ -38,18 +38,18 @@ public sealed class SlangShaderCookProfileTests
 
             ImportedAsset defaultImport = Assert.Single(
                 await importer.ImportAsync(projectRoot, sourcePath));
-            ShaderData defaultAsset = await ShaderData.ReadAsync(defaultImport.OutputPath);
+            using Shader.Asset defaultAsset = await Shader.Asset.OpenAsync(defaultImport.OutputPath);
             SourceOutput defaultMeta = SourceMeta.Load(sourcePath).FindOutput(
                 Path.ChangeExtension(sourcePath, ".shader.asset"))!;
 
             WriteMeta(sourcePath, sourceGuid, SlangShaderCookProfiles.D3D12ShaderModel62Name);
             ImportedAsset sm62Import = Assert.Single(
                 await importer.ImportAsync(projectRoot, sourcePath));
-            ShaderData sm62Asset = await ShaderData.ReadAsync(sm62Import.OutputPath);
+            using Shader.Asset sm62Asset = await Shader.Asset.OpenAsync(sm62Import.OutputPath);
             string outputPath = Path.ChangeExtension(sourcePath, ".shader.asset");
             SourceOutput sm62Meta = SourceMeta.Load(sourcePath).FindOutput(outputPath)!;
 
-            Assert.Equal(defaultAsset.AssetGuid, sm62Asset.AssetGuid);
+            Assert.Equal(defaultAsset.Id, sm62Asset.Id);
             Assert.Equal(defaultMeta.AssetGuid, sm62Meta.AssetGuid);
             Assert.Equal(sourceGuid, SourceMeta.Load(sourcePath).SourceGuid);
             Assert.NotEqual(defaultMeta.InputHash, sm62Meta.InputHash);
@@ -81,10 +81,8 @@ public sealed class SlangShaderCookProfileTests
                 sm62SourceMeta)!;
             Assert.Equal(sm62Meta.InputHash, currentFingerprint.InputHash);
 
-            await using BinaryDocument<ShaderData> document =
-                await AssetTestFiles.OpenAsync<Shader, ShaderData>(outputPath);
-            ShaderData loaded = document.Root;
-            Assert.Equal(sm62Asset.AssetGuid, loaded.AssetGuid);
+            using Shader.Asset loaded = await Shader.Asset.OpenAsync(outputPath);
+            Assert.Equal(sm62Asset.Id, loaded.Id);
             Assert.Equal(ReflectionSurface(sm62Asset), ReflectionSurface(loaded));
         }
         finally
@@ -126,11 +124,11 @@ public sealed class SlangShaderCookProfileTests
             });
     }
 
-    private static int CountBackend(ShaderData asset, string backend)
+    private static int CountBackend(Shader.Asset asset, string backend)
         => asset.Programs!.Count(program =>
             string.Equals(program.Backend, backend, StringComparison.Ordinal));
 
-    private static string[] ReflectionSurface(ShaderData asset)
+    private static string[] ReflectionSurface(Shader.Asset asset)
         => asset.EntryPointReflections!
             .Select(reflection =>
                 $"{reflection.Backend}:{reflection.Stage}:{reflection.EntryPoint}:"
@@ -138,7 +136,7 @@ public sealed class SlangShaderCookProfileTests
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
 
-    private static string[] BackendHashes(ShaderData asset, string backend)
+    private static string[] BackendHashes(Shader.Asset asset, string backend)
         => asset.Programs!
             .Where(program => string.Equals(program.Backend, backend, StringComparison.Ordinal))
             .Select(static program => program.ContentHash!)

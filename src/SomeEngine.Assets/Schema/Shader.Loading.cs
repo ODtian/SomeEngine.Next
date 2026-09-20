@@ -6,7 +6,7 @@ namespace SomeEngine.Assets.Schema;
 
 public partial class Shader : IDisposable
 {
-    private BinaryDocument<ShaderData>? _document;
+    private BinaryDocument? _document;
     private readonly SemaphoreSlim _readGate = new(1, 1);
     private int _disposed;
     public ulong Revision { get; private set; } = 1;
@@ -17,46 +17,33 @@ public partial class Shader : IDisposable
     {
         var shader = new Shader
         {
-            Name = name, Metadata = metadata, EntryPointReflections = reflections.ToList(),
+            Name = name, Metadata = metadata, EntryPointReflections = reflections.ToImmutableList(),
             Programs = code.Select(static value => new CookedShaderProgram
             {
                 Backend = value.Backend, Program = value,
-            }).ToList(),
+            }).ToImmutableList(),
         };
         Validate(shader);
         return shader;
     }
 
-    public static ValueTask<Shader> CreateAsync(Asset<Shader> asset,
+    public static ValueTask<Shader> CreateAsync(Shader.Asset asset,
         CancellationToken cancellationToken = default) => CreateCoreAsync(asset, null, cancellationToken);
 
-    public static ValueTask<Shader> CreateAsync(Asset<Shader> asset, ShaderTarget target,
+    public static ValueTask<Shader> CreateAsync(Shader.Asset asset, ShaderTarget target,
         CancellationToken cancellationToken = default)
         => CreateCoreAsync(asset, target == ShaderTarget.Spirv ? "spirv" : "dxil", cancellationToken);
 
-    private static async ValueTask<Shader> CreateCoreAsync(Asset<Shader> asset, string? backend,
+    private static async ValueTask<Shader> CreateCoreAsync(Shader.Asset asset, string? backend,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(asset);
         cancellationToken.ThrowIfCancellationRequested();
-        BinaryDocument<ShaderData>? document = asset.OpenDocumentGenerated<ShaderData>();
+        BinaryDocument? document = asset.RetainSource();
         try
         {
-            ShaderData fields = document is null ? asset.GetFieldsGenerated<ShaderData>()
-                : await ShaderData.MaterializeAsync(document, cancellationToken, backend).ConfigureAwait(false);
-            if (document is null)
-            {
-                foreach (CookedShaderProgram code in fields.Programs ?? [])
-                {
-                    code.Program = null;
-                    if (backend is not null && code.Backend != backend) continue;
-                    Memory<byte> bytes = code.Data
-                        ?? throw new InvalidDataException("Shader file content has no bytecode.");
-                    code.Program = ShaderProgram.Read(bytes.Span);
-                    if (code.Backend != code.Program.Backend)
-                        throw new InvalidDataException("Shader bytecode backend does not match the file fields.");
-                }
-            }
+            ShaderData fields = await ShaderData.MaterializeAsync(document, cancellationToken, backend,
+                asset.CopyValues()).ConfigureAwait(false);
             fields.AssetGuid = null;
             var shader = new Shader { _content = fields, _document = document };
             Validate(shader);
@@ -77,27 +64,23 @@ public partial class Shader : IDisposable
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             if (TryProgram(backend, out _)) return;
-            await using BinaryDocument<ShaderData> document = _document?.Duplicate()
+            await using BinaryDocument document = _document?.Retain()
                 ?? throw new InvalidOperationException("This shader has no file containing additional bytecode.");
-            ShaderData fields = await ShaderData.MaterializeAsync(document, cancellationToken, backend).ConfigureAwait(false);
+            ShaderData fields = await ShaderData.MaterializeAsync(document, cancellationToken, backend, _content).ConfigureAwait(false);
             var decoded = new Shader { _content = fields };
             Validate(decoded);
-            ShaderData replacement = _content.CopyFields();
-            for (int index = 0; index < fields.Programs!.Count; index++)
-                if (fields.Programs[index].Backend == backend)
-                    replacement.Programs![index] = fields.Programs[index];
             cancellationToken.ThrowIfCancellationRequested();
-            _content = replacement;
+            _content = fields;
         }
         finally { _readGate.Release(); }
     }
 
-    public async ValueTask UpdateAsync(Asset<Shader> asset, CancellationToken cancellationToken = default)
+    public async ValueTask UpdateAsync(Shader.Asset asset, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         using Shader replacement = await CreateAsync(asset, cancellationToken).ConfigureAwait(false);
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        BinaryDocument<ShaderData>? previous;
+        BinaryDocument? previous;
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -121,7 +104,7 @@ public partial class Shader : IDisposable
 
     public void Dispose()
     {
-        BinaryDocument<ShaderData>? document;
+        BinaryDocument? document;
         _readGate.Wait();
         try
         {

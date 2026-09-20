@@ -392,6 +392,9 @@ public sealed partial class Scheduler
             enqueueWhenReady: false);
         TryReleaseWorkDependencies(externalHandle);
         TryCompleteState(externalHandle);
+        // A synchronous access can become executable before its predecessor's
+        // child work completes. No ready work ticket is published for that access.
+        _workQueue.NotifyCompletion();
     }
 
     private DependencyReleaseAction ReleaseDependencyAndGetAction(

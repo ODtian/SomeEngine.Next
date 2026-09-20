@@ -14,3 +14,5 @@ Normal changes update existing components and their callers, remove replaced pat
 The former harness solution, its analyzers and baselines, and its repository workflow skills have been removed. There is no numeric run directory or mandatory evidence report. Preserve useful test inputs and real failure reproducers in the ordinary test projects.
 
 See [[Render-Boundaries]] and [[Render-Graph]] for rendering responsibilities.
+
+The asset architecture graph starts at [[Asset-Files]]. [[Asset-Responsibilities]] defines data and file responsibilities, [[Asset-Import-and-Storage]] connects development tools to storage, and [[Asset-Validation]] separates behavioral requirements from dated verification records.

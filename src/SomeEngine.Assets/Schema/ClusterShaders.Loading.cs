@@ -1,5 +1,6 @@
 namespace SomeEngine.Assets.Schema;
 
+[Asset(".clusterrender.asset")]
 public sealed partial class ClusterShaders : IDisposable
 {
     private readonly Dictionary<Guid, Shader> _shaders = [];
@@ -14,15 +15,16 @@ public sealed partial class ClusterShaders : IDisposable
         if (errors.Count != 0)
             throw new AggregateException("Some cluster shaders could not be closed.", errors);
     }
-    public string? Name { get; set; }
-    public IList<ClusterShaderOperation>? Operations { get; set; }
+    public partial string? Name { get; set; }
+    public partial ImmutableList<ClusterShaderOperation>? Operations { get; set; }
     public Shader GetShader(ShaderRef reference) => _shaders[Guid.Parse(reference.AssetGuid!)];
-    public static async ValueTask<ClusterShaders> CreateAsync(Asset<ClusterShaders> asset, AssetLoader loader, CancellationToken cancellationToken = default)
+    public static async ValueTask<ClusterShaders> CreateAsync(ClusterShaders.Asset asset, AssetLoader loader, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(asset);
         ArgumentNullException.ThrowIfNull(loader);
         cancellationToken.ThrowIfCancellationRequested();
-        ClusterShadersData fields = asset.GetFieldsGenerated<ClusterShadersData>();
+        ClusterShadersData fields = asset.CopyValues();
+        fields.Validate(asset.SourcePath);
         var result = new ClusterShaders
         {
             Name = fields.Name,
@@ -30,9 +32,9 @@ public sealed partial class ClusterShaders : IDisposable
         };
         try
         {
-            foreach (Guid id in asset.Dependencies)
+            foreach (Guid id in asset.Describe().Dependencies)
             {
-                await using Asset<Shader> shader = await loader.OpenAsync(new AssetId<Shader>(id), cancellationToken).ConfigureAwait(false);
+                await using Shader.Asset shader = await Shader.Asset.OpenAsync(loader, new AssetId<Shader>(id), cancellationToken).ConfigureAwait(false);
                 result._shaders.Add(id, await Shader.CreateAsync(shader, cancellationToken).ConfigureAwait(false));
             }
             cancellationToken.ThrowIfCancellationRequested();

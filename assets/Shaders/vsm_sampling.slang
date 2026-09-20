@@ -248,7 +248,7 @@ bool TryResolveVirtualShadowCoarsePage(
     int2 worldPage,
     out uint atlasPage)
 {
-    if (parameters.CoarsePageShift == 0u)
+    if (parameters.CoarsePageShift == 0u || parameters.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
         atlasPage = 0u;
         return false;
@@ -293,7 +293,7 @@ bool TryReadVirtualShadowCoarseDepth(
     uint2 virtualPixel,
     out float storedDepth)
 {
-    if (parameters.CoarsePageShift == 0u)
+    if (parameters.CoarsePageShift == 0u || parameters.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
         storedDepth = 0.0;
         return false;
@@ -374,7 +374,7 @@ bool TrySampleVirtualShadowCoarse(
     float3 worldPosition,
     out float shadow)
 {
-    if (parameters.CoarsePageShift == 0u)
+    if (parameters.CoarsePageShift == 0u || parameters.LightKind == VSM_LIGHT_DIRECTIONAL)
     {
         shadow = 0.0;
         return false;
@@ -624,6 +624,44 @@ float SampleVirtualShadowMapFiltered(
         maxFilterRadiusTexels);
 }
 
+bool TryFindDirectionalVirtualShadowView(
+    StructuredBuffer<VirtualShadowMapParameters> views,
+    StructuredBuffer<uint4> pageTable,
+    uint firstView,
+    uint clipmapLevelCount,
+    float3 worldPosition,
+    out uint viewIndex,
+    out float3 ndc,
+    out float2 uv)
+{
+    viewIndex = firstView;
+    ndc = float3(0.0);
+    uv = float2(0.0);
+    if (clipmapLevelCount == 0u)
+        return false;
+    VirtualShadowMapParameters baseView = views[firstView];
+    float distanceToClipmapOrigin = length(worldPosition - baseView.ClipmapWorldOrigin);
+    int absoluteLevel = (int)floor(
+        log2(max(distanceToClipmapOrigin, 1e-6)) + baseView.ResolutionLodBias);
+    uint firstLevel = (uint)max(0, absoluteLevel - baseView.FirstClipmapLevel);
+    if (firstLevel >= clipmapLevelCount)
+        return false;
+
+    for (uint level = firstLevel; level < clipmapLevelCount; level++)
+    {
+        viewIndex = firstView + level;
+        if (ProjectVirtualShadowPosition(
+                views[viewIndex], worldPosition, ndc, uv))
+        {
+            uint2 localPage = uint2(uv * float(VirtualShadowPagesPerRow(views[viewIndex])));
+            uint atlasPage;
+            if (TryResolveVirtualShadowFinePage(views[viewIndex], pageTable, localPage, atlasPage))
+                return true;
+        }
+    }
+    return false;
+}
+
 float SampleDirectionalVirtualShadowMap(
     StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint4> pageTable,
@@ -636,36 +674,15 @@ float SampleDirectionalVirtualShadowMap(
     float blockerSearchRadiusTexels,
     float maxFilterRadiusTexels)
 {
-    if (clipmapLevelCount == 0u)
+    uint viewIndex;
+    float3 ndc;
+    float2 uv;
+    if (!TryFindDirectionalVirtualShadowView(
+            views, pageTable, firstView, clipmapLevelCount, worldPosition, viewIndex, ndc, uv))
         return 1.0;
-    VirtualShadowMapParameters baseView = views[firstView];
-    float distanceToClipmapOrigin = length(worldPosition - baseView.ClipmapWorldOrigin);
-    int absoluteLevel = (int)floor(
-        log2(max(distanceToClipmapOrigin, 1e-6)) + baseView.ResolutionLodBias);
-    uint firstLevel = (uint)max(0, absoluteLevel - baseView.FirstClipmapLevel);
-    if (firstLevel >= clipmapLevelCount)
-        return 1.0;
-
-    for (uint level = firstLevel; level < clipmapLevelCount; level++)
-    {
-        float3 ndc;
-        float2 uv;
-        if (ProjectVirtualShadowPosition(
-                views[firstView + level], worldPosition, ndc, uv))
-        {
-            return SampleVirtualShadowMapFilteredProjected(
-                views[firstView + level],
-                pageTable,
-                atlas,
-                ndc,
-                uv,
-                blockerSampleCount,
-                filterSampleCount,
-                blockerSearchRadiusTexels,
-                maxFilterRadiusTexels);
-        }
-    }
-    return 1.0;
+    return SampleVirtualShadowMapFilteredProjected(
+        views[viewIndex], pageTable, atlas, ndc, uv, blockerSampleCount, filterSampleCount,
+        blockerSearchRadiusTexels, maxFilterRadiusTexels);
 }
 
 uint VirtualShadowPointFace(float3 lightToReceiver)

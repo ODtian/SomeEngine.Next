@@ -22,11 +22,10 @@ public sealed class RenderDeviceTextureTests
             return;
 
         using var assets = new TemporaryAssetProject();
-        Guid guid = assets.Project.CreateAsset(
-            "assets/canceled-first-use.texture.asset",(
-            SingleMipTexture("canceled-first-use", 2, 1, [8, 9])).ToAsset());
+        Guid guid = assets.Project.RegisterAsset(((
+            SingleMipTexture("canceled-first-use", 2, 1, [8, 9]))).SaveAsync(global::System.IO.Path.Combine(assets.Project.RootPath, "assets/canceled-first-use.texture.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
-        await using Asset<EngineTexture> file = await loader.OpenAsync(new AssetId<EngineTexture>(guid));
+        await using EngineTexture.Asset file = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(guid));
         await using EngineTexture asset = await EngineTexture.CreateAsync(file);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "RenderDevice cancel test");
@@ -50,9 +49,8 @@ public sealed class RenderDeviceTextureTests
             return;
 
         using var assets = new TemporaryAssetProject();
-        Guid guid = assets.Project.CreateAsset(
-            "assets/compressed-bootstrap.texture.asset",(
-            new TextureData
+        Guid guid = assets.Project.RegisterAsset(((
+            new EngineTexture.Asset
             {
                 Name = "compressed-bootstrap",
                 Width = 4,
@@ -75,9 +73,9 @@ public sealed class RenderDeviceTextureTests
                         Payload = new byte[16],
                     },
                 ],
-            }).ToAsset());
+            })).SaveAsync(global::System.IO.Path.Combine(assets.Project.RootPath, "assets/compressed-bootstrap.texture.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
-        await using Asset<EngineTexture> file = await loader.OpenAsync(new AssetId<EngineTexture>(guid));
+        await using EngineTexture.Asset file = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(guid));
         await using EngineTexture asset = await EngineTexture.CreateAsync(file);
         ChunkStreamingSnapshot before = asset.StreamingMetrics!.Snapshot();
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -99,11 +97,10 @@ public sealed class RenderDeviceTextureTests
             return;
 
         using var assets = new TemporaryAssetProject();
-        Guid guid = assets.Project.CreateAsset(
-            "assets/first-use.texture.asset",(
-            TwoLayerStreamedTexture("first-use")).ToAsset());
+        Guid guid = assets.Project.RegisterAsset(((
+            TwoLayerStreamedTexture("first-use"))).SaveAsync(global::System.IO.Path.Combine(assets.Project.RootPath, "assets/first-use.texture.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
-        await using Asset<EngineTexture> file = await loader.OpenAsync(new AssetId<EngineTexture>(guid));
+        await using EngineTexture.Asset file = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(guid));
         await using EngineTexture asset = await EngineTexture.CreateAsync(file);
         ChunkStreamingSnapshot before = asset.StreamingMetrics!.Snapshot();
 
@@ -201,11 +198,10 @@ public sealed class RenderDeviceTextureTests
             return;
 
         using var assets = new TemporaryAssetProject();
-        Guid guid = assets.Project.CreateAsset(
-            "assets/multi-device.texture.asset",(
-            SingleMipTexture("multi-device", 2, 1, [3, 7])).ToAsset());
+        Guid guid = assets.Project.RegisterAsset(((
+            SingleMipTexture("multi-device", 2, 1, [3, 7]))).SaveAsync(global::System.IO.Path.Combine(assets.Project.RootPath, "assets/multi-device.texture.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
-        await using Asset<EngineTexture> file = await loader.OpenAsync(new AssetId<EngineTexture>(guid));
+        await using EngineTexture.Asset file = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(guid));
         await using EngineTexture asset = await EngineTexture.CreateAsync(file);
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -234,16 +230,16 @@ public sealed class RenderDeviceTextureTests
         Guid guid = Guid.NewGuid();
         string beforePath = assets.File("before.texture.asset");
         string afterPath = assets.File("after.texture.asset");
-        TextureData beforeAsset = SingleMipTexture("before", 2, 1, [1, 2]);
-        beforeAsset.AssetGuid = guid.ToString();
-        TextureData afterAsset = SingleMipTexture("after", 4, 1, [4, 3, 2, 1]);
-        afterAsset.AssetGuid = guid.ToString();
-        AssetWriter.Write((beforeAsset).ToAsset(), beforePath);
-        AssetWriter.Write((afterAsset).ToAsset(), afterPath);
+        using EngineTexture.Asset beforeAsset = SingleMipTexture("before", 2, 1, [1, 2], new(guid));
+
+        using EngineTexture.Asset afterAsset = SingleMipTexture("after", 4, 1, [4, 3, 2, 1], new(guid));
+
+        ((beforeAsset)).SaveAsync(beforePath).AsTask().GetAwaiter().GetResult();
+        ((afterAsset)).SaveAsync(afterPath).AsTask().GetAwaiter().GetResult();
         var storage = new MutableAssetStorage();
         storage.Publish(guid, beforePath);
         await using var loader = new AssetLoader(storage);
-        await using Asset<EngineTexture> file = await loader.OpenAsync(new AssetId<EngineTexture>(guid));
+        await using EngineTexture.Asset file = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(guid));
         await using EngineTexture asset = await EngineTexture.CreateAsync(file);
 
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -254,7 +250,7 @@ public sealed class RenderDeviceTextureTests
         RhiTexture oldBacking = ExecuteTextureFrame(graph, renderDevice, asset);
 
         storage.Publish(guid, afterPath);
-        await using Asset<EngineTexture> nextFile = await loader.OpenAsync(new AssetId<EngineTexture>(guid));
+        await using EngineTexture.Asset nextFile = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(guid));
         Task canceledUpdate = asset.UpdateAsync(nextFile).AsTask();
         await WaitForUpdateAsync(asset, canceledUpdate);
         RhiTexture canceledReplacement = CancelTextureFrame(graph, renderDevice, asset);
@@ -279,10 +275,10 @@ public sealed class RenderDeviceTextureTests
     public async Task UploadFailureLeavesOldTextureContentAndAllocationUsable()
     {
         using var assets = new TemporaryAssetProject();
-        using Asset<EngineTexture> before = SingleMipTexture("before", 2, 1, [7, 8]).ToAsset();
-        Guid id = assets.Project.CreateAsset("before.texture.asset", before);
+        using EngineTexture.Asset before = SingleMipTexture("before", 2, 1, [7, 8]);
+        Guid id = assets.Project.RegisterAsset((before).SaveAsync(global::System.IO.Path.Combine(assets.Project.RootPath, "before.texture.asset")).AsTask().GetAwaiter().GetResult());
         await using var loader = new AssetLoader(assets.Project.CreateStorage());
-        await using Asset<EngineTexture> file = await loader.OpenAsync(new AssetId<EngineTexture>(id));
+        await using EngineTexture.Asset file = await EngineTexture.Asset.OpenAsync(loader, new AssetId<EngineTexture>(id));
         await using EngineTexture texture = await EngineTexture.CreateAsync(file);
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = CreateWarpDevice(backend, "texture failed update");
@@ -292,7 +288,7 @@ public sealed class RenderDeviceTextureTests
         var fields = SingleMipTexture("invalid upload", 4, 1, [3]);
         fields.MipTiles![0].RowPitch = 0;
         fields.MipTiles[0].SlicePitch = 0;
-        using Asset<EngineTexture> bad = fields.ToAsset(id);
+        using EngineTexture.Asset bad = fields.Duplicate(new(id));
         Task update = texture.UpdateAsync(bad).AsTask();
         await WaitForUpdateAsync(texture, update);
         Assert.Throws<InvalidDataException>(() => CancelTextureFrame(graph, renderDevice, texture));
@@ -528,7 +524,7 @@ public sealed class RenderDeviceTextureTests
             label: label));
     }
 
-    private static TextureData TwoLayerStreamedTexture(string name)
+    private static EngineTexture.Asset TwoLayerStreamedTexture(string name)
         => new()
         {
             Name = name,
@@ -550,12 +546,13 @@ public sealed class RenderDeviceTextureTests
             ],
         };
 
-    private static TextureData SingleMipTexture(
+    private static EngineTexture.Asset SingleMipTexture(
         string name,
         uint width,
         uint height,
-        byte[] payload)
-        => new()
+        byte[] payload,
+        AssetId<EngineTexture> id = default)
+        => new(id)
         {
             Name = name,
             Width = width,
@@ -621,8 +618,8 @@ public sealed class RenderDeviceTextureTests
             {
                 _entry = new AssetEntry(
                     guid,
-                    Asset<EngineTexture>.FileType,
-                    Asset<EngineTexture>.SchemaHash,
+                    EngineTexture.Asset.FileType,
+                    EngineTexture.Asset.SchemaHash,
                     Guid.NewGuid());
                 _path = path;
             }

@@ -1,10 +1,10 @@
 using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.Serialization;
+using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Schema;
 
-[Asset(typeof(Material), ".material.asset")]
 internal partial class MaterialData : IBinaryContract<MaterialData>
 {
     public string? AssetGuid { get; set; }
@@ -13,34 +13,29 @@ internal partial class MaterialData : IBinaryContract<MaterialData>
     public AssetId<Shader> Shader { get; set; }
     public AssetId<Material> Parent { get; set; }
     public List<MaterialParameter> Parameters { get; set; } = [];
+    internal MaterialData CopyFields() => new() { AssetGuid = AssetGuid, Name = Name, MaterialType = MaterialType, Shader = Shader, Parent = Parent, Parameters = [.. Parameters] };
 
     public static Guid TypeId => BinaryTypeId.FromLogicalName("SomeEngine.Assets.Material");
     public static ulong SchemaFingerprint => 0x4D41544C76340003UL;
     public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
     public static uint SchemaEpoch => 2;
 
-    internal IReadOnlyList<Guid> GetDependencies(string path)
+    internal MaterialData Copy(string name, Guid id)
     {
-        var dependencies = new HashSet<Guid>();
-        if (!Shader.IsEmpty) dependencies.Add(Shader.Value);
-        if (!Parent.IsEmpty) dependencies.Add(Parent.Value);
-        foreach (MaterialParameter parameter in Parameters)
-            if (parameter.Kind == MaterialParameterKind.Texture && !parameter.Texture.IsEmpty)
-                dependencies.Add(parameter.Texture.Value);
-        return dependencies.Order().ToArray();
+        MaterialData copy = CopyFields();
+        copy.AssetGuid = id.ToString();
+        copy.Name = name;
+        return copy;
     }
-
-    internal MaterialData Copy(string name, Guid id) => new()
-    {
-        AssetGuid = id.ToString(), Name = name, MaterialType = MaterialType,
-        Shader = Shader, Parent = Parent, Parameters = [.. Parameters],
-    };
 
     internal void Set(MaterialParameter parameter)
     {
-        int index = Parameters.FindIndex(p => p.Name == parameter.Name);
-        if (index < 0) Parameters.Add(parameter); else Parameters[index] = parameter;
+        List<MaterialParameter> parameters = Parameters;
+        int index = parameters.FindIndex(p => p.Name == parameter.Name);
+        if (index < 0) parameters.Add(parameter); else parameters[index] = parameter;
     }
+
+    internal bool Reset(string name) => Parameters.RemoveAll(p => p.Name == name) != 0;
 
     public static void Write(ref BinaryDataWriter writer, MaterialData value)
     {

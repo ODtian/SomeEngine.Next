@@ -4,6 +4,82 @@ namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class FrameAnalysisReuseTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void RetainedInputViewsFollowUploadsAndReboundBuffers(int framesInFlight)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: (uint)framesInFlight));
+        BufferDesc description = new(16, BufferUsages.ShaderRead | BufferUsages.CopySource);
+        using Buffer first = support.Backend.CreateBuffer(support.Device, description, MemoryType.Upload);
+        using Buffer second = support.Backend.CreateBuffer(support.Device, description, MemoryType.Upload);
+        using Buffer destination = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferId sourceId;
+        GraphBufferInput input;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            sourceId = edit.DeclareExternalBuffer(description, MemoryType.Upload);
+            input = edit.CreateBufferInput(description.Usages);
+            GraphBufferSrvId view = edit.CreateBufferSrv(input, structureStride: 4);
+            GraphBufferId target = edit.RegisterExternalBuffer(destination,
+                [new BufferBoundaryState(new BufferRange(0, 4), PipelineSync.Copy,
+                    ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
+            var data = new InputCopyData(input, view, target);
+            edit.AddGeneralFramePass("copy through retained input view", PassQueueSelection.Exact(support.GraphicsQueue),
+                data, default, InputCopyData.Declare, InputCopyData.Record);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int index = 0; index < 24; index++)
+        {
+            Buffer source = index / 6 % 2 == 0 ? first : second;
+            byte[] bytes = Enumerable.Range(0, 16).Select(value => (byte)(index * 7 + value)).ToArray();
+            using (MappedBuffer mapping = support.Backend.Map(source, MapType.Write, BufferRange.Whole))
+            {
+                bytes.CopyTo(mapping.Bytes);
+                mapping.Flush(new BufferRange(0, 16));
+            }
+            ulong offset = (ulong)(index / 3 % 4 * 4);
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.BindExternalBuffer(sourceId, source,
+                    [new BufferBoundaryState(new BufferRange(0, 16), source.InitialSync,
+                        source.InitialAccess, ResourceContentState.Defined)]);
+                GraphBufferSlice value = index < 12
+                    ? frame.Upload(bytes, description.Usages)
+                    : new GraphBufferSlice(sourceId, BufferRange.Whole);
+                frame.SetBufferInput(input,
+                    new GraphBufferSlice(value.Buffer, new BufferRange(value.Range.Offset + offset, 4)));
+                frame.Execute(completions);
+                support.Wait(completions);
+            }
+            using MappedBuffer result = support.Backend.Map(destination, MapType.Read, BufferRange.Whole);
+            result.Invalidate(new BufferRange(0, 4));
+            Assert.True(result.Bytes.SequenceEqual(bytes.AsSpan((int)offset, 4)));
+        }
+    }
+
+    private readonly record struct InputCopyData(GraphBufferInput Input, GraphBufferSrvId View, GraphBufferId Destination)
+    {
+        internal static void Declare(ref PassDefinition pass, ref InputCopyData data)
+        {
+            pass.Read(data.Input, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            pass.Read(data.View, PipelineSync.ComputeShading);
+            pass.Write(data.Destination, BufferRange.Whole, PipelineSync.Copy,
+                ResourceAccess.CopyDestination, WriteCoverage.Complete);
+        }
+
+        internal static void Record(ref GeneralPassCommandScope commands, in InputCopyData data)
+        {
+            BufferSrv view = commands.GetBufferSrv(data.View);
+            commands.CopyBuffer(new BufferCopy(view.Description.Buffer, view.Description.Range.Offset,
+                commands.GetBuffer(data.Destination), 0, 4));
+        }
+    }
+
     [Fact]
     public void DynamicUploadsReuseAnalysisAndRefreshResourcesAndCopyRanges()
     {

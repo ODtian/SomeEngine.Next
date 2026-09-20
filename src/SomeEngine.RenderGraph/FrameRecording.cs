@@ -1,22 +1,17 @@
 namespace SomeEngine.RenderGraph;
 
-using System.Runtime.ExceptionServices;
-
 internal sealed partial class FrameExecutor
 {
-    private static readonly Action<object?, int> RecordLatencyBatchAction = RecordLatencyBatch;
     private RecordedCommands[] _recorded = [];
     private bool[] _recordedValid = [];
     private QueueCompletion?[] _passCompletions = [];
     private bool[] _submittedQueues = [];
     private readonly List<QueueCompletion> _submittedCompletions = [];
-    private List<int>[] _waves = [];
-    private Queue[][] _recordingQueues = [];
-    private List<int>[][] _recordingPasses = [];
-    private RecordingBatch[][] _recordingUnits = [];
-    private bool[] _recordingParallel = [];
+    private int[][] _waveSubmissions = [];
+    private RecordingBatch[] _recordingBatches = [];
+    private (int Start, int Count)[] _submissionRecordings = [];
+    private JobHandle[] _recordingJobs = [];
     private readonly List<CommandContext> _recordingContexts = [];
-    private RecordingBatch[] _parallelBatches = [];
     private readonly List<QueueCompletion> _submitWaits = [];
     private RecordedCommands[] _submitCommands = [];
     private readonly List<SwapchainImage> _submitImages = [];
@@ -59,10 +54,11 @@ internal sealed partial class FrameExecutor
                 _recordingWorkerCount = workerCount;
             }
             PrepareStateUpdates();
+            StartRecordingJobs();
             if (_frame.Options.SubmissionMode == FrameSubmissionMode.RecordAllThenSubmit)
             {
                 for (int wave = 0; wave < waveCount; wave++)
-                    RecordWave(wave);
+                    CompleteWaveRecording(wave);
                 SubmitLateReleases(destination);
                 for (int wave = 0; wave < waveCount; wave++)
                     SubmitWave(wave, destination);
@@ -72,8 +68,12 @@ internal sealed partial class FrameExecutor
                 SubmitLateReleases(destination);
                 for (int wave = 0; wave < waveCount; wave++)
                 {
-                    RecordWave(wave);
-                    SubmitWave(wave, destination);
+                    foreach (int submission in _waveSubmissions[wave])
+                    {
+                        CompleteSubmissionRecording(submission);
+                        List<int> passes = _submissionPasses[submission];
+                        SubmitBatch(_passes[passes[0]].Queue!, passes, destination);
+                    }
                 }
             }
 
@@ -89,6 +89,14 @@ internal sealed partial class FrameExecutor
         }
         catch
         {
+            // Recording jobs may still hold frame data and command contexts after a
+            // different batch fails. Drain them before releasing unsubmitted commands.
+            foreach (JobHandle job in _recordingJobs)
+            {
+                try { job.Complete(); }
+                catch { }
+            }
+            Array.Clear(_recordingJobs);
             DisposeUnsubmitted();
             throw;
         }
@@ -186,12 +194,6 @@ internal sealed partial class FrameExecutor
         }
 
         int waveCount = maximum + 1;
-        PrepareLists(ref _waves, waveCount);
-        foreach (int pass in _schedule)
-        {
-            int wave = _submissionWaves[_submissionByPass[pass]];
-            _waves[wave].Add(pass);
-        }
         return waveCount;
     }
 
@@ -236,72 +238,101 @@ internal sealed partial class FrameExecutor
     private void BuildRecordingGroups(int waveCount)
     {
         ReleaseRecordingContexts();
-        PrepareArray(ref _recordingParallel, waveCount);
-        PrepareArray(ref _recordingQueues, waveCount);
-        PrepareArray(ref _recordingPasses, waveCount);
-        PrepareArray(ref _recordingUnits, waveCount);
-        int maximumUnitCount = checked(JobSystem.WorkerCount + 1);
+        PrepareArray(ref _waveSubmissions, waveCount);
+        PrepareArray(ref _submissionRecordings, _submissionCount);
+        bool parallel = JobSystem.WorkerCount != 0 &&
+            (_frame.Options.Debug & RenderGraphDebugOptions.DisableParallelRecording) == 0;
+        List<RecordingBatch> batches = [];
         for (int wave = 0; wave < waveCount; wave++)
         {
-            int groupCount = 0;
-            for (int submission = 0; submission < _submissionCount; submission++)
-                if (_submissionWaves[submission] == wave) groupCount++;
-            var queues = new Queue[groupCount];
-            var groups = new List<int>[groupCount];
-            int group = 0;
+            List<int> submissions = [];
             for (int submission = 0; submission < _submissionCount; submission++)
             {
                 if (_submissionWaves[submission] != wave) continue;
                 List<int> passes = _submissionPasses[submission];
-                queues[group] = _passes[passes[0]].Queue!;
-                groups[group++] = passes;
+                submissions.Add(submission);
+                int firstBatch = batches.Count;
+                int start = 0;
+                while (start < passes.Count)
+                {
+                    bool workerEligible = parallel &&
+                        _passes[passes[start]].Options.Recording == PassRecordingMode.WorkerEligible;
+                    int end = start + 1;
+                    while (end < passes.Count && (!parallel ||
+                        (_passes[passes[end]].Options.Recording == PassRecordingMode.WorkerEligible) == workerEligible))
+                        end++;
+                    AddRecordingBatches(passes, start, end, workerEligible, batches);
+                    start = end;
+                }
+                _submissionRecordings[submission] = (firstBatch, batches.Count - firstBatch);
             }
-            _recordingQueues[wave] = queues;
-            _recordingPasses[wave] = groups;
-            bool parallel = maximumUnitCount >= 2 &&
-                IsParallelRecordingWorthwhile(CollectionsMarshal.AsSpan(_waves[wave]));
-            foreach (int pass in _waves[wave])
-                if (_passes[pass].Options.Recording != PassRecordingMode.WorkerEligible)
-                    parallel = false;
-            _recordingParallel[wave] = parallel;
-            if (parallel)
-            {
-                int count = BuildCoarseRecordingBatches(groups, maximumUnitCount);
-                _recordingUnits[wave] = _parallelBatches.AsSpan(0, count).ToArray();
-            }
-            else
-            {
-                var units = new RecordingBatch[groups.Length];
-                for (int index = 0; index < groups.Length; index++)
-                    units[index] = CreateRecordingBatch(groups[index], 0, groups[index].Count, -1);
-                _recordingUnits[wave] = units;
-            }
+            _waveSubmissions[wave] = submissions.ToArray();
         }
+        _recordingBatches = batches.ToArray();
+        _recordingJobs = new JobHandle[_recordingBatches.Length];
     }
 
-    private void RecordWave(int wave)
+    private void AddRecordingBatches(List<int> passes, int start, int end, bool workerEligible,
+        List<RecordingBatch> batches)
     {
-        _parallelBatches = _recordingUnits[wave];
-        if (_recordingParallel[wave] && TryRecordCoarseBatches()) return;
-        foreach (RecordingBatch batch in _recordingUnits[wave])
-            RecordBatch(batch);
-    }
-
-    private bool IsParallelRecordingWorthwhile(ReadOnlySpan<int> passes)
-    {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
-        if ((_frame.Options.Debug & RenderGraphDebugOptions.DisableParallelRecording) != 0)
-            return false;
-        int count = 0;
-        ulong weight = 0;
-        foreach (int pass in passes)
+        int count = end - start;
+        int batchCount = workerEligible
+            ? Math.Min(JobSystem.WorkerCount + 1, Math.Max(1, (count + 15) / 16))
+            : 1;
+        ulong remainingWeight = 0;
+        for (int item = start; item < end; item++)
+            remainingWeight = SaturatingAdd(remainingWeight, RecordingWeight(passes[item]));
+        for (int batch = 0; batch < batchCount; batch++)
         {
-            if (_passes[pass].Options.Recording != PassRecordingMode.WorkerEligible)
-                continue;
-            count++;
-            weight = SaturatingAdd(weight, RecordingWeight(pass));
+            int remainingBatches = batchCount - batch;
+            int maximumEnd = end - (remainingBatches - 1);
+            ulong targetWeight = remainingWeight / (ulong)remainingBatches;
+            int batchEnd = start;
+            int accessCount = 0;
+            ulong weight = 0;
+            do
+            {
+                int pass = passes[batchEnd++];
+                weight = SaturatingAdd(weight, RecordingWeight(pass));
+                accessCount = checked(accessCount + _passAccesses[pass].Count);
+            }
+            while (batchEnd < maximumEnd && weight < targetWeight);
+            // The caller records the first batch while workers prepare later batches.
+            bool onWorker = workerEligible && batches.Count != 0;
+            batches.Add(CreateRecordingBatch(passes, start, batchEnd - start, accessCount, onWorker));
+            start = batchEnd;
+            remainingWeight = remainingWeight > weight ? remainingWeight - weight : 0;
         }
-        return count > 1 && weight >= (ulong)count * 8;
+    }
+
+    private void StartRecordingJobs()
+    {
+        for (int index = 0; index < _recordingBatches.Length; index++)
+        {
+            if (!_recordingBatches[index].OnWorker) continue;
+            var job = new RecordBatchJob(this, index);
+            _recordingJobs[index] = JobSystem.Schedule(job, new JobScheduleOptions(JobPriority.High));
+        }
+    }
+
+    private void CompleteWaveRecording(int wave)
+    {
+        foreach (int submission in _waveSubmissions[wave])
+            CompleteSubmissionRecording(submission);
+    }
+
+    private void CompleteSubmissionRecording(int submission)
+    {
+        (int start, int count) = _submissionRecordings[submission];
+        for (int index = start; index < start + count; index++)
+        {
+            if (_recordingBatches[index].OnWorker)
+            {
+                try { _recordingJobs[index].Complete(); }
+                finally { _recordingJobs[index] = default; }
+            }
+            else RecordBatch(_recordingBatches[index]);
+        }
     }
 
     private ulong RecordingWeight(int pass)
@@ -394,135 +425,7 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private bool TryRecordCoarseBatches()
-    {
-        int batchCount = _parallelBatches.Length;
-        if (batchCount < 2)
-            return false;
-
-        if (batchCount == 2 && JobSystem.TryHandoffLatencyWork(
-            this,
-            RecordLatencyBatchAction,
-            1,
-            JobPriority.High,
-            out long latencySequence))
-            return RecordCallingBatchAndJoinLatencyWorker(latencySequence);
-
-        var job = new RecordBatchJob(this, _parallelBatches, 1);
-        JobHandle handle = JobSystem.ScheduleParallel(job, batchCount - 1, 1);
-        Exception? callingThreadFailure = null;
-        try
-        {
-            RecordBatch(_parallelBatches[0]);
-        }
-        catch (Exception exception)
-        {
-            callingThreadFailure = exception;
-        }
-
-        try
-        {
-            handle.Complete();
-        }
-        catch when (callingThreadFailure is not null)
-        {
-        }
-        if (callingThreadFailure is not null)
-            ExceptionDispatchInfo.Capture(callingThreadFailure).Throw();
-        return true;
-    }
-
-    private bool RecordCallingBatchAndJoinLatencyWorker(long latencySequence)
-    {
-        Exception? callingThreadFailure = null;
-        try
-        {
-            RecordBatch(_parallelBatches[0]);
-        }
-        catch (Exception exception)
-        {
-            callingThreadFailure = exception;
-        }
-        if (JobSystem.TryReclaimLatencyWork(latencySequence))
-        {
-            if (callingThreadFailure is not null)
-                ExceptionDispatchInfo.Capture(callingThreadFailure).Throw();
-            RecordBatch(_parallelBatches[1]);
-            return true;
-        }
-        try
-        {
-            JobSystem.JoinLatencyWork(latencySequence);
-        }
-        catch when (callingThreadFailure is not null)
-        {
-        }
-        if (callingThreadFailure is not null)
-            ExceptionDispatchInfo.Capture(callingThreadFailure).Throw();
-        return true;
-    }
-
-    private int BuildCoarseRecordingBatches(List<int>[] groups, int maximumUnitCount)
-    {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
-        int required = checked(groups.Length * maximumUnitCount);
-        if (_parallelBatches.Length < required)
-            Array.Resize(ref _parallelBatches, required);
-        int destination = 0;
-        foreach (List<int> passes in groups)
-        {
-            int unitCount = Math.Min(maximumUnitCount, Math.Max(1, (passes.Count + 15) / 16));
-            ulong remainingWeight = 0;
-            foreach (int pass in passes)
-            {
-                remainingWeight = SaturatingAdd(remainingWeight, RecordingWeight(pass));
-            }
-            int start = 0;
-            for (int unit = 0; unit < unitCount; unit++)
-            {
-                int remainingUnits = unitCount - unit;
-                int maximumEnd = passes.Count - (remainingUnits - 1);
-                ulong divisor = (ulong)remainingUnits;
-                ulong targetWeight = remainingWeight / divisor +
-                    (remainingWeight % divisor == 0 ? 0UL : 1UL);
-                int count = 0;
-                ulong weight = 0;
-                while (start + count < maximumEnd)
-                {
-                    ulong nextWeight = RecordingWeight(passes[start + count]);
-                    ulong combinedWeight = SaturatingAdd(weight, nextWeight);
-                    if (count != 0 && weight < targetWeight &&
-                        combinedWeight > targetWeight &&
-                        targetWeight - weight <= combinedWeight - targetWeight)
-                        break;
-                    weight = combinedWeight;
-                    count++;
-                    if (weight >= targetWeight)
-                        break;
-                }
-                if (count == 0)
-                {
-                    weight = RecordingWeight(passes[start]);
-                    count = 1;
-                }
-                int accessCount = 0;
-                for (int item = start; item < start + count; item++)
-                    accessCount += _passAccesses[passes[item]].Count;
-                _parallelBatches[destination++] = CreateRecordingBatch(
-                    passes,
-                    start,
-                    count,
-                    accessCount);
-                start += count;
-                remainingWeight = remainingWeight > weight
-                    ? remainingWeight - weight
-                    : 0;
-            }
-        }
-        return destination;
-    }
-
-    private RecordingBatch CreateRecordingBatch(List<int> passes, int start, int count, int accessCount)
+    private RecordingBatch CreateRecordingBatch(List<int> passes, int start, int count, int accessCount, bool onWorker)
     {
         Queue queue = _passes[passes[start]].Queue!;
         CommandContext context = _frame.Backend.CreateCommandContext(
@@ -532,7 +435,7 @@ internal sealed partial class FrameExecutor
         try
         {
             _recordingContexts.Add(context);
-            return new RecordingBatch(passes, start, count, accessCount, context);
+            return new RecordingBatch(passes, start, count, accessCount, context, onWorker);
         }
         catch
         {
@@ -546,12 +449,6 @@ internal sealed partial class FrameExecutor
 
     private static ulong SaturatingAdd(ulong left, ulong right) =>
         ulong.MaxValue - left < right ? ulong.MaxValue : left + right;
-
-    private static void RecordLatencyBatch(object? state, int index)
-    {
-        FrameExecutor executor = (FrameExecutor)state!;
-        executor.RecordBatch(executor._parallelBatches[index]);
-    }
 
     private void RecordPassCommands(int pass, GraphPassKind kind, CommandContext context)
     {
@@ -759,10 +656,11 @@ internal sealed partial class FrameExecutor
 
     private void SubmitWave(int wave, Span<QueueCompletion> destination)
     {
-        Queue[] queues = _recordingQueues[wave];
-        List<int>[] passes = _recordingPasses[wave];
-        for (int index = 0; index < queues.Length; index++)
-            SubmitBatch(queues[index], passes[index], destination);
+        foreach (int submission in _waveSubmissions[wave])
+        {
+            List<int> passes = _submissionPasses[submission];
+            SubmitBatch(_passes[passes[0]].Queue!, passes, destination);
+        }
     }
 
     private void SubmitBatch(
@@ -1061,7 +959,8 @@ internal sealed partial class FrameExecutor
         int Start,
         int Count,
         int AccessCount,
-        CommandContext Context);
+        CommandContext Context,
+        bool OnWorker);
 
     private readonly record struct RasterRenderingCacheEntry(
         bool Valid,
@@ -1070,23 +969,9 @@ internal sealed partial class FrameExecutor
         uint Height,
         RenderingOptions Options);
 
-    private readonly struct RecordBatchJob : IJobParallelFor
+    private readonly struct RecordBatchJob(FrameExecutor executor, int batch) : IJob
     {
-        private readonly FrameExecutor _executor;
-        private readonly RecordingBatch[] _batches;
-        private readonly int _offset;
-
-        internal RecordBatchJob(
-            FrameExecutor executor,
-            RecordingBatch[] batches,
-            int offset)
-        {
-            _executor = executor;
-            _batches = batches;
-            _offset = offset;
-        }
-
-        public void Execute(int index) => _executor.RecordBatch(_batches[index + _offset]);
+        public void Execute() => executor.RecordBatch(executor._recordingBatches[batch]);
     }
 
     private readonly HashSet<int> _parameterPassChanges = [];
@@ -1105,6 +990,9 @@ internal sealed partial class FrameExecutor
     private sealed class ParameterBlock
     {
         internal required ShaderVariableLayout Layout;
+        internal bool Changed;
+        internal Pipeline? Pipeline;
+        internal PersistentParameterBindings? Bindings;
         internal byte[]? Data;
         internal ResourceBinding[] Resources = [];
         internal int Count;
@@ -1126,8 +1014,12 @@ internal sealed partial class FrameExecutor
     {
         while (_passParameters.Count < _passes.Count) _passParameters.Add(new());
         for (int index = _passes.Count; index < _passParameters.Count; index++)
+        {
             foreach (ParameterConnection connection in _passParameters[index].Connections)
                 DisconnectParameter(connection);
+            foreach (ParameterBlock block in _passParameters[index].Blocks)
+                ReleaseParameterBlock(block);
+        }
         if (_passParameters.Count > _passes.Count)
             _passParameters.RemoveRange(_passes.Count, _passParameters.Count - _passes.Count);
 
@@ -1139,7 +1031,7 @@ internal sealed partial class FrameExecutor
             foreach (ParameterConnection connection in parameters.Connections) DisconnectParameter(connection);
             int blockIndex = 0;
             int connectionIndex = 0;
-            ParameterBlock block = GetParameterBlock(parameters, blockIndex++, row.ParameterLayout, row.ParameterOrdinaryData);
+            ParameterBlock block = GetParameterBlock(parameters, blockIndex++, row.Pipeline, row.ParameterLayout, row.ParameterOrdinaryData);
             if (row.ParameterBindings is { } sources)
             {
                 foreach (GraphParameterResourceBinding source in sources)
@@ -1147,11 +1039,10 @@ internal sealed partial class FrameExecutor
                     if (source.BeginsParameterBlock)
                     {
                         if (block.Count != 0 || block.Data is { Length: > 0 })
-                            block = GetParameterBlock(parameters, blockIndex++, source.ParameterLayout, source.OrdinaryData);
+                            block = GetParameterBlock(parameters, blockIndex++, row.Pipeline, source.ParameterLayout, source.OrdinaryData);
                         else
                         {
-                            block.Layout = source.ParameterLayout;
-                            block.Data = source.OrdinaryData;
+                            ChangeParameterBlock(block, row.Pipeline, source.ParameterLayout, source.OrdinaryData);
                         }
                         continue;
                     }
@@ -1199,21 +1090,52 @@ internal sealed partial class FrameExecutor
             if (parameters.Connections.Count > connectionIndex)
                 parameters.Connections.RemoveRange(connectionIndex, parameters.Connections.Count - connectionIndex);
             if (parameters.Blocks.Count > blockIndex)
+            {
+                for (int index = blockIndex; index < parameters.Blocks.Count; index++)
+                    ReleaseParameterBlock(parameters.Blocks[index]);
                 parameters.Blocks.RemoveRange(blockIndex, parameters.Blocks.Count - blockIndex);
+            }
             foreach (ParameterBlock value in parameters.Blocks)
                 value.Resources.AsSpan(value.Count).Clear();
         }
         _parameterPassChanges.Clear();
     }
 
-    private static ParameterBlock GetParameterBlock(PassParameters parameters, int index, ShaderVariableLayout layout, byte[]? data)
+    private ParameterBlock GetParameterBlock(PassParameters parameters, int index,
+        Pipeline? pipeline, ShaderVariableLayout layout, byte[]? data)
     {
         if (index == parameters.Blocks.Count) parameters.Blocks.Add(new() { Layout = layout });
         ParameterBlock block = parameters.Blocks[index];
-        block.Layout = layout;
-        block.Data = data;
+        ChangeParameterBlock(block, pipeline, layout, data);
         block.Count = 0;
         return block;
+    }
+
+    private void ChangeParameterBlock(ParameterBlock block, Pipeline? pipeline,
+        ShaderVariableLayout layout, byte[]? data)
+    {
+        if (!ReferenceEquals(block.Pipeline, pipeline) || block.Layout != layout)
+        {
+            block.Bindings?.Dispose();
+            block.Bindings = null;
+        }
+        block.Pipeline = pipeline;
+        block.Layout = layout;
+        block.Data = data;
+        block.Changed = true;
+    }
+
+    private void ReleaseParameterBlock(ParameterBlock block)
+    {
+        block.Bindings?.Dispose();
+        block.Bindings = null;
+    }
+
+    internal void ReleaseParameterBindings()
+    {
+        foreach (PassParameters pass in _passParameters)
+            foreach (ParameterBlock block in pass.Blocks)
+                ReleaseParameterBlock(block);
     }
 
     private static void AddParameterConnection<TKey>(Dictionary<TKey, HashSet<ParameterConnection>> values, TKey key, ParameterConnection connection)
@@ -1267,7 +1189,12 @@ internal sealed partial class FrameExecutor
                 _inactiveParameterChanges.Add(connection);
                 continue;
             }
-            connection.Block.Resources[connection.Position] = ResolveParameterValue(connection);
+            ResourceBinding value = ResolveParameterValue(connection);
+            if (connection.Block.Resources[connection.Position] != value)
+            {
+                connection.Block.Resources[connection.Position] = value;
+                connection.Block.Changed = true;
+            }
         }
         // Disabled passes can become live without changing their resource declarations.
         (_parameterValueChanges, _inactiveParameterChanges) = (_inactiveParameterChanges, _parameterValueChanges);
@@ -1331,8 +1258,18 @@ internal sealed partial class FrameExecutor
         foreach (ParameterBlock block in _passParameters[pass].Blocks)
         {
             if (block.Count == 0 && block.Data is not { Length: > 0 }) continue;
-            _frame.Backend.SetTransientParameterBindings(context,
-                new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Count), block.Data ?? []));
+            if (block.Changed)
+            {
+                var bindings = new ParameterBlockBindings(block.Layout,
+                    block.Resources.AsSpan(0, block.Count), block.Data ?? []);
+                if (block.Bindings is null)
+                    block.Bindings = _frame.Backend.CreatePersistentParameterBindings(
+                        _frame.Graph.Device, block.Pipeline!, bindings);
+                else
+                    _frame.Backend.UpdatePersistentParameterBindings(block.Bindings, bindings);
+                block.Changed = false;
+            }
+            _frame.Backend.SetPersistentParameterBindings(context, block.Bindings!);
         }
     }
 }

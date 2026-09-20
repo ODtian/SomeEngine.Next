@@ -4,37 +4,25 @@ using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
-public sealed class ReadingSample : IDisposable
+[Asset(".reading.asset")]
+public sealed partial class ReadingSample : IDisposable
 {
     public static int Created;
+    public ReadingSample() : this("sample", 0) { }
     public ReadingSample(string name, int number) { Name = name; Number = number; Interlocked.Increment(ref Created); }
-    public string Name { get; private set; }
-    public int Number { get; private set; }
-    public bool IsDisposed { get; private set; }
-    public static ReadingSample Create(Asset<ReadingSample> asset)
-    {
-        ReadingSampleData fields = asset.GetFieldsGenerated<ReadingSampleData>();
-        return new(fields.Name, fields.Number);
-    }
-    public void Update(Asset<ReadingSample> asset)
-    {
-        ReadingSampleData fields = asset.GetFieldsGenerated<ReadingSampleData>();
-        if (fields.Number < 0) throw new InvalidDataException("A sample number must be nonnegative.");
-        Name = fields.Name;
-        Number = fields.Number;
-    }
-    public void Dispose() => IsDisposed = true;
-}
-
-[Asset(typeof(ReadingSample), ".reading.asset")]
-[BinaryContract]
-public sealed partial class ReadingSampleData
-{
-    public string? AssetGuid { get; set; }
     public string Name { get; set; } = "sample";
     public int Number { get; set; }
+    [AssetReference(typeof(ReadingSample))]
     public Guid Dependency { get; set; }
-    internal IReadOnlyList<Guid> GetDependencies(string path) => Dependency == Guid.Empty ? [] : [Dependency];
+    public bool IsDisposed { get; private set; }
+    public static ReadingSample Create(Asset asset) => new(asset.Name, asset.Number);
+    public void Update(Asset asset)
+    {
+        if (asset.Number < 0) throw new InvalidDataException("A sample number must be nonnegative.");
+        Name = asset.Name;
+        Number = asset.Number;
+    }
+    public void Dispose() => IsDisposed = true;
 }
 
 internal sealed class AssetTestDirectory : IDisposable
@@ -45,8 +33,8 @@ internal sealed class AssetTestDirectory : IDisposable
     internal string WriteSample(Guid id, int number, string name = "sample")
     {
         string path = File(name + ".reading.asset");
-        using Asset<ReadingSample> asset = new ReadingSampleData { AssetGuid = id.ToString(), Name = name, Number = number }.ToAsset();
-        AssetWriter.Write(asset, path);
+        using var asset = new ReadingSample.Asset(new(id)) { Name = name, Number = number };
+        asset.SaveAsync(path).AsTask().GetAwaiter().GetResult();
         return path;
     }
     public void Dispose() => Directory.Delete(Path, true);
@@ -65,9 +53,12 @@ internal sealed class ReadingStorage : IAssetStorage, IAsyncDisposable
     internal void Publish(Guid id, string path, string? type = null, ulong? schema = null, bool corrupt = false)
     {
         byte[] bytes = System.IO.File.ReadAllBytes(path);
+        var source = new MemoryRangeSource(bytes);
+        Guid version = SomeEngine.Serialization.Containers.BinaryDocument.ReadVersionAsync(source).AsTask().GetAwaiter().GetResult();
+        source.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (corrupt) bytes[0] ^= 0xFF;
-        _files[id] = (new AssetEntry(id, type ?? Asset<ReadingSample>.FileType,
-            schema ?? Asset<ReadingSample>.SchemaHash, Guid.NewGuid()), bytes);
+        _files[id] = (new AssetEntry(id, type ?? ReadingSample.Asset.FileType,
+            schema ?? ReadingSample.Asset.SchemaHash, version), bytes);
     }
     public bool TryFind(Guid id, out AssetEntry entry)
     {

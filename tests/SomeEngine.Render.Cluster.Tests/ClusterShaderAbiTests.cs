@@ -413,10 +413,10 @@ public sealed class ClusterShaderAbiTests
         AssetManifest manifest = AssetManifest.Load(
             Path.Combine(repositoryRoot, "Library", "AssetManifest"));
         AssetEntry configurationRecord = Assert.Single(
-            manifest.List(Asset<ClusterShaders>.FileType));
+            manifest.List(ClusterShaders.Asset.FileType));
         await using var loader = new AssetLoader(
             new LooseAssetStorage(repositoryRoot, manifest));
-        await using Asset<ClusterShaders> file = await loader.OpenAsync(new AssetId<ClusterShaders>(configurationRecord.AssetGuid));
+        await using ClusterShaders.Asset file = await ClusterShaders.Asset.OpenAsync(loader, new AssetId<ClusterShaders>(configurationRecord.AssetGuid));
         ClusterShaders configuration = await ClusterShaders.CreateAsync(file, loader);
         IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
             configuration.Operations);

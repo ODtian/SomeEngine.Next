@@ -33,6 +33,8 @@ public sealed class AssetProject
             : new AssetManifest();
     }
 
+    public string RootPath => _projectRoot;
+
     public AssetManifest Manifest { get; private set; }
 
     public LooseAssetStorage CreateStorage()
@@ -41,17 +43,15 @@ public sealed class AssetProject
             return new LooseAssetStorage(_projectRoot, Manifest);
     }
 
-    public Guid CreateAsset<T>(string assetPath, Asset<T> asset) where T : class
+    public Guid RegisterAsset(AssetEntry entry)
     {
         lock (_gate)
         {
-            string fullPath = FullPath(assetPath);
-            Guid id = asset.Id.Value;
-            if (Resolve(assetPath) is Guid registered && registered != id)
-                throw new InvalidOperationException($"Asset '{assetPath}' is registered as '{registered}', not '{id}'.");
-            AssetWriter.Write(asset, fullPath);
-            RegisterAssetFile(fullPath, asset.File.Entry);
-            return id;
+            string fullPath = FullPath(entry.Path);
+            if (Resolve(entry.Path) is Guid registered && registered != entry.AssetGuid)
+                throw new InvalidOperationException($"Asset '{entry.Path}' is already registered with a different ID.");
+            RegisterAssetFile(fullPath, entry);
+            return entry.AssetGuid;
         }
     }
 
@@ -75,21 +75,6 @@ public sealed class AssetProject
             fullPath,
             importer,
             cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Explicitly registers an already encoded asset. The generic contract selects the
-    /// one data reader; no extension scan, format probing, fallback, or second encoding is performed.
-    /// </summary>
-    public async ValueTask<Guid> RegisterAssetAsync<T>(string assetPath,
-        CancellationToken cancellationToken = default) where T : class
-    {
-        string fullPath = FullPath(assetPath);
-        await using Asset<T> asset = await AssetLoader.OpenFileAsync<T>(fullPath,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        lock (_gate)
-            RegisterAssetFile(fullPath, asset.File.Entry);
-        return asset.Id.Value;
     }
 
     // ── Resolve / Query ──

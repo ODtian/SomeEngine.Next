@@ -10,86 +10,36 @@ using SomeEngine.Graphics;
 
 namespace SomeEngine.Assets.Schema;
 
-[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.Texture")]
-[global::SomeEngine.Assets.Asset(typeof(Texture), ".texture.asset")]
-public sealed partial class TextureData
-{
-    public TextureData()
-    {
-    }
 
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public TextureDimension Dimension { get; set; }
-    public uint Width { get; set; }
-    public uint Height { get; set; }
-    public uint Depth { get; set; }
-    public uint MipLevelCount { get; set; }
-    public uint ArrayLayerCount { get; set; }
-    public Format Format { get; set; }
-    public Format SampledFormat { get; set; }
-    public SomeEngine.Graphics.TextureViewDimension SampledDimension { get; set; }
-    public IList<TextureMipTile>? MipTiles { get; set; }
-    internal TextureData CopyFields() => new()
-    {
-        AssetGuid = AssetGuid,
-        Name = Name,
-        Dimension = Dimension,
-        Width = Width,
-        Height = Height,
-        Depth = Depth,
-        MipLevelCount = MipLevelCount,
-        ArrayLayerCount = ArrayLayerCount,
-        Format = Format,
-        SampledFormat = SampledFormat,
-        SampledDimension = SampledDimension,
-        MipTiles = MipTiles?.Select(static tile => tile.CopyFields()).ToList(),
-    };
-}
 
 /// <summary>
 /// Describes one independently streamable texture tile. Payload is populated only by the
 /// eager data reader; binary documents keep it null and use ChunkKey for on-demand reads.
 /// </summary>
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class TextureMipTile
+public sealed partial record TextureMipTile
 {
     public TextureMipTile()
     {
     }
 
 
-    public uint MipLevel { get; set; }
-    public uint TileX { get; set; }
-    public uint TileY { get; set; }
-    public uint ArrayLayer { get; set; }
-    public uint Face { get; set; }
-    public uint DepthSlice { get; set; }
-    public uint Width { get; set; }
-    public uint Height { get; set; }
-    public ulong RowPitch { get; set; }
-    public ulong SlicePitch { get; set; }
-    public ulong ChunkKey { get; set; }
-    public ulong DecodedLength { get; set; }
+    public uint MipLevel { get; init; }
+    public uint TileX { get; init; }
+    public uint TileY { get; init; }
+    public uint ArrayLayer { get; init; }
+    public uint Face { get; init; }
+    public uint DepthSlice { get; init; }
+    public uint Width { get; init; }
+    public uint Height { get; init; }
+    public ulong RowPitch { get; init; }
+    public ulong SlicePitch { get; init; }
+    public ulong ChunkKey { get; init; }
+    public ulong DecodedLength { get; init; }
     [BinaryChunk(nameof(ChunkKey), nameof(DecodedLength))]
     [BinaryIgnore]
-    public Memory<byte>? Payload { get; set; }
-    internal TextureMipTile CopyFields() => new()
-    {
-        MipLevel = MipLevel,
-        TileX = TileX,
-        TileY = TileY,
-        ArrayLayer = ArrayLayer,
-        Face = Face,
-        DepthSlice = DepthSlice,
-        Width = Width,
-        Height = Height,
-        RowPitch = RowPitch,
-        SlicePitch = SlicePitch,
-        ChunkKey = ChunkKey,
-        DecodedLength = DecodedLength,
-        Payload = Payload.HasValue ? new Memory<byte>(Payload.Value.ToArray()) : (Memory<byte>?)null,
-    };
+    public ReadOnlyMemory<byte>? Payload { get; init; }
+    internal TextureMipTile CopyFields() => this;
 
 }
 
@@ -108,47 +58,18 @@ public enum ValueType : byte
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class Bounds
+public sealed partial record Bounds
 {
     public Bounds()
     {
     }
 
 
-    public Vec3 Center { get; set; } = new();
-    public float Radius { get; set; }
+    public Vec3 Center { get; init; } = new();
+    public float Radius { get; init; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.Mesh")]
-[global::SomeEngine.Assets.Asset(typeof(Mesh), ".mesh.asset")]
-public sealed partial class MeshData
-{
-    public MeshData()
-    {
-    }
 
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public Bounds? Bounds { get; set; }
-    public string? VertexEncoding { get; set; }
-    public ulong PayloadKey { get; set; }
-    public ulong PayloadLength { get; set; }
-    [BinaryChunk(nameof(PayloadKey), nameof(PayloadLength))]
-    [BinaryIgnore]
-    public Memory<byte>? Payload { get; set; }
-    public ulong BvhOffset { get; set; }
-    public IList<MeshPayloadPageDigest>? PageDigests { get; set; }
-    public ulong BvhLength { get; set; }
-    public Memory<byte>? BvhSha256 { get; set; }
-    public IList<MeshRegion>? Regions { get; set; }
-    public IList<string>? MaterialGuids { get; set; }
-    internal MeshData CopyFields()
-    {
-        MeshData copy = BinaryContractSerializer.Copy(this);
-        copy.Payload = Payload.HasValue ? new Memory<byte>(Payload.Value.ToArray()) : (Memory<byte>?)null;
-        return copy;
-    }
-}
 
 /// <summary>
 /// Root-authenticated layout and content identity for one independently streamed mesh page.
@@ -156,42 +77,42 @@ public sealed partial class MeshData
 /// descriptors that disagree with the page header or digest.
 /// </summary>
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class MeshPayloadPageDigest
+public sealed partial record MeshPayloadPageDigest
 {
     public MeshPayloadPageDigest()
     {
     }
 
 
-    public ulong Offset { get; set; }
-    public uint Length { get; set; }
-    public uint ClusterCount { get; set; }
-    public ulong VertexEncodingHash { get; set; }
-    public Memory<byte>? Sha256 { get; set; }
+    public ulong Offset { get; init; }
+    public uint Length { get; init; }
+    public uint ClusterCount { get; init; }
+    public ulong VertexEncodingHash { get; init; }
+    public ReadOnlyMemory<byte>? Sha256 { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class MeshRegion
+public sealed partial record MeshRegion
 {
     public MeshRegion()
     {
     }
 
 
-    public string? Name { get; set; }
+    public string? Name { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class Vec3
+public sealed partial record Vec3
 {
     public Vec3()
     {
     }
 
 
-    public float X { get; set; }
-    public float Y { get; set; }
-    public float Z { get; set; }
+    public float X { get; init; }
+    public float Y { get; init; }
+    public float Z { get; init; }
 }
 
 public enum DescriptorType : byte
@@ -286,265 +207,218 @@ public enum TextureSampleType : byte
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class BackendReflection
+public sealed partial record BackendReflection
 {
     public BackendReflection()
     {
     }
 
 
-    public string? Backend { get; set; }
-    public ShaderReflectionData? Reflection { get; set; }
+    public string? Backend { get; init; }
+    public ShaderReflectionData? Reflection { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class DependencyEntry
+public sealed partial record DependencyEntry
 {
     public DependencyEntry()
     {
     }
 
 
-    public string? Path { get; set; }
-    public string? ContentHash { get; set; }
+    public string? Path { get; init; }
+    public string? ContentHash { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ImportTrace
+public sealed partial record ImportTrace
 {
     public ImportTrace()
     {
     }
 
 
-    public string? SourceGuid { get; set; }
-    public string? SourcePath { get; set; }
-    public string? SubAssetKey { get; set; }
-    public string? ContentFingerprint { get; set; }
-    public IList<DependencyEntry>? Dependencies { get; set; }
-    public uint ImporterVersion { get; set; }
+    public string? SourceGuid { get; init; }
+    public string? SourcePath { get; init; }
+    public string? SubAssetKey { get; init; }
+    public string? ContentFingerprint { get; init; }
+    public ImmutableList<DependencyEntry>? Dependencies { get; init; }
+    public uint ImporterVersion { get; init; }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.Shader")]
-[global::SomeEngine.Assets.Asset(typeof(Shader), ".shader.asset")]
-public sealed partial class ShaderData
-{
-    public ShaderData()
-    {
-    }
 
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public ImportTrace? ImportTrace { get; set; }
-    public IList<CookedShaderProgram>? Programs { get; set; }
-    public IList<ShaderEntryPointAttribute>? EntryPointAttributes { get; set; }
-    public IList<BackendReflection>? Reflections { get; set; }
-    public IList<ShaderEntryPointReflection>? EntryPointReflections { get; set; }
-    public ShaderMetadata? Metadata { get; set; }
-    public IList<ShaderEntryPointMetadata>? EntryPointMetadata { get; set; }
-    public uint SchemaVersion { get; set; }
-    internal ShaderData CopyFields()
-    {
-        ShaderData copy = BinaryContractSerializer.Copy(this);
-        if (Programs is not null)
-            for (int index = 0; index < Programs.Count; index++)
-                copy.Programs![index] = Programs[index].CopyFields();
-        return copy;
-    }
-}
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class CookedShaderProgram
+public sealed partial record CookedShaderProgram
 {
     public CookedShaderProgram()
     {
     }
 
 
-    public string? Backend { get; set; }
-    public ulong DataChunkKey { get; set; }
-    public ulong DataDecodedLength { get; set; }
+    public string? Backend { get; init; }
+    public ulong DataChunkKey { get; init; }
+    public ulong DataDecodedLength { get; init; }
     [BinaryChunk(nameof(DataChunkKey), nameof(DataDecodedLength))]
     [BinaryIgnore]
-    public Memory<byte>? Data { get; set; }
-    public string? ContentHash { get; set; }
+    public ReadOnlyMemory<byte>? Data { get; init; }
+    public string? ContentHash { get; init; }
 
     [BinaryIgnore]
-    public SlangShaderSharp.ShaderProgram? Program { get; internal set; }
-    internal CookedShaderProgram CopyFields()
-    {
-        CookedShaderProgram copy = BinaryContractSerializer.Copy(this);
-        copy.Data = Data.HasValue ? new Memory<byte>(Data.Value.ToArray()) : (Memory<byte>?)null;
-        if (Program is not null && copy.Data.HasValue)
-            copy.Program = SlangShaderSharp.ShaderProgram.Read(copy.Data.Value.Span);
-        return copy;
-    }
+    public SlangShaderSharp.ShaderProgram? Program { get; internal init; }
+    internal CookedShaderProgram CopyFields() => this;
 
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderEntryPointAttribute
+public sealed partial record ShaderEntryPointAttribute
 {
     public ShaderEntryPointAttribute()
     {
     }
 
 
-    public int ProgramIndex { get; set; }
-    public int EntryPointIndex { get; set; }
-    public string? Name { get; set; }
-    public IList<string>? Args { get; set; }
+    public int ProgramIndex { get; init; }
+    public int EntryPointIndex { get; init; }
+    public string? Name { get; init; }
+    public ImmutableList<string>? Args { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderEntryPointMetadata
+public sealed partial record ShaderEntryPointMetadata
 {
     public ShaderEntryPointMetadata()
     {
     }
 
 
-    public int ProgramIndex { get; set; }
-    public int EntryPointIndex { get; set; }
-    public Memory<byte>? VertexLayoutDescriptor { get; set; }
+    public int ProgramIndex { get; init; }
+    public int EntryPointIndex { get; init; }
+    public ReadOnlyMemory<byte>? VertexLayoutDescriptor { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderEntryPointReflection
+public sealed partial record ShaderEntryPointReflection
 {
     public ShaderEntryPointReflection()
     {
     }
 
 
-    public string? Backend { get; set; }
-    public string? EntryPoint { get; set; }
-    public ShaderStage Stage { get; set; }
-    public ShaderReflectionData? Reflection { get; set; }
+    public string? Backend { get; init; }
+    public string? EntryPoint { get; init; }
+    public ShaderStage Stage { get; init; }
+    public ShaderReflectionData? Reflection { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderMaterialBinding
+public sealed partial record ShaderMaterialBinding
 {
     public ShaderMaterialBinding()
     {
     }
 
 
-    public string? Name { get; set; }
-    public byte ResourceType { get; set; }
+    public string? Name { get; init; }
+    public byte ResourceType { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderMaterialScalarField
+public sealed partial record ShaderMaterialScalarField
 {
     public ShaderMaterialScalarField()
     {
     }
 
 
-    public string? Name { get; set; }
-    public uint Offset { get; set; }
-    public uint Size { get; set; }
-    public uint RowCount { get; set; }
-    public uint ColumnCount { get; set; }
-    public byte ScalarType { get; set; }
+    public string? Name { get; init; }
+    public uint Offset { get; init; }
+    public uint Size { get; init; }
+    public uint RowCount { get; init; }
+    public uint ColumnCount { get; init; }
+    public byte ScalarType { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderMaterialScalarLayout
+public sealed partial record ShaderMaterialScalarLayout
 {
     public ShaderMaterialScalarLayout()
     {
     }
 
 
-    public string? Name { get; set; }
-    public uint Size { get; set; }
-    public IList<ShaderMaterialScalarField>? Fields { get; set; }
+    public string? Name { get; init; }
+    public uint Size { get; init; }
+    public ImmutableList<ShaderMaterialScalarField>? Fields { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderInstanceProperty
+public sealed partial record ShaderInstanceProperty
 {
     public ShaderInstanceProperty()
     {
     }
 
 
-    public string? CanonicalId { get; set; }
-    public string? MaterialScalarLayoutName { get; set; }
-    public string? MaterialScalarName { get; set; }
-    public string? Accessor { get; set; }
-    public uint Size { get; set; }
-    public uint Alignment { get; set; }
-    public uint RowCount { get; set; }
-    public uint ColumnCount { get; set; }
-    public byte ScalarType { get; set; }
-    public Memory<byte>? DefaultValue { get; set; }
+    public string? CanonicalId { get; init; }
+    public string? MaterialScalarLayoutName { get; init; }
+    public string? MaterialScalarName { get; init; }
+    public string? Accessor { get; init; }
+    public uint Size { get; init; }
+    public uint Alignment { get; init; }
+    public uint RowCount { get; init; }
+    public uint ColumnCount { get; init; }
+    public byte ScalarType { get; init; }
+    public ReadOnlyMemory<byte>? DefaultValue { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderMetadata
+public sealed partial record ShaderMetadata
 {
     public ShaderMetadata()
     {
     }
 
 
-    public IList<string>? Tags { get; set; }
-    public IList<ShaderMaterialBinding>? MaterialBindings { get; set; }
-    public IList<ShaderMaterialScalarLayout>? MaterialScalarLayouts { get; set; }
-    public IList<ShaderInstanceProperty>? InstanceProperties { get; set; }
+    public ImmutableList<string>? Tags { get; init; }
+    public ImmutableList<ShaderMaterialBinding>? MaterialBindings { get; init; }
+    public ImmutableList<ShaderMaterialScalarLayout>? MaterialScalarLayouts { get; init; }
+    public ImmutableList<ShaderInstanceProperty>? InstanceProperties { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderReflectionData
+public sealed partial record ShaderReflectionData
 {
     public ShaderReflectionData()
     {
     }
 
 
-    public IList<ShaderResourceReflection>? Resources { get; set; }
+    public ImmutableList<ShaderResourceReflection>? Resources { get; init; }
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public partial class ShaderResourceReflection
+public sealed partial record ShaderResourceReflection
 {
     public ShaderResourceReflection()
     {
     }
 
 
-    public string? Name { get; set; }
-    public uint Stages { get; set; }
-    public uint Binding { get; set; }
-    public uint Space { get; set; }
-    public DescriptorType Kind { get; set; }
-    public uint DescriptorCount { get; set; } = 1;
-    public AccessEffect Effect { get; set; }
-    public ShaderQualifiers Qualifiers { get; set; }
-    public TextureViewDimension? TextureDimension { get; set; }
-    public TextureSampleType? TextureSampleType { get; set; }
-    public StorageFormat? StorageFormat { get; set; }
-    public uint SlangResourceShape { get; set; }
-    public uint SlangScalarType { get; set; }
-    public uint SlangImageFormat { get; set; }
-}
-
-[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.ClusterShaders")]
-[global::SomeEngine.Assets.Asset(typeof(ClusterShaders), ".clusterrender.asset")]
-internal sealed partial class ClusterShadersData
-{
-    public ClusterShadersData()
-    {
-    }
-
-    public string? AssetGuid { get; set; }
-    public string? Name { get; set; }
-    public IList<ClusterShaderOperation>? Operations { get; set; }
-
+    public string? Name { get; init; }
+    public uint Stages { get; init; }
+    public uint Binding { get; init; }
+    public uint Space { get; init; }
+    public DescriptorType Kind { get; init; }
+    public uint DescriptorCount { get; init; } = 1;
+    public AccessEffect Effect { get; init; }
+    public ShaderQualifiers Qualifiers { get; init; }
+    public TextureViewDimension? TextureDimension { get; init; }
+    public TextureSampleType? TextureSampleType { get; init; }
+    public StorageFormat? StorageFormat { get; init; }
+    public uint SlangResourceShape { get; init; }
+    public uint SlangScalarType { get; init; }
+    public uint SlangImageFormat { get; init; }
 }
 
 public enum ClusterShaderOperationRole : byte
@@ -582,15 +456,15 @@ public enum ClusterShaderOperationRole : byte
 }
 
 [BinaryContract(BinaryCompatibility.ExactSchema)]
-public sealed partial class ClusterShaderOperation
+public sealed partial record ClusterShaderOperation
 {
     public ClusterShaderOperation()
     {
     }
 
 
-    public ClusterShaderOperationRole Role { get; set; }
-    public IList<ShaderRef>? Shaders { get; set; }
+    public ClusterShaderOperationRole Role { get; init; }
+    public ImmutableList<ShaderRef>? Shaders { get; init; }
 }
 
 #endif

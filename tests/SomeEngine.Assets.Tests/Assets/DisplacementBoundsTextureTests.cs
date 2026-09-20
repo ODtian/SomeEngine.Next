@@ -11,7 +11,7 @@ public sealed class DisplacementBoundsTextureTests
     public void CreatesExactConservativeHierarchyForOddDimensions()
     {
         float[] samples = Enumerable.Range(0, 15).Select(static value => (float)value).ToArray();
-        TextureData texture = DisplacementBoundsTexture.Create(
+        Texture.Asset texture = DisplacementBoundsTexture.Create(
             Guid.Empty,
             "displacement bounds",
             width: 5,

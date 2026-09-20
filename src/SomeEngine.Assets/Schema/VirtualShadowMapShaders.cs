@@ -2,35 +2,9 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
 
-[BinaryContract(BinaryCompatibility.ExactSchema, LogicalName = "SomeEngine.Assets.Schema.VirtualShadowMapShaders")]
-[global::SomeEngine.Assets.Asset(typeof(VirtualShadowMapShaders), ".virtualshadow.asset")]
 internal sealed partial class VirtualShadowMapShadersData
 {
-    public string? AssetGuid { get; set; }
-
-    public string? Name { get; set; }
-
-    public ShaderRef? MarkPages { get; set; }
-
-    public ShaderRef? MarkCoarsePages { get; set; }
-
-    public ShaderRef? AllocatePages { get; set; }
-
-    public ShaderRef? ClearPages { get; set; }
-
-    public ShaderRef? InitializeState { get; set; }
-
-    public ShaderRef? InvalidateCasters { get; set; }
-
-    public ShaderRef? BuildPagePool { get; set; }
-
-    public ShaderRef? CompactViews { get; set; }
-
-    public ShaderRef? InitializePageHiZ { get; set; }
-
-    public ShaderRef? ReducePageHiZ { get; set; }
-
-    internal IReadOnlyList<Guid> GetDependencies(string path)
+    internal void Validate(string path)
     {
         string subject = $"Virtual shadow map shader asset '{path}'";
         ShaderRef?[] entries =
@@ -59,18 +33,18 @@ internal sealed partial class VirtualShadowMapShadersData
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
         ];
-        var result = new List<Guid>(entries.Length);
         for (int index = 0; index < entries.Length; index++)
         {
-            Guid shader = ShaderRef.Require(
+            ShaderRef.Require(
                 entries[index],
                 subject,
                 names[index],
                 ShaderStage.Compute);
-            if (!result.Contains(shader))
-                result.Add(shader);
         }
-        result.Sort(static (left, right) => left.CompareTo(right));
-        return result;
+    }
+    internal static SomeEngine.Serialization.Containers.BinaryDocumentWriter CreateWriter(VirtualShadowMapShadersData fields)
+    {
+        fields.Validate(fields.Name ?? "");
+        return SomeEngine.Serialization.Containers.BinaryDocumentWriter.Create(fields);
     }
 }

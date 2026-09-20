@@ -1,5 +1,7 @@
 # 资产文件与运行对象
 
+> **重构范围说明（2026-09-12）。** [冻结原则](../wiki/architecture/Assets/Asset-Rebuild-Principles.md)与[执行任务](../wiki/architecture/Assets/Asset-Rebuild-Tasks.md)只替换本次明确讨论的设计。本页中冲突段落待更新，未涉及的架构继续适用；现有序列化与存储能力的保持依据见[源码审查](../wiki/architecture/Assets/Asset-Serialization-Review.md)。
+
 资产文件和运行对象是两种不同的数据。`Asset<T>` 表示已经打开或正在创建的文件内容；`Texture`、`Mesh`、`Shader`、`Material` 表示应用实际使用的对象。运行对象不实现文件根的序列化接口，不保存资产 GUID，也不由加载器建立唯一实例。
 
 ## 类型职责

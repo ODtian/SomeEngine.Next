@@ -4,21 +4,17 @@ using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Schema;
 
-public partial class TextureData
+internal partial class TextureData
 {
-    private static async ValueTask<BinaryDocument<TextureData>> OpenDocumentAsync(
-        string path, CancellationToken cancellationToken)
-    {
-        await using Asset<Texture> asset = await AssetLoader.OpenFileAsync<Texture>(
-            path, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return asset.OpenDocumentGenerated<TextureData>()!;
-    }
+    private static ValueTask<BinaryDocument> OpenDocumentAsync(string path, CancellationToken cancellationToken)
+        => BinaryDocument.OpenAsync(SomeEngine.Serialization.IO.FileRangeSource.Open(path), Texture.Asset.WireType,
+            ownsSource: true, cancellationToken: cancellationToken);
 
     internal static async ValueTask<TextureData> ReadAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
-        await using BinaryDocument<TextureData> document =
+        await using BinaryDocument document =
             await OpenDocumentAsync(path, cancellationToken)
                 .ConfigureAwait(false);
         return await MaterializeAsync(document, cancellationToken).ConfigureAwait(false);
@@ -55,7 +51,7 @@ public partial class TextureData
     internal static BinaryDocumentWriter CreateWriter(TextureData asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        IList<TextureMipTile> mipTiles = InitializeTiles(asset);
+        ImmutableList<TextureMipTile> mipTiles = InitializeTiles(asset);
 
         BinaryDocumentWriter builder = BinaryDocumentWriter.Create(asset);
         for (int ordinal = 0; ordinal < mipTiles.Count; ordinal++)
@@ -64,7 +60,7 @@ public partial class TextureData
             builder.AddChunk(
                 tile.PayloadChunk.Key,
                 tile.Payload!.Value,
-                AssetWriter.RawBytesSchema,
+                global::SomeEngine.Assets.Asset<Texture>.ByteSchema,
                 ChunkCompression.None,
                 alignment: 4096,
                 ordinal: checked((uint)ordinal));
@@ -73,13 +69,41 @@ public partial class TextureData
         return builder;
     }
 
+    internal static async ValueTask<BinaryDocumentWriter> CreateWriterAsync(TextureData asset,
+        BinaryDocument? source, CancellationToken cancellationToken)
+    {
+        if (source is null) return CreateWriter(asset);
+        ImmutableList<TextureMipTile> tiles = InitializeTiles(asset, allowSource: true);
+        ImmutableList<TextureMipTile>.Builder? changed = null;
+        BinaryDocumentWriter writer = BinaryDocumentWriter.Create(asset);
+        for (int index = 0; index < tiles.Count; index++)
+        {
+            TextureMipTile tile = tiles[index];
+            if (tile.Payload.HasValue)
+                writer.AddChunk(tile.ChunkKey, tile.Payload.Value, global::SomeEngine.Assets.Asset<Texture>.ByteSchema,
+                    ChunkCompression.None, alignment: 4096, ordinal: checked((uint)index));
+            else
+            {
+                ulong key = MipTileChunkKey(tile.MipLevel, tile.ArrayLayer, tile.Face, tile.DepthSlice, tile.TileX, tile.TileY);
+                await writer.AddChunkAsync(key, source, cancellationToken, tile.ChunkKey, checked((uint)index)).ConfigureAwait(false);
+                if (key != tile.ChunkKey)
+                {
+                    changed ??= tiles.ToBuilder();
+                    changed[index] = tile with { ChunkKey = key };
+                }
+            }
+        }
+        if (changed is not null) asset.MipTiles = changed.ToImmutable();
+        return writer;
+    }
+
     private static async ValueTask<TextureData> MaterializeAsync(
-        BinaryDocument<TextureData> document,
+        BinaryDocument document,
         CancellationToken cancellationToken)
     {
-        ValidateRootMetadata(document.Root);
-        TextureData result = document.Root.CopyFields();
-        IList<TextureMipTile> mipTiles = result.MipTiles!;
+        TextureData result = document.ReadRoot<TextureData>();
+        ValidateRootMetadata(result);
+        var mipTiles = result.MipTiles!.ToBuilder();
         for (int index = 0; index < mipTiles.Count; index++)
         {
             TextureMipTile tile = mipTiles[index];
@@ -89,19 +113,20 @@ public partial class TextureData
                 cancellationToken).ConfigureAwait(false);
             if (!payload.HasValue || checked((ulong)payload.Value.Length) != tile.DecodedLength)
                 throw new InvalidDataException($"TextureData {Describe(tile)} payload length disagrees with root metadata.");
-            tile.Payload = payload;
+            mipTiles[index] = tile with { Payload = payload };
         }
-
+        result.MipTiles = mipTiles.ToImmutable();
         return result;
     }
 
-    internal static IList<TextureMipTile> InitializeTiles(TextureData root)
+    internal static ImmutableList<TextureMipTile> InitializeTiles(TextureData root, bool allowSource = false)
     {
         ValidateDescription(root);
         if (root.MipTiles is null || root.MipTiles.Count == 0)
             throw new InvalidDataException("TextureData assets must contain mip/tile payloads.");
 
-        IList<TextureMipTile> tiles = root.MipTiles;
+        ImmutableList<TextureMipTile> tiles = root.MipTiles;
+        ImmutableList<TextureMipTile>.Builder? changed = null;
 
         TextureMipTile? mipZero = tiles.FirstOrDefault(static tile =>
             tile.MipLevel == 0
@@ -113,12 +138,15 @@ public partial class TextureData
         if (mipZero is null)
             throw new InvalidDataException("TextureData assets must contain mip 0 tile (0,0).");
 
-        SortCanonicalInPlace(tiles);
-
         var semantics = new HashSet<(uint Mip, uint Layer, uint Face, uint Depth, uint X, uint Y)>();
         var keys = new HashSet<ulong>();
+        bool sorted = true;
+        TextureMipTile? previous = null;
+        int index = 0;
         foreach (TextureMipTile tile in tiles)
         {
+            if (previous is not null && CompareTiles(previous, tile) > 0) sorted = false;
+            previous = tile;
             if (!semantics.Add((
                     tile.MipLevel,
                     tile.ArrayLayer,
@@ -132,56 +160,38 @@ public partial class TextureData
             }
 
             ValidateTileBounds(root, tile);
-            if (!tile.Payload.HasValue || tile.Payload.Value.IsEmpty)
+            if ((!tile.Payload.HasValue && !allowSource) || (tile.Payload.HasValue && tile.Payload.Value.IsEmpty))
             {
                 throw new InvalidDataException(
                     $"TextureData {Describe(tile)} has no payload.");
             }
 
-            tile.ChunkKey = MipTileChunkKey(
+            ulong key = MipTileChunkKey(
                 tile.MipLevel,
                 tile.ArrayLayer,
                 tile.Face,
                 tile.DepthSlice,
                 tile.TileX,
                 tile.TileY);
-            tile.DecodedLength = checked((ulong)tile.Payload.Value.Length);
-            ValidateStorageLayout(tile, tile.DecodedLength);
-            if (!keys.Add(tile.ChunkKey))
+            ulong length = tile.Payload is { } payload ? checked((ulong)payload.Length) : tile.DecodedLength;
+            ValidateStorageLayout(tile, length);
+            if (!keys.Add(key))
                 throw new InvalidDataException("TextureData mip/tile semantic chunk keys collided.");
+            if (tile.Payload.HasValue && (key != tile.ChunkKey || length != tile.DecodedLength))
+            {
+                changed ??= tiles.ToBuilder();
+                changed[index] = tile with { ChunkKey = key, DecodedLength = length };
+            }
+            index++;
         }
-
-        return tiles;
-    }
-
-    private static void SortCanonicalInPlace(IList<TextureMipTile> tiles)
-    {
-        for (int start = (tiles.Count / 2) - 1; start >= 0; start--)
-            SiftDown(tiles, start, tiles.Count);
-        for (int end = tiles.Count - 1; end > 0; end--)
+        if (!sorted)
         {
-            (tiles[0], tiles[end]) = (tiles[end], tiles[0]);
-            SiftDown(tiles, 0, end);
+            changed ??= tiles.ToBuilder();
+            changed.Sort(CompareTiles);
         }
+        return root.MipTiles = changed?.ToImmutable() ?? tiles;
     }
-
-    private static void SiftDown(IList<TextureMipTile> tiles, int root, int count)
-    {
-        while (true)
-        {
-            int child = checked((root * 2) + 1);
-            if (child >= count)
-                return;
-            if (child + 1 < count && CompareCanonical(tiles[child], tiles[child + 1]) < 0)
-                child++;
-            if (CompareCanonical(tiles[root], tiles[child]) >= 0)
-                return;
-            (tiles[root], tiles[child]) = (tiles[child], tiles[root]);
-            root = child;
-        }
-    }
-
-    private static int CompareCanonical(TextureMipTile left, TextureMipTile right)
+    private static int CompareTiles(TextureMipTile left, TextureMipTile right)
     {
         int mip = left.MipLevel.CompareTo(right.MipLevel);
         if (mip != 0)

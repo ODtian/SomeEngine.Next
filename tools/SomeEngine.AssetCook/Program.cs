@@ -70,7 +70,7 @@ static async Task<int> RunAsync(string[] args)
         if (!storage.TryFind(assetGuid, out AssetEntry entry))
             throw new InvalidOperationException($"Cooked shader '{assetGuid}' was not published.");
         await using var loader = new AssetLoader(storage);
-        await using Asset<Shader> file = await loader.OpenAsync(new AssetId<Shader>(assetGuid));
+        await using Shader.Asset file = await Shader.Asset.OpenAsync(loader, new AssetId<Shader>(assetGuid));
         Shader asset = await Shader.CreateAsync(file);
         string assetPath = Path.ChangeExtension(sourcePath, ".shader.asset");
         SourceOutput assetMeta = SourceMeta.Load(sourcePath).FindOutput(assetPath)

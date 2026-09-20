@@ -9,7 +9,7 @@ public sealed record VirtualShadowMapSettings
     public uint VirtualResolution { get; init; } = 16_384;
     public uint AtlasSize { get; init; } = 4_096;
     public uint PageSize { get; init; } = 128;
-    public uint CoarsePageShift { get; init; } = 5;
+    public uint CoarsePageShift => checked((uint)BitOperations.Log2(VirtualPagesPerRow));
     public uint MaxShadowLights { get; init; } = 4;
     public uint DirectionalClipmapLevels { get; init; } = 6;
     public int DirectionalFirstClipmapLevel { get; init; } = 6;
@@ -86,8 +86,8 @@ public sealed record VirtualShadowMapSettings
         if (!float.IsFinite(DirectionalResolutionLodBias))
             throw new ArgumentOutOfRangeException(nameof(DirectionalResolutionLodBias));
 
-        int virtualPageBits = BitOperations.Log2(VirtualPagesPerRow);
-        if (CoarsePageShift == 0u || CoarsePageShift >= virtualPageBits)
-            throw new ArgumentOutOfRangeException(nameof(CoarsePageShift));
+        if (VirtualPagesPerRow < 2u)
+            throw new ArgumentOutOfRangeException(nameof(VirtualResolution),
+                "Virtual shadows require a finer level above the full-projection fallback page.");
     }
 }

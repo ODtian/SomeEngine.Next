@@ -21,7 +21,7 @@ public class AssetStorageTests
     [Fact]
     public void AssetRuntimeAssemblyDoesNotReferenceImporterToolchains()
     {
-        string[] references = typeof(TextureData).Assembly
+        string[] references = typeof(Texture.Asset).Assembly
             .GetReferencedAssemblies()
             .Select(static assembly => assembly.Name ?? string.Empty)
             .ToArray();
@@ -42,21 +42,19 @@ public class AssetStorageTests
             Guid materialGuid = Guid.NewGuid();
             string materialPath = Path.Combine(dir, "assets", "Materials", "generated.material.asset");
             Directory.CreateDirectory(Path.GetDirectoryName(materialPath)!);
-            AssetWriter.Write<Material>((new StandardMaterialData
-            {
-                AssetGuid = materialGuid.ToString(),
+            ((new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(materialGuid)) {
                 Name = "GeneratedMaterial",
-            }).ToAsset(), materialPath);
+            })).SaveAsync(materialPath).AsTask().GetAwaiter().GetResult();
 
             AssetProject project = new AssetProject(dir, [new GltfSourceImporter(), new SlangSourceImporter()]);
-            await project.RegisterAssetAsync<Material>(
-                "assets/Materials/generated.material.asset");
+            using var materialFile = await Material.Asset.OpenAsync(Path.Combine(project.RootPath, "assets/Materials/generated.material.asset"));
+            project.RegisterAsset(materialFile.Describe());
             IAssetStorage storage = project.CreateStorage();
             Assert.True(storage.TryFind(materialGuid, out AssetEntry entry));
-            await using BinaryDocument<MaterialData> document =
-                await AssetTestFiles.OpenAsync<Material, MaterialData>(storage, entry);
+            await using var loader = new AssetLoader(storage);
+            using Material.Asset file = await Material.Asset.OpenAsync(loader, new(entry.AssetGuid));
 
-            Assert.Equal(materialGuid.ToString(), document.Root.AssetGuid);
+            Assert.Equal(materialGuid, file.Id.Value);
             Assert.Equal(materialGuid, project.Resolve("assets/Materials/generated.material.asset"));
         }
         finally

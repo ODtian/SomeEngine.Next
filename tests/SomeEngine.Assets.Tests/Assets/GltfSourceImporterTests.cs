@@ -61,31 +61,29 @@ public class GltfSourceImporterTests
             ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:0:Body");
             ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:1:Eyes");
 
-            MaterialData maskedAsset = await AssetTestFiles.ReadAsync<Material, MaterialData>(maskedMaterial.OutputPath);
-            MaterialData transparentAsset = await AssetTestFiles.ReadAsync<Material, MaterialData>(transparentMaterial.OutputPath);
-            MeshData bodyAsset = await MeshData.ReadAsync(bodyMesh.OutputPath);
-            MeshData eyesAsset = await MeshData.ReadAsync(eyesMesh.OutputPath);
+            using StandardMaterial.Asset maskedAsset = await StandardMaterial.Asset.OpenAsync(maskedMaterial.OutputPath);
+            using UnlitMaterial.Asset transparentAsset = await UnlitMaterial.Asset.OpenAsync(transparentMaterial.OutputPath);
+            using Mesh.Asset bodyAsset = await Mesh.Asset.OpenAsync(bodyMesh.OutputPath);
+            using Mesh.Asset eyesAsset = await Mesh.Asset.OpenAsync(eyesMesh.OutputPath);
             SourceMeta sourceMeta = SourceMeta.Load(gltfPath);
             SourceOutput? bodyMeshMeta = sourceMeta.FindOutput(bodyMesh.OutputPath);
 
             Assert.Equal(
                 new System.Numerics.Vector4(0.5f, 0.25f, 1.0f, 1.0f),
-                maskedAsset.Parameters.Single(p => p.Name == "BaseColorTint").Vector4);
-            Assert.Equal(0.75f, maskedAsset.Parameters.Single(p => p.Name == "MetallicFactor").Float);
-            Assert.Equal(0.35f, maskedAsset.Parameters.Single(p => p.Name == "Roughness").Float);
+                maskedAsset.BaseColorTint);
+            Assert.Equal(0.75f, maskedAsset.MetallicFactor);
+            Assert.Equal(0.35f, maskedAsset.Roughness);
             Assert.Equal(
                 new System.Numerics.Vector3(0.2f, 0.4f, 0.6f),
-                maskedAsset.Parameters.Single(p => p.Name == "EmissiveFactor").Vector3);
-            Assert.False((TextureReference(maskedAsset, nameof(StandardMaterialData.AlbedoMap)) == Guid.Empty));
-            Assert.False((TextureReference(maskedAsset, nameof(StandardMaterialData.NormalMap)) == Guid.Empty));
-            Assert.False((TextureReference(maskedAsset, nameof(StandardMaterialData.ARMMap)) == Guid.Empty));
+                maskedAsset.EmissiveFactor);
+            Assert.False((maskedAsset.AlbedoMap.Value == Guid.Empty));
+            Assert.False((maskedAsset.NormalMap.Value == Guid.Empty));
+            Assert.False((maskedAsset.ARMMap.Value == Guid.Empty));
 
             Assert.Equal(
                 new System.Numerics.Vector4(1.0f, 1.0f, 1.0f, 0.5f),
-                transparentAsset.Parameters.Single(p => p.Name == "BaseColorTint").Vector4);
-            Assert.False((TextureReference(
-                transparentAsset,
-                nameof(UnlitMaterialData.AlbedoMap)) == Guid.Empty));
+                transparentAsset.BaseColorTint);
+            Assert.False((transparentAsset.AlbedoMap.Value == Guid.Empty));
 
             Assert.NotNull(bodyAsset.Regions);
             Assert.Single(bodyAsset.Regions);
@@ -101,15 +99,15 @@ public class GltfSourceImporterTests
             Assert.Equal([transparentMaterial.AssetGuid.ToString()], eyesAsset.MaterialGuids);
             Assert.Equal([transparentMaterial.AssetGuid], eyesMesh.Dependencies);
 
-            // Verify texture sub-assets are produced and strong TextureData slots retain asset ids.
+            // Verify texture sub-assets are produced and strong Texture.Asset slots retain asset ids.
             var textureKeys = first.Where(asset => asset.SubAssetKey.StartsWith("texture:")).ToArray();
             Assert.Equal(4, textureKeys.Length);
             Assert.All(
                 new[]
                 {
-                    TextureReference(maskedAsset, nameof(StandardMaterialData.AlbedoMap)),
-                    TextureReference(maskedAsset, nameof(StandardMaterialData.NormalMap)),
-                    TextureReference(maskedAsset, nameof(StandardMaterialData.ARMMap)),
+                    maskedAsset.AlbedoMap.Value,
+                    maskedAsset.NormalMap.Value,
+                    maskedAsset.ARMMap.Value,
                 },
                 static guid => Assert.NotEqual(Guid.Empty, guid));
         }
@@ -220,28 +218,19 @@ public class GltfSourceImporterTests
     private static void WriteTemplate(string path, string name, bool unlit)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        MaterialData material = unlit
-            ? new UnlitMaterialData
-            {
-                AssetGuid = Guid.NewGuid().ToString(),
+        using Material.Asset material = unlit
+            ? new UnlitMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(Guid.NewGuid())) {
                 Name = name,
                 Shader = new(Guid.Parse(UnlitShaderGuid)),
             }
-            : new StandardMaterialData
-            {
-                AssetGuid = Guid.NewGuid().ToString(),
+            : new StandardMaterial.Asset(new global::SomeEngine.Assets.AssetId<global::SomeEngine.Assets.Schema.Material>(Guid.NewGuid())) {
                 Name = name,
                 Shader = new(Guid.Parse(LitShaderGuid)),
             };
-        AssetWriter.Write((material).ToAsset(), path);
+        ((material)).SaveAsync(path).AsTask().GetAwaiter().GetResult();
     }
 
-    private static Guid TextureReference(MaterialData material, string name)
-    {
-        return material.Parameters.Single(p => p.Name == name).Texture.Value;
-    }
-
-    private static byte[] BuildTriangleBuffer()
+private static byte[] BuildTriangleBuffer()
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);

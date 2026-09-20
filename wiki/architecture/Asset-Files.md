@@ -1,9 +1,47 @@
-# Asset files and domain objects
+# 资产架构导航
 
-The current asset model is specified in [docs/AssetSystem.md](../../docs/AssetSystem.md). Asset IDs are GUID values; `Asset<T>` is independent access to disk fields, and Texture/Mesh/Shader/Material are ordinary domain objects created explicitly from those fields or from application data.
+资产重构于 2026-09-12 明确范围：**只修改已讨论的设计及必要接入，未讨论的架构保持。** 现有序列化、范围来源、读取调度和资产包继续使用。
 
-A Loader owns its reads and file cache. It never owns the application's objects or borrowed storage. Multiple opens and multiple instances may coexist, including different versions of the same asset. Concrete binary-document access keeps old byte ranges valid after an Asset or Loader closes. Updates validate and prepare new data before replacing live content; Texture switches through the existing frame execution boundary and delays old GPU release until actual submitted uses finish.
+用户已将独立序列化审查及成熟实现对比中确认的全部不足纳入同一次重构。有效实现继续复用，认证、预算、写入边界、职责、公开 API、根描述、字段排列和视图访问必须完成修正。
 
-Game world and Render world remain the only world data route. Scene files instantiate the existing World; there is no identity wrapper or additional asset world. File metadata, dependencies and input/output import records belong to AssetEntry, AssetManifest and SourceMeta. Runtime Material stores concrete references and generated properties; its file stores IDs and overrides.
+**全部现有资产及其消费者必须接入新体系。** 通用能力可以复用，已确认缺陷需要修正；任何现有资产都不能以“保持旧架构”为由留在旧流程。执行任务包含按资产家族登记的完整接入清单。
 
-The earlier requirement that a decoded document root must be the same object as the runtime value no longer applies. Neither a unique runtime object per GUID nor a loader-wide retirement barrier is part of the asset model.
+## 当前有效的设计与执行依据
+
+- [序列化能力审查](Assets/Asset-Serialization-Review.md)：现有能力、149 个既有测试结果、四项探针证据，以及 D01–D10 的问题与对应任务。
+- [冻结概念与原则](Assets/Asset-Rebuild-Principles.md)：21 组原则，覆盖资产与序列化职责、API、数据、使用保证和渲染边界。
+- [统一执行任务](Assets/Asset-Rebuild-Tasks.md)：A00–A33 与 B00–B08 共 43 个任务，包含全部现有资产及全部审查不足的覆盖与验收。
+
+本次已修正文档范围和任务拆分，本文对应的生产实现任务尚未执行。实现前先核查现有能力，只有明确冲突才修改；新增概念或扩大范围必须先补充依据并更新原则。
+
+## 整体关系
+
+```mermaid
+flowchart LR
+    Source[源文件与资产定义] --> Build[发现、导入与构建]
+    Build --> Catalog[目录与 Manifest]
+    Catalog --> Storage[选定内容来源与版本]
+    Storage --> Binary[现有文档与范围读取]
+    Binary --> Asset[独立 Asset 类型]
+    Asset -->|显式创建或更新| Value[普通使用对象 T]
+    Asset --> Pages[通用页与 COW]
+    Value -->|保留使用所需数据| Pages
+    Value --> Game[Game world]
+    Game -->|既有提取流程| Render[Rendering world]
+    Types[类型与格式注册] --> Build
+    Types --> Asset
+```
+
+目录不持有内容页或业务对象。Asset 的普通引用不承诺全部内容驻留；T 在有效期间持有所需数据。字段写入不隐藏读盘，渲染不增加资产旁路。
+
+## 原主题页的状态
+
+Assets 中的其他主题页及 docs/AssetSystem.md 记录现有设计和历史验证。与上述明确变化冲突的段落需要更新，未涉及的架构继续适用；历史验证记录仅表示当时实际检查的结果。
+
+A32 按实际变更逐段更新说明，不整页宣布失效。嵌套资产、字段镜像和明确修正的序列化行为不作为兼容要求；有效编码、范围读取、包及未涉及业务能力继续使用。必要协议调整明确版本与消费者范围。
+
+## 与其他架构的关系
+
+[[DRY]]、[[SRP]] 约束主要数据持有者及共同流程；[[ECS-Architecture]] 规定实际 World 和组件拓扑；[[Render-Boundaries]]、[[Render-Graph]] 规定 Game world 到 Rendering world 的既有路径及资源使用期限；[[Product-Boundary]] 规定工具和产品边界。
+
+所有新资产架构定义和任务继续集中在结构化 wiki。其他目录只放必要的导航，不再复制一套设计正文。

@@ -353,11 +353,18 @@ internal sealed partial class FrameExecutor
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetPassRow);
         _passAccesses[index] ??= [];
-        _parameterPassChanges.Add(index);
         InvalidateRasterRendering(index);
         FramePass previous = _passes[index];
         bool identityChanged = previous.Identity != row.Identity &&
             (previous.Definition is not null || row.Definition is not null);
+        // Retained callback values and enablement do not change shader bindings.
+        // Immediate declarations can reuse mutable arrays, so reconnect those rows.
+        if (row.Definition is null || previous.Definition is null || identityChanged ||
+            !ReferenceEquals(previous.Pipeline, row.Pipeline) ||
+            previous.ParameterLayout != row.ParameterLayout ||
+            !ReferenceEquals(previous.ParameterBindings, row.ParameterBindings) ||
+            !ReferenceEquals(previous.ParameterOrdinaryData, row.ParameterOrdinaryData))
+            _parameterPassChanges.Add(index);
         if (identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal)
             RemoveValuePass(index);
         if (!previous.Identity.IsValid || identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal ||
