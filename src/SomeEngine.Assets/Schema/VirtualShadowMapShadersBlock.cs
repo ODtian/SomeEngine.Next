@@ -4,9 +4,10 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.VirtualShadowMapShadersBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(ResetFrame), nameof(DynamicResolution), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ))]
+[BinaryFields(nameof(ResetReceiverMasks), nameof(ResetFrame), nameof(DynamicResolution), nameof(MarkPages), nameof(MarkCoarsePages), nameof(AllocatePages), nameof(ClearPages), nameof(InitializeState), nameof(InvalidateCasters), nameof(BuildPagePool), nameof(CompactViews), nameof(InitializePageHiZ), nameof(ReducePageHiZ))]
 public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
 {
+    public partial ShaderRef? ResetReceiverMasks { get; set; }
     public partial ShaderRef? ResetFrame { get; set; }
     public partial ShaderRef? DynamicResolution { get; set; }
     public partial ShaderRef? MarkPages { get; set; }
@@ -35,6 +36,7 @@ public sealed partial class VirtualShadowMapShadersBlock : AssetPageBlock
             {
                 Name = name,
                 ResetFrame = copy.ResetFrame!.Resolve(shaders),
+                ResetReceiverMasks = copy.ResetReceiverMasks!.Resolve(shaders),
                 DynamicResolution = copy.DynamicResolution!.Resolve(shaders),
                 MarkPages = copy.MarkPages!.Resolve(shaders),
                 MarkCoarsePages = copy.MarkCoarsePages!.Resolve(shaders),

@@ -326,7 +326,12 @@ public sealed class RenderExtractionSystems : IDisposable
         // The detached value candidate gives transform, mesh/material, and light changes one
         // publication boundary without rediscovering or reconciling persistent mirror structure.
         _renderWorld.AcquireSystemVersion();
-        _context.ApplyTransformChanges();
+        if (_renderWorld.HasExtractionValueHooks([
+                SomeEngine.ECS.Registry.ComponentMetadata<RenderTransform>.Id,
+                SomeEngine.ECS.Registry.ComponentMetadata<RenderPreviousTransform>.Id]))
+            _context.ApplyTransformChanges();
+        else
+            _context.ApplyTransformValueChanges();
         foreach (IRenderExtractionSystem system in _changedSystems) system.ApplyChanges(_context);
     }
 

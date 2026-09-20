@@ -6,8 +6,10 @@ Instrumentation uses C# thread buffers and a C# file writer. It does not use Tra
 
 ## Capture
 
+Build the DefaultProject content first with `dotnet run --project tools/GenerateDefaultAssets/SomeEngine.GenerateDefaultAssets.csproj -c Release -- --engine <repository-root>`. The executable is Game.App; SomeEngine.Runtime is a library. See [the integrated baseline](../../docs/Integrated-Frame-Baseline-2026-09-20.md) for measured settings and limitations.
+
 ```powershell
-dotnet run --project src/SomeEngine.Runtime -c Release -- --frames 512 --hidden-window --no-vsync --trace capture.setrace --trace-detail --trace-allocations
+dotnet run --project templates/DefaultProject/Game.App/Game.App.csproj -c Release -- --frames 512 --hidden-window --no-vsync --trace capture.setrace --trace-detail --trace-allocations
 ```
 
 The destination must not already exist. `--trace-detail` includes RHI/native call sites and individual RG row updates. Without it, the recording retains application, ECS, Job, and RG intervals. `--trace-allocations` additionally reads each thread's managed allocation counter at scope boundaries.
@@ -17,7 +19,7 @@ The destination must not already exist. `--trace-detail` includes RHI/native cal
 For repeatable renderer measurements with all work completed in its frame:
 
 ```powershell
-dotnet run --project src/SomeEngine.Runtime -c Release -- --frames 512 --hidden-window --no-vsync --synchronous-frames --scene-playback materials --fixed-step 0.016666667 --trace capture.setrace --trace-detail --trace-allocations
+dotnet run --project templates/DefaultProject/Game.App/Game.App.csproj -c Release -- --frames 512 --hidden-window --no-vsync --synchronous-frames --scene-playback materials --fixed-step 0.016666667 --trace capture.setrace --trace-detail --trace-allocations
 ```
 
 `--synchronous-frames` updates and extracts the current scene in the current frame, and waits for its GPU completion events before presenting. It retains the actual update, extraction, recording, submission, and wait costs. It does not pipeline scene work into the next frame. Normal application scheduling remains available when this diagnostic mode is not selected.

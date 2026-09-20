@@ -10,7 +10,6 @@ internal sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12CommandContext
     {
         private D3D12CommandSlot? _repeatCommands;
-        private int _repeatChecks;
 
         internal bool TryRepeatCommands(out RecordedCommands commands)
         {
@@ -20,10 +19,8 @@ internal sealed unsafe partial class D3D12Backend
                 throw new InvalidOperationException("Finish the current recording before repeating commands.");
             commands = default;
             D3D12CommandSlot? recording = _repeatCommands;
-            bool report = ++_repeatChecks == 100;
             if (recording is null || !recording.TryClaim())
             {
-                if (report) Console.WriteLine($"REPEAT {_repeatCommands is null} busy {Label}");
                 return false;
             }
             bool completed = false;
@@ -31,7 +28,6 @@ internal sealed unsafe partial class D3D12Backend
             {
                 if (!recording.TryCaptureRepeatedCommands())
                 {
-                    if (report) recording.ReportRepeatFailure();
                     return false;
                 }
                 using var trace = EngineTrace.Begin(RhiTrace.ReuseNativeCommands);
@@ -52,7 +48,6 @@ internal sealed unsafe partial class D3D12Backend
         private readonly Dictionary<D3D12PersistentParameterBindings, D3D12PersistentParameterData> _repeatParameters = [];
         internal void TrackRepeatedParameters(D3D12PersistentParameterBindings source, D3D12PersistentParameterData data) =>
             _repeatParameters[source] = data;
-        internal void ReportRepeatFailure() => Console.WriteLine($"REPEAT {_context.Label}: complete={_nativeRecording.Complete}, allowed={_nativeRecording.Data.CanRepeat}, restrictions={_repeatRestrictions}");
         private int _repeatRestrictions;
         internal bool TryCaptureRepeatedCommands()
         {

@@ -143,7 +143,8 @@ public sealed class TextureDisplacementTests
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None, PipelineSync.ComputeShading, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(context, new ParameterBlockBindings(shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
-            [ResourceBinding.SampledTexture(heightView), ResourceBinding.SampledTexture(boundsView), ResourceBinding.SampledWith(sampler), ResourceBinding.WritableBuffer(outputView)], []));
+            [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer),
+             ResourceBinding.SampledTexture(heightView), ResourceBinding.SampledTexture(boundsView), ResourceBinding.SampledWith(sampler), ResourceBinding.WritableBuffer(outputView)], []));
         backend.Dispatch(context, new DispatchArguments((count + 31u) / 32u, 1, 1));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
         backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, bytes));

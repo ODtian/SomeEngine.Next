@@ -407,15 +407,17 @@ public sealed class VirtualShadowFeature : IGraphResourceProvider, IDisposable, 
                     _ = frameReset.Bind(edit.CreateBufferUav(buffer), PipelineSync.ComputeShading,
                         GraphAccessMode.Write, WriteCoverage.Complete);
 
-                var receiverMaskReset =
-                    new VirtualShadowInputBufferResetPassData(_consumePageReceiverMasks);
-                _receiverMaskResetPass = edit.AddCopyFramePass(
+                _receiverMaskResetPass = AddIndirectPass(ref edit,
                     "Reset virtual shadow receiver masks",
-                    PassQueueSelection.AnyOfType(QueueType.Graphics),
-                    receiverMaskReset,
-                    new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-                    VirtualShadowInputBufferResetPassData.Declare,
-                    VirtualShadowInputBufferResetPassData.Record);
+                    _shadowMap.ReceiverMaskResetPipeline,
+                    _pageRequestDispatchArguments);
+                PassDefinition receiverMaskReset = edit.GetPass(_receiverMaskResetPass);
+                _ = receiverMaskReset.Bind(edit.CreateBufferSrv(_pageRequestDispatchArguments),
+                    PipelineSync.ComputeShading);
+                _ = receiverMaskReset.Bind(edit.CreateBufferSrv(_consumeRequestedPageIndices, structureStride: sizeof(uint)),
+                    PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
+                _ = receiverMaskReset.Bind(edit.CreateBufferUav(_consumePageReceiverMasks, structureStride: 2u * sizeof(uint)),
+                    PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Partial);
                 var requestReset = new VirtualShadowInputBufferResetPassData(_consumeRequestedPageCount);
                 _requestResetPass = edit.AddCopyFramePass(
                     "Reset virtual shadow page request count",

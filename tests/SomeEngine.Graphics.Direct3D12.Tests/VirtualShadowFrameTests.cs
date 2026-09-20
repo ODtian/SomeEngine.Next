@@ -6,6 +6,24 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class VirtualShadowFrameTests
 {
     [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(65)]
+    public void ReceiverMaskResetChangesOnlyRequestedPages(int requestCount)
+    {
+        const int pageCount = 137;
+        uint[] indices = Enumerable.Range(0, 65).Select(index => (uint)((index * 17) % pageCount)).ToArray();
+        uint[] masks = Enumerable.Range(0, pageCount * 2).Select(index => (uint)(index + 1)).ToArray();
+        uint[][] result = Execute("vsm_receiver_mask_reset.slang", "ResetVirtualShadowReceiverMasks",
+            new DispatchArguments((uint)Math.Max(1, (requestCount + 63) / 64), 1, 1),
+            [([0, 1, 1, (uint)requestCount], ResourceBindingType.BufferSrv, 0),
+             (indices, ResourceBindingType.BufferSrv, 4), (masks, ResourceBindingType.BufferUav, 8)]);
+        HashSet<uint> changed = indices.Take(requestCount).ToHashSet();
+        for (int word = 0; word < masks.Length; word++)
+            Assert.Equal(changed.Contains((uint)(word / 2)) ? 0u : masks[word], result[0][word]);
+    }
+
+    [Theory]
     [InlineData(257)]
     [InlineData(1025)]
     public void FrameResetClearsGridAndCountersWithDifferentLengths(int gridWords)
