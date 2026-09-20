@@ -123,6 +123,28 @@ public readonly ref struct ReadOnlyQueryPacket
         return ColumnChangedSince(column, lastSystemVersion);
     }
 
+    /// <summary>
+    /// Tests whether every component row in this packet changed since the system version.
+    /// An empty packet returns false. The coarse column version rejects unchanged chunks before
+    /// visiting row versions.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool AllRowsChangedSince<T>(uint lastSystemVersion) where T : struct
+    {
+        if (Count == 0)
+            return false;
+        int column = QueryAccessGuards.RequireAccess<T>(
+            _match,
+            read: true,
+            write: false);
+        if (unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) <= 0)
+            return false;
+        foreach (uint version in _chunk.WriteVersionRows(column).Slice(_rowStart, Count))
+            if (unchecked((int)(version - lastSystemVersion)) <= 0)
+                return false;
+        return true;
+    }
+
     /// <summary>Tests this packet's dynamic-buffer header rows against one system version.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool BufferChangedSince<T>(uint lastSystemVersion)

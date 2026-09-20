@@ -2,13 +2,44 @@ using SomeEngine.Serialization;
 
 namespace SomeEngine.Assets.Schema;
 
-internal sealed partial class VirtualShadowMapShadersData
+[BinaryContract(BinaryCompatibility.ExactSchema)]
+[global::SomeEngine.Assets.Asset(".virtualshadow.asset")]
+public sealed partial class VirtualShadowMapShaders
 {
-    internal void Validate(string path)
+    public string? AssetGuid { get; set; }
+
+    public string? Name { get; set; }
+
+    public ShaderRef? ResetFrame { get; set; }
+
+    public ShaderRef? MarkPages { get; set; }
+
+    public ShaderRef? MarkCoarsePages { get; set; }
+
+    public ShaderRef? AllocatePages { get; set; }
+
+    public ShaderRef? ClearPages { get; set; }
+
+    public ShaderRef? InitializeState { get; set; }
+
+    public ShaderRef? InvalidateCasters { get; set; }
+
+    public ShaderRef? BuildPagePool { get; set; }
+
+    public ShaderRef? CompactViews { get; set; }
+
+    public ShaderRef? InitializePageHiZ { get; set; }
+
+    public ShaderRef? ReducePageHiZ { get; set; }
+
+    public ShaderRef? DynamicResolution { get; set; }
+
+    internal IReadOnlyList<AssetGuid> GetDependencies(string path)
     {
         string subject = $"Virtual shadow map shader asset '{path}'";
         ShaderRef?[] entries =
         [
+            ResetFrame,
             MarkPages,
             MarkCoarsePages,
             AllocatePages,
@@ -19,9 +50,11 @@ internal sealed partial class VirtualShadowMapShadersData
             CompactViews,
             InitializePageHiZ,
             ReducePageHiZ,
+            DynamicResolution,
         ];
         string[] names =
         [
+            nameof(ResetFrame),
             nameof(MarkPages),
             nameof(MarkCoarsePages),
             nameof(AllocatePages),
@@ -32,19 +65,20 @@ internal sealed partial class VirtualShadowMapShadersData
             nameof(CompactViews),
             nameof(InitializePageHiZ),
             nameof(ReducePageHiZ),
+            nameof(DynamicResolution),
         ];
+        var result = new List<AssetGuid>(entries.Length);
         for (int index = 0; index < entries.Length; index++)
         {
-            ShaderRef.Require(
+            AssetGuid shader = ShaderRef.Require(
                 entries[index],
                 subject,
                 names[index],
                 ShaderStage.Compute);
+            if (!result.Contains(shader))
+                result.Add(shader);
         }
-    }
-    internal static SomeEngine.Serialization.Containers.BinaryDocumentWriter CreateWriter(VirtualShadowMapShadersData fields)
-    {
-        fields.Validate(fields.Name ?? "");
-        return SomeEngine.Serialization.Containers.BinaryDocumentWriter.Create(fields);
+        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+        return result;
     }
 }

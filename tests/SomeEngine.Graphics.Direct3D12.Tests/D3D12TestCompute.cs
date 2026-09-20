@@ -20,7 +20,7 @@ internal static class D3D12TestCompute
             { directory = Path.Combine(current.FullName, "assets", "Shaders"); break; }
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths("compute_test", source,
             [new(entry, SlangStage.Compute)], "sm_6_0", directory ?? throw new DirectoryNotFoundException());
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         List<IDisposable> owned = [];
         try

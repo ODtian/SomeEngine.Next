@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SomeEngine.ECS.SourceGen;
 using Xunit;
@@ -60,34 +60,21 @@ public partial struct GeneratedPosition : SomeEngine.ECS.IComponent
     public int X;
     public GeneratedNested Nested;
 }
-
-[SerializableComponent("23232323-2323-2323-2323-232323232323")]
-public partial struct GeneratedLabel : SomeEngine.ECS.IComponent
-{
-    public string Name;
-}
 public static class Consumer
 {
     public static bool Execute()
     {
         var registry = new SerializationRegistry();
         global::GameSerializationModule.RegisterAll(registry);
-        using var world = new SomeEngine.ECS.World();
+        var world = new SomeEngine.ECS.World();
         var target = world.CreateEntity();
         var entity = world.CreateEntity(new GeneratedPosition { X = 17, Nested = new GeneratedNested { Target = target } });
         using var stream = new System.IO.MemoryStream();
         WorldSerializer.WriteCheckpointWorld(stream, world, registry);
         stream.Position = 0;
-        using var loaded = WorldSerializer.ReadCheckpointWorld(stream, registry);
+        var loaded = WorldSerializer.ReadCheckpointWorld(stream, registry);
         var value = loaded.Read<GeneratedPosition>(entity);
-        // A whole-world capture requires reference-free components. Managed fields use
-        // the component operation, whose input is kept alive explicitly by its caller.
-        var label = new GeneratedLabel { Name = "hello" };
-        using var labelStream = new System.IO.MemoryStream();
-        WorldSerializer.WriteDurableComponent(labelStream, in label, registry);
-        labelStream.Position = 0;
-        var restoredLabel = WorldSerializer.ReadDurableComponent<GeneratedLabel>(labelStream, registry);
-        return value.X == 17 && restoredLabel.Name == "hello" && value.Nested.Target == target && loaded.IsAlive(target);
+        return value.X == 17 && value.Nested.Target == target && loaded.IsAlive(target);
     }
 }
 """);

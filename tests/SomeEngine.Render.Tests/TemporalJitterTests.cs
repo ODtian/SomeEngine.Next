@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using SomeEngine.Render.Frame;
 
 namespace SomeEngine.Render.Tests;
@@ -48,5 +48,21 @@ public class TemporalJitterTests
 
         Assert.InRange((jitteredClip.X - clip.X) / clip.W, expectedNdc.X - 1e-6f, expectedNdc.X + 1e-6f);
         Assert.InRange((jitteredClip.Y - clip.Y) / clip.W, expectedNdc.Y - 1e-6f, expectedNdc.Y + 1e-6f);
+    }
+    [Fact]
+    public void OrthographicProjectionMovesEveryDepthByTheRequestedPixelOffset()
+    {
+        Matrix4x4 projection = Matrix4x4.CreateOrthographicOffCenter(-3, 5, -2, 4, 0.1f, 100);
+        Matrix4x4 jittered = TemporalJitter.ApplyToProjection(projection, new Vector2(0.5f, -0.25f), 100, 50);
+        foreach (float depth in new[] { -1f, -10f, -80f })
+        {
+            Vector4 position = new(0.25f, -0.5f, depth, 1);
+            Vector4 before = Vector4.Transform(position, projection);
+            Vector4 after = Vector4.Transform(position, jittered);
+            Assert.InRange(after.X / after.W - before.X / before.W, 0.009999f, 0.010001f);
+            Assert.InRange(after.Y / after.W - before.Y / before.W, 0.009999f, 0.010001f);
+            Assert.Equal(before.Z, after.Z);
+            Assert.Equal(before.W, after.W);
+        }
     }
 }

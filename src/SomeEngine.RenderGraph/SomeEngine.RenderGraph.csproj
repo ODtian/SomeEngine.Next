@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -17,6 +17,5 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SomeEngine.RenderGraph.Diagnostics" />
-    <InternalsVisibleTo Include="SomeEngine.RenderGraph.Tests" />
   </ItemGroup>
 </Project>

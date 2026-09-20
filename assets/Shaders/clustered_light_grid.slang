@@ -70,23 +70,30 @@ bool GetClusteredLightTileBounds(
         return true;
     }
 
-    float inverseTangentDistance = rsqrt(max(
-        viewDepth * viewDepth - radius * radius,
-        1e-8));
-    float2 ndcCenter = float2(
-        viewPosition.x * parameters.P00 / viewDepth,
-        viewPosition.y * parameters.P11 / viewDepth);
-    float2 ndcRadius = abs(float2(
-        parameters.P00,
-        parameters.P11)) * radius * inverseTangentDistance;
-    float2 pixelCenter = float2(
-        (ndcCenter.x * 0.5 + 0.5) * float(parameters.ScreenWidth),
-        (1.0 - (ndcCenter.y * 0.5 + 0.5)) * float(parameters.ScreenHeight));
-    float2 pixelRadius = ndcRadius * 0.5 * float2(
-        parameters.ScreenWidth,
-        parameters.ScreenHeight);
-    float2 pixelMinimum = pixelCenter - pixelRadius;
-    float2 pixelMaximum = pixelCenter + pixelRadius;
+    // The projected box encloses the sphere for perspective, off-center and
+    // orthographic matrices. A box crossing the eye plane covers the screen.
+    float2 ndcMinimum = float2(1e30);
+    float2 ndcMaximum = float2(-1e30);
+    for (uint corner = 0u; corner < 8u; corner++)
+    {
+        float3 offset = float3(
+            (corner & 1u) != 0u ? radius : -radius,
+            (corner & 2u) != 0u ? radius : -radius,
+            (corner & 4u) != 0u ? radius : -radius);
+        float4 clip = mul(float4(viewPosition + offset, 1.0), parameters.Projection);
+        if (clip.w <= 0.0)
+        {
+            minimumTile = uint2(0u);
+            maximumTile = uint2(parameters.TileCountX - 1u, parameters.TileCountY - 1u);
+            return true;
+        }
+        float2 ndc = clip.xy / clip.w;
+        ndcMinimum = min(ndcMinimum, ndc);
+        ndcMaximum = max(ndcMaximum, ndc);
+    }
+    float2 screenSize = float2(parameters.ScreenWidth, parameters.ScreenHeight);
+    float2 pixelMinimum = float2(ndcMinimum.x + 1.0, 1.0 - ndcMaximum.y) * 0.5 * screenSize;
+    float2 pixelMaximum = float2(ndcMaximum.x + 1.0, 1.0 - ndcMinimum.y) * 0.5 * screenSize;
     if (pixelMaximum.x < 0.0 || pixelMaximum.y < 0.0 ||
         pixelMinimum.x >= float(parameters.ScreenWidth) ||
         pixelMinimum.y >= float(parameters.ScreenHeight))
@@ -166,6 +173,20 @@ bool GetClusteredLightCellBounds(
 groupshared uint3 LightCellMinimum;
 groupshared uint3 LightCellExtent;
 
+void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint viewOffset, uint lightIndex, uint index)
+{
+    uint x = index % LightCellExtent.x;
+    uint yz = index / LightCellExtent.x;
+    uint y = yz % LightCellExtent.y;
+    uint z = yz / LightCellExtent.y;
+    uint3 coordinate = LightCellMinimum + uint3(x, y, z);
+    uint cell = viewOffset + (coordinate.z * parameters.TileCountY + coordinate.y) * parameters.TileCountX + coordinate.x;
+    uint destination;
+    InterlockedAdd(ClusteredLightGrid[cell].y, 1u, destination);
+    if (destination < parameters.MaxLightsPerCluster)
+        LightIndexList[cell * parameters.MaxLightsPerCluster + destination] = lightIndex;
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupIndex)
@@ -185,21 +206,16 @@ void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
         LightCellExtent = extent;
     }
     GroupMemoryBarrierWithGroupSync();
+    // Share cell work between groups when there are few lights. With many
+    // lights, keep the parallelism across lights instead of multiplying empty work.
     uint count = LightCellExtent.x * LightCellExtent.y * LightCellExtent.z;
-    uint cellsPerSlice = parameters.TileCountX * parameters.TileCountY;
     uint viewOffset = viewIndex * parameters.CellCountPerView;
-    for (uint index = threadIndex; index < count; index += 64u)
+    if (parameters.GroupsPerLight == 1u)
     {
-        uint x = index % LightCellExtent.x;
-        uint yz = index / LightCellExtent.x;
-        uint y = yz % LightCellExtent.y;
-        uint z = yz / LightCellExtent.y;
-        uint3 coordinate = LightCellMinimum + uint3(x, y, z);
-        uint cell = viewOffset + coordinate.z * cellsPerSlice +
-            coordinate.y * parameters.TileCountX + coordinate.x;
-        uint destination;
-        InterlockedAdd(ClusteredLightGrid[cell].y, 1u, destination);
-        if (destination < parameters.MaxLightsPerCluster)
-            LightIndexList[cell * parameters.MaxLightsPerCluster + destination] = lightIndex;
+        for (uint index = threadIndex; index < count; index += 64u)
+            AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
     }
+    else
+        for (uint index = groupId.z * 64u + threadIndex; index < count; index += 64u * parameters.GroupsPerLight)
+            AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
 }

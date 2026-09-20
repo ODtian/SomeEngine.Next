@@ -10,75 +10,119 @@ struct RasterBinningUniforms
     uint SlotCapacity;
     uint MaxVisibleClusters;
     uint CollectMetrics;
-    uint Pad1;
+    uint PolicyTarget;
     uint Pad2;
 };
 
-struct VRBDecoded
-{
-    uint batchCount;
-    uint triCounts[5];
-};
+static const uint RASTER_WORK_RANGE_BIT = 0x200u;
+static const uint RASTER_WORK_CONSUMED = 0x3FFu;
 
-VRBDecoded DecodeVRB(uint vrbInfo)
+uint RasterWorkVisibleIndex(uint work)
 {
-    VRBDecoded decoded;
-    decoded.batchCount = min(((vrbInfo >> 25) & 0x7) + 1, 5u);
-    for (uint index = 0u; index < 5u; index++)
-    {
-        decoded.triCounts[index] = index < decoded.batchCount
-            ? ((vrbInfo >> (index * 5u)) & 0x1Fu) + 1u
-            : 0u;
-    }
-    return decoded;
+    return work & 0x3FFFFFu;
 }
 
-bool EmitsSw(bool clusterWasClassifiedSW, uint batchIndex, uint encodedBatchCount)
+uint RasterRangeWorkIndex(uint firstMaterialRange, uint materialRangeCount)
 {
-    return clusterWasClassifiedSW && batchIndex < encodedBatchCount;
+    return RASTER_WORK_RANGE_BIT |
+        (firstMaterialRange & 3u) |
+        ((materialRangeCount - 1u) << 2u);
 }
 
-uint RasterBatchVisibleIndex(uint batch)
+bool RasterWorkIsRange(uint workIndex)
 {
-    return batch & 0x3FFFFFu;
+    return workIndex != RASTER_WORK_CONSUMED && (workIndex & RASTER_WORK_RANGE_BIT) != 0u;
 }
 
-uint EncodeRasterBatch(uint visible, uint batchIndex)
+uint RasterWorkFirstMaterialRange(uint workIndex)
 {
-    return visible | (batchIndex << 22u);
+    return workIndex & 3u;
 }
 
-void DecodeRasterBatchRange(ByteAddressBuffer pageHeap, DrawRequest entry,
-    uint batch, out uint triangleStart, out uint triangleEnd)
+uint RasterWorkMaterialRangeCount(uint workIndex)
+{
+    return ((workIndex >> 2u) & 3u) + 1u;
+}
+
+bool RasterSoftwareUsesVertReuseBatches(
+    StructuredBuffer<uint> stages,
+    RasterBinningUniforms uniforms,
+    uint stageOffset,
+    uint localMaterialIndex)
+{
+    uint value = GetStageSlot(stages, stageOffset, localMaterialIndex, uniforms.SlotCapacity);
+    return value != SLOT_INVALID && (value & 0x80000000u) != 0u;
+}
+
+uint4 LoadVertReuseBatchWords(ByteAddressBuffer pageHeap, uint clusterOffset)
+{
+    return uint4(
+        pageHeap.Load(clusterOffset + 80u),
+        pageHeap.Load(clusterOffset + 84u),
+        pageHeap.Load(clusterOffset + 88u),
+        pageHeap.Load(clusterOffset + 92u));
+}
+
+void DecodeRasterWorkRange(
+    ByteAddressBuffer pageHeap,
+    DrawRequest entry,
+    uint work,
+    out uint triangleStart,
+    out uint triangleEnd)
 {
     triangleStart = 0u;
     triangleEnd = 0u;
-    uint ordinal = batch >> 22u;
-    // Tessellation consumes a batch by marking its ordinal; the visible index
-    // remains valid for readers that fetch the source before decoding its range.
-    if (ordinal == 0x3FFu)
+    uint workIndex = work >> 22u;
+    if (workIndex == RASTER_WORK_CONSUMED)
         return;
+
     uint clusterOffset = entry.PageOffset + pageHeap.Load(entry.PageOffset + 16u) +
         DrawRequestClusterID(entry) * PACKED_CLUSTER_STRIDE_BYTES;
     uint triangleCount = (pageHeap.Load(clusterOffset + 60u) >> 8u) & 0xFFu;
     uint packedRanges = pageHeap.Load(clusterOffset + 72u);
-    VRBDecoded vrb = DecodeVRB(pageHeap.Load(clusterOffset + 80u));
-    for (uint index = 0u; index <= ordinal && triangleStart < triangleCount; index++)
+    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
+
+    if (RasterWorkIsRange(workIndex))
     {
-        triangleEnd = index < vrb.batchCount
-            ? min(triangleStart + vrb.triCounts[index], triangleCount)
-            : min(triangleStart + 32u, MaterialEnd(packedRanges, triangleStart, triangleCount));
-        if (index == ordinal)
+        uint firstRange = RasterWorkFirstMaterialRange(workIndex);
+        uint workRangeCount = RasterWorkMaterialRangeCount(workIndex);
+        if (firstRange >= rangeCount || firstRange + workRangeCount > rangeCount)
             return;
-        triangleStart = triangleEnd;
+        triangleStart = firstRange == 0u
+            ? 0u
+            : MaterialRangeEnd(packedRanges, triangleCount, firstRange - 1u);
+        triangleEnd = MaterialRangeEnd(
+            packedRanges,
+            triangleCount,
+            firstRange + workRangeCount - 1u);
+        return;
     }
+
+    uint4 words = LoadVertReuseBatchWords(pageHeap, clusterOffset);
+    uint flatBatchIndex = 0u;
+    for (uint rangeIndex = 0u; rangeIndex < rangeCount; rangeIndex++)
+    {
+        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
+        uint batchCount = VertReuseBatchCount(words, rangeIndex);
+        for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
+        {
+            uint count = VertReuseBatchTriangleCount(words, flatBatchIndex);
+            triangleEnd = min(triangleStart + count, rangeEnd);
+            if (flatBatchIndex == workIndex)
+                return;
+            triangleStart = triangleEnd;
+            flatBatchIndex++;
+        }
+        triangleStart = rangeEnd;
+    }
+
     triangleEnd = triangleStart;
 }
 
 void ReadClusterBinData(
     ByteAddressBuffer pageHeap,
     DrawRequest entry,
-    out uint vrbInfo,
+    out uint4 vertReuseBatchWords,
     out uint triangleCount,
     out uint packedMaterials,
     out uint packedRanges)
@@ -90,7 +134,7 @@ void ReadClusterBinData(
     triangleCount = (packedCounts >> 8u) & 0xFFu;
     packedMaterials = pageHeap.Load(clusterOffset + 68u);
     packedRanges = pageHeap.Load(clusterOffset + 72u);
-    vrbInfo = pageHeap.Load(clusterOffset + 80u);
+    vertReuseBatchWords = LoadVertReuseBatchWords(pageHeap, clusterOffset);
 }
 
 uint RasterKey(

@@ -241,11 +241,12 @@ public readonly struct GraphTextureAccessId : IEquatable<GraphTextureAccessId>
 public readonly struct PassRenderingRegionId : IEquatable<PassRenderingRegionId>
 {
     private readonly GraphIdentity _value;
-    internal PassRenderingRegionId(in GraphIdentity value) => _value = value;
+    internal PassRenderingRegionId(in GraphIdentity value, in GraphIdentity pass) { _value = value; Pass = pass; }
+    internal GraphIdentity Pass { get; }
     internal GraphIdentity Value => _value;
-    public bool Equals(PassRenderingRegionId other) => _value.Equals(other._value);
+    public bool Equals(PassRenderingRegionId other) => _value.Equals(other._value) && Pass.Equals(other.Pass);
     public override bool Equals(object? value) => value is PassRenderingRegionId other && Equals(other);
-    public override int GetHashCode() => _value.GetHashCode();
+    public override int GetHashCode() => HashCode.Combine(_value, Pass);
     public static bool operator ==(PassRenderingRegionId left, PassRenderingRegionId right) => left.Equals(right);
     public static bool operator !=(PassRenderingRegionId left, PassRenderingRegionId right) => !left.Equals(right);
 }

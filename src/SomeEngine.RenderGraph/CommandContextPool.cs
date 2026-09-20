@@ -50,9 +50,12 @@ internal sealed class CommandContextPool : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
         _disposed = true;
-        while (_all.TryTake(out CommandContextPoolEntry? entry)) entry.Context.Dispose();
+        while (_all.TryTake(out CommandContextPoolEntry? entry))
+        {
+            try { entry.Context.Dispose(); }
+            catch { _all.Add(entry); throw; }
+        }
         _idle.Clear();
     }
 

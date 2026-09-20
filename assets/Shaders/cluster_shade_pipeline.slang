@@ -3,7 +3,6 @@
 
 #include "vertex_consumer_cache.slang"
 #include "material_interfaces.slang"
-#include "triangle_surface_inverse.slang"
 #include "cluster_view.slang"
 
 struct ShadeUniforms
@@ -125,46 +124,55 @@ VertexEvalContext makeVertexEvalContext(
     return ctx;
 }
 
-Triangle evaluateTriangleWithTransform<TVE : IVertexEvaluate>(
+TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
     uniform TVE evaluator,
+    uniform TDomain domain,
     TriangleInfo tri,
     RenderInstanceTransform transform,
     uint isPreviousFrame)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    SurfaceVertex v0 = EvaluateSurfaceVertexWave(
+    TVE.Vertex v0 = EvaluateVertexWave(
         evaluator,
         makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0),
         tri.visibleClusterIndex);
-    SurfaceVertex v1 = EvaluateSurfaceVertexWave(
+    TVE.Vertex v1 = EvaluateVertexWave(
         evaluator,
         makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1),
         tri.visibleClusterIndex);
-    SurfaceVertex v2 = EvaluateSurfaceVertexWave(
+    TVE.Vertex v2 = EvaluateVertexWave(
         evaluator,
         makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2),
         tri.visibleClusterIndex);
-    return MakeTriangle(v0, v1, v2);
+    return domain.makeTriangle(v0, v1, v2);
 }
 
-Triangle evaluateTriangle<TVE : IVertexEvaluate>(
+TDomain.TriangleData evaluateTriangle<TVE, TDomain>(
     uniform TVE evaluator,
+    uniform TDomain domain,
     TriangleInfo tri)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    return evaluateTriangleWithTransform(
+    return evaluateTriangleWithTransform<TVE, TDomain>(
         evaluator,
+        domain,
         tri,
         GetCurrentInstanceTransform(tri.instanceID),
         0u);
 }
 
-float3 computeTriangleBarycentricAt(
+float3 computeTriangleBarycentricAt<TVertex, TDomain>(
+    uniform TDomain domain,
     float2 pixelPosition,
     ClusterViewUniforms view,
-    Triangle triangle)
+    TDomain.TriangleData triangle)
+    where TDomain : IDomainEvaluate<TVertex>
 {
-    ScreenProjection sp0 = ProjectToScreenProjection(triangle.Position0, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp1 = ProjectToScreenProjection(triangle.Position1, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    ScreenProjection sp2 = ProjectToScreenProjection(triangle.Position2, view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp0 = ProjectToScreenProjection(domain.cornerPosition(triangle, 0u), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp1 = ProjectToScreenProjection(domain.cornerPosition(triangle, 1u), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+    ScreenProjection sp2 = ProjectToScreenProjection(domain.cornerPosition(triangle, 2u), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     return ComputePerspectiveBarycentric(pixelPosition, sp0, sp1, sp2);
 }
 
@@ -181,19 +189,20 @@ float3 ReconstructWorldPositionAt(
     return abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
 }
 
-SurfaceBarycentrics ResolveBarycentrics<TDomain : IDomainEvaluate>(
+SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
     uniform TDomain domain,
     uint3 pixelCoord,
     ClusterViewUniforms view,
-    Triangle triangle)
+    TDomain.TriangleData triangle)
+    where TDomain : IDomainEvaluate<TVertex>
 {
     float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
-    float3 seed = computeTriangleBarycentricAt(
-        pixelCenter, view, triangle);
-    float3 seedX = computeTriangleBarycentricAt(
-        pixelCenter + float2(1.0, 0.0), view, triangle);
-    float3 seedY = computeTriangleBarycentricAt(
-        pixelCenter + float2(0.0, 1.0), view, triangle);
+    float3 seed = computeTriangleBarycentricAt<TVertex, TDomain>(
+        domain, pixelCenter, view, triangle);
+    float3 seedX = computeTriangleBarycentricAt<TVertex, TDomain>(
+        domain, pixelCenter + float2(1.0, 0.0), view, triangle);
+    float3 seedY = computeTriangleBarycentricAt<TVertex, TDomain>(
+        domain, pixelCenter + float2(0.0, 1.0), view, triangle);
     float depth = DepthBuffer.Load(int4(pixelCoord, 0));
 
     SurfaceReconstructionInput input;
@@ -218,15 +227,17 @@ float2 ClusterMotionClipToUv(float4 clip)
 }
 
 void WriteClusterMotion<
-    TVE : IVertexEvaluate,
-    TDomain : IDomainEvaluate>(
+    TVE,
+    TDomain>(
     uniform TVE evaluator,
     uniform TDomain domain,
     TriangleInfo tri,
     ClusterViewUniforms view,
-    SurfaceEval currentSurface,
+    TDomain.TriangleData currentTriangle,
     float3 bary,
     uint3 pixelCoord)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
 {
     if (view.HasPrevHistory == 0u)
     {
@@ -234,13 +245,15 @@ void WriteClusterMotion<
         return;
     }
 
-    Triangle previousTriangle = evaluateTriangleWithTransform(
+    TDomain.TriangleData previousTriangle = evaluateTriangleWithTransform<TVE, TDomain>(
         evaluator,
+        domain,
         tri,
         GetPreviousInstanceTransform(tri.instanceID),
         1u);
+    float3 currentPosition = domain.position(currentTriangle, bary);
     float3 previousPosition = domain.position(previousTriangle, bary);
-    float4 currentClip = mul(float4(currentSurface.Position, 1.0), view.ViewProj);
+    float4 currentClip = mul(float4(currentPosition, 1.0), view.ViewProj);
     float4 previousClip = mul(float4(previousPosition, 1.0), view.PrevViewProj);
     OutputMotionVectors[pixelCoord] =
         abs(currentClip.w) < 1e-6 || abs(previousClip.w) < 1e-6
@@ -249,13 +262,16 @@ void WriteClusterMotion<
 }
 
 void CSShadeCore<
-    TVE : IVertexEvaluate,
-    TDomain : IDomainEvaluate,
-    TSurface : ISurfaceEvaluate>(
+    TVE,
+    TDomain,
+    TSurface>(
     uniform TVE vertexEval,
     uniform TDomain domain,
     uniform TSurface surface,
     uint3 tid)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
     uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
     uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
@@ -279,8 +295,8 @@ void CSShadeCore<
         return;
     ClusterViewUniforms view = Views[tri.viewIndex];
 
-    Triangle triangle = evaluateTriangle(vertexEval, tri);
-    SurfaceBarycentrics coordinates = ResolveBarycentrics(
+    TDomain.TriangleData triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
+    SurfaceBarycentrics coordinates = ResolveBarycentrics<TVE.Vertex, TDomain>(
         domain,
         pixelCoord,
         view,
@@ -288,13 +304,13 @@ void CSShadeCore<
     if (coordinates.Valid == 0u)
         return;
     float3 bary = coordinates.Value;
-    SurfaceEval surfaceEval = domain.eval(triangle, bary);
-    WriteClusterMotion(
+    TDomain.Surface surfaceEval = domain.eval(triangle, bary);
+    WriteClusterMotion<TVE, TDomain>(
         vertexEval,
         domain,
         tri,
         view,
-        surfaceEval,
+        triangle,
         bary,
         pixelCoord);
 
@@ -323,15 +339,18 @@ void CSShadeCore<
 }
 
 void CSShade<
-    TVE : IVertexEvaluate,
-    TDomain : IDomainEvaluate,
-    TSurface : ISurfaceEvaluate>(
+    TVE,
+    TDomain,
+    TSurface>(
     uniform TVE vertexEval,
     uniform TDomain domain,
     uniform TSurface surface,
     uint3 tid)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
-    CSShadeCore(vertexEval, domain, surface, tid);
+    CSShadeCore<TVE, TDomain, TSurface>(vertexEval, domain, surface, tid);
 }
 
 #endif

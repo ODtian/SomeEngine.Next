@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 
 namespace SomeEngine.RenderGraph;
 
@@ -125,12 +125,25 @@ internal sealed partial class FrameExecutor
             view.Kind == kind && view.View is T,
             "The View identity has the wrong type.");
         if (view.Buffer.IsValid)
-            ValidateBuffer(pass, _buffers[view.BufferIndex].Resource!, view.BufferRange,
+            ValidateBuffer(pass, _buffers[ResolveBuffer(view.Buffer)].Resource!, view.BufferRange,
                 kind is GraphViewKind.BufferUav);
         if (view.Texture.IsValid)
-            ValidateTexture(pass, _textures[view.TextureIndex].Resource!, view.TextureRange,
+            ValidateTexture(pass, _textures[ResolveTexture(view.Texture)].Resource!, view.TextureRange,
                 kind is GraphViewKind.TextureUav or GraphViewKind.ColorAttachment or GraphViewKind.DepthStencil);
         return (T)view.View!;
+    }
+
+    [Conditional("DEBUG")]
+    internal void ValidateTextureCopyBuffer(int pass, in BufferTextureCopy copy, bool write)
+    {
+        TextureInfo info = copy.Texture.Info;
+        var description = new TextureDesc(
+            info.Dimension, info.Width, info.Height, info.Depth,
+            info.MipLevelCount, info.ArrayLayerCount, info.SampleCount,
+            info.Format, info.Usages, info.PermittedViewFormats);
+        TextureCopyFootprint footprint = _frame.Backend.GetTextureCopyFootprint(
+            copy.Texture.Device, description, copy, copy.BufferOffset);
+        ValidateBuffer(pass, copy.Buffer, footprint.GetBufferRange(copy), write);
     }
 
     [Conditional("DEBUG")]
@@ -320,10 +333,12 @@ internal sealed partial class FrameExecutor
 
     private static bool Contains(in BufferRange container, in BufferRange value) =>
         value.Offset >= container.Offset &&
+        value.Offset - container.Offset <= container.Size &&
         value.Size <= container.Size - (value.Offset - container.Offset);
 
     private static bool Contains(in QueryRange container, in QueryRange value) =>
         value.FirstQuery >= container.FirstQuery &&
+        value.FirstQuery - container.FirstQuery <= container.QueryCount &&
         value.QueryCount <= container.QueryCount -
             (value.FirstQuery - container.FirstQuery);
 
@@ -332,9 +347,11 @@ internal sealed partial class FrameExecutor
         in TextureSubresourceRange value)
     {
         return value.FirstMipLevel >= container.FirstMipLevel &&
+               value.FirstMipLevel - container.FirstMipLevel <= container.MipLevelCount &&
                value.MipLevelCount <= container.MipLevelCount -
                    (value.FirstMipLevel - container.FirstMipLevel) &&
                value.FirstArrayLayer >= container.FirstArrayLayer &&
+               value.FirstArrayLayer - container.FirstArrayLayer <= container.ArrayLayerCount &&
                value.ArrayLayerCount <= container.ArrayLayerCount -
                    (value.FirstArrayLayer - container.FirstArrayLayer) &&
                (value.Aspects & ~container.Aspects) == 0;

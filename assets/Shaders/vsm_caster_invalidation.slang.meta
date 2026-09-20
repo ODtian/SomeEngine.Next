@@ -2,31 +2,6 @@
   "source_guid": "41b955c1-bfe2-4ed7-88c0-62bbc1e724b1",
   "importer": "SlangShaderImporter",
   "importer_settings": {
-    "cook_profile": "d3d12-sm6.2"
-  },
-  "importer_version": 26,
-  "input_hash": "ff1e9dbee61aa7fe2679c9111ba83a357d38011f47952625c2d46fdf940a35e5",
-  "inputs": [
-    {
-      "relative_path": "assets/Shaders/resource_effects.slang",
-      "content_hash": "60e4b3cb3ef2ea7882768f11b5e4b8a5dc7f8649bae31b0fe32331c5d061518b"
-    },
-    {
-      "relative_path": "assets/Shaders/vsm_caster_invalidation.slang",
-      "content_hash": "1d4fd4ab9fd5dd38c5ac6afc5bb2a175ace4782761d627caae4f0f7628c36550"
-    },
-    {
-      "relative_path": "assets/Shaders/vsm_sampling.slang",
-      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
-    }
-  ],
-  "outputs": [
-    {
-      "asset_guid": "b07eabe5-59c8-5487-a9d0-1042f55e99e9",
-      "sub_asset_key": "shader:main",
-      "input_hash": "ff1e9dbee61aa7fe2679c9111ba83a357d38011f47952625c2d46fdf940a35e5",
-      "dependencies": [],
-      "asset_path": "vsm_caster_invalidation.shader.asset"
-    }
-  ]
+    "cook_profile": "default"
+  }
 }

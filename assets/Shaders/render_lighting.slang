@@ -20,6 +20,7 @@ struct GPULight
 struct ClusteredLightGridParameters
 {
     float4x4 View;
+    float4x4 Projection;
     uint TileSizeX;
     uint TileSizeY;
     uint TileCountX;
@@ -29,14 +30,10 @@ struct ClusteredLightGridParameters
     uint MaxLightsPerCluster;
     uint DirectionalCount;
     uint NonDirectionalCount;
-    float P00;
-    float P11;
     uint ScreenWidth;
     uint ScreenHeight;
     uint CellCountPerView;
-    uint Pad0;
-    uint Pad1;
-    uint Pad2;
+    uint GroupsPerLight;
 };
 
 uint ClusteredLightDepthSlice(

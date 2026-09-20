@@ -1,198 +1,110 @@
+using System.Collections.Immutable;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
-using EngineTexture = SomeEngine.Assets.Schema.Texture;
+using EngineTexture = SomeEngine.Assets.Schema.TextureData;
 using RhiTexture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
-    private readonly Dictionary<SomeEngine.Graphics.Buffer, GraphBufferId> _materialBuffers = [];
+    private readonly record struct MaterialBuffer(GraphBufferId Id, int References, bool RegisteredHere);
+    private ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> _materialBuffers =
+        ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer>.Empty;
 
-    private void ReconcileMaterialBuffers(ClusterMaterialAssignmentSet assignments)
+    private ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> UpdateMaterialBuffers(
+        ref RenderGraphEdit edit, ClusterMaterialAssignmentSet assignments)
+    {
+        var changes = new Dictionary<SomeEngine.Graphics.Buffer, int>();
+        foreach (long id in assignments.ChangedMaterialIds)
+        {
+            if (_installedAssignments is not null && _installedAssignments.TryGetMaterial(id, out MaterialData before))
+                foreach (SomeEngine.Graphics.Buffer buffer in MaterialBuffers(before))
+                    changes[buffer] = changes.GetValueOrDefault(buffer) - 1;
+            if (assignments.TryGetMaterial(id, out MaterialData after))
+                foreach (SomeEngine.Graphics.Buffer buffer in MaterialBuffers(after))
+                    changes[buffer] = changes.GetValueOrDefault(buffer) + 1;
+        }
+        var buffers = _materialBuffers;
+        foreach ((SomeEngine.Graphics.Buffer buffer, int change) in changes)
+        {
+            if (change == 0) continue;
+            if (buffers.TryGetValue(buffer, out MaterialBuffer current))
+            {
+                int references = checked(current.References + change);
+                if (references != 0) buffers = buffers.SetItem(buffer, current with { References = references });
+                else
+                {
+                    if (current.RegisteredHere) edit.Remove(current.Id);
+                    buffers = buffers.Remove(buffer);
+                }
+            }
+            else
+            {
+                bool registeredHere = !_graph.TryGetBufferId(buffer, out GraphBufferId id);
+                if (registeredHere)
+                    id = edit.RegisterExternalBuffer(buffer,
+                        [new BufferBoundaryState(new BufferRange(0, buffer.Info.Size), buffer.InitialSync,
+                            buffer.InitialAccess, ResourceContentState.Defined)]);
+                buffers = buffers.Add(buffer, new MaterialBuffer(id, change, registeredHere));
+            }
+        }
+        return buffers;
+    }
+
+    private static HashSet<SomeEngine.Graphics.Buffer> MaterialBuffers(MaterialData material)
     {
         var resources = new HashSet<SomeEngine.Graphics.Buffer>();
-        foreach (Material material in assignments.DistinctMaterials)
-            for (uint slot = 0; slot < material.PropertyCount; slot++)
-                switch (material.GetDeviceResource(slot))
-                {
-                    case BufferCbv view: resources.Add(view.Description.Buffer); break;
-                    case BufferSrv view: resources.Add(view.Description.Buffer); break;
-                    case BufferUav view:
-                        resources.Add(view.Description.Buffer);
-                        if (view.Description.CounterBuffer is { } counter) resources.Add(counter);
-                        break;
-                    case AccelerationStructureSrv view: resources.Add(view.Resource.Info.Storage); break;
-                }
-        var added = new Dictionary<SomeEngine.Graphics.Buffer, GraphBufferId>();
-        var removed = new List<SomeEngine.Graphics.Buffer>();
-        RenderGraphEdit edit = _graph.BeginEdit();
-        try
-        {
-            foreach (SomeEngine.Graphics.Buffer buffer in resources)
+        for (uint property = 0; property < material.PropertyCount; property++)
+            switch (material.GetValue(property))
             {
-                if (_graph.TryGetBufferId(buffer, out _)) continue;
-                added.Add(buffer, edit.RegisterExternalBuffer(buffer,
-                    [new BufferBoundaryState(new BufferRange(0, buffer.Info.Size), buffer.InitialSync,
-                        buffer.InitialAccess, ResourceContentState.Defined)]));
+                case BufferCbv view: resources.Add(view.Description.Buffer); break;
+                case BufferSrv view: resources.Add(view.Description.Buffer); break;
+                case BufferUav view:
+                    resources.Add(view.Description.Buffer);
+                    if (view.Description.CounterBuffer is { } counter) resources.Add(counter);
+                    break;
+                case AccelerationStructureSrv view: resources.Add(view.Resource.Info.Storage); break;
             }
-            foreach ((SomeEngine.Graphics.Buffer buffer, GraphBufferId id) in _materialBuffers)
-                if (!resources.Contains(buffer))
-                {
-                    edit.Remove(id);
-                    removed.Add(buffer);
-                }
-            edit.Commit();
-        }
-        finally { edit.Dispose(); }
-        foreach (SomeEngine.Graphics.Buffer buffer in removed) _materialBuffers.Remove(buffer);
-        foreach (var value in added) _materialBuffers.Add(value.Key, value.Value);
+        return resources;
     }
 
     private readonly Dictionary<SamplerDesc, Sampler> _materialSamplers = [];
-    private readonly HashSet<Material> _observedMaterials = [];
-    private bool _materialsChanged = true;
+    private ClusterMaterialAssignmentSet? _installedAssignments;
 
-    private void MaterialChanged(Material material) => _materialsChanged = true;
-
-    private void ObserveMaterials(ClusterMaterialAssignmentSet assignments)
+    private bool CollectMaterialChanges(ClusterMaterialAssignmentSet assignments)
     {
-        foreach (Material material in _observedMaterials) material.Changed -= MaterialChanged;
-        _observedMaterials.Clear();
-        foreach (Material material in assignments.DistinctMaterials)
-            if (_observedMaterials.Add(material)) material.Changed += MaterialChanged;
-        _materialsChanged = false;
+        bool resourcesChanged = false;
+        foreach (MaterialData material in assignments.ChangedMaterials)
+        {
+            if (_installedAssignments is null ||
+                !_installedAssignments.TryGetMaterial(material.MaterialId, out MaterialData previous))
+            {
+                resourcesChanged = true;
+                continue;
+            }
+            if (ReferenceEquals(material, previous)) continue;
+            if (!ReferenceEquals(material.ShaderAsset, previous.ShaderAsset) ||
+                material.ShaderGuid != previous.ShaderGuid)
+            {
+                resourcesChanged = true;
+                continue;
+            }
+            for (uint property = 0; property < material.PropertyCount; property++)
+                if (material.GetPropertyRevision(property) != previous.GetPropertyRevision(property) &&
+                    (_rasterStages!.UsesResourceProperty(material.MaterialId, property) ||
+                     _shadeStages!.UsesResourceProperty(material.MaterialId, property)))
+                    resourcesChanged = true;
+        }
+        return resourcesChanged;
     }
 
-    private void BindRasterStages(
-        ref RenderGraphEdit graph,
-        ClusterRasterStageSet rasterStages)
+    private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments)
     {
-        _materialInputsAreShade = false;
-        for (int index = 0; index < _softwareRasterPassBindings.Count; index++)
-        {
-            ClusterSoftwareRasterPassBinding passBinding = _softwareRasterPassBindings[index];
-            ClusterRasterInvocation invocation =
-                rasterStages.Invocations[checked((int)passBinding.Invocation)];
-            _materialInputIndex = checked((int)passBinding.Invocation);
-            PassDefinition pass = graph.GetPass(passBinding.Pass);
-            BindSoftwareRasterResources(
-                ref graph,
-                ref pass,
-                invocation,
-                passBinding.Uniforms,
-                passBinding.PolicyTarget);
-        }
-
-        for (int index = 0; index < _hardwareRasterPassBindings.Count; index++)
-        {
-            ClusterHardwareRasterPassBinding passBinding = _hardwareRasterPassBindings[index];
-            ClusterRasterInvocation invocation =
-                rasterStages.Invocations[checked((int)passBinding.Invocation)];
-            _materialInputIndex = checked((int)passBinding.Invocation);
-            PassDefinition pass = graph.GetPass(passBinding.Pass);
-            BindHardwareRasterResources(
-                ref graph,
-                ref pass,
-                invocation,
-                passBinding.Uniforms,
-                passBinding.DispatchUniforms,
-                passBinding.PolicyTarget);
-        }
-
-        for (int index = 0; index < _tessellationSeedPassBindings.Count; index++)
-        {
-            ClusterTessellationPassBinding passBinding = _tessellationSeedPassBindings[index];
-            ClusterRasterInvocation invocation =
-                rasterStages.Invocations[checked((int)passBinding.Invocation)];
-            ClusterTessellationInvocation tessellation = invocation.Tessellation ??
-                throw new InvalidOperationException("A recorded tessellation seed pass lost its material stages.");
-            _materialInputIndex = checked((int)passBinding.Invocation);
-            PassDefinition pass = graph.GetPass(passBinding.Pass);
-            BindTessellationResources(
-                ref graph,
-                ref pass,
-                invocation,
-                tessellation.SeedResources,
-                passBinding.Uniforms,
-                passBinding.PhaseOne,
-                passBinding.NextLevelArgument,
-                PipelineSync.ComputeShading,
-                passBinding.PolicyTarget);
-        }
-
-        for (int index = 0; index < _tessellationSplitPassBindings.Count; index++)
-        {
-            ClusterTessellationPassBinding passBinding = _tessellationSplitPassBindings[index];
-            ClusterRasterInvocation invocation =
-                rasterStages.Invocations[checked((int)passBinding.Invocation)];
-            ClusterTessellationInvocation tessellation = invocation.Tessellation ??
-                throw new InvalidOperationException("A recorded tessellation split pass lost its material stages.");
-            _materialInputIndex = checked((int)passBinding.Invocation);
-            PassDefinition pass = graph.GetPass(passBinding.Pass);
-            BindTessellationResources(
-                ref graph,
-                ref pass,
-                invocation,
-                tessellation.SplitResources,
-                passBinding.Uniforms,
-                passBinding.PhaseOne,
-                passBinding.NextLevelArgument,
-                PipelineSync.ComputeShading,
-                passBinding.PolicyTarget);
-        }
-
-        for (int index = 0; index < _tessellationDicePassBindings.Count; index++)
-        {
-            ClusterTessellationPassBinding passBinding = _tessellationDicePassBindings[index];
-            ClusterRasterInvocation invocation =
-                rasterStages.Invocations[checked((int)passBinding.Invocation)];
-            ClusterTessellationInvocation tessellation = invocation.Tessellation ??
-                throw new InvalidOperationException("A recorded tessellation dice pass lost its material stages.");
-            ClusterRasterStageResources<ClusterTessellationCoreResource> diceResources =
-                tessellation.DiceResources ?? throw new InvalidOperationException(
-                    "A recorded tessellation dice pass has no compute dicing resources.");
-            _materialInputIndex = checked((int)passBinding.Invocation);
-            PassDefinition pass = graph.GetPass(passBinding.Pass);
-            BindTessellationResources(
-                ref graph,
-                ref pass,
-                invocation,
-                diceResources,
-                passBinding.Uniforms,
-                passBinding.PhaseOne,
-                passBinding.NextLevelArgument,
-                PipelineSync.ComputeShading,
-                passBinding.PolicyTarget);
-        }
-
-        for (int index = 0; index < _tessellationHardwarePassBindings.Count; index++)
-        {
-            ClusterTessellationHardwarePassBinding passBinding =
-                _tessellationHardwarePassBindings[index];
-            ClusterRasterInvocation invocation =
-                rasterStages.Invocations[checked((int)passBinding.Invocation)];
-            ClusterTessellationInvocation tessellation = invocation.Tessellation ??
-                throw new InvalidOperationException(
-                    "A recorded tessellation hardware pass lost its material stages.");
-            ClusterRasterStageResources<ClusterTessellationCoreResource> hardwareResources =
-                tessellation.HardwareResources ?? throw new InvalidOperationException(
-                    "A recorded tessellation hardware pass has no raster resources.");
-            _materialInputIndex = checked((int)passBinding.Invocation);
-            PassDefinition pass = graph.GetPass(passBinding.Pass);
-            BindTessellationResources(
-                ref graph,
-                ref pass,
-                invocation,
-                hardwareResources,
-                passBinding.Uniforms,
-                passBinding.PhaseOne,
-                0u,
-                PipelineSync.AllShading,
-                passBinding.PolicyTarget);
-        }
+        _installedAssignments = assignments;
+        _materialAssignments.AcceptMaterialChanges(assignments);
     }
 
     private static bool BindInactiveStageResource(
@@ -214,7 +126,7 @@ public sealed partial class ClusterPipelineSystem
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
         ClusterRasterStageResources<ClusterTessellationCoreResource> stage,
-        GraphBufferId uniformBuffer,
+        GraphBufferInput uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
         PipelineSync sync,
@@ -257,7 +169,7 @@ public sealed partial class ClusterPipelineSystem
                 {
                     continue;
                 }
-                featureBinder(ref graph, ref pass);
+                featureBinder(ref graph, ref pass, sync);
                 continue;
             }
             ClusterMaterialStageBinding materialBinding = stage.MaterialBindings[resourceIndex];
@@ -279,7 +191,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterTessellationCoreResource resource,
-        GraphBufferId uniformBuffer,
+        GraphBufferInput uniformBuffer,
         bool phaseOne,
         uint nextLevelArgument,
         PipelineSync sync)
@@ -328,6 +240,15 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster tessellation visible clusters"),
+                    sync,
+                    BufferContentScope.CountBoundedPrefix);
+                return;
+            case ClusterTessellationCoreResource.RasterWindows:
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        frame.VisibleClusterRasterWindows,
+                        structureStride: VisibleClusterRasterWindowStride,
+                        label: "Cluster tessellation raster windows"),
                     sync,
                     BufferContentScope.CountBoundedPrefix);
                 return;
@@ -501,7 +422,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
-        GraphBufferId uniformBuffer,
+        GraphBufferInput uniformBuffer,
         bool policyTarget)
     {
         ClusterRasterStageResources<ClusterSoftwareRasterCoreResource> stage =
@@ -534,16 +455,11 @@ public sealed partial class ClusterPipelineSystem
                     uniformBuffer);
                 continue;
             }
+            if (!policyTarget && BindNeutralRasterTargetResource(ref graph, ref pass, resource))
+                continue;
             if (stage.FeatureBinders[resourceIndex] is { } featureBinder)
             {
-                if (!policyTarget && BindNeutralRasterTargetResource(
-                        ref graph,
-                        ref pass,
-                        resource))
-                {
-                    continue;
-                }
-                featureBinder(ref graph, ref pass);
+                featureBinder(ref graph, ref pass, PipelineSync.ComputeShading);
                 continue;
             }
             ClusterMaterialStageBinding materialBinding = stage.MaterialBindings[resourceIndex];
@@ -565,8 +481,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterRasterInvocation invocation,
-        GraphBufferId uniformBuffer,
-        GraphBufferId dispatchUniformBuffer,
+        GraphBufferInput uniformBuffer,
+        GraphBufferInput dispatchUniformBuffer,
         bool policyTarget)
     {
         ClusterRasterStageResources<ClusterHardwareRasterCoreResource> stage =
@@ -599,16 +515,11 @@ public sealed partial class ClusterPipelineSystem
                     dispatchUniformBuffer);
                 continue;
             }
+            if (!policyTarget && BindNeutralRasterTargetResource(ref graph, ref pass, resource))
+                continue;
             if (stage.FeatureBinders[resourceIndex] is { } featureBinder)
             {
-                if (!policyTarget && BindNeutralRasterTargetResource(
-                        ref graph,
-                        ref pass,
-                        resource))
-                {
-                    continue;
-                }
-                featureBinder(ref graph, ref pass);
+                featureBinder(ref graph, ref pass, PipelineSync.AllShading);
                 continue;
             }
             ClusterMaterialStageBinding materialBinding = stage.MaterialBindings[resourceIndex];
@@ -633,12 +544,28 @@ public sealed partial class ClusterPipelineSystem
     {
         switch (resource.Name, resource.Type)
         {
-            case ("RasterTargetInvocations", ResourceBindingType.BufferSrv):
+            case ("RasterTargetViews", ResourceBindingType.BufferSrv):
                 _ = pass.Bind(
                     graph.CreateBufferSrv(
                         _frameResources.NeutralPolicyView,
-                        structureStride: 48,
-                        label: "Cluster neutral raster target invocation"),
+                        structureStride: 72,
+                        label: "Cluster neutral raster target view"),
+                    PipelineSync.AllShading);
+                return true;
+            case ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv):
+            case ("RasterTargetPageTable", ResourceBindingType.BufferSrv):
+            case ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv):
+                uint stride = resource.Name switch
+                {
+                    "RasterTargetPageHierarchy" => sizeof(uint),
+                    "RasterTargetPageTable" => 4u * sizeof(uint),
+                    _ => 2u * sizeof(uint),
+                };
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        _frameResources.NeutralPolicyView,
+                        structureStride: stride,
+                        label: $"Cluster neutral {resource.Name}"),
                     PipelineSync.AllShading);
                 return true;
             case ("RasterTargetOutput", ResourceBindingType.TextureUav):
@@ -668,7 +595,7 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterSoftwareRasterCoreResource resource,
-        GraphBufferId uniformBuffer)
+        GraphBufferInput uniformBuffer)
     {
         FrameResources frame = _frameResources;
         switch (resource)
@@ -710,6 +637,15 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster software raster visible clusters"),
+                    PipelineSync.ComputeShading,
+                    BufferContentScope.CountBoundedPrefix);
+                return;
+            case ClusterSoftwareRasterCoreResource.RasterWindows:
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        frame.VisibleClusterRasterWindows,
+                        structureStride: VisibleClusterRasterWindowStride,
+                        label: "Cluster software raster windows"),
                     PipelineSync.ComputeShading,
                     BufferContentScope.CountBoundedPrefix);
                 return;
@@ -784,8 +720,8 @@ public sealed partial class ClusterPipelineSystem
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         ClusterHardwareRasterCoreResource resource,
-        GraphBufferId uniformBuffer,
-        GraphBufferId dispatchUniformBuffer)
+        GraphBufferInput uniformBuffer,
+        GraphBufferInput dispatchUniformBuffer)
     {
         FrameResources frame = _frameResources;
         switch (resource)
@@ -843,6 +779,15 @@ public sealed partial class ClusterPipelineSystem
                         frame.VisibleClusters,
                         structureStride: VisibleClusterStride,
                         label: "Cluster hardware raster visible clusters"),
+                    PipelineSync.AllShading,
+                    BufferContentScope.CountBoundedPrefix);
+                return;
+            case ClusterHardwareRasterCoreResource.RasterWindows:
+                _ = pass.Bind(
+                    graph.CreateBufferSrv(
+                        frame.VisibleClusterRasterWindows,
+                        structureStride: VisibleClusterRasterWindowStride,
+                        label: "Cluster hardware raster windows"),
                     PipelineSync.AllShading,
                     BufferContentScope.CountBoundedPrefix);
                 return;
@@ -918,74 +863,63 @@ public sealed partial class ClusterPipelineSystem
         FrameResources frame = _frameResources;
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
             graph.CreateBufferSrv(frame.PageHeap, label: label)));
-        if (!_pageHeapReaderPasses.Contains(pass.Id)) _pageHeapReaderPasses.Add(pass.Id);
+        _pageHeapReaderPasses = _pageHeapReaderPasses.Add(pass.Id);
     }
 
-    private void BindShadeStages(
-        ref RenderGraphEdit graph,
-        ClusterShadeStageSet shadeStages)
+    private GraphBufferInput BindShadeResources(
+        ref RenderGraphEdit graph, GraphPassId passId, ClusterShadeInvocation invocation,
+        ClusterShadeStageSet stages)
     {
-        if (_shadePasses.Length != shadeStages.Invocations.Count)
-            throw new InvalidOperationException("The retained shade passes do not match the installed invocations.");
-
         _materialInputsAreShade = true;
+        _materialInputBin = invocation.BinIndex;
         _shadeScalarOffsetsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
         _shadeScalarsInput ??= graph.CreateBufferInput(BufferUsages.ShaderRead);
-        _shadeUniformInputs = new GraphBufferInput[shadeStages.Invocations.Count];
-
-        for (int index = 0; index < shadeStages.Invocations.Count; index++)
+        PassDefinition pass = graph.GetPass(passId);
+        pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
+        GraphBufferInput uniformBuffer = UploadUniform(ref graph,
+            ShadeUniforms(invocation.BinIndex, stages), "Cluster shade parameters");
+        ReadOnlySpan<ClusterLinkedStageResource> resources = invocation.Resources.Resources;
+        for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
         {
-            ClusterShadeInvocation invocation = shadeStages.Invocations[index];
-            GraphPassId passId = _shadePasses[index];
-            PassDefinition pass = graph.GetPass(passId);
-            pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
-
-            _materialInputIndex = index;
-            GraphBufferInput uniformBuffer = graph.CreateBufferInput(BufferUsages.Constant);
-            _shadeUniformInputs[index] = uniformBuffer;
-
-            ReadOnlySpan<ClusterLinkedStageResource> resources = invocation.Resources.Resources;
-            for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
+            ref readonly ClusterLinkedStageResource resource = ref resources[resourceIndex];
+            if (BindInactiveStageResource(ref pass, resource))
+                continue;
+            if (resource.Element != 0)
             {
-                ref readonly ClusterLinkedStageResource resource = ref resources[resourceIndex];
-                if (BindInactiveStageResource(ref pass, resource))
-                    continue;
-                if (resource.Element != 0)
-                {
-                    throw new NotSupportedException(
-                        $"Cluster material resource arrays are not supported: '{resource.Name}[{resource.Element}]'.");
-                }
-                ClusterShadeCoreResource coreResource = invocation.CoreResources[resourceIndex];
-                if (coreResource != ClusterShadeCoreResource.None)
-                {
-                    BindShadeCoreResource(
-                        ref graph,
-                        ref pass,
-                        coreResource,
-                        uniformBuffer,
-                        _shadeScalarsInput,
-                        _shadeScalarOffsetsInput);
-                    continue;
-                }
-                if (invocation.FeatureResourceBinders[resourceIndex] is { } featureBinder)
-                {
-                    featureBinder(ref graph, ref pass);
-                    continue;
-                }
-                ClusterMaterialStageBinding materialBinding = invocation.MaterialBindings[resourceIndex];
-                if (!materialBinding.IsMaterialResource)
-                {
-                    throw new InvalidDataException(
-                        $"Final shade entry requires unknown linked resource '{resource.Name}'.");
-                }
-                BindStageMaterialResource(
+                throw new NotSupportedException(
+                    $"Cluster material resource arrays are not supported: '{resource.Name}[{resource.Element}]'.");
+            }
+            ClusterShadeCoreResource coreResource = invocation.CoreResources[resourceIndex];
+            if (coreResource != ClusterShadeCoreResource.None)
+            {
+                BindShadeCoreResource(
                     ref graph,
                     ref pass,
-                    resource,
-                    materialBinding,
-                    PipelineSync.ComputeShading);
+                    coreResource,
+                    uniformBuffer,
+                    _shadeScalarsInput,
+                    _shadeScalarOffsetsInput);
+                continue;
             }
+            if (invocation.FeatureResourceBinders[resourceIndex] is { } featureBinder)
+            {
+                featureBinder(ref graph, ref pass, PipelineSync.ComputeShading);
+                continue;
+            }
+            ClusterMaterialStageBinding materialBinding = invocation.MaterialBindings[resourceIndex];
+            if (!materialBinding.IsMaterialResource)
+            {
+                throw new InvalidDataException(
+                    $"Final shade entry requires unknown linked resource '{resource.Name}'.");
+            }
+            BindStageMaterialResource(
+                ref graph,
+                ref pass,
+                resource,
+                materialBinding,
+                PipelineSync.ComputeShading);
         }
+        return uniformBuffer;
     }
 
     private void BindShadeCoreResource(
@@ -1078,7 +1012,7 @@ public sealed partial class ClusterPipelineSystem
                     graph.CreateBufferSrv(
                         frame.PageHeap,
                         label: "Cluster shade PageHeap")));
-                if (!_pageHeapReaderPasses.Contains(pass.Id)) _pageHeapReaderPasses.Add(pass.Id);
+                _pageHeapReaderPasses = _pageHeapReaderPasses.Add(pass.Id);
                 return;
             case ClusterShadeCoreResource.OutputColor:
                 _ = pass.Bind(
@@ -1139,18 +1073,27 @@ public sealed partial class ClusterPipelineSystem
     {
         GraphParameterInput input = graph.CreateParameterInput(binding.Type);
         pass.Bind(input, sync);
-        _materialInputs.Add(new MaterialInput(pass.Id, input, binding.MaterialSlot, resource.Name,
-            _materialInputIndex, _materialInputsAreShade));
+        ImmutableList<MaterialInput> inputs = _materialInputs.TryGetValue(pass.Id, out var existing)
+            ? existing : [];
+        _materialInputs = _materialInputs.SetItem(pass.Id, inputs.Add(new MaterialInput(
+            pass.Id, input, binding.MaterialSlot, resource.Name, _materialInputBin, _materialInputsAreShade)));
     }
 
     private ResourceBinding GetMaterialTextureSrv(
         ref RenderGraphFrame graph,
         GraphPassId pass,
-        Material material,
+        MaterialData material,
         uint materialSlot,
         string name)
     {
-        EngineTexture? asset = material.GetTexture(materialSlot);
+        object? value = material.GetValue(materialSlot);
+        EngineTexture? asset = value switch
+        {
+            null => null,
+            EngineTexture assetTexture => assetTexture,
+            _ => throw new InvalidDataException(
+                $"Material '{material.Name}' slot '{name}' is not a Texture."),
+        };
 
         TextureSrv textureView;
         if (asset is null)
@@ -1170,11 +1113,12 @@ public sealed partial class ClusterPipelineSystem
     private ResourceBinding GetMaterialTextureUav(
         ref RenderGraphFrame graph,
         GraphPassId pass,
-        Material material,
+        MaterialData material,
         uint materialSlot,
         string name)
     {
-        EngineTexture asset = material.GetTexture(materialSlot) ?? throw new InvalidDataException(
+        object? value = material.GetValue(materialSlot);
+        EngineTexture asset = value as EngineTexture ?? throw new InvalidDataException(
             $"Material '{material.Name}' slot '{name}' must contain a Texture for writable access.");
         RhiTexture textureResource = _renderDevice.PrepareTexture(ref graph, pass, asset);
         TextureInfo info = textureResource.Info;
@@ -1192,7 +1136,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ResourceBinding GetMaterialBufferSrv(
-        Material material,
+        MaterialData material,
         uint materialSlot,
         string name)
     {
@@ -1201,7 +1145,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ResourceBinding GetMaterialBufferUav(
-        Material material,
+        MaterialData material,
         uint materialSlot,
         string name)
     {
@@ -1210,7 +1154,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ResourceBinding GetMaterialConstantBuffer(
-        Material material,
+        MaterialData material,
         uint materialSlot,
         string name)
     {
@@ -1219,7 +1163,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ResourceBinding GetMaterialAccelerationStructure(
-        Material material,
+        MaterialData material,
         uint materialSlot,
         string name)
     {
@@ -1230,18 +1174,25 @@ public sealed partial class ClusterPipelineSystem
         return ResourceBinding.AccelerationStructure(view);
     }
 
-    private static T RequireMaterialValue<T>(Material material, uint slot, string name)
-        where T : DeviceResource
+    private static T RequireMaterialValue<T>(MaterialData material, uint slot, string name)
+        where T : class
     {
-        DeviceResource? value = material.GetDeviceResource(slot);
+        object? value = material.GetValue(slot);
         DevelopmentCheck.Require(value is T,
             $"Material '{material.Name}' slot '{name}' must contain a {typeof(T).Name}.");
         return (T)value!;
     }
 
-    private Sampler ResolveMaterialSampler(Material material, uint materialSlot, string name)
+    private Sampler ResolveMaterialSampler(MaterialData material, uint materialSlot, string name)
     {
-        SamplerDesc description = material.GetSampler(materialSlot);
+        object? value = material.GetValue(materialSlot);
+        SamplerDesc description = value switch
+        {
+            SamplerDesc sampler => sampler,
+            null => ClusterMaterialBindingDefaults.Sampler,
+            _ => throw new InvalidDataException(
+                $"Material '{material.Name}' slot '{name}' is not a SamplerDesc."),
+        };
         if (_materialSamplers.TryGetValue(description, out Sampler? samplerResource))
             return samplerResource;
         samplerResource = _backend.CreateSampler(_device, description);
@@ -1260,48 +1211,64 @@ public sealed partial class ClusterPipelineSystem
     }
 
 
-    private readonly List<MaterialInput> _materialInputs = [];
-    private int _materialInputIndex;
+    private ImmutableDictionary<GraphPassId, ImmutableList<MaterialInput>> _materialInputs =
+        ImmutableDictionary<GraphPassId, ImmutableList<MaterialInput>>.Empty;
+    private uint _materialInputBin;
     private bool _materialInputsAreShade;
     private GraphBufferInput _shadeScalarOffsetsInput = null!;
     private GraphBufferInput _shadeScalarsInput = null!;
-    private GraphBufferInput[] _shadeUniformInputs = [];
-    private uint[] _shadeScalarOffsets = [];
-    private byte[] _shadeScalars = [];
+
+    private ClusterMaterialScalars _materialScalars = ClusterMaterialScalars.Empty;
+    private GraphBufferId _scalarBytes;
+    private GraphBufferId _scalarOffsets;
+
+    private void UpdateMaterialIndexBuffers(ref RenderGraphEdit edit,
+        ClusterRasterStageSet raster, ClusterShadeStageSet shade)
+    {
+        Update(ref edit, _frameResources.RasterSlots, raster.BinIndices, raster.ChangedOffsets);
+        Update(ref edit, _frameResources.ShadeSlots, shade.BinIndices, shade.ChangedOffsets);
+
+        void Update(ref RenderGraphEdit graph, GraphBufferId buffer, ClusterUploadData values,
+            IReadOnlyList<int> addresses)
+        {
+            BufferRange[] changes = addresses.Select(address => new BufferRange(
+                checked((ulong)address * sizeof(uint)), sizeof(uint))).ToArray();
+            _uploads!.SetChangedValue(ref graph, buffer,
+                values, changes);
+        }
+    }
+
+    private void UpdateScalarBuffers(ref RenderGraphEdit edit, ClusterMaterialScalars scalars)
+    {
+        _uploads!.SetChangedValue(ref edit, _scalarBytes, scalars.Bytes, scalars.ByteChanges);
+        _uploads.SetChangedValue(ref edit, _scalarOffsets,
+            scalars.Offsets, scalars.OffsetChanges);
+    }
 
     private readonly record struct MaterialInput(
         GraphPassId Pass, GraphParameterInput Input, uint MaterialSlot, string Name,
-        int StageIndex, bool Shade);
+        uint Bin, bool Shade);
 
     private void UpdateShadeInputs(ref RenderGraphFrame graph, ClusterShadeStageSet stages)
     {
-        graph.SetBufferInput(_shadeScalarOffsetsInput, graph.Upload<uint>(
-            _shadeScalarOffsets, BufferUsages.ShaderRead, "Cluster material scalar offsets"));
-        graph.SetBufferInput(_shadeScalarsInput, graph.Upload<byte>(
-            _shadeScalars, BufferUsages.ShaderRead, "Cluster material scalars"));
-        Span<ClusterShadeUniforms> uniforms = stackalloc ClusterShadeUniforms[1];
-        for (int index = 0; index < stages.Invocations.Count; index++)
-        {
-            uniforms[0] = new ClusterShadeUniforms
-            {
-                ScreenWidth = checked((uint)_frameResources.Width),
-                ScreenHeight = checked((uint)_frameResources.Height),
-                ShadingBin = stages.Invocations[index].BinIndex,
-                ShadeBinCount = stages.BinCount,
-                MaterialSlotCapacity = checked((uint)stages.Slots.Length),
-            };
-            graph.SetBufferInput(_shadeUniformInputs[index], graph.Upload<ClusterShadeUniforms>(
-                uniforms, BufferUsages.Constant, "Cluster shade parameters"));
-        }
+        ClusterDispatchParameters binDispatch = new(new DispatchArguments(
+            Math.Max(1u, (stages.BinCount + 127u) / 128u), 1, 1));
+        graph.SetPassData(_shadeClearPass, binDispatch);
+        graph.SetPassData(_shadeReservePass, binDispatch);
+        graph.SetBufferInput(_shadeScalarOffsetsInput, new GraphBufferSlice(_scalarOffsets,
+            new BufferRange(0, checked((ulong)_materialScalars.Offsets.Length))));
+        graph.SetBufferInput(_shadeScalarsInput, new GraphBufferSlice(_scalarBytes,
+            new BufferRange(0, checked((ulong)_materialScalars.Bytes.Length))));
     }
 
     private void UpdateMaterialInputs(ref RenderGraphFrame graph)
     {
-        foreach (MaterialInput input in _materialInputs)
+        foreach (ImmutableList<MaterialInput> inputs in _materialInputs.Values)
+        foreach (MaterialInput input in inputs)
         {
-            Material material = input.Shade
-                ? _installedShadeStages!.Invocations[input.StageIndex].Material
-                : _installedRasterStages!.Invocations[input.StageIndex].Material;
+            MaterialData material = input.Shade
+                ? _installedShadeStages!.GetBin(input.Bin).Material
+                : _installedRasterStages!.GetBin(input.Bin).Material;
             DevelopmentCheck.Require(input.Input.Type != ResourceBindingType.None && Enum.IsDefined(input.Input.Type),
                 "A material input requires a supported resource binding type.");
             ResourceBinding value = input.Input.Type switch

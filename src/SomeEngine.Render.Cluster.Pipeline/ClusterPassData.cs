@@ -87,34 +87,6 @@ internal readonly record struct ClusterLayerDispatch(
     uint GroupX,
     uint GroupY);
 
-internal readonly record struct ClusterSoftwareRasterPassBinding(
-    GraphPassId Pass,
-    uint Invocation,
-    GraphBufferId Uniforms,
-    bool PolicyTarget);
-
-internal readonly record struct ClusterHardwareRasterPassBinding(
-    GraphPassId Pass,
-    uint Invocation,
-    GraphBufferId Uniforms,
-    GraphBufferId DispatchUniforms,
-    bool PolicyTarget);
-
-internal readonly record struct ClusterTessellationPassBinding(
-    GraphPassId Pass,
-    uint Invocation,
-    GraphBufferId Uniforms,
-    bool PhaseOne,
-    uint NextLevelArgument,
-    bool PolicyTarget);
-
-internal readonly record struct ClusterTessellationHardwarePassBinding(
-    GraphPassId Pass,
-    uint Invocation,
-    GraphBufferId Uniforms,
-    bool PhaseOne,
-    bool PolicyTarget);
-
 internal readonly record struct ClusterBufferClearParameters(GraphBufferId Buffer)
 {
     internal static void Record(
@@ -615,7 +587,7 @@ internal struct ClusterFrameMetricsReadbackParameters
             parameters.VisibilityProbeX,
             parameters.VisibilityProbeY,
             0,
-            ClusterPipelineSystem.VisibilityProbePixelCount,
+            Math.Min(ClusterPipelineSystem.VisibilityProbePixelCount, visibility.Info.Width - parameters.VisibilityProbeX),
             1,
             1));
     }

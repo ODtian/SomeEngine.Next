@@ -1,15 +1,20 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 public sealed partial class RenderGraph : IDisposable
 {
-    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind)
+    internal void PropertyChanged(GraphIdentity identity, GraphStoreKind kind, bool refreshViews = true)
     {
-        foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind);
+        foreach (FrameSlot frame in _frameSlots) frame.ChangeProperty(identity, kind, refreshViews);
     }
 
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind)
     {
         foreach (FrameSlot frame in _frameSlots) frame.BoundaryChanged(identity, kind);
+    }
+
+    internal void CommandDataChanged(GraphIdentity identity)
+    {
+        foreach (FrameSlot frame in _frameSlots) frame.CommandDataChanged(identity);
     }
 
     private static long s_nextOwnerIdentity;
@@ -24,12 +29,16 @@ public sealed partial class RenderGraph : IDisposable
     private readonly object _structureGate = new();
     private readonly List<StructureTransition> _deferredRetirements = [];
     private GraphStructure _structure = new();
+    private GraphStructure? _editSource;
+    private GraphStructure? _editStructure;
+    private GraphEditChanges? _editChanges;
     private GraphStructureIndex _structureIndex = GraphStructureIndex.Empty;
     private long _editToken;
     private long _nextEditIdentity;
     private long _frameToken;
     private int _nextFrameSlot;
     private bool _disposed;
+    private bool _closing;
     private bool _lost;
 
     public RenderGraph(
@@ -89,16 +98,6 @@ public sealed partial class RenderGraph : IDisposable
     internal PersistentResourceAllocator PersistentResources => _persistentResources;
     internal HeapByteBudget HeapByteBudget => _heapByteBudget;
     internal int FrameSlotCount => _frameSlots.Length;
-    internal int InFlightCompletionCount
-    {
-        get
-        {
-            int count = 0;
-            foreach (FrameSlot slot in _frameSlots) count += slot.Completions.Count;
-            return count;
-        }
-    }
-
     public RenderGraphDesc Description { get; }
     public ulong StructureVersion { get; private set; }
     public string? Label => Description.Label;
@@ -118,11 +117,10 @@ public sealed partial class RenderGraph : IDisposable
         try
         {
             lock (_structureGate)
-                return new RenderGraphEdit(
-                    this,
-                    token,
-                    _structure.Fork(),
-                    new GraphEditChanges());
+            {
+                _editSource = _structure;
+                return new RenderGraphEdit(this, token);
+            }
         }
         catch
         {
@@ -130,6 +128,19 @@ public sealed partial class RenderGraph : IDisposable
             throw;
         }
     }
+
+    internal GraphStructure ReadEditStructure => _editStructure ?? _editSource!;
+
+    internal GraphStructure EditStructure
+    {
+        get
+        {
+            if (_editStructure is not null) return _editStructure;
+            lock (_structureGate) return _editStructure ??= _editSource!.Fork();
+        }
+    }
+
+    internal GraphEditChanges EditChanges => _editChanges ??= new GraphEditChanges();
 
     public bool TryBeginFrame(
         out RenderGraphFrame frame,
@@ -150,13 +161,17 @@ public sealed partial class RenderGraph : IDisposable
                 _nextFrameSlot = (index + 1) % _frameSlots.Length;
                 ulong identity = AllocateOwnerIdentity();
                 _frameToken = checked((long)identity);
-                frame = new RenderGraphFrame(slot.BeginExecution(
-                    this,
-                    identity,
-                    options,
-                    _structureIndex,
-                    StructureVersion));
-                return true;
+                try
+                {
+                    frame = new RenderGraphFrame(slot.BeginExecution(
+                        this, identity, options, _structureIndex, StructureVersion));
+                    return true;
+                }
+                catch
+                {
+                    _frameToken = 0;
+                    throw;
+                }
             }
         }
 
@@ -201,22 +216,6 @@ public sealed partial class RenderGraph : IDisposable
             _persistentResources.CollectCompleted();
         foreach (FrameSlot slot in _frameSlots)
             slot.CollectCompleted(_backend);
-    }
-
-    internal bool TryGetTransientPlacement(
-        GraphBufferId buffer,
-        out Heap? heap,
-        out ulong offset)
-    {
-        if (!buffer.Value.IsValid || buffer.Value.Owner != Identity)
-            throw new ArgumentException("The Buffer identity belongs to another RenderGraph.", nameof(buffer));
-        foreach (FrameSlot slot in _frameSlots)
-            if (slot.TransientResources is not null &&
-                slot.TransientResources.TryGetPlacement(buffer.Value, out heap, out offset))
-                return true;
-        heap = null;
-        offset = 0;
-        return false;
     }
 
     /// <summary>
@@ -277,8 +276,8 @@ public sealed partial class RenderGraph : IDisposable
             }
             foreach (FrameSlot slot in _frameSlots)
             {
-                slot.TransientResources?.Compact();
                 slot.ApplyEdit(changes);
+                slot.TransientResources?.Compact();
             }
 
         }
@@ -303,9 +302,11 @@ public sealed partial class RenderGraph : IDisposable
         }
 
         foreach (Queue queue in _queues)
-            if (queue.Type == policy.Type && QueueSupports(kind, queue.Type))
+            if ((policy.AllowsAnyType || queue.Type == policy.Type) && QueueSupports(kind, queue.Type))
                 return;
-        throw new NotSupportedException($"No registered {policy.Type} Queue can execute the pass.");
+        throw new NotSupportedException(policy.AllowsAnyType
+            ? $"No registered Queue supports {kind} commands."
+            : $"No registered {policy.Type} Queue can execute the pass.");
     }
 
     internal void ResolveQueueCandidates(
@@ -325,10 +326,12 @@ public sealed partial class RenderGraph : IDisposable
         }
 
         foreach (Queue queue in _queues)
-            if (queue.Type == policy.Type && QueueSupports(kind, queue.Type))
+            if ((policy.AllowsAnyType || queue.Type == policy.Type) && QueueSupports(kind, queue.Type))
                 destination.Add(queue);
         if (destination.Count == 0)
-            throw new NotSupportedException($"No registered {policy.Type} Queue can execute the pass.");
+            throw new NotSupportedException(policy.AllowsAnyType
+                ? $"No registered Queue supports {kind} commands."
+                : $"No registered {policy.Type} Queue can execute the pass.");
     }
 
     private static bool QueueSupports(GraphPassKind kind, QueueType queueType) => kind switch
@@ -349,17 +352,16 @@ public sealed partial class RenderGraph : IDisposable
             throw new NotSupportedException($"A {kind} pass cannot execute on a {type} Queue.");
     }
 
-    internal void CommitEdit(
-        long token,
-        GraphStructure staging,
-        GraphEditChanges changes)
+    internal void CommitEdit(long token)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.EditCommit);
         EnsureEdit(token);
         lock (_structureGate)
         {
             GraphStructure previous = _structure;
-            if (changes.IsEmpty)
+            GraphStructure staging = _editStructure ?? _editSource!;
+            GraphEditChanges? changes = _editChanges;
+            if (changes is null || changes.IsEmpty)
             {
 #if DEBUG
                 LastEditStatistics = default;
@@ -427,8 +429,15 @@ public sealed partial class RenderGraph : IDisposable
 
     private void EndEdit(long token)
     {
-        if (Interlocked.CompareExchange(ref _editToken, 0, token) != token)
-            throw new InvalidOperationException("The render graph edit token is no longer active.");
+        lock (_structureGate)
+        {
+            if (Volatile.Read(ref _editToken) != token)
+                throw new InvalidOperationException("The render graph edit token is no longer active.");
+            _editSource = null;
+            _editStructure = null;
+            _editChanges = null;
+            Interlocked.Exchange(ref _editToken, 0);
+        }
     }
 
     internal void EndFrame(ulong identity)
@@ -529,7 +538,7 @@ public sealed partial class RenderGraph : IDisposable
 
     private void EnsureAvailable()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed || _closing, this);
         if (_lost) throw new GraphicsException(GraphicsError.DeviceLost, "The RenderGraph Device is lost.");
     }
 
@@ -550,7 +559,7 @@ public sealed partial class RenderGraph : IDisposable
             throw new InvalidOperationException("A render graph edit or frame is active.");
         if (!_lost)
             WaitForSubmittedWork();
-        _disposed = true;
+        _closing = true;
         foreach (FrameSlot slot in _frameSlots)
             slot.Dispose();
         _commandContexts.Dispose();
@@ -571,6 +580,7 @@ public sealed partial class RenderGraph : IDisposable
         }
         _persistentResources.Dispose();
         foreach (GraphPass pass in _structure.Passes.Rows) pass.CallbackStorage.ClearData();
+        _disposed = true;
     }
 
     private void WaitForSubmittedWork()
@@ -588,7 +598,8 @@ public sealed partial class RenderGraph : IDisposable
                 if (endpoint.ReadyAfter.HasValue)
                     AddCompletion(completions, endpoint.ReadyAfter.Value);
         foreach (QueueCompletion completion in completions)
-            _ = _backend.WaitCpu(completion, Timeout.InfiniteTimeSpan);
+            if (_backend.WaitCpu(completion, Timeout.InfiniteTimeSpan) != WaitStatus.Completed)
+                throw new TimeoutException("Graph shutdown could not confirm submitted work completion.");
     }
 
     private void CollectRangeCompletions(

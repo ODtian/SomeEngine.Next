@@ -13,7 +13,7 @@ using Texture = SomeEngine.Graphics.Texture;
 
 namespace SomeEngine.Runtime;
 
-internal sealed class RuntimeUiRenderer : IDisposable
+internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutionObserver
 {
     private const int FontGraphId = 1;
     private const int InitialVertexCapacity = 10_000;
@@ -42,9 +42,9 @@ internal sealed class RuntimeUiRenderer : IDisposable
     private GraphBufferInput _uniform = null!;
     private GraphTextureInput _font = null!;
     private RuntimeUiPassData _passData;
-    private readonly BufferBoundaryState[] _vertexEndpoints = new BufferBoundaryState[2];
-    private readonly BufferBoundaryState[] _indexEndpoints = new BufferBoundaryState[2];
-    private readonly BufferBoundaryState[] _uniformEndpoints = new BufferBoundaryState[2];
+    private readonly BufferBoundaryState[][] _vertexEndpoints = new BufferBoundaryState[2][];
+    private readonly BufferBoundaryState[][] _indexEndpoints = new BufferBoundaryState[2][];
+    private readonly BufferBoundaryState[][] _uniformEndpoints = new BufferBoundaryState[2][];
     private readonly QueueCompletion[][] _readiness = [[], []];
     private Texture? _fontTexture;
     private Sampler? _fontSampler;
@@ -111,8 +111,8 @@ internal sealed class RuntimeUiRenderer : IDisposable
                 _uniformMappings[generation] = _backend.Map(_uniformBuffers[generation]!, MapType.Write,
                     new BufferRange(0, UniformBufferSize));
                 _uniformMappings[generation].Bytes.Clear();
-                _uniformEndpoints[generation] = InitialBufferEndpoint(
-                    _uniformBuffers[generation]!);
+                _uniformEndpoints[generation] = [InitialBufferEndpoint(
+                    _uniformBuffers[generation]!)];
                 EnsureBuffers(
                     generation,
                     InitialVertexCapacity,
@@ -235,7 +235,9 @@ internal sealed class RuntimeUiRenderer : IDisposable
         ImGui.Text(metrics.Focused ? "Window focus: active" : "Window focus: inactive");
         ImGui.Separator();
         _ = ImGui.Checkbox("Animate scene", ref animateScene);
-        ImGui.TextUnformatted("Temporal resolve: enabled (8-sample centered Halton)");
+        ImGui.TextUnformatted(metrics.TemporalAntialiasing
+            ? "Temporal resolve: enabled (8-sample centered Halton)"
+            : "Temporal resolve: disabled");
         ImGui.Separator();
         ImGui.TextUnformatted("WASD + Space/Ctrl: move camera");
         ImGui.TextUnformatted("Hold right mouse: look");
@@ -320,6 +322,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
             _writeGeneration = generation;
             graph.SetPassData(_pass, _passData with { Width = width, Height = height });
             graph.SetPassEnabled(_pass, true);
+            graph.ObserveExecution(this);
         }
         catch
         {
@@ -333,11 +336,11 @@ internal sealed class RuntimeUiRenderer : IDisposable
     private void UpdateInputs(ref RenderGraphFrame graph, int generation)
     {
         graph.SetBufferInput(_vertices, new GraphBufferSlice(
-            graph.Import(_vertexBuffers[generation]!, [_vertexEndpoints[generation]]), BufferRange.Whole));
+            graph.Import(_vertexBuffers[generation]!, _vertexEndpoints[generation]), BufferRange.Whole));
         graph.SetBufferInput(_indices, new GraphBufferSlice(
-            graph.Import(_indexBuffers[generation]!, [_indexEndpoints[generation]]), BufferRange.Whole));
+            graph.Import(_indexBuffers[generation]!, _indexEndpoints[generation]), BufferRange.Whole));
         graph.SetBufferInput(_uniform, new GraphBufferSlice(
-            graph.Import(_uniformBuffers[generation]!, [_uniformEndpoints[generation]]), new BufferRange(0, UniformBufferSize)));
+            graph.Import(_uniformBuffers[generation]!, _uniformEndpoints[generation]), new BufferRange(0, UniformBufferSize)));
         Texture font = _fontTexture ?? throw new InvalidOperationException("The ImGui font is unavailable.");
         graph.SetTextureInput(_font, graph.Import(font, [new TextureBoundaryState(
             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
@@ -386,32 +389,20 @@ internal sealed class RuntimeUiRenderer : IDisposable
         return true;
     }
 
-    internal void Commit(ReadOnlySpan<QueueCompletion> completions)
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
-        if (_writeGeneration < 0)
-            return;
+        if (_writeGeneration < 0) return;
         int generation = _writeGeneration;
-        QueueCompletion completion = FindGraphicsCompletion(completions);
-        _vertexEndpoints[generation] = UsedBufferEndpoint(
-            _vertexBuffers[generation]!,
-            PipelineSync.Draw,
-            ResourceAccess.VertexBuffer,
-            completion);
-        _indexEndpoints[generation] = UsedBufferEndpoint(
-            _indexBuffers[generation]!,
-            PipelineSync.IndexInput,
-            ResourceAccess.IndexBuffer,
-            completion);
-        _uniformEndpoints[generation] = UsedBufferEndpoint(
-            _uniformBuffers[generation]!,
-            PipelineSync.VertexShading,
-            ResourceAccess.ConstantBuffer,
-            completion);
-        _readiness[generation] = MergeCompletions(_readiness[generation], completions);
-        _preferredGeneration = 1 - generation;
-        _pendingDrawData = default;
-        _admittedGeneration = -1;
-        _writeGeneration = -1;
+        try
+        {
+            if (result.SubmittedCompletions.IsEmpty) return;
+            _readiness[generation] = MergeCompletions(_readiness[generation], result.SubmittedCompletions);
+            _vertexEndpoints[generation] = result.GetBufferStates(_vertexBuffers[generation]!).ToArray();
+            _indexEndpoints[generation] = result.GetBufferStates(_indexBuffers[generation]!).ToArray();
+            _uniformEndpoints[generation] = result.GetBufferStates(_uniformBuffers[generation]!).ToArray();
+            _preferredGeneration = 1 - generation;
+        }
+        finally { Discard(); }
     }
 
     internal void Discard()
@@ -748,7 +739,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
             _vertexMappings[generation] = _backend.Map(_vertexBuffers[generation]!, MapType.Write,
                 new BufferRange(0, _vertexBuffers[generation]!.Info.Size));
             _vertexMappings[generation].Bytes.Clear();
-            _vertexEndpoints[generation] = InitialBufferEndpoint(_vertexBuffers[generation]!);
+            _vertexEndpoints[generation] = [InitialBufferEndpoint(_vertexBuffers[generation]!)];
         }
         if (_indexBuffers[generation] is null
             || indexCount > _indexCapacities[generation])
@@ -767,7 +758,7 @@ internal sealed class RuntimeUiRenderer : IDisposable
             _indexMappings[generation] = _backend.Map(_indexBuffers[generation]!, MapType.Write,
                 new BufferRange(0, _indexBuffers[generation]!.Info.Size));
             _indexMappings[generation].Bytes.Clear();
-            _indexEndpoints[generation] = InitialBufferEndpoint(_indexBuffers[generation]!);
+            _indexEndpoints[generation] = [InitialBufferEndpoint(_indexBuffers[generation]!)];
         }
     }
 
@@ -1002,28 +993,6 @@ internal sealed class RuntimeUiRenderer : IDisposable
         buffer.InitialAccess,
         ResourceContentState.Defined);
 
-    private static BufferBoundaryState UsedBufferEndpoint(
-        Buffer buffer,
-        PipelineSync sync,
-        ResourceAccess access,
-        QueueCompletion completion) => new(
-        new BufferRange(0, buffer.Info.Size),
-        sync,
-        access,
-        ResourceContentState.Defined,
-        completion.Queue,
-        completion);
-
-    private static QueueCompletion FindGraphicsCompletion(
-        ReadOnlySpan<QueueCompletion> completions)
-    {
-        foreach (ref readonly QueueCompletion completion in completions)
-            if (completion.Queue.Type == QueueType.Graphics)
-                return completion;
-        throw new InvalidOperationException(
-            "Runtime ImGui resources require a Graphics Queue completion.");
-    }
-
     private static QueueCompletion[] MergeCompletions(
         ReadOnlySpan<QueueCompletion> left,
         ReadOnlySpan<QueueCompletion> right)
@@ -1072,7 +1041,8 @@ internal readonly record struct RuntimeUiMetrics(
     float DpiScale,
     Vector2 JitterPixels,
     Vector3 CameraPosition,
-    bool Focused);
+    bool Focused,
+    bool TemporalAntialiasing);
 
 internal readonly record struct RuntimeUiPassData(
     RuntimeUiRenderer Renderer,

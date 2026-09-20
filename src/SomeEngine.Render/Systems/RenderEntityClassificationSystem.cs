@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -83,6 +84,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
     private readonly JobScheduleOptions _jobOptions;
     private QueryHandle _initialQuery;
     private QueryHandle _invalidatedQuery;
+    private readonly HashSet<Entity> _members = [];
     private QueryHandle _ownedMembershipsQuery;
     private bool _created;
     private bool _initialized;
@@ -110,8 +112,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
     {
         _initialQuery = context.World.Query(_initialCandidates);
         _invalidatedQuery = context.World.Query(_invalidatedEntities);
-        _ownedMembershipsQuery = context.World.Query(
-            new QueryDefinitionBuilder().ReadBuffer<TMembership>().Build());
+        _ownedMembershipsQuery = context.World.Query(new QueryDefinitionBuilder().ReadBuffer<TMembership>().Build());
         _created = true;
     }
 
@@ -160,6 +161,9 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
                 static (QueryCursor cursor, ref ClassificationSnapshot state) =>
                     state.Record(cursor));
             snapshot.Playback();
+            foreach (var change in snapshot.Changes)
+                if (change.Present) _members.Add(change.Entity);
+                else _members.Remove(change.Entity);
         }
         finally
         {
@@ -169,7 +173,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
 
     private void RemoveOwnedMemberships(RenderWorld world)
     {
-        var snapshot = new RemovalSnapshot(_rowsPerPacket, _jobOptions);
+        var snapshot = new RemovalSnapshot(_rowsPerPacket, _jobOptions, _members);
         try
         {
             world.ExecuteReadSnapshot(
@@ -178,6 +182,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
                 static (QueryCursor cursor, ref RemovalSnapshot state) =>
                     state.Record(cursor));
             snapshot.Playback();
+            _members.Clear();
         }
         finally
         {
@@ -191,6 +196,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
         private readonly int _rowsPerPacket;
         private readonly JobScheduleOptions _jobOptions;
         private JobCommandBuffer? _commands;
+        internal (Entity Entity, bool Present)[] Changes = [];
 
         internal ClassificationSnapshot(
             TClassifier classifier,
@@ -211,17 +217,18 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
             if (rowCount == 0)
                 return;
 
+            Changes = new (Entity, bool)[rowCount];
             int[] counts = ArrayPool<int>.Shared.Rent(rowCount);
             int[] offsets = ArrayPool<int>.Shared.Rent(checked(rowCount + 1));
             TMembership[]? memberships = null;
             try
             {
-                var countJob = new CountMembershipsJob(_classifier, counts);
+                var countJob = new CountMembershipsJob(_classifier, counts, Changes);
                 JobResourceAccess countWrite =
                     JobResourceAccess.Write(counts, 0, rowCount);
                 int counted = packets.ExecuteParallel(
                     in countJob,
-                    [countWrite],
+                    [countWrite, JobResourceAccess.Write(Changes, 0, rowCount)],
                     _jobOptions);
                 if (counted != rowCount)
                 {
@@ -307,12 +314,14 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
 
     private struct RemovalSnapshot : IDisposable
     {
+        private readonly HashSet<Entity> _members;
         private readonly int _rowsPerPacket;
         private readonly JobScheduleOptions _jobOptions;
         private JobCommandBuffer? _commands;
 
-        internal RemovalSnapshot(int rowsPerPacket, JobScheduleOptions jobOptions)
+        internal RemovalSnapshot(int rowsPerPacket, JobScheduleOptions jobOptions, HashSet<Entity> members)
         {
+            _members = members;
             _rowsPerPacket = rowsPerPacket;
             _jobOptions = jobOptions;
             _commands = null;
@@ -320,7 +329,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
 
         internal void Record(QueryCursor cursor)
         {
-            var job = new RemoveMembershipsJob();
+            var job = new RemoveMembershipsJob(_members);
             _commands = ReadOnlyQueryPacketJobs.RecordParallel(
                 cursor,
                 in job,
@@ -340,7 +349,8 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
 
     private readonly struct CountMembershipsJob(
         TClassifier classifier,
-        int[] counts) : IReadOnlyQueryPacketJob
+        int[] counts,
+        (Entity Entity, bool Present)[] changes) : IReadOnlyQueryPacketJob
     {
         public void Execute(
             in ReadOnlyQueryPacketContext context,
@@ -356,6 +366,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
                         "A render classifier cannot return a negative membership count.");
                 }
                 counts[checked(context.OutputStart + row)] = count;
+                changes[checked(context.OutputStart + row)] = (packet.Entities[row], count != 0);
             }
         }
     }
@@ -432,7 +443,7 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
         }
     }
 
-    private readonly struct RemoveMembershipsJob : IReadOnlyQueryPacketCommandJob
+    private readonly struct RemoveMembershipsJob(HashSet<Entity> members) : IReadOnlyQueryPacketCommandJob
     {
         public void Execute(
             in ReadOnlyQueryPacketContext context,
@@ -440,7 +451,8 @@ public sealed class RenderEntityClassificationSystem<TClassifier, TMembership> :
             ref JobCommandWriter commands)
         {
             for (int row = 0; row < packet.Count; row++)
-                commands.RemoveBuffer<TMembership>(packet.Entities[row]);
+                if (members.Contains(packet.Entities[row]))
+                    commands.RemoveBuffer<TMembership>(packet.Entities[row]);
         }
     }
 

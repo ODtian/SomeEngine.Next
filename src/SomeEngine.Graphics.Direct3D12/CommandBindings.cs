@@ -86,6 +86,7 @@ internal sealed unsafe partial class D3D12Backend
                 nameof(bindings));
         D3D12PersistentParameterData current =
             RequireCurrentPersistentParameterData(native);
+        command.Recording.TrackRepeatedParameters(native, current);
         if (command.PersistentBindingIdentityEqual(native, current))
             return;
         D3D12Pipeline pipeline = command.Pipeline;
@@ -189,7 +190,7 @@ internal sealed unsafe partial class D3D12Backend
             (resourceBase, samplerBase) =
                 command.AllocateTransientDescriptorPair(resourceCount, samplerCount);
         }
-        command.CopyPersistentDescriptors(resourceBase, samplerBase, resourceCount, samplerCount, data);
+        command.CopyPersistentDescriptors(resourceBase, samplerBase, data.Descriptors);
         command.ApplyPersistentBlock(
             layout,
             resourceBase,
@@ -364,57 +365,66 @@ internal sealed unsafe partial class D3D12Backend
             ReadOnlySpan<ResourceBinding> resources,
             ReadOnlySpan<DescriptorSlotDesc> slots,
             ReadOnlySpan<byte> ordinaryData,
-            bool createOrdinaryBuffer,
-            D3D12PersistentParameterData? previous)
+            bool createOrdinaryBuffer)
         {
             if (resources.Length != slots.Length)
                 throw new ArgumentException("The reflected descriptor-slot count does not match the binding count.", nameof(slots));
             ResourceBinding[] resourcesCopy = resources.ToArray();
-            DescriptorRecord[] descriptorRecords = CreateDescriptorRecords(resourcesCopy, slots, previous);
+            DescriptorRecord[] descriptorRecords = CreateDescriptorRecords(
+                resourcesCopy,
+                slots);
             NativeLease? lifetime = null;
             try
             {
                 uint visibleNodeMask = uint.MaxValue;
                 foreach (DescriptorRecord descriptor in descriptorRecords)
                     visibleNodeMask &= descriptor.VisibleNodeMask;
-                D3D12SwapchainImageLease[] swapchainImages = CaptureSwapchainBindings(resourcesCopy);
-                byte[] ordinaryDataCopy;
+                byte[] ordinaryDataCopy = ordinaryData.ToArray();
+                D3D12SwapchainImageLease[] swapchainImages =
+                    CaptureSwapchainBindings(resourcesCopy);
                 ulong address = 0;
-                if (previous is not null && previous.OrdinaryData.AsSpan().SequenceEqual(ordinaryData))
+                if (createOrdinaryBuffer && ordinaryDataCopy.Length != 0)
                 {
-                    ordinaryDataCopy = previous.OrdinaryData;
-                    if (previous._ordinary is { } retained)
+                    NativeResource* native = CreateOrdinaryDataResource(
+                        device,
+                        ordinaryDataCopy,
+                        out address);
+                    try
                     {
-                        retained.Retain();
-                        lifetime = retained;
-                        address = previous.OrdinaryAddress;
+                        lifetime = new NativeLease((IUnknown*)native, ownsReference: true);
+                    }
+                    catch
+                    {
+                        _ = ResourceTrace.Release(native);
+                        throw;
                     }
                 }
-                else
-                {
-                    ordinaryDataCopy = ordinaryData.ToArray();
-                    if (createOrdinaryBuffer && ordinaryDataCopy.Length != 0)
-                    {
-                        NativeResource* native = CreateOrdinaryDataResource(device, ordinaryDataCopy, out address);
-                        try { lifetime = new NativeLease((IUnknown*)native, ownsReference: true); }
-                        catch { _ = ResourceTrace.Release(native); throw; }
-                    }
-                }
-                return new D3D12PersistentParameterData(version, resourcesCopy, descriptorRecords,
-                    swapchainImages, ordinaryDataCopy, lifetime, address, visibleNodeMask);
+                D3D12PersistentParameterData result =
+                    new(
+                        version,
+                        resourcesCopy,
+                        descriptorRecords,
+                        swapchainImages,
+                        ordinaryDataCopy,
+                        lifetime,
+                        address,
+                        visibleNodeMask);
+                lifetime = null;
+                descriptorRecords = [];
+                return result;
             }
             catch
             {
                 lifetime?.Release();
-                foreach (DescriptorRecord record in descriptorRecords) record.Release();
+                foreach (DescriptorRecord record in descriptorRecords)
+                    record.Release();
                 throw;
             }
         }
 
         private static DescriptorRecord[] CreateDescriptorRecords(
             ReadOnlySpan<ResourceBinding> resources,
-            ReadOnlySpan<DescriptorSlotDesc> slots,
-            D3D12PersistentParameterData? previous)
+            ReadOnlySpan<DescriptorSlotDesc> slots)
         {
             DescriptorRecord[] records = new DescriptorRecord[resources.Length];
             int created = 0;
@@ -424,13 +434,6 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     ref readonly ResourceBinding binding = ref resources[created];
                     ref readonly DescriptorSlotDesc slot = ref slots[created];
-                    if (previous is not null && previous.Resources[created] == binding)
-                    {
-                        DescriptorRecord retained = previous.Descriptors[created];
-                        retained.Retain();
-                        records[created] = retained;
-                        continue;
-                    }
                     if (binding.Value is null)
                     {
                         records[created] = DescriptorRecord.CreateNull(slot);
@@ -1383,9 +1386,8 @@ internal sealed unsafe partial class D3D12Backend
             Recording.CopyTransientDescriptors(resourceBase, samplerBase, resources, slots);
 
         internal void CopyPersistentDescriptors(
-            uint resourceBase, uint samplerBase, uint resourceCount, uint samplerCount,
-            D3D12PersistentParameterData data) =>
-            Recording.CopyPersistentDescriptors(resourceBase, samplerBase, resourceCount, samplerCount, data);
+            uint resourceBase, uint samplerBase, ReadOnlySpan<DescriptorRecord> records) =>
+            Recording.CopyPersistentDescriptors(resourceBase, samplerBase, records);
 
 
         internal void Capture(in ResourceBinding binding)
@@ -1445,17 +1447,7 @@ internal sealed unsafe partial class D3D12Backend
 
     // The contents of a descriptor position survive command allocator resets. The
     // recording object cannot be claimed again until its submitted GPU work retires.
-    private readonly record struct DescriptorContent(DescriptorLease? Source, DescriptorSlotDesc Slot)
-    {
-        // Membership points to the first descriptor, which identifies the whole binding.
-        // Overwriting any member invalidates that binding without scanning other tables.
-        internal int BlockStart { get; init; }
-        internal uint BlockLength { get; init; }
-        internal D3D12PersistentParameterData? BlockData { get; init; }
-
-        internal bool SameDescriptor(in DescriptorContent other) =>
-            ReferenceEquals(Source, other.Source) && Slot == other.Slot;
-    }
+    private readonly record struct DescriptorContent(DescriptorLease? Source, DescriptorSlotDesc Slot);
 
     private sealed partial class D3D12CommandSlot
     {
@@ -1890,13 +1882,8 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal void CopyPersistentDescriptors(
-            uint resourceBase, uint samplerBase, uint resourceCount, uint samplerCount,
-            D3D12PersistentParameterData data)
+            uint resourceBase, uint samplerBase, ReadOnlySpan<DescriptorRecord> records)
         {
-            if (ContainsDescriptorBlock(_resourceContents, resourceBase, resourceCount, data) &&
-                ContainsDescriptorBlock(_samplerContents, samplerBase, samplerCount, data))
-                return;
-            ReadOnlySpan<DescriptorRecord> records = data.Descriptors;
             if (_descriptorWrites.Length < records.Length)
                 Array.Resize(ref _descriptorWrites, records.Length);
             try
@@ -1904,40 +1891,11 @@ internal sealed unsafe partial class D3D12Backend
                 for (int index = 0; index < records.Length; index++)
                     _descriptorWrites[index] = new DescriptorContent(records[index].Source, records[index].Slot);
                 WriteDescriptors(resourceBase, samplerBase, _descriptorWrites.AsSpan(0, records.Length));
-                RememberDescriptorBlock(_resourceContents, resourceBase, resourceCount, data);
-                RememberDescriptorBlock(_samplerContents, samplerBase, samplerCount, data);
             }
             finally
             {
                 Array.Clear(_descriptorWrites, 0, records.Length);
             }
-        }
-
-        private static bool ContainsDescriptorBlock(DescriptorContent[] contents, uint first, uint count,
-            D3D12PersistentParameterData data) => count == 0 ||
-            (first < contents.Length && contents[first].BlockLength == count &&
-                ReferenceEquals(contents[first].BlockData, data));
-
-        private static void InvalidateDescriptorBlock(DescriptorContent[] contents, uint index)
-        {
-            int first = contents[index].BlockStart - 1;
-            if (first >= 0)
-                contents[first] = contents[first] with { BlockData = null, BlockLength = 0 };
-        }
-
-        private static void RememberDescriptorBlock(DescriptorContent[] contents, uint first, uint count,
-            D3D12PersistentParameterData data)
-        {
-            if (count == 0) return;
-            uint end = checked(first + count);
-            for (uint index = first; index < end; index++)
-                InvalidateDescriptorBlock(contents, index);
-            for (uint index = first; index < end; index++)
-                contents[index] = contents[index] with
-                {
-                    BlockStart = checked((int)first + 1), BlockData = null, BlockLength = 0,
-                };
-            contents[first] = contents[first] with { BlockData = data, BlockLength = count };
         }
 
         private void WriteDescriptors(uint resourceBase, uint samplerBase, ReadOnlySpan<DescriptorContent> writes)
@@ -1965,7 +1923,7 @@ internal sealed unsafe partial class D3D12Backend
                     bool sampler = next.Slot.Type == ResourceBindingType.Sampler;
                     uint index = sampler ? samplerIndex++ : resourceIndex++;
                     DescriptorContent[] contents = sampler ? _samplerContents : _resourceContents;
-                    if (contents[index].SameDescriptor(next)) continue;
+                    if (contents[index] == next) continue;
                     DescriptorHeapType type = sampler ? DescriptorHeapType.Sampler : DescriptorHeapType.CbvSrvUav;
                     CpuDescriptorHandle start = sampler ? _samplerCpuStart : _resourceCpuStart;
                     CpuDescriptorHandle destination = new(start.Ptr + checked((nuint)(
@@ -1988,12 +1946,10 @@ internal sealed unsafe partial class D3D12Backend
                 samplerIndex = samplerBase;
                 foreach (ref readonly DescriptorContent next in writes)
                 {
-                    bool sampler = next.Slot.Type == ResourceBindingType.Sampler;
-                    uint index = sampler ? samplerIndex++ : resourceIndex++;
-                    DescriptorContent[] contents = sampler ? _samplerContents : _resourceContents;
-                    if (contents[index].SameDescriptor(next)) continue;
-                    InvalidateDescriptorBlock(contents, index);
-                    contents[index] = next;
+                    if (next.Slot.Type == ResourceBindingType.Sampler)
+                        _samplerContents[samplerIndex++] = next;
+                    else
+                        _resourceContents[resourceIndex++] = next;
                 }
             }
             finally
@@ -2217,8 +2173,6 @@ internal sealed unsafe partial class D3D12Backend
                     ID3D12DescriptorHeap* previous = _resourceArena;
                     _resourceArena = resourceReplacement;
                     int resourceCopied = Math.Min(_resourceContents.Length, checked((int)_resourceUsed));
-                    if (resourceCopied < _resourceContents.Length)
-                        InvalidateDescriptorBlock(_resourceContents, (uint)resourceCopied);
                     Array.Clear(_resourceContents, resourceCopied, _resourceContents.Length - resourceCopied);
                     _resourceCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_resourceArena);
                     _resourceGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_resourceArena);
@@ -2232,8 +2186,6 @@ internal sealed unsafe partial class D3D12Backend
                     ID3D12DescriptorHeap* previous = _samplerArena;
                     _samplerArena = samplerReplacement;
                     int samplerCopied = Math.Min(_samplerContents.Length, checked((int)_samplerUsed));
-                    if (samplerCopied < _samplerContents.Length)
-                        InvalidateDescriptorBlock(_samplerContents, (uint)samplerCopied);
                     Array.Clear(_samplerContents, samplerCopied, _samplerContents.Length - samplerCopied);
                     _samplerCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_samplerArena);
                     _samplerGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_samplerArena);

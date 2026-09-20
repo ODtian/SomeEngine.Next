@@ -255,6 +255,10 @@ internal static class BenchmarkController
             return false;
         }
 
+        string manifestHash = BenchmarkEnvironment.Sha256File(
+            Path.Combine(options.ShaderDirectory, BenchmarkShaders.ManifestFileName));
+        if (run.Workloads.Any(workload => !string.Equals(workload.ShaderManifestSha256,
+                manifestHash, StringComparison.Ordinal))) return false;
         return HasReusableProtocolShape(
             run,
             profile,

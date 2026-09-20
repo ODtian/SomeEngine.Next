@@ -4,8 +4,8 @@ public static partial class JobSystem
 {
     private const int DefaultTestingWorkerCount = 2;
     private static readonly Lock Sync = new();
-    private static Scheduler? s_scheduler;
-    private static bool s_stopped;
+    private static long s_nextGeneration;
+    private static Scheduler s_scheduler = CreateScheduler(JobRuntimeConfig.Default);
 
     public static JobSafetyMode SafetyMode
     {
@@ -25,45 +25,27 @@ public static partial class JobSystem
     {
         ArgumentNullException.ThrowIfNull(config);
         config.Validate();
-        if (Scheduler.Executing is not null)
-            throw new InvalidOperationException("The default scheduler cannot be replaced from a Job callback.");
 
-        Scheduler replacement = new(config);
-        Scheduler? previous;
+        Scheduler previous;
         lock (Sync)
         {
             previous = s_scheduler;
-            s_scheduler = replacement;
-            s_stopped = false;
+            s_scheduler = CreateScheduler(config);
         }
-        previous?.Dispose();
+
+        previous.Dispose();
     }
 
     public static void Shutdown()
     {
-        if (Scheduler.Executing is not null)
-            throw new InvalidOperationException("The default scheduler cannot be stopped from a Job callback.");
-        Scheduler? previous;
+        Scheduler previous;
         lock (Sync)
         {
             previous = s_scheduler;
-            s_scheduler = null;
-            s_stopped = true;
+            s_scheduler = CreateScheduler(new JobRuntimeConfig { WorkerCount = 0 });
         }
-        previous?.Dispose();
-    }
 
-    public static Scheduler Default
-    {
-        get
-        {
-            lock (Sync)
-            {
-                if (s_stopped)
-                    throw new InvalidOperationException("The default scheduler is stopped. Call Initialize before submitting work.");
-                return s_scheduler ??= new Scheduler();
-            }
-        }
+        previous.Dispose();
     }
 
     public static JobRuntimeStats GetStats()
@@ -229,14 +211,7 @@ public static partial class JobSystem
     {
         // Observer registration does not wait for completion. Callbacks are best-effort notifications
         // and run inline on the registering, completing, or signaling thread; exceptions are suppressed.
-        if (handle.Scheduler is { } scheduler)
-            scheduler.OnCompleted(handle, continuation, state);
-        else
-        {
-            ArgumentNullException.ThrowIfNull(continuation);
-            try { continuation(handle, state); }
-            catch { /* Completion observers do not alter the completed operation. */ }
-        }
+        Current.OnCompleted(handle, continuation, state);
     }
 
     public static JobResource CreateResource(string? name = null)
@@ -271,17 +246,17 @@ public static partial class JobSystem
 
     internal static bool IsCompleted(JobHandle handle)
     {
-        return handle.IsCompleted;
+        return Current.IsCompleted(handle);
     }
 
     internal static bool NeedsLifetimeTracking(JobHandle handle)
     {
-        return handle.Scheduler?.NeedsLifetimeTracking(handle) ?? false;
+        return Current.NeedsLifetimeTracking(handle);
     }
 
     internal static void Complete(JobHandle handle)
     {
-        handle.Complete();
+        Current.Complete(handle);
     }
 
     internal static bool TryHandoffLatencyWork(
@@ -311,12 +286,12 @@ public static partial class JobSystem
 
     internal static JobHandle GetCurrentScope()
     {
-        return Scheduler.Executing?.GetCurrentScope() ?? default;
+        return Current.GetCurrentScope();
     }
 
     internal static bool IsScopeDescendantOf(JobHandle scope, JobHandle ancestor)
     {
-        return scope.Scheduler?.IsScopeDescendantOf(scope, ancestor) ?? false;
+        return Current.IsScopeDescendantOf(scope, ancestor);
     }
 
     internal static JobResourceToken GetContainerResourceToken(object container)
@@ -336,7 +311,7 @@ public static partial class JobSystem
     /// state, even when that dependency faulted. The cleanup job is responsible for observing and
     /// propagating the dependency fault after it has restored its owner's invariants.
     /// </summary>
-    public static JobHandle ScheduleFinally<T>(
+    internal static JobHandle ScheduleFinally<T>(
         in T job,
         JobScheduleOptions options,
         JobHandle dependency)
@@ -358,5 +333,43 @@ public static partial class JobSystem
         return Current.AcquireSynchronousAccess(accesses);
     }
 
-    private static Scheduler Current => Scheduler.Executing ?? Default;
+    internal static void ResetForTesting(int workerCount = DefaultTestingWorkerCount)
+    {
+        ResetForTesting(new JobRuntimeConfig { WorkerCount = workerCount });
+    }
+
+    internal static void ResetForTesting(JobRuntimeConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        config.Validate();
+
+        Scheduler previous;
+        lock (Sync)
+        {
+            previous = s_scheduler;
+            s_scheduler = CreateScheduler(config);
+        }
+
+        previous.Dispose();
+    }
+
+    internal static void ShutdownForTesting()
+    {
+        lock (Sync)
+        {
+            s_scheduler.Dispose();
+            s_scheduler = CreateScheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        }
+    }
+
+    private static Scheduler CreateScheduler(JobRuntimeConfig config)
+    {
+        return new Scheduler(config, Interlocked.Increment(ref s_nextGeneration));
+    }
+
+    private static Scheduler Current => Volatile.Read(ref s_scheduler);
 }
+
+
+
+

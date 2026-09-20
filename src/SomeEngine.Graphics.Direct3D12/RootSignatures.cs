@@ -1612,33 +1612,6 @@ internal sealed unsafe partial class D3D12Backend
             return declaration;
         }
 
-        private static nuint GetDescriptorSubObjectCategorySpace(
-            ShaderTypeLayout layout,
-            nint bindingRangeIndex,
-            SlangParameterCategory category,
-            string layoutName)
-        {
-            nint subObjectRangeCount = layout.SubObjectRangeCount;
-            nuint marker = unchecked((nuint)subObjectRangeCount);
-            if (subObjectRangeCount < 0 || marker == Slang.UnknownSize ||
-                marker == Slang.UnboundedSize)
-                throw new GraphicsException(GraphicsError.NativeFailure,
-                    $"Slang layout '{layoutName}' has an unresolved sub-object range count " +
-                    "while resolving a descriptor category space.");
-            for (nint index = 0; index < subObjectRangeCount; index++)
-            {
-                if (layout.GetSubObjectRangeBindingRangeIndex(index) != bindingRangeIndex)
-                    continue;
-                ShaderVariableLayout leaf = layout.GetSubObjectRangeOffset(index);
-                if (leaf == ShaderVariableLayout.Null)
-                    throw new GraphicsException(GraphicsError.NativeFailure,
-                        $"Slang descriptor binding range {bindingRangeIndex} on layout " +
-                        $"'{layoutName}' has no variable layout.");
-                return leaf.GetBindingSpace(category);
-            }
-            return 0;
-        }
-
         private void AddChildBlocks(
             ShaderVariableLayout layout,
             ShaderVisibility visibility,

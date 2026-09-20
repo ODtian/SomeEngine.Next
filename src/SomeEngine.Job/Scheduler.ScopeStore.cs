@@ -2,7 +2,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
     private sealed partial class CompletionStore
     {

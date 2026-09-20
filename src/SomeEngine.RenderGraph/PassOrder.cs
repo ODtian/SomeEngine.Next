@@ -1,7 +1,7 @@
 namespace SomeEngine.RenderGraph;
 
-// Retains execution positions so rescheduling one component leaves unrelated
-// components in place. Dependency edges belong to FrameExecutor's existing graph.
+// Retains execution positions. Repairing a dependency reorders only the nodes
+// participating in its conflicting interval; other positions remain unchanged.
 internal sealed class PassOrder
 {
     private readonly Dictionary<int, long> _positions = [];
@@ -10,6 +10,8 @@ internal sealed class PassOrder
 
     internal int Count => _positions.Count;
     internal IEnumerable<int> Nodes => _ordered.Values;
+    internal bool Contains(int node) => _positions.ContainsKey(node);
+    internal long Position(int node) => _positions[node];
 
     internal void Add(int node, long position)
     {
@@ -19,11 +21,12 @@ internal sealed class PassOrder
         Changed.Add(node);
     }
 
-    internal void Remove(int node)
+    internal bool Remove(int node)
     {
-        if (!_positions.Remove(node, out long position)) return;
+        if (!_positions.Remove(node, out long position)) return false;
         _ordered.Remove(position);
         Changed.Add(node);
+        return true;
     }
 
     internal void SetOrder(IReadOnlyList<int> nodes)

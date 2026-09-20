@@ -313,7 +313,6 @@ internal struct FramePass
     internal bool Enabled;
     internal bool Live;
     internal Queue? Queue;
-    internal int ScheduledOrdinal;
     internal int FirstAccess;
     internal int AccessCount;
     internal PassCallbackStorage? PersistentCallbacks;

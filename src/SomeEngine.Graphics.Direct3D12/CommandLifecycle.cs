@@ -538,53 +538,51 @@ internal sealed unsafe partial class D3D12Backend
             Recording.Capture(resource);
         }
 
+        private void CaptureDescriptor(GraphicsObject value, DescriptorLease descriptor)
+        {
+            var (primary, secondary) = GetResourceReferences(value);
+            if (primary.Lifetime is not null)
+                RequireResourceVisible(primary.VisibleNodeMask, nameof(value));
+            if (secondary.Lifetime is not null)
+                RequireResourceVisible(secondary.VisibleNodeMask, nameof(value));
+            Recording.Capture(primary);
+            Recording.Capture(secondary);
+            Recording.Capture(descriptor);
+        }
+
         internal void Capture(BufferCbv value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12Buffer resource = RequireD3D12.Buffer(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(BufferSrv value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12Buffer resource = RequireD3D12.Buffer(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(BufferUav value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12Buffer resource = RequireD3D12.Buffer(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            Recording.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(TextureSrv value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12TextureResource resource = RequireD3D12.Texture(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal void Capture(TextureUav value)
         {
             RequireSameDevice(value, nameof(value));
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12TextureResource resource = RequireD3D12.Texture(value.Resource);
-            RequireResourceVisible(resource.Info.VisibleNodeMask, nameof(value));
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
         internal CpuDescriptorHandle Capture(ColorAttachmentView value)
@@ -611,9 +609,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12TextureResource resource)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
             return descriptor.NativeDescriptor.Cpu;
         }
 
@@ -641,9 +637,7 @@ internal sealed unsafe partial class D3D12Backend
             D3D12TextureResource resource)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, resource.NativeLifetime);
-            slot.CaptureSwapchainUse(resource);
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
             return descriptor.NativeDescriptor.Cpu;
         }
 
@@ -687,6 +681,8 @@ internal sealed unsafe partial class D3D12Backend
             if (_recording is not null)
                 throw new InvalidOperationException("The CommandContext is already recording.");
 
+            _repeatCommands = null;
+
             D3D12CommandSlot? slot = null;
             foreach (D3D12CommandSlot candidate in _slots)
             {
@@ -724,11 +720,7 @@ internal sealed unsafe partial class D3D12Backend
             RequireRenderingClosed();
             D3D12CommandSlot slot = Recording;
             ulong sequence = AllocateSequence();
-            ThrowIfFailed(
-                _device,
-                    CommandExecutionTrace.Close(slot.List),
-                NativeOperationType.Ordinary,
-                "ID3D12GraphicsCommandList::Close");
+            slot.FinishCommandData();
             return FinishClosedCommands(slot, sequence);
         }
 
@@ -754,6 +746,7 @@ internal sealed unsafe partial class D3D12Backend
             _activeList = null;
             slot.ReleaseEncodingReferences();
             ResetEncodingState();
+            _repeatCommands = slot;
             return new RecordedCommands(lease, sequence);
         }
 
@@ -762,11 +755,7 @@ internal sealed unsafe partial class D3D12Backend
             _device.ThrowIfUnavailable();
             RequireRenderingClosed();
             D3D12CommandSlot slot = Recording;
-            ThrowIfFailed(
-                _device,
-                    CommandExecutionTrace.Close(slot.List),
-                NativeOperationType.Ordinary,
-                "ID3D12GraphicsCommandList::Close(bundle)");
+            slot.FinishCommandData();
             D3D12RecordedBundle bundle;
             try
             {
@@ -802,7 +791,7 @@ internal sealed unsafe partial class D3D12Backend
             _device.ThrowIfUnavailable();
             RequireRenderingClosed();
             D3D12CommandSlot slot = Recording;
-            _ = CommandExecutionTrace.Close(slot.List);
+            slot.AbortCommandData();
             _recording = null;
             _activeList = null;
             slot.ReleaseEncodingReferences();
@@ -827,7 +816,7 @@ internal sealed unsafe partial class D3D12Backend
             }
             if (recording is not null)
             {
-                _ = CommandExecutionTrace.Close(recording.List);
+                recording.AbortCommandData();
                 recording.ReleaseEncodingReferences();
                 recording.CompleteUse();
             }
@@ -862,7 +851,7 @@ internal sealed unsafe partial class D3D12Backend
             }
             if (recording is not null)
             {
-                _ = CommandExecutionTrace.Close(recording.List);
+                recording.AbortCommandData();
                 recording.ReleaseEncodingReferences();
                 recording.CompleteUse();
             }
@@ -903,8 +892,6 @@ internal sealed unsafe partial class D3D12Backend
             new(ReferenceEqualityComparer.Instance);
         private int _capturedBundleCapacity;
         private DescriptorGeneration? _descriptorGeneration;
-        private ID3D12CommandAllocator* _allocator;
-        private ID3D12GraphicsCommandList10* _list;
         private int _references = 1;
         private int _busy;
 
@@ -912,49 +899,11 @@ internal sealed unsafe partial class D3D12Backend
         {
             _context = context;
             _commands = new D3D12RecordedCommandsLease(context, this, context.NativeQueue);
-            CommandListType type = context.Bundle
-                ? CommandListType.Bundle
-                : ToCommandListType(context.QueueType);
-            Guid allocatorIid = ID3D12CommandAllocator.Guid;
-            ID3D12CommandAllocator* allocator = null;
-            ThrowIfFailed(
-                device,
-                    DevicePipelineTrace.CreateCommandAllocator(
-                device.Native, type,
-                    &allocatorIid,
-                    (void**)&allocator),
-                NativeOperationType.Ordinary,
-                "ID3D12Device::CreateCommandAllocator");
-            _allocator = allocator;
-            string commandName = context.Label ??
-                $"{context.QueueType} CommandContext[{context.QueueIndex}]";
-            SetNativeName(allocator, $"{commandName} Allocator");
-            try
-            {
-                Guid listIid = ID3D12GraphicsCommandList10.Guid;
-                ID3D12GraphicsCommandList10* list = null;
-                ThrowIfFailed(
-                    device,
-                        DevicePipelineTrace.CreateCommandList1(
-                    device.Native, context.NativeNodeMask,
-                        type,
-                        CommandListFlags.None,
-                        &listIid,
-                        (void**)&list),
-                    NativeOperationType.Ordinary,
-                    "ID3D12Device4::CreateCommandList1");
-                _list = list;
-                SetNativeName(list, $"{commandName} Command List");
-            }
-            catch
-            {
-                _ = ResourceTrace.Release(_allocator);
-                _allocator = null;
-                throw;
-            }
+            _nativeRecording = CreateCachedCommands();
+            _cachedCommands[0] = _nativeRecording;
         }
 
-        internal ID3D12GraphicsCommandList10* List => _list;
+        internal ID3D12GraphicsCommandList10* List => _nativeRecording.List;
         internal DescriptorGeneration Descriptors
         {
             get
@@ -965,6 +914,15 @@ internal sealed unsafe partial class D3D12Backend
                 DescriptorPublisher publisher = _context.NativeDevice
                     .GetDescriptorPublisher(_context.NativeQueue.NodeIndex);
                 current = publisher.CaptureCurrent();
+                try
+                {
+                    current.CaptureResources(this);
+                }
+                catch
+                {
+                    current.Release();
+                    throw;
+                }
                 _descriptorGeneration = current;
                 return current;
             }
@@ -999,15 +957,7 @@ internal sealed unsafe partial class D3D12Backend
             ResetTemporaryAttachmentDescriptors();
             if (_context.QueueType != QueueType.Copy)
                 ResetDescriptorArenaState(description);
-            ThrowIfFailed(_context.NativeDevice, ResourceTrace.Reset(_allocator), NativeOperationType.Ordinary, "ID3D12CommandAllocator::Reset");
-            ThrowIfFailed(
-                _context.NativeDevice,
-                    CommandExecutionTrace.Reset(_list, _allocator, null),
-                NativeOperationType.Ordinary,
-                "ID3D12GraphicsCommandList::Reset");
-
-            if (_context.QueueType == QueueType.Copy)
-                return;
+            BeginCommandData();
         }
 
         internal void CompleteUse()
@@ -1037,6 +987,15 @@ internal sealed unsafe partial class D3D12Backend
             NativeLease resource,
             D3D12SparseState? sparseState = null) =>
             _captures.Capture(resource, sparseState);
+
+        internal void Capture(in ResourceReferences references)
+        {
+            if (references.Lifetime is null)
+                return;
+            Capture(references.Lifetime, references.SparseState);
+            if (references.Texture is not null)
+                CaptureSwapchainUse(references.Texture);
+        }
 
         internal void CaptureTexture(D3D12TextureResource texture)
         {
@@ -1074,14 +1033,7 @@ internal sealed unsafe partial class D3D12Backend
             if (Interlocked.Decrement(ref _references) != 0)
                 return;
             ReleaseTransients();
-            ID3D12GraphicsCommandList10* list = _list;
-            _list = null;
-            if (list is not null)
-                _ = CommandExecutionTrace.Release(list);
-            ID3D12CommandAllocator* allocator = _allocator;
-            _allocator = null;
-            if (allocator is not null)
-                _ = ResourceTrace.Release(allocator);
+            ReleaseCachedCommands();
             ReleaseTemporaryAttachmentDescriptors();
             ReleaseDescriptorArena();
         }
@@ -1114,6 +1066,16 @@ internal sealed unsafe partial class D3D12Backend
             new(ReferenceEqualityComparer.Instance);
         private readonly HashSet<SparseMappingGeneration> _sparseGenerations =
             new(ReferenceEqualityComparer.Instance);
+        internal int SparseCount => _sparseGenerations.Count;
+
+        internal void AppendReferences(List<object> destination)
+        {
+            foreach (NativeLease resource in _resources)
+                destination.Add(resource);
+            foreach (DescriptorLease descriptor in _descriptors)
+                destination.Add(descriptor);
+        }
+
         private int _resourceCapacity;
         private int _descriptorCapacity;
         private int _sparseGenerationCapacity;

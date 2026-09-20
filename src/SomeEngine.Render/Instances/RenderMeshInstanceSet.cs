@@ -389,8 +389,6 @@ public sealed class RenderMeshInstanceSet : IDisposable
     {
         ArgumentNullException.ThrowIfNull(materials);
         Material[] values = [.. materials];
-        if (values.Length == 0)
-            throw new ArgumentException("An instanced-mesh set requires at least one material.", nameof(materials));
         for (int index = 0; index < values.Length; index++)
         {
             if (values[index] is null)

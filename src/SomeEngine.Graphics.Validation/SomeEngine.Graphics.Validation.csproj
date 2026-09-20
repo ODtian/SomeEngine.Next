@@ -10,10 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="../../external/SlangShaderSharp/src/SlangShaderSharp.csproj" />
     <ProjectReference Include="../SomeEngine.Graphics/SomeEngine.Graphics.csproj" />
-    <ProjectReference Include="../SomeEngine.Graphics.Direct3D12/SomeEngine.Graphics.Direct3D12.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Silk.NET.Direct3D12" Version="2.23.0" />
-    <PackageReference Include="Silk.NET.DXGI" Version="2.23.0" />
+    <InternalsVisibleTo Include="SomeEngine.Graphics.Direct3D12.Validation" />
   </ItemGroup>
 </Project>

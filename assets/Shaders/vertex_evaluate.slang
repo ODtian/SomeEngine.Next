@@ -1,20 +1,7 @@
 #ifndef VERTEX_EVALUATE_SLANG
 #define VERTEX_EVALUATE_SLANG
 
-#include "common.slang"
-#include "cluster_common.slang"
-#include "material_vertex_interfaces.slang"
-
-struct VertexEvalContext
-{
-    ByteAddressBuffer pageHeap;
-    uint vertexBlobAddress;
-    uint vertexBlobSize;
-    uint localVertexIndex;
-    uint instanceID;
-    RenderInstanceTransform transform;
-    uint IsPreviousFrame;
-};
+#include "vertex_evaluate_interfaces.slang"
 
 uint LoadStandardVertexBits(VertexEvalContext ctx, uint bitOffset, uint bitCount)
 {
@@ -121,20 +108,26 @@ StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
     float uvStep = asfloat(ctx.pageHeap.Load(ctx.vertexBlobAddress + 48u));
 
     StaticVertexAttributes attrs;
-    attrs.worldNormal = normalize(RotateByTransform(normal, ctx.transform));
-    attrs.worldTangent = float4(normalize(RotateByTransform(tangent.xyz, ctx.transform)), tangent.w);
+    float3 scale = ctx.transform.Scale * ctx.transform.Stretch;
+    float3 inverseScale = float3(
+        scale.x == 0.0 ? 0.0 : 1.0 / scale.x,
+        scale.y == 0.0 ? 0.0 : 1.0 / scale.y,
+        scale.z == 0.0 ? 0.0 : 1.0 / scale.z);
+    float3 transformedNormal = RotateByTransform(normal * inverseScale, ctx.transform);
+    attrs.worldNormal = dot(transformedNormal, transformedNormal) > 0.0
+        ? normalize(transformedNormal) : normalize(RotateByTransform(normal, ctx.transform));
+    float3 transformedTangent = RotateByTransform(tangent.xyz * scale, ctx.transform);
+    transformedTangent -= attrs.worldNormal * dot(attrs.worldNormal, transformedTangent);
+    float handedness = scale.x * scale.y * scale.z < 0.0 ? -tangent.w : tangent.w;
+    attrs.worldTangent = float4(
+        dot(transformedTangent, transformedTangent) > 0.0
+            ? normalize(transformedTangent) : normalize(RotateByTransform(tangent.xyz, ctx.transform)),
+        handedness);
     attrs.uv0 = uvOrigin + float2(u, v) * uvStep;
     return attrs;
 }
 
-interface IVertexEvaluate : IVertexAccess
-{
-    // Geometry implementations may be invoked zero, one, or multiple times for any logical
-    // vertex. Correctness must not depend on call count, order, or cross-call side effects.
-    Vertex evaluate(VertexEvalContext ctx);
-};
-
-struct StaticDeformedVertex
+struct StandardVertex
 {
     float3 position;
     float3 basePosition;
@@ -145,7 +138,7 @@ struct StaticDeformedVertex
 
 struct StaticVertexEval : IVertexEvaluate
 {
-    typedef StaticDeformedVertex Vertex;
+    typedef StandardVertex Vertex;
 
     Vertex evaluate(VertexEvalContext ctx)
     {
@@ -166,54 +159,21 @@ struct StaticVertexEval : IVertexEvaluate
         return v.position;
     }
 
-    void setPosition(inout Vertex v, float3 position)
+    Vertex readLane(Vertex value, uint lane)
     {
-        v.position = position;
+        Vertex result;
+        result.position = WaveReadLaneAt(value.position, lane);
+        result.basePosition = WaveReadLaneAt(value.basePosition, lane);
+        result.worldNormal = WaveReadLaneAt(value.worldNormal, lane);
+        result.worldTangent = WaveReadLaneAt(value.worldTangent, lane);
+        result.uv0 = WaveReadLaneAt(value.uv0, lane);
+        return result;
     }
-
-    float3 getNormal(Vertex v)
-    {
-        return v.worldNormal;
-    }
-
-    void setNormal(inout Vertex v, float3 normal)
-    {
-        v.worldNormal = normal;
-    }
-
-    float4 getTangent(Vertex v)
-    {
-        return v.worldTangent;
-    }
-
-    void setTangent(inout Vertex v, float4 tangent)
-    {
-        v.worldTangent = tangent;
-    }
-
-    float2 getTexCoord0(Vertex v)
-    {
-        return v.uv0;
-    }
-
-    void setTexCoord0(inout Vertex v, float2 texCoord)
-    {
-        v.uv0 = texCoord;
-    }
-};
-
-struct WaveDeformedVertex
-{
-    float3 position;
-    float3 basePosition;
-    float3 worldNormal;
-    float4 worldTangent;
-    float2 uv0;
 };
 
 struct WaveVertexEval : IVertexEvaluate
 {
-    typedef WaveDeformedVertex Vertex;
+    typedef StandardVertex Vertex;
 
     Vertex evaluate(VertexEvalContext ctx)
     {
@@ -238,39 +198,15 @@ struct WaveVertexEval : IVertexEvaluate
         return v.position;
     }
 
-    void setPosition(inout Vertex v, float3 position)
+    Vertex readLane(Vertex value, uint lane)
     {
-        v.position = position;
-    }
-
-    float3 getNormal(Vertex v)
-    {
-        return v.worldNormal;
-    }
-
-    void setNormal(inout Vertex v, float3 normal)
-    {
-        v.worldNormal = normal;
-    }
-
-    float4 getTangent(Vertex v)
-    {
-        return v.worldTangent;
-    }
-
-    void setTangent(inout Vertex v, float4 tangent)
-    {
-        v.worldTangent = tangent;
-    }
-
-    float2 getTexCoord0(Vertex v)
-    {
-        return v.uv0;
-    }
-
-    void setTexCoord0(inout Vertex v, float2 texCoord)
-    {
-        v.uv0 = texCoord;
+        Vertex result;
+        result.position = WaveReadLaneAt(value.position, lane);
+        result.basePosition = WaveReadLaneAt(value.basePosition, lane);
+        result.worldNormal = WaveReadLaneAt(value.worldNormal, lane);
+        result.worldTangent = WaveReadLaneAt(value.worldTangent, lane);
+        result.uv0 = WaveReadLaneAt(value.uv0, lane);
+        return result;
     }
 };
 

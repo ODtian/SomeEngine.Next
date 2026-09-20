@@ -20,7 +20,7 @@ ByteAddressBuffer PageHeap;
 void ScatterRasterBatches(
     uint visibleIndex,
     uint slotOffset,
-    uint vrbInfo,
+    uint4 vertReuseBatchWords,
     uint triangleCount,
     uint packedMaterials,
     uint packedRanges,
@@ -29,38 +29,66 @@ void ScatterRasterBatches(
     if (triangleCount == 0u)
         return;
 
-    VRBDecoded vrb = DecodeVRB(vrbInfo);
+    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
     uint triangleStart = 0u;
-    uint batch = 0u;
-    for (; batch < vrb.batchCount && triangleStart < triangleCount; batch++)
+    uint flatBatchIndex = 0u;
+    uint rangeIndex = 0u;
+    while (rangeIndex < rangeCount)
     {
-        uint triangleEnd = min(triangleStart + vrb.triCounts[batch], triangleCount);
+        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
         uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        ScatterRaster(
-            RasterBinMeta,
-            BinnedClusterIndexBuffer,
-            RasterKey(RasterSlots, Uniforms, slotOffset, material),
-            visibleIndex,
-            batch,
-            EmitsSw(isSoftware, batch, vrb.batchCount));
-        triangleStart = triangleEnd;
-    }
+        uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
+        uint batchCount = VertReuseBatchCount(vertReuseBatchWords, rangeIndex);
+        bool useVertReuseBatches = !isSoftware || RasterSoftwareUsesVertReuseBatches(
+            RasterSlots, Uniforms, slotOffset, material);
+        if (!useVertReuseBatches)
+        {
+            uint mergedRangeCount = 1u;
+            uint mergedBatchCount = batchCount;
+            while (rangeIndex + mergedRangeCount < rangeCount)
+            {
+                uint nextRange = rangeIndex + mergedRangeCount;
+                uint nextStart = MaterialRangeEnd(packedRanges, triangleCount, nextRange - 1u);
+                uint nextMaterial = LocalMaterial(packedMaterials, packedRanges, nextStart);
+                uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
+                bool nextUsesBatches = RasterSoftwareUsesVertReuseBatches(
+                    RasterSlots, Uniforms, slotOffset, nextMaterial);
+                if (nextBin != bin || nextUsesBatches)
+                    break;
+                mergedBatchCount += VertReuseBatchCount(vertReuseBatchWords, nextRange);
+                mergedRangeCount++;
+            }
 
-    while (triangleStart < triangleCount)
-    {
-        uint triangleEnd = min(
-            triangleStart + 32u,
-            MaterialEnd(packedRanges, triangleStart, triangleCount));
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        ScatterRaster(
-            RasterBinMeta,
-            BinnedClusterIndexBuffer,
-            RasterKey(RasterSlots, Uniforms, slotOffset, material),
-            visibleIndex,
-            batch,
-            false);
-        batch++;
-        triangleStart = triangleEnd;
+            ScatterRaster(
+                RasterBinMeta,
+                BinnedClusterIndexBuffer,
+                bin,
+                visibleIndex,
+                RasterRangeWorkIndex(rangeIndex, mergedRangeCount),
+                true);
+            flatBatchIndex += mergedBatchCount;
+            rangeIndex += mergedRangeCount;
+            triangleStart = MaterialRangeEnd(
+                packedRanges, triangleCount, rangeIndex - 1u);
+            continue;
+        }
+
+        for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
+        {
+            ScatterRaster(
+                RasterBinMeta,
+                BinnedClusterIndexBuffer,
+                bin,
+                visibleIndex,
+                flatBatchIndex,
+                isSoftware);
+            triangleStart = min(
+                triangleStart + VertReuseBatchTriangleCount(vertReuseBatchWords, flatBatchIndex),
+                rangeEnd);
+            flatBatchIndex++;
+        }
+        triangleStart = rangeEnd;
+        rangeIndex++;
     }
 }
 
@@ -86,14 +114,14 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
         isSoftware);
 
     DrawRequest entry = VisibleClusters[visibleIndex];
-    uint vrbInfo;
+    uint4 vertReuseBatchWords;
     uint triangleCount;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
         PageHeap,
         entry,
-        vrbInfo,
+        vertReuseBatchWords,
         triangleCount,
         packedMaterials,
         packedRanges);
@@ -106,7 +134,7 @@ void ScatterBins(uint3 threadId : SV_DispatchThreadID)
     ScatterRasterBatches(
         visibleIndex,
         slotOffset,
-        vrbInfo,
+        vertReuseBatchWords,
         triangleCount,
         packedMaterials,
         packedRanges,

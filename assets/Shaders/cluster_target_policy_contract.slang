@@ -22,6 +22,12 @@ bool ClusterTargetPolicyScreenBoundsAccepts(
     float2 maxUv,
     ClusterViewUniforms view);
 
+bool ClusterTargetPolicyRasterBoundsWindow(
+    float2 minUv,
+    float2 maxUv,
+    ClusterViewUniforms view,
+    out uint2 rasterWindow);
+
 bool ClusterTargetPolicyWorldBoundsOccluded(
     float3 worldMin,
     float3 worldMax,

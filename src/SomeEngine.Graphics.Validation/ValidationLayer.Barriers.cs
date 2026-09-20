@@ -1023,7 +1023,7 @@ public sealed partial class ValidationLayer
         in ResourceCellState state)
     {
         if (!state.Active)
-            Reject("Barriers", "The aliased resource range is inactive.", range.Resource.Label);
+            Reject("Barriers", $"The aliased resource range is inactive. Resource: '{range.Resource.Label}'.", range.Resource.Label);
         if (state.Handoff is not null)
         {
             Reject(

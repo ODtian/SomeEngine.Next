@@ -1,3 +1,4 @@
+﻿using SomeEngine.Graphics.Validation;
 using SomeEngine.Graphics.Direct3D12;
 using Xunit;
 
@@ -8,7 +9,7 @@ public sealed class WarpEncodePreparationTests
     [Fact]
     public void Second_begin_is_rejected_without_replacing_the_active_recording()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -40,7 +41,7 @@ public sealed class WarpEncodePreparationTests
     [Fact]
     public void RepeatedCopyBarrierAndClearRecordingCompletes()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -84,7 +85,7 @@ public sealed class WarpEncodePreparationTests
     [Fact]
     public void Invalid_second_native_borrow_resource_preserves_recording_for_retry()
     {
-        using var backend = new D3D12Backend();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -102,7 +103,7 @@ public sealed class WarpEncodePreparationTests
         backend.Begin(context, new CommandRecordingDesc(0, 0, 1));
         backend.CopyBuffer(context, new BufferCopy(upload, 0, readback, 0, 64));
         Resource[] invalid = [upload, null!];
-        Assert.Throws<ArgumentException>(() => backend.BorrowCommandList(context, invalid));
+        Assert.Throws<ArgumentNullException>(() => backend.BorrowCommandList(context, invalid));
 
         D3D12CommandListBorrow borrow = backend.BorrowCommandList(context, [upload, readback]);
         Assert.True(borrow.IsValid);

@@ -12,11 +12,6 @@ public enum RuntimeGraphicsBackend : byte
 public sealed record RuntimeStartupOptions(
     int FrameLimit,
     bool WindowVSync,
-    uint PresentSyncInterval,
-    double UpdatesPerSecond,
-    double FramesPerSecond,
-    int PipelineWarmupBudget,
-    bool WaitForPipelineWarmup,
     bool SkipSwapchainPresent,
     bool VerifyFrameOutput,
     string? RenderDocCapture,
@@ -37,10 +32,24 @@ public sealed record RuntimeStartupOptions(
     public bool SynchronousFrames { get; init; }
     public string? ScenePlayback { get; init; }
     public float FixedFrameSeconds { get; init; }
+    public string? FrameOutputPath { get; init; }
+    public bool HideDebugUi { get; init; }
+    public bool TemporalAntialiasing { get; init; } = true;
+    public bool VirtualShadows { get; init; } = true;
 
     public static RuntimeStartupOptions Parse(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
+        foreach (string argument in args)
+        {
+            string option = argument.Split('=', 2)[0];
+            if (option.Equals("--present-interval", StringComparison.OrdinalIgnoreCase) ||
+                option.Equals("--pipeline-budget", StringComparison.OrdinalIgnoreCase) ||
+                option.Equals("--wait-pipelines", StringComparison.OrdinalIgnoreCase) ||
+                option.Equals("--no-wait-pipelines", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"{option} is unsupported. Presentation is controlled by --vsync/--no-vsync; pipelines are created before rendering.");
+        }
+
 
         bool windowVSync = ReadBooleanOption(
             args,
@@ -48,6 +57,10 @@ public sealed record RuntimeStartupOptions(
             disableSwitches: ["--no-vsync"],
             defaultValue: true);
         int frameLimit = ReadPositive(args, "--frames", defaultValue: 0);
+        string? frameOutputPath = ReadOptionalValue(args, "--frame-output");
+        if (frameOutputPath is not null &&
+            !Path.GetExtension(frameOutputPath).Equals(".bmp", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("--frame-output requires a .bmp destination.");
         string? playback = ReadOptionalValue(args, "--scene-playback");
         if (playback is not null and not "motion" and not "materials")
             throw new ArgumentException("--scene-playback requires 'motion' or 'materials'.");
@@ -63,15 +76,6 @@ public sealed record RuntimeStartupOptions(
         return new RuntimeStartupOptions(
             FrameLimit: frameLimit,
             WindowVSync: windowVSync,
-            PresentSyncInterval: ReadSync(args, windowVSync),
-            UpdatesPerSecond: windowVSync ? 60.0 : 0.0,
-            FramesPerSecond: windowVSync ? 60.0 : 0.0,
-            PipelineWarmupBudget: ReadPositive(args, "--pipeline-budget", defaultValue: 4),
-            WaitForPipelineWarmup: ReadBooleanOption(
-                args,
-                enableSwitches: ["--wait-pipelines"],
-                disableSwitches: ["--no-wait-pipelines"],
-                defaultValue: true),
             SkipSwapchainPresent: ReadBooleanOption(
                 args,
                 enableSwitches: ["--skip-present"],
@@ -115,6 +119,10 @@ public sealed record RuntimeStartupOptions(
             SynchronousFrames = synchronousFrames,
             ScenePlayback = playback,
             FixedFrameSeconds = fixedStep,
+            FrameOutputPath = frameOutputPath,
+            HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
+            TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
+            VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
         };
     }
 
@@ -145,34 +153,6 @@ public sealed record RuntimeStartupOptions(
         return defaultValue;
     }
 
-    private static uint ReadSync(string[] args, bool windowVSync)
-    {
-        for (int index = 0; index < args.Length; index++)
-        {
-            string arg = args[index];
-            const string presentIntervalPrefix = "--present-interval=";
-            if (arg.StartsWith(presentIntervalPrefix, StringComparison.OrdinalIgnoreCase))
-                return ParsePresentSyncInterval("--present-interval", arg[presentIntervalPrefix.Length..]);
-
-            if (!string.Equals(arg, "--present-interval", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            if (++index >= args.Length)
-                throw new ArgumentException("--present-interval requires an integer value from 0 to 4.");
-
-            return ParsePresentSyncInterval("--present-interval", args[index]);
-        }
-
-        return windowVSync ? 1u : 0u;
-    }
-
-    private static uint ParsePresentSyncInterval(string name, string value)
-    {
-        if (!uint.TryParse(value, out uint interval) || interval > 4)
-            throw new ArgumentException($"{name} requires an integer value from 0 to 4.");
-
-        return interval;
-    }
     private static string? ReadOptionalValue(string[] args, string optionName)
     {
         string prefix = optionName + "=";

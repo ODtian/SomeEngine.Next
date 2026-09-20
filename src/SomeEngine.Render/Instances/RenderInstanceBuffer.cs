@@ -23,6 +23,7 @@ public sealed partial class RenderInstanceBuffer : IRenderInstanceSource, IDispo
     private int _capacity;
     private int _count;
     private ulong _revision = 1ul;
+    private ulong _writeVersion;
     private bool _disposed;
 
     public RenderInstanceBuffer(
@@ -373,8 +374,10 @@ public sealed partial class RenderInstanceBuffer : IRenderInstanceSource, IDispo
             Column column = RequireColumn(property);
             ValidateRange(start, count);
             Span<T> values = MemoryMarshal.Cast<byte, T>(column.Range(start, count));
+            ulong writeVersion = checked(++_writeVersion);
             return new RenderInstanceColumnWriteScope<T>(
                 this,
+                writeVersion,
                 property.Ordinal,
                 start,
                 values);
@@ -455,10 +458,13 @@ public sealed partial class RenderInstanceBuffer : IRenderInstanceSource, IDispo
         where T : unmanaged =>
         MemoryMarshal.Cast<byte, T>(_columns[ordinal].Range(start, count));
 
-    internal void CompleteMappedWrite(int ordinal, int start, int count)
+    internal void CompleteMappedWrite(ulong writeVersion, int ordinal, int start, int count)
     {
+        if (writeVersion != _writeVersion)
+            return;
         try
         {
+            _writeVersion = checked(_writeVersion + 1);
             if (count != 0)
                 RecordProperty(ordinal, new RenderInstanceRange(start, count));
         }
@@ -626,16 +632,19 @@ public ref struct RenderInstanceColumnWriteScope<T>
     where T : unmanaged
 {
     private RenderInstanceBuffer? _owner;
+    private readonly ulong _writeVersion;
     private readonly int _ordinal;
     private readonly int _start;
 
     internal RenderInstanceColumnWriteScope(
         RenderInstanceBuffer owner,
+        ulong writeVersion,
         int ordinal,
         int start,
         Span<T> values)
     {
         _owner = owner;
+        _writeVersion = writeVersion;
         _ordinal = ordinal;
         _start = start;
         Values = values;
@@ -647,6 +656,6 @@ public ref struct RenderInstanceColumnWriteScope<T>
     {
         RenderInstanceBuffer? owner = _owner;
         _owner = null;
-        owner?.CompleteMappedWrite(_ordinal, _start, Values.Length);
+        owner?.CompleteMappedWrite(_writeVersion, _ordinal, _start, Values.Length);
     }
 }

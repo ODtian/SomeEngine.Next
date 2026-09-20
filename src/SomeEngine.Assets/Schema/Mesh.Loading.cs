@@ -7,114 +7,126 @@ public partial class Mesh : IDisposable, IAsyncDisposable
 {
     private readonly object _contentGate = new();
     private MeshPayloadSource? _payloadSource;
-    private int _disposed;
+    private MeshData? _data;
+    private readonly List<(WeakReference<MeshData> Data, MeshPayloadSource Source)> _retiredSources = [];
+    private bool _disposed;
 
+    public event Action<Mesh>? Changed;
+
+    /// <summary>Returns the current immutable content. Reload publishes a different data object.</summary>
+    public MeshData CaptureData()
+    {
+        lock (_contentGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _data ??= new MeshData(this, _payloadSource);
+        }
+    }
+
+    internal bool TryRetainPayloadSource(MeshData data, out MeshPayloadSource? source)
+    {
+        lock (_contentGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            source = data.Source?.Retain();
+            return source is not null;
+        }
+    }
+
+    [SomeEngine.Serialization.BinaryIgnore]
     public ulong Revision { get; private set; } = 1;
+
+    [SomeEngine.Serialization.BinaryIgnore]
     public bool IsStreamed => Volatile.Read(ref _payloadSource) is not null;
-
-    internal bool TryRetainPayloadSource(out MeshPayloadSource? source)
-    {
-        lock (_contentGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed != 0, this);
-            source = _payloadSource?.Retain();
-            return source is not null;
-        }
-    }
-
-    internal bool TryBorrowPayloadSource(out MeshPayloadSource? source)
-    {
-        lock (_contentGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed != 0, this);
-            source = _payloadSource;
-            return source is not null;
-        }
-    }
 
     internal void AttachPayloadSource(MeshPayloadSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        lock (_contentGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed != 0, this);
-            if (_payloadSource is not null)
-                throw new InvalidOperationException("Mesh already has a streamed payload source.");
-            _payloadSource = source;
-        }
+        if (Interlocked.CompareExchange(ref _payloadSource, source, null) is not null)
+            throw new InvalidOperationException("Mesh already owns a streamed payload source.");
     }
 
-    public static async ValueTask<Mesh> CreateAsync(Mesh.Asset asset,
-        CancellationToken cancellationToken = default)
+    internal static async ValueTask<Mesh> LoadAssetAsync(
+        AssetLoadContext context,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(asset);
         cancellationToken.ThrowIfCancellationRequested();
-        MeshData fields = asset.CopyValues();
-        fields.ValidateMaterialReferences(asset.SourcePath);
-        if (fields.Payload is { } payload)
-        {
-            MeshData.PopulatePayloadIntegrity(fields, payload.Span);
-            fields.PayloadKey = MeshData.PayloadChunkKey;
-            fields.PayloadLength = checked((ulong)payload.Length);
-            fields.AssetGuid = null;
-            return new Mesh { _content = fields };
-        }
-        BinaryDocument? document = asset.RetainSource();
-        if (document is null)
-        {
-            fields.Dispose();
-            throw new InvalidDataException("Mesh asset has no payload.");
-        }
-        return await MeshData.OpenStreamedAsync(document, fields, cancellationToken).ConfigureAwait(false);
+        BinaryDocument<Mesh> document = await context
+            .OpenAsync<Mesh>()
+            .ConfigureAwait(false);
+        Mesh root = await OpenStreamedAsync(document, cancellationToken).ConfigureAwait(false);
+        return context.Transfer(document, root);
     }
 
-    /// <summary>Changes this mesh at the caller's world update boundary; existing page reads retain their bytes.</summary>
-    public async ValueTask UpdateAsync(Mesh.Asset asset, CancellationToken cancellationToken = default)
-    {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        await using Mesh replacement = await CreateAsync(asset, cancellationToken).ConfigureAwait(false);
-        await ApplyReloadAsync(this, replacement, cancellationToken).ConfigureAwait(false);
-    }
-
-    internal static Mesh FromFields(MeshData fields)
-    {
-        MeshData content = fields.CopyFields();
-        content.AssetGuid = null;
-        return new Mesh { _content = content };
-    }
-
-    internal static ValueTask ApplyReloadAsync(Mesh current, Mesh replacement, CancellationToken cancellationToken)
+    internal static ValueTask ApplyReloadAsync(
+        Mesh current,
+        Mesh replacement,
+        AssetUpdate update,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(replacement);
         cancellationToken.ThrowIfCancellationRequested();
-        MeshPayloadSource? previous;
+
         lock (current._contentGate)
         {
-            ObjectDisposedException.ThrowIf(current._disposed != 0, current);
+            ObjectDisposedException.ThrowIf(current._disposed, current);
             ulong revision = checked(current.Revision + 1);
-            MeshPayloadSource? next = Interlocked.Exchange(ref replacement._payloadSource, null);
-            previous = Interlocked.Exchange(ref current._payloadSource, next);
-            current._content.Dispose();
-            current._content = replacement._content;
-            replacement._content = new();
+            current.CollectUnusedSources();
+            MeshPayloadSource? previous = current._payloadSource;
+            if (previous is not null)
+            {
+                if (current._data is { } data)
+                    current._retiredSources.Add((new WeakReference<MeshData>(data), previous));
+            }
+            current._payloadSource = Interlocked.Exchange(ref replacement._payloadSource,
+                current._data is null ? previous : null);
+            current.AssetGuid = replacement.AssetGuid;
+            current.Name = replacement.Name;
+            current.Bounds = replacement.Bounds;
+            current.VertexEncoding = replacement.VertexEncoding;
+            current.PayloadKey = replacement.PayloadKey;
+            current.PayloadLength = replacement.PayloadLength;
+            current.Payload = replacement.Payload;
+            current.BvhOffset = replacement.BvhOffset;
+            current.PageDigests = replacement.PageDigests;
+            current.BvhLength = replacement.BvhLength;
+            current.BvhSha256 = replacement.BvhSha256;
+            current.Regions = replacement.Regions;
+            current.MaterialGuids = replacement.MaterialGuids;
             current.Revision = revision;
+            current._data = null;
         }
-        previous?.Dispose();
+        update.Accept();
+        AssetUpdate.Notify(current.Changed, current);
         return ValueTask.CompletedTask;
+    }
+
+    private void CollectUnusedSources()
+    {
+        for (int index = _retiredSources.Count - 1; index >= 0; index--)
+        {
+            var source = _retiredSources[index];
+            if (source.Data.TryGetTarget(out _)) continue;
+            source.Source.Dispose();
+            _retiredSources.RemoveAt(index);
+        }
     }
 
     public void Dispose()
     {
-        MeshPayloadSource? source;
         lock (_contentGate)
         {
-            if (_disposed != 0) return;
-            Volatile.Write(ref _disposed, 1);
-            source = Interlocked.Exchange(ref _payloadSource, null);
+            _disposed = true;
+            _payloadSource?.Dispose();
+            _payloadSource = null;
+            _data = null;
+            for (int index = _retiredSources.Count - 1; index >= 0; index--)
+            {
+                _retiredSources[index].Source.Dispose();
+                _retiredSources.RemoveAt(index);
+            }
         }
-        try { source?.Dispose(); }
-        finally { _content.Dispose(); }
     }
 
     public ValueTask DisposeAsync()

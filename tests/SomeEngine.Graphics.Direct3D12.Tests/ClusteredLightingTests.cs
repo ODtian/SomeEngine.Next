@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using Xunit;
 using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
@@ -10,22 +10,28 @@ public sealed class ClusteredLightingTests
     [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
+    [InlineData(3, true)]
+    [InlineData(3, false)]
     [InlineData(80, true)]
     [InlineData(80, false)]
     public void Clear_and_group_assignment_preserve_view_boundaries_and_bounded_indices(int lightCount, bool large)
     {
         const int cells = 8 * 4 * 4, capacity = 16, views = 2, directional = 2;
+        uint sliceGroups = (uint)(4 + Math.Max(lightCount, 1) - 1) / (uint)Math.Max(lightCount, 1);
         const uint untouched = 0xdeadbeef;
-        var parameters = new uint[36 * views];
+        var parameters = new uint[48 * views];
         for (int view = 0; view < views; view++)
         {
-            Span<uint> row = parameters.AsSpan(view * 36, 36);
+            Span<uint> row = parameters.AsSpan(view * 48, 48);
             Matrix4x4 matrix = view == 0 ? Matrix4x4.Identity : Matrix4x4.CreateTranslation(0, 0, -1000);
             MemoryMarshal.Write(MemoryMarshal.AsBytes(row), in matrix);
-            row[16] = 16; row[17] = 16; row[18] = 8; row[19] = 4;
-            row[20] = Float(1); row[21] = Float(16); row[22] = Float(1); row[23] = 0;
-            row[24] = 4; row[25] = capacity; row[26] = directional; row[27] = (uint)lightCount;
-            row[28] = Float(1); row[29] = Float(1); row[30] = 128; row[31] = 64; row[32] = cells;
+            Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, 1, 16);
+            MemoryMarshal.Write(MemoryMarshal.AsBytes(row[16..]), in projection);
+            row[32] = 16; row[33] = 16; row[34] = 8; row[35] = 4;
+            row[36] = Float(1); row[37] = Float(16); row[38] = Float(1); row[39] = 0;
+            row[40] = 4; row[41] = capacity; row[42] = directional; row[43] = (uint)lightCount;
+            row[44] = 128; row[45] = 64; row[46] = cells;
+            row[47] = sliceGroups;
         }
         var lights = new uint[Math.Max(directional + lightCount, 1) * 36];
         for (int index = directional; index < directional + lightCount; index++)
@@ -40,7 +46,7 @@ public sealed class ClusteredLightingTests
         Assert.All(cleared[0], value => Assert.Equal(0u, value));
         Assert.All(cleared[1], value => Assert.Equal(untouched, value));
         uint[][] assigned = lightCount == 0 ? cleared : Dispatch("BuildClusteredLightGrid",
-            new((uint)lightCount, views, 1), cleared[0], cleared[1]);
+            new((uint)lightCount, views, sliceGroups), cleared[0], cleared[1]);
         for (int cell = 0; cell < cells * views; cell++)
         {
             // Small spheres lie strictly within tile (4, 1), depth slice 1.
@@ -59,7 +65,7 @@ public sealed class ClusteredLightingTests
         uint[][] Dispatch(string entry, DispatchArguments dispatch, uint[] counts, uint[] output) =>
             Execute("clustered_light_grid.slang", entry, dispatch,
             [
-                (parameters, ResourceBindingType.BufferSrv, 144), (lights, ResourceBindingType.BufferSrv, 144),
+                (parameters, ResourceBindingType.BufferSrv, 192), (lights, ResourceBindingType.BufferSrv, 144),
                 (counts, ResourceBindingType.BufferUav, 8), (output, ResourceBindingType.BufferUav, 4),
             ]);
     }

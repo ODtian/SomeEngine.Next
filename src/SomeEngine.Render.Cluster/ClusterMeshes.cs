@@ -28,7 +28,7 @@ internal sealed class ClusterPageSourceException : Exception
 }
 
 internal readonly record struct ClusterMeshRegistration(
-    Mesh Mesh,
+    MeshData Mesh,
     uint FirstPageId,
     uint PageCount,
     uint RootNode);
@@ -568,13 +568,13 @@ internal sealed partial class ClusterMeshes : IDisposable
                     $"Cluster page at byte {payloadOffset} cluster {index} requests an undefined slow material-table path.");
             }
             ValidateExtensionRange(cluster, header, payloadOffset, index);
-            if ((cluster.PackedGroup & 0xFFFF0000u) != 0 || cluster.Reserved != 0)
+            if ((cluster.PackedGroup & 0xFFFF0000u) != 0)
             {
                 throw new InvalidDataException(
                     $"Cluster page at byte {payloadOffset} cluster {index} has non-zero reserved protocol bits.");
             }
             ValidateFastMaterialEncoding(cluster, triangleCount, payloadOffset, index);
-            ValidateVrbEncoding(cluster.VRBBatchInfo, triangleCount, payloadOffset, index);
+            ValidateVertReuseBatchEncoding(cluster, triangleCount, payloadOffset, index);
 
             int indicesStart = checked((int)header.IndicesOffset + cluster.TriangleStart);
             int indicesLength = checked((int)triangleCount * 3);
@@ -664,52 +664,111 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    private static void ValidateVrbEncoding(
-        uint value,
+    private static void ValidateVertReuseBatchEncoding(
+        in PackedCluster cluster,
         uint triangleCount,
         int payloadOffset,
         int clusterIndex)
     {
-        uint encodedBatchCount = ((value >> 25) & 0x7) + 1;
-        if ((value & 0xF0000000) != 0 || encodedBatchCount > 5)
+        uint range0End = cluster.PackedRanges & 0xFFu;
+        uint range1End = (cluster.PackedRanges >> 8) & 0xFFu;
+        int rangeCount = range0End == triangleCount
+            ? 1
+            : (range1End == triangleCount ? 2 : 3);
+        Span<uint> rangeEnds = stackalloc uint[3]
         {
-            throw new InvalidDataException(
-                $"Cluster page at byte {payloadOffset} cluster {clusterIndex} has invalid VRB batch metadata.");
-        }
+            range0End,
+            range1End,
+            triangleCount,
+        };
 
-        uint triangleSum = 0;
-        for (uint batch = 0; batch < encodedBatchCount; batch++)
-            triangleSum = checked(triangleSum + (((value >> checked((int)(batch * 5))) & 0x1F) + 1));
-        for (uint batch = encodedBatchCount; batch < 5; batch++)
+        uint triangleStart = 0;
+        int flatBatchIndex = 0;
+        for (int rangeIndex = 0; rangeIndex < rangeCount; rangeIndex++)
         {
-            if (((value >> checked((int)(batch * 5))) & 0x1F) != 0)
+            uint batchCount = ReadVertReuseBits(cluster, rangeIndex * 4, 4);
+            if (batchCount == 0)
             {
                 throw new InvalidDataException(
-                    $"Cluster page at byte {payloadOffset} cluster {clusterIndex} stores unused VRB batch bits.");
+                    $"Cluster page at byte {payloadOffset} cluster {clusterIndex} has a material range without a vertex-reuse batch.");
+            }
+
+            uint rangeEnd = rangeEnds[rangeIndex];
+            for (uint batch = 0; batch < batchCount; batch++)
+            {
+                uint batchTriangleCount = ReadVertReuseBits(
+                    cluster,
+                    12 + flatBatchIndex * 5,
+                    5) + 1u;
+                triangleStart = checked(triangleStart + batchTriangleCount);
+                if (triangleStart > rangeEnd)
+                {
+                    throw new InvalidDataException(
+                        $"Cluster page at byte {payloadOffset} cluster {clusterIndex} has a vertex-reuse batch outside its material range.");
+                }
+                flatBatchIndex++;
+            }
+
+            if (triangleStart != rangeEnd)
+            {
+                throw new InvalidDataException(
+                    $"Cluster page at byte {payloadOffset} cluster {clusterIndex} vertex-reuse batches do not exactly cover their material range.");
             }
         }
 
-        if (triangleSum > triangleCount)
+        for (int rangeIndex = rangeCount; rangeIndex < 3; rangeIndex++)
         {
-            throw new InvalidDataException(
-                $"Cluster page at byte {payloadOffset} cluster {clusterIndex} VRB batches cover {triangleSum} of {triangleCount} triangles.");
+            if (ReadVertReuseBits(cluster, rangeIndex * 4, 4) != 0)
+            {
+                throw new InvalidDataException(
+                    $"Cluster page at byte {payloadOffset} cluster {clusterIndex} stores batch counts for an unused material range.");
+            }
+        }
+
+        int usedBits = 12 + flatBatchIndex * 5;
+        for (int bit = usedBits; bit < 128; bit++)
+        {
+            if (ReadVertReuseBits(cluster, bit, 1) != 0)
+            {
+                throw new InvalidDataException(
+                    $"Cluster page at byte {payloadOffset} cluster {clusterIndex} stores unused vertex-reuse batch bits.");
+            }
         }
     }
 
-    public bool TryGetPublishedRoot(Mesh mesh, out uint root)
+    private static uint ReadVertReuseBits(
+        in PackedCluster cluster,
+        int bitOffset,
+        int bitCount)
+    {
+        if (bitOffset < 0 || bitCount <= 0 || bitCount > 31 || bitOffset + bitCount > 128)
+            throw new InvalidDataException("Vertex-reuse batch metadata exceeds its inline encoding.");
+
+        int wordIndex = bitOffset >> 5;
+        int wordBit = bitOffset & 31;
+        uint first = VertReuseWord(cluster, wordIndex) >> wordBit;
+        int lowBits = Math.Min(bitCount, 32 - wordBit);
+        uint value = first;
+        if (lowBits < bitCount)
+            value |= VertReuseWord(cluster, wordIndex + 1) << lowBits;
+        return value & ((1u << bitCount) - 1u);
+    }
+
+    private static uint VertReuseWord(in PackedCluster cluster, int index)
+        => index switch
+        {
+            0 => cluster.VertReuseBatchWord0,
+            1 => cluster.VertReuseBatchWord1,
+            2 => cluster.VertReuseBatchWord2,
+            3 => cluster.VertReuseBatchWord3,
+            _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        };
+
+    public bool TryGetPublishedRoot(MeshData mesh, out uint root)
     {
         lock (_gate)
         {
             ThrowIfDisposed();
-            if (_pages.TryRegistration(
-                    mesh,
-                    out _,
-                    out _,
-                    out _))
-            {
-                // The registration owns a retained payload source. A Mesh reload publishes a
-                // source for future epochs without invalidating readers of the current epoch.
-            }
             return _bvh.TryPublishedRoot(mesh, out root);
         }
     }

@@ -1,4 +1,4 @@
-using SlangShaderSharp;
+﻿using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
 
@@ -51,25 +51,20 @@ internal sealed unsafe partial class VulkanBackend
             reflection,
             entries,
             desc.StaticSamplers);
-        CompiledSpirv vertex = CompileSpirv(
-            desc.Program,
-            reflection,
-            layout,
-            desc.Vertex,
-            SlangStage.Vertex,
-            "vertex",
-            streamOutput);
-        CompiledSpirv pixel = CompileSpirv(
-            desc.Program, reflection, layout, desc.Pixel, SlangStage.Fragment, "fragment");
-        layout.ActivateEntryBindings(
-        [
-            new VulkanSpirvEntryBindings(desc.Vertex, vertex.ActiveBindings),
-            new VulkanSpirvEntryBindings(desc.Pixel, pixel.ActiveBindings),
-        ]);
         VkPipeline native = default;
         VulkanPipeline? pipeline = null;
         try
         {
+            CompiledSpirv vertex = CompileSpirv(
+                desc.Program,
+                reflection,
+                layout,
+                desc.Vertex,
+                SlangStage.Vertex,
+                "vertex",
+                streamOutput);
+            CompiledSpirv pixel = CompileSpirv(
+                desc.Program, reflection, layout, desc.Pixel, SlangStage.Fragment, "fragment");
             if (nativeCache is null)
                 native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, default);
             else
@@ -126,21 +121,19 @@ internal sealed unsafe partial class VulkanBackend
             reflection,
             [desc.Compute],
             desc.StaticSamplers.Span);
-        CompiledSpirv compute = CompileSpirv(
-            desc.Program,
-            reflection,
-            layout,
-            desc.Compute,
-            SlangStage.Compute,
-            "compute");
-        layout.ActivateEntryBindings(
-            [new VulkanSpirvEntryBindings(desc.Compute, compute.ActiveBindings)]);
         VkPipeline native = default;
         VkShaderModule module = default;
         nint entryName = 0;
         VulkanPipeline? pipeline = null;
         try
         {
+            CompiledSpirv compute = CompileSpirv(
+                desc.Program,
+                reflection,
+                layout,
+                desc.Compute,
+                SlangStage.Compute,
+                "compute");
             module = CreateShaderModule(nativeDevice, compute.Code);
             entryName = SilkMarshal.StringToPtr(compute.Name);
             PipelineShaderStageCreateInfo stage = new()
@@ -534,7 +527,7 @@ internal sealed unsafe partial class VulkanBackend
         byte[] bytes = NormalizeSpirvDescriptorBindings(
             entry.Code.Span,
             layout.GetSpirvTargets(entry),
-            out VulkanSpirvBindingTarget[] activeTargets);
+            out _);
         string entryName = entry.TargetName;
         if (string.IsNullOrWhiteSpace(entryName))
             throw new GraphicsException(
@@ -542,7 +535,7 @@ internal sealed unsafe partial class VulkanBackend
                 $"The cooked {role} entry point has no target entry name.");
         if (streamOutput is not null)
             bytes = ApplySpirvStreamOutput(bytes, entryName, streamOutput);
-        return new CompiledSpirv(bytes, entryName, activeTargets);
+        return new CompiledSpirv(bytes, entryName);
     }
 
     private static ShaderProgramLayout GetProgramReflection(ShaderProgram program)
@@ -728,7 +721,26 @@ internal sealed unsafe partial class VulkanBackend
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
 
-    private static LogicOp ToNative(LogicOperation operation) => (LogicOp)operation;
+    private static LogicOp ToNative(LogicOperation operation) => operation switch
+    {
+        LogicOperation.Clear => LogicOp.Clear,
+        LogicOperation.Set => LogicOp.Set,
+        LogicOperation.Copy => LogicOp.Copy,
+        LogicOperation.CopyInverted => LogicOp.CopyInverted,
+        LogicOperation.NoOperation => LogicOp.NoOp,
+        LogicOperation.Invert => LogicOp.Invert,
+        LogicOperation.And => LogicOp.And,
+        LogicOperation.Nand => LogicOp.Nand,
+        LogicOperation.Or => LogicOp.Or,
+        LogicOperation.Nor => LogicOp.Nor,
+        LogicOperation.Xor => LogicOp.Xor,
+        LogicOperation.Equivalence => LogicOp.Equivalent,
+        LogicOperation.AndReverse => LogicOp.AndReverse,
+        LogicOperation.AndInverted => LogicOp.AndInverted,
+        LogicOperation.OrReverse => LogicOp.OrReverse,
+        LogicOperation.OrInverted => LogicOp.OrInverted,
+        _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+    };
 
     private static void ThrowPipelineFailure(
         VulkanDevice device,
@@ -749,8 +761,7 @@ internal sealed unsafe partial class VulkanBackend
 
     private readonly record struct CompiledSpirv(
         byte[] Code,
-        string Name,
-        VulkanSpirvBindingTarget[] ActiveBindings);
+        string Name);
 
     private sealed class GraphicsPipelineSnapshot
     {

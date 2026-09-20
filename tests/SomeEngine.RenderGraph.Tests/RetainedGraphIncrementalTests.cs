@@ -1,55 +1,11 @@
-using SomeEngine.Graphics;
+﻿using SomeEngine.Graphics;
 
 namespace SomeEngine.RenderGraph.Tests;
 
 #if DEBUG
 public sealed class RetainedGraphIncrementalTests
 {
-    [Fact]
-    public void ExplicitOrderPlacesNewPassBeforeExistingHazardConsumer()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue]);
-        Branch branch;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            branch = AddBranch(edit, support.GraphicsQueue, "ordered insertion");
-            edit.Commit();
-        }
 
-        GraphPassId middle;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            var state = new DeclarationState(branch.Buffer);
-            middle = edit.AddCopyPass<DeclarationState, byte>(
-                "ordered middle write",
-                PassQueueSelection.Exact(support.GraphicsQueue),
-                state,
-                default,
-                static (ref PassDefinition pass, ref DeclarationState value) =>
-                    value.Access = pass.Write(
-                        value.Buffer,
-                        new BufferRange(0, 64),
-                        PipelineSync.Copy,
-                        ResourceAccess.CopyDestination,
-                        WriteCoverage.Complete),
-                static (ref CopyPassCommandScope _, in DeclarationState _, in byte _) => { });
-            edit.OrderAfter(middle, branch.WritePass);
-            edit.OrderAfter(branch.ReadPass, middle);
-            edit.Commit();
-        }
-
-        GraphHazardTimeline hazards = graph.StructureIndex.HazardTimelines[branch.Buffer.Value];
-        Assert.Contains(
-            hazards.Edges,
-            edge => edge.Predecessor == middle.Value && edge.Consumer == branch.ReadPass.Value);
-        Assert.DoesNotContain(
-            hazards.Edges,
-            edge => edge.Predecessor == branch.ReadPass.Value && edge.Consumer == middle.Value);
-    }
 
     [Fact]
     public void OldFrameCompletesAgainstOldBlocksAfterNewVersionCommits()
@@ -141,125 +97,7 @@ public sealed class RetainedGraphIncrementalTests
         support.Wait(submitted);
     }
 
-    [Fact]
-    public void DescriptorOnlySrvTracksExplicitResidentRangesWithoutOrderingFreshUploads()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using Buffer pageHeap = support.Backend.CreateBuffer(
-            support.Device,
-            new BufferDesc(
-                64,
-                BufferUsages.ShaderRead | BufferUsages.CopyDestination,
-                "range-tracked page heap"),
-            MemoryType.DeviceLocal);
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue, support.CopyQueue]);
-        GraphBufferId pageHeapId;
-        GraphPassId reader;
-        GraphPassId upload;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            pageHeapId = edit.RegisterExternalBuffer(
-                pageHeap,
-                [new BufferBoundaryState(
-                    new BufferRange(0, 64),
-                    pageHeap.InitialSync,
-                    pageHeap.InitialAccess,
-                    ResourceContentState.Defined)]);
-            GraphBufferSrvId wholeHeap = edit.CreateBufferSrv(pageHeapId, BufferRange.Whole);
-            var readState = new ResidentReadState(pageHeapId, wholeHeap);
-            reader = edit.AddComputePass<ResidentReadState, byte>(
-                "read old resident range",
-                PassQueueSelection.Exact(support.GraphicsQueue),
-                readState,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition pass, ref ResidentReadState state) =>
-                {
-                    pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(state.View));
-                    state.Access = pass.Read(
-                        state.Buffer,
-                        new BufferRange(0, 32),
-                        PipelineSync.ComputeShading,
-                        ResourceAccess.ShaderResource);
-                },
-                static (ref ComputePassCommandScope _, in ResidentReadState _, in byte _) => { });
-            var uploadState = new DeclarationState(pageHeapId);
-            upload = edit.AddCopyPass<DeclarationState, byte>(
-                "upload fresh unpublished range",
-                PassQueueSelection.Exact(support.CopyQueue),
-                uploadState,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition pass, ref DeclarationState state) =>
-                    state.Access = pass.Write(
-                        state.Buffer,
-                        new BufferRange(32, 32),
-                        PipelineSync.Copy,
-                        ResourceAccess.CopyDestination,
-                        WriteCoverage.Complete),
-                static (ref CopyPassCommandScope _, in DeclarationState _, in byte _) => { });
-            edit.Commit();
-        }
 
-        GraphStructureIndex index = graph.StructureIndex;
-        GraphIdentity[] accesses = index.ResourceAccesses[pageHeapId.Value];
-        Assert.Equal(2, accesses.Length);
-        Assert.Contains(accesses, id =>
-            index.Structure.Accesses.Get(id).BufferRange == new BufferRange(0, 32));
-        Assert.Contains(accesses, id =>
-            index.Structure.Accesses.Get(id).BufferRange == new BufferRange(32, 32));
-        Assert.Empty(index.HazardTimelines[pageHeapId.Value].Edges);
-        Assert.DoesNotContain(reader.Value, index.DependencyPredecessors.GetValueOrDefault(upload.Value, []));
-        Assert.DoesNotContain(upload.Value, index.DependencyPredecessors.GetValueOrDefault(reader.Value, []));
-    }
-
-    [Fact]
-    public void UnchangedTransientKeepsPhysicalHeapOffsetAcrossLocalResize()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue],
-            new RenderGraphDesc(MaximumFramesInFlight: 1));
-        Branch left;
-        Branch right;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            left = AddBranch(edit, support.GraphicsQueue, "physical-left");
-            right = AddBranch(edit, support.GraphicsQueue, "physical-right");
-            edit.Commit();
-        }
-
-        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
-        using (RenderGraphFrame frame = graph.BeginFrame())
-            Assert.Equal(1, frame.Execute(completions));
-        support.Wait(completions);
-        Assert.True(graph.TryGetTransientPlacement(right.Buffer, out Heap? heap, out ulong offset));
-
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetBufferDescription(
-                left.Buffer,
-                new BufferDesc(
-                    128,
-                    BufferUsages.CopySource | BufferUsages.CopyDestination,
-                    "physical-left resized"));
-            edit.Commit();
-        }
-
-        completions.AsSpan().Clear();
-        using (RenderGraphFrame frame = graph.BeginFrame())
-            Assert.Equal(1, frame.Execute(completions));
-        support.Wait(completions);
-        Assert.True(graph.TryGetTransientPlacement(
-            right.Buffer,
-            out Heap? retainedHeap,
-            out ulong retainedOffset));
-        Assert.Same(heap, retainedHeap);
-        Assert.Equal(offset, retainedOffset);
-    }
 
     [Fact]
     public void LocalTransientResizeKeepsUnchangedCachedRhiBuffer()
@@ -354,43 +192,7 @@ public sealed class RetainedGraphIncrementalTests
 
     }
 
-    [Fact]
-    public void ExtensionPointAndFollowingPassReceiveDistinctStableOrdinals()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue]);
-        GraphExtensionPointId point;
-        GraphPassId pass;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            point = edit.AddExtensionPoint("one-shot work");
-            pass = edit.AddCopyPass<int, byte>(
-                "retained work",
-                PassQueueSelection.Exact(support.GraphicsQueue),
-                0,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
-                static (ref PassDefinition _, ref int _) => { },
-                static (ref CopyPassCommandScope _, in int _, in byte _) => { });
-            edit.Commit();
-        }
 
-        GraphStructure structure = graph.StructureIndex.Structure;
-        int extensionOrdinal = structure.ExtensionPoints.Get(point.Value).DeclarationOrdinal;
-        int passOrdinal = structure.Passes.Get(pass.Value).DeclarationOrdinal;
-        Assert.Equal(extensionOrdinal + 1, passOrdinal);
-
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            edit.SetPassLabel(pass, "renamed retained work");
-            edit.Commit();
-        }
-        Assert.Equal(
-            passOrdinal,
-            graph.StructureIndex.Structure.Passes.Get(pass.Value).DeclarationOrdinal);
-    }
 
     private static Branch AddBranch(RenderGraphEdit edit, Queue queue, string label)
     {

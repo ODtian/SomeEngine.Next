@@ -38,17 +38,17 @@ internal static partial class RhiBenchmarkRunner
     private static ProcessRun RunInterfaceReceiver(in WorkerConfiguration configuration)
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
-        return RunCore<InterfaceReceiverDispatch, InterfaceReceiverDispatch>(
-            new InterfaceReceiverDispatch(backend),
+        return RunCore(
+            backend,
             backend,
             configuration);
     }
 
-    private static ProcessRun RunCore<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static ProcessRun RunCore(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         in WorkerConfiguration configuration)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         AdapterInfo adapter = FindAdapter(backend, configuration.AdapterId);
         DeviceQueueDesc[] queueDescriptions =
@@ -113,13 +113,13 @@ internal static partial class RhiBenchmarkRunner
         WorkloadRun[] workloads = configuration.Workloads.ToArray().Select(RunSelected).ToArray();
         WorkloadRun RunSelected(GraphicsWorkload workload) => workload switch
         {
-            GraphicsWorkload.EmptySubmit => RunEmptySubmit<TReceiver, TDispatch>(receiver, backend, device, shader.ManifestSha256, selectedConfiguration),
+            GraphicsWorkload.EmptySubmit => RunEmptySubmit(receiver, backend, device, shader.ManifestSha256, selectedConfiguration),
             GraphicsWorkload.PersistentDraw10000 or GraphicsWorkload.TransientDraw10000 or GraphicsWorkload.StateSuppression10000 =>
-                RunDraw<TReceiver, TDispatch>(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, selectedConfiguration, workload),
-            GraphicsWorkload.ExplicitBarrier4096 => RunExplicitBarriers<TReceiver, TDispatch>(receiver, backend, device, computePipeline, shader.ManifestSha256, selectedConfiguration),
-            GraphicsWorkload.ThreeQueuePresent => RunThreeQueuePresent<TReceiver, TDispatch>(receiver, backend, device, graphicsPipeline, computePipeline, persistentBindings, shader.ManifestSha256, selectedConfiguration),
+                RunDraw(receiver, backend, diagnostics, device, graphicsPipeline, persistentBindings, globalLayout, shader.ManifestSha256, selectedConfiguration, workload),
+            GraphicsWorkload.ExplicitBarrier4096 => RunExplicitBarriers(receiver, backend, device, computePipeline, shader.ManifestSha256, selectedConfiguration),
+            GraphicsWorkload.ThreeQueuePresent => RunThreeQueuePresent(receiver, backend, device, graphicsPipeline, computePipeline, persistentBindings, shader.ManifestSha256, selectedConfiguration),
             GraphicsWorkload.RepresentativeFrameSerial or GraphicsWorkload.RepresentativeFrameParallel =>
-                RunRepresentativeFrame<TReceiver, TDispatch>(
+                RunRepresentativeFrame(
                     receiver,
                     backend,
                     device,
@@ -150,13 +150,13 @@ internal static partial class RhiBenchmarkRunner
             workloads);
     }
 
-    private static WorkloadRun RunEmptySubmit<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static WorkloadRun RunEmptySubmit(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         Device device,
         string shaderManifest,
         in WorkerConfiguration configuration)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         var samples = new FrameSample[configuration.MeasuredFrames];
@@ -164,9 +164,9 @@ internal static partial class RhiBenchmarkRunner
         for (int frame = 0; frame < configuration.WarmupFrames; frame++)
         {
             QueueSubmitDesc submit = new([], [], [], [], []);
-            QueueCompletion completion = TDispatch.Submit(receiver, queue, submit);
-            RequireCompleted(TDispatch.WaitCpu(receiver, completion, GpuTimeout));
-            TDispatch.CollectCompleted(receiver, device);
+            QueueCompletion completion = receiver.Submit(queue, submit);
+            RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
+            receiver.CollectCompleted(device);
         }
         for (int frame = 0; frame < samples.Length; frame++)
         {
@@ -174,14 +174,14 @@ internal static partial class RhiBenchmarkRunner
             long beforeEvents = allocations.Count;
             long started = Stopwatch.GetTimestamp();
             QueueSubmitDesc submit = new([], [], [], [], []);
-            QueueCompletion completion = TDispatch.Submit(receiver, queue, submit);
+            QueueCompletion completion = receiver.Submit(queue, submit);
             long stopped = Stopwatch.GetTimestamp();
             long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
             long events = AllocationEventCounter.AttributeIntervalEvents(
                 bytes,
                 allocations.Count - beforeEvents);
-            RequireCompleted(TDispatch.WaitCpu(receiver, completion, GpuTimeout));
-            TDispatch.CollectCompleted(receiver, device);
+            RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
+            receiver.CollectCompleted(device);
             long ticks = stopped - started;
             samples[frame] = new FrameSample(
                 frame,
@@ -206,8 +206,8 @@ internal static partial class RhiBenchmarkRunner
             []);
     }
 
-    private static WorkloadRun RunDraw<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static WorkloadRun RunDraw(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         D3D12Diagnostics diagnostics,
         Device device,
@@ -217,7 +217,7 @@ internal static partial class RhiBenchmarkRunner
         string shaderManifest,
         in WorkerConfiguration configuration,
         GraphicsWorkload workload)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         TextureDesc targetDescription = new(
             TextureDimension.Texture2D,
@@ -247,9 +247,7 @@ internal static partial class RhiBenchmarkRunner
             new BufferDesc(16, BufferUsages.QueryResolve),
             MemoryType.Readback);
         BufferRange queryRange = new(0, 16);
-        using MappedBuffer queryMapping = TDispatch.Map(
-            receiver,
-            queryReadback,
+        using MappedBuffer queryMapping = receiver.Map(queryReadback,
             MapType.Read,
             queryRange);
         using CommandContext context = backend.CreateCommandContext(
@@ -276,7 +274,7 @@ internal static partial class RhiBenchmarkRunner
 
         for (int frame = 0; frame < configuration.WarmupFrames; frame++)
         {
-            _ = ExecuteDrawFrame<TReceiver, TDispatch>(
+            _ = ExecuteDrawFrame(
                 receiver,
                 backend,
                 diagnostics,
@@ -306,7 +304,7 @@ internal static partial class RhiBenchmarkRunner
         }
         for (int frame = 0; frame < samples.Length; frame++)
         {
-            FrameMeasurement measurement = ExecuteDrawFrame<TReceiver, TDispatch>(
+            FrameMeasurement measurement = ExecuteDrawFrame(
                 receiver,
                 backend,
                 diagnostics,
@@ -337,7 +335,7 @@ internal static partial class RhiBenchmarkRunner
             calibrations[frame] = ToCalibration(QueueType.Graphics, frame, measurement.Calibration);
         }
 
-        string outputHash = ReadTextureHash<TReceiver, TDispatch>(
+        string outputHash = ReadTextureHash(
             receiver,
             backend,
             device,
@@ -363,8 +361,8 @@ internal static partial class RhiBenchmarkRunner
             barriers);
     }
 
-    private static unsafe FrameMeasurement ExecuteDrawFrame<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static unsafe FrameMeasurement ExecuteDrawFrame(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         D3D12Diagnostics diagnostics,
         Device device,
@@ -390,9 +388,9 @@ internal static partial class RhiBenchmarkRunner
         ref bool initialized,
         AllocationEventCounter allocations,
         int frameIndex)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
-        CalibratedTimestampInfo calibration = TDispatch.Calibrate(receiver, queue);
+        CalibratedTimestampInfo calibration = receiver.CalibrateTimestamps(queue);
         long beforeBytes = GC.GetAllocatedBytesForCurrentThread();
         long beforeEvents = allocations.Count;
         long started = Stopwatch.GetTimestamp();
@@ -401,8 +399,9 @@ internal static partial class RhiBenchmarkRunner
             for (int drawIndex = 0; drawIndex < drawCount; drawIndex++)
                 WritePacket(transientPackets.AsSpan(drawIndex * 16, 16), drawIndex);
         }
-        TDispatch.Begin(receiver, context, recording);
-        TDispatch.WriteTimestamp(receiver, context, queries, 0);
+        receiver.Begin(context, recording);
+        receiver.ResetQueries(context, queries, 0, 1);
+        receiver.WriteTimestamp(context, queries, 0);
             TextureBarrier first = new(
                 target,
                 targetRange,
@@ -412,25 +411,25 @@ internal static partial class RhiBenchmarkRunner
                 ResourceAccess.RenderTarget,
                 initialized ? TextureLayout.CopySource : TextureLayout.Undefined,
                 TextureLayout.RenderTarget);
-            TDispatch.Barrier(receiver, context, first);
-            TDispatch.SetPipeline(receiver, context, pipeline);
-            TDispatch.SetViewports(receiver, context, viewports);
-            TDispatch.SetScissors(receiver, context, scissors);
+            receiver.Barrier(context, first);
+            receiver.SetPipeline(context, pipeline);
+            receiver.SetViewports(context, viewports);
+            receiver.SetScissors(context, scissors);
             if (workload is GraphicsWorkload.PersistentDraw10000 or GraphicsWorkload.StateSuppression10000)
-                TDispatch.SetPersistentBindings(receiver, context, persistent);
+                receiver.SetPersistentParameterBindings(context, persistent);
             RenderingDesc rendering = new(
                 colors,
                 null,
                 BenchmarkDefaults.RenderWidth,
                 BenchmarkDefaults.RenderHeight);
-            TDispatch.BeginRendering(receiver, context, rendering);
+            receiver.BeginRendering(context, rendering);
             switch (workload)
             {
                 case GraphicsWorkload.PersistentDraw10000:
-                    TDispatch.DrawRepeated(receiver, context, draw, drawCount);
+                    DrawRepeated(receiver, context, draw, drawCount);
                     break;
                 case GraphicsWorkload.TransientDraw10000:
-                    TDispatch.DrawTransientPackets(
+                    DrawTransientPackets(
                         receiver,
                         context,
                         layout,
@@ -439,7 +438,7 @@ internal static partial class RhiBenchmarkRunner
                         drawCount);
                     break;
                 case GraphicsWorkload.StateSuppression10000:
-                    TDispatch.DrawWithRedundantState(
+                    DrawWithRedundantState(
                         receiver,
                         context,
                         pipeline,
@@ -452,7 +451,7 @@ internal static partial class RhiBenchmarkRunner
                 default:
                     throw new ArgumentOutOfRangeException(nameof(workload));
             }
-            TDispatch.EndRendering(receiver, context);
+            receiver.EndRendering(context);
             TextureBarrier second = new(
                 target,
                 targetRange,
@@ -462,21 +461,22 @@ internal static partial class RhiBenchmarkRunner
                 ResourceAccess.CopySource,
                 TextureLayout.RenderTarget,
                 TextureLayout.CopySource);
-            TDispatch.Barrier(receiver, context, second);
-            TDispatch.WriteTimestamp(receiver, context, queries, 1);
-        TDispatch.ResolveQueries(receiver, context, queries, 0, 2, queryReadback, queryRange);
-        RecordedCommands recorded = TDispatch.End(receiver, context);
+            receiver.Barrier(context, second);
+            receiver.ResetQueries(context, queries, 1, 1);
+            receiver.WriteTimestamp(context, queries, 1);
+        receiver.ResolveQueries(context, queries, 0, 2, queryReadback, queryRange);
+        RecordedCommands recorded = receiver.End(context);
         OneCommands[0] = recorded;
         QueueSubmitDesc submit = new([], [], OneCommands, [], []);
-        QueueCompletion completion = TDispatch.Submit(receiver, queue, submit);
+        QueueCompletion completion = receiver.Submit(queue, submit);
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
         long events = AllocationEventCounter.AttributeIntervalEvents(
             bytes,
             allocations.Count - beforeEvents);
         recorded.Dispose();
-        RequireCompleted(TDispatch.WaitCpu(receiver, completion, GpuTimeout));
-        TDispatch.CollectCompleted(receiver, device);
+        RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
+        receiver.CollectCompleted(device);
         (ulong gpuStart, ulong gpuEnd) = ReadTimestampPair(queryMapping, queryRange);
         initialized = true;
         long cpuTicks = stopped - started;
@@ -493,14 +493,14 @@ internal static partial class RhiBenchmarkRunner
             calibration);
     }
 
-    private static WorkloadRun RunExplicitBarriers<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static WorkloadRun RunExplicitBarriers(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         Device device,
         Pipeline computePipeline,
         string shaderManifest,
         in WorkerConfiguration configuration)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         using QueryPool queries = backend.CreateQueryPool(
             device,
@@ -510,9 +510,7 @@ internal static partial class RhiBenchmarkRunner
             new BufferDesc(16, BufferUsages.QueryResolve),
             MemoryType.Readback);
         BufferRange queryRange = new(0, 16);
-        using MappedBuffer queryMapping = TDispatch.Map(
-            receiver,
-            queryReadback,
+        using MappedBuffer queryMapping = receiver.Map(queryReadback,
             MapType.Read,
             queryRange);
         using CommandContext context = backend.CreateCommandContext(
@@ -532,7 +530,7 @@ internal static partial class RhiBenchmarkRunner
 
         for (int frame = 0; frame < configuration.WarmupFrames; frame++)
         {
-            _ = ExecuteBarrierFrame<TReceiver, TDispatch>(
+            _ = ExecuteBarrierFrame(
                 receiver,
                 device,
                 queue,
@@ -551,7 +549,7 @@ internal static partial class RhiBenchmarkRunner
         }
         for (int frame = 0; frame < samples.Length; frame++)
         {
-            FrameMeasurement measurement = ExecuteBarrierFrame<TReceiver, TDispatch>(
+            FrameMeasurement measurement = ExecuteBarrierFrame(
                 receiver,
                 device,
                 queue,
@@ -587,8 +585,8 @@ internal static partial class RhiBenchmarkRunner
             evidence);
     }
 
-    private static FrameMeasurement ExecuteBarrierFrame<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static FrameMeasurement ExecuteBarrierFrame(
+        IGraphicsBackend receiver,
         Device device,
         Queue queue,
         CommandContext context,
@@ -603,31 +601,33 @@ internal static partial class RhiBenchmarkRunner
         int barrierCount,
         AllocationEventCounter allocations,
         int frameIndex)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
-        CalibratedTimestampInfo calibration = TDispatch.Calibrate(receiver, queue);
+        CalibratedTimestampInfo calibration = receiver.CalibrateTimestamps(queue);
         long beforeBytes = GC.GetAllocatedBytesForCurrentThread();
         long beforeEvents = allocations.Count;
         long started = Stopwatch.GetTimestamp();
-        TDispatch.Begin(receiver, context, recording);
-        TDispatch.WriteTimestamp(receiver, context, queries, 0);
-        TDispatch.RecordMemoryBarriers(receiver, context, barrier, barrierCount);
-        TDispatch.SetPipeline(receiver, context, pipeline);
-        TDispatch.Dispatch(receiver, context, dispatch);
-        TDispatch.WriteTimestamp(receiver, context, queries, 1);
-        TDispatch.ResolveQueries(receiver, context, queries, 0, 2, queryReadback, queryRange);
-        RecordedCommands recorded = TDispatch.End(receiver, context);
+        receiver.Begin(context, recording);
+        receiver.ResetQueries(context, queries, 0, 1);
+        receiver.WriteTimestamp(context, queries, 0);
+        RecordMemoryBarriers(receiver, context, barrier, barrierCount);
+        receiver.SetPipeline(context, pipeline);
+        receiver.Dispatch(context, dispatch);
+        receiver.ResetQueries(context, queries, 1, 1);
+        receiver.WriteTimestamp(context, queries, 1);
+        receiver.ResolveQueries(context, queries, 0, 2, queryReadback, queryRange);
+        RecordedCommands recorded = receiver.End(context);
         OneCommands[0] = recorded;
         QueueSubmitDesc submit = new([], [], OneCommands, [], []);
-        QueueCompletion completion = TDispatch.Submit(receiver, queue, submit);
+        QueueCompletion completion = receiver.Submit(queue, submit);
         long stopped = Stopwatch.GetTimestamp();
         long bytes = GC.GetAllocatedBytesForCurrentThread() - beforeBytes;
         long events = AllocationEventCounter.AttributeIntervalEvents(
             bytes,
             allocations.Count - beforeEvents);
         recorded.Dispose();
-        RequireCompleted(TDispatch.WaitCpu(receiver, completion, GpuTimeout));
-        TDispatch.CollectCompleted(receiver, device);
+        RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
+        receiver.CollectCompleted(device);
         (ulong gpuStart, ulong gpuEnd) = ReadTimestampPair(queryMapping, queryRange);
         long cpuTicks = stopped - started;
         return new FrameMeasurement(
@@ -642,8 +642,8 @@ internal static partial class RhiBenchmarkRunner
             calibration);
     }
 
-    private static WorkloadRun RunThreeQueuePresent<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static WorkloadRun RunThreeQueuePresent(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         Device device,
         Pipeline graphicsPipeline,
@@ -651,7 +651,7 @@ internal static partial class RhiBenchmarkRunner
         PersistentParameterBindings persistent,
         string shaderManifest,
         in WorkerConfiguration configuration)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         Queue graphicsQueue = backend.GetQueue(device, QueueType.Graphics);
         Queue computeQueue = backend.GetQueue(device, QueueType.Compute);
@@ -708,14 +708,10 @@ internal static partial class RhiBenchmarkRunner
         using Buffer copyTimestamp = backend.CreateBuffer(device, new BufferDesc(8, BufferUsages.QueryResolve), MemoryType.Readback);
         using Buffer graphicsTimestamp = backend.CreateBuffer(device, new BufferDesc(8, BufferUsages.QueryResolve), MemoryType.Readback);
         BufferRange timestampRange = new(0, 8);
-        using MappedBuffer copyTimestampMapping = TDispatch.Map(
-            receiver,
-            copyTimestamp,
+        using MappedBuffer copyTimestampMapping = receiver.Map(copyTimestamp,
             MapType.Read,
             timestampRange);
-        using MappedBuffer graphicsTimestampMapping = TDispatch.Map(
-            receiver,
-            graphicsTimestamp,
+        using MappedBuffer graphicsTimestampMapping = receiver.Map(graphicsTimestamp,
             MapType.Read,
             timestampRange);
         using CommandContext copyContext = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Copy, 0, 2));
@@ -737,7 +733,7 @@ internal static partial class RhiBenchmarkRunner
 
         for (int frame = 0; frame < configuration.WarmupFrames; frame++)
         {
-            _ = ExecuteThreeQueueFrame<TReceiver, TDispatch>(
+            _ = ExecuteThreeQueueFrame(
                 receiver, device, copyQueue, computeQueue, graphicsQueue, copyContext, computeContext,
                 graphicsContext, copyQuery, graphicsQuery, copyTimestamp, graphicsTimestamp, swapchain,
                 copyTimestampMapping, graphicsTimestampMapping, timestampRange,
@@ -747,7 +743,7 @@ internal static partial class RhiBenchmarkRunner
         }
         for (int frame = 0; frame < samples.Length; frame++)
         {
-            ThreeQueueMeasurement measurement = ExecuteThreeQueueFrame<TReceiver, TDispatch>(
+            ThreeQueueMeasurement measurement = ExecuteThreeQueueFrame(
                 receiver, device, copyQueue, computeQueue, graphicsQueue, copyContext, computeContext,
                 graphicsContext, copyQuery, graphicsQuery, copyTimestamp, graphicsTimestamp, swapchain,
                 copyTimestampMapping, graphicsTimestampMapping, timestampRange,
@@ -758,7 +754,7 @@ internal static partial class RhiBenchmarkRunner
             calibrations[frame * 2] = ToCalibration(QueueType.Copy, frame, measurement.CopyCalibration);
             calibrations[frame * 2 + 1] = ToCalibration(QueueType.Graphics, frame, measurement.GraphicsCalibration);
         }
-        string outputHash = ReadTextureHash<TReceiver, TDispatch>(
+        string outputHash = ReadTextureHash(
             receiver,
             backend,
             device,
@@ -792,8 +788,8 @@ internal static partial class RhiBenchmarkRunner
             evidence);
     }
 
-    private static ThreeQueueMeasurement ExecuteThreeQueueFrame<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static ThreeQueueMeasurement ExecuteThreeQueueFrame(
+        IGraphicsBackend receiver,
         Device device,
         Queue copyQueue,
         Queue computeQueue,
@@ -830,24 +826,23 @@ internal static partial class RhiBenchmarkRunner
         ref bool initialized,
         AllocationEventCounter allocations,
         int frameIndex)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
-        RequireAcquired(TDispatch.Acquire(
-            receiver,
-            swapchain,
+        RequireAcquired(receiver.Acquire(swapchain,
             new SwapchainAcquireOptions(GpuTimeout, PreserveContents: false),
             out SwapchainImage image));
-        CalibratedTimestampInfo copyCalibration = TDispatch.Calibrate(receiver, copyQueue);
-        CalibratedTimestampInfo graphicsCalibration = TDispatch.Calibrate(receiver, graphicsQueue);
+        CalibratedTimestampInfo copyCalibration = receiver.CalibrateTimestamps(copyQueue);
+        CalibratedTimestampInfo graphicsCalibration = receiver.CalibrateTimestamps(graphicsQueue);
         long beforeBytes = GC.GetAllocatedBytesForCurrentThread();
         long beforeEvents = allocations.Count;
         long started = Stopwatch.GetTimestamp();
 
-        TDispatch.Begin(receiver, copyContext, default);
-        TDispatch.WriteTimestamp(receiver, copyContext, copyQuery, 0);
+        receiver.Begin(copyContext, default);
+        receiver.ResetQueries(copyContext, copyQuery, 0, 1);
+        receiver.WriteTimestamp(copyContext, copyQuery, 0);
         if (initialized)
         {
-            TDispatch.Barrier(receiver, copyContext, new QueueAcquire(
+            receiver.Barrier(copyContext, new QueueAcquire(
                 work,
                 null,
                 QueueType.Graphics,
@@ -857,56 +852,52 @@ internal static partial class RhiBenchmarkRunner
         }
         else
         {
-            TDispatch.Barrier(receiver, copyContext, new BufferBarrier(
+            receiver.Barrier(copyContext, new BufferBarrier(
                 work,
                 PipelineSync.None,
                 PipelineSync.Copy,
                 ResourceAccess.NoAccess,
                 ResourceAccess.CopyDestination));
         }
-        TDispatch.CopyBuffer(receiver, copyContext, new BufferCopy(upload, 0, work, 0, 256));
-        TDispatch.Barrier(receiver, copyContext, new QueueRelease(
+        receiver.CopyBuffer(copyContext, new BufferCopy(upload, 0, work, 0, 256));
+        receiver.Barrier(copyContext, new QueueRelease(
             work,
             null,
             PipelineSync.Copy,
             ResourceAccess.CopyDestination,
             null,
             QueueType.Compute));
-        TDispatch.ResolveQueries(receiver, copyContext, copyQuery, 0, 1, copyTimestamp, new BufferRange(0, 8));
-        RecordedCommands copyRecorded = TDispatch.End(receiver, copyContext);
+        receiver.ResolveQueries(copyContext, copyQuery, 0, 1, copyTimestamp, new BufferRange(0, 8));
+        RecordedCommands copyRecorded = receiver.End(copyContext);
         copyCommands[0] = copyRecorded;
-        QueueCompletion copyCompletion = TDispatch.Submit(
-            receiver,
-            copyQueue,
+        QueueCompletion copyCompletion = receiver.Submit(copyQueue,
             new QueueSubmitDesc([], [], copyCommands, [], []));
 
-        TDispatch.Begin(receiver, computeContext, default);
-        TDispatch.Barrier(receiver, computeContext, new QueueAcquire(
+        receiver.Begin(computeContext, default);
+        receiver.Barrier(computeContext, new QueueAcquire(
             work,
             null,
             QueueType.Copy,
             PipelineSync.ComputeShading,
             ResourceAccess.ShaderResource,
             null));
-        TDispatch.SetPipeline(receiver, computeContext, computePipeline);
-        TDispatch.Dispatch(receiver, computeContext, new DispatchArguments(1, 1, 1));
-        TDispatch.Barrier(receiver, computeContext, new QueueRelease(
+        receiver.SetPipeline(computeContext, computePipeline);
+        receiver.Dispatch(computeContext, new DispatchArguments(1, 1, 1));
+        receiver.Barrier(computeContext, new QueueRelease(
             work,
             null,
             PipelineSync.ComputeShading,
             ResourceAccess.ShaderResource,
             null,
             QueueType.Graphics));
-        RecordedCommands computeRecorded = TDispatch.End(receiver, computeContext);
+        RecordedCommands computeRecorded = receiver.End(computeContext);
         computeCommands[0] = computeRecorded;
         computeWaits[0] = copyCompletion;
-        QueueCompletion computeCompletion = TDispatch.Submit(
-            receiver,
-            computeQueue,
+        QueueCompletion computeCompletion = receiver.Submit(computeQueue,
             new QueueSubmitDesc(computeWaits, [], computeCommands, [], []));
 
-        TDispatch.Begin(receiver, graphicsContext, default);
-        TDispatch.Barrier(receiver, graphicsContext, new QueueAcquire(
+        receiver.Begin(graphicsContext, default);
+        receiver.Barrier(graphicsContext, new QueueAcquire(
             work,
             null,
             QueueType.Compute,
@@ -915,22 +906,22 @@ internal static partial class RhiBenchmarkRunner
             null));
         if (!initialized)
         {
-            TDispatch.Barrier(receiver, graphicsContext, new BufferBarrier(
+            receiver.Barrier(graphicsContext, new BufferBarrier(
                 sink,
                 PipelineSync.None,
                 PipelineSync.Copy,
                 ResourceAccess.NoAccess,
                 ResourceAccess.CopyDestination));
         }
-        TDispatch.CopyBuffer(receiver, graphicsContext, new BufferCopy(work, 0, sink, 0, 256));
-        TDispatch.Barrier(receiver, graphicsContext, new QueueRelease(
+        receiver.CopyBuffer(graphicsContext, new BufferCopy(work, 0, sink, 0, 256));
+        receiver.Barrier(graphicsContext, new QueueRelease(
             work,
             null,
             PipelineSync.Copy,
             ResourceAccess.CopySource,
             null,
             QueueType.Copy));
-        TDispatch.Barrier(receiver, graphicsContext, new TextureBarrier(
+        receiver.Barrier(graphicsContext, new TextureBarrier(
             target,
             textureRange,
             initialized ? PipelineSync.Copy : PipelineSync.None,
@@ -939,18 +930,18 @@ internal static partial class RhiBenchmarkRunner
             ResourceAccess.RenderTarget,
             initialized ? TextureLayout.CopySource : TextureLayout.Undefined,
             TextureLayout.RenderTarget));
-        TDispatch.SetPipeline(receiver, graphicsContext, graphicsPipeline);
-        TDispatch.SetPersistentBindings(receiver, graphicsContext, persistent);
-        TDispatch.SetViewports(receiver, graphicsContext, viewports);
-        TDispatch.SetScissors(receiver, graphicsContext, scissors);
-        TDispatch.BeginRendering(receiver, graphicsContext, new RenderingDesc(
+        receiver.SetPipeline(graphicsContext, graphicsPipeline);
+        receiver.SetPersistentParameterBindings(graphicsContext, persistent);
+        receiver.SetViewports(graphicsContext, viewports);
+        receiver.SetScissors(graphicsContext, scissors);
+        receiver.BeginRendering(graphicsContext, new RenderingDesc(
             colors,
             null,
             BenchmarkDefaults.RenderWidth,
             BenchmarkDefaults.RenderHeight));
-        TDispatch.Draw(receiver, graphicsContext, new DrawArguments(3, 1, 0, 0));
-        TDispatch.EndRendering(receiver, graphicsContext);
-        TDispatch.Barrier(receiver, graphicsContext, new TextureBarrier(
+        receiver.Draw(graphicsContext, new DrawArguments(3, 1, 0, 0));
+        receiver.EndRendering(graphicsContext);
+        receiver.Barrier(graphicsContext, new TextureBarrier(
             target,
             textureRange,
             PipelineSync.RenderTarget,
@@ -959,7 +950,7 @@ internal static partial class RhiBenchmarkRunner
             ResourceAccess.CopySource,
             TextureLayout.RenderTarget,
             TextureLayout.CopySource));
-        TDispatch.Barrier(receiver, graphicsContext, new TextureBarrier(
+        receiver.Barrier(graphicsContext, new TextureBarrier(
             image.Texture,
             textureRange,
             image.InitialSync,
@@ -968,11 +959,11 @@ internal static partial class RhiBenchmarkRunner
             ResourceAccess.CopyDestination,
             image.InitialLayout,
             TextureLayout.CopyDestination));
-        TDispatch.CopyTexture(receiver, graphicsContext, new TextureCopy(
+        receiver.CopyTexture(graphicsContext, new TextureCopy(
             target, 0, 0, TextureAspects.Color, 0, 0, 0,
             image.Texture, 0, 0, TextureAspects.Color, 0, 0, 0,
             BenchmarkDefaults.RenderWidth, BenchmarkDefaults.RenderHeight, 1));
-        TDispatch.Barrier(receiver, graphicsContext, new TextureBarrier(
+        receiver.Barrier(graphicsContext, new TextureBarrier(
             image.Texture,
             textureRange,
             PipelineSync.Copy,
@@ -981,17 +972,16 @@ internal static partial class RhiBenchmarkRunner
             ResourceAccess.NoAccess,
             TextureLayout.CopyDestination,
             TextureLayout.Present));
-        TDispatch.WriteTimestamp(receiver, graphicsContext, graphicsQuery, 0);
-        TDispatch.ResolveQueries(receiver, graphicsContext, graphicsQuery, 0, 1, graphicsTimestamp, new BufferRange(0, 8));
-        RecordedCommands graphicsRecorded = TDispatch.End(receiver, graphicsContext);
+        receiver.ResetQueries(graphicsContext, graphicsQuery, 0, 1);
+        receiver.WriteTimestamp(graphicsContext, graphicsQuery, 0);
+        receiver.ResolveQueries(graphicsContext, graphicsQuery, 0, 1, graphicsTimestamp, new BufferRange(0, 8));
+        RecordedCommands graphicsRecorded = receiver.End(graphicsContext);
         graphicsCommands[0] = graphicsRecorded;
         graphicsWaits[0] = computeCompletion;
         images[0] = image;
-        QueueCompletion graphicsCompletion = TDispatch.Submit(
-            receiver,
-            graphicsQueue,
+        QueueCompletion graphicsCompletion = receiver.Submit(graphicsQueue,
             new QueueSubmitDesc(graphicsWaits, [], graphicsCommands, images, []));
-        PresentStatus present = TDispatch.Present(receiver, graphicsQueue, image);
+        PresentStatus present = receiver.Present(graphicsQueue, image);
         if (present is not (PresentStatus.Success or PresentStatus.Suboptimal or PresentStatus.Occluded))
             throw new InvalidOperationException($"Present returned {present}.");
         long stopped = Stopwatch.GetTimestamp();
@@ -1003,8 +993,8 @@ internal static partial class RhiBenchmarkRunner
         copyRecorded.Dispose();
         computeRecorded.Dispose();
         graphicsRecorded.Dispose();
-        RequireCompleted(TDispatch.WaitCpu(receiver, graphicsCompletion, GpuTimeout));
-        TDispatch.CollectCompleted(receiver, device);
+        RequireCompleted(receiver.WaitCpu(graphicsCompletion, GpuTimeout));
+        receiver.CollectCompleted(device);
         ulong copyTick = ReadTimestamp(copyTimestampMapping, timestampRange);
         ulong graphicsTick = ReadTimestamp(graphicsTimestampMapping, timestampRange);
         double startCpu = MapQueueTickToCpuMicroseconds(copyTick, copyCalibration);
@@ -1022,14 +1012,14 @@ internal static partial class RhiBenchmarkRunner
         return new ThreeQueueMeasurement(sample, copyCalibration, graphicsCalibration);
     }
 
-    private static string ReadTextureHash<TReceiver, TDispatch>(
-        TReceiver receiver,
+    private static string ReadTextureHash(
+        IGraphicsBackend receiver,
         IGraphicsBackend backend,
         Device device,
         Queue queue,
         Texture texture,
         in TextureSubresourceRange range)
-        where TDispatch : struct, IRhiDispatch<TReceiver>
+
     {
         const ulong size = BenchmarkDefaults.RenderWidth * BenchmarkDefaults.RenderHeight * 4UL;
         using Buffer readback = backend.CreateBuffer(
@@ -1039,8 +1029,8 @@ internal static partial class RhiBenchmarkRunner
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Graphics, 0, 1));
-        TDispatch.Begin(receiver, context, default);
-        TDispatch.CopyTextureToBuffer(receiver, context, new BufferTextureCopy(
+        receiver.Begin(context, default);
+        receiver.CopyTextureToBuffer(context, new BufferTextureCopy(
             readback,
             0,
             256,
@@ -1055,16 +1045,14 @@ internal static partial class RhiBenchmarkRunner
             BenchmarkDefaults.RenderWidth,
             BenchmarkDefaults.RenderHeight,
             1));
-        RecordedCommands recorded = TDispatch.End(receiver, context);
+        RecordedCommands recorded = receiver.End(context);
         OneCommands[0] = recorded;
-        QueueCompletion completion = TDispatch.Submit(
-            receiver,
-            queue,
+        QueueCompletion completion = receiver.Submit(queue,
             new QueueSubmitDesc([], [], OneCommands, [], []));
         recorded.Dispose();
-        RequireCompleted(TDispatch.WaitCpu(receiver, completion, GpuTimeout));
-        TDispatch.CollectCompleted(receiver, device);
-        using MappedBuffer mapped = TDispatch.Map(receiver, readback, MapType.Read, BufferRange.Whole);
+        RequireCompleted(receiver.WaitCpu(completion, GpuTimeout));
+        receiver.CollectCompleted(device);
+        using MappedBuffer mapped = receiver.Map(readback, MapType.Read, BufferRange.Whole);
         mapped.Invalidate(mapped.Range);
         return Convert.ToHexString(SHA256.HashData(mapped.Bytes));
     }

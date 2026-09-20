@@ -1,0 +1,53 @@
+{
+  "asset_guid": "2bb497ab-fcf4-5fb5-88e9-a510d278a6fb",
+  "source_guid": "bbf2dfa3-5628-4a58-8dd5-6dc7a4bb522f",
+  "sub_asset_key": "shader:main",
+  "content_fingerprint": "8523e9230d72dfb5025276d7f1e1839585d7ece6ca6e8970ff3737c9a1bf3311",
+  "dependencies": [
+    {
+      "path": "assets/Shaders/cluster_bin_io.slang",
+      "hash": "f52b738ead1778d48bbf234769f645e366d560279e961197f05c0b28a1013a32"
+    },
+    {
+      "path": "assets/Shaders/cluster_instance_properties.slang",
+      "hash": "ba3fa8bcbef6cc98a007b09cd82563cc2e1840a51041a02b4d805950abb074d8"
+    },
+    {
+      "path": "assets/Shaders/cluster_structures.slang",
+      "hash": "f1a84f05d2ea458f8bb68e4ef7ef811023e23136c4debd13bfc3eb31bc5d27fe"
+    },
+    {
+      "path": "assets/Shaders/generated/render_instance_layout.slang",
+      "hash": "cf8fa08c7f1b56d2cfe5e5419fcbf8664c8906c14123109c48d0064d6d65d738"
+    },
+    {
+      "path": "assets/Shaders/render_instance_properties.slang",
+      "hash": "33eb01451d41f3ff6649fdd438a416ca212ec3c0128e9d36e20ac5c374234f54"
+    },
+    {
+      "path": "assets/Shaders/render_instance_transform.slang",
+      "hash": "a57a9965b0626215c09dcdbe7f86c7119ca1effdbbdce24e1d570001ac5abe67"
+    },
+    {
+      "path": "assets/Shaders/resource_effects.slang",
+      "hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "path": "assets/Shaders/shade_bin_common.slang",
+      "hash": "e3f21634d87ce869936ae71c0622d54fde4710c10252fc62f2def615ee171040"
+    },
+    {
+      "path": "assets/Shaders/shade_bin_count.slang",
+      "hash": "3d949cdeee409a3fb569aaa7119876ee181675a0f72710330211fbc6d658b49b"
+    },
+    {
+      "path": "assets/Shaders/visbuffer_encoding.slang",
+      "hash": "f1148b395dd0151f0da387694369667b9f17d330bdf8b84668ca9d6b2ca4bf70"
+    },
+    {
+      "path": "assets/Shaders/wave_aggregation.slang",
+      "hash": "3d754138c48b2a15e25f4765dde879fbea66bbc2f40f46bbe47e6a0d9f7044e4"
+    }
+  ],
+  "importer_version": 26
+}

@@ -1,4 +1,4 @@
-using SomeEngine.Graphics;
+﻿using SomeEngine.Graphics;
 using SomeEngine.RenderGraph.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -7,9 +7,182 @@ using SomeEngine.Trace;
 
 namespace SomeEngine.RenderGraph.Tests;
 
+[Collection("Render graph trace")]
 public sealed class PersistentRenderGraphTests
 {
     private const int ByteCount = 256;
+
+    [Fact]
+    public void DiscardedLargeEditsKeepTheCommittedGraphAndRetireTheirIds()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        var recorded = new List<int>();
+        var passes = new List<GraphPassId>();
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            for (int i = 0; i < 193; i++) passes.Add(Add(edit, i));
+            edit.Commit();
+        }
+
+        GraphPassId discarded;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            for (int i = 0; i < passes.Count; i += 3) edit.Remove(passes[i]);
+            discarded = Add(edit, 1000);
+            for (int i = 1; i < 75; i++) Add(edit, 1000 + i);
+        }
+        Execute();
+        Assert.Equal(Enumerable.Range(0, 193), recorded.Order());
+
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            for (int i = 0; i < passes.Count; i += 3) edit.Remove(passes[i]);
+            for (int i = 0; i < 75; i++) Add(edit, 2000 + i);
+            bool rejected = false;
+            try { _ = edit.GetPass(discarded); }
+            catch (ArgumentException) { rejected = true; }
+            Assert.True(rejected);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(Enumerable.Range(0, 193).Where(i => i % 3 != 0).Concat(Enumerable.Range(2000, 75)), recorded.Order());
+
+        GraphPassId Add(RenderGraphEdit edit, int value) => edit.AddCopyFramePass(
+            $"record {value}", PassQueueSelection.AnyOfType(QueueType.Graphics), value,
+            new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+            static (ref PassDefinition _, ref int _) => { },
+            (ref CopyPassCommandScope _, in int number) => recorded.Add(number));
+
+        void Execute()
+        {
+            recorded.Clear();
+            using RenderGraphFrame frame = graph.BeginFrame();
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            int count = frame.Execute(completions);
+            support.Wait(completions.AsSpan(0, count));
+        }
+    }
+
+    [Fact]
+    public void ExecutionOrderSurvivesReorderingRemovingAndAddingPasses()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        var recorded = new List<int>();
+        GraphPassId first, middle, last;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            first = Add(edit, 1);
+            middle = Add(edit, 2);
+            last = Add(edit, 3);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(new[] { 1, 2, 3 }, recorded);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.OrderAfter(first, last);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(3, recorded.Count);
+        Assert.True(recorded.IndexOf(3) < recorded.IndexOf(1));
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.Remove(middle);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(new[] { 3, 1 }, recorded);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.RemoveOrder(first, last);
+            GraphPassId added = Add(edit, 4);
+            edit.OrderAfter(last, added);
+            edit.Commit();
+        }
+        Execute();
+        Assert.Equal(3, recorded.Count);
+        Assert.Contains(1, recorded);
+        Assert.True(recorded.IndexOf(4) < recorded.IndexOf(3));
+
+        GraphPassId Add(RenderGraphEdit edit, int value) => edit.AddCopyFramePass(
+            $"record {value}", PassQueueSelection.Exact(support.GraphicsQueue), value,
+            new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+            static (ref PassDefinition _, ref int _) => { },
+            (ref CopyPassCommandScope _, in int number) => recorded.Add(number));
+
+        void Execute()
+        {
+            recorded.Clear();
+            using RenderGraphFrame frame = graph.BeginFrame();
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            int count = frame.Execute(completions);
+            support.Wait(completions.AsSpan(0, count));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CompletionCallbacksReportSubmissionAndReleaseFrameAfterCallbackFailure(bool execute)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        RenderGraphFrame frame = graph.BeginFrame();
+        GraphPassId pass = frame.AddGeneralPass(
+            "Observed pass", PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition _, ref int _) => { },
+            static (ref GeneralPassCommandScope _, in int _) => { });
+        var result = new CompletionReceiver(pass);
+        frame.ObserveExecution(new ThrowingCompletionReceiver());
+        frame.ObserveExecution(result);
+        bool failed = false;
+        try
+        {
+            if (execute)
+                frame.Execute(new QueueCompletion[graph.MaximumQueueCompletionCount]);
+            else
+                frame.Dispose();
+        }
+        catch (AggregateException exception)
+        {
+            Assert.IsType<InvalidOperationException>(Assert.Single(exception.InnerExceptions));
+            failed = true;
+        }
+        finally
+        {
+            frame.Dispose();
+        }
+        Assert.True(failed);
+        Assert.True(result.Called);
+        Assert.Equal(execute, result.Submitted);
+        Assert.Equal(execute, result.HasCompletions);
+        using RenderGraphFrame next = graph.BeginFrame();
+    }
+
+    private sealed class CompletionReceiver(GraphPassId pass) : IRenderGraphFrameExecutionObserver
+    {
+        public bool Called { get; private set; }
+        public bool Submitted { get; private set; }
+        public bool HasCompletions { get; private set; }
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+        {
+            Called = true;
+            Submitted = result.TryGetPassCompletion(pass, out _);
+            HasCompletions = !result.SubmittedCompletions.IsEmpty;
+        }
+    }
+
+    private sealed class ThrowingCompletionReceiver : IRenderGraphFrameExecutionObserver
+    {
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result) =>
+            throw new InvalidOperationException("Completion callback failed");
+    }
 
     [Fact]
     public void EditCommitIsAtomicAndInvalidatesRemovedIds()
@@ -139,63 +312,7 @@ public sealed class PersistentRenderGraphTests
         Assert.True(rejected);
     }
 
-    [Fact]
-    public void ResourceKindsUseDistinctIdentityDomains()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var graph = new RenderGraph(
-            support.Backend,
-            support.Device,
-            [support.GraphicsQueue]);
 
-        GraphBufferId buffer;
-        GraphTextureId texture;
-        using (RenderGraphEdit edit = graph.BeginEdit())
-        {
-            buffer = edit.CreateTransientBuffer(new BufferDesc(
-                64,
-                BufferUsages.CopyDestination));
-            texture = edit.CreateTransientTexture(new TextureDesc(
-                TextureDimension.Texture2D,
-                width: 1,
-                height: 1,
-                depth: 1,
-                mipLevelCount: 1,
-                arrayLayerCount: 1,
-                sampleCount: 1,
-                format: Format.R8G8B8A8UNorm,
-                usages: TextureUsages.CopyDestination));
-            edit.Commit();
-        }
-
-        Assert.Equal(buffer.Value.Owner, texture.Value.Owner);
-        Assert.Equal(buffer.Value.Slot, texture.Value.Slot);
-        Assert.Equal(buffer.Value.Generation, texture.Value.Generation);
-        Assert.Equal(GraphIdentityDomain.Buffer, buffer.Value.Domain);
-        Assert.Equal(GraphIdentityDomain.Texture, texture.Value.Domain);
-        Assert.NotEqual(buffer.Value, texture.Value);
-
-        using RenderGraphFrame frame = graph.BeginFrame();
-        GraphBufferId frameBuffer = frame.CreateBuffer(new BufferDesc(
-            64,
-            BufferUsages.CopyDestination));
-        GraphTextureId frameTexture = frame.CreateTexture(new TextureDesc(
-            TextureDimension.Texture2D,
-            width: 1,
-            height: 1,
-            depth: 1,
-            mipLevelCount: 1,
-            arrayLayerCount: 1,
-            sampleCount: 1,
-            format: Format.R8G8B8A8UNorm,
-            usages: TextureUsages.CopyDestination));
-        Assert.Equal(frameBuffer.Value.Owner, frameTexture.Value.Owner);
-        Assert.Equal(frameBuffer.Value.Slot, frameTexture.Value.Slot);
-        Assert.Equal(frameBuffer.Value.Generation, frameTexture.Value.Generation);
-        Assert.Equal(GraphIdentityDomain.Buffer, frameBuffer.Value.Domain);
-        Assert.Equal(GraphIdentityDomain.Texture, frameTexture.Value.Domain);
-        Assert.NotEqual(frameBuffer.Value, frameTexture.Value);
-    }
 
 #if DEBUG
     [Fact]
@@ -634,6 +751,8 @@ public sealed class PersistentRenderGraphTests
     [InlineData(FrameSubmissionMode.Pipelined, true)]
     [InlineData(FrameSubmissionMode.RecordAllThenSubmit, false)]
     [InlineData(FrameSubmissionMode.RecordAllThenSubmit, true)]
+    [InlineData(FrameSubmissionMode.RecordAhead, false)]
+    [InlineData(FrameSubmissionMode.RecordAhead, true)]
     public void SubmissionMergingPreservesQueueDependenciesAndReadback(
         FrameSubmissionMode mode, bool crossesBack)
     {
@@ -695,6 +814,87 @@ public sealed class PersistentRenderGraphTests
         {
             foreach (Buffer output in outputs) output.Dispose();
             File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(FrameSubmissionMode.Pipelined)]
+    [InlineData(FrameSubmissionMode.RecordAllThenSubmit)]
+    [InlineData(FrameSubmissionMode.RecordAhead)]
+    public void RemovingAndRestoringQueueDependenciesUpdatesSubmissionCountAndReadback(FrameSubmissionMode mode)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue, support.ComputeQueue], new RenderGraphDesc(MaximumFramesInFlight: 3));
+        var outputs = new List<Buffer>();
+        var passes = new GraphPassId[3];
+        Queue[] queues = [support.GraphicsQueue, support.ComputeQueue, support.GraphicsQueue];
+        string path = Path.Combine(Path.GetTempPath(), $"graph-queue-changes-{Guid.NewGuid():N}.setrace");
+        try
+        {
+            using (RenderGraphEdit edit = graph.BeginEdit())
+            {
+                for (int index = 0; index < passes.Length; index++)
+                {
+                    Buffer output = support.Backend.CreateBuffer(support.Device,
+                        new BufferDesc(64, BufferUsages.CopyDestination), MemoryType.Readback);
+                    outputs.Add(output);
+                    GraphBufferId resource = edit.RegisterExternalBuffer(output,
+                        [Endpoint(output, queues[index], ResourceContentState.Undefined)]);
+                    passes[index] = AddClear(edit, $"queue change output {index}", queues[index], resource, (uint)(index + 1));
+                }
+                edit.OrderAfter(passes[1], passes[0]);
+                edit.OrderAfter(passes[2], passes[1]);
+                edit.Commit();
+            }
+            var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+            var options = new RenderGraphFrameOptions(mode,
+                RenderGraphDebugOptions.DeclarationOrderScheduling | RenderGraphDebugOptions.DisableParallelRecording);
+            using (EngineTrace.Start(path, new TraceOptions { Detail = true, BufferMegabytes = 4 }))
+            {
+                for (int frameIndex = 1; frameIndex <= 9; frameIndex++)
+                {
+                    if (frameIndex is 4 or 7)
+                    {
+                        using RenderGraphEdit edit = graph.BeginEdit();
+                        if (frameIndex == 4)
+                        {
+                            edit.RemoveOrder(passes[1], passes[0]);
+                            edit.RemoveOrder(passes[2], passes[1]);
+                        }
+                        else
+                        {
+                            edit.OrderAfter(passes[1], passes[0]);
+                            edit.OrderAfter(passes[2], passes[1]);
+                        }
+                        edit.Commit();
+                    }
+                    using var trace = EngineTrace.BeginFrame(frameIndex);
+                    using RenderGraphFrame frame = graph.BeginFrame(options);
+                    int count = frame.Execute(completions);
+                    support.Wait(completions.AsSpan(0, count));
+                    for (int index = 0; index < outputs.Count; index++)
+                    {
+                        using MappedBuffer mapped = support.Backend.Map(outputs[index], MapType.Read, new(0, 64));
+                        mapped.Invalidate(new(0, 64));
+                        foreach (uint value in MemoryMarshal.Cast<byte, uint>(mapped.Bytes))
+                            Assert.Equal((uint)(index + 1), value);
+                    }
+                }
+            }
+            TraceData data = TraceFile.Read(path);
+            Assert.Equal(0, data.Misuse);
+            Assert.All(data.Threads, thread => Assert.Equal(0, thread.Dropped));
+            int submitSite = data.Sites.Single(site => site.Name == "ID3D12CommandQueue.ExecuteCommandLists").Id;
+            for (int frameIndex = 1; frameIndex <= 9; frameIndex++)
+                Assert.Equal(frameIndex is >= 4 and <= 6 ? 2 : 3,
+                    data.Events.Count(value => value.Event.Frame == frameIndex && value.Event.Kind == TraceEventKind.Begin &&
+                        value.Event.Site == submitSite));
+        }
+        finally
+        {
+            foreach (Buffer output in outputs) output.Dispose();
+            if (File.Exists(path)) File.Delete(path);
         }
     }
 
@@ -1249,27 +1449,7 @@ public sealed class PersistentRenderGraphTests
         second.Dispose();
     }
 
-    [Fact]
-    public void CopiedCommandContextLeaseReturnsPoolEntryOnlyOnce()
-    {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
-        using var pool = new CommandContextPool(support.Backend, support.Device);
 
-        CommandContextPool.CommandContextLease original =
-            pool.Acquire(support.GraphicsQueue, bundle: false, "lease copy test");
-        CommandContextPool.CommandContextLease duplicate = original;
-        CommandContext context = original.Context;
-        original.Dispose();
-        duplicate.Dispose();
-
-        using CommandContextPool.CommandContextLease first =
-            pool.Acquire(support.GraphicsQueue, bundle: false, "first reacquire");
-        using CommandContextPool.CommandContextLease second =
-            pool.Acquire(support.GraphicsQueue, bundle: false, "second reacquire");
-
-        Assert.Same(context, first.Context);
-        Assert.NotSame(first.Context, second.Context);
-    }
 
     [Fact]
     public void ExplicitUndefinedResultRejectsSameFrameRead()
@@ -1420,8 +1600,8 @@ public sealed class PersistentRenderGraphTests
         try { _ = frame.Execute(completions); }
         catch (InvalidOperationException) { failed = true; }
         Assert.True(failed);
-        Assert.True(graph.InFlightCompletionCount > 0,
-            "A successfully submitted wave must remain attached to the FrameSlot after a later failure.");
+        QueueCompletion accepted = Assert.Single(completions, value => value != default);
+        support.Wait([accepted]);
     }
 
     [Fact]

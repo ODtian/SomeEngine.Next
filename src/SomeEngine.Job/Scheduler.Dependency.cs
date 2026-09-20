@@ -3,26 +3,16 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
     private const int InlineDependencyCapacity = 16;
-
-    [System.Runtime.CompilerServices.InlineArray(InlineDependencyCapacity)]
-    private struct InlineDependencies
-    {
-        private JobHandle _first;
-    }
     private const string UninitializedContinuationMessage = "Continuation is not initialized.";
-    public JobHandle CombineDependencies(ReadOnlySpan<JobHandle> handles)
+    internal JobHandle CombineDependencies(ReadOnlySpan<JobHandle> handles)
     {
-        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
-        foreach (JobHandle handle in handles)
-            ValidateDependency(handle);
-        InlineDependencies inline = default;
         JobHandle[]? rentedHandles = null;
         Span<JobHandle> liveDependencies = handles.Length <= InlineDependencyCapacity
-            ? ((Span<JobHandle>)inline)[..handles.Length]
+            ? stackalloc JobHandle[handles.Length]
             : (rentedHandles = ArrayPool<JobHandle>.Shared.Rent(handles.Length)).AsSpan(0, handles.Length);
         int liveDependencyCount = 0;
 
@@ -392,9 +382,6 @@ public sealed partial class Scheduler
             enqueueWhenReady: false);
         TryReleaseWorkDependencies(externalHandle);
         TryCompleteState(externalHandle);
-        // A synchronous access can become executable before its predecessor's
-        // child work completes. No ready work ticket is published for that access.
-        _workQueue.NotifyCompletion();
     }
 
     private DependencyReleaseAction ReleaseDependencyAndGetAction(

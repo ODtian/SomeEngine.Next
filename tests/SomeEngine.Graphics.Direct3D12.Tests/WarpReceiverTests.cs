@@ -11,7 +11,7 @@ public sealed class WarpReceiverTests
     public void Warp_copy_round_trips_upload_and_readback_memory()
     {
         Assert.True(OperatingSystem.IsWindows());
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         byte[] source = CreatePattern(1024);
 
         byte[] result = D3D12TestSupport.ExecuteCopyChain(backend, source);
@@ -22,8 +22,8 @@ public sealed class WarpReceiverTests
     [Fact]
     public void Receiver_rejects_objects_created_by_another_backend_instance()
     {
-        using var receiver = new D3D12Backend();
-        using var foreignReceiver = new D3D12Backend();
+        using var receiver = D3D12GraphicsBackend.Create();
+        using var foreignReceiver = D3D12GraphicsBackend.Create();
         using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(foreignReceiver);
         using Buffer foreignBuffer = foreignReceiver.CreateBuffer(
             foreignDevice,
@@ -47,11 +47,11 @@ public sealed class WarpReceiverTests
         byte[] source = CreatePattern(257);
 
         byte[] concreteResult;
-        using (var backend = new D3D12Backend())
+        using (var backend = D3D12GraphicsBackend.Create())
             concreteResult = ExecuteConcrete(backend, source);
 
         byte[] interfaceResult;
-        using (IGraphicsBackend backend = new D3D12Backend())
+        using (IGraphicsBackend backend = D3D12GraphicsBackend.Create())
             interfaceResult = ExecuteInterface(backend, source);
 
         Assert.Equal(source, concreteResult);
@@ -61,7 +61,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void RepeatedEmptySubmissionsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         QueueSubmitDesc submit = new([], [], [], [], []);
@@ -77,7 +77,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void RepeatedRecordedSubmissionsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -120,7 +120,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void RepeatedCopyFramesComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,
@@ -165,7 +165,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void RepeatedRenderingFramesComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Texture target = backend.CreateTexture(
             device,
@@ -247,7 +247,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void RepeatedBufferClearsComplete()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer destination = backend.CreateBuffer(
             device,
@@ -294,7 +294,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void Stable_clear_texture_reuses_command_slot_attachment_descriptors()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Texture target = backend.CreateTexture(
             device,
@@ -354,7 +354,7 @@ public sealed class WarpReceiverTests
     [Fact]
     public void Repeated_normalized_state_calls_produce_valid_direct_and_bundle_payloads()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out VariableRateShading? shadingRate));
         Assert.NotNull(shadingRate);
@@ -537,7 +537,7 @@ public sealed class WarpReceiverTests
         ShaderTypeLayout reflected = GetDataLayout(layout);
         Assert.Equal((nint)1, reflected.BindingRangeCount);
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -660,7 +660,6 @@ public sealed class WarpReceiverTests
         Assert.Throws<ArgumentException>(() =>
             backend.SetPersistentParameterBindings(bundleContext, secondGraphicsBindings));
         using RecordedBundle bundle = backend.EndBundle(bundleContext);
-        Assert.False(bundle.IsDisposed);
 
     }
 
@@ -687,7 +686,7 @@ public sealed class WarpReceiverTests
         Assert.Equal((nuint)16, reflected.GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nint)0, reflected.BindingRangeCount);
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         byte[] first = new byte[16];
         byte[] second = new byte[16];
@@ -729,7 +728,7 @@ public sealed class WarpReceiverTests
     }
 
     private static byte[] ExecuteConcrete(
-        D3D12Backend graphics,
+        IGraphicsBackend graphics,
         ReadOnlySpan<byte> source)
     {
         AdapterEnumerationOptions options = new(

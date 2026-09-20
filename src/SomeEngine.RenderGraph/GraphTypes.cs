@@ -37,12 +37,7 @@ public enum PassSchedulingMode : byte
 
 public enum PassRecordingMode : byte
 {
-    /// <summary>
-    /// The callback may record concurrently and before its GPU predecessors are submitted.
-    /// Resource dependencies order GPU execution, not host-side callback effects.
-    /// </summary>
     WorkerEligible,
-    /// <summary>The callback records on the thread that executes the frame.</summary>
     CallingThread,
 }
 
@@ -50,6 +45,12 @@ public enum FrameSubmissionMode : byte
 {
     Pipelined,
     RecordAllThenSubmit,
+    /// <summary>
+    /// Records worker-eligible batches ahead of submission. Each submission waits only
+    /// for its own recording. Earlier submissions remain valid if later recording fails;
+    /// every recording job is joined before frame execution returns, including on failure.
+    /// </summary>
+    RecordAhead,
 }
 
 [Flags]
@@ -62,6 +63,12 @@ public enum RenderGraphDebugOptions : uint
     DisableParallelRecording = 1u << 3,
 }
 
+/// <param name="RepeatCommands">
+/// Allows reuse of recorded commands until declared resources, bindings or pass data change.
+/// The callback must only encode commands, with no per-frame CPU side effects or reads of
+/// undeclared mutable data. Change command data through the graph setters. This does not skip
+/// GPU execution: shaders and copies still consume the current buffer contents every frame.
+/// </param>
 public readonly record struct PassOptions(
     PassCullingMode Culling = PassCullingMode.Cullable,
     PassSchedulingMode Scheduling = PassSchedulingMode.Reorderable,
@@ -69,7 +76,8 @@ public readonly record struct PassOptions(
     uint EstimatedExecutionCost = 1,
     uint EstimatedRecordingCost = 1,
     uint RasterWidth = 0,
-    uint RasterHeight = 0);
+    uint RasterHeight = 0,
+    bool RepeatCommands = false);
 
 public readonly record struct RenderGraphFrameOptions(
     FrameSubmissionMode SubmissionMode = FrameSubmissionMode.Pipelined,
@@ -78,21 +86,24 @@ public readonly record struct RenderGraphFrameOptions(
 
 public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
 {
-    private PassQueueSelection(Queue? queue, QueueType type, bool exact)
+    private PassQueueSelection(Queue? queue, QueueType type, bool exact, bool anyCompatible = false)
     {
         Queue = queue;
         Type = type;
         IsExact = exact;
+        AllowsAnyType = anyCompatible;
     }
 
     public bool IsExact { get; }
     public Queue? Queue { get; }
     public QueueType Type { get; }
+    public bool AllowsAnyType { get; }
 
     public bool Equals(PassQueueSelection other) =>
-        IsExact == other.IsExact && Type == other.Type && ReferenceEquals(Queue, other.Queue);
+        IsExact == other.IsExact && AllowsAnyType == other.AllowsAnyType &&
+        Type == other.Type && ReferenceEquals(Queue, other.Queue);
     public override bool Equals(object? other) => other is PassQueueSelection value && Equals(value);
-    public override int GetHashCode() => HashCode.Combine(IsExact, Type, Queue);
+    public override int GetHashCode() => HashCode.Combine(IsExact, AllowsAnyType, Type, Queue);
     public static bool operator ==(PassQueueSelection left, PassQueueSelection right) => left.Equals(right);
     public static bool operator !=(PassQueueSelection left, PassQueueSelection right) => !left.Equals(right);
 
@@ -107,6 +118,12 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
         if (!Enum.IsDefined(type)) throw new ArgumentOutOfRangeException(nameof(type));
         return new PassQueueSelection(null, type, false);
     }
+
+    /// <summary>
+    /// Allows any registered queue that supports the pass commands, preferring
+    /// fewer transfers from predecessor queues before comparing available time.
+    /// </summary>
+    public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
 }
 
 public readonly record struct BufferBoundaryState(

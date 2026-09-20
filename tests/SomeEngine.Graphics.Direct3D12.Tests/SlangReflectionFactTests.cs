@@ -32,7 +32,7 @@ public sealed class SlangReflectionFactTests
             .ToArray();
         Assert.Equal(2, blocks.Length);
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device, new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
@@ -91,7 +91,7 @@ public sealed class SlangReflectionFactTests
         Assert.NotEqual(first, second);
         Assert.NotEqual(firstNested, secondNested);
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device, new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
@@ -180,7 +180,7 @@ public sealed class SlangReflectionFactTests
         Assert.Equal((nuint)16, GetDataLayout(validLayout).GetSize(SlangParameterCategory.Uniform));
         Assert.Equal((nuint)32, GetDataLayout(invalidLayout).GetSize(SlangParameterCategory.Uniform));
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline validPipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(validShader.Program, validShader.GetEntryPoint(0)));
@@ -223,7 +223,7 @@ public sealed class SlangReflectionFactTests
             secondShader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null;
         Assert.NotEqual(firstLayout, secondLayout);
 
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         Assert.NotNull(diagnostics);
@@ -299,7 +299,7 @@ public sealed class SlangReflectionFactTests
                 (reflected.GetBindingRangeType(index) & SlangBindingType.MutableFlag) == 0);
         Assert.Equal((nint)2, reflected.GetBindingRangeBindingCount(inputRange));
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
@@ -456,7 +456,7 @@ public sealed class SlangReflectionFactTests
                         checked(setSpace + leafSpace));
                 }
             }
-            using var backend = new D3D12Backend();
+            using var backend = D3D12GraphicsBackend.Create();
             using Device device = D3D12TestSupport.CreateWarpDevice(backend);
             using Pipeline pipeline = backend.CreateComputePipeline(device,
                 new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
@@ -562,7 +562,7 @@ public sealed class SlangReflectionFactTests
                     setIndex, firstDescriptorRange + relative) & SlangBindingType.BaseMask)
                 .ToArray());
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));
@@ -736,7 +736,7 @@ public sealed class SlangReflectionFactTests
             .Count(index => unchecked((nuint)data.GetBindingRangeBindingCount(index)) ==
                 Slang.UnboundedSize));
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using DescriptorTable textures = backend.CreateDescriptorTable(device,
             [ResourceBindingType.TextureSrv]);
@@ -856,7 +856,7 @@ public sealed class SlangReflectionFactTests
             constants.GetBindingSpace(SlangParameterCategory.ConstantBuffer));
 
         Assert.Equal((nuint)4, GetDataLayout(constants).GetSize(SlangParameterCategory.Uniform));
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -1008,7 +1008,7 @@ public sealed class SlangReflectionFactTests
         Assert.Equal((nuint)0, nested.GetOffset(SlangParameterCategory.ConstantBuffer));
         Assert.Equal((nuint)0, nested.GetBindingSpace(SlangParameterCategory.ConstantBuffer));
 
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(
             device,
@@ -1076,7 +1076,7 @@ public sealed class SlangReflectionFactTests
         Assert.Contains(varyingFacts, static fact => fact.Type == SlangBindingType.VaryingOutput);
         Assert.All(varyingFacts, static fact => Assert.Equal((nint)0, fact.DescriptorRangeCount));
 
-        using var backend = new ValidationLayer(new D3D12Backend());
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Format[] formats = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blends = [new(Enabled: false, WriteMask: ColorWriteMasks.All)];

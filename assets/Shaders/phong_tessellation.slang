@@ -120,8 +120,26 @@ SurfaceEval EvalPhongSurface(
     return result;
 }
 
-struct PhongTessellation : IDomainEvaluate
+struct PhongTessellation : IDomainEvaluate<StandardVertex>
 {
+    typealias TriangleData = Triangle;
+    typealias Surface = SurfaceEval;
+
+    Triangle makeTriangle(
+        StandardVertex first,
+        StandardVertex second,
+        StandardVertex third)
+    {
+        return MakeStandardTriangle(first, second, third);
+    }
+
+    float3 cornerPosition(Triangle triangle, uint corner)
+    {
+        if (corner == 0u) return triangle.Position0;
+        if (corner == 1u) return triangle.Position1;
+        return triangle.Position2;
+    }
+
     float3 position(Triangle triangle, float3 barycentric)
     {
         return EvalPhongPosition(BuildPhongCoefficients(triangle), barycentric);

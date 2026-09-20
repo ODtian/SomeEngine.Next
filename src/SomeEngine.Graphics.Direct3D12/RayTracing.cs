@@ -468,9 +468,9 @@ internal sealed unsafe partial class D3D12Backend
                 "Two Slang entry points use the same state-object export name.",
                 "desc");
         }
+        if (existing == entry) return name;
         shaderExports[name] = entry;
-        if (!stateObjectNames.Add(name) &&
-            !records.Any(record => record.EntryPoint == entry))
+        if (!stateObjectNames.Add(name))
         {
             throw new ArgumentException(
                 "Ray-tracing state-object export names must be unique.",
@@ -556,19 +556,7 @@ internal sealed unsafe partial class D3D12Backend
         Dictionary<string, D3D12RayTracingExport> hitGroupExports,
         ref bool rootsTransferred)
     {
-        byte[] key = CreateRayTracingPipelineKey(
-            nativeDevice,
-            global,
-            localRoots,
-            library,
-            records,
-            hitGroups,
-            desc);
-        byte[][] replayLibraries = ResolveStateObjectReplayCode(
-            nativeCache,
-            4,
-            key,
-            library);
+        byte[][] libraries = library.Libraries;
         ID3D12StateObject* stateObject = null;
         ID3D12StateObjectProperties* properties = null;
         NativeLease? nativeState = null;
@@ -580,7 +568,7 @@ internal sealed unsafe partial class D3D12Backend
             stateObject = CreateNativeRayTracingStateObject(
                 nativeDevice,
                 global,
-                replayLibraries,
+                libraries,
                 allEntries,
                 records,
                 hitGroups,
@@ -616,7 +604,6 @@ internal sealed unsafe partial class D3D12Backend
             propertiesLease = null;
             retainedProgram = null;
             nativeDevice.RegisterChild(result);
-            StoreStateObjectReplay(nativeCache, 4, key, library);
             return result;
         }
         catch
@@ -635,7 +622,7 @@ internal sealed unsafe partial class D3D12Backend
     private ID3D12StateObject* CreateNativeRayTracingStateObject(
         D3D12Device nativeDevice,
         D3D12RootSignatureState global,
-        byte[][] replayLibraries,
+        byte[][] libraries,
         ShaderEntryPoint[] allEntries,
         IReadOnlyList<D3D12RayTracingExport> records,
         IReadOnlyList<RayTracingHitGroupState> hitGroups,
@@ -643,11 +630,11 @@ internal sealed unsafe partial class D3D12Backend
     {
         using NativeStateObjectArena arena = new();
         int subobjectCount = checked(
-            replayLibraries.Length + 4 + hitGroups.Count + (records.Count * 2));
+            libraries.Length + 4 + hitGroups.Count + (records.Count * 2));
         StateSubobject* subobjects = arena.Allocate<StateSubobject>(subobjectCount);
         int ordinal = AddRayTracingLibraries(
             arena,
-            replayLibraries,
+            libraries,
             allEntries,
             subobjects);
         GlobalRootSignature* globalDescription = arena.Allocate<GlobalRootSignature>();
@@ -692,17 +679,17 @@ nativeDevice.Native, &native,
 
     private static int AddRayTracingLibraries(
         NativeStateObjectArena arena,
-        byte[][] replayLibraries,
+        byte[][] libraries,
         ShaderEntryPoint[] allEntries,
         StateSubobject* subobjects)
     {
         int ordinal = 0;
-        for (int index = 0; index < replayLibraries.Length; index++)
+        for (int index = 0; index < libraries.Length; index++)
         {
             string name = GetStableEntryPointName(allEntries[index]);
             ExportDesc* export = arena.Allocate<ExportDesc>();
             *export = new ExportDesc(arena.String(name), null, ExportFlags.None);
-            byte[] code = replayLibraries[index];
+            byte[] code = libraries[index];
             DxilLibraryDesc* libraryDescription = arena.Allocate<DxilLibraryDesc>();
             *libraryDescription = new DxilLibraryDesc(
                 new ShaderBytecode(arena.Bytes(code), (nuint)code.Length),
@@ -1585,62 +1572,6 @@ nativeDevice.Native, &native,
         if ((value & RayTracingPipelineOptions.SkipProceduralPrimitives) != 0)
             result |= RaytracingPipelineFlags.SkipProceduralPrimitives;
         return result;
-    }
-
-    private static byte[] CreateRayTracingPipelineKey(
-        D3D12Device device,
-        D3D12RootSignatureState global,
-        IReadOnlyList<D3D12RootSignatureState> localRoots,
-        CompiledProgramLibrary library,
-        IReadOnlyList<D3D12RayTracingExport> exports,
-        IReadOnlyList<RayTracingHitGroupState> hitGroups,
-        in RayTracingPipelineDesc desc)
-    {
-        uint nodeMask = desc.NodeMask;
-        uint maximumRecursionDepth = desc.MaximumRecursionDepth;
-        uint maximumPayloadSize = desc.MaximumPayloadSize;
-        uint maximumAttributeSize = desc.MaximumAttributeSize;
-        RayTracingPipelineOptions options = desc.Options;
-        return CreateCanonicalPipelineKey(
-            device,
-            4,
-            writer =>
-            {
-                writer.Write(1u);
-                writer.Write(true);
-                WriteCompiledProgramIdentity(writer, library);
-            },
-            writer =>
-            {
-                writer.Write(1u);
-                WriteCanonicalBytes(writer, global.Serialized);
-                writer.Write(checked((uint)localRoots.Count));
-                foreach (D3D12RootSignatureState root in localRoots)
-                    WriteCanonicalBytes(writer, root.Serialized);
-            },
-            writer =>
-            {
-                writer.Write(nodeMask);
-                writer.Write(checked((uint)exports.Count));
-                foreach (D3D12RayTracingExport value in exports)
-                {
-                    writer.Write((byte)value.Type);
-                    WriteCanonicalString(writer, value.Name);
-                }
-                writer.Write(checked((uint)hitGroups.Count));
-                foreach (RayTracingHitGroupState value in hitGroups)
-                {
-                    WriteCanonicalString(writer, value.Name);
-                    WriteCanonicalString(writer, value.ClosestHit ?? string.Empty);
-                    WriteCanonicalString(writer, value.AnyHit ?? string.Empty);
-                    WriteCanonicalString(writer, value.Intersection ?? string.Empty);
-                    writer.Write((int)value.Type);
-                }
-                writer.Write(maximumRecursionDepth);
-                writer.Write(maximumPayloadSize);
-                writer.Write(maximumAttributeSize);
-                writer.Write((byte)options);
-            });
     }
 
     private static RaytracingGeometryFlags ToNativeGeometryFlags(
@@ -2656,10 +2587,8 @@ nativeDevice.Native, &native,
         internal void Capture(AccelerationStructureSrv value)
         {
             INativeDescriptor descriptor = (INativeDescriptor)value;
-            D3D12AccelerationStructure structure =
-                RequireD3D12.AccelerationStructure(value.Resource);
-            D3D12CommandSlot slot = Recording;
-            slot.Capture(descriptor.NativeDescriptor, structure.NativeLifetime);
+            RequireSameDevice(value, nameof(value));
+            CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
     }
 

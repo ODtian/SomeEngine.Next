@@ -104,7 +104,7 @@ public sealed class ClusterCompressionTests
     [Fact]
     public void Upload_mapping_can_be_retained_across_submissions_and_copies_share_disposal()
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopySource), MemoryType.Upload);
         using Buffer readback = backend.CreateBuffer(device, new BufferDesc(16, BufferUsages.CopyDestination), MemoryType.Readback);
@@ -369,7 +369,7 @@ public sealed class ClusterCompressionTests
 
     private static uint[] Execute(D3D12TestShaderProgram shader, int count, int words, bool hardware = false, int groupWidth = 64)
     {
-        using var backend = new D3D12Backend();
+        using var backend = D3D12GraphicsBackend.Create();
         using Device device = hardware ? CreateHardwareDevice(backend) : D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.Program, shader.GetEntryPoint(0)));

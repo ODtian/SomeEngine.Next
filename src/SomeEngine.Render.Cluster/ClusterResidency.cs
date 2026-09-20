@@ -196,14 +196,14 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal bool IsDisposed => Volatile.Read(ref _lifecycleState) == 2;
 
     internal ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        Mesh mesh,
+        MeshData mesh,
         CancellationToken cancellationToken = default)
     {
         ThrowIfNotActive();
         return _meshes.RegisterMeshAsync(mesh, cancellationToken);
     }
 
-    internal bool IsMeshRegistered(Mesh mesh)
+    internal bool IsMeshRegistered(MeshData mesh)
     {
         ThrowIfNotActive();
         return _meshes.IsMeshRegistered(mesh);
@@ -253,7 +253,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             throw new InvalidOperationException("The discarded Cluster residency publication is stale.");
     }
 
-    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
+    internal bool TryGetPublishedRoot(MeshData mesh, out uint root)
     {
         ThrowIfNotActive();
         return _meshes.TryGetPublishedRoot(mesh, out root);

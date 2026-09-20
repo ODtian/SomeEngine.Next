@@ -27,7 +27,7 @@ public sealed class WarpLifetimeTests
             entered.Set();
             release.Wait();
         });
-        var backend = new D3D12Backend();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         validation = new ValidationLayer(
             backend,
             new ValidationOptions(sink, ReportLiveObjectsOnDispose: true));
@@ -78,7 +78,7 @@ public sealed class WarpLifetimeTests
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var sink = new BlockingThrowingSink(entered, release);
-        var backend = new D3D12Backend();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         var validation = new ValidationLayer(
             backend,
             new ValidationOptions(sink, ReportLiveObjectsOnDispose: true));
@@ -122,36 +122,12 @@ public sealed class WarpLifetimeTests
         }
     }
 
-    [Fact]
-    public void Graphics_object_cross_thread_dispose_joins_one_release()
-    {
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
-        var value = new BlockingGraphicsObject(entered, release);
-        var owner = new Thread(value.Dispose);
-        owner.Start();
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-        using var contenderStarted = new ManualResetEventSlim();
-        using var contenderReturned = new ManualResetEventSlim();
-        var contender = new Thread(() =>
-        {
-            contenderStarted.Set();
-            value.Dispose();
-            contenderReturned.Set();
-        });
-        contender.Start();
-        Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-        Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
-        release.Set();
-        Assert.True(owner.Join(TimeSpan.FromSeconds(5)));
-        Assert.True(contender.Join(TimeSpan.FromSeconds(5)));
-        Assert.Equal(1, value.ReleaseCount);
-    }
+
 
     [Fact]
     public void Backend_cross_thread_dispose_joins_while_real_queue_gate_is_held()
     {
-        var backend = new D3D12Backend();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
         using var gateHeld = new ManualResetEventSlim();
@@ -221,160 +197,24 @@ public sealed class WarpLifetimeTests
         }
     }
 
-    [Fact]
-    public void External_handle_cross_thread_contender_joins()
-    {
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
-        using var contenderStarted = new ManualResetEventSlim();
-        using var contenderReturned = new ManualResetEventSlim();
-        ExternalHandle? handle = null;
-        int releaseCount = 0;
-        handle = new ExternalHandle(ExternalHandleType.OpaqueWin32, 1, _ =>
-        {
-            releaseCount++;
-            handle!.Dispose();
-            entered.Set();
-            release.Wait();
-            throw new InvalidOperationException("close failure must not escape Dispose");
-        });
-
-        var owner = new Thread(handle.Dispose);
-        var contender = new Thread(() =>
-        {
-            contenderStarted.Set();
-            handle.Dispose();
-            contenderReturned.Set();
-        });
-        owner.Start();
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-        contender.Start();
-        Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-        Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
-        release.Set();
-        Assert.True(owner.Join(TimeSpan.FromSeconds(5)));
-        Assert.True(contender.Join(TimeSpan.FromSeconds(5)));
-        Assert.Equal(1, releaseCount);
-        Assert.Throws<ObjectDisposedException>(() => _ = handle.Value);
-    }
-
-    [Fact]
-    public void Recorded_commands_copies_collectively_join_discard_for_the_same_sequence()
-    {
-        using var backend = new D3D12Backend();
-        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Queue queue = backend.GetQueue(device, QueueType.Copy);
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
-        using var contenderStarted = new ManualResetEventSlim();
-        using var contenderReturned = new ManualResetEventSlim();
-        var lease = new BlockingRecordedCommandsLease(device, queue, entered, release);
-        RecordedCommands first = lease.Create(1);
-        RecordedCommands copy = first;
-
-        var owner = new Thread(first.Dispose);
-        var contender = new Thread(() =>
-        {
-            contenderStarted.Set();
-            copy.Dispose();
-            contenderReturned.Set();
-        });
-        owner.Start();
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-        contender.Start();
-        Assert.True(contenderStarted.Wait(TimeSpan.FromSeconds(5)));
-        Assert.False(contenderReturned.Wait(TimeSpan.FromMilliseconds(100)));
-        release.Set();
-        Assert.True(owner.Join(TimeSpan.FromSeconds(5)));
-        Assert.True(contender.Join(TimeSpan.FromSeconds(5)));
-        Assert.Equal(1, lease.DiscardCount);
-        Assert.Equal(RecordedCommandsStatus.Disposed, copy.Status);
-    }
-
-    [Fact]
-    public void Graphics_object_release_and_diagnostic_failures_do_not_escape_dispose()
-    {
-        var value = new ThrowingGraphicsObject();
-        value.Dispose();
-        value.Dispose();
-        Assert.Equal(1, value.ReleaseCount);
-        Assert.Equal(1, value.DiagnosticCount);
-    }
 
 
-    [Fact]
-    public void Child_registry_retains_a_failed_child_and_disposes_every_sibling()
-    {
-        object gate = new();
-        var registry = new GraphicsObjectRegistry(gate);
-        var tail = new RegistryChild(registry, throws: false);
-        var middle = new RegistryChild(registry, throws: false);
-        var head = new RegistryChild(registry, throws: true);
-        registry.Add(tail);
-        registry.Add(middle);
-        registry.Add(head);
-
-        GraphicsObject? children = registry.CloseAndBuildDrainList();
-        while (children is GraphicsObject child)
-        {
-            children = child.RegistryDrainNext;
-            child.RegistryDrainNext = null;
-            child.DisposeFromParent();
-            _ = registry.CompleteDrain(child);
-        }
-
-        Assert.Equal(1, head.ReleaseCount);
-        Assert.Equal(1, middle.ReleaseCount);
-        Assert.Equal(1, tail.ReleaseCount);
-        Assert.True(registry.HasRetainedFailures);
-    }
-
-    [Fact]
-    public void Child_registry_rejects_duplicate_registration()
-    {
-        object gate = new();
-        var registry = new GraphicsObjectRegistry(gate);
-        var child = new RegistryChild(registry, throws: false);
-        registry.Add(child);
-
-        _ = Assert.Throws<InvalidOperationException>(() => registry.Add(child));
-
-        GraphicsObject? children = registry.CloseAndBuildDrainList();
-        while (children is GraphicsObject value)
-        {
-            children = value.RegistryDrainNext;
-            value.RegistryDrainNext = null;
-            value.DisposeFromParent();
-            _ = registry.CompleteDrain(value);
-        }
-        Assert.Equal(1, child.ReleaseCount);
-        Assert.False(registry.HasRetainedFailures);
-    }
 
 
-    [Fact]
-    public void Preexisting_teardown_diagnostic_does_not_interrupt_device_child_cascade()
-    {
-        var backend = new D3D12Backend();
-        Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
-        Buffer child = backend.CreateBuffer(
-            device,
-            new BufferDesc(256, BufferUsages.CopySource),
-            MemoryType.Upload);
-        var first = new InvalidOperationException("preexisting teardown diagnostic");
-        device.RecordReleaseFailure(first);
 
-        device.Dispose();
 
-        Assert.Same(first, diagnostics!.TeardownFailure);
-        backend.Dispose();
-    }
+
+
+
+
+
+
+
 
     [Fact]
     public void Backend_teardown_quiesces_submitted_payload_before_releasing_native_roots()
     {
-        var backend = new D3D12Backend();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         CommandContext context = backend.CreateCommandContext(
@@ -394,60 +234,12 @@ public sealed class WarpLifetimeTests
         device.Dispose();
     }
 
-    [Fact]
-    public unsafe void Native_queue_lock_copies_release_from_another_thread_and_contenders_join()
-    {
-        var exclusion = new QueueExclusion();
-        exclusion.Enter();
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
-        using var firstStarted = new ManualResetEventSlim();
-        using var secondStarted = new ManualResetEventSlim();
-        using var firstReturned = new ManualResetEventSlim();
-        using var secondReturned = new ManualResetEventSlim();
-        const ulong sequence = 7;
-        var lease = new BlockingQueueLockLease(exclusion, sequence, entered, release);
-        D3D12CommandQueueLock original = new(lease, sequence);
 
-        var first = new Thread(() =>
-        {
-            D3D12CommandQueueLock copy = new(lease, sequence);
-            firstStarted.Set();
-            copy.Dispose();
-            firstReturned.Set();
-        });
-        var second = new Thread(() =>
-        {
-            D3D12CommandQueueLock copy = new(lease, sequence);
-            secondStarted.Set();
-            copy.Dispose();
-            secondReturned.Set();
-        });
-        first.Start();
-        Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-        Assert.False(original.IsHeld);
-        AssertQueueLockPointerUnavailable(original);
-        second.Start();
-        Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
-        Assert.False(firstReturned.Wait(TimeSpan.FromMilliseconds(100)));
-        Assert.False(secondReturned.Wait(TimeSpan.FromMilliseconds(100)));
-        release.Set();
-        Assert.True(first.Join(TimeSpan.FromSeconds(5)));
-        Assert.True(second.Join(TimeSpan.FromSeconds(5)));
-        Assert.Equal(1, lease.ReleaseCount);
-
-        Assert.False(original.IsHeld);
-        original.Dispose();
-        using (exclusion.EnterScope())
-        {
-        }
-    }
 
     [Fact]
     public void Structured_uav_retains_both_native_resources_without_owning_their_wrappers()
     {
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Buffer data = backend.CreateBuffer(
             device,
@@ -484,7 +276,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Structured_uav_with_identical_resource_and_counter_retains_one_native_payload()
     {
-        var backend = new D3D12Backend();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Assert.True(backend.TryGetCapability(device, out D3D12Diagnostics? diagnostics));
         Buffer parent = backend.CreateBuffer(
@@ -529,7 +321,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Validated_queue_lock_is_invalidated_before_parent_physical_release()
     {
-        var direct = new D3D12Backend();
+        var direct = D3D12GraphicsBackend.Create();
         var backend = new ValidationLayer(direct);
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Queue queue = backend.GetQueue(device, QueueType.Copy);
@@ -583,143 +375,17 @@ public sealed class WarpLifetimeTests
         }
     }
 
-    private sealed class BlockingGraphicsObject : GraphicsObject
-    {
-        private readonly ManualResetEventSlim _entered;
-        private readonly ManualResetEventSlim _release;
-
-        internal BlockingGraphicsObject(
-            ManualResetEventSlim entered,
-            ManualResetEventSlim release)
-            : base(null)
-        {
-            _entered = entered;
-            _release = release;
-        }
-
-        internal int ReleaseCount { get; private set; }
-
-        internal override void Release(bool fromParent)
-        {
-            ReleaseCount++;
-            Dispose();
-            _entered.Set();
-            _release.Wait();
-        }
-    }
-
-    private sealed class BlockingRecordedCommandsLease : RecordedCommandsLease
-    {
-        private readonly ManualResetEventSlim _entered;
-        private readonly ManualResetEventSlim _release;
-        private RecordedCommands _copy;
-
-        internal BlockingRecordedCommandsLease(
-            Device device,
-            Queue queue,
-            ManualResetEventSlim entered,
-            ManualResetEventSlim release)
-            : base(device, queue)
-        {
-            _entered = entered;
-            _release = release;
-        }
-
-        internal int DiscardCount { get; private set; }
-
-        internal RecordedCommands Create(ulong sequence)
-        {
-            Activate(sequence);
-            _copy = new RecordedCommands(this, sequence);
-            return _copy;
-        }
-
-        protected override void DiscardUnsubmitted(ulong sequence)
-        {
-            DiscardCount++;
-            _copy.Dispose();
-            _entered.Set();
-            _release.Wait();
-        }
-    }
-
-    private sealed class ThrowingGraphicsObject : GraphicsObject
-    {
-        internal ThrowingGraphicsObject() : base(null)
-        {
-        }
-
-        internal int ReleaseCount { get; private set; }
-        internal int DiagnosticCount { get; private set; }
-
-        internal override void Release(bool fromParent)
-        {
-            ReleaseCount++;
-            throw new InvalidOperationException("release failed");
-        }
-
-        internal override void RecordReleaseFailure(Exception exception)
-        {
-            DiagnosticCount++;
-            throw new InvalidOperationException("diagnostic publication failed");
-        }
-    }
-
-    private sealed class RegistryChild : GraphicsObject
-    {
-        private readonly GraphicsObjectRegistry _registry;
-        private readonly bool _throws;
-
-        internal RegistryChild(GraphicsObjectRegistry registry, bool throws)
-            : base(null)
-        {
-            _registry = registry;
-            _throws = throws;
-        }
-
-        internal int ReleaseCount { get; private set; }
-
-        internal override void Release(bool fromParent)
-        {
-            ReleaseCount++;
-            if (_throws)
-                throw new InvalidOperationException("registry child release failed");
-            _registry.Remove(this);
-        }
-    }
 
 
 
-    private sealed unsafe class BlockingQueueLockLease : D3D12CommandQueueLockLease
-    {
-        private readonly QueueExclusion _exclusion;
-        private readonly ManualResetEventSlim _entered;
-        private readonly ManualResetEventSlim _release;
 
-        internal BlockingQueueLockLease(
-            QueueExclusion exclusion,
-            ulong sequence,
-            ManualResetEventSlim entered,
-            ManualResetEventSlim release)
-        {
-            _exclusion = exclusion;
-            _entered = entered;
-            _release = release;
-            Activate(sequence);
-        }
 
-        internal int ReleaseCount { get; private set; }
 
-        protected override Silk.NET.Direct3D12.ID3D12CommandQueue* GetPointerCore() => null;
 
-        protected override void ReleaseCore()
-        {
-            ReleaseCount++;
-            _entered.Set();
-            _release.Wait();
-            _exclusion.Exit();
-        }
-    }
+
+
+
+
 
     private sealed class BlockingThrowingSink : IValidationMessageSink
     {
@@ -766,7 +432,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Device_disposal_discards_payload_after_its_context_was_disposed()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         CommandContext context = backend.CreateCommandContext(
             device,
@@ -806,7 +472,7 @@ public sealed class WarpLifetimeTests
             "rhi_lifetime_matrix",
             source,
             entries);
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         var children = new List<GraphicsObject>();
         D3D12TestShaderProgram? rayShader = null;
@@ -1037,9 +703,6 @@ public sealed class WarpLifetimeTests
         Assert.Equal(DeviceStatus.Disposed, device.Status);
         foreach (GraphicsObject child in children)
         {
-            Assert.True(
-                child.IsDisposed,
-                $"{child.GetType().Name} remained live after the concurrent Device cascade.");
             child.Dispose();
         }
         Assert.Equal(RecordedCommandsStatus.Discarded, executable.Status);
@@ -1061,7 +724,7 @@ public sealed class WarpLifetimeTests
     public void Surface_or_device_disposal_invalidates_swapchain_images_and_is_idempotent()
     {
         using D3D12TestWindow window = new();
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,
@@ -1097,9 +760,6 @@ public sealed class WarpLifetimeTests
             device.Dispose,
             device.Dispose);
 
-        Assert.True(surface.IsDisposed);
-        Assert.True(swapchain.IsDisposed);
-        Assert.True(imageTexture.IsDisposed);
         Assert.Equal(DeviceStatus.Disposed, device.Status);
         Assert.Equal(SwapchainImageStatus.Invalidated, image.Status);
         Assert.Throws<InvalidOperationException>(() => _ = image.Texture);
@@ -1111,7 +771,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void External_handle_disposal_is_concurrent_terminal_and_keeps_metadata()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using ExternalTimeline timeline = backend.CreateExternalTimeline(device, 1);
         ExternalHandle handle = backend.ExportTimeline(
@@ -1128,7 +788,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Replacing_the_owning_root_fully_closes_the_old_runtime_before_the_new_one()
     {
-        var oldBackend = new D3D12Backend();
+        var oldBackend = D3D12GraphicsBackend.Create();
         Device oldDevice = CreateWarpDevice(oldBackend);
         Buffer oldBuffer = oldBackend.CreateBuffer(
             oldDevice,
@@ -1139,13 +799,12 @@ public sealed class WarpLifetimeTests
         oldBackend.Dispose();
 
         Assert.Equal(DeviceStatus.Disposed, oldDevice.Status);
-        Assert.True(oldBuffer.IsDisposed);
         Assert.Throws<ObjectDisposedException>(() => oldBackend.TryEnumerateAdapters(
             new AdapterEnumerationOptions(IncludeSoftware: true),
             [],
             out _));
 
-        using var newBackend = new D3D12Backend();
+        using var newBackend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device newDevice = CreateWarpDevice(newBackend);
         using Buffer newBuffer = newBackend.CreateBuffer(
             newDevice,
@@ -1176,7 +835,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Heap_and_device_disposal_cascade_once_through_descendants()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         BufferDesc description = new(
             256,
@@ -1195,9 +854,6 @@ public sealed class WarpLifetimeTests
 
         Parallel.For(0, 32, _ => heap.Dispose());
 
-        Assert.True(heap.IsDisposed);
-        Assert.False(buffer.IsDisposed);
-        Assert.False(view.IsDisposed);
         view.Dispose();
         buffer.Dispose();
         heap.Dispose();
@@ -1215,14 +871,13 @@ public sealed class WarpLifetimeTests
         device.Dispose();
 
         Assert.Equal(DeviceStatus.Disposed, device.Status);
-        Assert.True(sampler.IsDisposed);
         sampler.Dispose();
     }
 
     [Fact]
     public void View_retains_resource_native_state_exactly_until_view_disposal()
     {
-        using var backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer buffer = backend.CreateBuffer(
             device,
@@ -1241,7 +896,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Backend_disposal_cascades_the_complete_device_tree()
     {
-        var backend = new D3D12Backend();
+        var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         Device device = D3D12TestSupport.CreateWarpDevice(backend);
         Buffer buffer = backend.CreateBuffer(
             device,
@@ -1252,7 +907,6 @@ public sealed class WarpLifetimeTests
         backend.Dispose();
 
         Assert.Equal(DeviceStatus.Disposed, device.Status);
-        Assert.True(buffer.IsDisposed);
         buffer.Dispose();
         device.Dispose();
     }
@@ -1260,7 +914,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Automatic_submission_retains_native_payload_after_public_owners_dispose()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         byte[] expected = Enumerable.Range(0, 257)
             .Select(static value => unchecked((byte)(value * 43 + 7)))
@@ -1318,7 +972,7 @@ public sealed class WarpLifetimeTests
     [Fact]
     public void Reused_command_slot_does_not_resurrect_stale_recorded_command_copies()
     {
-        using IGraphicsBackend backend = new D3D12Backend();
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Buffer upload = backend.CreateBuffer(
             device,

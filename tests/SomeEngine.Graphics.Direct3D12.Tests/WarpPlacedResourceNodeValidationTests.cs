@@ -10,7 +10,7 @@ public sealed class WarpPlacedResourceNodeValidationTests
     [Fact]
     public void Placed_resource_use_accepts_a_heap_visible_to_the_executing_queue_node()
     {
-        using var validation = new ValidationLayer(new D3D12Backend());
+        using var validation = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(validation);
         using Heap heap = validation.CreateHeap(
             device,

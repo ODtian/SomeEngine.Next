@@ -61,7 +61,7 @@ public sealed class IntelCompatibilityTests
             DisableSynchronizedQueueValidation: true,
             DisableDred: true);
         using var backend = new ValidationLayer(
-            new D3D12Backend(new D3D12BackendOptions(validation)));
+            D3D12GraphicsBackend.Create(new D3D12BackendOptions(validation)));
         AdapterInfo adapter = SelectIntel(backend);
         DeviceQueueDesc[] queues = [new(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(adapter.Id, queues));
@@ -228,7 +228,7 @@ internal sealed class IntelHardwareDataAttribute : DataAttribute
     {
         try
         {
-            using IGraphicsBackend backend = new D3D12Backend();
+            using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
             AdapterEnumerationOptions options = new(
                 AdapterPreference.HighPerformance,
                 IncludeSoftware: false);

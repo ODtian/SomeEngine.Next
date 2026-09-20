@@ -2,7 +2,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
     private interface ICompletionStore
     {
@@ -126,7 +126,9 @@ public sealed partial class Scheduler
             SpinWait spinWait = new();
             while (true)
             {
-                long changeVersion = _workQueue.ChangeVersion;
+                // Capture before checking completion so a completion notification
+                // between the check and the wait cannot be lost.
+                long wakeVersion = _workQueue.WakeVersion;
                 if (_completion.IsCompleted(lease)) break;
                 if (!waited)
                 {
@@ -146,7 +148,7 @@ public sealed partial class Scheduler
                     continue;
                 }
 
-                _workQueue.WaitForChange(changeVersion);
+                _workQueue.WaitAndExecuteOne(wakeVersion);
 
                 spinWait = new SpinWait();
             }

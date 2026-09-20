@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Entities;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
@@ -24,7 +25,7 @@ public readonly record struct TemporalFeatureOutput(
 /// Owns temporal history, resolve, initialization, and history-update passes. The feature consumes
 /// only explicit color, depth, and motion outputs and has no Cluster shader operation role.
 /// </summary>
-public sealed class TemporalFeature : IDisposable
+public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObserver
 {
     private static readonly TextureSubresourceRange ColorRange =
         new(0, 1, 0, 1, TextureAspects.Color);
@@ -44,7 +45,9 @@ public sealed class TemporalFeature : IDisposable
     private readonly GraphTextureInput _sceneDepth;
     private readonly GraphTextureInput _sceneMotion;
     private bool _historyValid;
-    private bool _pending;
+    private Entity _historyView;
+    private Entity _frameView;
+    private bool _frameActive;
     private bool _disposed;
 
     public TemporalFeature(
@@ -141,14 +144,14 @@ public sealed class TemporalFeature : IDisposable
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalInitializePassData(_colorHistory, _motionHistory, _sceneDepth, _depthHistory,
                     checked((uint)width), checked((uint)height)),
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalInitializePassData data) => data.Declare(ref pass),
                 TemporalInitializePassData.Record);
             _resolvePass = edit.AddRasterFramePass(
                 "Temporal resolve",
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalResolvePassData(resolvedAttachment, width, height),
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 pipeline.Pipeline,
                 pipeline.Program.Layout.GetGlobalParamsVarLayout(),
                 default,
@@ -159,7 +162,7 @@ public sealed class TemporalFeature : IDisposable
                 PassQueueSelection.AnyOfType(QueueType.Graphics),
                 new TemporalHistoryPassData(resolved, _colorHistory, _sceneMotion, _motionHistory,
                     _sceneDepth, _depthHistory, checked((uint)width), checked((uint)height)),
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                 static (ref PassDefinition pass, ref TemporalHistoryPassData data) => data.Declare(ref pass),
                 TemporalHistoryPassData.Record);
             edit.OrderAfter(_resolvePass, _initializePass);
@@ -237,15 +240,17 @@ public sealed class TemporalFeature : IDisposable
         in MotionFeatureOutput motion,
         TemporalResolveSettings settings,
         bool enabled = true,
-        bool cameraCut = false)
+        bool cameraCut = false,
+        Entity view = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_pending)
-            throw new InvalidOperationException("The previous temporal frame must be committed or discarded.");
+        if (_frameActive)
+            throw new InvalidOperationException("The previous temporal graph frame is still active.");
         if (sceneColor == default || sceneDepth == default || !motion.IsValid)
             throw new ArgumentException("Temporal resolve requires valid color, depth, and motion inputs.");
 
-        bool useHistory = enabled && _historyValid && !cameraCut;
+        bool sameView = view != Entity.Null && view == _historyView;
+        bool useHistory = enabled && _historyValid && !cameraCut && sameView;
         TemporalResolveUniforms uniforms = useHistory
             ? settings.ToUniforms()
             : settings.ToUniforms() with { HistoryWeight = 0.0f };
@@ -258,31 +263,34 @@ public sealed class TemporalFeature : IDisposable
         graph.SetTextureInput(_sceneColor, sceneColor);
         graph.SetTextureInput(_sceneDepth, sceneDepth);
         graph.SetTextureInput(_sceneMotion, motion.MotionVectors);
-        graph.SetPassEnabled(_initializePass, !_historyValid || cameraCut);
+        graph.SetPassEnabled(_initializePass, !_historyValid || cameraCut || !sameView);
         graph.SetPassEnabled(_resolvePass, true);
         graph.SetPassEnabled(_historyPass, true);
-        _pending = true;
+        graph.ObserveExecution(this);
+        _frameView = view;
+        _frameActive = true;
     }
 
-    public void Commit()
+    void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_pending)
-            throw new InvalidOperationException("No temporal frame is waiting for commit.");
-        _historyValid = true;
-        _pending = false;
-    }
-
-    public void Discard()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _pending = false;
+        if (_disposed || !_frameActive)
+            return;
+        // A submitted copy pass contains all three history writes. An interrupted frame
+        // may have initialized the textures without producing the next history.
+        if (result.TryGetPassCompletion(_historyPass, out _))
+        {
+            _historyView = _frameView;
+            _historyValid = _frameView != Entity.Null;
+        }
+        else if (result.TryGetPassCompletion(_initializePass, out _))
+            _historyValid = false;
+        _frameActive = false;
     }
 
     public void InvalidateHistory()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_pending)
+        if (_frameActive)
             throw new InvalidOperationException("Temporal history cannot be invalidated during an open frame.");
         _historyValid = false;
     }
@@ -291,8 +299,9 @@ public sealed class TemporalFeature : IDisposable
     {
         if (_disposed)
             return;
+        if (_frameActive)
+            throw new InvalidOperationException("Temporal resources cannot be disposed during an open graph frame.");
         _pipeline.Dispose();
-        _pending = false;
         _historyValid = false;
         _disposed = true;
     }

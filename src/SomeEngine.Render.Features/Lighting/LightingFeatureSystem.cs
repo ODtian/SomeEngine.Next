@@ -10,6 +10,8 @@ namespace SomeEngine.Render.Features.Lighting;
 /// <summary>Records lighting before geometry shade passes without adding lighting state to Cluster.</summary>
 public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 {
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "Lighting.Update", detail: true);
+
     private readonly LightingFeature _feature;
     private readonly RenderLightSetSystem _lights;
     private readonly RenderView[] _views;
@@ -33,6 +35,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         _collector.Clear();
         ViewCollector collector = _collector;
         context.World.ExecuteQuery(

@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Components;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Queries;
@@ -38,6 +39,19 @@ public readonly ref struct QueryCursor
     public uint CurrentSystemVersion { get; }
 
     internal World Owner => _world;
+
+    /// <summary>Finds one entity within this query, applying the same filters and access rules as row iteration.</summary>
+    public bool TryGetRow(Entity entity, out QueryRow row) =>
+        _world.TryGetEntityQueryRow(_plan, entity, LastSystemVersion, CurrentSystemVersion, out row);
+
+    /// <summary>Visits each changed table chunk once, combining known membership changes with read-column versions.</summary>
+    public QueryChangedChunkEnumerator ChangedChunks(EntityTableChangeBatch changes)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!ReferenceEquals(changes.Changes.RequireWorld(), _world))
+            throw new ArgumentException("Table changes belong to another World.", nameof(changes));
+        return new(_world, _plan, changes.Entities, LastSystemVersion, CurrentSystemVersion);
+    }
 
     public QueryChunkEnumerator<NoSharedFilter> Chunks =>
         new(

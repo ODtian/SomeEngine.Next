@@ -51,6 +51,14 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
         ReadOnlyQueryPacket packet,
         uint lastSystemVersion);
 
+    /// <summary>
+    /// Returns true when every row in this packet must be rewritten. Implementations may use a
+    /// cheap dense-change test; returning false preserves the row-range fallback.
+    /// </summary>
+    bool AllRowsChanged(
+        ReadOnlyQueryPacket packet,
+        uint lastSystemVersion) => false;
+
     /// <summary>Returns how many exact-layout groups one RenderWorld entity contributes to.</summary>
     int CountGroups(ReadOnlyQueryPacket packet, int entityRow);
 
@@ -530,15 +538,6 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         int entityCount = packets.RowCount;
-        if (entityCount == 0)
-        {
-            RenderInstanceBatches<TGroupKey>? previous = Current;
-            Current = new RenderInstanceBatches<TGroupKey>(0, [], [0], []);
-            if (previous is not null)
-                Retire(context, previous);
-            return;
-        }
-
         TGroupKey key = default!;
         RenderInstancePropertyLayout layout = composer.GetLayout(in key)
             ?? throw new InvalidOperationException(
@@ -1061,7 +1060,7 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 local.OneInstancePerEntity)
             {
                 TGroupKey key = default!;
-                if (writeAll)
+                if (writeAll || local.AllRowsChanged(packet, context.LastSystemVersion))
                     local.WritePacket(in key, 0, packet, destinations[0].Slice(context.OutputStart, packet.Count));
                 else
                 {

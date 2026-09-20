@@ -71,6 +71,7 @@ internal sealed class WorkStream<TItem> : WorkStream
     private const int DrainQuantum = 64;
     private static readonly bool ContainsReferences = RuntimeHelpers.IsReferenceOrContainsReferences<TItem>();
 
+    internal static WorkStream<TItem> Instance { get; } = new();
 
     private readonly Lock _sync = new();
     private readonly List<Slot> _slots = [default];
@@ -82,7 +83,7 @@ internal sealed class WorkStream<TItem> : WorkStream
     [ThreadStatic]
     private static TItem[]? s_drainBuffer;
 
-    internal WorkStream()
+    private WorkStream()
     {
         _readyItems = new ConcurrentQueue<TItem>[JobPriorityOrder.Count];
         for (int i = 0; i < _readyItems.Length; i++)

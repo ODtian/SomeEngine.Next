@@ -16,7 +16,7 @@ public sealed class WarpRenderGraphPresentationTests
             DisableGpuBasedValidation: true,
             DisableSynchronizedQueueValidation: true);
         using var backend = new ValidationLayer(
-            new D3D12Backend(new D3D12BackendOptions(nativeValidation)));
+            D3D12GraphicsBackend.Create(new D3D12BackendOptions(nativeValidation)));
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Surface surface = backend.CreateSurface(new SurfaceDesc(
             NativeWindowType.Win32,

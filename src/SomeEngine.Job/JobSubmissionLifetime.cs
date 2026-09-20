@@ -13,8 +13,6 @@ internal interface IJobSubmissionObserver
     void CommitSubmission(JobHandle handle);
 
     void RollbackSubmission(JobHandle handle);
-
-    void CompleteSubmission(JobHandle handle);
 }
 
 /// <summary>
@@ -75,6 +73,18 @@ internal sealed class JobLifetime : IJobSubmissionObserver
         }
     }
 
+    internal int TrackedRootCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                RetireObservedRootsUnderGate();
+                return _roots.Count;
+            }
+        }
+    }
+
     internal JobSubmissionScope EnterSubmissionScope() =>
         JobSubmissionTracker.Enter(this);
 
@@ -121,6 +131,11 @@ internal sealed class JobLifetime : IJobSubmissionObserver
                 throw new InvalidOperationException("Job lifetime submission accounting is unbalanced.");
 
             _roots.Add(handle);
+            JobSystem.OnCompleted(
+                handle,
+                static (completed, state) =>
+                    ((JobLifetime)state!).RetireCompletedRoot(completed),
+                this);
             _pendingSubmissions--;
             if (_pendingSubmissions == 0)
                 Monitor.PulseAll(_gate);
@@ -275,11 +290,18 @@ internal sealed class JobLifetime : IJobSubmissionObserver
         ArrayPool<JobHandle>.Shared.Return(roots);
     }
 
-    private bool IsOwnedScopeUnderGate(JobHandle scope) =>
-        scope.Scheduler?.Uses(scope, this) ?? false;
+    private bool IsOwnedScopeUnderGate(JobHandle scope)
+    {
+        for (int i = 0; i < _roots.Count; i++)
+        {
+            if (JobSystem.IsScopeDescendantOf(scope, _roots[i]))
+                return true;
+        }
 
+        return false;
+    }
 
-    void IJobSubmissionObserver.CompleteSubmission(JobHandle handle)
+    private void RetireCompletedRoot(JobHandle handle)
     {
         // Completion observers must never mark a fault as observed: the submitter still owns the
         // ordinary JobHandle.Complete exception contract. Successful roots can be forgotten at
@@ -397,6 +419,7 @@ internal struct JobSubmissionReservation
     private Entry _fourth;
     private List<Entry>? _overflow;
     private int _count;
+    private JobHandle _boundHandle;
 
     internal void Add(IJobSubmissionObserver observer, JobHandle currentScope)
     {
@@ -404,9 +427,10 @@ internal struct JobSubmissionReservation
             return;
 
         bool reserved = observer.TryBeginSubmission(currentScope);
+        var entry = new Entry(observer, reserved);
         try
         {
-            Store(new Entry(observer, reserved ? new JobUse(observer) : null));
+            Store(entry);
         }
         catch
         {
@@ -418,14 +442,23 @@ internal struct JobSubmissionReservation
 
     internal void Bind(JobHandle handle)
     {
+        _boundHandle = handle;
         for (int i = 0; i < _count; i++)
-            Get(i).Use?.Bind(handle);
+        {
+            Entry entry = Get(i);
+            if (entry.Reserved)
+                entry.Observer.CommitSubmission(handle);
+        }
     }
 
     internal void Rollback()
     {
         for (int i = _count - 1; i >= 0; i--)
-            Get(i).Use?.Rollback();
+        {
+            Entry entry = Get(i);
+            if (entry.Reserved)
+                entry.Observer.RollbackSubmission(_boundHandle);
+        }
     }
 
     private bool Contains(IJobSubmissionObserver observer)
@@ -474,36 +507,5 @@ internal struct JobSubmissionReservation
 
     private readonly record struct Entry(
         IJobSubmissionObserver Observer,
-        JobUse? Use);
-}
-
-/// <summary>One accepted use, ended exactly once by completion or failed submission.</summary>
-internal sealed class JobUse(IJobSubmissionObserver observer)
-{
-    private JobHandle _handle;
-    private int _ended;
-
-    internal void Bind(JobHandle handle)
-    {
-        observer.CommitSubmission(handle);
-        _handle = handle;
-        handle.Scheduler!.AddUse(handle, observer);
-        handle.Scheduler.OnCompleted(handle, static (_, state) => ((JobUse)state!).Complete(), this);
-    }
-
-    internal void Rollback()
-    {
-        if (Interlocked.Exchange(ref _ended, 1) != 0)
-            return;
-        _handle.Scheduler?.RemoveUse(_handle, observer);
-        observer.RollbackSubmission(_handle);
-    }
-
-    private void Complete()
-    {
-        if (Interlocked.Exchange(ref _ended, 1) != 0)
-            return;
-        _handle.Scheduler!.RemoveUse(_handle, observer);
-        observer.CompleteSubmission(_handle);
-    }
+        bool Reserved);
 }

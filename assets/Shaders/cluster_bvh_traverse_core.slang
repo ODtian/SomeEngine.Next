@@ -239,9 +239,9 @@ void ProcessTraversalLevel(
             uint ignored;
             NextNodeIndirectArgs.InterlockedMax(
                 TraversalLevel.NextArgsOffset,
-                groupCount,
+                min(groupCount, 65535u),
                 ignored);
-            NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 4u, 1u);
+            NextNodeIndirectArgs.InterlockedMax(TraversalLevel.NextArgsOffset + 4u, (groupCount + 65534u) / 65535u, ignored);
             NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 8u, 1u);
             NextNodeIndirectArgs.Store(TraversalLevel.NextArgsOffset + 16u, inputEnd);
         }

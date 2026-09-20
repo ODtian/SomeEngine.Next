@@ -240,7 +240,7 @@ internal sealed unsafe partial class D3D12Backend
                 BarrierAccess.NoAccess,
                 layout,
                 TextureLayout.General,
-                TextureBarrierFlags.None);
+                TextureBarrierFlags.None, layoutAfterOverride: BarrierLayout.Common);
             command.RecordSwapchainState(
                 texture,
                 TextureLayout.General,
@@ -303,7 +303,7 @@ internal sealed unsafe partial class D3D12Backend
                 ToBarrierAccess(barrier.Access),
                 TextureLayout.General,
                 layout,
-                TextureBarrierFlags.None);
+                TextureBarrierFlags.None, layoutBeforeOverride: BarrierLayout.Common);
             command.RecordSwapchainState(texture, layout, barrier.Access);
         }
         else
@@ -328,7 +328,9 @@ internal sealed unsafe partial class D3D12Backend
         BarrierAccess accessAfter,
         TextureLayout layoutBefore,
         TextureLayout layoutAfter,
-        TextureBarrierFlags flags)
+        TextureBarrierFlags flags,
+        BarrierLayout? layoutBeforeOverride = null,
+        BarrierLayout? layoutAfterOverride = null)
     {
         ResolveEnhancedTextureLayouts(
             command.QueueType,
@@ -337,6 +339,8 @@ internal sealed unsafe partial class D3D12Backend
             layoutAfter,
             out BarrierLayout nativeLayoutBefore,
             out BarrierLayout nativeLayoutAfter);
+        nativeLayoutBefore = layoutBeforeOverride ?? nativeLayoutBefore;
+        nativeLayoutAfter = layoutAfterOverride ?? nativeLayoutAfter;
         Span<TextureAspects> aspects = stackalloc TextureAspects[3];
         int aspectCount = ExpandBarrierAspects(texture.Info, range, aspects);
         NativeTextureBarrier* native = stackalloc NativeTextureBarrier[aspectCount];

@@ -51,6 +51,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
     private readonly Device _device;
     private readonly HeapByteBudget _budget;
     private readonly List<PersistentHeapPage> _pages = [];
+    private readonly HashSet<PersistentHeapPage> _discardedPages = [];
     private readonly List<PendingResourceRetirement> _retirements = [];
     private readonly Dictionary<Resource, ResourcePlacement> _allocations =
         new(ReferenceEqualityComparer.Instance);
@@ -71,7 +72,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
         GraphEditChanges changes,
         bool retireRemoved)
     {
-        int originalPageCount = _pages.Count;
+        int previousPageCount = _pages.Count;
         var createdObjects = new List<IDisposable>();
         var createdPlacements = new List<ResourcePlacement>();
         try
@@ -89,6 +90,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
                     buffer.MemoryType,
                     buffer.Description.NodePlacement,
                     buffer.Description.Usages.HasFlag(BufferUsages.Shareable));
+                createdPlacements.Add(placement);
                 Buffer resource = _backend.CreatePlacedBuffer(
                     _device,
                     placement.Heap,
@@ -107,7 +109,6 @@ internal sealed class PersistentResourceAllocator : IDisposable
                 ];
                 _allocations.Add(resource, placement);
                 createdObjects.Add(resource);
-                createdPlacements.Add(placement);
             }
 
             foreach (GraphIdentity id in changes.Textures)
@@ -124,6 +125,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
                     MemoryType.DeviceLocal,
                     texture.NodePlacement,
                     texture.Usages.HasFlag(TextureUsages.Shareable));
+                createdPlacements.Add(placement);
                 Texture resource = _backend.CreatePlacedTexture(
                     _device,
                     placement.Heap,
@@ -148,7 +150,6 @@ internal sealed class PersistentResourceAllocator : IDisposable
                 ];
                 _allocations.Add(resource, placement);
                 createdObjects.Add(resource);
-                createdPlacements.Add(placement);
             }
 
             foreach (GraphIdentity id in changes.Views)
@@ -162,22 +163,40 @@ internal sealed class PersistentResourceAllocator : IDisposable
                 createdObjects.Add(resourceView);
             }
         }
-        catch
+        catch (Exception failure)
         {
+            for (int index = previousPageCount; index < _pages.Count; index++)
+                _discardedPages.Add(_pages[index]);
+            // The unpublished declaration must be retryable before cleanup calls user/backend
+            // code. Disposal failures retain their objects and placements in the usual queue.
+            var created = new HashSet<IDisposable>(createdObjects, ReferenceEqualityComparer.Instance);
+            foreach (GraphIdentity id in changes.Views)
+                if (next.Views.Contains(id) && next.Views.Get(id).PersistentView is { } view && created.Contains(view))
+                    next.Views.GetMutable(id).PersistentView = null;
+            foreach (GraphIdentity id in changes.Buffers)
+                if (next.Buffers.Contains(id) && next.Buffers.Get(id).PersistentResource is { } buffer && created.Contains(buffer))
+                {
+                    GraphBuffer value = next.Buffers.GetMutable(id);
+                    value.PersistentResource = null;
+                    value.BoundaryStates = [];
+                }
+            foreach (GraphIdentity id in changes.Textures)
+                if (next.Textures.Contains(id) && next.Textures.Get(id).PersistentResource is { } texture && created.Contains(texture))
+                {
+                    GraphTexture value = next.Textures.GetMutable(id);
+                    value.PersistentResource = null;
+                    value.BoundaryStates = [];
+                }
             foreach (IDisposable value in createdObjects)
-                if (value is Resource resource)
-                    _allocations.Remove(resource);
-            for (int i = createdObjects.Count - 1; i >= 0; i--)
-                createdObjects[i].Dispose();
-            foreach (ResourcePlacement placement in createdPlacements)
-                Release(placement);
-            for (int page = _pages.Count - 1; page >= originalPageCount; page--)
             {
-                PersistentHeapPage created = _pages[page];
-                _budget.Release(created.Heap.Info.Size);
-                created.Heap.Dispose();
-                _pages.RemoveAt(page);
+                if (value is Resource resource && _allocations.TryGetValue(resource, out ResourcePlacement placement))
+                    createdPlacements.Remove(placement);
+                Retire(value, []);
             }
+            // A placement whose native creation threw never acquired a resource.
+            foreach (ResourcePlacement placement in createdPlacements) Release(placement);
+            try { CollectCompleted(); }
+            catch (Exception cleanupFailure) { throw new AggregateException(failure, cleanupFailure); }
             throw;
         }
 
@@ -352,7 +371,7 @@ internal sealed class PersistentResourceAllocator : IDisposable
         ulong bestWaste = ulong.MaxValue;
         foreach (PersistentHeapPage page in _pages)
         {
-            if (page.Key != key) continue;
+            if (page.Key != key || _discardedPages.Contains(page)) continue;
             if (!page.TryFind(requirements.Size, requirements.Alignment, out int range, out ulong waste))
                 continue;
             if (waste >= bestWaste) continue;
@@ -425,19 +444,33 @@ internal sealed class PersistentResourceAllocator : IDisposable
             if (retirement.Placement.HasValue) Release(retirement.Placement.Value);
             _retirements.RemoveAt(i);
         }
+        foreach (PersistentHeapPage page in _discardedPages.ToArray())
+        {
+            if (!page.IsEmpty) continue;
+            page.Heap.Dispose();
+            _budget.Release(page.Heap.Info.Size);
+            _pages.Remove(page);
+            _discardedPages.Remove(page);
+        }
     }
 
     public void Dispose()
     {
-        foreach (PendingResourceRetirement retirement in _retirements)
-            retirement.Value.Dispose();
-        _retirements.Clear();
-        foreach (PersistentHeapPage page in _pages)
+        for (int index = _retirements.Count - 1; index >= 0; index--)
         {
-            _budget.Release(page.Heap.Info.Size);
-            page.Heap.Dispose();
+            PendingResourceRetirement retirement = _retirements[index];
+            retirement.Value.Dispose();
+            if (retirement.Placement.HasValue) Release(retirement.Placement.Value);
+            _retirements.RemoveAt(index);
         }
-        _pages.Clear();
+        for (int index = _pages.Count - 1; index >= 0; index--)
+        {
+            PersistentHeapPage page = _pages[index];
+            page.Heap.Dispose();
+            _budget.Release(page.Heap.Info.Size);
+            _pages.RemoveAt(index);
+            _discardedPages.Remove(page);
+        }
         _allocations.Clear();
     }
 
@@ -479,6 +512,7 @@ internal sealed class PersistentHeapPage
 
     internal Heap Heap { get; }
     internal HeapCompatibilityKey Key { get; }
+    internal bool IsEmpty => _free.Count == 1 && _free[0] == (0UL, Heap.Info.Size);
 
     internal bool TryFind(ulong size, ulong alignment, out int range, out ulong waste)
     {
@@ -555,15 +589,19 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
     private FrameSubmissionMode _submissionMode;
     private RenderGraphDebugOptions _debug;
     private bool _initialized;
+    private bool _cleanupRequired;
+    private ulong _frameNumber;
 
     internal FrameTransientResourceAllocator(IGraphicsBackend backend, Device device, HeapByteBudget budget)
     {
         _backend = backend; _device = device; _budget = budget;
     }
 
-    internal void Reset(FrameSubmissionMode submissionMode, RenderGraphDebugOptions debug)
+    internal bool Reset(FrameSubmissionMode submissionMode, RenderGraphDebugOptions debug)
     {
-        if (_initialized && (_submissionMode != submissionMode || _debug != debug)) Compact();
+        _frameNumber++;
+        bool compacted = _cleanupRequired || _initialized && (_submissionMode != submissionMode || _debug != debug);
+        if (compacted) Compact();
         _submissionMode = submissionMode; _debug = debug; _initialized = true;
         ResetUploads();
         _releasedViewResources.Clear();
@@ -571,6 +609,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             if (resource.IsDisposed) _releasedViewResources.Add(resource);
         foreach (Resource resource in _releasedViewResources) RemoveResourceViews(resource);
         _releasedViewResources.Clear();
+        return compacted;
     }
 
     internal void UpdateLifetime(GraphIdentity identity, int[] begin, int[] end, Queue firstQueue, Queue lastQueue)
@@ -701,7 +740,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
                 // Its first resource only needs activation; before-side deactivation belongs
                 // to resources whose last access occurs earlier in this execution.
                 Resource? predecessor = index > 0 ? _activeAllocations[index - 1].Resource : null;
-                bool aliases = _activeAllocations.Count > 1 || region.Used && !ReferenceEquals(region.LastUsed, allocation.Resource);
+                bool aliases = _activeAllocations.Count > 1 || region.Used && !ReferenceEquals(region.LastAccess?.Resource, allocation.Resource);
                 if (ReferenceEquals(allocation.Predecessor, predecessor) && allocation.Aliases == aliases) continue;
                 allocation.Predecessor = predecessor; allocation.Aliases = aliases;
                 _changedPlacements.Add(allocation.Request.Identity);
@@ -718,13 +757,6 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
     }
 
     internal bool IsCached(Resource resource) => _resources.Contains(resource);
-
-    internal bool TryGetPlacement(in GraphIdentity identity, out Heap? heap, out ulong offset)
-    {
-        if (_allocations.TryGetValue(identity, out TransientAllocation? allocation))
-        { heap = allocation.Page.Heap; offset = allocation.Region.Offset; return heap is not null; }
-        heap = null; offset = 0; return false;
-    }
 
     internal BufferBoundaryState[]? FindCachedBufferStates(in GraphIdentity identity, Resource resource) =>
         _allocations.TryGetValue(identity, out TransientAllocation? allocation) && ReferenceEquals(allocation.Resource, resource) ? allocation.BufferStates : null;
@@ -747,7 +779,16 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
     private void Used(TransientAllocation allocation)
     {
         TransientHeapPage.Region region = allocation.Region;
-        region.Used = true; region.LastUsed = allocation.Resource;
+        // State results are committed by resource table order, not command order.
+        // Aliased allocations have disjoint ordered lifetimes; retain the one
+        // used last on the GPU among this frame's successful submissions.
+        if (region.LastUsedFrame != _frameNumber || region.LastAccess is null ||
+            TransientHeapPage.Before(region.LastAccess.Request.End, allocation.Request.End))
+        {
+            region.LastAccess = allocation;
+            region.LastUsedFrame = _frameNumber;
+        }
+        region.Used = true;
         if (allocation.Aliases && region.Allocations.Count == 1) _changedRegions.Add(region);
     }
 
@@ -772,13 +813,17 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     private void RemoveResourceViews(Resource resource)
     {
-        if (!_resourceViews.Remove(resource, out HashSet<ViewDescription>? keys)) return;
-        foreach (ViewDescription key in keys)
+        if (!_resourceViews.TryGetValue(resource, out HashSet<ViewDescription>? keys)) return;
+        foreach (ViewDescription key in keys.ToArray())
         {
-            if (!_views.Remove(key, out CachedView view)) continue;
-            RemoveReference(view.Primary);
-            if (view.Secondary is not null) RemoveReference(view.Secondary);
-            view.View.Dispose();
+            if (_views.TryGetValue(key, out CachedView view))
+            {
+                ReleaseObject(view.View);
+                _views.Remove(key);
+                RemoveReference(view.Primary);
+                if (view.Secondary is not null) RemoveReference(view.Secondary);
+            }
+            keys.Remove(key);
             void RemoveReference(Resource other)
             {
                 if (ReferenceEquals(other, resource) || !_resourceViews.TryGetValue(other, out var views)) return;
@@ -786,6 +831,13 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
                 if (views.Count == 0) _resourceViews.Remove(other);
             }
         }
+        _resourceViews.Remove(resource);
+    }
+
+    private void ReleaseObject(IDisposable value)
+    {
+        try { value.Dispose(); }
+        catch { _cleanupRequired = true; throw; }
     }
 
     private static ViewDescription DescribeView(in FrameView view, Resource primary, Resource? secondary) =>
@@ -796,18 +848,19 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     internal void RemoveResource(GraphAccessTargetKind kind, GraphIdentity identity)
     {
-        if (!_allocations.Remove(identity, out TransientAllocation? allocation)) return;
+        if (!_allocations.TryGetValue(identity, out TransientAllocation? allocation)) return;
         if (allocation.Resource is { } resource)
         {
             RemoveResourceViews(resource);
+            ReleaseObject(resource);
             _resources.Remove(resource);
-            resource.Dispose();
         }
+        _allocations.Remove(identity);
         _changedRegions.Add(allocation.Region);
         allocation.Page.Release(allocation);
         if (allocation.Page.AllocationCount == 0)
         {
-            if (allocation.Page.Heap is { } heap) { _budget.Release(heap.Info.Size); heap.Dispose(); }
+            if (allocation.Page.Heap is { } heap) { ReleaseObject(heap); _budget.Release(heap.Info.Size); }
             _pages.Remove(allocation.Page); _newPages.Remove(allocation.Page);
         }
     }
@@ -818,14 +871,34 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     internal void Compact()
     {
-        foreach (CachedView view in _views.Values) view.View.Dispose();
-        _views.Clear(); _resourceViews.Clear();
+        _cleanupRequired = true;
+        foreach (ViewDescription key in _views.Keys.ToArray())
+        {
+            _views[key].View.Dispose();
+            _views.Remove(key);
+        }
+        _resourceViews.Clear();
         DisposeUploads();
-        foreach (Resource resource in _resources) resource.Dispose();
-        _resources.Clear(); _allocations.Clear();
-        foreach (TransientHeapPage page in _pages)
-            if (page.Heap is { } heap) { _budget.Release(heap.Info.Size); heap.Dispose(); }
-        _pages.Clear(); _newPages.Clear(); _changedRegions.Clear(); _changedLifetimes.Clear(); _changedPlacements.Clear();
+        while (_resources.Count != 0)
+        {
+            Resource resource = _resources.First();
+            ReleaseObject(resource);
+            _resources.Remove(resource);
+        }
+        _allocations.Clear();
+        for (int index = _pages.Count - 1; index >= 0; index--)
+        {
+            TransientHeapPage page = _pages[index];
+            if (page.Heap is { } heap)
+            {
+                heap.Dispose();
+                _budget.Release(heap.Info.Size);
+            }
+            _pages.RemoveAt(index);
+            _newPages.Remove(page);
+        }
+        _changedRegions.Clear(); _changedLifetimes.Clear(); _changedPlacements.Clear();
+        _cleanupRequired = false;
     }
 
     public void Dispose() => Compact();
@@ -836,6 +909,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
         bool ReadOnlyDepth, bool ReadOnlyStencil);
 
     private readonly List<UploadPage> _uploadPages = [];
+    private readonly Dictionary<GraphIdentity, (BufferDesc Description, UploadPage Page)> _bufferUploads = [];
     private const BufferUsages UploadReadUsages = BufferUsages.Constant | BufferUsages.ShaderRead;
 
     internal sealed class UploadPage
@@ -850,6 +924,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     private void ResetUploads()
     {
+        foreach (var value in _bufferUploads.Values) value.Page.Used = 0;
         foreach (UploadPage page in _uploadPages)
         {
             page.Used = 0;
@@ -859,6 +934,7 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     internal (UploadPage UploadPage, BufferRange Range) WriteUpload(ReadOnlySpan<byte> data, BufferUsages usages, uint elementAlignment)
     {
+        if (_cleanupRequired) throw new InvalidOperationException("Transient storage cleanup must finish before another upload.");
         DevelopmentCheck.Require(!data.IsEmpty, "Upload data cannot be empty.");
         DevelopmentCheck.Require(usages != 0 && (usages & ~(UploadReadUsages | BufferUsages.CopySource)) == 0,
             "Upload pages support GPU reads only.");
@@ -897,28 +973,31 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
             MemoryRequirements requirements = _backend.GetBufferMemoryRequirements(_device, description, MemoryType.Upload);
             if (!_budget.TryReserve(requirements.Size))
                 throw new InvalidOperationException("The render graph upload memory budget is exhausted.");
-            Buffer? buffer = null;
-            MappedBuffer mapping = default;
+            Buffer buffer;
+            try { buffer = _backend.CreateBuffer(_device, description, MemoryType.Upload); }
+            catch { _budget.Release(requirements.Size); throw; }
+            target = new UploadPage
+            {
+                Buffer = buffer,
+                Mapping = default,
+                CommittedBytes = requirements.Size,
+                BoundaryStates = [new BufferBoundaryState(new BufferRange(0, capacity),
+                    buffer.InitialSync, buffer.InitialAccess, ResourceContentState.Defined)],
+            };
+            _uploadPages.Add(target);
             try
             {
-                buffer = _backend.CreateBuffer(_device, description, MemoryType.Upload);
-                mapping = _backend.Map(buffer, MapType.Write, new BufferRange(0, capacity));
-                mapping.Bytes.Clear();
-                target = new UploadPage
-                {
-                    Buffer = buffer,
-                    Mapping = mapping,
-                    CommittedBytes = requirements.Size,
-                    BoundaryStates = [new BufferBoundaryState(new BufferRange(0, capacity),
-                        buffer.InitialSync, buffer.InitialAccess, ResourceContentState.Defined)],
-                };
-                _uploadPages.Add(target);
+                target.Mapping = _backend.Map(buffer, MapType.Write, new BufferRange(0, capacity));
+                target.Mapping.Bytes.Clear();
             }
-            catch
+            catch (Exception failure)
             {
-                mapping.Dispose();
-                buffer?.Dispose();
-                _budget.Release(requirements.Size);
+                try { DisposeUpload(_uploadPages.Count - 1); }
+                catch (Exception cleanupFailure)
+                {
+                    _cleanupRequired = true;
+                    throw new AggregateException(failure, cleanupFailure);
+                }
                 throw;
             }
             offset = 0;
@@ -932,19 +1011,71 @@ internal sealed class FrameTransientResourceAllocator : IDisposable
 
     internal void FlushUploads()
     {
+        if (_cleanupRequired) throw new InvalidOperationException("Transient storage cleanup must finish before execution.");
         foreach (UploadPage page in _uploadPages)
             if (page.Used != 0) page.Mapping.Flush(new BufferRange(0, page.Used));
+        foreach (var value in _bufferUploads.Values)
+            if (value.Page.Used != 0) value.Page.Mapping.Flush(new BufferRange(0, value.Page.Used));
+    }
+
+    internal UploadPage WriteBufferData(GraphIdentity id, in BufferDesc description, ReadOnlySpan<byte> data)
+    {
+        if (!_bufferUploads.TryGetValue(id, out var stored) || stored.Description != description)
+        {
+            RemoveBufferData(id);
+            MemoryRequirements requirements = _backend.GetBufferMemoryRequirements(_device, description, MemoryType.Upload);
+            if (!_budget.TryReserve(requirements.Size))
+                throw new InvalidOperationException("The render graph upload memory budget is exhausted.");
+            Buffer? buffer = null;
+            MappedBuffer mapping = default;
+            try
+            {
+                buffer = _backend.CreateBuffer(_device, description, MemoryType.Upload);
+                mapping = _backend.Map(buffer, MapType.Write, new BufferRange(0, description.Size));
+                var page = new UploadPage
+                {
+                    Buffer = buffer, Mapping = mapping, CommittedBytes = requirements.Size,
+                    BoundaryStates = [new BufferBoundaryState(new BufferRange(0, description.Size),
+                        buffer.InitialSync, buffer.InitialAccess, ResourceContentState.Defined)],
+                };
+                stored = (description, page);
+                _bufferUploads.Add(id, stored);
+            }
+            catch
+            {
+                mapping.Dispose();
+                buffer?.Dispose();
+                _budget.Release(requirements.Size);
+                throw;
+            }
+        }
+        data.CopyTo(stored.Page.Mapping.Bytes);
+        stored.Page.Used = description.Size;
+        return stored.Page;
+    }
+
+    internal void RemoveBufferData(GraphIdentity id)
+    {
+        if (!_bufferUploads.Remove(id, out var value)) return;
+        RemoveResourceViews(value.Page.Buffer);
+        value.Page.Mapping.Dispose();
+        value.Page.Buffer.Dispose();
+        _budget.Release(value.Page.CommittedBytes);
     }
 
     private void DisposeUploads()
     {
-        foreach (UploadPage page in _uploadPages)
-        {
-            page.Mapping.Dispose();
-            page.Buffer.Dispose();
-            _budget.Release(page.CommittedBytes);
-        }
-        _uploadPages.Clear();
+        foreach (GraphIdentity id in _bufferUploads.Keys.ToArray()) RemoveBufferData(id);
+        for (int index = _uploadPages.Count - 1; index >= 0; index--) DisposeUpload(index);
+    }
+
+    private void DisposeUpload(int index)
+    {
+        UploadPage page = _uploadPages[index];
+        page.Mapping.Dispose();
+        page.Buffer.Dispose();
+        _budget.Release(page.CommittedBytes);
+        _uploadPages.RemoveAt(index);
     }
 
     private static ulong AlignUp(ulong value, ulong alignment) => checked((value + alignment - 1) / alignment * alignment);
@@ -978,7 +1109,8 @@ internal sealed class TransientHeapPage
         internal readonly ulong Offset = offset;
         internal ulong Size = size;
         internal readonly List<TransientAllocation> Allocations = [];
-        internal Resource? LastUsed;
+        internal TransientAllocation? LastAccess;
+        internal ulong LastUsedFrame;
         internal bool Used;
     }
 
@@ -1043,7 +1175,7 @@ internal sealed class TransientHeapPage
             ulong end = region.Offset + region.Size;
             Regions.Remove(region.Offset);
             if (offset > region.Offset) Regions.Add(region.Offset, new Region(region.Offset, offset - region.Offset) { Used = region.Used });
-            Region selected = new(offset, size) { Used = region.Used, LastUsed = region.LastUsed };
+            Region selected = new(offset, size) { Used = region.Used, LastAccess = region.LastAccess, LastUsedFrame = region.LastUsedFrame };
             Regions.Add(offset, selected);
             if (offset + size < end) Regions.Add(offset + size, new Region(offset + size, end - offset - size) { Used = region.Used });
             region = selected;
@@ -1056,7 +1188,7 @@ internal sealed class TransientHeapPage
         Region region = allocation.Region;
         region.Allocations.Remove(allocation);
         AllocationCount--;
-        if (ReferenceEquals(region.LastUsed, allocation.Resource)) region.LastUsed = null;
+        if (ReferenceEquals(region.LastAccess, allocation)) region.LastAccess = null;
         if (region.Allocations.Count != 0) return;
         int index = Regions.IndexOfKey(region.Offset);
         if (index > 0 && Regions.Values[index - 1].Allocations.Count == 0)
@@ -1064,7 +1196,7 @@ internal sealed class TransientHeapPage
             Region previous = Regions.Values[index - 1];
             previous.Size += region.Size;
             previous.Used |= region.Used;
-            previous.LastUsed = null;
+            previous.LastAccess = null;
             Regions.RemoveAt(index);
             region = previous;
             index--;
@@ -1074,7 +1206,7 @@ internal sealed class TransientHeapPage
             Region next = Regions.Values[index + 1];
             region.Size += next.Size;
             region.Used |= next.Used;
-            region.LastUsed = null;
+            region.LastAccess = null;
             Regions.RemoveAt(index + 1);
         }
     }

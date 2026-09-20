@@ -1,17 +1,13 @@
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
-    public JobHandle CreateExternalFenceHandle(IJobExternalFence fence) =>
-        CreateExternalFenceHandle(fence, ReadOnlySpan<JobResourceAccess>.Empty);
-
     private const string MissingExternalFenceSignalStateMessage = "External fence signal state is missing.";
-    public JobHandle CreateExternalFenceHandle(
+    internal JobHandle CreateExternalFenceHandle(
         IJobExternalFence fence,
         ReadOnlySpan<JobResourceAccess> accesses)
     {
         ArgumentNullException.ThrowIfNull(fence);
-        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
 
         JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);

@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
@@ -8,11 +8,17 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _changedLifetimeResources = [];
     private readonly HashSet<int> _scheduleVisited = [];
     private readonly HashSet<int> _scheduleComponent = [];
+    private readonly HashSet<int> _schedulePredecessors = [];
     private readonly List<int> _componentSchedule = [];
     private readonly Stack<int> _scheduleWork = [];
-    private readonly PriorityQueue<int, int> _frontierWork = new();
+    private readonly PriorityQueue<int, long> _frontierWork = new();
+    private readonly Dictionary<Queue, SortedSet<(long Position, int Pass)>> _queuePasses = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<int, (Queue Queue, long Position)> _passQueuePositions = [];
+    private readonly HashSet<int> _queueNeighborChanges = [];
     private int[] _componentFinish = [], _sameQueueSuccessor = [];
     private bool _scheduleInitialized;
+    private readonly Queue<PassEdge> _scheduleEdgeWork = [];
+    private readonly HashSet<PassEdge> _scheduleEdgesQueued = [];
 
     private void ResolveSchedule()
     {
@@ -23,85 +29,198 @@ internal sealed partial class FrameExecutor
         {
             if (IsLive(pass))
             {
-                if (!_scheduledMembers.Contains(pass))
+                if (!_executionOrder.Contains(pass))
                 {
                     _executionOrder.Add(pass, _passes[pass].DeclarationOrdinal);
-                    _scheduledMembers.Add(pass);
                     _frontierSeeds.Add(pass);
                 }
             }
-            else if (_scheduledMembers.Remove(pass))
+            else if (_executionOrder.Remove(pass))
             {
-                _executionOrder.Remove(pass);
                 if (pass < _sameQueueSuccessor.Length && _sameQueueSuccessor[pass] >= 0)
                     _frontierSeeds.Add(_sameQueueSuccessor[pass]);
-                if (pass < _scheduledPosition.Length) _scheduledPosition[pass] = -1;
             }
         }
-        _scheduleVisited.Clear();
-        foreach (int seed in _scheduleSeeds)
+        if (!_scheduleInitialized)
         {
-            if (!IsLive(seed) || !_scheduleVisited.Add(seed)) continue;
             _scheduleComponent.Clear();
-            _scheduleComponent.Add(seed);
-            _scheduleWork.Push(seed);
-            if (!_scheduleInitialized)
-                foreach (int pass in _scheduledMembers)
-                    if (_scheduleVisited.Add(pass))
-                    {
-                        _scheduleComponent.Add(pass);
-                        _scheduleWork.Push(pass);
-                    }
-            while (_scheduleWork.TryPop(out int pass))
-            {
-                foreach (int predecessor in _predecessors[pass]) Add(predecessor);
-                foreach (int successor in _successors[pass]) Add(successor);
-            }
+            _scheduleComponent.UnionWith(_executionOrder.Nodes);
             ScheduleComponent(_scheduleComponent);
             _executionOrder.SetOrder(_componentSchedule);
-
-            void Add(int pass)
+        }
+        else
+        {
+            _scheduleEdgeWork.Clear();
+            _scheduleEdgesQueued.Clear();
+            foreach (int seed in _scheduleSeeds)
             {
-                if (!IsLive(pass) || !_scheduleVisited.Add(pass)) return;
-                _scheduleComponent.Add(pass);
-                _scheduleWork.Push(pass);
+                if (!IsLive(seed)) continue;
+                RetainQueue(seed);
+                EnqueueEdges(seed);
+            }
+            while (_scheduleEdgeWork.TryDequeue(out PassEdge edge))
+            {
+                _scheduleEdgesQueued.Remove(edge);
+                if (_executionOrder.Position(edge.Predecessor) < _executionOrder.Position(edge.Consumer)) continue;
+                RepairOrder(edge.Predecessor, edge.Consumer);
+                foreach (int pass in _schedulePredecessors) EnqueueEdges(pass);
+                foreach (int pass in _scheduleVisited) EnqueueEdges(pass);
+            }
+
+            void EnqueueEdges(int pass)
+            {
+                foreach (int predecessor in _predecessors[pass])
+                    if (IsLive(predecessor)) Enqueue(new(predecessor, pass));
+                foreach (int successor in _successors[pass])
+                    if (IsLive(successor)) Enqueue(new(pass, successor));
+            }
+            void Enqueue(PassEdge edge)
+            {
+                if (_executionOrder.Position(edge.Predecessor) >= _executionOrder.Position(edge.Consumer) &&
+                    _scheduleEdgesQueued.Add(edge)) _scheduleEdgeWork.Enqueue(edge);
             }
         }
         _scheduleInitialized = true;
         foreach (int pass in _executionOrder.Changed)
         {
             MarkPassResources(pass, _changedLifetimeResources);
-            MarkPassResources(pass, _changedSynchronizationResources);
+            ChangePassSynchronization(pass);
             if (_synchronizationByPass.TryGetValue(pass, out var resources))
-                _changedSynchronizationResources.UnionWith(resources);
+                foreach (var resource in resources) ChangeSynchronization(resource);
         }
-        if (_executionOrder.Changed.Count != 0 || _recordingChanged)
+        if (_executionOrder.Changed.Count != 0)
         {
-            PrepareArray(ref _schedule, _executionOrder.Count);
-            EnsureCapacity(ref _scheduledPosition, _passes.Count);
             EnsureCapacity(ref _sameQueuePredecessor, _passes.Count);
             EnsureCapacity(ref _sameQueueSuccessor, _passes.Count);
-            _queueLastPass.Clear();
-            int position = 0;
-            foreach (int pass in _executionOrder.Nodes)
+            _queueNeighborChanges.Clear();
+            foreach (int pass in _executionOrder.Changed)
             {
-                Queue queue = _passes[pass].Queue!;
-                int previous = _queueLastPass.GetValueOrDefault(queue, -1);
-                if (_sameQueuePredecessor[pass] != previous) _frontierSeeds.Add(pass);
-                _sameQueuePredecessor[pass] = previous;
-                _sameQueueSuccessor[pass] = -1;
-                if (previous >= 0) _sameQueueSuccessor[previous] = pass;
-                _queueLastPass[queue] = pass;
-                _scheduledPosition[pass] = position;
-                CollectionsMarshal.AsSpan(_passes)[pass].ScheduledOrdinal = position;
-                _schedule[position++] = pass;
+                if (_passQueuePositions.Remove(pass, out var previous))
+                {
+                    SortedSet<(long Position, int Pass)> queuePasses = _queuePasses[previous.Queue];
+                    AddNeighbors(queuePasses, previous.Position, pass);
+                    queuePasses.Remove((previous.Position, pass));
+                    if (queuePasses.Count == 0) _queuePasses.Remove(previous.Queue);
+                }
+                if (pass < _sameQueuePredecessor.Length)
+                {
+                    _sameQueuePredecessor[pass] = -1;
+                    _sameQueueSuccessor[pass] = -1;
+                }
             }
-            _recordingChanged = true;
+            foreach (int pass in _executionOrder.Changed)
+            {
+                if (!IsLive(pass)) continue;
+                Queue queue = _passes[pass].Queue!;
+                long position = _executionOrder.Position(pass);
+                if (!_queuePasses.TryGetValue(queue, out var queuePasses))
+                    _queuePasses.Add(queue, queuePasses = []);
+                queuePasses.Add((position, pass));
+                _passQueuePositions.Add(pass, (queue, position));
+                _frontierSeeds.Add(pass);
+                _queueNeighborChanges.Add(pass);
+                AddNeighbors(queuePasses, position, pass);
+            }
+            foreach (int pass in _queueNeighborChanges)
+            {
+                if (!_passQueuePositions.TryGetValue(pass, out var current)) continue;
+                var queuePasses = _queuePasses[current.Queue];
+                int predecessor = Neighbor(queuePasses, current.Position, pass, before: true);
+                if (_sameQueuePredecessor[pass] != predecessor) _frontierSeeds.Add(pass);
+                _sameQueuePredecessor[pass] = predecessor;
+                _sameQueueSuccessor[pass] = Neighbor(queuePasses, current.Position, pass, before: false);
+            }
+            foreach (int pass in _executionOrder.Changed) ChangeRecording(pass);
+            foreach (int pass in _queueNeighborChanges) ChangeRecording(pass);
         }
         _scheduleSeeds.Clear();
     }
 
-    private readonly HashSet<int> _scheduledMembers = [];
+    private void RetainQueue(int pass)
+    {
+        FramePass row = _passes[pass];
+        _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
+        if (row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
+        Queue? chosen = null;
+        foreach (Queue candidate in _queueCandidateScratch)
+            if (QueueBefore(candidate, chosen)) chosen = candidate;
+        row.Queue = chosen ?? throw new InvalidOperationException("RG9002: No Queue satisfies the Pass declaration.");
+        _passes[pass] = row;
+        _executionOrder.Changed.Add(pass);
+    }
+
+    private void RepairOrder(int predecessor, int consumer)
+    {
+        long first = _executionOrder.Position(consumer);
+        long last = _executionOrder.Position(predecessor);
+        if (last < first) return;
+
+        _scheduleVisited.Clear();
+        _schedulePredecessors.Clear();
+        _scheduleWork.Clear();
+        _scheduleWork.Push(consumer);
+        while (_scheduleWork.TryPop(out int pass))
+        {
+            if (!IsLive(pass) || _executionOrder.Position(pass) > last || !_scheduleVisited.Add(pass)) continue;
+            if (pass == predecessor)
+                throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
+            foreach (int successor in _successors[pass]) _scheduleWork.Push(successor);
+        }
+        _scheduleWork.Push(predecessor);
+        while (_scheduleWork.TryPop(out int pass))
+        {
+            if (!IsLive(pass) || _executionOrder.Position(pass) < first || !_schedulePredecessors.Add(pass)) continue;
+            if (_scheduleVisited.Contains(pass))
+                throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
+            foreach (int source in _predecessors[pass]) _scheduleWork.Push(source);
+        }
+        _componentSchedule.Clear();
+        AppendOrdered(_schedulePredecessors);
+        AppendOrdered(_scheduleVisited);
+        _executionOrder.SetOrder(_componentSchedule);
+
+        void AppendOrdered(HashSet<int> affected)
+        {
+            EnsureCapacity(ref _scheduleIndegrees, _passes.Count);
+            _criticalReady.Clear();
+            foreach (int pass in affected)
+            {
+                int count = 0;
+                foreach (int source in _predecessors[pass])
+                    if (affected.Contains(source)) count++;
+                _scheduleIndegrees[pass] = count;
+                if (count == 0) _criticalReady.Enqueue(pass, _executionOrder.Position(pass));
+            }
+            int start = _componentSchedule.Count;
+            while (_criticalReady.TryDequeue(out int pass, out _))
+            {
+                _componentSchedule.Add(pass);
+                foreach (int successor in _successors[pass])
+                    if (affected.Contains(successor) && --_scheduleIndegrees[successor] == 0)
+                        _criticalReady.Enqueue(successor, _executionOrder.Position(successor));
+            }
+            if (_componentSchedule.Count - start != affected.Count)
+                throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
+        }
+    }
+
+    private void AddNeighbors(SortedSet<(long Position, int Pass)> passes, long position, int pass)
+    {
+        int predecessor = Neighbor(passes, position, pass, before: true);
+        int successor = Neighbor(passes, position, pass, before: false);
+        if (predecessor >= 0) _queueNeighborChanges.Add(predecessor);
+        if (successor >= 0) _queueNeighborChanges.Add(successor);
+    }
+
+    private static int Neighbor(SortedSet<(long Position, int Pass)> passes, long position, int pass, bool before)
+    {
+        IEnumerable<(long Position, int Pass)> candidates = before
+            ? passes.GetViewBetween((long.MinValue, int.MinValue), (position, pass)).Reverse()
+            : passes.GetViewBetween((position, pass), (long.MaxValue, int.MaxValue));
+        foreach (var candidate in candidates)
+            if (candidate.Pass != pass) return candidate.Pass;
+        return -1;
+    }
 
     private void ScheduleComponent(HashSet<int> component)
     {
@@ -129,6 +248,7 @@ internal sealed partial class FrameExecutor
             long chosenStart = long.MaxValue;
             int chosenRank = int.MinValue;
             long chosenDeclaration = long.MaxValue;
+            int chosenTransfers = int.MaxValue;
 
             for (int readyIndex = 0; readyIndex < _scheduleReady.Count; readyIndex++)
             {
@@ -137,16 +257,30 @@ internal sealed partial class FrameExecutor
                     _passes[pass].QueuePolicy,
                     _passes[pass].Kind,
                     _queueCandidateScratch);
+                int minimumTransfers = int.MaxValue;
+                if (_passes[pass].QueuePolicy.AllowsAnyType)
+                {
+                    foreach (Queue candidate in _queueCandidateScratch)
+                    {
+                        int transfers = 0;
+                        foreach (int predecessor in _predecessors[pass])
+                            if (_live[predecessor] && !ReferenceEquals(_passes[predecessor].Queue, candidate)) transfers++;
+                        minimumTransfers = Math.Min(minimumTransfers, transfers);
+                    }
+                }
                 foreach (Queue queue in _queueCandidateScratch)
                 {
                     _queueTime.TryGetValue(queue, out int queueAvailable);
                     int predecessorFinish = 0;
+                    int transfers = 0;
                     foreach (int predecessor in _predecessors[pass])
                     {
                         if (!_live[predecessor]) continue;
                         int finish = _componentFinish[predecessor];
                         if (finish > predecessorFinish) predecessorFinish = finish;
+                        if (!ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
                     }
+                    if (transfers > minimumTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
@@ -158,7 +292,8 @@ internal sealed partial class FrameExecutor
                           start == chosenStart && rank > chosenRank ||
                           start == chosenStart && rank == chosenRank && declaration < chosenDeclaration ||
                           start == chosenStart && rank == chosenRank && declaration == chosenDeclaration &&
-                          QueueBefore(queue, chosenQueue);
+                          (transfers < chosenTransfers ||
+                           transfers == chosenTransfers && QueueBefore(queue, chosenQueue));
                     if (!better) continue;
                     chosenReady = readyIndex;
                     chosenPass = pass;
@@ -166,6 +301,7 @@ internal sealed partial class FrameExecutor
                     chosenStart = start;
                     chosenRank = rank;
                     chosenDeclaration = declaration;
+                    chosenTransfers = transfers;
                 }
             }
 
@@ -175,9 +311,10 @@ internal sealed partial class FrameExecutor
             FramePass row = _passes[chosenPass];
             if (!ReferenceEquals(row.Queue, chosenQueue))
             {
+                _executionOrder.Changed.Add(chosenPass);
                 _frontierSeeds.Add(chosenPass);
-                MarkPassResources(chosenPass, _changedSynchronizationResources);
-                _recordingChanged = true;
+                ChangePassSynchronization(chosenPass);
+                ChangeRecording(chosenPass);
             }
             row.Queue = chosenQueue;
             _passes[chosenPass] = row;
@@ -220,7 +357,20 @@ internal sealed partial class FrameExecutor
                 if (_live[successor] && --_scheduleIndegrees[successor] == 0)
                     _criticalReady.Enqueue(successor, _passes[successor].DeclarationOrdinal);
         }
-        if (index != liveCount) throw new InvalidOperationException("RG5001: The live render graph contains a dependency cycle.");
+        if (index != liveCount)
+        {
+            var path = new List<int>();
+            var positions = new Dictionary<int, int>();
+            int current = component.First(pass => _live[pass] && _scheduleIndegrees[pass] != 0);
+            while (!positions.ContainsKey(current))
+            {
+                positions.Add(current, path.Count);
+                path.Add(current);
+                current = _predecessors[current].First(pass => _live[pass] && _scheduleIndegrees[pass] != 0);
+            }
+            string cycle = string.Join(" <- ", path.Skip(positions[current]).Append(current).Select(pass => _passes[pass].Label));
+            throw new InvalidOperationException($"RG5001: The live render graph contains a dependency cycle: {cycle}.");
+        }
         for (int i = liveCount - 1; i >= 0; i--)
         {
             int pass = _criticalTopological[i];
@@ -289,8 +439,8 @@ internal sealed partial class FrameExecutor
             {
                 int pass = _accesses[index].PassIndex;
                 if (!IsLive(pass)) continue;
-                if (first < 0 || _scheduledPosition[pass] < _scheduledPosition[first]) first = pass;
-                if (last < 0 || _scheduledPosition[pass] > _scheduledPosition[last]) last = pass;
+                if (first < 0 || _executionOrder.Position(pass) < _executionOrder.Position(first)) first = pass;
+                if (last < 0 || _executionOrder.Position(pass) > _executionOrder.Position(last)) last = pass;
             }
             if (key.Kind == GraphAccessTargetKind.Buffer)
             {
@@ -308,7 +458,7 @@ internal sealed partial class FrameExecutor
 
         void Enqueue(int pass)
         {
-            if (IsLive(pass) && _frontierQueued.Add(pass)) _frontierWork.Enqueue(pass, _scheduledPosition[pass]);
+            if (IsLive(pass) && _frontierQueued.Add(pass)) _frontierWork.Enqueue(pass, _executionOrder.Position(pass));
         }
     }
 
@@ -343,37 +493,51 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<PassEdge, int> _orderEdgeSources = [];
     private readonly Dictionary<int, HashSet<PassEdge>> _orderEdgesByPass = [];
     private readonly HashSet<int> _changedValuePasses = [];
-    private readonly HashSet<int> _changedOrderPasses = [];
+    private readonly Dictionary<PassEdge, bool> _orderDependencyChanges = [];
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _orderPredecessorResources = [];
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _orderConsumerResources = [];
     private readonly HashSet<GraphIdentity> _changedOrderIdentities = [];
     private readonly HashSet<int> _fixedValuePasses = [];
-    private HashSet<PassEdge> _dynamicValueEdges = [];
-    private HashSet<PassEdge> _nextDynamicValueEdges = [];
+    private readonly Dictionary<ExplicitPassOrder, PassEdge> _dynamicValueEdges = [];
+    private readonly Dictionary<ExplicitPassOrder, bool> _dynamicOrderChanges = [];
+    private readonly Dictionary<GraphIdentity, HashSet<ExplicitPassOrder>> _dynamicOrdersByPass = [];
+
+    internal void ChangeDynamicOrder(ExplicitPassOrder order, bool exists)
+    {
+        if (_dynamicValueEdges.ContainsKey(order) == exists)
+            _dynamicOrderChanges.Remove(order);
+        else
+            _dynamicOrderChanges[order] = exists;
+    }
+
+    private void RefreshDynamicOrders(GraphIdentity identity)
+    {
+        if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders)) return;
+        foreach (ExplicitPassOrder order in orders)
+            _dynamicOrderChanges.TryAdd(order, true);
+    }
 
     private void SetPassRow(int index, in FramePass row)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetPassRow);
         _passAccesses[index] ??= [];
+        _parameterPassChanges.Add(index);
         InvalidateRasterRendering(index);
         FramePass previous = _passes[index];
         bool identityChanged = previous.Identity != row.Identity &&
             (previous.Definition is not null || row.Definition is not null);
-        // Retained callback values and enablement do not change shader bindings.
-        // Immediate declarations can reuse mutable arrays, so reconnect those rows.
-        if (row.Definition is null || previous.Definition is null || identityChanged ||
-            !ReferenceEquals(previous.Pipeline, row.Pipeline) ||
-            previous.ParameterLayout != row.ParameterLayout ||
-            !ReferenceEquals(previous.ParameterBindings, row.ParameterBindings) ||
-            !ReferenceEquals(previous.ParameterOrdinaryData, row.ParameterOrdinaryData))
-            _parameterPassChanges.Add(index);
         if (identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal)
+        {
+            RefreshDynamicOrders(previous.Identity);
+            RefreshDynamicOrders(row.Identity);
             RemoveValuePass(index);
+        }
         if (!previous.Identity.IsValid || identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal ||
             previous.Enabled != row.Enabled || previous.Options.Scheduling != row.Options.Scheduling)
             _changedValuePasses.Add(index);
         ObservePass(index, row);
         FramePass retained = row;
         retained.Queue = _passes[index].Queue;
-        retained.ScheduledOrdinal = _passes[index].ScheduledOrdinal;
         _passes[index] = retained;
         if (row.Definition is not null)
             _rowChanges.Accesses.UnionWith(row.Definition.Accesses);
@@ -419,13 +583,24 @@ internal sealed partial class FrameExecutor
                     SetValueOrderEdge(new(index, ResolvePass(consumer)), 1, true);
             }
 
-            _nextDynamicValueEdges.Clear();
-            foreach (ExplicitPassOrder order in _frame.DynamicOrders)
-                _nextDynamicValueEdges.Add(new(ResolvePass(order.Predecessor), ResolvePass(order.Consumer)));
-            foreach (PassEdge edge in _dynamicValueEdges)
-                if (!_nextDynamicValueEdges.Contains(edge)) SetValueOrderEdge(edge, 2, false);
-            foreach (PassEdge edge in _nextDynamicValueEdges) SetValueOrderEdge(edge, 2, true);
-            (_dynamicValueEdges, _nextDynamicValueEdges) = (_nextDynamicValueEdges, _dynamicValueEdges);
+            foreach (var change in _dynamicOrderChanges)
+            {
+                if (!_dynamicValueEdges.Remove(change.Key, out PassEdge previous)) continue;
+                SetValueOrderEdge(previous, 2, false);
+                RemoveReference(change.Key.Predecessor, change.Key);
+                RemoveReference(change.Key.Consumer, change.Key);
+            }
+            foreach (var change in _dynamicOrderChanges)
+            {
+                if (!change.Value) continue;
+                ExplicitPassOrder order = change.Key;
+                var edge = new PassEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
+                _dynamicValueEdges.Add(order, edge);
+                AddReference(order.Predecessor, order);
+                AddReference(order.Consumer, order);
+                SetValueOrderEdge(edge, 2, true);
+            }
+            _dynamicOrderChanges.Clear();
 
             foreach (int index in _changedValuePasses)
             {
@@ -445,7 +620,6 @@ internal sealed partial class FrameExecutor
             InvalidateOrderedResources();
             _changedValuePasses.Clear();
             _changedOrderIdentities.Clear();
-            _changedOrderPasses.Clear();
         }
         catch
         {
@@ -453,8 +627,26 @@ internal sealed partial class FrameExecutor
             _orderEdgesByPass.Clear();
             _fixedValuePasses.Clear();
             _dynamicValueEdges.Clear();
+            _dynamicOrdersByPass.Clear();
+            _dynamicOrderChanges.Clear();
+            foreach (ExplicitPassOrder order in _frame.DynamicOrders)
+                _dynamicOrderChanges[order] = true;
             for (int index = 0; index < _passes.Count; index++) _changedValuePasses.Add(index);
             throw;
+        }
+
+        void AddReference(GraphIdentity identity, ExplicitPassOrder order)
+        {
+            if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders))
+                _dynamicOrdersByPass.Add(identity, orders = []);
+            orders.Add(order);
+        }
+
+        void RemoveReference(GraphIdentity identity, ExplicitPassOrder order)
+        {
+            if (!_dynamicOrdersByPass.TryGetValue(identity, out var orders)) return;
+            orders.Remove(order);
+            if (orders.Count == 0) _dynamicOrdersByPass.Remove(identity);
         }
     }
 
@@ -472,8 +664,8 @@ internal sealed partial class FrameExecutor
         int current = exists ? previous | source : previous & ~source;
         if (current == previous) return;
         _changedExecutionEdges.Add(edge);
-        _changedOrderPasses.Add(edge.Predecessor);
-        _changedOrderPasses.Add(edge.Consumer);
+        if (previous == 0 || current == 0)
+            _orderDependencyChanges.TryAdd(edge, previous != 0);
         if (current == 0)
         {
             _orderEdgeSources.Remove(edge);
@@ -500,21 +692,49 @@ internal sealed partial class FrameExecutor
 
     private void InvalidateOrderedResources()
     {
-        _changedOrderPasses.UnionWith(_changedValuePasses);
-        _orderSearchVisited.Clear();
-        _orderSearchWork.Clear();
-        foreach (int seed in _changedOrderPasses)
-            if (seed < _passes.Count) _orderSearchWork.Push(seed);
-        while (_orderSearchWork.TryPop(out int pass))
+        foreach (var change in _orderDependencyChanges)
         {
-            if (!_orderSearchVisited.Add(pass)) continue;
+            if (_orderEdgeSources.ContainsKey(change.Key) == change.Value) continue;
+            PassEdge edge = change.Key;
+            _scheduleSeeds.Add(edge.Predecessor);
+            _scheduleSeeds.Add(edge.Consumer);
+            Collect(edge.Predecessor, before: true, _orderPredecessorResources);
+            Collect(edge.Consumer, before: false, _orderConsumerResources);
+            InvalidateIntersection();
+        }
+        foreach (int pass in _changedValuePasses)
+        {
             MarkPassResources(pass, _changedAnalysisResources);
-            _scheduleSeeds.Add(pass);
-            if (!_orderEdgesByPass.TryGetValue(pass, out HashSet<PassEdge>? edges)) continue;
-            foreach (PassEdge edge in edges)
+            Collect(pass, before: true, _orderPredecessorResources);
+            Collect(pass, before: false, _orderConsumerResources);
+            InvalidateIntersection();
+        }
+        _orderDependencyChanges.Clear();
+
+        void InvalidateIntersection()
+        {
+            foreach (var resource in _orderPredecessorResources)
+                if (_orderConsumerResources.Contains(resource)) _changedAnalysisResources.Add(resource);
+        }
+
+        void Collect(int seed, bool before, HashSet<(GraphAccessTargetKind Kind, int Index)> resources)
+        {
+            resources.Clear();
+            _orderSearchVisited.Clear();
+            _orderSearchWork.Clear();
+            _orderSearchWork.Push(seed);
+            while (_orderSearchWork.TryPop(out int pass))
             {
-                _orderSearchWork.Push(edge.Predecessor);
-                _orderSearchWork.Push(edge.Consumer);
+                if ((uint)pass >= (uint)_passes.Count || !_orderSearchVisited.Add(pass)) continue;
+                MarkPassResources(pass, resources);
+                if (!_orderEdgesByPass.TryGetValue(pass, out var edges)) continue;
+                foreach (PassEdge edge in edges)
+                {
+                    int next = before ? edge.Predecessor : edge.Consumer;
+                    if ((before ? edge.Consumer : edge.Predecessor) == pass &&
+                        (uint)next < (uint)_passes.Count && _passes[next].Enabled)
+                        _orderSearchWork.Push(next);
+                }
             }
         }
     }

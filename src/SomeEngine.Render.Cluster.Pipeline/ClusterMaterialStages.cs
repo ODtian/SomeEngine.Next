@@ -1,3 +1,6 @@
+﻿using System.Buffers.Binary;
+using System.Collections.Immutable;
+using SomeEngine.RenderGraph;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
@@ -54,9 +57,23 @@ internal static class ClusterMaterialEntries
         _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
 
-    internal static Shader RequireShader(Material material)
-        => material.Shader ?? throw new InvalidDataException(
+    internal static void AddResourceProperties(
+        HashSet<uint> properties,
+        ReadOnlySpan<ClusterMaterialStageBinding> bindings)
+    {
+        foreach (ref readonly var binding in bindings)
+            if (binding.IsMaterialResource) properties.Add(binding.MaterialSlot);
+    }
+
+    internal static Shader RequireShader(MaterialData material)
+        => material.ShaderAsset ?? throw new InvalidDataException(
             $"Material '{material.Name}' has no loaded user shader.");
+
+    internal static AssetGuid RequireShaderGuid(MaterialData material)
+        => AssetGuid.TryParse(material.ShaderGuid, out AssetGuid guid) && !guid.IsEmpty
+            ? guid
+            : throw new InvalidDataException(
+                $"Material '{material.Name}' has no valid user shader GUID.");
 
     internal static bool HasEntry(
         Shader shader,
@@ -97,53 +114,105 @@ internal static class ClusterMaterialBindingDefaults
         Label: "Cluster default material sampler");
 }
 
-internal sealed class ClusterBinIndexMap<TKey>
-    where TKey : notnull
+// This index is derived from material addresses. A candidate shares unchanged groups, and
+// records affected bin identities directly instead of diffing a newly collected scene.
+internal sealed class ClusterBinIndexMap<TKey, TStage> where TKey : notnull
 {
-    private readonly Dictionary<TKey, uint> _indices = [];
-    private readonly SortedSet<uint> _free = [];
-    private HashSet<TKey> _active = [];
+    private sealed record Group(uint Index, ImmutableSortedDictionary<int, TStage> Members);
+    private ImmutableDictionary<TKey, Group> _groups = ImmutableDictionary<TKey, Group>.Empty;
+    private ImmutableDictionary<int, TKey> _keys = ImmutableDictionary<int, TKey>.Empty;
+    private ImmutableSortedSet<uint> _free = ImmutableSortedSet<uint>.Empty;
     private uint _next;
-
-    internal void Reconcile(HashSet<TKey> active)
+    private ImmutableHashSet<uint> _updated = ImmutableHashSet<uint>.Empty;
+    private ImmutableSortedDictionary<uint, TStage> _stages = ImmutableSortedDictionary<uint, TStage>.Empty;
+    internal ImmutableHashSet<uint> Changes { get; private set; } = ImmutableHashSet<uint>.Empty;
+    private readonly Func<TStage, TStage, bool> _sameBindings;
+    internal ClusterBinIndexMap(Func<TStage, TStage, bool> sameBindings) => _sameBindings = sameBindings;
+    internal ClusterBinIndexMap(ClusterBinIndexMap<TKey, TStage> source)
     {
-        ArgumentNullException.ThrowIfNull(active);
-        foreach (TKey key in _active)
-        {
-            if (active.Contains(key))
-                continue;
-            uint index = _indices[key];
-            _indices.Remove(key);
-            _free.Add(index);
-        }
-
-        foreach (TKey key in active)
-        {
-            if (_indices.ContainsKey(key))
-                continue;
-            uint index;
-            if (_free.Count != 0)
-            {
-                index = _free.Min;
-                _free.Remove(index);
-            }
-            else
-            {
-                index = _next;
-                _next = checked(_next + 1);
-            }
-            _indices.Add(key, index);
-        }
-        _active = new HashSet<TKey>(active);
+        _sameBindings = source._sameBindings;
+        _groups = source._groups;
+        _keys = source._keys;
+        _free = source._free;
+        _next = source._next;
+        _stages = source._stages;
+        _updated = source._updated;
+        Changes = source.Changes;
     }
-
-    internal uint Get(TKey key)
-        => _indices.TryGetValue(key, out uint index)
-            ? index
-            : throw new KeyNotFoundException("The Cluster bin key is not registered.");
-
-    internal uint Range
-        => _indices.Count == 0 ? 0 : checked(_indices.Values.Max() + 1);
+    internal void AcceptChanges() => Changes = Changes.Clear();
+    internal void Set(int address, TKey key, TStage stage)
+    {
+        if (_keys.TryGetValue(address, out TKey? previous) && !EqualityComparer<TKey>.Default.Equals(previous, key))
+            Remove(address);
+        bool added = !_groups.TryGetValue(key, out Group? group);
+        TStage? before = added ? default : group!.Members.First().Value;
+        if (added)
+        {
+            uint index;
+            if (!_free.IsEmpty) { index = _free.Min; _free = _free.Remove(index); }
+            else { index = _next; _next = checked(_next + 1); }
+            group = new Group(index, ImmutableSortedDictionary<int, TStage>.Empty);
+        }
+        group = group! with { Members = group.Members.SetItem(address, stage) };
+        _groups = _groups.SetItem(key, group);
+        _stages = _stages.SetItem(group.Index, group.Members.First().Value);
+        _updated = _updated.Add(group.Index);
+        _keys = _keys.SetItem(address, key);
+        if (added || !_sameBindings(before!, group.Members.First().Value)) Changes = Changes.Add(group.Index);
+    }
+    internal void Remove(int address)
+    {
+        if (!_keys.TryGetValue(address, out TKey? key)) return;
+        Group group = _groups[key];
+        _keys = _keys.Remove(address);
+        var members = group.Members.Remove(address);
+        if (members.IsEmpty)
+        {
+            _groups = _groups.Remove(key);
+            _free = _free.Add(group.Index);
+            _stages = _stages.Remove(group.Index);
+        }
+        else
+        {
+            _groups = _groups.SetItem(key, group with { Members = members });
+            _stages = _stages.SetItem(group.Index, members.First().Value);
+            _updated = _updated.Add(group.Index);
+        }
+        if (members.IsEmpty || !_sameBindings(group.Members.First().Value, members.First().Value))
+            Changes = Changes.Add(group.Index);
+    }
+    internal uint Range => Math.Max(1u, _next);
+    internal ImmutableSortedDictionary<uint, TStage> GetStages(Func<TStage, uint, TStage> withIndex)
+    {
+        foreach (uint index in _updated)
+            if (_stages.TryGetValue(index, out TStage? stage))
+                _stages = _stages.SetItem(index, withIndex(stage, index));
+        _updated = _updated.Clear();
+        return _stages;
+    }
+    internal ClusterUploadData GetIndices(
+        uint capacity,
+        ClusterUploadData previous,
+        IEnumerable<int> addresses,
+        Func<TStage, uint, uint>? encodeIndex = null)
+    {
+        var changes = new List<(int Offset, byte[] Bytes)>();
+        foreach (int address in addresses)
+        {
+            uint index = 0;
+            if (_keys.TryGetValue(address, out TKey? key))
+            {
+                Group group = _groups[key];
+                index = group.Index;
+                if (encodeIndex is not null)
+                    index = encodeIndex(group.Members.First().Value, index);
+            }
+            byte[] bytes = new byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes, index);
+            changes.Add((checked(address * sizeof(uint)), bytes));
+        }
+        return previous.WithChanges(checked((int)capacity * sizeof(uint)), changes);
+    }
 }
 
 internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindingKey>
@@ -161,7 +230,7 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
     }
 
     internal static ClusterCommandBindingKey Create(
-        Material material,
+        MaterialData material,
         ClusterLinkedStageLayout resources,
         ClusterMaterialStageBinding[] bindings)
     {
@@ -214,29 +283,50 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
     public override int GetHashCode() => _hash;
 
     private static object? Normalize(
-        Material material,
+        MaterialData material,
         in ClusterMaterialStageBinding binding,
         string name)
     {
-        uint index = binding.MaterialSlot;
+        object? value = material.GetValue(binding.MaterialSlot);
         return binding.Type switch
         {
-            ResourceBindingType.TextureSrv => material.GetTexture(index) is { } texture ? new TextureValue(texture) : null,
-            ResourceBindingType.TextureUav => material.GetTexture(index) is { } texture ? new TextureValue(texture) : throw InvalidValue(material, name, "Texture"),
-            ResourceBindingType.Sampler => material.GetSampler(index) with { Label = null },
-            ResourceBindingType.BufferSrv => material.GetDeviceResource(index) is BufferSrv srv ? BufferSrvValue.From(srv.Description) : throw InvalidValue(material, name, nameof(BufferSrv)),
-            ResourceBindingType.BufferUav => material.GetDeviceResource(index) is BufferUav uav ? BufferUavValue.From(uav.Description) : throw InvalidValue(material, name, nameof(BufferUav)),
-            ResourceBindingType.ConstantBuffer => material.GetDeviceResource(index) is BufferCbv cbv ? BufferCbvValue.From(cbv.Description) : throw InvalidValue(material, name, nameof(BufferCbv)),
-            ResourceBindingType.AccelerationStructure => material.GetDeviceResource(index) is AccelerationStructureSrv acceleration ? new AccelerationValue(acceleration.Resource) : throw InvalidValue(material, name, nameof(AccelerationStructureSrv)),
-            _ => throw new InvalidDataException($"Unsupported material binding type {binding.Type}."),
+            ResourceBindingType.TextureSrv => value switch
+            {
+                null => null,
+                SomeEngine.Assets.Schema.TextureData texture => new TextureValue(texture),
+                _ => throw InvalidValue(material, name, "Texture"),
+            },
+            ResourceBindingType.TextureUav => value is SomeEngine.Assets.Schema.TextureData texture
+                ? new TextureValue(texture)
+                : throw InvalidValue(material, name, "Texture"),
+            ResourceBindingType.Sampler => value switch
+            {
+                null => ClusterMaterialBindingDefaults.Sampler,
+                SamplerDesc sampler => sampler with { Label = null },
+                _ => throw InvalidValue(material, name, nameof(SamplerDesc)),
+            },
+            ResourceBindingType.BufferSrv => value is BufferSrv srv
+                ? BufferSrvValue.From(srv.Description)
+                : throw InvalidValue(material, name, nameof(BufferSrv)),
+            ResourceBindingType.BufferUav => value is BufferUav uav
+                ? BufferUavValue.From(uav.Description)
+                : throw InvalidValue(material, name, nameof(BufferUav)),
+            ResourceBindingType.ConstantBuffer => value is BufferCbv cbv
+                ? BufferCbvValue.From(cbv.Description)
+                : throw InvalidValue(material, name, nameof(BufferCbv)),
+            ResourceBindingType.AccelerationStructure => value is AccelerationStructureSrv acceleration
+                ? new AccelerationValue(acceleration.Resource)
+                : throw InvalidValue(material, name, nameof(AccelerationStructureSrv)),
+            _ => throw new InvalidDataException(
+                $"Cluster material resource '{name}' has unsupported binding type {binding.Type}."),
         };
     }
 
-    private static InvalidDataException InvalidValue(Material material, string name, string expected)
+    private static InvalidDataException InvalidValue(MaterialData material, string name, string expected)
         => new($"Material '{material.Name}' slot '{name}' is not a {expected}.");
 
     private readonly record struct BindingValue(ResourceBindingType Type, object? Value);
-    private readonly record struct TextureValue(SomeEngine.Assets.Schema.Texture Texture);
+    private readonly record struct TextureValue(SomeEngine.Assets.Schema.TextureData Texture);
     private readonly record struct AccelerationValue(AccelerationStructure Resource);
     private readonly record struct BufferSrvValue(
         SomeEngine.Graphics.Buffer Buffer,
@@ -294,11 +384,20 @@ internal sealed class ClusterRasterStages : IDisposable
     private readonly ClusterVisibilityMode _visibilityMode;
     private readonly ClusterComputePipeline? _defaultSoftware;
     private readonly ClusterRasterPipeline _defaultHardware;
-    private readonly IClusterStageResourceProvider? _featureResources;
+    private readonly IGraphResourceProvider? _featureResources;
     private readonly Dictionary<ClusterRasterSoftwareKey, ClusterComputePipeline> _softwarePipelines = [];
     private readonly Dictionary<ClusterRasterSoftwareKey, ClusterComputePipeline> _tessellationPipelines = [];
     private readonly Dictionary<ClusterRasterHardwareKey, ClusterRasterPipeline> _hardwarePipelines = [];
-    private readonly ClusterBinIndexMap<ClusterRasterBinKey> _binIndices = new();
+    private ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation> _binIndices =
+        new(static (before, after) => before.HasSameBindings(after) && before.Bounds == after.Bounds);
+    private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
+
+    internal bool UsesResourceProperty(long materialId, uint property) =>
+        _resourceProperties.TryGetValue(materialId, out var properties) && properties.Contains(property);
+
+    private ClusterRasterStageSet? _resolved;
+
+    internal void AcceptChanges() => _binIndices.AcceptChanges();
     private bool _disposed;
 
     internal ClusterRasterStages(
@@ -308,7 +407,7 @@ internal sealed class ClusterRasterStages : IDisposable
         string vertexEncoding,
         ClusterComputePipeline? defaultSoftware,
         ClusterRasterPipeline defaultHardware,
-        IClusterStageResourceProvider? featureResources)
+        IGraphResourceProvider? featureResources)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
@@ -322,44 +421,62 @@ internal sealed class ClusterRasterStages : IDisposable
         _featureResources = featureResources;
     }
 
+    private ClusterMaterialAssignmentSet? _resolvedAssignments;
+
     internal ClusterRasterStageSet Resolve(ClusterMaterialAssignmentSet assignments)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(assignments);
-        ReadOnlySpan<Material> materialSlots = assignments.Slots.Span;
-        ReadOnlySpan<string> vertexEncodings = assignments.VertexEncodings.Span;
-        var keys = new ClusterRasterBinKey[materialSlots.Length];
-        var invocationByKey = new Dictionary<ClusterRasterBinKey, ClusterRasterInvocation>();
-        var slots = new uint[checked((int)assignments.SlotCapacity)];
-
-        for (int slot = 0; slot < materialSlots.Length; slot++)
+        if (ReferenceEquals(assignments, _resolvedAssignments)) return _resolved!;
+        var addresses = _resolvedAssignments is null
+            ? new HashSet<int>(assignments.ActiveOffsets)
+            : new HashSet<int>(assignments.ChangedOffsets);
+        foreach (long material in assignments.ChangedMaterialIds)
+            addresses.UnionWith(assignments.GetMaterialOffsets(material));
+        var bins = new ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation>(_binIndices);
+        var resourceProperties = _resourceProperties;
+        foreach (long material in assignments.ChangedMaterialIds)
+            resourceProperties = resourceProperties.Remove(material);
+        foreach (int address in addresses)
         {
-            Material material = materialSlots[slot];
-            string vertexEncoding = vertexEncodings[slot];
-            ClusterRasterInvocation invocation = ResolveInvocation(material, vertexEncoding);
-            var key = new ClusterRasterBinKey(
-                invocation.Key,
-                vertexEncoding,
-                invocation.CommandBindings);
-            keys[slot] = key;
-            invocationByKey.TryAdd(key, invocation);
+            if (!assignments.TryGetEntry(address, out MaterialData material, out string encoding))
+            {
+                bins.Remove(address);
+                continue;
+            }
+            ClusterRasterInvocation invocation = ResolveInvocation(material, encoding);
+            HashSet<uint> properties = [];
+            if (invocation.SoftwareResources is { } software)
+                ClusterMaterialEntries.AddResourceProperties(properties, software.MaterialBindings);
+            ClusterMaterialEntries.AddResourceProperties(properties, invocation.HardwareResources.MaterialBindings);
+            if (invocation.Tessellation is { } tessellation)
+            {
+                ClusterMaterialEntries.AddResourceProperties(properties, tessellation.SeedResources.MaterialBindings);
+                ClusterMaterialEntries.AddResourceProperties(properties, tessellation.SplitResources.MaterialBindings);
+                if (tessellation.DiceResources is { } dice)
+                    ClusterMaterialEntries.AddResourceProperties(properties, dice.MaterialBindings);
+                if (tessellation.HardwareResources is { } hardware)
+                    ClusterMaterialEntries.AddResourceProperties(properties, hardware.MaterialBindings);
+            }
+            var key = new ClusterRasterBinKey(invocation.Key, encoding, invocation.CommandBindings);
+            if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
+            resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
+            bins.Set(address, key, invocation);
         }
-
-        _binIndices.Reconcile([.. invocationByKey.Keys]);
-        var invocations = invocationByKey
-            .Select(pair => pair.Value with { BinIndex = _binIndices.Get(pair.Key) })
-            .OrderBy(static invocation => invocation.BinIndex)
-            .ToArray();
-        for (int slot = 0; slot < keys.Length; slot++)
-            slots[slot] = _binIndices.Get(keys[slot]);
-
-        return new ClusterRasterStageSet(
-            slots,
-            invocations,
-            _binIndices.Range);
+        var invocations = bins.GetStages(static (stage, index) => stage with { BinIndex = index });
+        var result = new ClusterRasterStageSet(bins.GetIndices(
+            assignments.SlotCapacity,
+            _resolved?.BinIndices ?? ClusterUploadData.Zero(0),
+            addresses,
+            static (stage, index) => stage.Software is null ? index : index | 0x80000000u),
+            invocations, bins.Range, [.. bins.Changes], [.. addresses], _resolved);
+        _binIndices = bins;
+        _resourceProperties = resourceProperties;
+        _resolvedAssignments = assignments;
+        _resolved = result;
+        return result;
     }
 
-    private ClusterRasterInvocation ResolveInvocation(Material material, string vertexEncoding)
+    private ClusterRasterInvocation ResolveInvocation(MaterialData material, string vertexEncoding)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         ShaderTarget target = _device.Capabilities.ShaderTarget;
@@ -473,7 +590,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterRasterInvocation CreateInvocation(
-        Material material,
+        MaterialData material,
         string vertexEncoding,
         ClusterComputePipeline? software,
         ClusterRasterPipeline hardware,
@@ -648,7 +765,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterRasterStageResources<TCore> ResolveRasterResources<TCore>(
-        Material material,
+        MaterialData material,
         ShaderVariableLayout parameterLayout,
         Shader? shader,
         string? firstEntry,
@@ -665,10 +782,11 @@ internal sealed class ClusterRasterStages : IDisposable
             ? new Dictionary<string, byte>(StringComparer.Ordinal)
             : ResolveMaterialResources(shader, resources);
         resources.ValidateMaterialResources(materialResources);
-        ClusterStageResourceBinder?[] featureBinders = resources.ResolveFeatureResources(
+        GraphResourceBinder?[] featureBinders = resources.ResolveFeatureResources(
             materialResources,
             _featureResources,
-            isCore);
+            isCore,
+            allowNeutralRasterTarget: true);
         ClusterMaterialStageBinding[] materialBindings = ResolveMaterialBindings(
             material,
             resources,
@@ -709,14 +827,14 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private static ClusterMaterialStageBinding[] ResolveMaterialBindings(
-        Material material,
+        MaterialData material,
         ClusterLinkedStageLayout resources,
         IReadOnlyDictionary<string, byte> materialResources,
-        ClusterStageResourceBinder?[] featureBinders)
+        GraphResourceBinder?[] featureBinders)
     {
         ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
         var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialPropertyDefinition> slots = material.Properties;
+        IReadOnlyList<MaterialSlotDefinition> slots = material.Properties;
         for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
         {
             if (featureBinders[resourceIndex] is not null)
@@ -734,8 +852,8 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private static uint FindMaterialSlot(
-        Material material,
-        IReadOnlyList<MaterialPropertyDefinition> slots,
+        MaterialData material,
+        IReadOnlyList<MaterialSlotDefinition> slots,
         string name)
     {
         for (uint slot = 0; slot < slots.Count; slot++)
@@ -748,7 +866,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterComputePipeline ResolveSoftwarePipeline(
-        Material material,
+        MaterialData material,
         Shader shader,
         string entryPoint,
         string vertexEncoding)
@@ -775,7 +893,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterComputePipeline ResolveTessellationPipeline(
-        Material material,
+        MaterialData material,
         Shader shader,
         string entryPoint,
         string vertexEncoding,
@@ -803,7 +921,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private ClusterRasterPipeline ResolveHardwarePipeline(
-        Material material,
+        MaterialData material,
         Shader shader,
         string vertexEntry,
         string pixelEntry,
@@ -859,7 +977,7 @@ internal sealed class ClusterRasterStages : IDisposable
     }
 
     private static ClusterConservativeBounds ResolveBounds(
-        Material material,
+        MaterialData material,
         Shader shader,
         string softwareEntry,
         string vertexEntry)
@@ -909,48 +1027,50 @@ internal sealed class ClusterRasterStages : IDisposable
 
 internal sealed class ClusterRasterStageSet
 {
-    private readonly ClusterRasterInvocation[] _invocations;
+    private readonly ImmutableSortedDictionary<uint, ClusterRasterInvocation> _bins;
+    private readonly int _unboundedBinCount;
 
     internal ClusterRasterStageSet(
-        uint[] slots,
-        ClusterRasterInvocation[] invocations,
-        uint binCount)
+        ClusterUploadData binIndices,
+        ImmutableSortedDictionary<uint, ClusterRasterInvocation> invocations,
+        uint binCount,
+        uint[]? changedBins = null,
+        int[]? changedOffsets = null,
+        ClusterRasterStageSet? previous = null)
     {
-        Slots = slots;
-        _invocations = invocations;
+        BinIndices = binIndices;
+        _bins = invocations;
         BinCount = binCount;
+        ChangedBins = changedBins ?? [];
+        ChangedOffsets = changedOffsets ?? [];
+        _unboundedBinCount = previous?._unboundedBinCount ?? 0;
+        if (previous is null)
+            _unboundedBinCount = invocations.Values.Count(static stage => stage.Bounds != ClusterConservativeBounds.Finite);
+        else
+            foreach (uint bin in ChangedBins)
+            {
+                if (previous._bins.TryGetValue(bin, out var before) && before.Bounds != ClusterConservativeBounds.Finite)
+                    _unboundedBinCount--;
+                if (_bins.TryGetValue(bin, out var after) && after.Bounds != ClusterConservativeBounds.Finite)
+                    _unboundedBinCount++;
+            }
     }
 
-    internal ReadOnlyMemory<uint> Slots { get; }
-    internal IReadOnlyList<ClusterRasterInvocation> Invocations => _invocations;
+    internal ClusterUploadData BinIndices { get; }
+    internal IReadOnlyList<int> ChangedOffsets { get; }
+    internal IEnumerable<ClusterRasterInvocation> Invocations => _bins.Values;
     internal uint BinCount { get; }
-    internal bool HasFiniteBounds => _invocations.All(
-        static invocation => invocation.Bounds == ClusterConservativeBounds.Finite);
+    internal IReadOnlyList<uint> ChangedBins { get; }
+    internal bool TryGetBin(uint bin, out ClusterRasterInvocation stage) => _bins.TryGetValue(bin, out stage!);
+    internal ClusterRasterInvocation GetBin(uint bin) => _bins[bin];
+    internal bool HasFiniteBounds => _unboundedBinCount == 0;
 
-    internal bool HasSameTopology(ClusterRasterStageSet other)
-    {
-        ArgumentNullException.ThrowIfNull(other);
-        if (BinCount != other.BinCount ||
-            !Slots.Span.SequenceEqual(other.Slots.Span) ||
-            _invocations.Length != other._invocations.Length)
-        {
-            return false;
-        }
-        for (int index = 0; index < _invocations.Length; index++)
-            if (_invocations[index].BinIndex != other._invocations[index].BinIndex ||
-                _invocations[index].Key != other._invocations[index].Key ||
-                !string.Equals(
-                    _invocations[index].VertexEncoding,
-                    other._invocations[index].VertexEncoding,
-                    StringComparison.Ordinal))
-                return false;
-        return true;
-    }
+
 }
 
 internal sealed record ClusterRasterInvocation(
     uint BinIndex,
-    Material Material,
+    MaterialData Material,
     string VertexEncoding,
     ClusterRasterCompatibilityKey Key,
     ClusterComputePipeline? Software,
@@ -959,7 +1079,21 @@ internal sealed record ClusterRasterInvocation(
     ClusterConservativeBounds Bounds,
     ClusterRasterStageResources<ClusterSoftwareRasterCoreResource>? SoftwareResources,
     ClusterRasterStageResources<ClusterHardwareRasterCoreResource> HardwareResources,
-    ClusterCommandBindingKey CommandBindings);
+    ClusterCommandBindingKey CommandBindings)
+{
+    internal bool HasSameBindings(ClusterRasterInvocation other) =>
+        SameBindings(SoftwareResources, other.SoftwareResources) &&
+        SameBindings(HardwareResources, other.HardwareResources) &&
+        SameBindings(Tessellation?.SeedResources, other.Tessellation?.SeedResources) &&
+        SameBindings(Tessellation?.SplitResources, other.Tessellation?.SplitResources) &&
+        SameBindings(Tessellation?.DiceResources, other.Tessellation?.DiceResources) &&
+        SameBindings(Tessellation?.HardwareResources, other.Tessellation?.HardwareResources);
+
+    private static bool SameBindings<TCore>(ClusterRasterStageResources<TCore>? left,
+        ClusterRasterStageResources<TCore>? right) where TCore : struct, Enum =>
+        ReferenceEquals(left, right) || left is not null && right is not null &&
+        left.MaterialBindings.AsSpan().SequenceEqual(right.MaterialBindings);
+}
 
 internal sealed record ClusterTessellationInvocation(
     ClusterTessellationCompatibilityKey Key,
@@ -980,7 +1114,7 @@ internal sealed class ClusterRasterStageResources<TCore>
         ClusterLinkedStageLayout resources,
         TCore[] coreResources,
         ClusterMaterialStageBinding[] materialBindings,
-        ClusterStageResourceBinder?[] featureBinders)
+        GraphResourceBinder?[] featureBinders)
     {
         Resources = resources;
         CoreResources = coreResources;
@@ -991,7 +1125,7 @@ internal sealed class ClusterRasterStageResources<TCore>
     internal ClusterLinkedStageLayout Resources { get; }
     internal TCore[] CoreResources { get; }
     internal ClusterMaterialStageBinding[] MaterialBindings { get; }
-    internal ClusterStageResourceBinder?[] FeatureBinders { get; }
+    internal GraphResourceBinder?[] FeatureBinders { get; }
 }
 
 internal readonly record struct ClusterRasterSoftwareKey(
@@ -1011,66 +1145,76 @@ internal sealed class ClusterShadeStages : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly IClusterStageResourceProvider? _featureResources;
+    private readonly IGraphResourceProvider? _featureResources;
     private readonly Dictionary<ClusterShadeCompatibilityKey, ClusterComputePipeline> _pipelines = [];
-    private readonly ClusterBinIndexMap<ClusterShadeBinKey> _binIndices = new();
+    private ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation> _binIndices =
+        new(static (before, after) => before.MaterialBindings.AsSpan().SequenceEqual(after.MaterialBindings));
+    private ImmutableDictionary<long, HashSet<uint>> _resourceProperties = ImmutableDictionary<long, HashSet<uint>>.Empty;
+
+    internal bool UsesResourceProperty(long materialId, uint property) =>
+        _resourceProperties.TryGetValue(materialId, out var properties) && properties.Contains(property);
+
+    private ClusterShadeStageSet _resolved = ClusterShadeStageSet.Empty;
     private bool _disposed;
+
+    internal void AcceptChanges() => _binIndices.AcceptChanges();
 
     internal ClusterShadeStages(
         IGraphicsBackend backend,
         Device device,
-        IClusterStageResourceProvider? featureResources)
+        IGraphResourceProvider? featureResources)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _featureResources = featureResources;
     }
 
+    private ClusterMaterialAssignmentSet? _resolvedAssignments;
+
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(assignments);
-        ReadOnlySpan<Material> materialSlots = assignments.Slots.Span;
-        ReadOnlySpan<string> vertexEncodings = assignments.VertexEncodings.Span;
-        var keys = new ClusterShadeBinKey[materialSlots.Length];
-        var invocationByKey = new Dictionary<ClusterShadeBinKey, ClusterShadeInvocation>();
-        var scalarLayouts = new ScalarLayout.ScalarMaterialLayout?[checked((int)assignments.SlotCapacity)];
-        var slots = new uint[checked((int)assignments.SlotCapacity)];
-
-        for (int slot = 0; slot < materialSlots.Length; slot++)
+        if (ReferenceEquals(assignments, _resolvedAssignments)) return _resolved!;
+        var addresses = _resolvedAssignments is null
+            ? new HashSet<int>(assignments.ActiveOffsets)
+            : new HashSet<int>(assignments.ChangedOffsets);
+        foreach (long material in assignments.ChangedMaterialIds)
+            addresses.UnionWith(assignments.GetMaterialOffsets(material));
+        var bins = new ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation>(_binIndices);
+        var resourceProperties = _resourceProperties;
+        foreach (long material in assignments.ChangedMaterialIds)
+            resourceProperties = resourceProperties.Remove(material);
+        var scalarLayouts = _resolved.ScalarLayouts;
+        foreach (int address in addresses)
         {
-            Material material = materialSlots[slot];
-            string vertexEncoding = vertexEncodings[slot];
-            ClusterShadeInvocation invocation = CreateInvocation(material, vertexEncoding);
-            var key = new ClusterShadeBinKey(
-                invocation.Key,
-                vertexEncoding,
-                invocation.Scalars.LayoutHash,
-                invocation.Scalars.PayloadByteSize,
-                invocation.CommandBindings);
-            keys[slot] = key;
-            scalarLayouts[slot] = invocation.Scalars;
-            invocationByKey.TryAdd(key, invocation);
+            if (!assignments.TryGetEntry(address, out MaterialData material, out string encoding))
+            {
+                bins.Remove(address);
+                scalarLayouts = scalarLayouts.Remove(address);
+                continue;
+            }
+            ClusterShadeInvocation invocation = CreateInvocation(material, encoding);
+            HashSet<uint> properties = [];
+            ClusterMaterialEntries.AddResourceProperties(properties, invocation.MaterialBindings);
+            scalarLayouts = scalarLayouts.SetItem(address, invocation.Scalars);
+            var key = new ClusterShadeBinKey(invocation.Key, encoding,
+                invocation.Scalars.LayoutHash, invocation.Scalars.PayloadByteSize, invocation.CommandBindings);
+            if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
+            resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
+            bins.Set(address, key, invocation);
         }
-
-        _binIndices.Reconcile([.. invocationByKey.Keys]);
-        var invocations = invocationByKey
-            .Select(pair => pair.Value with { BinIndex = _binIndices.Get(pair.Key) })
-            .OrderBy(static invocation => invocation.BinIndex)
-            .ToArray();
-        for (int slot = 0; slot < keys.Length; slot++)
-            slots[slot] = _binIndices.Get(keys[slot]);
-
-        Material[] materials = materialSlots.ToArray();
-        return new ClusterShadeStageSet(
-            slots,
-            invocations,
-            _binIndices.Range,
-            materials,
-            scalarLayouts);
+        var invocations = bins.GetStages(static (stage, index) => stage with { BinIndex = index });
+        var result = new ClusterShadeStageSet(bins.GetIndices(
+            assignments.SlotCapacity, _resolved.BinIndices, addresses),
+            invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses]);
+        _binIndices = bins;
+        _resourceProperties = resourceProperties;
+        _resolvedAssignments = assignments;
+        _resolved = result;
+        return result;
     }
 
-    private ClusterShadeInvocation CreateInvocation(Material material, string vertexEncoding)
+    private ClusterShadeInvocation CreateInvocation(MaterialData material, string vertexEncoding)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         string entryPoint = ClusterMaterialEntries.Shade;
@@ -1103,7 +1247,7 @@ internal sealed class ClusterShadeStages : IDisposable
         ClusterShadeCoreResource[] coreResources = ResolveShadeCoreResources(resources);
         Dictionary<string, byte> materialResources = ResolveMaterialResources(shader, resources);
         resources.ValidateMaterialResources(materialResources);
-        ClusterStageResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
+        GraphResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
             materialResources,
             _featureResources,
             ClusterShadeCoreResources.Contains);
@@ -1145,14 +1289,14 @@ internal sealed class ClusterShadeStages : IDisposable
     }
 
     private static ClusterMaterialStageBinding[] ResolveMaterialBindings(
-        Material material,
+        MaterialData material,
         ClusterLinkedStageLayout resources,
         IReadOnlyDictionary<string, byte> materialResources,
-        ClusterStageResourceBinder?[] featureResourceBinders)
+        GraphResourceBinder?[] featureResourceBinders)
     {
         ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
         var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialPropertyDefinition> slots = material.Properties;
+        IReadOnlyList<MaterialSlotDefinition> slots = material.Properties;
         for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
         {
             if (featureResourceBinders[resourceIndex] is not null)
@@ -1237,85 +1381,41 @@ internal sealed class ClusterShadeStages : IDisposable
 internal sealed class ClusterShadeStageSet
 {
     internal static ClusterShadeStageSet Empty { get; } =
-        new([], [], 0u, [], []);
+        new(ClusterUploadData.Zero(0), ImmutableSortedDictionary<uint, ClusterShadeInvocation>.Empty, 0u,
+            ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout>.Empty);
 
-    private readonly ClusterShadeInvocation[] _invocations;
-    private readonly Material[] _materials;
-    private readonly ScalarLayout.ScalarMaterialLayout?[] _scalarLayouts;
+    private readonly ImmutableSortedDictionary<uint, ClusterShadeInvocation> _bins;
+    internal ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout> ScalarLayouts { get; }
 
     internal ClusterShadeStageSet(
-        uint[] slots,
-        ClusterShadeInvocation[] invocations,
+        ClusterUploadData binIndices,
+        ImmutableSortedDictionary<uint, ClusterShadeInvocation> invocations,
         uint binCount,
-        Material[] materials,
-        ScalarLayout.ScalarMaterialLayout?[] scalarLayouts)
+        ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout> scalarLayouts,
+        uint[]? changedBins = null,
+        int[]? changedOffsets = null)
     {
-        Slots = slots;
-        _invocations = invocations;
+        BinIndices = binIndices;
+        _bins = invocations;
         BinCount = binCount;
-        _materials = materials;
-        _scalarLayouts = scalarLayouts;
+        ScalarLayouts = scalarLayouts;
+        ChangedBins = changedBins ?? [];
+        ChangedOffsets = changedOffsets ?? [];
     }
 
-    internal ReadOnlyMemory<uint> Slots { get; }
-    internal IReadOnlyList<ClusterShadeInvocation> Invocations => _invocations;
+    internal ClusterUploadData BinIndices { get; }
+    internal IReadOnlyList<int> ChangedOffsets { get; }
+    internal IEnumerable<ClusterShadeInvocation> Invocations => _bins.Values;
     internal uint BinCount { get; }
+    internal ClusterShadeInvocation GetBin(uint bin) => _bins[bin];
+    internal IReadOnlyList<uint> ChangedBins { get; }
+    internal bool TryGetBin(uint bin, out ClusterShadeInvocation stage) => _bins.TryGetValue(bin, out stage!);
 
-
-    internal (uint[] Offsets, byte[] Region) EncodeScalars()
-    {
-        int byteCount = 0;
-        for (int index = 0; index < _materials.Length; index++)
-        {
-            ScalarLayout.ScalarMaterialLayout layout = _scalarLayouts[index]
-                ?? throw new InvalidDataException("A Cluster material slot has no scalar layout.");
-            byteCount = checked(byteCount + layout.ByteSize);
-        }
-
-        var offsets = new uint[Slots.Length];
-        var region = new byte[Math.Max(byteCount, ScalarLayout.HeaderByteSize)];
-        int byteOffset = 0;
-        for (int index = 0; index < _materials.Length; index++)
-        {
-            ScalarLayout.ScalarMaterialLayout layout = _scalarLayouts[index]!;
-            offsets[index] = checked((uint)byteOffset);
-            byte[] packet = layout.Encode(_materials[index]);
-            packet.CopyTo(region, byteOffset);
-            byteOffset += packet.Length;
-        }
-        return (offsets, region);
-    }
-
-    internal bool HasSameTopology(ClusterShadeStageSet other)
-    {
-        ArgumentNullException.ThrowIfNull(other);
-        if (BinCount != other.BinCount ||
-            !Slots.Span.SequenceEqual(other.Slots.Span) ||
-            _invocations.Length != other._invocations.Length)
-        {
-            return false;
-        }
-        for (int index = 0; index < _invocations.Length; index++)
-        {
-            if (_invocations[index].BinIndex != other._invocations[index].BinIndex ||
-                _invocations[index].Key != other._invocations[index].Key ||
-                _invocations[index].Scalars.LayoutHash != other._invocations[index].Scalars.LayoutHash ||
-                _invocations[index].Scalars.PayloadByteSize != other._invocations[index].Scalars.PayloadByteSize ||
-                !string.Equals(
-                    _invocations[index].VertexEncoding,
-                    other._invocations[index].VertexEncoding,
-                    StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
 }
 
 internal sealed record ClusterShadeInvocation(
     uint BinIndex,
-    Material Material,
+    MaterialData Material,
     string VertexEncoding,
     ClusterShadeCompatibilityKey Key,
     ClusterComputePipeline Pipeline,
@@ -1323,7 +1423,7 @@ internal sealed record ClusterShadeInvocation(
     ClusterShadeCoreResource[] CoreResources,
     ScalarLayout.ScalarMaterialLayout Scalars,
     ClusterMaterialStageBinding[] MaterialBindings,
-    ClusterStageResourceBinder?[] FeatureResourceBinders,
+    GraphResourceBinder?[] FeatureResourceBinders,
     ClusterCommandBindingKey CommandBindings);
 
 internal readonly record struct ClusterMaterialStageBinding(
@@ -1341,6 +1441,7 @@ internal enum ClusterSoftwareRasterCoreResource : byte
     PolicyViews,
     PageHeap,
     VisibleClusters,
+    RasterWindows,
     BinnedClusters,
     BinMetadata,
     Depth,
@@ -1362,6 +1463,7 @@ internal enum ClusterHardwareRasterCoreResource : byte
     PageHeap,
     BinnedClusters,
     VisibleClusters,
+    RasterWindows,
     DrawMetadata,
     WinnerImage,
     WinnerBuffer,
@@ -1377,6 +1479,7 @@ internal enum ClusterTessellationCoreResource : byte
     PolicyViews,
     PageHeap,
     VisibleClusters,
+    RasterWindows,
     BinnedClusters,
     BinMetadata,
     RasterSlots,
@@ -1574,13 +1677,14 @@ internal sealed class ClusterLinkedStageLayout
         }
     }
 
-    internal ClusterStageResourceBinder?[] ResolveFeatureResources(
+    internal GraphResourceBinder?[] ResolveFeatureResources(
         IReadOnlyDictionary<string, byte> materialResources,
-        IClusterStageResourceProvider? provider,
-        Func<string, bool> isCoreResource)
+        IGraphResourceProvider? provider,
+        Func<string, bool> isCoreResource,
+        bool allowNeutralRasterTarget = false)
     {
         ArgumentNullException.ThrowIfNull(isCoreResource);
-        var result = new ClusterStageResourceBinder?[_resources.Length];
+        var result = new GraphResourceBinder?[_resources.Length];
         for (int index = 0; index < _resources.Length; index++)
         {
             ClusterLinkedStageResource resource = _resources[index];
@@ -1597,9 +1701,17 @@ internal sealed class ClusterLinkedStageLayout
                     $"Feature stage resource arrays are not supported: '{resource.Name}[{resource.Element}]'.");
             }
             if (provider is null ||
-                !provider.TryResolve(resource.Name, resource.Type, out ClusterStageResourceBinder? binder) ||
+                !provider.TryResolve(resource.Name, resource.Type, out GraphResourceBinder? binder) ||
                 binder is null)
             {
+                if (allowNeutralRasterTarget &&
+                    (resource.Name, resource.Type) is
+                    ("RasterTargetViews", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetPageHierarchy", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetPageTable", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetReceiverMasks", ResourceBindingType.BufferSrv) or
+                    ("RasterTargetOutput", ResourceBindingType.TextureUav))
+                    continue;
                 throw new InvalidDataException(
                     $"Final stage entry requires feature resource '{resource.Name}' ({resource.Type}), " +
                     "but no installed feature owns it.");
@@ -1753,6 +1865,7 @@ internal static class ClusterSoftwareRasterCoreResources
             ClusterSoftwareRasterCoreResource.PolicyViews or
             ClusterSoftwareRasterCoreResource.PageHeap or
             ClusterSoftwareRasterCoreResource.VisibleClusters or
+            ClusterSoftwareRasterCoreResource.RasterWindows or
             ClusterSoftwareRasterCoreResource.BinnedClusters or
             ClusterSoftwareRasterCoreResource.BinMetadata => ResourceBindingType.BufferSrv,
             ClusterSoftwareRasterCoreResource.InstanceProperties or
@@ -1784,6 +1897,7 @@ internal static class ClusterSoftwareRasterCoreResources
         "SoftwareRasterPolicyViews" => ClusterSoftwareRasterCoreResource.PolicyViews,
         "PageHeap" => ClusterSoftwareRasterCoreResource.PageHeap,
         "VisibleClusters" or "SoftwareRasterVisibleClusters" => ClusterSoftwareRasterCoreResource.VisibleClusters,
+        "VisibleClusterRasterWindows" => ClusterSoftwareRasterCoreResource.RasterWindows,
         "BinnedClusterIndexBuffer" or
         "SoftwareRasterBinnedClusterIndexBuffer" => ClusterSoftwareRasterCoreResource.BinnedClusters,
         "RasterBinMeta" or "SoftwareRasterBinMeta" => ClusterSoftwareRasterCoreResource.BinMetadata,
@@ -1816,6 +1930,7 @@ internal static class ClusterHardwareRasterCoreResources
             ClusterHardwareRasterCoreResource.PageHeap or
             ClusterHardwareRasterCoreResource.BinnedClusters or
             ClusterHardwareRasterCoreResource.VisibleClusters or
+            ClusterHardwareRasterCoreResource.RasterWindows or
             ClusterHardwareRasterCoreResource.DrawMetadata => ResourceBindingType.BufferSrv,
             ClusterHardwareRasterCoreResource.InstanceProperties or
             ClusterHardwareRasterCoreResource.Uniforms or
@@ -1846,6 +1961,7 @@ internal static class ClusterHardwareRasterCoreResources
         "BinnedClusterIndexBuffer" or
         "HardwareRasterBinnedClusterIndexBuffer" => ClusterHardwareRasterCoreResource.BinnedClusters,
         "VisibleClusters" or "HardwareRasterVisibleClusters" => ClusterHardwareRasterCoreResource.VisibleClusters,
+        "VisibleClusterRasterWindows" => ClusterHardwareRasterCoreResource.RasterWindows,
         "VisibleClusterMeta" or "HardwareRasterVisibleClusterMeta" => ClusterHardwareRasterCoreResource.DrawMetadata,
         "VisibilityWinnerImage" => ClusterHardwareRasterCoreResource.WinnerImage,
         "VisibilityWinnerBuffer" => ClusterHardwareRasterCoreResource.WinnerBuffer,
@@ -1869,6 +1985,7 @@ internal static class ClusterTessellationCoreResources
             ClusterTessellationCoreResource.PolicyViews or
             ClusterTessellationCoreResource.PageHeap or
             ClusterTessellationCoreResource.VisibleClusters or
+            ClusterTessellationCoreResource.RasterWindows or
             ClusterTessellationCoreResource.BinMetadata or
             ClusterTessellationCoreResource.RasterSlots or
             ClusterTessellationCoreResource.GroupedPatchIndices or
@@ -1911,6 +2028,7 @@ internal static class ClusterTessellationCoreResources
         "PageHeap" => ClusterTessellationCoreResource.PageHeap,
         "VisibleClusters" or
         "TessellationVisibleClusters" => ClusterTessellationCoreResource.VisibleClusters,
+        "VisibleClusterRasterWindows" => ClusterTessellationCoreResource.RasterWindows,
         "BinnedClusterIndexBuffer" or
         "TessellationBinnedClusterIndexBuffer" => ClusterTessellationCoreResource.BinnedClusters,
         "RasterBinMeta" or

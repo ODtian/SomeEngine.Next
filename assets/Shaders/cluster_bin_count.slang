@@ -17,7 +17,7 @@ ByteAddressBuffer PageHeap;
 
 void CountRasterBatches(
     uint slotOffset,
-    uint vrbInfo,
+    uint4 vertReuseBatchWords,
     uint triangleCount,
     uint packedMaterials,
     uint packedRanges,
@@ -26,29 +26,54 @@ void CountRasterBatches(
     if (triangleCount == 0u)
         return;
 
-    VRBDecoded vrb = DecodeVRB(vrbInfo);
+    uint rangeCount = MaterialRangeCount(packedRanges, triangleCount);
     uint triangleStart = 0u;
-    for (uint batch = 0u; batch < vrb.batchCount && triangleStart < triangleCount; batch++)
+    uint flatBatchIndex = 0u;
+    uint rangeIndex = 0u;
+    while (rangeIndex < rangeCount)
     {
-        uint triangleEnd = min(triangleStart + vrb.triCounts[batch], triangleCount);
+        uint rangeEnd = MaterialRangeEnd(packedRanges, triangleCount, rangeIndex);
         uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        CountRaster(
-            RasterBinMeta,
-            RasterKey(RasterSlots, Uniforms, slotOffset, material),
-            EmitsSw(isSoftware, batch, vrb.batchCount));
-        triangleStart = triangleEnd;
-    }
+        uint bin = RasterKey(RasterSlots, Uniforms, slotOffset, material);
+        uint batchCount = VertReuseBatchCount(vertReuseBatchWords, rangeIndex);
+        bool useVertReuseBatches = !isSoftware || RasterSoftwareUsesVertReuseBatches(
+            RasterSlots, Uniforms, slotOffset, material);
+        if (!useVertReuseBatches)
+        {
+            uint mergedRangeCount = 1u;
+            uint mergedBatchCount = batchCount;
+            while (rangeIndex + mergedRangeCount < rangeCount)
+            {
+                uint nextRange = rangeIndex + mergedRangeCount;
+                uint nextStart = MaterialRangeEnd(packedRanges, triangleCount, nextRange - 1u);
+                uint nextMaterial = LocalMaterial(packedMaterials, packedRanges, nextStart);
+                uint nextBin = RasterKey(RasterSlots, Uniforms, slotOffset, nextMaterial);
+                bool nextUsesBatches = RasterSoftwareUsesVertReuseBatches(
+                    RasterSlots, Uniforms, slotOffset, nextMaterial);
+                if (nextBin != bin || nextUsesBatches)
+                    break;
+                mergedBatchCount += VertReuseBatchCount(vertReuseBatchWords, nextRange);
+                mergedRangeCount++;
+            }
 
-    while (triangleStart < triangleCount)
-    {
-        uint material = LocalMaterial(packedMaterials, packedRanges, triangleStart);
-        CountRaster(
-            RasterBinMeta,
-            RasterKey(RasterSlots, Uniforms, slotOffset, material),
-            false);
-        triangleStart = min(
-            triangleStart + 32u,
-            MaterialEnd(packedRanges, triangleStart, triangleCount));
+            CountRaster(RasterBinMeta, bin, true);
+            flatBatchIndex += mergedBatchCount;
+            rangeIndex += mergedRangeCount;
+            triangleStart = MaterialRangeEnd(
+                packedRanges, triangleCount, rangeIndex - 1u);
+            continue;
+        }
+
+        for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
+        {
+            CountRaster(RasterBinMeta, bin, isSoftware);
+            triangleStart = min(
+                triangleStart + VertReuseBatchTriangleCount(vertReuseBatchWords, flatBatchIndex),
+                rangeEnd);
+            flatBatchIndex++;
+        }
+        triangleStart = rangeEnd;
+        rangeIndex++;
     }
 }
 
@@ -74,14 +99,14 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         isSoftware);
 
     DrawRequest entry = VisibleClusters[visibleIndex];
-    uint vrbInfo;
+    uint4 vertReuseBatchWords;
     uint triangleCount;
     uint packedMaterials;
     uint packedRanges;
     ReadClusterBinData(
         PageHeap,
         entry,
-        vrbInfo,
+        vertReuseBatchWords,
         triangleCount,
         packedMaterials,
         packedRanges);
@@ -93,7 +118,7 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         entry.InstanceID);
     CountRasterBatches(
         slotOffset,
-        vrbInfo,
+        vertReuseBatchWords,
         triangleCount,
         packedMaterials,
         packedRanges,

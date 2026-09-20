@@ -9,7 +9,7 @@ struct VirtualShadowPageHiZUniforms
 };
 
 ConstantBuffer<VirtualShadowPageHiZUniforms> PageHiZ;
-StructuredBuffer<uint2> ActivePhysicalPages;
+StructuredBuffer<uint4> ActivePhysicalPages;
 #if VSM_PAGE_HIZ_INITIALIZE
 Texture2D<uint> ShadowPhysicalAtlas;
 #else

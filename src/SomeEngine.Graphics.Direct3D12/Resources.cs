@@ -110,7 +110,10 @@ nativeDevice.Native, visibleNodeMask,
             footprint.Footprint.RowPitch,
             rows,
             rowSize,
-            totalSize);
+            totalSize)
+        {
+            BlockHeight = FormatMappings.IsBlockCompressed(desc.Format) ? 4u : 1u,
+        };
     }
 
     private static PlacedSubresourceFootprint GetNativeCopyFootprint(
@@ -1227,7 +1230,11 @@ device.Native, heap,
         internal NativeResource* Native => (NativeResource*)_native.Pointer;
         internal NativeLease NativeLifetime => _native;
         internal D3D12MemoryAllocation? MemoryAllocation => _native.MemoryAllocation;
-        internal D3D12SparseState? SparseState { get; set; }
+        internal D3D12SparseState? SparseState
+        {
+            get => _native.SparseState;
+            set => _native.SparseState = value;
+        }
 
         internal MappedBuffer Map(MapType type, BufferRange range, int length)
         {
@@ -1313,7 +1320,6 @@ device.Native, heap,
         {
             _mapping.DisposeCurrent();
             ReleaseConstantBufferDescriptors();
-            SparseState?.Dispose();
             _native.Release();
             _device.UnregisterChild(this);
         }
@@ -1417,11 +1423,14 @@ device.Native, heap,
         internal NativeResource* Native => (NativeResource*)_native.Pointer;
         internal NativeLease NativeLifetime => _native;
         internal D3D12MemoryAllocation? MemoryAllocation => _native.MemoryAllocation;
-        internal D3D12SparseState? SparseState { get; set; }
+        internal D3D12SparseState? SparseState
+        {
+            get => _native.SparseState;
+            set => _native.SparseState = value;
+        }
 
         internal void Release()
         {
-            SparseState?.Dispose();
             _native.Release();
             _device.UnregisterChild(Owner);
         }
@@ -1513,6 +1522,8 @@ device.Native, heap,
             _dependencies = dependencies;
         }
 
+        internal D3D12SparseState? SparseState { get; set; }
+
         internal nint Pointer => Volatile.Read(ref _pointer);
         internal D3D12MemoryAllocation? MemoryAllocation => Volatile.Read(ref _allocation);
 
@@ -1539,6 +1550,8 @@ device.Native, heap,
             nint pointer = Interlocked.Exchange(ref _pointer, 0);
             if (_ownsReference && pointer != 0)
                 _ = ResourceTrace.Release(((IUnknown*)pointer));
+            SparseState?.Dispose();
+            SparseState = null;
             Interlocked.Exchange(ref _allocation, null)?.Release();
             Interlocked.Exchange(ref _dependency, null)?.Release();
             NativeLease[]? dependencies = Interlocked.Exchange(ref _dependencies, null);

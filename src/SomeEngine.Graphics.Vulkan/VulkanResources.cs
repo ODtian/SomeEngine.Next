@@ -67,7 +67,10 @@ internal sealed unsafe partial class VulkanBackend
             requestedBufferOffset,
             nativeDevice.Capabilities.Limits.TextureDataPlacementAlignment);
         ulong totalSize = checked((ulong)rowPitch * rowCount * copy.Depth);
-        return new TextureCopyFootprint(offset, rowPitch, rowCount, rowSize, totalSize);
+        return new TextureCopyFootprint(offset, rowPitch, rowCount, rowSize, totalSize)
+        {
+            BlockHeight = blockHeight,
+        };
     }
 
     internal RhiHeap CreateHeap(RhiDevice device, in HeapDesc desc)
@@ -571,7 +574,8 @@ internal sealed unsafe partial class VulkanBackend
             }
             if (nativeViewFormats.Length != 0)
                 flags |= ImageCreateFlags.CreateMutableFormatBit;
-            if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6)
+            if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6 &&
+                desc.Width == desc.Height && desc.SampleCount == 1)
                 flags |= ImageCreateFlags.CreateCubeCompatibleBit;
             ImageCreateInfo createInfo = new()
             {
@@ -803,6 +807,8 @@ internal sealed unsafe partial class VulkanBackend
         if ((usages & BufferUsages.ShaderWrite) != 0) result |= BufferUsageFlags.StorageBufferBit | BufferUsageFlags.StorageTexelBufferBit | BufferUsageFlags.ShaderDeviceAddressBit;
         if ((usages & BufferUsages.Vertex) != 0) result |= BufferUsageFlags.VertexBufferBit;
         if ((usages & BufferUsages.Index) != 0) result |= BufferUsageFlags.IndexBufferBit;
+        if ((usages & BufferUsages.Predication) != 0)
+            result |= BufferUsageFlags.ConditionalRenderingBitExt;
         if ((usages & (BufferUsages.Indirect | BufferUsages.Predication)) != 0)
             result |= BufferUsageFlags.IndirectBufferBit;
         if ((usages & BufferUsages.Indirect) != 0)
@@ -1225,8 +1231,6 @@ internal sealed unsafe partial class VulkanBackend
         {
             if (_memory.Mapped == 0)
                 throw new NotSupportedException("The Vulkan Buffer memory is not host visible.");
-            if (type == MapType.Read && Buffer.Info.MemoryType == MemoryType.Upload)
-                throw new ArgumentException("Upload Buffers do not support read mappings.", nameof(type));
             if (type == MapType.Write && Buffer.Info.MemoryType == MemoryType.Readback)
                 throw new ArgumentException("Readback Buffers do not support write mappings.", nameof(type));
             ulong sequence = PrepareNextSequence();
@@ -1382,7 +1386,8 @@ internal sealed unsafe partial class VulkanBackend
         ImageCreateFlags flags = ImageCreateFlags.CreateAliasBit;
         if (!desc.PermittedViewFormats.IsEmpty)
             flags |= ImageCreateFlags.CreateMutableFormatBit;
-        if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6)
+        if (desc.Dimension == TextureDimension.Texture2D && desc.ArrayLayerCount >= 6 &&
+                desc.Width == desc.Height && desc.SampleCount == 1)
             flags |= ImageCreateFlags.CreateCubeCompatibleBit;
         PhysicalDeviceImageFormatInfo2 info = new()
         {

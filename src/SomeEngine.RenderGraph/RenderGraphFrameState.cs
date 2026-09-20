@@ -20,6 +20,7 @@ internal sealed partial class RenderGraphFrameState
         new(ReferenceEqualityComparer.Instance);
     private readonly List<IRenderGraphFrameExecutionObserver> _executionObservers = [];
     private readonly FrameExecutor _executor;
+    private readonly Dictionary<GraphIdentity, FrameTransientResourceAllocator.UploadPage> _bufferData = [];
     private bool _executorActive;
     private bool _sealed;
     private bool _finished = true;
@@ -64,30 +65,35 @@ internal sealed partial class RenderGraphFrameState
     internal IReadOnlyList<BufferRangeRead> BufferRangeReads => _bufferRangeReads;
     internal IReadOnlyList<ExplicitPassOrder> DynamicOrders => _dynamicOrders;
     internal IReadOnlyList<(GraphIdentity Identity, SwapchainImage Image, Queue PresentQueue)> SwapchainImages => _swapchainImages;
-    internal void ReleaseRecordingContexts()
-    {
-        _executor.ReleaseRecordingContexts();
-        _executor.ReleaseParameterBindings();
-    }
+    internal void ReleaseRecordingContexts() => _executor.ReleaseRecordingContexts();
 
     internal FrameExecutor Executor => _executorActive
         ? _executor
         : throw new InvalidOperationException("The render graph frame has not been prepared for execution.");
     internal IGraphicsBackend Backend => Graph.Backend;
 
-    internal void ChangeProperty(GraphIdentity identity, GraphStoreKind kind)
+    internal void ChangeProperty(GraphIdentity identity, GraphStoreKind kind, bool refreshViews)
     {
         switch (kind)
         {
             case GraphStoreKind.Passes: _executor.ChangePass(identity); break;
-            case GraphStoreKind.Buffers: _executor.ChangeBuffer(identity); break;
-            case GraphStoreKind.Textures: _executor.ChangeTexture(identity); break;
+            case GraphStoreKind.Buffers: _executor.ChangeBuffer(identity, refreshViews); break;
+            case GraphStoreKind.Textures: _executor.ChangeTexture(identity, refreshViews); break;
             case GraphStoreKind.Views: _executor.ChangeView(identity); break;
             case GraphStoreKind.Accesses: _executor.ChangeAccess(identity); break;
         }
     }
 
-    internal void ApplyEdit(GraphEditChanges changes) => _executor.ApplyEdit(changes);
+    internal void ApplyEdit(GraphEditChanges changes)
+    {
+        if (!changes.IsEmpty && !changes.LabelsOnly)
+        {
+            _bufferInputs.Clear();
+            _textureInputs.Clear();
+            _parameterInputs.Clear();
+        }
+        _executor.ApplyEdit(changes);
+    }
     internal void BoundaryChanged(GraphIdentity identity, GraphStoreKind kind) => _executor.BoundaryChanged(identity, kind);
 
     internal void EnsureLease(ulong identity)
@@ -155,7 +161,7 @@ internal sealed partial class RenderGraphFrameState
         return new PassDefinition(this, identity, definition.Kind);
     }
 
-    internal void SetPassData<T>(GraphPassId pass, in T value)
+    internal void SetPassData<T>(GraphPassId pass, in T value, bool compareValue = false)
     {
         EnsureAuthoring();
         ValidateStatic(pass.Value, StructureIndex.Structure.Passes);
@@ -166,8 +172,13 @@ internal sealed partial class RenderGraphFrameState
                 $"The pass expects frame data of type {graphPass.CallbackStorage.FrameDataType.FullName}.",
                 nameof(value));
         }
+        bool unchanged = graphPass.Options.RepeatCommands &&
+            (compareValue ? slot.FrameValueEquals(value) : slot.FrameDataEquals(value));
         slot.SetFrameData(value);
+        if (!unchanged) Graph.CommandDataChanged(pass.Value);
     }
+
+    internal void CommandDataChanged(GraphIdentity identity) => _executor.ChangeCommandData(identity);
 
     internal void SetBufferRange(GraphBufferAccessId access, in BufferRange range)
     {
@@ -241,6 +252,7 @@ internal sealed partial class RenderGraphFrameState
             _importedBuffers.TryGetValue(previous, out GraphBufferId previousId) && previousId == slot)
             _importedBuffers.Remove(previous);
         _importedBuffers[buffer] = slot;
+        if (_bufferData.Remove(slot.Value)) _executor.ChangeBuffer(slot.Value, refreshViews: false);
         if (ReferenceEquals(previous, buffer) && boundaryStates.SequenceEqual(graphBuffer.BoundaryStates)) return;
         BufferBoundaryState[] states = graphBuffer.BoundaryStates.Length == boundaryStates.Length
             ? graphBuffer.BoundaryStates : new BufferBoundaryState[boundaryStates.Length];
@@ -250,7 +262,7 @@ internal sealed partial class RenderGraphFrameState
         if (ReferenceEquals(previous, buffer))
             Graph.BoundaryChanged(slot.Value, GraphStoreKind.Buffers);
         else
-            Graph.PropertyChanged(slot.Value, GraphStoreKind.Buffers);
+            Graph.PropertyChanged(slot.Value, GraphStoreKind.Buffers, refreshViews: false);
     }
 
     internal void BindExternalTexture(
@@ -280,7 +292,7 @@ internal sealed partial class RenderGraphFrameState
         if (ReferenceEquals(previous, texture))
             Graph.BoundaryChanged(slot.Value, GraphStoreKind.Textures);
         else
-            Graph.PropertyChanged(slot.Value, GraphStoreKind.Textures);
+            Graph.PropertyChanged(slot.Value, GraphStoreKind.Textures, refreshViews: false);
     }
     internal void BindExternalTexture(
         GraphTextureId slot,
@@ -364,6 +376,30 @@ internal sealed partial class RenderGraphFrameState
         }
         return new GraphBufferSlice(page.GraphBuffer, range);
     }
+
+    internal void SetBufferData(GraphBufferId buffer, scoped ReadOnlySpan<byte> data)
+    {
+        EnsureAuthoring();
+        ValidateStatic(buffer.Value, StructureIndex.Structure.Buffers);
+        GraphBuffer declaration = StructureIndex.Structure.Buffers.Get(buffer.Value);
+        DevelopmentCheck.Require(declaration.MemoryType == MemoryType.Upload &&
+            declaration.RegisteredResource is null &&
+            declaration.Ownership == RenderGraphResourceOwnership.CallerOwned &&
+            (declaration.Description.Usages & ~(BufferUsages.ShaderRead | BufferUsages.Constant | BufferUsages.CopySource)) == 0,
+            "Buffer data requires an external upload declaration used only for GPU reads.");
+        if ((ulong)data.Length != declaration.Description.Size)
+            throw new ArgumentException("Buffer data must cover the declared byte size.", nameof(data));
+        FrameTransientResourceAllocator.UploadPage page = Slot.TransientResources!
+            .WriteBufferData(buffer.Value, declaration.Description, data);
+        if (_bufferData.TryGetValue(buffer.Value, out var previous) && !ReferenceEquals(previous.Buffer, page.Buffer))
+            _importedBuffers.Remove(previous.Buffer);
+        _bufferData[buffer.Value] = page;
+        _importedBuffers[page.Buffer] = buffer;
+        _executor.ChangeBuffer(buffer.Value, refreshViews: false);
+    }
+
+    internal bool TryGetBufferData(GraphIdentity id, out FrameTransientResourceAllocator.UploadPage page) =>
+        _bufferData.TryGetValue(id, out page!);
 
     internal GraphTextureId AddTexture(
         in TextureDesc description,
@@ -793,7 +829,9 @@ internal sealed partial class RenderGraphFrameState
         EnsureAuthoring();
         ValidatePassIdentity(pass.Value);
         ValidatePassIdentity(predecessor.Value);
-        _dynamicOrders.Add(new ExplicitPassOrder(predecessor.Value, pass.Value));
+        var order = new ExplicitPassOrder(predecessor.Value, pass.Value);
+        _dynamicOrders.Add(order);
+        _executor.ChangeDynamicOrder(order, true);
     }
 
     internal int ResolveExtensionPoint(GraphExtensionPointId point)
@@ -966,9 +1004,7 @@ internal sealed partial class RenderGraphFrameState
         uint x,
         uint y,
         uint width,
-        uint height,
-        uint firstArrayLayer,
-        uint arrayLayerCount)
+        uint height)
     {
         _ = ResolveDynamicPass(pass);
         if (!DynamicRenderingRegions.TryGetValue(pass, out List<PassRenderingRegion>? regions))
@@ -978,7 +1014,7 @@ internal sealed partial class RenderGraphFrameState
         }
         int region = regions.Count;
         regions.Add(new PassRenderingRegion(
-            x, y, width, height, firstArrayLayer, arrayLayerCount));
+            x, y, width, height));
         return region;
     }
 
@@ -1017,35 +1053,19 @@ internal sealed partial class RenderGraphFrameState
             _executor.Reset();
             Slot.TransientResources!.FlushUploads();
             _executorActive = true;
-            int result = _executor.Execute(destination);
-            _finished = true;
-            _executorActive = false;
-            Slot.SetCompletions(_executor.SubmittedCompletions);
-            NotifyExecutionObservers(executed: true);
-            ClearFrameData();
-            Graph.EndFrame(Identity);
-            return result;
+            return _executor.Execute(destination);
         }
         catch (GraphicsException exception) when (exception.Error == GraphicsError.DeviceLost)
         {
-            Slot.SetCompletions(_executor.SubmittedCompletions);
             Graph.MarkDeviceLost();
-            _finished = true;
-            _executorActive = false;
-            NotifyExecutionObservers(executed: true);
-            ClearFrameData();
-            Graph.EndFrame(Identity);
             throw;
         }
-        catch
+        finally
         {
-            Slot.SetCompletions(_executor.SubmittedCompletions);
             _finished = true;
             _executorActive = false;
-            NotifyExecutionObservers(executed: true);
-            ClearFrameData();
-            Graph.EndFrame(Identity);
-            throw;
+            Slot.SetCompletions(_executor.SubmittedCompletions);
+            FinishFrame(this);
         }
     }
 
@@ -1054,9 +1074,20 @@ internal sealed partial class RenderGraphFrameState
         if (_finished || Identity != identity) return;
         _finished = true;
         _executorActive = false;
-        NotifyExecutionObservers(executed: false);
-        ClearFrameData();
-        Graph.EndFrame(Identity);
+        FinishFrame(null);
+    }
+
+    private void FinishFrame(RenderGraphFrameState? frame)
+    {
+        try
+        {
+            NotifyExecutionObservers(frame);
+        }
+        finally
+        {
+            ClearFrameData();
+            Graph.EndFrame(Identity);
+        }
     }
 
     private GraphPassId AddDynamicPass<TState, TCallback>(
@@ -1129,6 +1160,7 @@ internal sealed partial class RenderGraphFrameState
             {
                 _dynamicAccesses.RemoveRange(firstAccess, _dynamicAccesses.Count - firstAccess);
             }
+            _bufferRangeReads.RemoveAll(read => read.Pass == identity);
             DynamicRenderingRegions.Remove(identity);
             DynamicColorAttachments.Remove(identity);
             DynamicDepthAttachments.Remove(identity);
@@ -1266,6 +1298,7 @@ internal sealed partial class RenderGraphFrameState
         ValidateResourceIdentity(identity, buffer: true);
         if (identity.Owner == Graph.Identity)
         {
+            if (_bufferData.TryGetValue(identity, out var data)) return data.Buffer;
             GraphBuffer row = StructureIndex.Structure.Buffers.Get(identity);
             if (row.RegisteredResource is not null) return row.RegisteredResource;
             if (row.PersistentResource is not null) return row.PersistentResource;
@@ -1335,9 +1368,8 @@ internal sealed partial class RenderGraphFrameState
 
     private void ClearFrameData()
     {
-        _bufferInputs.Clear();
-        _parameterInputs.Clear();
-        _textureInputs.Clear();
+        foreach (GraphIdentity id in _bufferData.Keys) _executor.ChangeBuffer(id, refreshViews: false);
+        _bufferData.Clear();
         foreach (FramePassCallbackStore callbackStore in _callbackStores.Values) callbackStore.Reset();
         _dynamicBuffers.Clear();
         _dynamicTextures.Clear();
@@ -1347,6 +1379,8 @@ internal sealed partial class RenderGraphFrameState
         _dynamicPasses.Clear();
         _dynamicAccesses.Clear();
         _bufferRangeReads.Clear();
+        foreach (ExplicitPassOrder order in _dynamicOrders)
+            _executor.ChangeDynamicOrder(order, false);
         _dynamicOrders.Clear();
         foreach (var image in _swapchainImages)
         {
@@ -1363,12 +1397,49 @@ internal sealed partial class RenderGraphFrameState
         _executionObservers.Clear();
     }
 
-    private void NotifyExecutionObservers(bool executed)
+    internal ReadOnlySpan<QueueCompletion> SubmittedCompletions => _executor.SubmittedCompletions;
+
+    internal ReadOnlySpan<BufferBoundaryState> GetBufferStates(GraphBufferId buffer) =>
+        _executor.GetBufferStates(buffer);
+
+    internal ReadOnlySpan<TextureBoundaryState> GetTextureStates(GraphTextureId texture) =>
+        _executor.GetTextureStates(texture);
+
+    internal ReadOnlySpan<BufferBoundaryState> GetBufferStates(Buffer buffer)
+    {
+        if (_importedBuffers.TryGetValue(buffer, out GraphBufferId id)) return GetBufferStates(id);
+        return StructureIndex.ResourceIdentities.TryGetValue(buffer, out GraphIdentity identity)
+            ? GetBufferStates(new GraphBufferId(identity)) : [];
+    }
+
+    internal ReadOnlySpan<TextureBoundaryState> GetTextureStates(Texture texture)
+    {
+        if (_importedTextures.TryGetValue(texture, out GraphTextureId id)) return GetTextureStates(id);
+        return StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity identity)
+            ? GetTextureStates(new GraphTextureId(identity)) : [];
+    }
+
+    internal bool TryGetPassCompletion(GraphPassId pass, out QueueCompletion completion) =>
+        _executor.TryGetPassCompletion(pass, out completion);
+
+    private void NotifyExecutionObservers(RenderGraphFrameState? frame)
     {
         IRenderGraphFrameExecutionObserver[] observers = [.. _executionObservers];
         _executionObservers.Clear();
+        List<Exception>? errors = null;
         foreach (IRenderGraphFrameExecutionObserver observer in observers)
-            observer.OnRenderGraphFrameFinished(executed);
+        {
+            try
+            {
+                observer.OnRenderGraphFrameFinished(new RenderGraphFrameResult(frame));
+            }
+            catch (Exception exception)
+            {
+                (errors ??= []).Add(exception);
+            }
+        }
+        if (errors is not null)
+            throw new AggregateException("Render graph completion callbacks failed.", errors);
     }
 
     private sealed class FrameRetirement(RenderGraph graph, IDisposable value)
@@ -1376,7 +1447,7 @@ internal sealed partial class RenderGraphFrameState
     {
         private IDisposable? _value = value;
 
-        public void OnRenderGraphFrameFinished(bool executed)
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
         {
             IDisposable? retired = Interlocked.Exchange(ref _value, null);
             if (retired is not null)
@@ -1384,7 +1455,15 @@ internal sealed partial class RenderGraphFrameState
         }
     }
 
-    private readonly Dictionary<GraphBufferInput, GraphBufferSlice> _bufferInputs = [];
+    private sealed class InputData<T>
+    {
+        internal T Value = default!;
+        internal ulong Frame;
+    }
+
+    // Input keys can disappear after graph edits. Weak keys avoid keeping removed inputs
+    // and their resources alive while preserving values between uses of this frame.
+    private readonly ConditionalWeakTable<GraphBufferInput, InputData<GraphBufferSlice>> _bufferInputs = new();
 
     internal void SetBufferInput(GraphBufferInput input, GraphBufferSlice value)
     {
@@ -1398,18 +1477,22 @@ internal sealed partial class RenderGraphFrameState
         DevelopmentCheck.Require((description.Usages & input.Usages) == input.Usages,
             "The buffer does not provide the input's declared usages.");
         BufferRange range = GraphStructureIndex.ResolveRange(value.Range, description.Size);
-        _bufferInputs[input] = new GraphBufferSlice(value.Buffer, range);
-        _executor.ChangeBufferInput(input);
+        InputData<GraphBufferSlice> data = _bufferInputs.GetValue(input, static _ => new());
+        GraphBufferSlice next = new(value.Buffer, range);
+        bool changed = data.Frame == 0 || !data.Value.Equals(next);
+        data.Value = next;
+        data.Frame = Identity;
+        if (changed) _executor.ChangeBufferInput(input);
     }
 
     internal GraphBufferSlice ResolveBufferInput(GraphBufferInput input)
     {
-        bool found = _bufferInputs.TryGetValue(input, out GraphBufferSlice value);
+        bool found = _bufferInputs.TryGetValue(input, out InputData<GraphBufferSlice>? data) && data.Frame == Identity;
         DevelopmentCheck.Require(found, "A buffer input has no value for this frame.");
-        return value;
+        return found ? data!.Value : default;
     }
 
-    private readonly Dictionary<GraphTextureInput, GraphTextureId> _textureInputs = [];
+    private readonly ConditionalWeakTable<GraphTextureInput, InputData<GraphTextureId>> _textureInputs = new();
 
     internal void SetTextureInput(GraphTextureInput input, GraphTextureId value)
     {
@@ -1417,15 +1500,18 @@ internal sealed partial class RenderGraphFrameState
         DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
             "The texture input must belong to this graph.");
         ValidateResourceIdentity(value.Value, buffer: false);
-        _textureInputs[input] = value;
-        _executor.ChangeTextureInput(input);
+        InputData<GraphTextureId> data = _textureInputs.GetValue(input, static _ => new());
+        bool changed = data.Frame == 0 || data.Value != value;
+        data.Value = value;
+        data.Frame = Identity;
+        if (changed) _executor.ChangeTextureInput(input);
     }
 
     internal GraphTextureId ResolveTextureInput(GraphTextureInput input)
     {
-        bool found = _textureInputs.TryGetValue(input, out GraphTextureId value);
+        bool found = _textureInputs.TryGetValue(input, out InputData<GraphTextureId>? data) && data.Frame == Identity;
         DevelopmentCheck.Require(found, "A texture input has no value for this frame.");
-        return value;
+        return found ? data!.Value : default;
     }
 
     internal Texture GetTexture(int pass, GraphTextureInput input) => GetTexture(pass, ResolveTextureInput(input));
@@ -1436,7 +1522,7 @@ internal sealed partial class RenderGraphFrameState
         return new BufferRegion(GetBuffer(pass, value.Buffer), value.Range);
     }
 
-    private readonly Dictionary<GraphParameterInput, ParameterInputValue> _parameterInputs = [];
+    private readonly ConditionalWeakTable<GraphParameterInput, InputData<ParameterInputValue>> _parameterInputs = new();
 
     internal void SetParameterInput(GraphParameterInput input, ResourceBinding binding)
     {
@@ -1500,8 +1586,13 @@ internal sealed partial class RenderGraphFrameState
                     "The RHI resource is not supported by a parameter input.");
                 break;
         }
-        _parameterInputs[input] = new ParameterInputValue(binding, primary, range, textureRange,
+        var next = new ParameterInputValue(binding, primary, range, textureRange,
             secondary, secondaryBufferRange, secondaryTextureRange);
+        InputData<ParameterInputValue> data = _parameterInputs.GetValue(input, static _ => new());
+        bool changed = data.Frame == 0 || data.Value != next;
+        data.Value = next;
+        data.Frame = Identity;
+        if (!changed) return;
         foreach (GraphIdentity access in StructureIndex.ParameterInputAccesses.GetValueOrDefault(input, []))
             _executor.ChangeAccess(access);
         _executor.ChangeParameterInput(input);
@@ -1509,9 +1600,9 @@ internal sealed partial class RenderGraphFrameState
 
     internal ParameterInputValue ResolveParameterInput(GraphParameterInput input)
     {
-        bool found = _parameterInputs.TryGetValue(input, out ParameterInputValue value);
+        bool found = _parameterInputs.TryGetValue(input, out InputData<ParameterInputValue>? data) && data.Frame == Identity;
         DevelopmentCheck.Require(found, "A shader parameter input has no value for this frame.");
-        return value;
+        return found ? data!.Value : default;
     }
 }
 

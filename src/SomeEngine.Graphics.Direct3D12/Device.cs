@@ -689,6 +689,20 @@ internal sealed unsafe partial class D3D12Backend
                     RecordReleaseFailure(ChildDetachFailure);
             }
 
+            // Child disposal can enqueue presentation and capability retirements.
+            // Their completion must be collected before destroying native queues.
+            foreach (D3D12Queue queue in _queues.Values)
+            {
+                try
+                {
+                    queue.QuiescePayloads();
+                }
+                catch (Exception exception)
+                {
+                    RecordReleaseFailure(exception);
+                }
+            }
+
             if (_retainedCommandPayloadHead is not null ||
                 _children.HasRetainedFailures ||
                 TeardownFailure is not null)
@@ -1162,6 +1176,14 @@ internal sealed unsafe partial class D3D12Backend
 
         internal QueueCompletion SignalCompletionUnderGate()
         {
+            if (ResourceTrace.GetCompletedValue(Fence) == ulong.MaxValue)
+            {
+                throw PublishDeviceLoss(
+                    _device,
+                    DxgiErrorDeviceRemoved,
+                    "D3D12 reported the device-removal completion sentinel.",
+                    DxgiErrorDeviceRemoved);
+            }
             if (_nextCompletion == ulong.MaxValue)
                 throw new InvalidOperationException("The Queue completion domain is exhausted.");
             ulong value = _nextCompletion;

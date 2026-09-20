@@ -95,7 +95,9 @@ float EvaluateDistanceAttenuation(float distanceSq, float range)
     if (distanceSq >= rangeSq)
         return 0.0;
 
-    return 1.0 / max(distanceSq, MIN_DISTANCE_SQ);
+    float relativeDistanceSq = distanceSq / rangeSq;
+    float fade = 1.0 - relativeDistanceSq * relativeDistanceSq;
+    return fade * fade / max(distanceSq, MIN_DISTANCE_SQ);
 }
 
 /// Evaluate Cook-Torrance BRDF for a single point light.

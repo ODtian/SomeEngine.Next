@@ -9,14 +9,22 @@ public sealed record VirtualShadowMapSettings
     public uint VirtualResolution { get; init; } = 16_384;
     public uint AtlasSize { get; init; } = 4_096;
     public uint PageSize { get; init; } = 128;
-    public uint CoarsePageShift => checked((uint)BitOperations.Log2(VirtualPagesPerRow));
     public uint MaxShadowLights { get; init; } = 4;
-    public uint DirectionalClipmapLevels { get; init; } = 6;
+    public uint DirectionalClipmapLevels { get; init; } = 17;
     public int DirectionalFirstClipmapLevel { get; init; } = 6;
-    public float DirectionalResolutionLodBias { get; init; } = -0.5f;
+    public int DirectionalFirstCoarseClipmapLevel { get; init; } = 15;
+    public int DirectionalLastCoarseClipmapLevel { get; init; } = 18;
+    public float DirectionalResolutionLodBias { get; init; }
+    public float LocalResolutionLodBias { get; init; }
+    public bool DynamicResolutionEnabled { get; init; } = true;
+    public uint DynamicResolutionTargetRasterWork { get; init; } = 250_000;
+    public float DynamicResolutionPagePoolLoadStart { get; init; } = 0.85f;
+    public float DynamicResolutionMaxDirectionalLodBias { get; init; } = 2.0f;
+    public float DynamicResolutionMaxLocalLodBias { get; init; } = 2.0f;
+    public bool DirectionalReceiverMask { get; init; } = true;
+    public bool LocalReceiverMask { get; init; } = true;
     public float DepthBias { get; init; } = 0.0005f;
     public float NormalBias { get; init; } = 0.01f;
-    public float DirectionalWorldExtent { get; init; } = 256.0f;
     public float DirectionalLightDistance { get; init; } = 500.0f;
     public float DirectionalNearPlane { get; init; } = 0.1f;
     public float DirectionalFarPlane { get; init; } = 1000.0f;
@@ -28,20 +36,102 @@ public sealed record VirtualShadowMapSettings
 
     public uint VirtualPagesPerRow => VirtualResolution / PageSize;
     public uint VirtualPagesPerView => checked(VirtualPagesPerRow * VirtualPagesPerRow);
-    public uint CoarsePageScale => 1u << checked((int)CoarsePageShift);
-    public uint CoarseActivePagesPerRow =>
-        checked(((VirtualPagesPerRow + CoarsePageScale - 1u) / CoarsePageScale) + 1u);
-    public uint CoarseTablePagesPerRow =>
-        BitOperations.RoundUpToPowerOf2(CoarseActivePagesPerRow);
-    public uint CoarsePagesPerView => checked(CoarseTablePagesPerRow * CoarseTablePagesPerRow);
+    public uint MipLevelCount => checked((uint)BitOperations.Log2(VirtualPagesPerRow) + 1u);
+    public uint PageTableEntriesPerView
+    {
+        get
+        {
+            uint result = 0u;
+            for (uint mip = 0u; mip < MipLevelCount; mip++)
+            {
+                uint dimension = PageTableMipPagesPerRow(mip);
+                result = checked(result + dimension * dimension);
+            }
+            return result;
+        }
+    }
+    public uint PageHierarchyWordsPerView
+    {
+        get
+        {
+            uint result = 0u;
+            for (uint mip = 0u; mip < MipLevelCount; mip++)
+                result = checked(result + PageHierarchyMipWordCount(mip));
+            return result;
+        }
+    }
     public uint PhysicalPagesPerRow => AtlasSize / PageSize;
     public uint MaxPhysicalPages => checked(PhysicalPagesPerRow * PhysicalPagesPerRow);
+
+    public uint PageTableMipPagesPerRow(uint mip)
+    {
+        if (mip >= MipLevelCount)
+            throw new ArgumentOutOfRangeException(nameof(mip));
+        return Math.Max(VirtualPagesPerRow >> checked((int)mip), 1u);
+    }
+
+    public uint PageTableMipOffset(uint mip)
+    {
+        if (mip >= MipLevelCount)
+            throw new ArgumentOutOfRangeException(nameof(mip));
+        uint result = 0u;
+        for (uint level = 0u; level < mip; level++)
+        {
+            uint dimension = PageTableMipPagesPerRow(level);
+            result = checked(result + dimension * dimension);
+        }
+        return result;
+    }
+
+    public uint PageHierarchyMipOffset(uint mip)
+    {
+        if (mip >= MipLevelCount)
+            throw new ArgumentOutOfRangeException(nameof(mip));
+        uint result = 0u;
+        for (uint level = 0u; level < mip; level++)
+            result = checked(result + PageHierarchyMipWordCount(level));
+        return result;
+    }
+
+    public uint PageHierarchyLevelOffset(uint mip, uint hierarchyLevel)
+    {
+        if (mip >= MipLevelCount)
+            throw new ArgumentOutOfRangeException(nameof(mip));
+        uint dimension = PageTableMipPagesPerRow(mip);
+        uint levelCount = checked((uint)BitOperations.Log2(dimension) + 1u);
+        if (hierarchyLevel >= levelCount)
+            throw new ArgumentOutOfRangeException(nameof(hierarchyLevel));
+
+        uint result = PageHierarchyMipOffset(mip);
+        for (uint level = 0u; level < hierarchyLevel; level++)
+        {
+            result = checked(result +
+                dimension * ((dimension + 31u) / 32u));
+            dimension = Math.Max(dimension >> 1, 1u);
+        }
+        return result;
+    }
+
+    private uint PageHierarchyMipWordCount(uint mip)
+    {
+        uint dimension = PageTableMipPagesPerRow(mip);
+        uint result = 0u;
+        while (true)
+        {
+            result = checked(result +
+                dimension * ((dimension + 31u) / 32u));
+            if (dimension == 1u)
+                return result;
+            dimension >>= 1;
+        }
+    }
 
     public void Validate()
     {
         if (!BitOperations.IsPow2(VirtualResolution) ||
             !BitOperations.IsPow2(AtlasSize) ||
             !BitOperations.IsPow2(PageSize) ||
+            PageSize < 8u ||
             PageSize > AtlasSize ||
             AtlasSize > VirtualResolution ||
             VirtualResolution % PageSize != 0 ||
@@ -56,8 +146,6 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(DepthBias));
         if (!float.IsFinite(NormalBias) || NormalBias < 0.0f)
             throw new ArgumentOutOfRangeException(nameof(NormalBias));
-        if (!float.IsFinite(DirectionalWorldExtent) || DirectionalWorldExtent <= 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(DirectionalWorldExtent));
         if (!float.IsFinite(DirectionalLightDistance) || DirectionalLightDistance <= 0.0f)
             throw new ArgumentOutOfRangeException(nameof(DirectionalLightDistance));
         if (!float.IsFinite(DirectionalNearPlane) ||
@@ -79,15 +167,37 @@ public sealed record VirtualShadowMapSettings
             throw new ArgumentOutOfRangeException(nameof(FilterSampleCount));
         if (MaxShadowLights is 0 or > 16)
             throw new ArgumentOutOfRangeException(nameof(MaxShadowLights));
-        if (DirectionalClipmapLevels is 0 or > 16)
+        if (DirectionalClipmapLevels is 0 or > 32)
             throw new ArgumentOutOfRangeException(nameof(DirectionalClipmapLevels));
         if (DirectionalFirstClipmapLevel is < -32 or > 32)
             throw new ArgumentOutOfRangeException(nameof(DirectionalFirstClipmapLevel));
+        if (DirectionalFirstCoarseClipmapLevel is < -32 or > 32)
+            throw new ArgumentOutOfRangeException(nameof(DirectionalFirstCoarseClipmapLevel));
+        if (DirectionalLastCoarseClipmapLevel is < -32 or > 32 ||
+            DirectionalLastCoarseClipmapLevel < DirectionalFirstCoarseClipmapLevel)
+            throw new ArgumentOutOfRangeException(nameof(DirectionalLastCoarseClipmapLevel));
         if (!float.IsFinite(DirectionalResolutionLodBias))
             throw new ArgumentOutOfRangeException(nameof(DirectionalResolutionLodBias));
+        if (!float.IsFinite(LocalResolutionLodBias))
+            throw new ArgumentOutOfRangeException(nameof(LocalResolutionLodBias));
+        if (DynamicResolutionTargetRasterWork == 0u)
+            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionTargetRasterWork));
+        if (!float.IsFinite(DynamicResolutionPagePoolLoadStart) ||
+            DynamicResolutionPagePoolLoadStart < 0.0f ||
+            DynamicResolutionPagePoolLoadStart >= 1.0f)
+            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionPagePoolLoadStart));
+        if (!float.IsFinite(DynamicResolutionMaxDirectionalLodBias) ||
+            DynamicResolutionMaxDirectionalLodBias < 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxDirectionalLodBias));
+        if (!float.IsFinite(DynamicResolutionMaxLocalLodBias) ||
+            DynamicResolutionMaxLocalLodBias < 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(DynamicResolutionMaxLocalLodBias));
 
-        if (VirtualPagesPerRow < 2u)
+        if (MipLevelCount > 16u)
             throw new ArgumentOutOfRangeException(nameof(VirtualResolution),
-                "Virtual shadows require a finer level above the full-projection fallback page.");
+                "Virtual-shadow mip masks support at most 16 levels.");
+        if (VirtualPagesPerRow < 4u || (VirtualPagesPerRow & 3u) != 0u)
+            throw new ArgumentOutOfRangeException(nameof(VirtualResolution),
+                "Directional clipmap scrolling requires a virtual page dimension divisible by four.");
     }
 }

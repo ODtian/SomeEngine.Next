@@ -99,11 +99,9 @@ public ref struct RasterPassCommandScope
     public void SetShadingRate(ShadingRate rate, ShadingRateCombiner primitiveCombiner,
         ShadingRateCombiner imageCombiner) =>
         _frame.Backend.SetShadingRate(_context, rate, primitiveCombiner, imageCombiner);
-    public void SetShadingRateImage(Texture? texture)
-    {
-        if (texture is not null) _frame.Executor.ValidateTexture(_passIndex, texture, null, false);
-        _frame.Backend.SetShadingRateImage(_context, texture);
-    }
+    /// <summary>The raster declaration selects this image before rendering begins.</summary>
+    public void SetShadingRateImage(Texture? texture) =>
+        _frame.Executor.ValidateShadingRateImage(_passIndex, texture);
     public void BeginEvent(ReadOnlySpan<byte> utf8Label)
     {
         _frame.Backend.BeginEvent(_context, utf8Label);
@@ -346,8 +344,7 @@ public ref struct CopyPassCommandScope
     }
     public void CopyBufferToTexture(in BufferTextureCopy copy)
     {
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), false);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, false);
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), true);
         _frame.Backend.CopyBufferToTexture(_context, copy);
@@ -356,8 +353,7 @@ public ref struct CopyPassCommandScope
     {
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), false);
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), true);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, true);
         _frame.Backend.CopyTextureToBuffer(_context, copy);
     }
     public void CopyTexture(in TextureCopy copy)
@@ -429,12 +425,6 @@ public ref struct CopyPassCommandScope
         DevelopmentCheck.Require(_eventDepth == 0, "Pass events are not balanced.");
     }
 
-    private static ulong EstimateBufferTextureBytes(in BufferTextureCopy copy)
-    {
-        uint rows = Math.Max(copy.Height, 1);
-        uint depth = Math.Max(copy.Depth, 1);
-        return checked((ulong)Math.Max(copy.BufferRowPitch, 1) * rows * depth);
-    }
 }
 
 public ref struct GeneralPassCommandScope
@@ -545,8 +535,7 @@ public ref struct GeneralPassCommandScope
     }
     public void CopyBufferToTexture(in BufferTextureCopy copy)
     {
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), write: false);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, write: false);
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), write: true);
         _frame.Backend.CopyBufferToTexture(_context, copy);
@@ -555,8 +544,7 @@ public ref struct GeneralPassCommandScope
     {
         _frame.Executor.ValidateTexture(_passIndex, copy.Texture,
             new TextureSubresourceRange(copy.MipLevel, 1, copy.ArrayLayer, 1, copy.Aspect), write: false);
-        _frame.Executor.ValidateBuffer(_passIndex, copy.Buffer,
-            new BufferRange(copy.BufferOffset, EstimateBufferTextureBytes(copy)), write: true);
+        _frame.Executor.ValidateTextureCopyBuffer(_passIndex, copy, write: true);
         _frame.Backend.CopyTextureToBuffer(_context, copy);
     }
     public void CopyTexture(in TextureCopy copy)
@@ -748,11 +736,5 @@ public ref struct GeneralPassCommandScope
         _frame.Executor.ValidateRawRegionsCompleted(_passIndex, _nextRegion);
     }
 
-    private static ulong EstimateBufferTextureBytes(in BufferTextureCopy copy)
-    {
-        uint rows = Math.Max(copy.Height, 1);
-        uint depth = Math.Max(copy.Depth, 1);
-        return checked((ulong)Math.Max(copy.BufferRowPitch, 1) * rows * depth);
-    }
 }
 

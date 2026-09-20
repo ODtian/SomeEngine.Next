@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Graphics;
@@ -30,6 +30,7 @@ public sealed partial class ClusterPipelineSystem
     private Vector3[] _scenePositions = [];
     private uint[] _sceneRemap = [];
     private uint[] _sceneInstances = [];
+    private (bool Geometry, bool Targets)? _geometryPassesEnabled;
 
     private void InstallSceneBounds(ref RenderGraphEdit graph)
     {
@@ -63,9 +64,10 @@ public sealed partial class ClusterPipelineSystem
         _ = pass.Bind(graph.CreateBufferUav(_instanceWorldBounds, structureStride: 16), PipelineSync.ComputeShading,
             GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         _sceneBatch = null;
+        _geometryPassesEnabled = null;
     }
 
-    private void BindSceneBounds(ref RenderGraphFrame graph, RenderInstanceBatch batch)
+    private void BindSceneBounds(ref RenderGraphFrame graph, RenderInstanceBatch batch, bool hasTargetViews)
     {
         bool hasPrevious = ReferenceEquals(_sceneBatch, batch);
         bool changed = !hasPrevious || _sceneInstanceRevision != batch.ContentRevision || _sceneGeometryRevision != GeometryRevision;
@@ -83,12 +85,13 @@ public sealed partial class ClusterPipelineSystem
                 _instanceLayout.Resolve<RenderTransform>(RenderInstanceTransformProperties.CurrentTransformKey), _sceneTransforms.AsSpan());
             for (int index = 0; index < count; index++)
                 _scenePositions[index] = _sceneTransforms[index].Position;
-            Meshopt.SpatialSortRemap(_sceneRemap, MemoryMarshal.Cast<Vector3, float>(_scenePositions), 12u);
+            if (count != 0)
+                Meshopt.SpatialSortRemap(_sceneRemap, MemoryMarshal.Cast<Vector3, float>(_scenePositions), 12u);
             for (uint index = 0; index < count; index++)
                 _sceneInstances[_sceneRemap[index]] = index;
         }
         graph.SetBufferInput(_frameSceneInstances, graph.Upload<uint>(
-            _sceneInstances, BufferUsages.ShaderRead, "Cluster spatial instance indices"));
+            _sceneInstances.Length == 0 ? [0u] : _sceneInstances, BufferUsages.ShaderRead, "Cluster spatial instance indices"));
         Span<byte> constants = stackalloc byte[256];
         constants.Clear();
         var uniforms = new ClusterSceneUniforms { InstanceCount = checked((uint)batch.InstanceCount), HasPreviousBounds = hasPrevious ? 1u : 0u };
@@ -96,8 +99,72 @@ public sealed partial class ClusterPipelineSystem
         graph.SetBufferInput(_sceneUniforms, graph.Upload<byte>(constants, BufferUsages.Constant, "Cluster scene bounds parameters"));
         graph.SetPassData(_sceneBoundsPass, new ClusterDispatchParameters(new DispatchArguments(
             (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1)));
-        graph.SetPassEnabled(_sceneBoundsPass, changed && _outputs.Geometry.HasBvhData);
+        bool hasGeometry = batch.InstanceCount != 0 && _outputs.Geometry.HasBvhData;
+        graph.SetPassEnabled(_sceneBoundsPass, changed && hasGeometry);
+        SetGeometryPassesEnabled(ref graph, hasGeometry, hasGeometry && hasTargetViews);
         graph.SetPassEnabled(_sceneInitializePass, _sceneBatch is null);
+    }
+
+    private void SetGeometryPassesEnabled(ref RenderGraphFrame graph, bool hasGeometry, bool hasTargetGeometry)
+    {
+        if (_geometryPassesEnabled == (hasGeometry, hasTargetGeometry)) return;
+        graph.SetPassEnabled(_traversalSeedPass, hasGeometry);
+        foreach (GraphPassId pass in _traversalLevelPasses)
+            graph.SetPassEnabled(pass, hasGeometry);
+        foreach (GraphPassId pass in _primaryPostTraversalLevelPasses)
+            graph.SetPassEnabled(pass, hasGeometry);
+        graph.SetPassEnabled(_primaryDeferredResumePass, hasGeometry);
+        graph.SetPassEnabled(_phaseOneCullPass, hasGeometry);
+        graph.SetPassEnabled(_phaseTwoCullPass, hasGeometry);
+        if (_continuationTraversalSeedPass != default)
+        {
+            graph.SetPassEnabled(_continuationResetPass, hasTargetGeometry);
+            graph.SetPassEnabled(_continuationDeferredResetPass, hasTargetGeometry);
+            graph.SetPassEnabled(_continuationTraversalSeedPass, hasTargetGeometry);
+            foreach (GraphPassId pass in _continuationTraversalLevelPasses)
+                graph.SetPassEnabled(pass, hasTargetGeometry);
+            foreach (GraphPassId pass in _continuationPostTraversalLevelPasses)
+                graph.SetPassEnabled(pass, hasTargetGeometry);
+            graph.SetPassEnabled(_continuationDeferredResumePass, hasTargetGeometry);
+            graph.SetPassEnabled(_continuationCullPass, hasTargetGeometry);
+            graph.SetPassEnabled(_continuationPostCullPass, hasTargetGeometry);
+        }
+        for (int index = 0; index < _rasterBinning.Length; index++)
+        {
+            RasterBinning? binning = _rasterBinning[index];
+            if (binning is null) continue;
+            bool enabled = index < 2 ? hasGeometry : hasTargetGeometry;
+            graph.SetPassEnabled(binning.Count, enabled);
+            graph.SetPassEnabled(binning.Scatter, enabled);
+        }
+        foreach (RasterEpoch epoch in _rasterEpochs.Values)
+        {
+            bool enabled = epoch.PolicyTarget ? hasTargetGeometry : hasGeometry;
+            if (epoch.PolicyTarget)
+                foreach (GraphPassId pass in epoch.Work.Passes)
+                    graph.SetPassEnabled(pass, enabled);
+            foreach (RasterBin bin in epoch.Bins.Values)
+                foreach (GraphPassId pass in bin.Passes.Passes)
+                    graph.SetPassEnabled(pass, enabled);
+            foreach (GraphPassId pass in epoch.Patches.Passes)
+                graph.SetPassEnabled(pass, enabled);
+            foreach (TessellationGroup group in epoch.Splits.Values)
+            {
+                if (epoch.PolicyTarget)
+                    foreach (GraphPassId pass in group.Reset.Passes)
+                        graph.SetPassEnabled(pass, enabled);
+                foreach (GraphPassId pass in group.Split.Passes)
+                    graph.SetPassEnabled(pass, enabled);
+                foreach (TessellationSeed seed in group.Seeds.Values)
+                    foreach (GraphPassId pass in seed.Passes.Passes)
+                        graph.SetPassEnabled(pass, enabled);
+            }
+        }
+        graph.SetPassEnabled(_shadeCountPass, hasGeometry);
+        graph.SetPassEnabled(_shadeScatterPass, hasGeometry);
+        foreach (ShadeGroup group in _shadeGroups.Values)
+            graph.SetPassEnabled(group.Pass, hasGeometry);
+        _geometryPassesEnabled = (hasGeometry, hasTargetGeometry);
     }
 
     private void BindSceneSeed(ref RenderGraphEdit graph, ref PassDefinition pass)

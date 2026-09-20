@@ -1,4 +1,4 @@
-using SlangShaderSharp;
+﻿using SlangShaderSharp;
 
 namespace SomeEngine.Graphics.Vulkan;
 
@@ -162,7 +162,6 @@ internal sealed unsafe partial class VulkanBackend
         VkShaderModule[] modules = new VkShaderModule[build.Stages.Length];
         nint[] names = new nint[build.Stages.Length];
         PipelineShaderStageCreateInfo[] stages = new PipelineShaderStageCreateInfo[build.Stages.Length];
-        var activeEntries = new VulkanSpirvEntryBindings[build.Stages.Length];
         try
         {
             for (int index = 0; index < stages.Length; index++)
@@ -174,9 +173,6 @@ internal sealed unsafe partial class VulkanBackend
                     build.Stages[index].Entry,
                     build.Stages[index].SlangStage,
                     "ray tracing");
-                activeEntries[index] = new VulkanSpirvEntryBindings(
-                    build.Stages[index].Entry,
-                    shader.ActiveBindings);
                 modules[index] = CreateShaderModule(device, shader.Code);
                 names[index] = SilkMarshal.StringToPtr(shader.Name);
                 stages[index] = new PipelineShaderStageCreateInfo
@@ -187,7 +183,6 @@ internal sealed unsafe partial class VulkanBackend
                     PName = (byte*)names[index],
                 };
             }
-            layout.ActivateEntryBindings(activeEntries, includeEntrySlots: false);
             fixed (PipelineShaderStageCreateInfo* stagePointer = stages)
             fixed (RayTracingShaderGroupCreateInfoKHR* groupPointer = build.Groups)
             {
@@ -345,11 +340,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanRayTracingPipelineState pipeline)
     {
         if (desc.RayGenerationRecordCount == 0 || desc.MaximumRecordSize == 0 ||
-            desc.MaximumRecordSize > pipeline.MaximumStride ||
-            desc.RayGenerationRecordCount > pipeline.GroupCount ||
-            desc.MissRecordCount > pipeline.GroupCount ||
-            desc.HitRecordCount > pipeline.GroupCount ||
-            desc.CallableRecordCount > pipeline.GroupCount)
+            desc.MaximumRecordSize > pipeline.MaximumStride)
             throw new ArgumentOutOfRangeException(nameof(desc));
     }
 

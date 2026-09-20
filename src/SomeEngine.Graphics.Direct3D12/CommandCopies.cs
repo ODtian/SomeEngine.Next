@@ -126,6 +126,21 @@ internal sealed unsafe partial class D3D12Backend
                 "Texture copies require matching sample counts and compatible format families.",
                 nameof(copy));
         }
+        bool entireSubresource = source.Info.SampleCount > 1 ||
+            copy.SourceAspect != TextureAspects.Color;
+        if (entireSubresource &&
+            (copy.SourceX != 0 || copy.SourceY != 0 || copy.SourceZ != 0 ||
+             copy.DestinationX != 0 || copy.DestinationY != 0 || copy.DestinationZ != 0 ||
+             copy.Width != Math.Max(1u, source.Info.Width >> (int)copy.SourceMipLevel) ||
+             copy.Height != Math.Max(1u, source.Info.Height >> (int)copy.SourceMipLevel) ||
+             copy.Depth != Math.Max(1u, source.Info.Depth >> (int)copy.SourceMipLevel) ||
+             copy.Width != Math.Max(1u, destination.Info.Width >> (int)copy.DestinationMipLevel) ||
+             copy.Height != Math.Max(1u, destination.Info.Height >> (int)copy.DestinationMipLevel) ||
+             copy.Depth != Math.Max(1u, destination.Info.Depth >> (int)copy.DestinationMipLevel)))
+        {
+            throw new ArgumentException(
+                "Multisampled and depth/stencil copies must cover both complete subresources.", nameof(copy));
+        }
         TextureCopyLocation sourceLocation = CreateTextureCopyLocation(
             source,
             copy.SourceMipLevel,
@@ -153,7 +168,7 @@ internal sealed unsafe partial class D3D12Backend
                     copy.DestinationY,
                     copy.DestinationZ,
                     &sourceLocation,
-                    &sourceBox);
+                    entireSubresource ? null : &sourceBox);
     }
 
     public void ResolveTexture(CommandContext context, in TextureResolve resolve)

@@ -1,6 +1,6 @@
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
     private const string DefaultScopeResourceName = "scope resource";
     private const string DefaultScopeTokenName = "scope token";
@@ -79,13 +79,28 @@ public sealed partial class Scheduler
 
     private readonly struct ScopeToken
     {
-        private readonly JobHandle _handle;
-        internal int Index => _handle.Index;
-        internal int Version => _handle.Version;
-        internal long Generation => _handle.Generation;
+        internal readonly int Index;
+        internal readonly int Version;
+        internal readonly long Generation;
 
-        private ScopeToken(JobHandle handle) => _handle = handle;
-        internal static ScopeToken FromHandle(JobHandle handle) => new(handle);
-        internal JobHandle ToHandle() => _handle;
+        private ScopeToken(int index, int version, long generation)
+        {
+            Index = index;
+            Version = version;
+            Generation = generation;
+        }
+
+        internal static ScopeToken FromHandle(JobHandle handle)
+        {
+            return new ScopeToken(handle.Index, handle.Version, handle.Generation);
+        }
+
+        internal JobHandle ToHandle()
+        {
+            return new JobHandle(Index, Version, Generation);
+        }
     }
 }
+
+
+

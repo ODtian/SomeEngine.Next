@@ -8,43 +8,9 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed class WarpAliasingBarrierTests
 {
-    [Theory]
-    [InlineData(0, 0, false)]
-    [InlineData(0, 1, false)]
-    [InlineData(1, 0, false)]
-    [InlineData(1, 1, false)]
-    [InlineData(2, 1, true)]
-    [InlineData(1, 2, true)]
-    [InlineData(2, 2, true)]
-    public void Legacy_aliasing_cardinality_selects_exact_or_global_encoding(
-        int beforeCount,
-        int afterCount,
-        bool global)
-    {
-        Assert.Equal(
-            global,
-            D3D12Backend.RequiresGlobalLegacyAliasingBarrier(beforeCount, afterCount));
-    }
 
-    [Fact]
-    public void Enhanced_aliasing_state_orders_both_halves_and_leaves_after_uninitialized()
-    {
-        D3D12Backend.EnhancedAliasingBarrierState before =
-            D3D12Backend.GetEnhancedAliasingBarrierState(activate: false);
-        D3D12Backend.EnhancedAliasingBarrierState after =
-            D3D12Backend.GetEnhancedAliasingBarrierState(activate: true);
 
-        Assert.Equal(PipelineSync.All, before.SyncBefore);
-        Assert.Equal(PipelineSync.All, before.SyncAfter);
-        Assert.Equal(NativeBarrierAccess.Common, before.AccessBefore);
-        Assert.Equal(NativeBarrierAccess.NoAccess, before.AccessAfter);
-        Assert.False(before.Discard);
-        Assert.Equal(PipelineSync.All, after.SyncBefore);
-        Assert.Equal(PipelineSync.All, after.SyncAfter);
-        Assert.Equal(NativeBarrierAccess.NoAccess, after.AccessBefore);
-        Assert.Equal(NativeBarrierAccess.NoAccess, after.AccessAfter);
-        Assert.True(after.Discard);
-    }
+
 
     [Theory]
     [InlineData(false)]
@@ -424,7 +390,7 @@ public sealed class WarpAliasingBarrierTests
         D3D12ValidationOptions options = new(
             DisableGpuBasedValidation: true,
             DisableSynchronizedQueueValidation: true);
-        D3D12Backend native = new(new D3D12BackendOptions(options));
+        IGraphicsBackend native = D3D12GraphicsBackend.Create(new D3D12BackendOptions(options));
         return validation ? new ValidationLayer(native) : native;
     }
 

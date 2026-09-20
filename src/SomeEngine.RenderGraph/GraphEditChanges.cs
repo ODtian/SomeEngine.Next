@@ -24,6 +24,7 @@ internal sealed class GraphEditChanges
     internal readonly HashSet<GraphIdentity> QueryPools = [];
     internal readonly HashSet<GraphIdentity> ShaderTables = [];
     internal readonly HashSet<GraphIdentity> Views = [];
+    internal readonly HashSet<GraphIdentity> ReleasedViews = [];
     internal readonly HashSet<GraphIdentity> Passes = [];
     internal readonly HashSet<GraphIdentity> AffectedPasses = [];
     internal readonly HashSet<GraphIdentity> Accesses = [];

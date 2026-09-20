@@ -4,13 +4,13 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler : IDisposable
+internal sealed partial class Scheduler : IDisposable
 {
     private const string InvalidJobPriorityMessage = "Job priority is invalid.";
     private const string InvalidBatchSizeMessage = "Batch size must be positive.";
     private readonly JobRuntimeConfig _config;
     private readonly RuntimeCounters _counters;
-    private readonly CompletionStore _completion;
+    private readonly ICompletionStore _completion;
     private readonly IDependencyStore _dependencies;
     private readonly IExecutionStore _execution;
     private readonly IScopeStore _scopes;
@@ -20,22 +20,6 @@ public sealed partial class Scheduler : IDisposable
     private readonly Dictionary<SubmissionResourceIdentity, IJobSubmissionObserver> _submissionObservers = [];
     private readonly IWorkQueue _workQueue;
     private int _managedPayloadPolicy;
-    private static long s_nextGeneration;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, WorkStream> _streams = new();
-
-    [ThreadStatic]
-    private static Scheduler? s_executing;
-
-    internal static Scheduler? Executing => s_executing;
-
-    public Scheduler(JobRuntimeConfig? config = null)
-        : this(config ?? JobRuntimeConfig.Default, Interlocked.Increment(ref s_nextGeneration))
-    {
-    }
-
-    private WorkStream<TItem> GetWorkStream<TItem>()
-        where TItem : struct, IWorkStreamItem<TItem> =>
-        (WorkStream<TItem>)_streams.GetOrAdd(typeof(TItem), static _ => new WorkStream<TItem>());
 
     [ThreadStatic]
     private static ScopeToken s_currentScope;
@@ -48,7 +32,7 @@ public sealed partial class Scheduler : IDisposable
         Generation = generation;
         _config = config;
         _counters = new RuntimeCounters(config.EnableCounters);
-        var completion = new CompletionStore(this, config, _counters, generation);
+        var completion = new CompletionStore(config, _counters, generation);
         _completion = completion;
         _dependencies = completion;
         _execution = completion;
@@ -82,13 +66,13 @@ public sealed partial class Scheduler : IDisposable
         int Version,
         long Generation);
 
-    public JobSafetyMode SafetyMode
+    internal JobSafetyMode SafetyMode
     {
         get => _resources.SafetyMode;
         set => _resources.SafetyMode = value;
     }
 
-    public ManagedPayloadPolicy ManagedPayloadPolicy
+    internal ManagedPayloadPolicy ManagedPayloadPolicy
     {
         get => (ManagedPayloadPolicy)Volatile.Read(ref _managedPayloadPolicy);
         set
@@ -104,7 +88,7 @@ public sealed partial class Scheduler : IDisposable
 
     internal int WorkerCount => _config.WorkerCount;
 
-    public JobRuntimeStats GetStats()
+    internal JobRuntimeStats GetStats()
     {
         return _counters.Snapshot();
     }
@@ -128,47 +112,47 @@ public sealed partial class Scheduler : IDisposable
     internal bool TryReclaimLatencyWork(long sequence) =>
         _workQueue.TryReclaimLatencyWork(sequence);
 
-    public JobHandle Schedule<T>(in T job, JobHandle dependency = default)
+    internal JobHandle Schedule<T>(in T job, JobHandle dependency)
         where T : struct, IJob
     {
         return Schedule(job, JobScheduleOptions.Default, dependency);
     }
 
-    public JobHandle Schedule<T>(in T job, JobScheduleOptions options, JobHandle dependency = default)
+    internal JobHandle Schedule<T>(in T job, JobScheduleOptions options, JobHandle dependency)
         where T : struct, IJob
     {
         return Schedule(job, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
     }
 
-    public JobHandle Schedule<T>(in T job, JobResourceAccess access, JobHandle dependency = default)
+    internal JobHandle Schedule<T>(in T job, JobResourceAccess access, JobHandle dependency)
         where T : struct, IJob
     {
         ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
         return Schedule(job, accesses, JobScheduleOptions.Default, dependency);
     }
 
-    public JobHandle Schedule<T>(
+    internal JobHandle Schedule<T>(
         in T job,
         JobResourceAccess access,
         JobScheduleOptions options,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJob
     {
         ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
         return Schedule(job, accesses, options, dependency);
     }
 
-    public JobHandle Schedule<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses, JobHandle dependency = default)
+    internal JobHandle Schedule<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses, JobHandle dependency)
         where T : struct, IJob
     {
         return Schedule(job, accesses, JobScheduleOptions.Default, dependency);
     }
 
-    public JobHandle Schedule<T>(
+    internal JobHandle Schedule<T>(
         in T job,
         ReadOnlySpan<JobResourceAccess> accesses,
         JobScheduleOptions options,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJob
     {
         return ScheduleCore(
@@ -179,7 +163,7 @@ public sealed partial class Scheduler : IDisposable
             ignoreExplicitDependencyFault: false);
     }
 
-    public JobHandle ScheduleFinally<T>(
+    internal JobHandle ScheduleFinally<T>(
         in T job,
         JobScheduleOptions options,
         JobHandle dependency)
@@ -201,8 +185,6 @@ public sealed partial class Scheduler : IDisposable
         bool ignoreExplicitDependencyFault)
         where T : struct, IJob
     {
-        using Submission submissionScope = EnterSubmission();
-        ValidateDependency(dependency);
         JobPayloadLane lane = BeginSchedule<T>(options);
         JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
         bool hasResourceAccesses = accesses.Length != 0;
@@ -301,7 +283,7 @@ public sealed partial class Scheduler : IDisposable
         ref WorkBatch work)
         where T : struct, IJob
     {
-        WorkStream<ScheduledJob<T>> stream = GetWorkStream<ScheduledJob<T>>();
+        WorkStream<ScheduledJob<T>> stream = WorkStream<ScheduledJob<T>>.Instance;
         var scheduled = new ScheduledJob<T>(job, state);
         if (!hasScheduleDependencies)
         {
@@ -338,70 +320,68 @@ public sealed partial class Scheduler : IDisposable
         CancelUnscheduledState(state);
     }
 
-    public JobHandle ScheduleParallel<T>(in T job, int length, int batchSize, JobHandle dependency = default)
+    internal JobHandle ScheduleParallel<T>(in T job, int length, int batchSize, JobHandle dependency)
         where T : struct, IJobParallelFor
     {
         return ScheduleParallel(job, length, batchSize, JobScheduleOptions.Default, dependency);
     }
 
-    public JobHandle ScheduleParallel<T>(
+    internal JobHandle ScheduleParallel<T>(
         in T job,
         int length,
         int batchSize,
         JobScheduleOptions options,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJobParallelFor
     {
         return ScheduleParallel(job, length, batchSize, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
     }
 
-    public JobHandle ScheduleParallel<T>(
+    internal JobHandle ScheduleParallel<T>(
         in T job,
         int length,
         int batchSize,
         JobResourceAccess access,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJobParallelFor
     {
         ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
         return ScheduleParallel(job, length, batchSize, accesses, JobScheduleOptions.Default, dependency);
     }
 
-    public JobHandle ScheduleParallel<T>(
+    internal JobHandle ScheduleParallel<T>(
         in T job,
         int length,
         int batchSize,
         JobResourceAccess access,
         JobScheduleOptions options,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJobParallelFor
     {
         ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
         return ScheduleParallel(job, length, batchSize, accesses, options, dependency);
     }
 
-    public JobHandle ScheduleParallel<T>(
+    internal JobHandle ScheduleParallel<T>(
         in T job,
         int length,
         int batchSize,
         ReadOnlySpan<JobResourceAccess> accesses,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJobParallelFor
     {
         return ScheduleParallel(job, length, batchSize, accesses, JobScheduleOptions.Default, dependency);
     }
 
-    public JobHandle ScheduleParallel<T>(
+    internal JobHandle ScheduleParallel<T>(
         in T job,
         int length,
         int batchSize,
         ReadOnlySpan<JobResourceAccess> accesses,
         JobScheduleOptions options,
-        JobHandle dependency = default)
+        JobHandle dependency)
         where T : struct, IJobParallelFor
     {
-        using Submission submissionScope = EnterSubmission();
-        ValidateDependency(dependency);
         var lane = BeginParallelSchedule<T>(options, batchSize);
         if (length <= 0)
             return dependency;
@@ -521,7 +501,7 @@ public sealed partial class Scheduler : IDisposable
         ref int preparedSlots)
         where T : struct, IJobParallelFor
     {
-        stream = GetWorkStream<ScheduledParallelToken<T>>();
+        stream = WorkStream<ScheduledParallelToken<T>>.Instance;
         group = ParallelJobGroup<T>.Rent(
             job,
             length,
@@ -599,35 +579,34 @@ public sealed partial class Scheduler : IDisposable
 
 }
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
-    public JobResource CreateResource(string? name = null)
+    internal JobResource CreateResource(string? name)
     {
-        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
         return _resources.CreateResource(name);
     }
 
-    public JobResourceToken CreateResourceToken(string? name = null)
+    internal JobResourceToken CreateResourceToken(string? name)
     {
-        using Submission submissionScope = EnterSubmission();
         EnsureCurrentScopeBelongsToThisRuntime();
         return _resources.CreateToken(name);
     }
 
-    public void ReleaseResource(JobResource resource)
+    internal void ReleaseResource(JobResource resource)
     {
         _resources.Release(resource);
     }
 
-    public void ReleaseResourceToken(JobResourceToken token)
+    internal void ReleaseResourceToken(JobResourceToken token)
     {
         _resources.Release(token);
-        lock (_submissionObserverGate)
-            _submissionObservers.Remove(
-                new SubmissionResourceIdentity(ResourceKind.Token, token.Id, token.Version, token.Generation));
     }
 
+    public void Dispose()
+    {
+        _workQueue.Dispose();
+    }
 
     private static int CalculateParallelBatchCount(int length, int batchSize)
     {

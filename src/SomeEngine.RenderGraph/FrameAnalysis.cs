@@ -1,4 +1,4 @@
-namespace SomeEngine.RenderGraph;
+﻿namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
@@ -564,10 +564,10 @@ internal sealed partial class FrameExecutor
         for (int index = 1; index < accesses.Count; index++)
         {
             int value = accesses[index];
-            int ordinal = _scheduledPosition[_accesses[value].PassIndex];
+            long ordinal = _executionOrder.Position(_accesses[value].PassIndex);
             int insertion = index;
             while (insertion > 0 &&
-                   _scheduledPosition[_accesses[accesses[insertion - 1]].PassIndex] > ordinal)
+                   _executionOrder.Position(_accesses[accesses[insertion - 1]].PassIndex) > ordinal)
             {
                 accesses[insertion] = accesses[insertion - 1];
                 insertion--;
@@ -642,7 +642,8 @@ internal sealed partial class FrameExecutor
             {
                 BufferRange range = GraphStructureIndex.ResolveRange(
                     endpoint.Range,
-                    buffer.Description.Size);
+                    buffer.Description.Size,
+                    buffer.Description.Label);
                 _bufferCoordinateScratch[count++] = range.Offset;
                 _bufferCoordinateScratch[count++] = checked(range.Offset + range.Size);
             }
@@ -981,14 +982,17 @@ internal sealed partial class FrameExecutor
     private void ObservePass(int index, in FramePass pass)
     {
         FramePass previous = _passes[index];
+        if (previous.Options.Recording != pass.Options.Recording ||
+            previous.Options.EstimatedRecordingCost != pass.Options.EstimatedRecordingCost)
+            _recordingConfigurationPasses.Add(index);
         if (previous.Identity.IsValid && previous.Kind == pass.Kind && previous.Enabled == pass.Enabled &&
             previous.QueuePolicy == pass.QueuePolicy && previous.Options == pass.Options &&
             previous.DeclarationOrdinal == pass.DeclarationOrdinal) return;
-        _stateUpdatesChanged = true;
+        MarkPassResources(index, _stateConnectionChanges);
         _analysisChanged = true;
         _changedAnalysisPasses.Add(index);
         _scheduleSeeds.Add(index);
-        _recordingChanged = true;
+        ChangeRecording(index);
     }
 
     private void ObserveAccess(int index, in FrameResourceAccess current)
@@ -1010,7 +1014,7 @@ internal sealed partial class FrameExecutor
         _stateUpdateResourcesChanged.Add((kind, index));
         _analysisChanged = true;
         _changedAnalysisResources.Add((kind, index));
-        _changedSynchronizationResources.Add((kind, index));
+        ChangeSynchronization((kind, index));
         _changedLifetimeResources.Add((kind, index));
     }
 
@@ -1028,7 +1032,10 @@ internal sealed partial class FrameExecutor
     private List<int>[] _valueSuccessors = [];
     private readonly HashSet<int> _livenessSeeds = [];
     private readonly HashSet<int> _livenessComponent = [];
-    private readonly HashSet<int> _nextLive = [];
+    private int[] _liveSupport = [];
+    private readonly List<int> _livenessPath = [];
+    private readonly List<int> _livenessPathOffsets = [];
+    private readonly HashSet<int> _livenessVisited = [];
     private readonly HashSet<PassEdge> _changedExecutionEdges = [];
     private readonly HashSet<PassEdge> _activeValueEdges = [];
     private readonly HashSet<PassEdge> _activeOrderEdges = [];
@@ -1084,6 +1091,9 @@ internal sealed partial class FrameExecutor
                 if (previous is null || !previous.Roots.Contains(root)) ChangeRoot(root, 1);
             if (previous is null)
             {
+                // The reused storage may still hold another resource's old hazards after
+                // the last swap. This new resource has contributed no execution edges yet.
+                _collectDependencies.Hazards.Clear();
                 _resourceDependencies.Add(resource, _collectDependencies);
                 _dependencyScratch = new();
             }
@@ -1097,7 +1107,7 @@ internal sealed partial class FrameExecutor
         UpdateLiveness();
         foreach (var resource in _changedHazardResources)
         {
-            MaterializationChanged(resource);
+            MaterializeMissingResource(resource);
             if (!_resourceDependencies.TryGetValue(resource, out ResourceDependencies? previous)) continue;
             _collectDependencies = _dependencyScratch;
             _collectDependencies.Hazards.Clear();
@@ -1180,17 +1190,17 @@ internal sealed partial class FrameExecutor
         if (previous == 0 || count == 0)
         {
             _livenessSeeds.Add(edge.Predecessor);
-            _livenessSeeds.Add(edge.Consumer);
             _changedExecutionEdges.Add(edge);
         }
     }
 
     private void ChangeRoot(int pass, int delta)
     {
-        int count = _rootCounts.GetValueOrDefault(pass) + delta;
+        int previous = _rootCounts.GetValueOrDefault(pass);
+        int count = previous + delta;
         if (count == 0) _rootCounts.Remove(pass);
         else _rootCounts[pass] = count;
-        _livenessSeeds.Add(pass);
+        if (previous == 0 || count == 0) _livenessSeeds.Add(pass);
     }
 
     private void MarkPassResources(int pass, HashSet<(GraphAccessTargetKind Kind, int Index)> resources)
@@ -1207,42 +1217,84 @@ internal sealed partial class FrameExecutor
 
     private void UpdateLiveness()
     {
+        int previousCapacity = _liveSupport.Length;
+        EnsureCapacity(ref _liveSupport, _live.Length);
+        Array.Fill(_liveSupport, -1, previousCapacity, _liveSupport.Length - previousCapacity);
         _livenessComponent.Clear();
         _livenessStack.Clear();
         foreach (int seed in _livenessSeeds)
             if (_livenessComponent.Add(seed)) _livenessStack.Push(seed);
+        bool disableCulling = (_frame.Options.Debug & RenderGraphDebugOptions.DisableCulling) != 0;
         while (_livenessStack.TryPop(out int pass))
         {
-            foreach (int neighbor in _valuePredecessors[pass])
-                if (_livenessComponent.Add(neighbor)) _livenessStack.Push(neighbor);
-            foreach (int neighbor in _valueSuccessors[pass])
-                if (_livenessComponent.Add(neighbor)) _livenessStack.Push(neighbor);
-        }
-        _nextLive.Clear();
-        bool disableCulling = (_frame.Options.Debug & RenderGraphDebugOptions.DisableCulling) != 0;
-        foreach (int pass in _livenessComponent)
-            if (pass < _passes.Count && _passes[pass].Enabled && (disableCulling ||
-                _passes[pass].Options.Culling == PassCullingMode.NeverCull || _rootCounts.ContainsKey(pass)))
+            _livenessComponent.Remove(pass);
+            if (FindLivePath(pass))
             {
-                _nextLive.Add(pass);
-                _livenessStack.Push(pass);
+                for (int index = _livenessPath.Count - 1; index >= 0; index--)
+                {
+                    int node = _livenessPath[index];
+                    _liveSupport[node] = index + 1 < _livenessPath.Count ? _livenessPath[index + 1] : -1;
+                    SetLive(node, true);
+                }
             }
-        while (_livenessStack.TryPop(out int consumer))
-            foreach (int producer in _valuePredecessors[consumer])
-                if (producer < _passes.Count && _passes[producer].Enabled && _nextLive.Add(producer))
-                    _livenessStack.Push(producer);
-        foreach (int pass in _livenessComponent)
+            else
+            {
+                _liveSupport[pass] = -1;
+                SetLive(pass, false);
+            }
+        }
+
+        bool FindLivePath(int seed)
         {
-            bool live = _nextLive.Contains(pass);
-            if (_live[pass] == live) continue;
+            _livenessPath.Clear();
+            _livenessPathOffsets.Clear();
+            _livenessVisited.Clear();
+            if ((uint)seed >= (uint)_passes.Count || !_passes[seed].Enabled) return false;
+            Push(seed);
+            while (_livenessPath.Count != 0)
+            {
+                int last = _livenessPath.Count - 1;
+                int node = _livenessPath[last];
+                if (disableCulling || _passes[node].Options.Culling == PassCullingMode.NeverCull ||
+                    _rootCounts.ContainsKey(node)) return true;
+                int offset = _livenessPathOffsets[last];
+                List<int> consumers = _valueSuccessors[node];
+                if (offset > consumers.Count)
+                {
+                    _livenessPath.RemoveAt(last);
+                    _livenessPathOffsets.RemoveAt(last);
+                    continue;
+                }
+                _livenessPathOffsets[last] = offset + 1;
+                int consumer = offset == 0 ? _liveSupport[node] : consumers[offset - 1];
+                if (consumer < 0 || (uint)consumer >= (uint)_passes.Count || !_passes[consumer].Enabled ||
+                    offset == 0 && !_valueEdgeCounts.ContainsKey(new(node, consumer)) ||
+                    _livenessVisited.Contains(consumer)) continue;
+                Push(consumer);
+            }
+            return false;
+        }
+
+        void Push(int pass)
+        {
+            _livenessVisited.Add(pass);
+            _livenessPath.Add(pass);
+            _livenessPathOffsets.Add(0);
+        }
+
+        void SetLive(int pass, bool live)
+        {
+            if (_live[pass] == live) return;
             _live[pass] = live;
             _scheduleSeeds.Add(pass);
-            _recordingChanged = true;
+            ChangeRecording(pass);
             MarkPassResources(pass, _changedLifetimeResources);
             MarkPassResources(pass, _changedHazardResources);
             foreach (int predecessor in _valuePredecessors[pass]) _changedExecutionEdges.Add(new(predecessor, pass));
             foreach (int consumer in _valueSuccessors[pass]) _changedExecutionEdges.Add(new(pass, consumer));
             if (_orderEdgesByPass.TryGetValue(pass, out HashSet<PassEdge>? orders)) _changedExecutionEdges.UnionWith(orders);
+            foreach (int predecessor in _valuePredecessors[pass])
+                if (_livenessComponent.Add(predecessor)) _livenessStack.Push(predecessor);
         }
     }
 
@@ -1260,7 +1312,7 @@ internal sealed partial class FrameExecutor
             _scheduleSeeds.Add(edge.Predecessor);
             _scheduleSeeds.Add(edge.Consumer);
             _frontierSeeds.Add(edge.Consumer);
-            _recordingChanged = true;
+            ChangeRecording(edge.Consumer);
         }
         if (count == 0)
         {

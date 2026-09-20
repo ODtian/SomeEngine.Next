@@ -1,6 +1,8 @@
 namespace SomeEngine.Graphics.Direct3D12;
 internal static unsafe class RhiTrace
 {
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite ReuseNativeCommands = new("rhi", nameof(ReuseNativeCommands), detail: true);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite EncodeNativeCommands = new("rhi", nameof(EncodeNativeCommands), detail: true);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite CreateWaitEvent = new("native", nameof(CreateWaitEvent), detail: true);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite CloseWaitEvent = new("native", nameof(CloseWaitEvent), detail: true);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite CpuFenceWait = new("wait", nameof(CpuFenceWait));

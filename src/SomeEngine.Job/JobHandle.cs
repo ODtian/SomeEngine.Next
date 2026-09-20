@@ -2,24 +2,22 @@ namespace SomeEngine.Job;
 
 public readonly struct JobHandle
 {
-    internal readonly Scheduler? Scheduler;
     internal readonly int Index;
     internal readonly int Version;
     internal readonly long Generation;
 
-    internal JobHandle(int index, int version, long generation, Scheduler scheduler)
+    internal JobHandle(int index, int version, long generation)
     {
-        Scheduler = scheduler;
         Index = index;
         Version = version;
         Generation = generation;
     }
 
-    public bool IsCompleted => Scheduler?.IsCompleted(this) ?? true;
+    public bool IsCompleted => JobSystem.IsCompleted(this);
 
     public void Complete()
     {
-        Scheduler?.Complete(this);
+        JobSystem.Complete(this);
     }
 }
 

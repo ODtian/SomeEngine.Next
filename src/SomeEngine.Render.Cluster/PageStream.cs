@@ -427,7 +427,8 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             pageId,
             code,
             message);
-        _permanentlyFailedPages.Add(pageId);
+        if (code != PageStreamFailureCode.SourceReadFailed)
+            _permanentlyFailedPages.Add(pageId);
     }
 
     private void PublishSnapshot(PageStreamLifecycle lifecycle)

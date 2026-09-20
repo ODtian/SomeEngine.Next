@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
 
@@ -557,7 +557,7 @@ public sealed partial class ValidationLayer
                     range.Offset > buffer.Info.Size ||
                     range.Size > buffer.Info.Size - range.Offset ||
                     range.Offset % alignment != 0 || range.Size % alignment != 0)
-                    Reject("Bindings", "A direct constant buffer binding requires a contained, aligned Constant buffer range.", buffer.Label);
+                    Reject("Bindings", $"A direct constant buffer binding requires a contained, aligned Constant buffer range: '{buffer.Label}', offset={range.Offset}, size={range.Size}, bufferSize={buffer.Info.Size}, alignment={alignment}, usages={buffer.Info.Usages}.", buffer.Label);
             }
             GraphicsObject? current = resource;
             while (current is not null && current is not Device)

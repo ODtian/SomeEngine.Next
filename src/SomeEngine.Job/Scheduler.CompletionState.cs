@@ -3,9 +3,9 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-public sealed partial class Scheduler
+internal sealed partial class Scheduler
 {
-    private sealed class CompletionState(CompletionStore completion)
+    private sealed class CompletionState
     {
         internal readonly Lock Sync = new();
         internal int Version;
@@ -16,12 +16,8 @@ public sealed partial class Scheduler
         internal int PendingChildren;
         internal int ActiveCompleters;
         internal ScopeToken Parent;
-        internal HashSet<IJobSubmissionObserver>? Users;
-        private JobFailure? _failure;
-        internal ExceptionDispatchInfo? Fault => Volatile.Read(ref _failure)?.DispatchInfo;
-        internal bool FailureReported => Volatile.Read(ref _failure)?.Reported == true;
-        internal void ReportFailure() => Volatile.Read(ref _failure)?.Report();
         internal SomeEngine.Diagnostics.TraceContext TraceContext;
+        internal ExceptionDispatchInfo? Fault;
         internal bool FaultObserved;
         internal bool QueuedForFaultReuse;
         internal List<DependencyContinuation> Continuations { get; } = [];
@@ -42,7 +38,7 @@ public sealed partial class Scheduler
         internal void RecordFirstFault(ExceptionDispatchInfo fault)
         {
             ArgumentNullException.ThrowIfNull(fault);
-            Interlocked.CompareExchange(ref _failure, completion.Failure(fault), null);
+            Interlocked.CompareExchange(ref Fault, fault, null);
         }
 
         internal void Reset(int pendingWork, int pendingDependencies, bool scheduleDependenciesSealed)
@@ -56,8 +52,7 @@ public sealed partial class Scheduler
             PendingChildren = 0;
             ActiveCompleters = 0;
             Parent = default;
-            Users?.Clear();
-            _failure = null;
+            Fault = null;
             FaultObserved = false;
             QueuedForFaultReuse = false;
             ClearIfNotEmpty(Continuations);
@@ -86,8 +81,7 @@ public sealed partial class Scheduler
             PendingChildren = 0;
             ActiveCompleters = 0;
             Parent = default;
-            Users?.Clear();
-            _failure = null;
+            Fault = null;
             FaultObserved = false;
             QueuedForFaultReuse = false;
             ClearIfNotEmpty(Continuations);

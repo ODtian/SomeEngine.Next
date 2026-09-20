@@ -11,8 +11,8 @@ internal readonly record struct D3D12TestShaderEntry(
 
 internal sealed class D3D12TestShaderProgram : IDisposable
 {
-    private const string SlangStandardModuleDirectory =
-        SlangToolchainIdentity.StandardModuleDirectory;
+    private static readonly string SlangStandardModuleDirectory =
+        Path.GetFileName(Directory.GetDirectories(AppContext.BaseDirectory, "slang-standard-module-*").Single());
     private const string SlangWorkGraphSourceSha256 =
         "5AC051E0BBB9E78CAD3D7D368AA76045ADEFE417133182E4B9A783ED711345D7";
     private const string SlangWorkGraphModuleSha256 =

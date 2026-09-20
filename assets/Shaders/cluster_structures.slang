@@ -1,7 +1,7 @@
 #ifndef CLUSTER_STRUCTURES_SLANG
 #define CLUSTER_STRUCTURES_SLANG
 
-static const uint PACKED_CLUSTER_STRIDE_BYTES = 88;
+static const uint PACKED_CLUSTER_STRIDE_BYTES = 96;
 static const uint SLOT_INVALID = 0xFFFFu;
 static const uint BIN_INVALID = 0xFFFFFFFFu;
 
@@ -21,8 +21,10 @@ struct PackedCluster
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
     uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
     uint MaterialTableOffset;           // 76 — must be 0xFFFFFFFF
-    uint VRBBatchInfo;                  // 80
-    uint Reserved;                      // 84
+    uint VertReuseBatchWord0;           // 80
+    uint VertReuseBatchWord1;           // 84
+    uint VertReuseBatchWord2;           // 88
+    uint VertReuseBatchWord3;           // 92
 };
 
 float3 GetClusterCenter(PackedCluster c)
@@ -53,39 +55,51 @@ int DecodeGroupId(PackedCluster c)
     return (raw << 16) >> 16;
 }
 
-// ─── VRB Batch Decode ───
-
-struct VRBBatch
+uint4 VertReuseBatchWords(PackedCluster cluster)
 {
-    uint start; // first triangle index in this batch
-    uint count; // number of triangles
-};
-
-uint DecodeVRBBatchCount(PackedCluster c)
-{
-    return ((c.VRBBatchInfo >> 25) & 0x7) + 1;
+    return uint4(
+        cluster.VertReuseBatchWord0,
+        cluster.VertReuseBatchWord1,
+        cluster.VertReuseBatchWord2,
+        cluster.VertReuseBatchWord3);
 }
 
-VRBBatch DecodeVRBBatch(PackedCluster c, uint batchIdx)
+uint ReadVertReuseBits(uint4 words, uint bitOffset, uint bitCount)
 {
-    VRBBatch batch;
-    batch.start = 0;
-    for (uint i = 0; i < batchIdx; i++)
-        batch.start += ((c.VRBBatchInfo >> (i * 5)) & 0x1F) + 1;
-    batch.count = ((c.VRBBatchInfo >> (batchIdx * 5)) & 0x1F) + 1;
-    return batch;
+    uint wordIndex = bitOffset >> 5u;
+    uint wordBit = bitOffset & 31u;
+    uint lowBits = min(bitCount, 32u - wordBit);
+    uint value = words[wordIndex] >> wordBit;
+    if (lowBits < bitCount)
+        value |= words[wordIndex + 1u] << lowBits;
+    return value & ((1u << bitCount) - 1u);
 }
 
-// Total triangles covered by encoded VRB batches (fast path portion)
-uint DecodeVRBTotalFastTris(PackedCluster c)
+uint VertReuseBatchCount(uint4 words, uint materialRangeIndex)
 {
-    uint batchCount = DecodeVRBBatchCount(c);
-    uint total = 0;
-    for (uint i = 0; i < batchCount; i++)
-        total += ((c.VRBBatchInfo >> (i * 5)) & 0x1F) + 1;
-    return total;
+    return ReadVertReuseBits(words, materialRangeIndex * 4u, 4u);
 }
 
+uint VertReuseBatchTriangleCount(uint4 words, uint flatBatchIndex)
+{
+    return ReadVertReuseBits(words, 12u + flatBatchIndex * 5u, 5u) + 1u;
+}
+
+uint MaterialRangeCount(uint packedRanges, uint triangleCount)
+{
+    uint range0End = packedRanges & 0xFFu;
+    uint range1End = (packedRanges >> 8u) & 0xFFu;
+    return range0End == triangleCount ? 1u : (range1End == triangleCount ? 2u : 3u);
+}
+
+uint MaterialRangeEnd(uint packedRanges, uint triangleCount, uint rangeIndex)
+{
+    if (rangeIndex == 0u)
+        return min(packedRanges & 0xFFu, triangleCount);
+    if (rangeIndex == 1u)
+        return min((packedRanges >> 8u) & 0xFFu, triangleCount);
+    return triangleCount;
+}
 uint DecodeTriangleCount(PackedCluster c)
 {
     return (c.PackedCounts >> 8) & 0xFF;
@@ -355,6 +369,22 @@ ClusterTraversalNode DecodeDeferredTraversalNode(DrawRequest work)
 struct ClusterMeshVertex
 {
     float4 Pos : SV_POSITION;
+};
+
+struct ClusterRasterVertexData<TVarying>
+{
+    float4 Pos : SV_POSITION;
+    TVarying Varying;
+};
+
+struct ClusterRasterPixelInput<TVarying>
+{
+    float4 Pos : SV_POSITION;
+    TVarying Varying;
+    nointerpolation uint VisibleClusterIndex : VIS_CLUSTER_IDX;
+    nointerpolation uint TriangleID : TRIANGLE_ID;
+    nointerpolation uint ViewIndex : VIEW_INDEX;
+    uint RenderTargetIndex : SV_RenderTargetArrayIndex;
 };
 
 struct ClusterMeshPrimitive
