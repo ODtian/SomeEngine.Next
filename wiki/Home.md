@@ -1,19 +1,46 @@
 # SomeEngine Wiki
 
-根索引（MOC）。每条笔记聚焦一个概念，通过 `[[wikilink]]` 互联。
+根索引。每个架构事实由一个原子页面拥有；领域页只负责导航。参见 [[design/Atomic-Wiki|Atomic Wiki]]。
 
-## 领域
+## Architecture
 
-- [[DRY]] · [[SRP]] · [[Structural-Optimization]] — 设计原则
-- [[Engine-Trace]] · [[Profiler-Bridge-Only]] · [[Tracy-Toolchain]] · [[ECS-Architecture]] · [[Product-Boundary]] · [[Render-Boundaries]] · [[Render-Graph]] · [[Asset-Files]] — 架构决策
-- [[Engine-Goals]] — 项目目标
-- [[visco-semen-liquid-domain]] — 独立原型领域记录
+- [[architecture/Rendering|Rendering]]
+- [[architecture/RHI/Index|RHI]]
+- [[architecture/ECS-Architecture|ECS]]
+- [[architecture/Product-Boundary|Product Boundary]]
+- [[architecture/Profiler-Bridge-Only|Profiler Bridge Only]]
+- [[architecture/Tracy-Toolchain|Tracy Toolchain]]
 
-## 资产架构图谱
+## Design
 
-从 [[Asset-Files]] 进入完整导航。2026-09-12 起，以以下两份重建文件为有效依据：
+- [[design/Atomic-Wiki|Atomic Wiki]]
+- [[design/DRY|DRY]]
+- [[design/SRP|SRP]]
+- [[design/Structural-Optimization|Structural Optimization]]
+- [[design/Type-Admission|Type Admission]]
+- [[design/Naming|Naming]]
 
-- [冻结概念与原则](architecture/Assets/Asset-Rebuild-Principles.md)：先固定职责、数据和保证。
-- [替换范围与执行任务](architecture/Assets/Asset-Rebuild-Tasks.md)：按依赖执行 34 个小任务并逐项验收。
+## Harness
 
-原资产主题页已标记为旧说明，不再约束新实现。当前完成的是文档冻结，生产代码尚未重建。
+- [[harness/Harness-Definition|Harness]]
+- [[harness/Architecture-Checks|Architecture Checks]]
+- [[harness/Behavior-Checks|Behavior Checks]]
+- [[harness/Harness-Performance-Evidence|Performance Evidence]]
+- [[harness/Constraint-Direction|Constraint Direction]]
+- [[harness/Feedforward-Feedback|Feedforward and Feedback]]
+
+## Goals and prototypes
+
+- [[goals/Engine-Goals|Engine Goals]]
+- [[design/visco-semen-liquid-domain|Visco-Semen Liquid Domain]]
+
+
+
+## Evidence and history
+
+Architecture pages define current design. `evidence/` records measurements and source evidence. `history/` preserves superseded decisions and past reconstruction notes; neither overrides current architecture pages.
+
+## Assets
+
+- [[architecture/Asset-Files|资产与 Block 架构]]
+- [[architecture/Assets/Asset-Verification-2026-09-16|资产迁移验证记录]]

@@ -1,22 +1,25 @@
 # ECS Architecture
 
-全 C# ECS 游戏引擎架构决策。
+本页只负责 ECS 领域导航。
 
-- ECS 框架自研（[[Engine-Goals]]）：`SomeEngine.ECS` 与 `SomeEngine.Job` 作为内部项目
-- QVVS 坐标系统
-- 所有系统建立在 ECS 基础上
+## Core
+- [[architecture/ECS/Coordinate-System|Coordinate System]]
+- [[architecture/ECS/World-Structure|World Structure]]
+- [[architecture/ECS/Save-Contracts|Save Contracts]]
+- [[architecture/ECS-Job-Relation-Hierarchy|Job, Relation and Hierarchy]]
 
-Job、Relation、Hierarchy、结构事务与安全借用的统一终态见 [[ECS-Job-Relation-Hierarchy]]。
+## Main concepts
+- [[architecture/ECS/Job-Completion|Job Completion]]
+- [[architecture/ECS/Readiness-Admission|Readiness Order]]
+- [[architecture/ECS/ECS-Admission-and-Ranges|ECS Ranges]]
+- [[architecture/ECS/Borrow-and-Storable-Descriptions|Borrow and Storable Descriptions]]
+- [[architecture/ECS/Change-Tracking|Change Tracking]]
+- [[architecture/ECS/Structural-Transactions|Structural Transactions]]
+- [[architecture/ECS/Relations|Relations]]
+- [[architecture/ECS/Hierarchy|Hierarchy]]
+- [[architecture/ECS/Transform-Propagation|Transform Propagation]]
+- [[architecture/ECS/Lifetime-Domains|Lifetime Domains]]
+- [[architecture/ECS/Determinism|Determinism]]
 
-结构候选通过单一 `WorldStructureRoot + epoch` 发布；entity record page、chunk backing、
-sparse/index/shared/buffer/table side ownership以及分页面 journal 使用按写分离。未绑定 Job
-coordinator 的同步 root-control mutation 与结构候选共享 mutation gate，避免 query registry、
-clock或journal control-plane 更新被候选提交覆盖。
-
-存档采用两个强类型契约：`RawCheckpoint` 只服务同一构建/ABI的最快恢复，`DurableSave`
-只接受显式稳定schema和canonical codec。完整决策见
-`docs/adr/0005-ecs-save-contracts.md`。
-
-World 资产在集成层使用 `WorldAsset : Asset<World>`，复用已有组件、缓冲区与拓扑序列化，不建立固定 SceneData。文件外层信息与 ECS 内容的边界见 [[Asset-Worlds]]；在同一个 Game world 上解析资源并进入既有提取流程的关系见 [[Asset-Application-and-Rendering]]。资产整体导航见 [[Asset-Files]]。
-
-参见 [[Engine-Goals]]。
+## History
+- [[history/ECS/ECS-Job-Relation-Hierarchy-Monolith|Previous monolithic specification]]
