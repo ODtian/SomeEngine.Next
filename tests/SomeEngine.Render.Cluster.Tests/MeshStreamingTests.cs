@@ -1,8 +1,9 @@
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Serialization.IO;
@@ -13,6 +14,42 @@ public sealed class MeshStreamingTests
 {
     private const int PageBytes = ClusterTestAssets.PageBytes;
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BvhReadFailureOrCancellationReleasesTheSourceAndAllowsRetry(bool cancel)
+    {
+        using var directory = new TemporaryDirectory();
+        string path = System.IO.Path.Combine(directory.Path, "failed.mesh.asset");
+        using Mesh mesh = TwoPageMesh();
+        ClusterTestFiles.WriteMesh(mesh, path);
+        var source = new ControlledRangeSource(FileRangeSource.Open(path), mesh.BvhByteLength);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        source.BeforeRead = async (_, _, token) =>
+        {
+            entered.TrySetResult();
+            await release.Task.WaitAsync(token);
+            throw new IOException("Injected required-BVH read failure.");
+        };
+        source.Arm();
+        Task<MeshFileContent> opening = ClusterTestFiles.OpenMeshAsync(source, true, cancellation.Token).AsTask();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (cancel) cancellation.Cancel();
+            else release.TrySetResult();
+            if (cancel) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => opening);
+            else await Assert.ThrowsAsync<IOException>(() => opening);
+            await Assert.ThrowsAsync<ObjectDisposedException>(() => source.ReadExactlyAsync(0, new byte[1]).AsTask());
+            using var reopened = await ClusterTestFiles.OpenMeshAsync(FileRangeSource.Open(path), true);
+            Assert.Equal(mesh.BvhByteLength, reopened.Mesh.BvhByteLength);
+            Assert.False(reopened.Mesh.TryRetainPage(0, out _));
+        }
+        finally { cancellation.Cancel(); release.TrySetResult(); }
+    }
+
     [Fact]
     public async Task StreamedOpenAndOneHundredDuplicateFaultsReadOnlyOneRequestedPage()
     {
@@ -22,24 +59,25 @@ public sealed class MeshStreamingTests
         string path = System.IO.Path.Combine(directory.Path, "streamed.mesh.asset");
         ClusterTestFiles.WriteMesh(sourceAsset, path);
         var counted = new CountingRangeSource(FileRangeSource.Open(path));
-        using Mesh streamed = await ClusterTestFiles.OpenMeshAsync(
+        using var content = await ClusterTestFiles.OpenMeshAsync(
             counted,
             ownsSource: true);
-        Assert.Null(streamed.Payload);
+        Mesh streamed = content.Mesh;
+        Assert.False(streamed.TryRetainPage(0, out _));
         Assert.Equal(2, streamed.PageCount);
         Assert.Equal(3 * Marshal.SizeOf<ClusterBVHNode>(), streamed.BvhByteLength);
 
         RangeRead[] metadataReads = counted.Reads;
         Assert.DoesNotContain(metadataReads, static read => read.Length == MeshPageHeader.Size);
 
-        Assert.True(streamed.IsStreamed);
+        Assert.True(content.PageSource.Matches(streamed));
         using var manager = new ClusterMeshes();
         int readCountBeforeRegistration = counted.Reads.Length;
-        ClusterMeshRegistration registration = await manager.AddMeshAsync(streamed);
+        ClusterMeshRegistration registration = await manager.AddMeshAsync(streamed, pageSource: content.PageSource);
 
         RangeRead[] registeredReads = counted.Reads;
-        Assert.Equal(readCountBeforeRegistration + 1, registeredReads.Length);
-        Assert.Equal(streamed.BvhByteLength, registeredReads[readCountBeforeRegistration].Length);
+        Assert.Equal(readCountBeforeRegistration, registeredReads.Length);
+        Assert.Contains(metadataReads, read => read.Length == streamed.BvhByteLength);
         Assert.Same(streamed, registration.Mesh);
         Assert.Equal(2u, registration.PageCount);
         ClusterMeshesSnapshot registrationSnapshot = manager.CaptureSnapshot();
@@ -96,11 +134,11 @@ public sealed class MeshStreamingTests
         ClusterTestFiles.WriteMesh(asset, path);
 
         var probe = new CountingRangeSource(FileRangeSource.Open(path));
-        using (Mesh valid = await ClusterTestFiles.OpenMeshAsync(probe, ownsSource: true))
+        using (var valid = await ClusterTestFiles.OpenMeshAsync(probe, ownsSource: true))
         {
-            Assert.All(valid.PageDigests!, static page => Assert.Equal(32, page.Sha256!.Value.Length));
-            var page = new byte[valid.GetPageByteLength(0)];
-            await valid.ReadPageAsync(0, page);
+            Assert.All(valid.Mesh.PageDigests, static page => Assert.Equal(32, page.Sha256.Length));
+            var page = new byte[valid.Mesh.GetPageByteLength(0)];
+            await valid.PageSource.ReadPageIntoAsync(0, page);
             Assert.Equal(PageBytes, page.Length);
         }
 
@@ -110,7 +148,7 @@ public sealed class MeshStreamingTests
             .First();
         long firstPageOffset = firstPageRead.Offset;
         long bvhOffset = checked(firstPageOffset + (long)asset.BvhOffset);
-        int bvhLength = checked((int)(asset.Payload!.Value.Length - (long)asset.BvhOffset));
+        int bvhLength = asset.BvhByteLength;
 
         var headerCorruption = new TamperingRangeSource(
             FileRangeSource.Open(path),
@@ -122,14 +160,14 @@ public sealed class MeshStreamingTests
                     nameof(MeshPageHeader.VertexEncodingHash)));
                 bytes[encodingHashOffset] ^= 0x01;
             });
-        using (Mesh corrupted = await ClusterTestFiles.OpenMeshAsync(
+        using (var corrupted = await ClusterTestFiles.OpenMeshAsync(
             headerCorruption,
             ownsSource: true))
         {
-            var page = new byte[corrupted.GetPageByteLength(0)];
+            var page = new byte[corrupted.Mesh.GetPageByteLength(0)];
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
             {
-                await corrupted.ReadPageAsync(0, page);
+                await corrupted.PageSource.ReadPageIntoAsync(0, page);
             });
         }
 
@@ -138,14 +176,14 @@ public sealed class MeshStreamingTests
             firstPageOffset,
             PageBytes,
             static bytes => bytes[MeshPageHeader.Size + PackedCluster.SizeInBytes] ^= 0x01);
-        using (Mesh corrupted = await ClusterTestFiles.OpenMeshAsync(
+        using (var corrupted = await ClusterTestFiles.OpenMeshAsync(
             pageCorruption,
             ownsSource: true))
         {
-            var page = new byte[corrupted.GetPageByteLength(0)];
+            var page = new byte[corrupted.Mesh.GetPageByteLength(0)];
             await Assert.ThrowsAsync<InvalidDataException>(async () =>
             {
-                await corrupted.ReadPageAsync(0, page);
+                await corrupted.PageSource.ReadPageIntoAsync(0, page);
             });
         }
 
@@ -154,16 +192,9 @@ public sealed class MeshStreamingTests
             bvhOffset,
             bvhLength,
             static bytes => bytes[^1] ^= 0x01);
-        using (Mesh corrupted = await ClusterTestFiles.OpenMeshAsync(
-            bvhCorruption,
-            ownsSource: true))
-        {
-            var bvh = new byte[corrupted.BvhByteLength];
-            await Assert.ThrowsAsync<InvalidDataException>(async () =>
-            {
-                await corrupted.ReadBvhAsync(bvh);
-            });
-        }
+        // The required BVH must be authenticated before a usable Mesh can be returned.
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await ClusterTestFiles.OpenMeshAsync(bvhCorruption, ownsSource: true));
     }
 
     private static void CompletePublication(ClusterMeshes manager)
@@ -191,14 +222,8 @@ public sealed class MeshStreamingTests
         first.CopyTo(payload, 0);
         second.CopyTo(payload, PageBytes);
         MemoryMarshal.AsBytes(nodes.AsSpan()).CopyTo(payload.AsSpan(2 * PageBytes));
-        return new Mesh
-        {
-            Name = "RangeStreamedMesh",
-            Bounds = new Bounds { Center = new Vec3(), Radius = 1f },
-            VertexEncoding = ClusterTestAssets.StandardVertexEncoding,
-            Payload = payload,
-            BvhOffset = 2 * PageBytes,
-        };
+        return Mesh.Create("RangeStreamedMesh", ClusterTestAssets.StandardVertexEncoding, payload.AsMemory(), 2 * PageBytes,
+            new Bounds { Center = new Vec3(), Radius = 1f });
     }
 
     private static byte[] PageData(byte marker)

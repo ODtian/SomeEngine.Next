@@ -5356,7 +5356,7 @@
     "src/SomeEngine.ECS/Queries/QueryChunkView.cs": true,
     "src/SomeEngine.ECS/Commands/CommandBuffer.cs": true,
     "src/SomeEngine.ECS/World.Iteration.cs": true,
-    "src/SomeEngine.Serialization/BinaryContractSerializer.cs": true,
+    "src/SomeEngine.Serialization/BinarySerializer.cs": true,
     "src/SomeEngine.ECS/Owners.Clock.cs": true,
     "src/SomeEngine.ECS/World.Indexing.cs": true,
     "src/SomeEngine.ECS.Systems/RelationshipChunkJobs.cs": true,

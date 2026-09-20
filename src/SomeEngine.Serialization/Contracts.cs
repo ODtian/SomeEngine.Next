@@ -8,11 +8,11 @@ public enum BinaryCompatibility : byte
     ExactSchema = 0,
 }
 
-/// <summary>Marks a partial C# type as the authoritative binary contract.</summary>
+/// <summary>Marks a partial C# type for generated binary serialization.</summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false)]
-public sealed class BinaryContractAttribute : Attribute
+public sealed class BinarySerializableAttribute : Attribute
 {
-    public BinaryContractAttribute(BinaryCompatibility compatibility = BinaryCompatibility.ExactSchema)
+    public BinarySerializableAttribute(BinaryCompatibility compatibility = BinaryCompatibility.ExactSchema)
     {
         if (compatibility != BinaryCompatibility.ExactSchema)
             throw new ArgumentOutOfRangeException(nameof(compatibility), "Only ExactSchema contracts are supported.");
@@ -49,8 +49,8 @@ public sealed class BinaryNativeLayoutAttribute : Attribute
     public string AbiToken { get; }
 }
 
-/// <summary>Overrides the stable logical field name used by schema fingerprints.</summary>
-[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, Inherited = false)]
+/// <summary>Overrides the encoded identity of a field or enum used by schema fingerprints.</summary>
+[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Enum, Inherited = false)]
 public sealed class BinaryNameAttribute : Attribute
 {
     public BinaryNameAttribute(string logicalName)
@@ -91,7 +91,7 @@ public sealed class BinaryChunkAttribute : Attribute
 /// abstract base-class member. The source generator uses each case's explicit
 /// <see cref="BinaryUnionCaseAttribute"/> tag and emits closed, reflection-free dispatch. Cases
 /// must be sealed classes assignable to the annotated type and marked with
-/// <see cref="BinaryContractAttribute"/>.
+/// <see cref="BinarySerializableAttribute"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Interface | AttributeTargets.Class, Inherited = false)]
 public sealed class BinaryUnionAttribute : Attribute
@@ -126,11 +126,11 @@ public sealed class BinaryUnionCaseAttribute : Attribute
 }
 
 /// <summary>
-/// Compile-time contract implemented by generated codecs. Runtime reflection and assembly scanning are
-/// intentionally absent from the serialization path.
+/// Static binary read and write capabilities provided by the type itself, either generated or handwritten.
+/// Serialization requires no reflection or assembly scanning.
 /// </summary>
-public interface IBinaryContract<TSelf>
-    where TSelf : IBinaryContract<TSelf>
+public interface IBinarySerializable<TSelf>
+    where TSelf : IBinarySerializable<TSelf>
 {
     static abstract Guid TypeId { get; }
 
@@ -145,6 +145,23 @@ public interface IBinaryContract<TSelf>
     static abstract TSelf Read(ref BinaryDataReader reader);
 }
 
+/// <summary>
+/// Marks a binary value that can be copied or shared without retaining mutable reference state.
+/// The generator verifies source storage and emits this proof for consumers in other assemblies.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false)]
+public sealed class BinaryValueAttribute : Attribute;
+
+/// <summary>
+/// Decodes into an explicitly supplied object and its writable collections. The caller chooses
+/// its storage; decoding can partially update the target on failure, so use an unpublished
+/// object or isolated branch when a successful commit must be atomic.
+/// </summary>
+public interface IBinaryObjectReader<TSelf> where TSelf : class, IBinarySerializable<TSelf>
+{
+    static abstract void ReadInto(ref BinaryDataReader reader, TSelf target);
+}
+
 /// <summary>Untyped contract metadata used by catalogs and diagnostics.</summary>
 public readonly record struct BinaryContractDescriptor(
     Guid TypeId,
@@ -154,7 +171,7 @@ public readonly record struct BinaryContractDescriptor(
     uint SchemaEpoch);
 
 public static class BinaryContract<T>
-    where T : IBinaryContract<T>
+    where T : IBinarySerializable<T>
 {
     public static BinaryContractDescriptor Descriptor { get; } = new(
         T.TypeId,
@@ -193,7 +210,21 @@ public readonly record struct BinaryEnvelopeMetadata(
     ulong SchemaFingerprint,
     BinaryCompatibility Compatibility,
     uint SchemaEpoch,
-    long PayloadLength);
+    long PayloadLength)
+{
+    public Guid Generation { get; init; }
+}
+
+/// <summary>
+/// Declares the complete encoding order by C# member name, including inherited fields.
+/// Without this attribute, fields retain their existing ordinal logical-name order.
+/// BinaryName continues to define each field's disk identity.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false)]
+public sealed class BinaryFieldsAttribute(params string[] names) : Attribute
+{
+    public IReadOnlyList<string> Names { get; } = names;
+}
 
 public static class BinaryTypeId
 {

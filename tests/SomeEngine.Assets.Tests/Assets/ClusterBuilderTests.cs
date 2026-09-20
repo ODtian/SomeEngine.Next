@@ -2,9 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Importers;
-using ValueType = SomeEngine.Assets.Data.ValueType;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -62,7 +62,7 @@ public class ClusterBuilderTests
         };
 
         // 2. Run Builder
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             rawAttributes,
             indices,
@@ -70,11 +70,12 @@ public class ClusterBuilderTests
             "TestPlane");
 
         // 3. Assertions
-        Assert.NotNull(asset.Payload);
-        Assert.True(asset.Payload.Value.Length > 0);
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        byte[] payloadBytes = payloadRead.ToArray();
+        Assert.True(payloadBytes.Length > 0);
 
         // Check if we have at least one page
-        var span = asset.Payload.Value.Span;
+        var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
         Assert.True(header.ClusterCount > 0);
         Assert.True(header.TotalVertexCount > 0);
@@ -100,22 +101,23 @@ public class ClusterBuilderTests
             new("TEXCOORD_0", uvs, 2, ValueType.Float16, 2, false),   // 4 bytes/vertex
         };
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             rawAttributes,
             indices,
             ClusterBuilderTestMaterials.Slots(),
             "TestSoA");
 
-        Assert.NotNull(asset.Payload);
-        var span = asset.Payload.Value.Span;
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        byte[] payloadBytes = payloadRead.ToArray();
+        var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
 
         Assert.True(header.ClusterCount > 0);
         uint totalVerts = header.TotalVertexCount;
         Assert.Equal(3u, totalVerts);
 
-        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, asset.VertexEncoding);
+        Assert.Equal(StandardClusterVertexEncoder.EncodingCompatibility, asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().VertexEncoding);
         Assert.Equal(
             VertexEncodingCompatibility.Hash(StandardClusterVertexEncoder.EncodingCompatibility),
             header.VertexEncodingHash);
@@ -152,15 +154,16 @@ public class ClusterBuilderTests
             new("TEXCOORD_0", uvs, 2, ValueType.Float16, 2, false),
         };
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             rawAttributes,
             indices,
             ClusterBuilderTestMaterials.Slots(),
             "TestSoAWithTangent");
 
-        Assert.NotNull(asset.Payload);
-        var span = asset.Payload.Value.Span;
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        byte[] payloadBytes = payloadRead.ToArray();
+        var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
 
         List<DecodedStandardVertex> decoded = DecodeStandardVertices(span, header);
@@ -185,7 +188,7 @@ public class ClusterBuilderTests
         };
         var encoder = new SentinelVertexEncoder();
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             [],
             [0, 1, 2],
@@ -193,8 +196,9 @@ public class ClusterBuilderTests
             "CustomVertexEncoding",
             encoder);
 
-        Assert.Equal(SentinelVertexEncoder.CompatibilityName, asset.VertexEncoding);
-        ReadOnlySpan<byte> payload = asset.Payload!.Value.Span;
+        Assert.Equal(SentinelVertexEncoder.CompatibilityName, asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().VertexEncoding);
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        ReadOnlySpan<byte> payload = payloadRead.ToArray();
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
         Assert.Equal(
             VertexEncodingCompatibility.Hash(SentinelVertexEncoder.CompatibilityName),
@@ -240,15 +244,16 @@ public class ClusterBuilderTests
             new("TEXCOORD_0", uvs, 2, ValueType.Float16, 2, false),
         };
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             rawAttributes,
             indices,
             ClusterBuilderTestMaterials.Slots(),
             "UvSeam");
 
-        Assert.NotNull(asset.Payload);
-        var span = asset.Payload.Value.Span;
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        byte[] payloadBytes = payloadRead.ToArray();
+        var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
         Assert.Equal(4u, header.TotalVertexCount);
         Assert.Contains(
@@ -268,15 +273,16 @@ public class ClusterBuilderTests
         };
         var indices = new uint[] { 0, 1, 2 };
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             new List<RawAttribute>(),
             indices,
             ClusterBuilderTestMaterials.Slots(),
             "QuantizedBounds");
 
-        Assert.NotNull(asset.Payload);
-        var span = asset.Payload.Value.Span;
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        byte[] payloadBytes = payloadRead.ToArray();
+        var span = payloadBytes.AsSpan();
         var header = MemoryMarshal.Read<MeshPageHeader>(span.Slice(0, MeshPageHeader.Size));
         var clusters = MemoryMarshal.Cast<byte, PackedCluster>(
             span.Slice(
@@ -310,16 +316,16 @@ public class ClusterBuilderTests
         var materialGuid = System.Guid.NewGuid();
         var materialSlot = new MeshMaterialSlot(materialGuid);
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             new List<RawAttribute>(),
             indices,
             new List<MeshMaterialSlot> { materialSlot },
             "GuidMesh");
 
-        Assert.NotNull(asset.Regions);
-        Assert.Single(asset.Regions);
-        Assert.Equal("region_0", asset.Regions[0].Name);
+        Assert.NotNull(asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions);
+        Assert.Single(asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions);
+        Assert.Equal("region_0", asset.GetBlock<SomeEngine.Assets.Schema.MeshBlock>().Regions[0].Name);
     }
 
     [Fact]
@@ -348,14 +354,15 @@ public class ClusterBuilderTests
             ClusterBuilderTestMaterials.Slot(),
         ];
 
-        var asset = ClusterBuilder.ProcessRaw(
+        using var asset = ClusterBuilder.ProcessRaw(
             positions,
             [materialIndices],
             indices,
             materials,
             "MixedDeform");
 
-        ReadOnlySpan<byte> payload = asset.Payload!.Value.Span;
+        using var payloadRead = asset.GetBlock<SomeEngine.Assets.Schema.ClusterMeshBlock>().Chunks.Retain(SomeEngine.Assets.Schema.ClusterMeshBlock.PayloadChunkKey);
+        ReadOnlySpan<byte> payload = payloadRead.ToArray();
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(payload);
         ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
             payload.Slice(

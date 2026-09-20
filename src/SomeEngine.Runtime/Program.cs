@@ -1,8 +1,8 @@
 namespace SomeEngine.Runtime;
 
-internal static class Program
+public static class Application
 {
-    public static async Task<int> Main(string[] args)
+    public static async Task<int> RunAsync(string[] args, Func<SomeEngine.Resources.Material, float, bool>? animateMaterial = null)
     {
         try
         {
@@ -38,7 +38,7 @@ internal static class Program
 
             bool useWarp = args.Any(static value =>
                 string.Equals(value, "--warp", StringComparison.OrdinalIgnoreCase));
-            await RuntimeApplication.RunAsync(options, useWarp).ConfigureAwait(false);
+            await RuntimeApplication.RunAsync(options, useWarp, animateMaterial).ConfigureAwait(false);
             return 0;
         }
         catch (Exception failure)

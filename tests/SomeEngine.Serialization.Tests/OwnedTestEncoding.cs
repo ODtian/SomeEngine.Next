@@ -35,10 +35,10 @@ internal sealed class OwnedTestEncoding
     }
 
     internal static OwnedTestEncoding Encode<T>(T value, int capacity = 4 * 1024 * 1024)
-        where T : IBinaryContract<T>
+        where T : IBinarySerializable<T>
     {
         byte[] buffer = GC.AllocateUninitializedArray<byte>(capacity);
-        if (!BinaryContractSerializer.TryWrite(buffer, value, out int written))
+        if (!BinarySerializer.TryWrite(buffer, value, out int written))
         {
             throw new InvalidOperationException(
                 $"The fixed test destination ({capacity} bytes) is too small for {typeof(T).FullName}.");

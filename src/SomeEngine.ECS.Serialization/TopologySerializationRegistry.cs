@@ -192,7 +192,7 @@ internal abstract class TopologySerializationRuntime
     internal abstract void WriteAdmitted(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
-        TopologyCaptureBudget budget);
+        TopologyCaptureBudget budget, ISet<ExternalReferenceKey>? references);
 
     internal abstract void ReadApply(
         BinaryReader reader,
@@ -228,12 +228,12 @@ internal sealed class HierarchyTopologySerializationRuntime<TDomain> : TopologyS
     internal override void WriteAdmitted(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
-        TopologyCaptureBudget budget)
+        TopologyCaptureBudget budget, ISet<ExternalReferenceKey>? references)
     {
         HierarchyTopologyWriteAccess<TDomain> access =
             admitted.OpenHierarchyTopology<TDomain>();
         budget.ReserveRecords(access.RecordCount, TypeKey.StableName);
-        var data = new DataWriter(writer);
+        var data = new DataWriter(writer, references);
         writer.Write(access.ParentCount);
         int writtenParents = 0;
         for (int slot = 0; slot < access.SlotCount; slot++)
@@ -363,7 +363,7 @@ internal sealed class RelationTopologySerializationRuntime<T> : TopologySerializ
     internal override void WriteAdmitted(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
-        TopologyCaptureBudget budget)
+        TopologyCaptureBudget budget, ISet<ExternalReferenceKey>? references)
     {
         RelationTopologyWriteAccess<T> access =
             admitted.OpenRelationTopology<T>(validate: false);
@@ -371,7 +371,7 @@ internal sealed class RelationTopologySerializationRuntime<T> : TopologySerializ
         writer.Write((byte)access.Schema.Direction);
         writer.Write((byte)access.Schema.Cardinality);
         writer.Write(access.Schema.AllowSelfEdge);
-        var data = new DataWriter(writer);
+        var data = new DataWriter(writer, references);
 
         writer.Write(access.EdgeCount);
         int writtenEdges = 0;

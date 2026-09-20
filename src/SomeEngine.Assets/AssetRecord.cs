@@ -21,15 +21,13 @@ public readonly record struct ImportedAsset
     public ulong SchemaFingerprint => Entry.SchemaFingerprint;
     public IReadOnlyList<Guid> Dependencies => Entry.Dependencies;
 
-    public static ImportedAsset Create<T>(
-        Asset<T> asset,
+    public static ImportedAsset Create(
+        AssetEntry entry,
         string subAssetKey,
         string outputPath)
-        where T : class
     {
-        ArgumentNullException.ThrowIfNull(asset);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        AssetEntry info = asset.File.Entry;
+        AssetEntry info = entry;
         return new ImportedAsset(
             subAssetKey ?? string.Empty,
             outputPath,

@@ -15,6 +15,7 @@ public sealed class RegressionAcceptanceTests
     [Theory]
     [InlineData("SEIDX001")]
     [InlineData("SEIDX002")]
+    [InlineData("SEBDOC03")]
     public async Task PreviousBinaryEnvelopeFailsClosed(string previousMagic)
     {
         using MappedTestDocument bytes = BinaryDocumentWriter.Create(TestRoots.Canonical()).BuildMapped();
@@ -233,7 +234,7 @@ public sealed class RegressionAcceptanceTests
     }
 }
 
-internal sealed record DifferentTypeWithMatchingSchema : IBinaryContract<DifferentTypeWithMatchingSchema>
+internal sealed record DifferentTypeWithMatchingSchema : IBinarySerializable<DifferentTypeWithMatchingSchema>
 {
     internal static readonly Guid StableTypeId = Guid.Parse("314e8c17-692d-443f-ac38-a71dbc5db88a");
 

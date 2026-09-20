@@ -1,5 +1,6 @@
 using SomeEngine.Assets.Importers;
 using SomeEngine.Tests;
+using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -8,37 +9,44 @@ public class ShaderSourcePolicyTests
 
 
     [Theory]
-    [InlineData("triangle.slang", "VSMain", "PSMain")]
-    [InlineData("hello_triangle.slang", "VSMain", "PSMain")]
-    public void MigratedShadersImportAsSlang(string shaderFile, params string[] entryPoints)
+    [InlineData("triangle.shader", "VSMain", "PSMain")]
+    [InlineData("hello_triangle.shader", "VSMain", "PSMain")]
+    public async Task DefinitionsCompileOriginalSlangEntryPoints(string shaderFile, params string[] entryPoints)
     {
-        var asset = SlangShaderImporter.Import(TestProjectPaths.ShaderPath(shaderFile));
+        string path = TestProjectPaths.ShaderPath(shaderFile);
+        using var definition = await ShaderAsset.OpenSourceAsync(path);
+        using var asset = SlangShaderImporter.CompileDefinition(definition, path);
+        using var shader = await asset.GetBlock<ShaderBlock>().CreateAsync(asset.Name);
 
         foreach (string entryPoint in entryPoints)
         {
-            Assert.Contains(asset.Programs!, program =>
-                program.Data is { } data && data.Length > 0
-                && program.Program!.EntryPoints.Any(entry =>
+            Assert.Contains(shader.Programs!, program =>
+                program is not null && program.EntryPoints.Any(entry =>
                     entry.Name == entryPoint && entry.Code.Length > 0));
         }
     }
 
 
     [Theory]
-    [InlineData("cluster_draw.slang")]
-    [InlineData("cluster_resolve.slang")]
-    [InlineData("cluster_shade_material.slang")]
-    [InlineData("cluster_shade_unlit.slang")]
-    [InlineData("cluster_tessellation_phong.slang")]
-    [InlineData("debug_sphere.slang")]
-    public void ClusterEntryModulesImportAfterLayoutChange(string shaderFile)
+    [InlineData("cluster_draw.shader")]
+    [InlineData("cluster_resolve.shader")]
+    [InlineData("standard.shader")]
+    [InlineData("unlit.shader")]
+    [InlineData("cluster_tessellation_phong.shader")]
+    [InlineData("debug_sphere.shader")]
+    public async Task ClusterDefinitionsCompileAfterLayoutChange(string shaderFile)
     {
-        var asset = SlangShaderImporter.ImportTransient(TestProjectPaths.ShaderPath(shaderFile));
+        string path = shaderFile is "standard.shader" or "unlit.shader"
+            ? Path.Combine(TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", shaderFile)
+            : TestProjectPaths.ShaderPath(shaderFile);
+        using var definition = await ShaderAsset.OpenSourceAsync(path);
+        using var asset = SlangShaderImporter.CompileDefinition(definition, path,
+            includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 
-        Assert.NotNull(asset.Programs);
-        Assert.NotEmpty(asset.Programs);
-        Assert.NotNull(asset.EntryPointReflections);
-        Assert.NotEmpty(asset.EntryPointReflections);
+        ShaderBlock code = asset.GetBlock<ShaderBlock>();
+        Assert.NotEmpty(code.Programs);
+        Assert.NotNull(code.EntryPointReflections);
+        Assert.NotEmpty(code.EntryPointReflections);
     }
 
 }

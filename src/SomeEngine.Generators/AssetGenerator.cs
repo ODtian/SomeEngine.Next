@@ -2,117 +2,94 @@ using System;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SomeEngine.Generators;
 
+/// <summary>Generates identity and file access. Content codecs and page storage belong to AssetBlockGenerator.</summary>
 [Generator]
 public sealed class AssetGenerator : IIncrementalGenerator
 {
-    private static readonly DiagnosticDescriptor InvalidFields = new(
-        "SEAS001", "Invalid asset fields", "Asset fields '{0}': {1}", "SomeEngine.Assets",
-        DiagnosticSeverity.Error, true);
+    private static readonly DiagnosticDescriptor InvalidAsset = new("SEAS001", "Invalid asset declaration",
+        "Asset '{0}': {1}", "SomeEngine.Assets", DiagnosticSeverity.Error, true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var fields = context.SyntaxProvider.ForAttributeWithMetadataName(
-            "SomeEngine.Assets.AssetAttribute", static (node, _) => node is ClassDeclarationSyntax,
-            static (value, _) => value);
-        context.RegisterSourceOutput(fields, static (output, value) => Emit(output, value));
+        var types = context.SyntaxProvider.ForAttributeWithMetadataName("SomeEngine.Assets.AssetAttribute",
+            static (syntax, _) => syntax is ClassDeclarationSyntax,
+            static (attribute, _) => (INamedTypeSymbol)attribute.TargetSymbol);
+        context.RegisterSourceOutput(types, static (output, type) => Generate(output, type));
     }
 
-    private static void Emit(SourceProductionContext output, GeneratorAttributeSyntaxContext context)
+    private static void Generate(SourceProductionContext output, INamedTypeSymbol type)
     {
-        var fields = (INamedTypeSymbol)context.TargetSymbol;
-        AttributeData attribute = context.Attributes[0];
-        if (attribute.ConstructorArguments.Length != 2 ||
-            attribute.ConstructorArguments[0].Value is not INamedTypeSymbol type ||
-            attribute.ConstructorArguments[1].Value is not string suffix || !suffix.StartsWith(".", StringComparison.Ordinal))
-        {
-            Error("requires a domain type and a file suffix starting with '.'");
-            return;
-        }
-        if (SymbolEqualityComparer.Default.Equals(type, fields))
-        {
-            Error("the domain type and file fields must be different types");
-            return;
-        }
-        if (fields.Arity != 0 || fields.ContainingType is not null || type.TypeKind != TypeKind.Class || type.IsStatic)
-        {
-            Error("requires non-generic top-level fields and an instance domain class");
-            return;
-        }
-        if (!fields.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "SomeEngine.Serialization.BinaryContractAttribute") &&
-            !fields.AllInterfaces.Any(i => i.OriginalDefinition.ToDisplayString() == "SomeEngine.Serialization.IBinaryContract<TSelf>" || i.Name == "IBinaryContract"))
-        {
-            Error("requires generated or explicit binary serialization on the file fields");
-            return;
-        }
-        if (!fields.GetMembers("AssetGuid").OfType<IPropertySymbol>().Any(p => p.Type.SpecialType == SpecialType.System_String && p.SetMethod is not null))
-        {
-            Error("requires an AssetGuid string in the file fields");
-            return;
-        }
-        string data = fields.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        string domain = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        string registration = "__" + fields.Name + "AssetFormat";
-        string writer = fields.GetMembers("CreateWriter").OfType<IMethodSymbol>().Any(m => m.IsStatic)
-            ? data + ".CreateWriter" : "global::SomeEngine.Serialization.Containers.BinaryDocumentWriter.Create";
-        string dependencies = fields.GetMembers("GetDependencies").Length != 0
-            ? "static (fields, path) => fields.GetDependencies(path)" : "static (_, _) => global::System.Array.Empty<global::System.Guid>()";
-        string name = fields.GetMembers("Name").Length != 0 ? "fields.Name ?? string.Empty" : "string.Empty";
-        string copy;
-        if (fields.GetMembers("CopyFields").OfType<IMethodSymbol>().Any(m => !m.IsStatic && m.Parameters.Length == 0))
-            copy = "static fields => fields.CopyFields()";
-        else
-        {
-            var body = new StringBuilder("static fields => { var copy = global::SomeEngine.Serialization.BinaryContractSerializer.Copy(fields);");
-            foreach (IPropertySymbol property in fields.GetMembers().OfType<IPropertySymbol>())
-            {
-                if (property.IsStatic || property.GetMethod is null || property.SetMethod is null ||
-                    !property.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "SomeEngine.Serialization.BinaryIgnoreAttribute"))
-                    continue;
-                string propertyType = property.Type.ToDisplayString();
-                if (propertyType is "System.Memory<byte>" or "System.ReadOnlyMemory<byte>")
-                    body.Append(" copy.").Append(property.Name).Append(" = fields.").Append(property.Name).Append(".ToArray();");
-                else if (propertyType is "System.Memory<byte>?" or "System.ReadOnlyMemory<byte>?")
-                    body.Append(" copy.").Append(property.Name).Append(" = fields.").Append(property.Name)
-                        .Append(".HasValue ? new global::").Append(propertyType.TrimEnd('?')).Append("(fields.")
-                        .Append(property.Name).Append(".Value.ToArray()) : default(global::")
-                        .Append(propertyType).Append(");");
-                else if (propertyType is "byte[]" or "byte[]?")
-                    body.Append(" copy.").Append(property.Name).Append(" = fields.").Append(property.Name).Append("?.ToArray();");
-            }
-            copy = body.Append(" return copy; }").ToString();
-        }
-        StringBuilder code = new();
-        code.AppendLine("// <auto-generated/>");
-        code.AppendLine("#nullable enable");
-        if (!fields.ContainingNamespace.IsGlobalNamespace)
-            code.Append("namespace ").Append(fields.ContainingNamespace.ToDisplayString()).AppendLine(";");
-        code.Append("internal static class ").Append(registration).AppendLine(" {");
-        code.AppendLine("[global::System.Runtime.CompilerServices.ModuleInitializer] internal static void Register() {");
-        code.Append("global::SomeEngine.Assets.Asset<").Append(domain).Append(">.RegisterGenerated<").Append(data).AppendLine(">(");
-        code.Append("typeof(").Append(domain).Append(").FullName!, ").Append(Literal(suffix)).AppendLine(",");
-        code.AppendLine("static fields => global::System.Guid.Parse(fields.AssetGuid!),");
-        code.Append("static fields => ").Append(name).AppendLine(",");
-        code.Append(dependencies).AppendLine(",");
-        code.Append("static fields => ").Append(writer).Append("(fields), ").Append(copy).AppendLine("); }");
-        code.AppendLine("}");
-        code.Append(fields.DeclaredAccessibility == Accessibility.Public ? "public " : "internal ");
-        code.Append("partial class ").Append(fields.Name).AppendLine(" {");
-        code.Append("public global::SomeEngine.Assets.Asset<").Append(domain).AppendLine("> ToAsset(global::System.Guid id = default) {");
-        code.AppendLine("if (id != global::System.Guid.Empty) AssetGuid = id.ToString();");
-        code.AppendLine("if (string.IsNullOrEmpty(AssetGuid)) AssetGuid = global::System.Guid.NewGuid().ToString();");
-        code.Append("return global::SomeEngine.Assets.Asset<").Append(domain).AppendLine(">.CreateGenerated(");
-        code.Append("this, global::System.Guid.Parse(AssetGuid), ").Append(name.Replace("fields.", "")).AppendLine(",");
-        code.Append(fields.GetMembers("GetDependencies").Length != 0 ? "GetDependencies(string.Empty)" : "global::System.Array.Empty<global::System.Guid>()").AppendLine(",");
-        code.Append("static fields => ").Append(writer).Append("(fields), ").Append(copy).AppendLine("); }");
-        code.AppendLine("}");
-        output.AddSource(registration + ".g.cs", code.ToString());
-        void Error(string message) => output.ReportDiagnostic(Diagnostic.Create(InvalidFields,
-            fields.Locations.FirstOrDefault(), fields.ToDisplayString(), message));
+        void Error(string reason) => output.ReportDiagnostic(Diagnostic.Create(InvalidAsset, type.Locations.FirstOrDefault(), type.Name, reason));
+        if (type.Arity != 0 || type.ContainingType is not null || type.IsRecord || type.IsAbstract
+            || type.BaseType?.ToDisplayString() != "SomeEngine.Assets.Asset"
+            || type.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is ClassDeclarationSyntax declaration
+                && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword)))
+        { Error("use a non-generic top-level partial class derived directly from Asset"); return; }
+        if (Attribute(type, "SomeEngine.Serialization.BinarySerializableAttribute") is null)
+        { Error("declare BinarySerializable for the asset's identity and block directory"); return; }
+        AttributeData? order = Attribute(type, "SomeEngine.Serialization.BinaryFieldsAttribute");
+        var names = order?.ConstructorArguments.FirstOrDefault().Values;
+        if (names is null || names.Value.Length != 4 || names.Value[0].Value as string != "Id"
+            || names.Value[1].Value as string != "Name" || names.Value[2].Value as string != "AssetType"
+            || names.Value[3].Value as string != "BlockDescriptions")
+        { Error("BinaryFields must contain only Id, Name, AssetType, BlockDescriptions; declare business data in typed blocks"); return; }
+        IPropertySymbol? directory = type.GetMembers("BlockDescriptions").OfType<IPropertySymbol>().SingleOrDefault();
+        if (directory?.DeclaredAccessibility != Accessibility.Public || directory.GetMethod is null || directory.SetMethod is null
+            || directory.Type.ToDisplayString() != "System.Collections.Immutable.ImmutableArray<SomeEngine.Assets.AssetBlockDescription>")
+        { Error("expose the base BlockDescriptions directory with a public new property and a private setter for its static codec"); return; }
+        if (type.GetMembers().Any(member => !member.IsStatic && !member.IsImplicitlyDeclared
+            && (member is IPropertySymbol property && property.Name != "BlockDescriptions" || member is IFieldSymbol)))
+        { Error("asset declarations contain identity and the block directory; move all content fields and properties into AssetBlock types"); return; }
+        string suffix = Attribute(type, "SomeEngine.Assets.AssetAttribute")!.ConstructorArguments[0].Value as string ?? "";
+        if (string.IsNullOrWhiteSpace(suffix) || !suffix.StartsWith(".", StringComparison.Ordinal))
+        { Error("provide a non-empty file suffix beginning with a period"); return; }
+        output.AddSource(type.ToDisplayString().Replace('.', '_') + ".Asset.g.cs", Emit(type, suffix));
     }
 
-    private static string Literal(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    private static string Emit(INamedTypeSymbol type, string suffix)
+    {
+        string fullType = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        string name = "@" + type.Name;
+        string fileType = Attribute(type, "SomeEngine.Assets.AssetAttribute")!.NamedArguments
+            .FirstOrDefault(argument => argument.Key == "SchemaName").Value.Value as string ?? type.ToDisplayString();
+        var code = new StringBuilder("// <auto-generated/>\n#nullable enable\n");
+        if (!type.ContainingNamespace.IsGlobalNamespace) code.Append("namespace ").Append(type.ContainingNamespace.ToDisplayString()).AppendLine(";");
+        code.Append(type.DeclaredAccessibility == Accessibility.Public ? "public " : "internal ").Append("partial class ").Append(name).AppendLine(" {");
+        code.Append("public const string FileType = ").Append(Literal(fileType)).AppendLine(";");
+        code.Append("public const string PathSuffix = ").Append(Literal(suffix)).AppendLine(";");
+        code.AppendLine("public static ulong SchemaHash => global::SomeEngine.Assets.AssetHeader.SchemaFingerprint;");
+        code.AppendLine("public static global::SomeEngine.Serialization.Containers.BinaryWireTypeDescriptor WireType => global::SomeEngine.Assets.AssetHeader.WireType;");
+        code.Append("[global::SomeEngine.Serialization.BinaryIgnore] public global::SomeEngine.Assets.AssetId<").Append(fullType).AppendLine("> Reference => new(Id);");
+        code.Append("public ").Append(name).AppendLine("() : this(global::SomeEngine.Serialization.Containers.PageArena.Shared) { }");
+        code.Append("public ").Append(name).AppendLine("(global::SomeEngine.Serialization.Containers.PageArena pages, global::System.Guid id = default) : this(pages, id, true) { }");
+        code.Append("private ").Append(name).AppendLine("(global::SomeEngine.Serialization.Containers.PageArena pages, global::System.Guid id, bool initialize) : base(pages, id) {");
+        code.AppendLine("try { AssetType = FileType; if (initialize) Initialize(); } catch (global::System.Exception error) { try { Dispose(); } catch (global::System.Exception cleanup) { throw new global::System.AggregateException(error, cleanup); } throw; } }");
+        code.AppendLine("partial void Initialize();");
+        code.Append(type.IsSealed ? "private " : "protected ").Append(name).Append('(').Append(fullType).AppendLine(" source) : base(source) { }");
+        code.Append("public override ").Append(fullType).AppendLine(" Duplicate() { lock (Access.SyncRoot) { RequireIdle(); return new(this); } }");
+        code.Append("public override ").Append(fullType).Append(" CreateCopy(global::System.Guid id = default) => (").Append(fullType).AppendLine(")base.CreateCopy(id);");
+        code.AppendLine("public global::System.Collections.Generic.IEnumerable<global::System.Guid> References() => BlockReferences();");
+        code.AppendLine("public global::SomeEngine.Assets.AssetEntry Describe() => Describe(SchemaHash, References());");
+        code.AppendLine("public async global::System.Threading.Tasks.ValueTask<global::SomeEngine.Assets.AssetEntry> SaveAsync(string path, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("using var copy = Duplicate(); return await copy.SaveBlockContentAsync(path, PathSuffix, cancellationToken).ConfigureAwait(false); }");
+        code.Append("private static ").Append(fullType).AppendLine(" ReadFile(global::SomeEngine.Assets.AssetFile file, global::System.Guid expected = default) {");
+        code.AppendLine("var description = file.Describe(); if ((expected != global::System.Guid.Empty && expected != description.AssetGuid) || description.AssetType != FileType) throw new global::System.IO.InvalidDataException(\"The asset identity or type differs from the selected file.\");");
+        code.Append("var result = new ").Append(name).AppendLine("(file.Pages, description.AssetGuid, false);");
+        code.AppendLine("try { result.ReadBlockContent(file); result.AttachFile(file); return result; } catch (global::System.Exception error) { try { result.Dispose(); } catch (global::System.Exception cleanup) { throw new global::System.AggregateException(error, cleanup); } throw; } }");
+        code.Append("public static async global::System.Threading.Tasks.ValueTask<").Append(fullType).AppendLine("> OpenAsync(string path, global::SomeEngine.Serialization.Containers.PageArena? pages = null, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("if (!path.EndsWith(PathSuffix, global::System.StringComparison.OrdinalIgnoreCase)) throw new global::System.IO.InvalidDataException(\"The asset path has a different suffix.\");");
+        code.AppendLine("await using var file = await global::SomeEngine.Assets.AssetFile.OpenAsync(path, WireType, pages, cancellationToken: cancellationToken).ConfigureAwait(false); return ReadFile(file); }");
+        code.Append("public static async global::System.Threading.Tasks.ValueTask<").Append(fullType).Append("> OpenAsync(global::SomeEngine.Assets.AssetLoader loader, global::SomeEngine.Assets.AssetId<").Append(fullType).AppendLine("> id, global::System.Threading.CancellationToken cancellationToken = default) {");
+        code.AppendLine("await using var file = await loader.OpenFileAsync(id, FileType, WireType, cancellationToken).ConfigureAwait(false); return ReadFile(file, id.Value); }");
+        code.AppendLine("}");
+        return code.ToString();
+    }
+
+    private static AttributeData? Attribute(ISymbol type, string name) => type.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == name);
+    private static string Literal(string value) => Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(value, true);
 }

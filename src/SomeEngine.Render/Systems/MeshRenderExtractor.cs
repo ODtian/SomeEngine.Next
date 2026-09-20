@@ -1,5 +1,6 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -78,7 +79,8 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialOffset,
                     materialCount,
                     MeshChanged: true,
-                    MaterialsChanged: true));
+                    MaterialsChanged: true,
+                    meshes[row].PageSource));
                 _meshSources.Add(source);
             }
 
@@ -153,7 +155,8 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialOffset,
                     materialCount,
                     meshChanged,
-                    materialsChanged));
+                    materialsChanged,
+                    mesh.PageSource));
             }
 
             bool instancedChanged = instancedChunkChanged &&
@@ -182,7 +185,8 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
             context.Upsert(entity, new RenderInstance());
             context.Upsert(entity, new RenderMesh(
                 snapshot.Mesh,
-                snapshot.BoundsExpansion));
+                snapshot.BoundsExpansion,
+                snapshot.PageSource));
             SyncMaterials(context.World, snapshot, entity, allowStructuralChanges: true);
         }
 
@@ -229,7 +233,8 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
                     entity,
                     new RenderMesh(
                         snapshot.Mesh,
-                        snapshot.BoundsExpansion));
+                        snapshot.BoundsExpansion,
+                        snapshot.PageSource));
             }
             if (snapshot.MaterialsChanged)
             {
@@ -358,7 +363,8 @@ internal sealed class MeshRenderExtractor : IRenderExtractionSystem
         int MaterialOffset,
         int MaterialCount,
         bool MeshChanged,
-        bool MaterialsChanged);
+        bool MaterialsChanged,
+        SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource);
 
     private readonly record struct InstancedSnapshot(
         Entity Source,

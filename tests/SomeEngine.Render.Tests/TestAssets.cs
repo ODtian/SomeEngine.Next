@@ -1,4 +1,8 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
+using SomeEngine.Resources.Geometry;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Render.Tests;
 
@@ -15,7 +19,7 @@ internal static class TestAssets
         {
             if (!Meshes.TryGetValue((id, revision), out Mesh? asset))
             {
-                asset = new Mesh { Name = $"mesh-{id}-r{revision}" };
+                asset = CreateMesh($"mesh-{id}-r{revision}");
                 Meshes.Add((id, revision), asset);
             }
             return asset;
@@ -41,10 +45,38 @@ internal static class TestAssets
         {
             if (!Textures.TryGetValue((id, revision), out Texture? asset))
             {
-                asset = new Texture { Name = $"texture-{id}-r{revision}" };
+                asset = SomeEngine.Resources.Texture.Create(new SomeEngine.Graphics.TextureDesc(
+                    SomeEngine.Graphics.TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+                    SomeEngine.Graphics.Format.R8UNorm, SomeEngine.Graphics.TextureUsages.Sampled,
+                    label: $"texture-{id}-r{revision}"),
+                    [new TexturePixels(new TextureMipTile { Width = 1, Height = 1 }, new byte[] { 1 })],
+                    SomeEngine.Graphics.TextureViewDimension.Texture2D);
                 Textures.Add((id, revision), asset);
             }
             return asset;
         }
+    }
+
+    private static Mesh CreateMesh(string name)
+    {
+        const string encoding = "render-tests.opaque";
+        int vertices = MeshPageHeader.Size + PackedCluster.SizeInBytes;
+        int bvhOffset = vertices + 1 + 3;
+        byte[] bytes = new byte[bvhOffset + Unsafe.SizeOf<ClusterBVHNode>()];
+        var header = new MeshPageHeader
+        {
+            ClusterCount = 1, TotalVertexCount = 1, TotalTriangleCount = 1, VertexBlobBytes = 1,
+            ClustersOffset = MeshPageHeader.Size, VertexBlobsOffset = (uint)vertices,
+            IndicesOffset = (uint)(vertices + 1), ExtensionDataOffset = (uint)bvhOffset,
+            VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding),
+        };
+        MemoryMarshal.Write(bytes, in header);
+        var cluster = new PackedCluster { VertexBlobSize = 1, PackedCounts = 1 | (1u << 8),
+            ExtensionOffset = uint.MaxValue, MaterialTableOffset = uint.MaxValue };
+        MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
+        var bvh = new ClusterBVHNode { NodeType = 1 };
+        bvh.SetLeafData(0, 1);
+        MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in bvh);
+        return SomeEngine.Resources.Mesh.Create(name, encoding, bytes.AsMemory(), (ulong)bvhOffset);
     }
 }

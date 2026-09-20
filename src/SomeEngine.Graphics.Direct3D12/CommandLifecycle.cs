@@ -170,7 +170,8 @@ internal sealed unsafe partial class D3D12Backend
     {
         using (queue.Gate.EnterScope())
         {
-            queue.Device.ThrowIfUnavailable();
+            // A native signal may succeed after removal; the completion fence still reports the loss.
+            _ = queue.ReadCompletedValue();
             return queue.SignalCompletionUnderGate();
         }
     }

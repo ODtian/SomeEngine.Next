@@ -9,7 +9,7 @@ namespace SomeEngine.Serialization.Containers;
 /// <c>Root</c> and chunk streaming operations.
 /// </summary>
 public sealed class BinaryDocumentView<TContract, TView> : IAsyncDisposable
-    where TContract : IBinaryContract<TContract>, IBinaryViewContract<TContract, TView>
+    where TContract : IBinarySerializable<TContract>, IBinaryViewContract<TContract, TView>
     where TView : struct
 {
     private readonly IRangeSource _source;
@@ -51,48 +51,26 @@ public sealed class BinaryDocumentView<TContract, TView> : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        BinaryReadLimits effectiveLimits = limits ?? BinaryReadLimits.Default;
-        string openingGeneration = source.Generation;
         RangeLease? rootLease = null;
         BinaryContractViewOwner? rootOwner = null;
         try
         {
-            using RangeLease headerLease = await source.AcquireAsync(
-                0,
-                BinaryDocumentFormat.HeaderSize,
-                cancellationToken).ConfigureAwait(false);
-            BinaryDocumentHeader header = BinaryDocumentFormat.ReadHeader(headerLease.Memory.Span);
-            BinaryDocument<TContract>.ValidateHeader<TContract>(header, source.Length, effectiveLimits);
-
-            using RangeLease catalogLease = await source.AcquireAsync(
-                BinaryDocumentFormat.HeaderSize,
-                checked((int)header.CatalogLength),
-                cancellationToken).ConfigureAwait(false);
-            BinaryWireTypeDescriptor[] typeCatalog = BinaryDocumentFormat.ReadTypeCatalog(
-                catalogLease.Memory.Span,
-                effectiveLimits);
-            _ = BinaryDocument<TContract>.GetRootCatalogEntry<TContract>(typeCatalog, header);
-
-            rootLease = await source.AcquireAsync(
-                header.RootOffset,
-                checked((int)header.RootLength),
-                cancellationToken).ConfigureAwait(false);
-            BinaryDocument<TContract>.VerifyHash(
-                rootLease.Memory.Span,
-                header.RootHash,
-                "binary document root view");
+            var content = await BinaryDocument.ReadContentAsync(source,
+                new(TContract.TypeId, TContract.SchemaFingerprint, TContract.Compatibility, TContract.SchemaEpoch),
+                limits, cancellationToken).ConfigureAwait(false);
+            rootLease = content.Root;
             rootOwner = BinaryContractViewOwner.Take(rootLease);
             rootLease = null;
-            TView root = TContract.CreateView(rootOwner, effectiveLimits);
+            TView root = TContract.CreateView(rootOwner, content.Limits);
 
-            if (!StringComparer.Ordinal.Equals(openingGeneration, source.Generation))
+            if (!StringComparer.Ordinal.Equals(content.SourceGeneration, source.Generation))
                 throw new IOException("Range source generation changed while opening an binary root view.");
 
             var result = new BinaryDocumentView<TContract, TView>(
                 source,
                 ownsSource,
-                header,
-                typeCatalog,
+                content.Header,
+                content.Types,
                 rootOwner,
                 root);
             rootOwner = null;

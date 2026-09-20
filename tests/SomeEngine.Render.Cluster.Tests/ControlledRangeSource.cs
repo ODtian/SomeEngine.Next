@@ -1,4 +1,5 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Assets;
 using SomeEngine.Serialization.IO;
 
@@ -76,15 +77,17 @@ internal sealed class ControlledRangeSource : IRangeSource
 
 internal sealed class ControlledRuntimeMesh : IDisposable
 {
-    internal ControlledRuntimeMesh(Mesh mesh, ControlledRangeSource source)
+    private readonly MeshFileContent _content;
+    internal ControlledRuntimeMesh(MeshFileContent content, ControlledRangeSource source)
     {
-        Mesh = mesh;
+        _content = content;
         Source = source;
     }
 
-    internal Mesh Mesh { get; }
+    internal Mesh Mesh => _content.Mesh;
+    internal SomeEngine.Assets.Pipeline.MeshPayloadSource PageSource => _content.PageSource;
 
     internal ControlledRangeSource Source { get; }
 
-    public void Dispose() => Mesh.Dispose();
+    public void Dispose() => _content.Dispose();
 }

@@ -1,0 +1,44 @@
+{
+  "importer_id": "00000000-0000-0000-0000-000000000000",
+  "importer_version": 26,
+  "input_hash": "cf4a22c8ec22a5bf283db1ab84793d8b0c3fc7a3e5081f0ef32a64b1e045e1fe",
+  "inputs": [
+    {
+      "relative_path": "../../assets/Shaders/hiz_common.slang",
+      "content_hash": "e5137ac4f4aef066af08a822ff18cc251fd4186c3752bbef5f2836fc8b531551"
+    },
+    {
+      "relative_path": "../../assets/Shaders/hiz_reduce_pair.slang",
+      "content_hash": "d081d3eb153a797b1d1caf24a6e45772c2985c3be5f22d7c2278462f3abf8ee6"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
+    },
+    {
+      "relative_path": "assets/Shaders/Pipeline/build_hiz_reduce_pair.slang",
+      "content_hash": "ca759a955c4342fda795f59f9a6cb6ea20e68dfc5ebefddde530ab4f28b4771d"
+    },
+    {
+      "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
+      "content_hash": "ac67726795aff3ee3c5398492bc202bde4ec8889dab426bb74a90f96e86ce749"
+    },
+    {
+      "relative_path": "assets/Shaders/hiz_reduce_pair.shader",
+      "content_hash": "01cf359f8cf192523a4001825a0da7518c0882dcd47c82a3cbd6714706afbf56"
+    }
+  ],
+  "reported_inputs": [],
+  "outputs": [
+    {
+      "asset_guid": "127f9d54-98ec-566d-bb4d-41e06037e66d",
+      "sub_asset_key": "",
+      "input_hash": "cf4a22c8ec22a5bf283db1ab84793d8b0c3fc7a3e5081f0ef32a64b1e045e1fe",
+      "dependencies": [],
+      "asset_path": "hiz_reduce_pair.shader.asset",
+      "version": "68a67b1d-18ad-d165-4910-b40c56b10ab2",
+      "content_hash": "3B807F8501FE8DB55DB7DFA21125580BC4B0DD4D6AD20539A8591005F4048B8D",
+      "asset_dependencies": []
+    }
+  ]
+}

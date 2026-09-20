@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using static SomeEngine.Tests.TestProjectPaths;
 
 namespace SomeEngine.Tests.Assets;
@@ -24,9 +25,10 @@ public class AssetManifestTests
 
             AssetManifest manifest = new();
             manifest.AddSource(sourceGuid, "assets/Shaders/test.slang");
-            manifest.AddAsset(shaderGuid, "TestShader", "assets/Shaders/test.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, sourceGuid, "shader:main");
-            manifest.AddAsset(materialGuid, "TestMaterial", "assets/Materials/test.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [shaderGuid]);
+            manifest.AddAsset(shaderGuid, "TestShader", "assets/Shaders/test.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash, sourceGuid, "shader:main");
+            manifest.AddAsset(materialGuid, "TestMaterial", "assets/Materials/test.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash, dependencies: [shaderGuid]);
             manifest.Save(dir);
+            Assert.Equal(AssetManifest.CatalogFileName, Path.GetFileName(Assert.Single(Directory.EnumerateFiles(dir))));
 
             AssetManifest loaded = AssetManifest.Load(dir);
 
@@ -35,7 +37,7 @@ public class AssetManifestTests
             Assert.True(loaded.TryGetAsset(shaderGuid, out AssetEntry shaderRecord));
             Assert.Equal("TestShader", shaderRecord.Name);
             Assert.Equal(sourceGuid, shaderRecord.SourceGuid);
-            Assert.Equal(ShaderData.SchemaFingerprint, shaderRecord.SchemaFingerprint);
+            Assert.Equal(ShaderAsset.SchemaHash, shaderRecord.SchemaFingerprint);
             Assert.Equal(new[] { shaderGuid }, loaded.GetDependencies(materialGuid));
         }
         finally
@@ -69,8 +71,8 @@ public class AssetManifestTests
             assetGuid,
             "Obsolete",
             "assets/Shaders/obsolete.shader.asset",
-            Asset<Shader>.FileType,
-            ShaderData.SchemaFingerprint,
+            ShaderAsset.FileType,
+            ShaderAsset.SchemaHash,
             sourceGuid,
             "shader:main");
 
@@ -110,10 +112,10 @@ public class AssetManifestTests
 
             var document = new JsonObject
             {
-                ["assets"] = new JsonArray(entry),
+                ["assets"] = new JsonObject { ["assets"] = new JsonArray(entry) },
             };
             File.WriteAllText(
-                Path.Combine(directory, AssetManifest.AssetIndexFileName),
+                Path.Combine(directory, AssetManifest.CatalogFileName),
                 document.ToJsonString());
 
             Assert.Throws<InvalidDataException>(() => AssetManifest.Load(directory));
@@ -133,8 +135,8 @@ public class AssetManifestTests
 
         AssetManifest manifest = new();
         manifest.AddSource(sourceGuid, "assets/Shaders/shared.slang");
-        manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, sourceGuid, "shader:main");
-        manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint, sourceGuid, "shader:shadow");
+        manifest.AddAsset(mainGuid, "Main", "assets/Shaders/shared.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash, sourceGuid, "shader:main");
+        manifest.AddAsset(shadowGuid, "Shadow", "assets/Shaders/shared.shadow.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash, sourceGuid, "shader:shadow");
 
         Assert.True(manifest.TrySourceGuid("assets/Shaders/shared.slang", out SourceGuid resolvedSourceGuid));
         Assert.Equal(sourceGuid, resolvedSourceGuid);
@@ -153,9 +155,9 @@ public class AssetManifestTests
         Guid meshGuid = Guid.NewGuid();
 
         AssetManifest manifest = new();
-        manifest.AddAsset(textureGuid, "TextureData", "assets/Textures/test.texture.asset", Asset<Texture>.FileType, TextureData.SchemaFingerprint);
-        manifest.AddAsset(materialGuid, "MaterialData", "assets/Materials/test.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [textureGuid]);
-        manifest.AddAsset(meshGuid, "MeshData", "assets/Meshes/test.mesh.asset", Asset<Mesh>.FileType, MeshData.SchemaFingerprint, dependencies: [materialGuid]);
+        manifest.AddAsset(textureGuid, "TextureAsset", "assets/Textures/test.texture.asset", TextureAsset.FileType, TextureAsset.SchemaHash);
+        manifest.AddAsset(materialGuid, "MaterialData", "assets/Materials/test.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash, dependencies: [textureGuid]);
+        manifest.AddAsset(meshGuid, "MeshAsset", "assets/Meshes/test.mesh.asset", MeshAsset.FileType, MeshAsset.SchemaHash, dependencies: [materialGuid]);
 
         Assert.Equal(new[] { materialGuid }, manifest.GetReferencers(textureGuid));
         Assert.Equal(new[] { meshGuid }, manifest.GetReferencers(materialGuid));
@@ -169,14 +171,83 @@ public class AssetManifestTests
         Guid materialGuid = Guid.NewGuid();
 
         AssetManifest manifest = new();
-        manifest.AddAsset(shaderGuid, "ShaderData", "assets/Shaders/test.shader.asset", Asset<Shader>.FileType, ShaderData.SchemaFingerprint);
-        manifest.AddAsset(materialGuid, "MaterialData", "assets/Materials/test.material.asset", Asset<Material>.FileType, MaterialData.SchemaFingerprint, dependencies: [shaderGuid]);
+        manifest.AddAsset(shaderGuid, "ShaderAsset", "assets/Shaders/test.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash);
+        manifest.AddAsset(materialGuid, "MaterialData", "assets/Materials/test.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash, dependencies: [shaderGuid]);
 
-        IReadOnlyList<AssetEntry> materials = manifest.List(Asset<Material>.FileType);
+        IReadOnlyList<AssetEntry> materials = manifest.List(MaterialAsset.FileType);
 
         Assert.Single(materials);
         Assert.Equal(materialGuid, materials[0].AssetGuid);
         Assert.Equal("MaterialData", materials[0].Name);
+    }
+
+    [Fact]
+    public void MissingCatalogDoesNotReadObsoleteIndexesAndCorruptionDoesNotFallBack()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            foreach (string name in new[] { "source_index.json", "asset_index.json", "dependency_graph.json" })
+                File.WriteAllText(Path.Combine(directory, name), "Obsolete data must not be read.");
+            AssetManifest empty = AssetManifest.Load(directory);
+            Assert.Empty(empty.Sources);
+            Assert.Empty(empty.Assets);
+            File.WriteAllText(Path.Combine(directory, AssetManifest.CatalogFileName), "null");
+            Assert.Throws<InvalidDataException>(() => AssetManifest.Load(directory));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ConcurrentReadersObserveWholeCatalogsDuringRepeatedReplacement()
+    {
+        string directory = CreateTempDir();
+        try
+        {
+            SourceGuid firstSource = SourceGuid.New(), secondSource = SourceGuid.New();
+            Guid material = Guid.NewGuid(), firstShader = Guid.NewGuid(), secondShader = Guid.NewGuid();
+            AssetManifest first = Create(firstSource, firstShader, "first");
+            AssetManifest second = Create(secondSource, secondShader, "second");
+            first.Save(directory);
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task writer = Task.Run(async () =>
+            {
+                await entered.Task;
+                for (int index = 0; index < 100; index++) (index % 2 == 0 ? second : first).Save(directory);
+            });
+            Task reader = Task.Run(() =>
+            {
+                entered.SetResult();
+                int reads = 0;
+                do
+                {
+                    AssetManifest loaded = AssetManifest.Load(directory);
+                    SourceGuid source = Assert.Single(loaded.Sources).Key;
+                    bool isFirst = source == firstSource;
+                    Assert.True(isFirst || source == secondSource);
+                    Guid shader = isFirst ? firstShader : secondShader;
+                    Assert.Equal(2, loaded.Assets.Count);
+                    Assert.True(loaded.TryGetAsset(material, out AssetEntry entry));
+                    Assert.Equal(source, entry.SourceGuid);
+                    Assert.Equal(isFirst ? "first" : "second", entry.Name);
+                    Assert.Equal(shader, Assert.Single(loaded.GetDependencies(material)));
+                    Assert.True(loaded.TryGetAsset(shader, out _));
+                    reads++;
+                } while (!writer.IsCompleted || reads < 100);
+            });
+            await Task.WhenAll(writer, reader).WaitAsync(TimeSpan.FromSeconds(30));
+
+            AssetManifest Create(SourceGuid source, Guid shader, string name)
+            {
+                var value = new AssetManifest();
+                value.AddSource(source, $"assets/{name}.gltf");
+                value.AddAsset(shader, name, $"assets/{name}.shader.asset", ShaderAsset.FileType, ShaderAsset.SchemaHash, source, "shader");
+                value.AddAsset(material, name, "assets/result.material.asset", MaterialAsset.FileType, MaterialAsset.SchemaHash,
+                    source, "material", [shader]);
+                return value;
+            }
+        }
+        finally { Directory.Delete(directory, recursive: true); }
     }
 
     private static void AssertEquivalent(IEnumerable<Guid> actual, IEnumerable<Guid> expected)

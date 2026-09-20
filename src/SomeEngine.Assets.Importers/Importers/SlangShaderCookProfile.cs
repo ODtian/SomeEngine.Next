@@ -1,32 +1,4 @@
-using System.Text.Json;
-
 namespace SomeEngine.Assets.Importers;
-
-public sealed class SlangShaderImporterSettings
-{
-    public string CookProfile { get; set; } = SlangShaderCookProfiles.DefaultName;
-
-    public static SlangShaderImporterSettings Default() => new();
-
-    internal static SlangShaderImporterSettings Load(SourceMeta sourceMeta, string sourcePath)
-    {
-        if (!sourceMeta.ImporterSettings.HasValue)
-        {
-            return Default();
-        }
-
-        SlangShaderImporterSettings? settings =
-            sourceMeta.ImporterSettings.Value.Deserialize<SlangShaderImporterSettings>(
-                AssetIoHelpers.JsonOptions);
-        if (settings == null)
-        {
-            throw new InvalidOperationException(
-                $"Source '{sourcePath}' contains invalid importer settings for {nameof(SlangShaderImporter)}.");
-        }
-
-        return settings;
-    }
-}
 
 public readonly record struct SlangShaderCookProfile
 {

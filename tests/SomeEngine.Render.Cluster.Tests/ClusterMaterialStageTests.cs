@@ -1,6 +1,7 @@
 using System.Reflection;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 
@@ -60,13 +61,13 @@ public sealed class ClusterMaterialStageTests
     [Fact]
     public void Different_materials_can_share_one_shade_compatibility_key()
     {
-        CookedShaderProgram cooked = CookedShaderTestProgram.Create();
+        SlangShaderSharp.ShaderProgram cooked = CookedShaderTestProgram.Create();
         var firstKey = new ClusterShadeCompatibilityKey(
-            cooked.Program!,
-            cooked.Program!.EntryPoints[0]);
+            cooked,
+            cooked.EntryPoints[0]);
         var secondKey = new ClusterShadeCompatibilityKey(
-            cooked.Program,
-            cooked.Program.EntryPoints[0]);
+            cooked,
+            cooked.EntryPoints[0]);
 
         Material first = new StandardMaterial { Name = "first" };
         Material second = new UnlitMaterial { Name = "second" };
@@ -93,10 +94,10 @@ public sealed class ClusterMaterialStageTests
     [Fact]
     public void Material_slot_value_changes_do_not_change_a_stage_key()
     {
-        CookedShaderProgram cooked = CookedShaderTestProgram.Create();
+        SlangShaderSharp.ShaderProgram cooked = CookedShaderTestProgram.Create();
         var key = new ClusterShadeCompatibilityKey(
-            cooked.Program!,
-            cooked.Program!.EntryPoints[0]);
+            cooked,
+            cooked.EntryPoints[0]);
         var material = new StandardMaterial();
 
         ulong initialRevision = material.Revision;
@@ -109,8 +110,8 @@ public sealed class ClusterMaterialStageTests
             AddressType.Repeat,
             AddressType.MirrorRepeat);
         var afterValuesChanged = new ClusterShadeCompatibilityKey(
-            cooked.Program,
-            cooked.Program.EntryPoints[0]);
+            cooked,
+            cooked.EntryPoints[0]);
 
         Assert.True(material.Revision > initialRevision);
         Assert.Equal(key, afterValuesChanged);
@@ -123,8 +124,8 @@ public sealed class ClusterMaterialStageTests
         string boundsValue,
         string expectedBounds)
     {
-        CookedShaderProgram cooked = CookedShaderTestProgram.Create();
-        string entryPoint = cooked.Program!.EntryPoints[0].Name;
+        SlangShaderSharp.ShaderProgram cooked = CookedShaderTestProgram.Create();
+        string entryPoint = cooked.EntryPoints[0].Name;
         var shader = new Shader
         {
             Programs = [cooked],
@@ -158,8 +159,8 @@ public sealed class ClusterMaterialStageTests
     [Fact]
     public void Missing_conservative_bounds_declaration_fails_during_stage_resolution()
     {
-        CookedShaderProgram cooked = CookedShaderTestProgram.Create();
-        string entryPoint = cooked.Program!.EntryPoints[0].Name;
+        SlangShaderSharp.ShaderProgram cooked = CookedShaderTestProgram.Create();
+        string entryPoint = cooked.EntryPoints[0].Name;
         var shader = new Shader
         {
             Programs = [cooked],
@@ -200,13 +201,13 @@ public sealed class ClusterMaterialStageTests
 
     [Theory]
     [InlineData(
-        "cluster_shade_material.shader.asset",
+        "standard.shader.asset",
         "ClusterShade",
         "AlbedoMap",
         "NormalMap",
         "ARMMap")]
     [InlineData(
-        "cluster_shade_unlit.shader.asset",
+        "unlit.shader.asset",
         "ClusterShade",
         "AlbedoMap",
         null,
@@ -255,11 +256,13 @@ public sealed class ClusterMaterialStageTests
     [InlineData("ClusterShade", true)]
     public async Task Material_resources_only_separate_commands_that_use_them(string entry, bool separates)
     {
-        Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(AppContext.BaseDirectory,
-            "Content", "Shaders", "cluster_shade_material.shader.asset"));
+        using Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(AppContext.BaseDirectory,
+            "Content", "Shaders", "standard.shader.asset"));
         ClusterLinkedStageLayout layout = ClusterLinkedStageLayout.Create(shader, ShaderTarget.Spirv, entry);
-        var first = new StandardMaterial { AlbedoMap = new SomeEngine.Assets.Schema.Texture() };
-        var second = new StandardMaterial { AlbedoMap = new SomeEngine.Assets.Schema.Texture() };
+        using var firstTexture = TestTexture();
+        using var secondTexture = TestTexture();
+        using var first = new StandardMaterial { AlbedoMap = firstTexture };
+        using var second = new StandardMaterial { AlbedoMap = secondTexture };
         ClusterMaterialStageBinding[] bindings = layout.Resources.ToArray().Select(resource =>
         {
             MaterialPropertyDefinition slot = first.Properties.FirstOrDefault(slot => slot.Name == resource.Name);
@@ -279,6 +282,12 @@ public sealed class ClusterMaterialStageTests
         Assert.Equal(separates, !ClusterCommandBindingKey.Create(first, layout, bindings)
             .Equals(ClusterCommandBindingKey.Create(second, layout, bindings)));
     }
+
+    private static SomeEngine.Resources.Texture TestTexture() => SomeEngine.Resources.Texture.Create(
+        new SomeEngine.Graphics.TextureDesc(SomeEngine.Graphics.TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+            SomeEngine.Graphics.Format.R8UNorm, SomeEngine.Graphics.TextureUsages.Sampled),
+        [new TexturePixels(new TextureMipTile { Width = 1, Height = 1 }, new byte[] { 1 })],
+        SomeEngine.Graphics.TextureViewDimension.Texture2D);
 
     private static ClusterMaterialAssignmentSet Assignment(Material material) => new(
         [new ClusterMaterialSequence([material], ClusterTestAssets.StandardVertexEncoding, 0)],

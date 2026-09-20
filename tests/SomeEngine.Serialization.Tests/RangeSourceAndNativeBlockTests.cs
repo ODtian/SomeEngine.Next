@@ -218,7 +218,7 @@ public sealed class RangeSourceAndNativeBlockTests
     }
 }
 
-[BinaryContract(BinaryCompatibility.ExactSchema)]
+[BinarySerializable(BinaryCompatibility.ExactSchema)]
 [BinaryNativeLayout("SomeEngine.Serialization.Tests.GeneratedNativeInt32.v1")]
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public partial struct GeneratedNativeInt32

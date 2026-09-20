@@ -1,4 +1,5 @@
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 

@@ -2,6 +2,7 @@ using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -18,17 +19,17 @@ public sealed class SlangShaderTextureShapeTests
         File.WriteAllText(path, Source);
         try
         {
-            ShaderData imported = SlangShaderImporter.ImportTransient(path);
+            using ShaderAsset imported = ShaderTestCompilation.Compile(path);
             string cookedPath = Path.Combine(directory, "texture_shape.shader.asset");
-            AssetWriter.Write((imported).ToAsset(), cookedPath);
-            ShaderData asset = await ShaderData.ReadAsync(cookedPath);
-            Assert.Equal(imported.SchemaVersion, asset.SchemaVersion);
-            Assert.Equal(SlangShaderImporter.ImporterVersion, asset.ImportTrace!.ImporterVersion);
-            ShaderEntryPointReflection reflection = asset.EntryPointReflections!
+            await imported.SaveAsync(cookedPath);
+            using ShaderAsset asset = await ShaderAsset.OpenAsync(cookedPath);
+            Assert.Equal(imported.GetBlock<ShaderBlock>().SchemaVersion, asset.GetBlock<ShaderBlock>().SchemaVersion);
+            Assert.Equal(SlangShaderImporter.ImporterVersion, asset.GetBlock<ShaderBlock>().ImportTrace!.ImporterVersion);
+            ShaderEntryPointReflection reflection = asset.GetBlock<ShaderBlock>().EntryPointReflections!
                 .Single(value =>
                     value.Backend == "dxil" &&
                     value.EntryPoint == "Main" &&
-                    value.Stage == SomeEngine.Assets.Schema.ShaderStage.Compute);
+                    value.Stage == SomeEngine.Resources.ShaderStage.Compute);
             IList<ShaderResourceReflection> resources = reflection.Reflection!.Resources!;
 
             AssertTexture(
@@ -86,11 +87,11 @@ public sealed class SlangShaderTextureShapeTests
 
             foreach (string backend in new[] { "dxil", "spirv" })
             {
-                ShaderResourceReflection formatted = asset.EntryPointReflections!
+                ShaderResourceReflection formatted = asset.GetBlock<ShaderBlock>().EntryPointReflections!
                     .Single(value =>
                         value.Backend == backend &&
                         value.EntryPoint == "Main" &&
-                        value.Stage == SomeEngine.Assets.Schema.ShaderStage.Compute)
+                        value.Stage == SomeEngine.Resources.ShaderStage.Compute)
                     .Reflection!.Resources!
                     .Single(value => value.Name == "formattedStorage");
                 Assert.Equal(StorageFormat.R8G8B8A8UNorm, formatted.StorageFormat);

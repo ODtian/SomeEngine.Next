@@ -1,9 +1,12 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using SlangShaderSharp;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Instances;
@@ -12,8 +15,32 @@ using SlangShaderReflection = SlangShaderSharp.ShaderReflection;
 namespace SomeEngine.Render.Cluster.Tests;
 
 [Collection(SlangReflectionCollection.Name)]
-public sealed class ClusterShaderAbiTests
+public sealed class ClusterShaderAbiTests : IDisposable
 {
+    private readonly List<ComObject> _compilerObjects = [];
+    private readonly HashSet<ComObject> _seen = new(ReferenceEqualityComparer.Instance);
+
+    private T Hold<T>(T value)
+    {
+        if (value is ComObject native && _seen.Add(native)) _compilerObjects.Add(native);
+        return value;
+    }
+
+    public void Dispose()
+    {
+        // Slang children can depend on their session. Release children before their parents,
+        // including on assertion failure, rather than relying on finalizer ordering.
+        List<Exception>? errors = null;
+        for (int index = _compilerObjects.Count - 1; index >= 0; index--)
+        {
+            try { _compilerObjects[index].FinalRelease(); }
+            catch (Exception error) { (errors ??= []).Add(error); }
+        }
+        _compilerObjects.Clear();
+        _seen.Clear();
+        if (errors is not null) throw new AggregateException("Shader test cleanup failed.", errors);
+    }
+
     // Sorts before SomeEngine ids so the exact-layout probe exercises shifted Cluster ordinals.
     private const string TestTintCanonicalId = "material.test.tint";
 
@@ -48,8 +75,10 @@ public sealed class ClusterShaderAbiTests
         ];
         foreach ((string assetName, string entryPoint, string subject, ClusterConservativeBounds expectedBounds) in geometryEntries)
         {
-            Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(
+            using Shader shader = await ClusterTestFiles.OpenShaderAsync(Path.Combine(
                 repositoryRoot,
+                "templates",
+                "DefaultProject",
                 "assets",
                 "Shaders",
                 assetName));
@@ -83,6 +112,7 @@ public sealed class ClusterShaderAbiTests
         Assert.False(instanceLayout.Contains(tintKey));
 
         SlangResult createResult = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession globalSession);
+        Hold(globalSession);
         Assert.True(createResult.Succeeded, $"Failed to create the Slang global session: {createResult}.");
 
         SlangProfileID spirvProfile = globalSession.FindProfile("glsl_460");
@@ -118,6 +148,7 @@ public sealed class ClusterShaderAbiTests
             SearchPaths = [shaderDirectory],
         };
         SlangResult sessionResult = globalSession.CreateSession(sessionDesc, out ISession session);
+        Hold(session);
         Assert.True(sessionResult.Succeeded, $"Failed to create the Slang reflection session: {sessionResult}.");
 
         const string transformReflectionSource = """
@@ -135,8 +166,10 @@ public sealed class ClusterShaderAbiTests
         IModule? module = session.LoadModuleFromSource(
             "render_instance_transform_reflection_test",
             sourcePath,
-            Slang.CreateBlob(transformReflectionSource),
+            Hold(Slang.CreateBlob(transformReflectionSource)),
             out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
         Assert.True(module is not null, moduleDiagnostics?.AsString ?? "Slang did not return module diagnostics.");
 
         Type renderInstanceTransform = typeof(SomeEngine.Render.Components.RenderTransform);
@@ -145,6 +178,7 @@ public sealed class ClusterShaderAbiTests
             SlangShaderReflection reflection = module.GetLayout(
                 targetIndex,
                 out ISlangBlob? layoutDiagnostics);
+            Hold(layoutDiagnostics);
             Assert.NotEqual(SlangShaderReflection.Null, reflection);
             Assert.True(
                 layoutDiagnostics is null || string.IsNullOrWhiteSpace(layoutDiagnostics.AsString),
@@ -176,12 +210,11 @@ public sealed class ClusterShaderAbiTests
             shaderDirectory,
             sessionDesc.Targets.Length);
         await AssertConfiguredClusterOperationsCompile(
-            session,
             FindRepositoryRoot(),
             sessionDesc.Targets.Length);
     }
 
-    private static void AssertExactPipelineMaterialLayoutCompiles(
+    private void AssertExactPipelineMaterialLayoutCompiles(
         ISession session,
         string shaderDirectory,
         int targetCount,
@@ -238,8 +271,10 @@ public sealed class ClusterShaderAbiTests
         IModule? module = session.LoadModuleFromSource(
             "exact_pipeline_material_layout_probe",
             shaderPath,
-            Slang.CreateBlob(source),
+            Hold(Slang.CreateBlob(source)),
             out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
         Assert.True(
             module is not null,
             $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
@@ -249,6 +284,8 @@ public sealed class ClusterShaderAbiTests
             SlangStage.Compute,
             out IEntryPoint entryPoint,
             out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
         Assert.True(
             entryPointResult.Succeeded,
             "Failed to check ExactPipelineMaterialLayoutProbe: "
@@ -278,7 +315,7 @@ public sealed class ClusterShaderAbiTests
     }
 
 
-    private static void AssertPipelineNeutralMaterialInterfaceCompiles(
+    private void AssertPipelineNeutralMaterialInterfaceCompiles(
         ISession session,
         string shaderDirectory,
         int targetCount)
@@ -300,8 +337,10 @@ public sealed class ClusterShaderAbiTests
         IModule? module = session.LoadModuleFromSource(
             "material_interface_neutral_probe",
             shaderPath,
-            Slang.CreateBlob(source),
+            Hold(Slang.CreateBlob(source)),
             out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
         Assert.True(
             module is not null,
             $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
@@ -311,6 +350,8 @@ public sealed class ClusterShaderAbiTests
             SlangStage.Compute,
             out IEntryPoint entryPoint,
             out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
         Assert.True(
             entryPointResult.Succeeded,
             "Failed to check NeutralMaterialInterfaceProbe: "
@@ -324,7 +365,7 @@ public sealed class ClusterShaderAbiTests
             targetCount);
     }
 
-    private static void AssertTextureDisplacementDomainCompiles(
+    private void AssertTextureDisplacementDomainCompiles(
         ISession session,
         string shaderDirectory,
         int targetCount)
@@ -381,8 +422,10 @@ public sealed class ClusterShaderAbiTests
         IModule? module = session.LoadModuleFromSource(
             "texture_displacement_domain_probe",
             shaderPath,
-            Slang.CreateBlob(source),
+            Hold(Slang.CreateBlob(source)),
             out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
         Assert.True(
             module is not null,
             $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
@@ -392,6 +435,8 @@ public sealed class ClusterShaderAbiTests
             SlangStage.Compute,
             out IEntryPoint entryPoint,
             out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
         Assert.True(
             entryPointResult.Succeeded,
             "Failed to check TextureDisplacementDomainProbe: "
@@ -406,107 +451,62 @@ public sealed class ClusterShaderAbiTests
     }
 
     private static async Task AssertConfiguredClusterOperationsCompile(
-        ISession session,
         string repositoryRoot,
         int targetCount)
     {
+        string projectRoot = Path.Combine(repositoryRoot, "templates", "DefaultProject");
         AssetManifest manifest = AssetManifest.Load(
-            Path.Combine(repositoryRoot, "Library", "AssetManifest"));
+            Path.Combine(projectRoot, "Library", "AssetManifest"));
         AssetEntry configurationRecord = Assert.Single(
-            manifest.List(Asset<ClusterShaders>.FileType));
+            manifest.List(ClusterShadersAsset.FileType));
         await using var loader = new AssetLoader(
-            new LooseAssetStorage(repositoryRoot, manifest));
-        await using Asset<ClusterShaders> file = await loader.OpenAsync(new AssetId<ClusterShaders>(configurationRecord.AssetGuid));
-        ClusterShaders configuration = await ClusterShaders.CreateAsync(file, loader);
+            new LooseAssetStorage(projectRoot, manifest));
+        await using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(loader, new AssetId<ClusterShadersAsset>(configurationRecord.AssetGuid));
+        using ClusterShaders configuration = await file.GetBlock<ClusterShadersBlock>().CreateAsync(file.Name, loader);
         IList<ClusterShaderOperation> operations = Assert.IsAssignableFrom<IList<ClusterShaderOperation>>(
-            configuration.Operations);
+            file.GetBlock<ClusterShadersBlock>().Operations);
+        Assert.Equal(operations.Count, configuration.Operations.Count);
         Assert.Equal(
             Enum.GetValues<ClusterShaderOperationRole>()
                 .Count(static role => role != ClusterShaderOperationRole.None),
             operations.Count);
 
-        var modules = new Dictionary<string, IModule>(StringComparer.OrdinalIgnoreCase);
-        foreach (ClusterShaderOperation operation in operations)
+        var shaders = new Dictionary<Guid, Shader>();
+        try
         {
-            IList<ShaderRef> entries = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders);
-            Assert.NotEmpty(entries);
-            ShaderRef first = entries[0];
-            Assert.True(
-                Guid.TryParse(first.AssetGuid, out Guid shaderGuid),
-                $"Operation {operation.Role} has no Shader asset identity.");
-            Assert.All(entries, entry => Assert.Equal(first.AssetGuid, entry.AssetGuid));
-            Shader shader = configuration.GetShader(first);
-            string source = Assert.IsType<string>(shader.ImportTrace?.SourcePath);
-            string sourcePath = Path.GetFullPath(Path.Combine(
-                repositoryRoot,
-                source.Replace('/', Path.DirectorySeparatorChar)));
-            Assert.StartsWith(
-                Path.GetFullPath(repositoryRoot) + Path.DirectorySeparatorChar,
-                sourcePath,
-                StringComparison.OrdinalIgnoreCase);
-
-            if (!modules.TryGetValue(sourcePath, out IModule? module))
+            foreach (ClusterShaderOperation operation in operations)
             {
-                string moduleName = Path.GetFileNameWithoutExtension(sourcePath);
-                module = session.LoadModuleFromSource(
-                    moduleName,
-                    sourcePath,
-                    Slang.CreateBlob(File.ReadAllText(sourcePath)),
-                    out ISlangBlob? moduleDiagnostics);
-                Assert.True(
-                    module is not null,
-                    $"Failed to load configured shader {sourcePath}: "
-                    + (moduleDiagnostics?.AsString ?? "no diagnostics"));
-                modules.Add(sourcePath, module);
-            }
-
-            foreach (ShaderRef entry in entries)
-            {
-                AssertConfiguredEntryPointCompiles(
-                    session,
-                    module,
-                    sourcePath,
-                    Assert.IsType<string>(entry.EntryPoint),
-                    entry.Stage switch
+                IList<ShaderRef> entries = Assert.IsAssignableFrom<IList<ShaderRef>>(operation.Shaders);
+                Assert.NotEmpty(entries);
+                ShaderRef first = entries[0];
+                Guid shaderGuid = first.Asset.Value;
+                Assert.All(entries, entry => Assert.Equal(first.Asset, entry.Asset));
+                using ShaderAsset shaderFile = await ShaderAsset.OpenAsync(loader, new(shaderGuid));
+                Assert.Equal(shaderFile.Name, configuration.Operations.Single(value => value.Role == operation.Role).Shaders[0].Shader.Name);
+                if (!shaders.TryGetValue(shaderGuid, out Shader? shader))
+                {
+                    Assert.True(manifest.TryGetAsset(shaderGuid, out AssetEntry description));
+                    Assert.NotEmpty(description.DefinitionPath);
+                    string path = Path.GetFullPath(Path.Combine(projectRoot, description.DefinitionPath));
+                    using ShaderAsset definition = await ShaderAsset.OpenSourceAsync(path);
+                    if (targetCount == 1) definition.GetBlock<ShaderSourceBlock>().Targets = [SomeEngine.Graphics.ShaderTarget.Spirv];
+                    using ShaderAsset compiled = SlangShaderImporter.CompileDefinition(definition, path,
+                        includeDirectories: [Path.Combine(repositoryRoot, "assets", "Shaders")]);
+                    shader = await compiled.GetBlock<ShaderBlock>().CreateAsync(compiled.Name);
+                    shaders.Add(shaderGuid, shader);
+                }
+                foreach (ShaderRef entry in entries)
+                    foreach (string backend in targetCount == 1 ? new[] { "spirv" } : new[] { "spirv", "dxil" })
                     {
-                        ShaderStage.Compute => SlangStage.Compute,
-                        ShaderStage.Vertex => SlangStage.Vertex,
-                        ShaderStage.Pixel => SlangStage.Fragment,
-                        _ => throw new InvalidDataException(
-                            $"Cluster operation {operation.Role} uses unsupported stage {entry.Stage}."),
-                    },
-                    targetCount);
+                        Assert.True(shader.TryEntry(backend, Assert.IsType<string>(entry.EntryPoint), entry.Stage, out _, out var compiledEntry),
+                            $"Configured {operation.Role} entry {entry.EntryPoint} is missing from {backend} output.");
+                        Assert.False(compiledEntry.Code.IsEmpty);
+                    }
             }
         }
+        finally { foreach (Shader shader in shaders.Values) shader.Dispose(); }
     }
-
-    private static void AssertConfiguredEntryPointCompiles(
-        ISession session,
-        IModule module,
-        string shaderPath,
-        string entryPointName,
-        SlangStage stage,
-        int targetCount)
-    {
-        SlangResult entryPointResult = module.FindAndCheckEntryPoint(
-            entryPointName,
-            stage,
-            out IEntryPoint entryPoint,
-            out ISlangBlob? entryPointDiagnostics);
-        Assert.True(
-            entryPointResult.Succeeded,
-            $"Failed to check configured {stage} entry point {entryPointName} in {shaderPath}: "
-            + (entryPointDiagnostics?.AsString ?? entryPointResult.ToString()));
-        AssertEntryPointCompiles(
-            session,
-            module,
-            entryPoint,
-            shaderPath,
-            entryPointName,
-            targetCount);
-    }
-
-    private static void AssertDirectPropertyAccessCompiles(
+    private void AssertDirectPropertyAccessCompiles(
         ISession session,
         string shaderDirectory,
         int targetCount)
@@ -554,8 +554,10 @@ public sealed class ClusterShaderAbiTests
         IModule? module = session.LoadModuleFromSource(
             "render_instance_direct_property_probe",
             shaderPath,
-            Slang.CreateBlob(source),
+            Hold(Slang.CreateBlob(source)),
             out ISlangBlob? moduleDiagnostics);
+        Hold(module);
+        Hold(moduleDiagnostics);
         Assert.True(
             module is not null,
             $"Failed to load {shaderFile}: {moduleDiagnostics?.AsString ?? "no diagnostics"}");
@@ -565,6 +567,8 @@ public sealed class ClusterShaderAbiTests
             SlangStage.Compute,
             out IEntryPoint entryPoint,
             out ISlangBlob? entryPointDiagnostics);
+        Hold(entryPoint);
+        Hold(entryPointDiagnostics);
         Assert.True(
             entryPointResult.Succeeded,
             $"Failed to check DirectPropertyProbe: "
@@ -578,7 +582,7 @@ public sealed class ClusterShaderAbiTests
             targetCount);
     }
 
-    private static void AssertEntryPointCompiles(
+    private void AssertEntryPointCompiles(
         ISession session,
         IModule module,
         IEntryPoint entryPoint,
@@ -591,6 +595,8 @@ public sealed class ClusterShaderAbiTests
             components,
             out IComponentType composedProgram,
             out ISlangBlob? composeDiagnostics);
+        Hold(composedProgram);
+        Hold(composeDiagnostics);
         Assert.True(
             composeResult.Succeeded,
             $"Failed to compose entry point {entryPointName} in {shaderFile}: "
@@ -599,6 +605,8 @@ public sealed class ClusterShaderAbiTests
         SlangResult linkResult = composedProgram.Link(
             out IComponentType linkedProgram,
             out ISlangBlob? linkDiagnostics);
+        Hold(linkedProgram);
+        Hold(linkDiagnostics);
         Assert.True(
             linkResult.Succeeded,
             $"Failed to link entry point {entryPointName} in {shaderFile}: "
@@ -611,6 +619,8 @@ public sealed class ClusterShaderAbiTests
                 targetIndex,
                 out ISlangBlob code,
                 out ISlangBlob? compileDiagnostics);
+            Hold(code);
+            Hold(compileDiagnostics);
             Assert.True(
                 compileResult.Succeeded && code.GetBufferSize() > 0,
                 $"Failed to compile entry point {entryPointName} in {shaderFile} " +

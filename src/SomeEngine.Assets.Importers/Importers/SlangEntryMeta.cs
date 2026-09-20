@@ -35,7 +35,7 @@ internal static class SlangEntryMeta
         return attributes;
     }
 
-    public static Schema.ShaderEntryPointMetadata? Create(
+    public static SomeEngine.Resources.ShaderEntryPointMetadata? Create(
         int programIndex,
         int entryPointIndex,
         IReadOnlyList<Attr> attributes)

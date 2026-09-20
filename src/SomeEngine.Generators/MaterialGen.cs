@@ -13,7 +13,7 @@ namespace SomeEngine.Generators;
 [Generator]
 public sealed class MaterialGen : IIncrementalGenerator
 {
-    private const string MaterialTypeName = "SomeEngine.Assets.Schema.Material";
+    private const string MaterialTypeName = "SomeEngine.Resources.Material";
 
     private static readonly SymbolDisplayFormat QualifiedTypeFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
@@ -42,25 +42,25 @@ public sealed class MaterialGen : IIncrementalGenerator
             return [];
 
         var materials = ImmutableArray.CreateBuilder<MaterialInfo>();
-        Collect(compilation.Assembly.GlobalNamespace, materialBase, materials);
+        Collect(compilation.Assembly.GlobalNamespace, materialBase, materials, compilation);
         return materials.ToImmutable();
     }
 
     private static void Collect(
         INamespaceSymbol ns,
         INamedTypeSymbol materialBase,
-        ImmutableArray<MaterialInfo>.Builder materials)
+        ImmutableArray<MaterialInfo>.Builder materials, Compilation compilation)
     {
         foreach (INamespaceSymbol child in ns.GetNamespaceMembers())
-            Collect(child, materialBase, materials);
+            Collect(child, materialBase, materials, compilation);
         foreach (INamedTypeSymbol type in ns.GetTypeMembers())
-            Collect(type, materialBase, materials);
+            Collect(type, materialBase, materials, compilation);
     }
 
     private static void Collect(
         INamedTypeSymbol type,
         INamedTypeSymbol materialBase,
-        ImmutableArray<MaterialInfo>.Builder materials)
+        ImmutableArray<MaterialInfo>.Builder materials, Compilation compilation)
     {
         if (IsMaterial(type, materialBase))
         {
@@ -70,14 +70,14 @@ public sealed class MaterialGen : IIncrementalGenerator
                 .OrderBy(static property => SourcePath(property), StringComparer.Ordinal)
                 .ThenBy(static property => SourceStart(property))
                 .ThenBy(static property => property.Name, StringComparer.Ordinal)
-                .Select(static (property, slot) => new PropertyInfo(
+                .Select((property, slot) => new PropertyInfo(
                     property.Name,
                     property.Type.ToDisplayString(QualifiedTypeFormat),
                     property.Type.WithNullableAnnotation(NullableAnnotation.None)
                         .ToDisplayString(QualifiedTypeFormat),
                     AccessibilityText(property.DeclaredAccessibility),
                     property.SetMethod?.IsInitOnly == true,
-                    checked((uint)slot)))
+                    checked((uint)slot), DefaultExpression(property, compilation)))
                 .ToImmutableArray();
             if (!properties.IsDefaultOrEmpty)
             {
@@ -88,13 +88,14 @@ public sealed class MaterialGen : IIncrementalGenerator
                     AccessibilityText(type.DeclaredAccessibility),
                     type.IsSealed,
                     type.Name,
+                    type.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == "SomeEngine.Resources.MaterialTypeAttribute")?.ConstructorArguments.FirstOrDefault().Value as string ?? type.ToDisplayString(),
                     Sanitize(type.ToDisplayString()) + ".Material.g.cs",
                     properties));
             }
         }
 
         foreach (INamedTypeSymbol nested in type.GetTypeMembers())
-            Collect(nested, materialBase, materials);
+            Collect(nested, materialBase, materials, compilation);
     }
 
     private static bool IsMaterial(INamedTypeSymbol type, INamedTypeSymbol materialBase)
@@ -119,35 +120,35 @@ public sealed class MaterialGen : IIncrementalGenerator
         source.Append(material.Accessibility).Append(" partial class ").Append(material.Name).AppendLine(" {");
         foreach (PropertyInfo p in material.Properties)
         {
-            source.Append("private ").Append(p.Type).Append(" _").Append(p.Name).AppendLine(" = default!;");
             source.Append(p.Accessibility).Append(" partial ").Append(p.Type).Append(' ').Append(p.Name)
-                .Append(" { get => _").Append(p.Name).Append("; ").Append(p.IsInitOnly ? "init" : "set")
-                .Append(" => SetProperty(ref _").Append(p.Name).Append(", value, ").Append(p.Slot).AppendLine("u); }");
+                .Append(" { get => field; ").Append(p.IsInitOnly ? "init" : "set")
+                .Append(" => SetProperty(ref field, value, ").Append(p.Slot).AppendLine("u); }");
         }
         string name = material.Namespace.Length == 0 ? material.Name : material.Namespace + "." + material.Name;
-        source.Append("public override global::System.Guid MaterialTypeId => global::SomeEngine.Serialization.BinaryTypeId.FromLogicalName(\"")
-            .Append(name).AppendLine("\");");
-        source.AppendLine("private static readonly global::SomeEngine.Assets.Schema.MaterialPropertyDefinition[] Definitions = [");
+        source.Append("public static global::System.Guid TypeId { get; } = global::SomeEngine.Serialization.BinaryTypeId.FromLogicalName(\"")
+            .Append(material.TypeName).AppendLine("\");");
+        source.AppendLine("public override global::System.Guid MaterialTypeId => TypeId;");
+        source.AppendLine("private static readonly global::SomeEngine.Resources.MaterialPropertyDefinition[] Definitions = [");
         foreach (PropertyInfo p in material.Properties)
             source.Append("new(").Append(p.Slot).Append("u, \"").Append(Escape(p.Name)).Append("\", typeof(").Append(p.TypeOf).AppendLine(")),");
         source.AppendLine("];");
-        source.AppendLine("public override global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Assets.Schema.MaterialPropertyDefinition> Properties => Definitions;");
+        source.AppendLine("public override global::System.Collections.Generic.IReadOnlyList<global::SomeEngine.Resources.MaterialPropertyDefinition> Properties => Definitions;");
         source.AppendLine("public override global::SomeEngine.Graphics.DeviceResource? GetDeviceResource(uint index) => index switch {");
         foreach (PropertyInfo p in material.Properties)
             if (p.TypeOf.EndsWith(".BufferSrv", StringComparison.Ordinal) || p.TypeOf.EndsWith(".BufferUav", StringComparison.Ordinal) ||
                 p.TypeOf.EndsWith(".BufferCbv", StringComparison.Ordinal) || p.TypeOf.EndsWith(".AccelerationStructureSrv", StringComparison.Ordinal))
-                source.Append(p.Slot).Append("u => _").Append(p.Name).AppendLine(",");
+                source.Append(p.Slot).Append("u => ").Append(p.Name).AppendLine(",");
         source.AppendLine("_ => null, };");
-        EmitGetter("global::SomeEngine.Assets.Schema.Texture?", "GetTexture", "Texture", "null");
+        EmitGetter("global::SomeEngine.Resources.Texture?", "GetTexture", "Texture", "null");
         EmitGetter("global::SomeEngine.Graphics.SamplerDesc", "GetSampler", "Sampler", "default");
         source.AppendLine("public override global::System.Numerics.Vector4 GetFloatComponents(uint index) => index switch {");
         foreach (PropertyInfo p in material.Properties)
         {
             string kind = Kind(p);
-            string? expression = kind == "Float" ? "new(_" + p.Name + ")"
-                : kind == "Vector2" ? "new(_" + p.Name + ", 0f, 0f)"
-                : kind == "Vector3" ? "new(_" + p.Name + ", 0f)"
-                : kind == "Vector4" ? "_" + p.Name : null;
+            string? expression = kind == "Float" ? "new(" + p.Name + ")"
+                : kind == "Vector2" ? "new(" + p.Name + ", 0f, 0f)"
+                : kind == "Vector3" ? "new(" + p.Name + ", 0f)"
+                : kind == "Vector4" ? p.Name : null;
             if (expression != null) source.Append(p.Slot).Append("u => ").Append(expression).AppendLine(",");
         }
         source.AppendLine("_ => default, };");
@@ -155,39 +156,64 @@ public sealed class MaterialGen : IIncrementalGenerator
         foreach (PropertyInfo p in material.Properties)
         {
             string kind = Kind(p);
-            string? expression = kind == "Int" ? "unchecked((uint)_" + p.Name + ")"
-                : kind == "UInt" ? "_" + p.Name : kind == "Bool" ? "_" + p.Name + " ? 1u : 0u" : null;
+            string? expression = kind == "Int" ? "unchecked((uint)" + p.Name + ")"
+                : kind == "UInt" ? p.Name : kind == "Bool" ? p.Name + " ? 1u : 0u" : null;
             if (expression != null) source.Append(p.Slot).Append("u => ").Append(expression).AppendLine(",");
         }
         source.AppendLine("_ => 0, };");
-        source.AppendLine("public override void ApplyParameter(global::SomeEngine.Assets.Schema.MaterialParameter parameter, global::SomeEngine.Assets.Schema.Texture? texture) {");
+        source.AppendLine("public override void ApplyParameter(global::SomeEngine.Resources.MaterialValue parameter, global::SomeEngine.Resources.Texture? texture) {");
         source.AppendLine("switch (parameter.Name) {");
         foreach (PropertyInfo p in material.Properties)
         {
             string kind = Kind(p);
             if (kind == "") continue;
-            source.Append("case \"").Append(Escape(p.Name)).Append("\" when parameter.Kind == global::SomeEngine.Assets.Schema.MaterialParameterKind.")
+            source.Append("case \"").Append(Escape(p.Name)).Append("\" when parameter.Kind == global::SomeEngine.Resources.MaterialParameterKind.")
                 .Append(kind).Append(": ").Append(p.Name).Append(" = ")
                 .Append(kind == "Texture" ? "texture" : "parameter." + kind).AppendLine("; break;");
         }
         source.AppendLine("default: throw new global::System.IO.InvalidDataException($\"Material parameter '{parameter.Name}' does not match the concrete properties.\"); } }");
-        source.AppendLine("protected override void CopyProperties(global::SomeEngine.Assets.Schema.Material source) {");
+        source.Append("protected override global::SomeEngine.Resources.Material CreateEmpty() => new ").Append(material.Name).AppendLine("();");
+        source.AppendLine("protected override void CopyProperties(global::SomeEngine.Resources.Material source) {");
         source.Append("var value = (").Append(material.Name).AppendLine(")source;");
         foreach (PropertyInfo p in material.Properties)
             source.Append(p.Name).Append(" = value.").Append(p.Name).AppendLine(";");
-        source.AppendLine("} }");
-        source.Append("internal static class __").Append(Sanitize(material.Name)).AppendLine("MaterialRegistration {");
-        source.AppendLine("[global::System.Runtime.CompilerServices.ModuleInitializer] internal static void Register() {");
-        source.Append("global::SomeEngine.Assets.Schema.Material.RegisterGeneratedType<global::").Append(name)
-            .Append(">(\"").Append(name).AppendLine("\"); } }");
+        source.AppendLine("}");
+        source.AppendLine("}");
         return source.ToString();
 
         void EmitGetter(string type, string method, string kind, string fallback)
         {
             source.Append("public override ").Append(type).Append(' ').Append(method).AppendLine("(uint index) => index switch {");
             foreach (PropertyInfo p in material.Properties)
-                if (Kind(p) == kind) source.Append(p.Slot).Append("u => _").Append(p.Name).AppendLine(",");
+                if (Kind(p) == kind) source.Append(p.Slot).Append("u => ").Append(p.Name).AppendLine(",");
             source.Append("_ => ").Append(fallback).AppendLine(", };");
+        }
+    }
+
+    internal static string DefaultExpression(IPropertySymbol property, Compilation compilation)
+    {
+        foreach (SyntaxReference reference in property.DeclaringSyntaxReferences)
+            if (reference.GetSyntax() is PropertyDeclarationSyntax { Initializer: { } initializer })
+                return new QualifiedNames(compilation.GetSemanticModel(initializer.SyntaxTree)).Visit(initializer.Value)!.ToString();
+        return "default";
+    }
+
+    private sealed class QualifiedNames(SemanticModel semantics) : CSharpSyntaxRewriter
+    {
+        public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
+        {
+            ISymbol? symbol = semantics.GetSymbolInfo(node).Symbol;
+            if (symbol is INamedTypeSymbol type)
+                return SyntaxFactory.ParseName(type.ToDisplayString(QualifiedTypeFormat)).WithTriviaFrom(node);
+            return base.VisitIdentifierName(node);
+        }
+
+        public override SyntaxNode? VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
+        {
+            ISymbol? symbol = semantics.GetSymbolInfo(node).Symbol;
+            if (symbol is { IsStatic: true, ContainingType: { } type })
+                return SyntaxFactory.ParseExpression(type.ToDisplayString(QualifiedTypeFormat) + "." + symbol.Name).WithTriviaFrom(node);
+            return base.VisitMemberAccessExpression(node);
         }
     }
 
@@ -242,6 +268,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             string accessibility,
             bool isSealed,
             string name,
+            string typeName,
             string hintName,
             ImmutableArray<PropertyInfo> properties)
         {
@@ -249,6 +276,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             Accessibility = accessibility;
             IsSealed = isSealed;
             Name = name;
+            TypeName = typeName;
             HintName = hintName;
             Properties = properties;
         }
@@ -257,6 +285,7 @@ public sealed class MaterialGen : IIncrementalGenerator
         internal string Accessibility { get; }
         internal bool IsSealed { get; }
         internal string Name { get; }
+        internal string TypeName { get; }
         internal string HintName { get; }
         internal ImmutableArray<PropertyInfo> Properties { get; }
     }
@@ -269,7 +298,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             string typeOf,
             string accessibility,
             bool isInitOnly,
-            uint slot)
+            uint slot, string defaultValue)
         {
             Name = name;
             Type = type;
@@ -277,6 +306,7 @@ public sealed class MaterialGen : IIncrementalGenerator
             Accessibility = accessibility;
             IsInitOnly = isInitOnly;
             Slot = slot;
+            DefaultValue = defaultValue;
         }
 
         internal string Name { get; }
@@ -285,5 +315,6 @@ public sealed class MaterialGen : IIncrementalGenerator
         internal string Accessibility { get; }
         internal bool IsInitOnly { get; }
         internal uint Slot { get; }
+        internal string DefaultValue { get; }
     }
 }

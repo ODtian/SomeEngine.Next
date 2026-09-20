@@ -8,11 +8,14 @@ public partial class World
     /// before their first write and must not invoke user code from the mutation.
     /// </summary>
     protected TResult ExecuteValueMutation<TState, TResult>(
+        SomeEngine.ECS.Queries.QueryDefinition access,
         TState state,
         Func<TState, TResult> execution)
     {
         ArgumentNullException.ThrowIfNull(execution);
-        using WorldJobAdmissionScope admission = EnterJobTopologyRead();
+        ArgumentNullException.ThrowIfNull(access);
+        using WorldJobAdmissionScope admission = EnterJobAdmission(WorldJobAdmissionRequest.ForQuery(
+            WorldTopologyAccess.Read, access.JobStorageAccesses, access.CanWrite));
         return execution(state);
     }
 

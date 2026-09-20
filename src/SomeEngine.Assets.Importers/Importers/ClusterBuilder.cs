@@ -8,11 +8,12 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SharpGLTF.Schema2;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
-using MeshData = SomeEngine.Assets.Schema.MeshData;
-using ValueType = SomeEngine.Assets.Data.ValueType;
+using MeshAsset = SomeEngine.Assets.Schema.MeshAsset;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -355,7 +356,7 @@ public static partial class ClusterBuilder
 {
 
 
-    public static MeshData Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
+    public static MeshAsset Process(string filePath, Func<string, MeshMaterialSlot> materialResolver)
     {
         ArgumentNullException.ThrowIfNull(materialResolver);
         var model = ModelRoot.Load(filePath);
@@ -366,7 +367,7 @@ public static partial class ClusterBuilder
         return ProcessMesh(mesh, materialSlots, mesh.Name ?? "Unnamed");
     }
 
-    public static MeshData ProcessMesh(
+    public static MeshAsset ProcessMesh(
         GltfMesh mesh,
         IReadOnlyList<MeshMaterialSlot> materialSlots,
         string name,
@@ -506,8 +507,7 @@ public static partial class ClusterBuilder
         state.MaterialSlots.Add(
             primitiveIndex < materialSlots.Count
                 ? materialSlots[primitiveIndex]
-                : throw new InvalidDataException(
-                    $"MeshData primitive {primitiveIndex} has no material/deform cook slot."));
+                : default);
         AddMaterialIndices(state.MaterialIndices, primitiveIndex, positions.Length);
         return vertexOffset + (uint)positions.Length;
     }
@@ -886,7 +886,7 @@ public static partial class ClusterBuilder
 {
 
 
-    public static MeshData ProcessRaw(
+    public static MeshAsset ProcessRaw(
         Vector3[] rawPos,
         List<RawAttribute> rawAttributes,
         uint[] rawIndices,

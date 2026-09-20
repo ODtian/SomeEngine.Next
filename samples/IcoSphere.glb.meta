@@ -1,41 +1,19 @@
 {
   "source_guid": "1e00a232-7680-4051-97b7-16efe4178761",
-  "importer": "GltfSourceImporter",
-  "importer_settings": {
-    "lit_material_template": "assets/Materials/Standard.material.asset",
-    "unlit_material_template": "assets/Materials/TestUnlit_1.material.asset",
-    "generate_tangents": true
-  },
-  "importer_version": 5,
-  "input_hash": "f9ff4c226cf53b6e8fa30cf814569ac75acd558c3b30e28d447c637662f277a5",
-  "inputs": [
+  "importers": [
     {
-      "relative_path": "assets/Materials/Standard.material.asset",
-      "content_hash": "72f7228d88a0b49ddbab9f6c303200abe020eb2eee06bfd05e05f9c740368c43"
-    },
-    {
-      "relative_path": "assets/Materials/TestUnlit_1.material.asset",
-      "content_hash": "be9f9b2d797d8764a72de9be22b6da23acadecfb6c21ac0f487bc80f77e82277"
-    },
-    {
-      "relative_path": "samples/IcoSphere.glb",
-      "content_hash": "40523d69e4e2c6fc1316114008b3de26100108a3a5ed2a5601ff1b9ff6c89a83"
+      "importer_id": "b0c10195-d8d1-46ab-81b8-f8c54db7d0aa",
+      "settings": {
+        "lit_material_template": "assets/Materials/Standard.material.asset",
+        "unlit_material_template": "assets/Materials/TestUnlit_1.material.asset",
+        "generate_tangents": true
+      },
+      "enabled": true
     }
   ],
-  "outputs": [
-    {
-      "asset_guid": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
-      "sub_asset_key": "material:0:Default",
-      "input_hash": "f9ff4c226cf53b6e8fa30cf814569ac75acd558c3b30e28d447c637662f277a5",
-      "dependencies": [],
-      "asset_path": "IcoSphere.material.0.Default.material.asset"
-    },
-    {
-      "asset_guid": "7c2bd842-d3a3-5616-a385-b8f2918c3daf",
-      "sub_asset_key": "mesh:0:IcoSphere",
-      "input_hash": "f9ff4c226cf53b6e8fa30cf814569ac75acd558c3b30e28d447c637662f277a5",
-      "dependencies": [],
-      "asset_path": "IcoSphere.mesh.0.IcoSphere.mesh.asset"
-    }
-  ]
+  "use_default_importers": true,
+  "element_ids": {
+    "material:index:0": "8ce87f0b-f828-58dd-8fb3-c60f28054282",
+    "mesh:index:0": "7c2bd842-d3a3-5616-a385-b8f2918c3daf"
+  }
 }
