@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "6d2bb81c97f93848cc39058af9602990983505d2f3cd4c144ce0f82e84269dd5",
+  "input_hash": "583912ec4df055ca17038106cd0fb4512b76cdff388f02f1e2a5897059c5a55a",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/hiz_common.slang",
@@ -9,7 +9,7 @@
     },
     {
       "relative_path": "../../assets/Shaders/hiz_reduce.slang",
-      "content_hash": "7dd906c3a271482c8ebda091ddabf53bd23a10964d207a664ea8f595170ab93d"
+      "content_hash": "a15d806b1c82569627e825a2475f14c2e0e9454dc0aa9d8fd18f48eb79d06879"
     },
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -17,7 +17,7 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_hiz_reduce.slang",
-      "content_hash": "906b973ac2ce9754f7ed841ffd714c621d958212b140fdd4af8148c951fc22c1"
+      "content_hash": "75037ac561b8ef4ec36a7cfc3a8500d13a1854b817dce24372ec1a3dc5141db8"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/hiz_reduce.shader",
-      "content_hash": "0eed53d2f4d03b38b9bf011cdf3045f0d1cac48394a2e95ac938f96a0a0b2717"
+      "content_hash": "be7ecc8ac41416150c1b2ce85369919eb93c0c8b006d0fa46086f3d2223e994d"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +33,11 @@
     {
       "asset_guid": "a22ae123-2398-52e0-996a-fcdeba6165f1",
       "sub_asset_key": "",
-      "input_hash": "6d2bb81c97f93848cc39058af9602990983505d2f3cd4c144ce0f82e84269dd5",
+      "input_hash": "583912ec4df055ca17038106cd0fb4512b76cdff388f02f1e2a5897059c5a55a",
       "dependencies": [],
       "asset_path": "hiz_reduce.shader.asset",
-      "version": "40bee776-572f-0820-e22f-b5322a5dbf61",
-      "content_hash": "72DAC4E93EC5CE3DD932C099F985BDC6534BD203FC3218854A19199B6B47F4D9",
+      "version": "bd633483-f8be-10f1-f5ef-dedfa0a4ab2d",
+      "content_hash": "AEECC0366A27EB8E975B846E5490BF731FB26070E513E861EAAE096637121B39",
       "asset_dependencies": []
     }
   ]

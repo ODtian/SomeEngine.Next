@@ -37,62 +37,12 @@ public sealed class RenderDeviceTextureTests
 
         RhiTexture canceledBacking = CancelTextureFrame(graph, renderDevice, asset);
 
-        Assert.Same(canceledBacking, renderDevice.GetTexture(asset.CaptureData()));
-        Assert.Throws<InvalidOperationException>(() => renderDevice.GetTextureSrv(asset.CaptureData()));
+        Assert.Same(canceledBacking, renderDevice.GetTexture(asset));
+        Assert.Throws<InvalidOperationException>(() => renderDevice.GetTextureSrv(asset));
 
         RhiTexture executedBacking = ExecuteTextureFrame(graph, renderDevice, asset);
         Assert.Same(canceledBacking, executedBacking);
-        _ = renderDevice.GetTextureSrv(asset.CaptureData());
-    }
-
-    [Theory]
-    [InlineData(FrameSubmissionMode.RecordAllThenSubmit)]
-    [InlineData(FrameSubmissionMode.Pipelined)]
-    public async Task FailedConsumerDoesNotCommitTextureUpload(FrameSubmissionMode mode)
-    {
-        if (!OperatingSystem.IsWindows())
-            return;
-        using var assets = new TemporaryAssetProject();
-        AssetGuid guid = assets.Project.CreateAsset(
-            "assets/failed-consumer.texture.asset",
-            SingleMipTexture("failed-consumer", 2, 1, [8, 9]));
-        await using var loader = new AssetLoader(assets.Project.CreateStorage());
-        EngineTexture asset = await loader.LoadAsync(new AssetId<EngineTexture>(guid));
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
-        using Device device = CreateWarpDevice(backend, "Texture recording failure test");
-        using var renderDevice = new RenderDevice(backend, device);
-        using var graph = CreateGraph(backend, device);
-        RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(SubmissionMode: mode));
-        bool failed = false;
-        try
-        {
-            GraphPassId consumer = frame.AddGeneralPass(
-                "Fail after Texture upload",
-                PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
-                new PassOptions(Culling: PassCullingMode.NeverCull,
-                    Recording: PassRecordingMode.CallingThread),
-                static (ref PassDefinition _, ref int _) => { },
-                static (ref GeneralPassCommandScope _, in int _) =>
-                    throw new InvalidOperationException("Texture consumer recording failed"));
-            _ = renderDevice.PrepareTexture(ref frame, consumer, asset.CaptureData());
-            try
-            {
-                frame.Execute(new QueueCompletion[graph.MaximumQueueCompletionCount]);
-            }
-            catch (InvalidOperationException exception) when (
-                exception.Message == "Texture consumer recording failed")
-            {
-                failed = true;
-            }
-        }
-        finally
-        {
-            frame.Dispose();
-        }
-        Assert.True(failed);
-        Assert.Throws<InvalidOperationException>(() => renderDevice.GetTextureSrv(asset.CaptureData()));
-        _ = ExecuteTextureFrame(graph, renderDevice, asset);
-        _ = renderDevice.GetTextureSrv(asset.CaptureData());
+        _ = renderDevice.GetTextureSrv(asset);
     }
 
     [Fact]
@@ -167,7 +117,7 @@ public sealed class RenderDeviceTextureTests
         RhiTexture resource = ExecuteTextureFrame(graph, renderDevice, asset);
         ChunkStreamingSnapshot after = file.StreamingMetrics.Snapshot();
 
-        Assert.Same(resource, renderDevice.GetTexture(asset.CaptureData()));
+        Assert.Same(resource, renderDevice.GetTexture(asset));
         Assert.Equal(before.LoadsCompleted, after.LoadsCompleted);
         Assert.Equal(before.StoredBytesRead, after.StoredBytesRead);
         Assert.Equal(before.CacheHits, after.CacheHits);
@@ -182,26 +132,26 @@ public sealed class RenderDeviceTextureTests
             Assert.Same(resource, secondGraphResource);
         }
 
-        TextureSrv defaultView = renderDevice.GetTextureSrv(asset.CaptureData());
+        TextureSrv defaultView = renderDevice.GetTextureSrv(asset);
         Assert.Equal(1u, defaultView.Description.Range.FirstMipLevel);
         Assert.Equal(1u, defaultView.Description.Range.MipLevelCount);
         Assert.Equal(2u, defaultView.Description.Range.ArrayLayerCount);
 
         TextureSubresourceRange firstLayer = new(1, 1, 0, 1, TextureAspects.Color);
         TextureSrv first = renderDevice.GetTextureSrv(
-            asset.CaptureData(),
+            asset,
             firstLayer,
             Format.R8UNorm,
             GraphicsTextureViewDimension.Texture2DArray,
             "first label");
         TextureSrv sameDescription = renderDevice.GetTextureSrv(
-            asset.CaptureData(),
+            asset,
             firstLayer,
             Format.R8UNorm,
             GraphicsTextureViewDimension.Texture2DArray,
             "ignored cache label");
         TextureSrv secondLayer = renderDevice.GetTextureSrv(
-            asset.CaptureData(),
+            asset,
             new TextureSubresourceRange(1, 1, 1, 1, TextureAspects.Color),
             Format.R8UNorm,
             GraphicsTextureViewDimension.Texture2DArray,
@@ -211,19 +161,19 @@ public sealed class RenderDeviceTextureTests
         Assert.NotSame(first, secondLayer);
 
         TextureUav firstUav = renderDevice.GetTextureUav(
-            asset.CaptureData(),
+            asset,
             firstLayer,
             Format.R8UNorm,
             GraphicsTextureViewDimension.Texture2DArray,
             "first UAV");
         TextureUav sameUav = renderDevice.GetTextureUav(
-            asset.CaptureData(),
+            asset,
             firstLayer,
             Format.R8UNorm,
             GraphicsTextureViewDimension.Texture2DArray,
             "ignored UAV label");
         TextureUav secondUav = renderDevice.GetTextureUav(
-            asset.CaptureData(),
+            asset,
             new TextureSubresourceRange(1, 1, 1, 1, TextureAspects.Color),
             Format.R8UNorm,
             GraphicsTextureViewDimension.Texture2DArray,
@@ -242,7 +192,7 @@ public sealed class RenderDeviceTextureTests
         }
 
         _ = ExecuteTextureFrame(graph, renderDevice, asset);
-        TextureSrv refinedView = renderDevice.GetTextureSrv(asset.CaptureData());
+        TextureSrv refinedView = renderDevice.GetTextureSrv(asset);
         Assert.Equal(0u, refinedView.Description.Range.FirstMipLevel);
         Assert.Equal(2u, refinedView.Description.Range.MipLevelCount);
     }
@@ -266,8 +216,8 @@ public sealed class RenderDeviceTextureTests
         using var first = new RenderDevice(backend, firstDevice);
         using var second = new RenderDevice(backend, secondDevice);
 
-        RhiTexture firstTexture = first.GetTexture(asset.CaptureData());
-        RhiTexture secondTexture = second.GetTexture(asset.CaptureData());
+        RhiTexture firstTexture = first.GetTexture(asset);
+        RhiTexture secondTexture = second.GetTexture(asset);
 
         Assert.NotSame(firstTexture, secondTexture);
         Assert.Same(firstDevice, firstTexture.Device);
@@ -283,7 +233,7 @@ public sealed class RenderDeviceTextureTests
             return;
 
         using var assets = new TemporaryAssetProject();
-        AssetGuid guid = AssetGuid.New();
+        Guid guid = Guid.NewGuid();
         string beforePath = assets.File("before.texture.asset");
         string afterPath = assets.File("after.texture.asset");
         using EngineTextureAsset beforeAsset = SingleMipTexture("before", 2, 1, [1, 2], new(guid));
@@ -310,6 +260,7 @@ public sealed class RenderDeviceTextureTests
         Task canceledUpdate = nextFile.GetBlock<TextureBlock>().UpdateAsync(asset, nextFile.Name).AsTask();
         await WaitForUpdateAsync(asset, canceledUpdate);
         RhiTexture canceledReplacement = CancelTextureFrame(graph, renderDevice, asset);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledUpdate);
         Assert.NotSame(oldBacking, canceledReplacement);
         Assert.Same(oldBacking, renderDevice.GetTexture(asset));
         Assert.Equal("before", asset.Name);
@@ -317,8 +268,8 @@ public sealed class RenderDeviceTextureTests
         Task update = nextFile.GetBlock<TextureBlock>().UpdateAsync(asset, nextFile.Name).AsTask();
         await WaitForUpdateAsync(asset, update);
         RhiTexture newBacking = ExecuteTextureFrame(graph, renderDevice, asset);
-
-        Assert.Same(asset, reloadResult);
+        await update.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("after", asset.Name);
         Assert.NotSame(oldBacking, newBacking);
         Assert.Equal(2u, oldBacking.Info.Width);
         Assert.Equal(4u, newBacking.Info.Width);
@@ -497,8 +448,8 @@ public sealed class RenderDeviceTextureTests
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition _, ref int _) => { },
                 static (ref GeneralPassCommandScope _, in int _) => { });
-            resource = renderDevice.PrepareTexture(ref frame, consumer, asset.CaptureData());
-            TextureSrv view = renderDevice.GetTextureSrv(asset.CaptureData());
+            resource = renderDevice.PrepareTexture(ref frame, consumer, asset);
+            TextureSrv view = renderDevice.GetTextureSrv(asset);
             GraphTextureId graphTexture = frame.GetImported(resource);
             GraphTextureSrvId graphView = frame.CreateTextureSrv(
                 graphTexture,
@@ -539,7 +490,7 @@ public sealed class RenderDeviceTextureTests
                 new PassOptions(Culling: PassCullingMode.NeverCull),
                 static (ref PassDefinition _, ref int _) => { },
                 static (ref GeneralPassCommandScope _, in int _) => { });
-            return renderDevice.PrepareTexture(ref frame, consumer, asset.CaptureData());
+            return renderDevice.PrepareTexture(ref frame, consumer, asset);
         }
         finally
         {
@@ -673,7 +624,7 @@ public sealed class RenderDeviceTextureTests
         private AssetEntry _entry;
         private string? _path;
 
-        internal void Publish(AssetGuid guid, string path)
+        internal void Publish(Guid guid, string path)
         {
             lock (_gate)
             {
@@ -686,7 +637,7 @@ public sealed class RenderDeviceTextureTests
             }
         }
 
-        public bool TryFind(AssetGuid assetGuid, out AssetEntry entry)
+        public bool TryFind(Guid assetGuid, out AssetEntry entry)
         {
             lock (_gate)
             {

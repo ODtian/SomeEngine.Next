@@ -4,6 +4,8 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
@@ -323,7 +325,7 @@ internal static class RuntimeApplication
         using World mainWorld = RuntimeWait.Task(sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
             new(Execution: new WorldJobs(JobSystem.Default))).AsTask(), window, FrameTimeout);
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
 
         RuntimeScene scene = RuntimeWait.Task(
             RuntimeScene.CreateAsync(mainWorld, assets).AsTask(),
@@ -406,7 +408,6 @@ internal static class RuntimeApplication
         using var virtualShadows = new VirtualShadowFeature(
             backend,
             device,
-            assets,
             virtualShadowConfiguration,
             shadowSettings,
             renderGraph,
@@ -499,7 +500,7 @@ internal static class RuntimeApplication
                 $"Runtime configuration '{title}' loaded from {contentRootLabel(FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
                 $"sceneBounds={scene.MeshPositionMin}..{scene.MeshPositionMax}, " +
-                $"clusterPipeline={pipelineConfiguration.AssetGuid}.");
+                    $"clusterPipeline={boot.Pipeline.Value}.");
             long runtimeStarted = Stopwatch.GetTimestamp();
             long previousFrameTimestamp = Stopwatch.GetTimestamp();
             int frameIndex = 0;
@@ -572,10 +573,6 @@ internal static class RuntimeApplication
                     RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
                     nextGameUpdate = null;
                 }
-                RuntimeWait.Task(
-                    assets.ApplyUpdatesAsync().AsTask(),
-                    window,
-                    FrameTimeout);
                 input.BeginFrame();
                 if (!window.PumpMessages())
                     break;
@@ -1208,83 +1205,5 @@ internal static class RuntimeApplication
             "The application directory has no Library/AssetManifest/catalog.json. Build this project's content before starting the application.");
     }
 
-    private static AssetGuid ParseGuid(string? value, string field)
-    {
-        if (!AssetGuid.TryParse(value, out AssetGuid guid) || guid.IsEmpty)
-            throw new InvalidDataException($"Runtime configuration field '{field}' is invalid.");
-        return guid;
-    }
-
-    private static (AssetGuid Shader, string VertexEntry, string PixelEntry) ParseRasterShaders(
-        IList<ShaderRef>? shaders,
-        string field)
-    {
-        if (shaders is not { Count: 2 })
-            throw new InvalidDataException($"Runtime field '{field}' requires one vertex and one pixel shader entry.");
-
-        ShaderRef? vertex = null;
-        ShaderRef? pixel = null;
-        foreach (ShaderRef shader in shaders)
-        {
-            if (shader is null)
-                throw new InvalidDataException($"Runtime field '{field}' contains a null shader entry.");
-            if (shader.Stage == ShaderStage.Vertex && vertex is null)
-                vertex = shader;
-            else if (shader.Stage == ShaderStage.Pixel && pixel is null)
-                pixel = shader;
-            else
-                throw new InvalidDataException($"Runtime field '{field}' requires one vertex and one pixel shader entry.");
-        }
-
-        if (vertex!.Asset.IsEmpty || pixel!.Asset.IsEmpty)
-            throw new InvalidDataException($"Runtime field '{field}' shader asset is missing.");
-        Guid vertexGuid = vertex.Asset.Value;
-        Guid pixelGuid = pixel.Asset.Value;
-        if (vertexGuid != pixelGuid)
-            throw new InvalidDataException($"Runtime field '{field}' entries must use one shader asset.");
-        if (string.IsNullOrWhiteSpace(vertex.EntryPoint) || string.IsNullOrWhiteSpace(pixel.EntryPoint))
-            throw new InvalidDataException($"Runtime field '{field}' shader entry points are missing.");
-        return (vertexGuid, vertex.EntryPoint, pixel.EntryPoint);
-    }
-
-    private static (AssetGuid Shader, string EntryPoint) ParseComputeShader(
-        ShaderRef? shader,
-        string field)
-    {
-        if (shader is null || shader.Stage != ShaderStage.Compute)
-            throw new InvalidDataException($"Runtime field '{field}' must contain one compute shader.");
-        if (shader.Asset.IsEmpty)
-            throw new InvalidDataException($"Runtime field '{field}' shader asset is missing.");
-        Guid guid = shader.Asset.Value;
-        if (string.IsNullOrWhiteSpace(shader.EntryPoint))
-            throw new InvalidDataException($"Runtime field '{field}' shader entry point is missing.");
-        return (guid, shader.EntryPoint);
-    }
-
     private static string contentRootLabel(string value) => Path.GetFullPath(value);
-
-    private readonly record struct BootConfiguration(
-        AssetGuid Scene,
-        AssetGuid Pipeline,
-        AssetGuid VirtualShadowMap,
-        AssetGuid UiShader,
-        string UiVertexEntry,
-        string UiPixelEntry,
-        AssetGuid PresentationShader,
-        string PresentationVertexEntry,
-        string PresentationPixelEntry,
-        AssetGuid LightingShader,
-        string LightingEntryPoint,
-        AssetGuid TemporalShader,
-        string TemporalVertexEntry,
-        string TemporalPixelEntry,
-        AssetGuid TranslucencyShader,
-        string TranslucencyVertexEntry,
-        string TranslucencyPixelEntry,
-        AssetGuid DebugShader,
-        string DebugVertexEntry,
-        string DebugPixelEntry,
-        int Width,
-        int Height,
-        string Title);
 }

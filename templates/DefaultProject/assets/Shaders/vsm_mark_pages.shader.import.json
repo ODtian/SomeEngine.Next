@@ -1,23 +1,31 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "d3af237df0a983b2526ce621740153df0aa45b788945c98f1fa82d902f626bb7",
+  "input_hash": "5fe12258049d34f00ad06757bffeec5131e4f6d3a975ffd8ecc549809a2ce4f9",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/render_lighting.slang",
-      "content_hash": "c764a5c47ff78017cf2a2fcd1b0ed1ee078d52e6d050395ff2da9a2d1b9c98b3"
+      "content_hash": "b1f856269f4f8ab8811fe6a976965ca3835ceb787fd86559f289be687bc73032"
+    },
+    {
+      "relative_path": "../../assets/Shaders/resource_effects.slang",
+      "content_hash": "9803d2c095d145b3fcbcada9eb832d9eb4ba92fbbec270c9feb81bc35cac64dc"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_mark_pages.slang",
-      "content_hash": "d208672073b5033ac647081a7936d2b977538798ac95cbecee467abf07ea6270"
+      "content_hash": "48a182f1c7f977a4564e39d918901680eb646a54bec999db92ff77247693e91c"
+    },
+    {
+      "relative_path": "../../assets/Shaders/vsm_page_request_common.slang",
+      "content_hash": "922a7c3309386b14790eb4b99f38f9ef094acde2133fb464301a97427c47f544"
     },
     {
       "relative_path": "../../assets/Shaders/vsm_sampling.slang",
-      "content_hash": "99806b0838f3d971d8c9580331c7be6efdeb1ab9785acbf1752811c23978a832"
+      "content_hash": "392fd680e12af9b29d59961bd85e88ec2024152434f79a6e2d2bca62824e622e"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_mark_pages.slang",
-      "content_hash": "83b86f57a7e68aa2e1bfe494ccf6aec0c52845e3b61227f0394f8d1e102833bf"
+      "content_hash": "8578d7918927ca46d1a36150a0bf1bd6f20a2486f22e82e0261c6c7d1b5bf80c"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +33,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_mark_pages.shader",
-      "content_hash": "50bd72642fe8b1d2b94025b5e01a4c217ac5f2b596f77b27f3b460fce884f1cf"
+      "content_hash": "b3dcfec4a3d0bef1aeb31481061a61de24f30ce52272e61a9911f2da075ee2eb"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +41,11 @@
     {
       "asset_guid": "6c441d68-a857-5643-9923-2d03131e0a37",
       "sub_asset_key": "",
-      "input_hash": "d3af237df0a983b2526ce621740153df0aa45b788945c98f1fa82d902f626bb7",
+      "input_hash": "5fe12258049d34f00ad06757bffeec5131e4f6d3a975ffd8ecc549809a2ce4f9",
       "dependencies": [],
       "asset_path": "vsm_mark_pages.shader.asset",
-      "version": "a5acd7fb-56c9-c0aa-70df-d90b3ec82e20",
-      "content_hash": "EC236296F99DD34FFD3A458FE2E00ABE18A5B6AA32C3BA2383924F4BD8823F13",
+      "version": "3266cc65-97f3-859c-9c1d-40152d5c612e",
+      "content_hash": "972CD4649CB1BB920877D6225A5C083748060E331887CD39669E2A247D2029FE",
       "asset_dependencies": []
     }
   ]

@@ -15,30 +15,26 @@ public sealed class VirtualShadowPageTests
     [InlineData(2, 0, 0)]
     public void CoarsePagesCoverEveryFinePageIncludingScrolledBorders(uint lightKind, int originX, int originY)
     {
-        uint[] view = new uint[42];
-        view[16] = 16384;
-        view[17] = 128;
-        view[21] = unchecked((uint)originX);
-        view[25] = unchecked((uint)originY);
-        view[34] = 5;
-        view[36] = lightKind;
+        const int pages = 21845;
+        uint[] view = new uint[43];
+        view[16] = 16384; view[17] = 128;
+        view[21] = unchecked((uint)originX); view[25] = unchecked((uint)originY);
+        view[33] = 1; view[34] = 8; view[37] = lightKind;
         uint[][] result = Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
-            ([1, 64, 7, 0], ResourceBindingType.ConstantBuffer, 0),
-            (view, ResourceBindingType.BufferSrv, 168),
-            (new uint[64], ResourceBindingType.BufferUav, 4),
+            ([1, pages, 7, 0], ResourceBindingType.ConstantBuffer, 0),
+            (view, ResourceBindingType.BufferSrv, 172),
+            (new uint[pages], ResourceBindingType.BufferUav, 4),
+            (new uint[pages], ResourceBindingType.BufferUav, 4),
+            (new uint[pages], ResourceBindingType.BufferUav, 4),
+            ([0], ResourceBindingType.BufferUav, 4),
+            (new uint[pages * 2], ResourceBindingType.BufferUav, 8),
         ]);
-        var requiredPages = new HashSet<int>();
-        for (int y = 0; y < 128; y++)
-        for (int x = 0; x < 128; x++)
-        {
-            int coarseX = (int)Math.Floor((originX + x) / 32.0);
-            int coarseY = (int)Math.Floor((originY + y) / 32.0);
-            int tableIndex = (coarseY & 7) * 8 + (coarseX & 7);
-            requiredPages.Add(tableIndex);
-            Assert.Equal(7u, result[0][tableIndex]);
-        }
-        Assert.Equal(requiredPages.Count, result[0].Count(value => value != 0));
+        Assert.Equal(7u, result[0][pages - 1]);
+        Assert.Equal(1, result[0].Count(value => value != 0));
+        Assert.Equal(2u, result[1][pages - 1]);
+        Assert.Equal((uint)pages - 1, result[2][0]);
+        Assert.Equal(1u, result[3][0]);
     }
 
     [Theory]
@@ -64,30 +60,35 @@ public sealed class VirtualShadowPageTests
         }
         var requested = new uint[1024];
         Array.Fill(requested, 10u, 0, requests);
-        uint[] views = new uint[42];
+        uint[] views = new uint[43];
         views[16] = 4096; views[17] = 128; views[21] = unchecked((uint)-3);
-        views[24] = 5; views[25] = 5;
+        views[24] = 5; views[25] = 5; views[34] = 1;
         uint[][] result = Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(16, 1, 1),
         [
-            ([1024, capacity, 1024, 1024, 64, 1, 10, 8], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 168), (requested, ResourceBindingType.BufferSrv, 4),
+            ([1024, 1024, capacity, 1, 10, 8, 63, 1], ResourceBindingType.ConstantBuffer, 0),
+            (views, ResourceBindingType.BufferSrv, 172),
+            (Enumerable.Range(0, requests).Select(index => (uint)index).ToArray(), ResourceBindingType.BufferSrv, 4),
+            ([requests], ResourceBindingType.BufferSrv, 4),
+            (Enumerable.Repeat(1u, 1024).ToArray(), ResourceBindingType.BufferSrv, 4),
             (table, ResourceBindingType.BufferUav, 16), (owners, ResourceBindingType.BufferUav, 4),
             (new uint[capacity * 4], ResourceBindingType.BufferUav, 16),
             (Enumerable.Range(0, capacity).Select(x => (uint)x).ToArray(), ResourceBindingType.BufferUav, 4),
             ([(uint)freeCount], ResourceBindingType.BufferUav, 4),
             (eviction, ResourceBindingType.BufferUav, 4), (counts, ResourceBindingType.BufferUav, 4),
-            (new uint[capacity * 2], ResourceBindingType.BufferUav, 8), ([0], ResourceBindingType.BufferUav, 4),
+            (new uint[capacity * 4], ResourceBindingType.BufferUav, 16), ([0], ResourceBindingType.BufferUav, 4),
+            ([uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
+            (new uint[63], ResourceBindingType.BufferUav, 4),
             ([0, 0], ResourceBindingType.BufferUav, 4),
         ]);
         Assert.Equal(0u, result[4][0]);
         Assert.All(result[6], count => Assert.Equal(0u, count));
         Assert.Equal((uint)available, result[8][0]);
-        Assert.Equal(new uint[] { 0, (uint)(requests - available) }, result[9]);
+        Assert.Equal(new uint[] { (uint)(requests - available), 0 }, result[11]);
         var allocated = new HashSet<uint>();
         var activeTables = new HashSet<uint>();
         for (int index = 0; index < available; index++)
         {
-            uint page = result[7][index * 2], entry = result[7][index * 2 + 1];
+            uint page = result[7][index * 4], entry = result[7][index * 4 + 1];
             Assert.True(allocated.Add(page));
             Assert.True(activeTables.Add(entry));
             Assert.InRange(page, 0u, (uint)available - 1u);
@@ -104,19 +105,20 @@ public sealed class VirtualShadowPageTests
     [Fact]
     public void Dirty_casters_invalidate_both_transforms_and_dilated_coarse_pages_with_overlapping_groups()
     {
-        const int dimension = 16, coarseDimension = 16, pages = 512;
-        uint[] views = new uint[42];
+        const int dimension = 16, pages = 320;
+        uint[] views = new uint[43];
         Matrix4x4 matrix = Matrix4x4.Identity;
         MemoryMarshal.Write(MemoryMarshal.AsBytes(views.AsSpan()), in matrix);
         views[16] = 2048; views[17] = 128; views[21] = unchecked((uint)-3);
-        views[24] = 9; views[25] = 5; views[34] = 1; views[35] = 256;
+        views[24] = 9; views[25] = 5; views[34] = 2; views[37] = 1;
         var table = new uint[pages * 4];
         for (int level = 0; level < 2; level++)
-        for (int y = 0; y < dimension; y++)
-        for (int x = 0; x < dimension; x++)
+        for (int y = 0; y < (dimension >> level); y++)
+        for (int x = 0; x < (dimension >> level); x++)
         {
             int wx = (level == 0 ? -3 : -2) + x, wy = (level == 0 ? 5 : 2) + y;
-            int entry = level * 256 + (wy & 15) * 16 + (wx & 15);
+            int size = dimension >> level;
+            int entry = level * 256 + (wy & (size - 1)) * size + (wx & (size - 1));
             table[entry * 4] = (uint)entry + 1;
             table[entry * 4 + 1] = unchecked((uint)wx);
             table[entry * 4 + 2] = unchecked((uint)wy);
@@ -135,22 +137,26 @@ public sealed class VirtualShadowPageTests
         }
         uint[][] result = Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(2, 1, 1),
         [
-            ([2, 1, pages, 1], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 168), (bounds, ResourceBindingType.BufferSrv, 16),
-            (table, ResourceBindingType.BufferUav, 16),
+            ([2, 1, pages, 1, 10, 46, 0, 0], ResourceBindingType.ConstantBuffer, 0),
+            (views, ResourceBindingType.BufferSrv, 172), (bounds, ResourceBindingType.BufferSrv, 16),
             ([0, 2], ResourceBindingType.BufferSrv, 4),
+            (new uint[pages], ResourceBindingType.BufferSrv, 4),
+            (new uint[pages], ResourceBindingType.BufferSrv, 4),
+            (new uint[pages * 4], ResourceBindingType.BufferSrv, 16),
+            (Enumerable.Repeat(uint.MaxValue, 46).ToArray(), ResourceBindingType.BufferSrv, 4),
+            (table, ResourceBindingType.BufferUav, 16),
         ]);
         HashSet<int> expected = [];
         foreach (float center in new[] { -0.5f, 0.25f })
+        for (int level = 0; level < 2; level++)
         {
-            int minX = (int)((center - 0.05f) * 8 + 8) - 1, maxX = (int)((center + 0.05f) * 8 + 8) + 1;
-            int minY = 6, maxY = 9;
+            int size = dimension >> level;
+            int minX = (int)((center - 0.05f) * size / 2 + size / 2) - 1;
+            int maxX = (int)((center + 0.05f) * size / 2 + size / 2) + 1;
+            int minY = (int)(.475f * size) - 1, maxY = (int)(.525f * size) + 1;
             for (int y = minY; y <= maxY; y++)
             for (int x = minX; x <= maxX; x++)
-                expected.Add(((5 + y) & 15) * dimension + ((-3 + x) & 15));
-            for (int y = (int)Math.Floor((5 + minY) / 2.0); y <= (5 + maxY) / 2; y++)
-            for (int x = (int)Math.Floor((-3 + minX) / 2.0); x <= (int)Math.Floor((-3 + maxX) / 2.0); x++)
-                expected.Add(256 + (y & 15) * coarseDimension + (x & 15));
+                expected.Add(level * 256 + (((5 >> level) + y) & (size - 1)) * size + (((-3 >> level) + x) & (size - 1)));
         }
         for (int entry = 0; entry < pages; entry++)
         {

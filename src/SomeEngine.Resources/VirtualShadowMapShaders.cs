@@ -6,6 +6,8 @@ public sealed class VirtualShadowMapShaders : IDisposable
     private int _disposed;
     public string? Name { get; init; }
     public ShaderEntry? MarkPages { get; init; }
+    public ShaderEntry? ResetFrame { get; init; }
+    public ShaderEntry? DynamicResolution { get; init; }
     public ShaderEntry? MarkCoarsePages { get; init; }
     public ShaderEntry? AllocatePages { get; init; }
     public ShaderEntry? ClearPages { get; init; }
@@ -20,7 +22,7 @@ public sealed class VirtualShadowMapShaders : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         ShaderEntry?[] entries = [MarkPages, MarkCoarsePages, AllocatePages, ClearPages, InitializeState,
-            InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ, ReducePageHiZ];
+            InvalidateCasters, BuildPagePool, CompactViews, InitializePageHiZ, ReducePageHiZ, ResetFrame, DynamicResolution];
         foreach (Shader shader in entries.OfType<ShaderEntry>().Select(static entry => entry.Shader).Distinct())
             shader.Dispose();
     }

@@ -73,7 +73,7 @@ public readonly record struct RenderSpotLight(
 
 /// <summary>Light-cookie snapshot owned by the render world.</summary>
 public readonly record struct RenderLightCookie(
-    TextureData Texture,
+    Texture Texture,
     float Strength,
     Vector4 ScaleOffset,
     Matrix4x4 WorldToCookie) : IComponent;

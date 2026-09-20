@@ -1,11 +1,11 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "62b435a37899adeb79a99ca37f6934d6aa788304bf77c66335daa1fa8334f02a",
+  "input_hash": "25e7c14ade02a576efd5907c6c6eba057eaf81b1104d9bd3d0fc74aac77ebe2e",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/cluster_bin_io.slang",
-      "content_hash": "ea0eb677c8f30c23f9c73cca63bda27de834cc96a3e777bd861031d4fa78dffe"
+      "content_hash": "f52b738ead1778d48bbf234769f645e366d560279e961197f05c0b28a1013a32"
     },
     {
       "relative_path": "../../assets/Shaders/cluster_instance_properties.slang",
@@ -13,11 +13,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/cluster_structures.slang",
-      "content_hash": "b8e35528889e952baac109a420883b5a7651eb79596673631b40082bdbf14929"
+      "content_hash": "f1a84f05d2ea458f8bb68e4ef7ef811023e23136c4debd13bfc3eb31bc5d27fe"
     },
     {
       "relative_path": "../../assets/Shaders/generated/render_instance_layout.slang",
-      "content_hash": "201a24aaced360c708fd0d38274f628781b238668bba152cfb9472f2cb28cb06"
+      "content_hash": "b3deb519f6691bbb7bbd28a7d6e5f162dc95b49212ad3bdcf4ff4d78eee5cc06"
     },
     {
       "relative_path": "../../assets/Shaders/render_instance_properties.slang",
@@ -49,7 +49,7 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_shade_bin_scatter.slang",
-      "content_hash": "1bef0f81ad68032befad019114707349486591e76a31553281a7bed409db294c"
+      "content_hash": "8804880eef93db8dfa6bac3c6031d9247fbf5a246d4be9584459956ee1a4355a"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -57,7 +57,7 @@
     },
     {
       "relative_path": "assets/Shaders/shade_bin_scatter.shader",
-      "content_hash": "81e5f953e9b9c576e8dd1530aa316a61238dad7621e5d327534fec2626b29b38"
+      "content_hash": "48c9c168e713341f89c60329039678e59f997247bc52769a46290173c1b8a1a0"
     }
   ],
   "reported_inputs": [],
@@ -65,11 +65,11 @@
     {
       "asset_guid": "fadd69b1-2ed9-504a-91e2-eb0006e7e993",
       "sub_asset_key": "",
-      "input_hash": "62b435a37899adeb79a99ca37f6934d6aa788304bf77c66335daa1fa8334f02a",
+      "input_hash": "25e7c14ade02a576efd5907c6c6eba057eaf81b1104d9bd3d0fc74aac77ebe2e",
       "dependencies": [],
       "asset_path": "shade_bin_scatter.shader.asset",
-      "version": "005df8ea-d22e-d82b-6ebd-c340c1a194ca",
-      "content_hash": "2965B6E35CACAAE56939EDDDF64CF98BF3EF9FF78E52B6C62F1CFAA42B5406C5",
+      "version": "03761952-ccdf-0869-3e29-27ad11daa536",
+      "content_hash": "5A38BBE7BDC3F3A0F3B0B7CB154DC6CCA970AC197C548820E3A1F4F93B5F18ED",
       "asset_dependencies": []
     }
   ]

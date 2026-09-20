@@ -1,9 +1,9 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using SomeEngine.Assets.Data;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
-using ValueType = SomeEngine.Assets.Data.ValueType;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -36,10 +36,11 @@ public sealed class VertexReuseBatchTests
                 indices.Add((uint)(materialCount + vertex));
                 indices.Add((uint)(materialCount + (vertex + 1) % rimCount));
             }
-        Mesh mesh = ClusterBuilder.ProcessRaw(positions,
+        using var mesh = ClusterBuilder.ProcessRaw(positions,
             [new RawAttribute("_MATERIAL_INDEX", materialValues, 1, ValueType.UInt8, 1, false)],
             indices.ToArray(), ClusterBuilderTestMaterials.Slots(materialCount), "Reuse batch bounds");
-        ReadOnlySpan<byte> page = mesh.Payload!.Value.Span;
+        using var bytes = mesh.GetBlock<ClusterMeshBlock>().Chunks.Retain(ClusterMeshBlock.PayloadChunkKey);
+        ReadOnlySpan<byte> page = bytes.ToArray();
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(page);
         ReadOnlySpan<PackedCluster> clusters = MemoryMarshal.Cast<byte, PackedCluster>(
             page.Slice((int)header.ClustersOffset, checked((int)header.ClusterCount * PackedCluster.SizeInBytes)));

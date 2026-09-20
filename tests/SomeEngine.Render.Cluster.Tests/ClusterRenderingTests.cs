@@ -1,3 +1,5 @@
+using SomeEngine.Resources;
+using Game.Content;
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -36,8 +38,10 @@ public sealed class ClusterRenderingTests
         string root = FindRoot();
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
         await using var assets = new AssetLoader(new LooseAssetStorage(root, manifest));
-        AssetManifestRecord record = Assert.Single(manifest.List(AssetType<ClusterShaders>.Name));
-        ClusterShaders configuration = await assets.LoadAsync(new AssetId<ClusterShaders>(record.Guid));
+        Game.Assets.MaterialTypes.Register();
+        AssetEntry record = Assert.Single(manifest.List(ClusterShadersAsset.FileType));
+        using ClusterShadersAsset file = await ClusterShadersAsset.OpenAsync(assets, new(record.AssetGuid));
+        using ClusterShaders configuration = await file.GetBlock<ClusterShadersBlock>().CreateAsync(file.Name, assets);
         using IGraphicsBackend backend = vulkan ? VulkanGraphicsBackend.Create() : new ValidationLayer(D3D12GraphicsBackend.Create());
         var enumeration = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         backend.TryEnumerateAdapters(enumeration, [], out int count);
@@ -51,13 +55,24 @@ public sealed class ClusterRenderingTests
         Queue copy = backend.GetQueue(device, QueueType.Copy);
         using var mainWorld = new World();
         Entity source = Entity.Null;
-        Mesh? mesh = changeGeometry ? await assets.LoadAsync(new AssetId<Mesh>(
-            manifest.List(AssetType<Mesh>.Name).First(value => value.Name == "IcoSphere").Guid)) : null;
-        Material? material = changeGeometry ? await assets.LoadAsync(new AssetId<Material>(
-            manifest.List(AssetType<Material>.Name).First(value => value.Name == "TestUnlit_1").Guid)) : null;
-        await using var secondAssets = new AssetLoader(new LooseAssetStorage(root, manifest));
-        Material? secondMaterial = shadeColor ? await secondAssets.LoadAsync(new AssetId<Material>(
-            manifest.List(AssetType<Material>.Name).First(value => value.Name == "TestUnlit_1").Guid)) : null;
+        using Mesh? mesh = changeGeometry ? await ReadMesh() : null;
+        using Material? material = changeGeometry ? await ReadMaterial() : null;
+        using Material? secondMaterial = shadeColor ? await ReadMaterial() : null;
+
+        async Task<Mesh> ReadMesh()
+        {
+            using MeshAsset value = await MeshAsset.OpenAsync(assets, new(manifest.List(MeshAsset.FileType).First().AssetGuid));
+            ClusterMeshBlock geometry = value.GetBlock<ClusterMeshBlock>();
+            Mesh result = await geometry.CreateAsync(value.GetBlock<MeshBlock>(), value.Name);
+            await geometry.LoadPagesAsync(result, Enumerable.Range(0, result.PageCount));
+            return result;
+        }
+        async Task<Material> ReadMaterial()
+        {
+            using MaterialAsset value = await MaterialAsset.OpenAsync(assets,
+                new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Unlit").AssetGuid));
+            return await value.CreateAsync(assets);
+        }
         Entity secondSource = Entity.Null;
         if (shadeColor)
         {
@@ -264,7 +279,7 @@ public sealed class ClusterRenderingTests
     private static string FindRoot()
     {
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) return directory.FullName;
+            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) return Path.Combine(directory.FullName, "templates", "DefaultProject");
         throw new DirectoryNotFoundException("The test content root was not found.");
     }
 }

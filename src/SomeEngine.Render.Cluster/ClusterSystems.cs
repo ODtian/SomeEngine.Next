@@ -1,3 +1,4 @@
+using SomeEngine.Render.Components;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Instances;

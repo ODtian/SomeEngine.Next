@@ -3,7 +3,7 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal sealed partial class Scheduler
+public sealed partial class Scheduler
 {
     internal WorkItemExecutionResult ExecuteStreamItem<TItem>(ref TItem item)
         where TItem : struct, IWorkStreamItem<TItem>
@@ -18,6 +18,8 @@ internal sealed partial class Scheduler
                 completedWorkItems: abandonedWorkItems);
         }
 
+        Scheduler? previousScheduler = s_executing;
+        s_executing = this;
         using var association = SomeEngine.Diagnostics.EngineTrace.IsEnabled
             ? SomeEngine.Diagnostics.EngineTrace.Associate(_execution.GetTraceContext(handle)) : default;
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Execute);
@@ -45,6 +47,7 @@ internal sealed partial class Scheduler
             try
             {
                 s_currentScope = previousScope;
+                s_executing = previousScheduler;
             }
             finally
             {

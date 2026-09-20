@@ -84,7 +84,7 @@ public sealed class ClusterCompressionTests
             """;
         using D3D12TestShaderProgram shader = D3D12TestShaderProgram.CompileWithSearchPaths(
             "quadratic_error", source, [new("TestQuadraticBounds", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        uint[] results = Execute(shader, count, 2);
+        uint[] results = Execute(shader, count, 2, instanceBindings: true);
         for (int index = 0; index < count; index++)
         {
             double a = (index % 8) / 7.0, b = ((index / 8) % 8) / 7.0, c = (index / 64) / 7.0;
@@ -367,7 +367,7 @@ public sealed class ClusterCompressionTests
             label: "Wave32 register-cache integration device"));
     }
 
-    private static uint[] Execute(D3D12TestShaderProgram shader, int count, int words, bool hardware = false, int groupWidth = 64)
+    private static uint[] Execute(D3D12TestShaderProgram shader, int count, int words, bool hardware = false, int groupWidth = 64, bool instanceBindings = false)
     {
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = hardware ? CreateHardwareDevice(backend) : D3D12TestSupport.CreateWarpDevice(backend);
@@ -386,7 +386,9 @@ public sealed class ClusterCompressionTests
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
             shader.Reflection.GetGlobalParamsVarLayout() ?? ShaderVariableLayout.Null,
-            [ResourceBinding.WritableBuffer(outputView)], []));
+            instanceBindings
+                ? [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer), ResourceBinding.WritableBuffer(outputView)]
+                : [ResourceBinding.WritableBuffer(outputView)], []));
         backend.Dispatch(context, new DispatchArguments(checked((uint)((count + groupWidth - 1) / groupWidth)), 1, 1));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));

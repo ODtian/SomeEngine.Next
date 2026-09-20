@@ -1,3 +1,4 @@
+using SomeEngine.Resources;
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using SomeEngine.Assets.Schema;

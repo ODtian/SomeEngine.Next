@@ -70,12 +70,6 @@ internal static class ClusterMaterialEntries
         => material.ShaderAsset ?? throw new InvalidDataException(
             $"Material '{material.Name}' has no loaded user shader.");
 
-    internal static AssetGuid RequireShaderGuid(MaterialData material)
-        => AssetGuid.TryParse(material.ShaderGuid, out AssetGuid guid) && !guid.IsEmpty
-            ? guid
-            : throw new InvalidDataException(
-                $"Material '{material.Name}' has no valid user shader GUID.");
-
     internal static bool HasEntry(
         Shader shader,
         ShaderTarget target,
@@ -294,10 +288,10 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
             ResourceBindingType.TextureSrv => value switch
             {
                 null => null,
-                SomeEngine.Assets.Schema.TextureData texture => new TextureValue(texture),
+                SomeEngine.Resources.Texture texture => new TextureValue(texture),
                 _ => throw InvalidValue(material, name, "Texture"),
             },
-            ResourceBindingType.TextureUav => value is SomeEngine.Assets.Schema.TextureData texture
+            ResourceBindingType.TextureUav => value is SomeEngine.Resources.Texture texture
                 ? new TextureValue(texture)
                 : throw InvalidValue(material, name, "Texture"),
             ResourceBindingType.Sampler => value switch
@@ -835,7 +829,7 @@ internal sealed class ClusterRasterStages : IDisposable
     {
         ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
         var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialSlotDefinition> slots = material.Properties;
+        IReadOnlyList<MaterialPropertyDefinition> slots = material.Properties;
         for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
         {
             if (featureBinders[resourceIndex] is not null)
@@ -854,7 +848,7 @@ internal sealed class ClusterRasterStages : IDisposable
 
     private static uint FindMaterialSlot(
         MaterialData material,
-        IReadOnlyList<MaterialSlotDefinition> slots,
+        IReadOnlyList<MaterialPropertyDefinition> slots,
         string name)
     {
         for (uint slot = 0; slot < slots.Count; slot++)
@@ -1297,7 +1291,7 @@ internal sealed class ClusterShadeStages : IDisposable
     {
         ReadOnlySpan<ClusterLinkedStageResource> linked = resources.Resources;
         var result = new ClusterMaterialStageBinding[linked.Length];
-        IReadOnlyList<MaterialSlotDefinition> slots = material.Properties;
+        IReadOnlyList<MaterialPropertyDefinition> slots = material.Properties;
         for (int resourceIndex = 0; resourceIndex < linked.Length; resourceIndex++)
         {
             if (featureResourceBinders[resourceIndex] is not null)

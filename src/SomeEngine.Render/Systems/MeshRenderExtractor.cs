@@ -64,7 +64,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         return data;
     }
 
-    private MeshData TrackMesh(Entity source, in MeshInstance instance)
+    private Mesh TrackMesh(Entity source, in MeshInstance instance)
     {
         lock (_assetChangesGate)
         {
@@ -207,7 +207,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             {
                 if (_collectedMeshSources.Contains(source)) continue;
                 MeshInstance instance = _sourceMeshes[source];
-                MeshData data = instance.Mesh.CaptureData();
+                Mesh data = instance.Mesh.CaptureData();
                 Entity entity = context.RequireMirror(source);
                 if (ReferenceEquals(context.World.Read<RenderMesh>(entity).Mesh, data))
                 {
@@ -215,7 +215,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     continue;
                 }
                 _snapshots.Add(new MeshSnapshot(source, default, data, instance.BoundsExpansion,
-                    false, 0, 0, MeshChanged: true, MaterialsChanged: false));
+                    false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource));
                 _meshSources.Add(source);
                 changed = true;
             }
@@ -242,7 +242,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     continue;
                 }
                 _snapshots.Add(new MeshSnapshot(source, default, null!, 0, true,
-                    offset, materials.Length, MeshChanged: false, MaterialsChanged: true));
+                    offset, materials.Length, MeshChanged: false, MaterialsChanged: true, null));
                 _meshSources.Add(source);
                 changed = true;
             }
@@ -584,7 +584,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly record struct MeshSnapshot(
         Entity Source,
         RenderTransform? Transform,
-        MeshData Mesh,
+        Mesh Mesh,
         float BoundsExpansion,
         bool HasMaterialBuffer,
         int MaterialOffset,

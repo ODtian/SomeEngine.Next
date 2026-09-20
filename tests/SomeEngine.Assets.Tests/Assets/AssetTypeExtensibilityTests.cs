@@ -1,16 +1,14 @@
-using SomeEngine.Assets;
 using SomeEngine.Serialization;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 
-namespace SomeEngine.Tests.Assets;
+namespace SomeEngine.Assets.Tests.Assets;
 
+[Collection("Asset samples")]
 public sealed class AssetTypeExtensibilityTests
 {
-
-
     [Fact]
-    public async Task NewAssetTypeNeedsNoCentralRegistrationAndEncodesOnce()
+    public async Task DownstreamFormatOpensWithoutCreatingItsDomainType()
     {
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
@@ -35,7 +33,7 @@ public sealed class AssetTypeExtensibilityTests
     }
 
     [Fact]
-    public async Task ExistingFileRequiresExplicitTypedPublicationAndNoFormatProbe()
+    public async Task ExistingFileRebuildsTheIndexThroughItsGeneratedFormat()
     {
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
@@ -49,7 +47,7 @@ public sealed class AssetTypeExtensibilityTests
     }
 
     [Fact]
-    public async Task ThirdPartyStorageSuppliesRangesWithoutOwningDecoding()
+    public async Task ThirdPartyStorageProvidesBytesWithoutDecodingOrOwningObjects()
     {
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
@@ -68,7 +66,7 @@ public sealed class AssetTypeExtensibilityTests
     }
 
     [Fact]
-    public async Task ThirdPartyStorageCanPublishANewVersionForTheSameStrongHandle()
+    public async Task DependenciesAreEnumeratedWithoutBeingInstantiated()
     {
         using var directory = new AssetTestDirectory();
         Guid dependency = Guid.NewGuid();
@@ -85,7 +83,7 @@ public sealed class AssetTypeExtensibilityTests
     }
 
     [Fact]
-    public async Task LoaderRetainsAndDisposesEveryCanonicalDependency()
+    public async Task WrongTypeAndSchemaAreRejectedBeforeOpeningBytes()
     {
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();
@@ -101,7 +99,7 @@ public sealed class AssetTypeExtensibilityTests
     }
 
     [Fact]
-    public async Task TypedOpenRejectsNonCurrentFingerprintBeforeOpeningBytes()
+    public async Task CorruptContentReleasesItsRangeAndCanBeReopenedAfterRepair()
     {
         using var directory = new AssetTestDirectory();
         Guid id = Guid.NewGuid();

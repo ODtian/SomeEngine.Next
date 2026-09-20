@@ -93,7 +93,8 @@ public sealed class RepeatingDisplacementTests
                 ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
             backend.SetPipeline(context, pipeline);
             backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout()!,
-                [ResourceBinding.SampledTexture(textureView), ResourceBinding.ReadOnlyBuffer(inputView), ResourceBinding.WritableBuffer(outputView)], []));
+                [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer),
+                 ResourceBinding.SampledTexture(textureView), ResourceBinding.ReadOnlyBuffer(inputView), ResourceBinding.WritableBuffer(outputView)], []));
             backend.Dispatch(context, new((uint)(coordinates.Count + 31) / 32, 1, 1));
             backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
                 ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));

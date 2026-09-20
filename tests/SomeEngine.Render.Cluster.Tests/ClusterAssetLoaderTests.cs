@@ -19,7 +19,7 @@ public sealed class ClusterAssetLoaderTests
         ClusterShaderOperationRole[] roles = Enum.GetValues<ClusterShaderOperationRole>()
             .Where(static role => role != ClusterShaderOperationRole.None)
             .ToArray();
-        AssetGuid[] shaderGuids = new AssetGuid[roles.Length];
+        Guid[] shaderGuids = new Guid[roles.Length];
         for (int index = 0; index < shaderGuids.Length; index++)
         {
             using ShaderAsset shader = CreateShaderData($"cluster-{index}");
@@ -60,10 +60,10 @@ public sealed class ClusterAssetLoaderTests
     public async Task ClusterRenderAssetWithEmptyLastShaderReferenceFailsBeforeWriting()
     {
         using var directory = new TemporaryDirectory();
-        AssetGuid clusterGuid = AssetGuid.New();
+        Guid clusterGuid = Guid.NewGuid();
         string relativePath = "assets/pipelines/invalid.clusterrender.asset";
         string fullPath = Path.Combine(directory.Path, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        AssetGuid valid = AssetGuid.New();
+        Guid valid = Guid.NewGuid();
         int operationCount = Enum.GetValues<ClusterShaderOperationRole>()
             .Count(static role => role != ClusterShaderOperationRole.None);
         using ClusterShadersAsset root = CreateClusterRoot(
@@ -121,7 +121,7 @@ public sealed class ClusterAssetLoaderTests
 
     private static ClusterShaderOperation Operation(
         ClusterShaderOperationRole role,
-        AssetGuid guid)
+        Guid guid)
     {
         var result = new ClusterShaderOperation
         {

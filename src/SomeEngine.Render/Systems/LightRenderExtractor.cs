@@ -1,3 +1,4 @@
+using SomeEngine.Resources;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;

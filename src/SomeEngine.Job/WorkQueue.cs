@@ -405,6 +405,11 @@ internal sealed class WorkQueue : IWorkQueue
 
     public void Dispose()
     {
+        // The public scheduler drains submitted work before releasing wait handles.
+        while (Volatile.Read(ref _queuedWorkItemCount) != 0 || Volatile.Read(ref _activeDrainerCount) != 0)
+        {
+            if (!TryExecuteOne(wait: false)) Thread.Yield();
+        }
         lock (_stateLock)
         {
             if (Interlocked.Exchange(ref _disposeState, 1) != 0)

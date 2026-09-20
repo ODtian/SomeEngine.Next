@@ -584,8 +584,7 @@ public sealed class DiskAssetBehaviorTests
     }
 }
 
-[Asset(".probe.asset")]
-public sealed partial class DiskProbe : IAsyncDisposable
+public sealed class DiskProbe : IAsyncDisposable
 {
     private static int _constructionCount;
     private PageBuffer? _bytes;

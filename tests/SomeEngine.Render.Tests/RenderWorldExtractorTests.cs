@@ -106,15 +106,15 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
     {
         using var mainWorld = new World(execution: new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default));
         using var renderWorld = new RenderWorld(execution: new SomeEngine.ECS.Systems.WorldJobs(SomeEngine.Job.JobSystem.Default));
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         using Mesh mesh = MeshAsset(812, 1);
         Entity source = AddMeshSource(mainWorld, mesh, 0, Vector3.Zero);
-        ExtractAndApply(extraction, mainWorld);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
         Entity mirror = renderWorld.GetByIndex<RenderSource, Entity>(source)[0];
         WorldTransform moved = mainWorld.Read<WorldTransform>(source);
         moved.Qvvs.Position = new Vector3(3, 4, 5);
         mainWorld.Replace(source, moved);
-        ExtractAndApply(extraction, mainWorld);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
         Assert.Equal(new Vector3(3, 4, 5), renderWorld.Read<RenderTransform>(mirror).Position);
     }
 
@@ -126,7 +126,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using var second = first.Retain();
         var game = new SomeEngine.ECS.World();
         var render = new SomeEngine.Render.Systems.RenderWorld();
-        using var extraction = new SomeEngine.Render.Systems.RenderExtractionSystems(render);
+        using var extraction = new SomeEngine.Render.Systems.RenderExtractionSystems(render, new MeshRenderExtractor(), new LightRenderExtractor());
         var entity = game.CreateEntity();
         game.Add(entity, new SomeEngine.Core.ECS.Components.WorldTransform
         {
@@ -134,12 +134,12 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         });
         game.Add(entity, new SomeEngine.Render.Components.MeshInstance { Mesh = mesh, PageSource = first });
         extraction.Extract(game);
-        Assert.True(extraction.ApplyPendingCandidate());
+        Assert.True(graphics.Apply(extraction, render));
         var mirror = render.GetByIndex<SomeEngine.Render.Components.RenderSource, SomeEngine.ECS.Entities.Entity>(entity)[0];
         Assert.Same(first, render.Read<SomeEngine.Render.Components.RenderMesh>(mirror).PageSource);
         game.Replace(entity, new SomeEngine.Render.Components.MeshInstance { Mesh = mesh, PageSource = second });
         extraction.Extract(game);
-        Assert.True(extraction.ApplyPendingCandidate());
+        Assert.True(graphics.Apply(extraction, render));
         Assert.Same(second, render.Read<SomeEngine.Render.Components.RenderMesh>(mirror).PageSource);
     }
 
@@ -1143,7 +1143,7 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Entity source = mainWorld.CreateEntity();
         mainWorld.Add(source, new CustomExtractValue(37));
         RenderWorld renderWorld = new();
-        using var extraction = new RenderExtractionSystems(renderWorld);
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
         var custom = new CustomExtractionSystem();
         extraction.Add(custom);
 

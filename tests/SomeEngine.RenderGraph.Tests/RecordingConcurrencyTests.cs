@@ -6,10 +6,8 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class RecordingConcurrencyTests
 {
     [Theory]
-    [InlineData(FrameSubmissionMode.Pipelined, false)]
-    [InlineData(FrameSubmissionMode.Pipelined, true)]
-    [InlineData(FrameSubmissionMode.RecordAllThenSubmit, false)]
-    [InlineData(FrameSubmissionMode.RecordAllThenSubmit, true)]
+    [InlineData(FrameSubmissionMode.RecordAhead, false)]
+    [InlineData(FrameSubmissionMode.RecordAhead, true)]
     public void WorkerRecordingOverlapsCallingThreadWithoutChangingGpuDependencies(
         FrameSubmissionMode mode, bool dependent)
     {
@@ -43,7 +41,7 @@ public sealed class RecordingConcurrencyTests
                 });
             edit.AddCopyPass<CopyData, byte>("worker consumer",
                 PassQueueSelection.Exact(support.GraphicsQueue), data,
-                new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.WorkerEligible),
+                new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.WorkerEligible, EstimatedRecordingCost: 64),
                 static (ref PassDefinition pass, ref CopyData data) =>
                 {
                     if (data.Dependent)
@@ -60,6 +58,10 @@ public sealed class RecordingConcurrencyTests
                         commands.ClearBuffer(commands.GetBuffer(data.Destination), new BufferRange(0, 4), 73);
                     data.Recorded.Set();
                 });
+            edit.AddCopyFramePass("independent worker work", PassQueueSelection.Exact(support.GraphicsQueue), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref CopyPassCommandScope _, in int _) => { });
             edit.Commit();
         }
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
@@ -107,7 +109,7 @@ public sealed class RecordingConcurrencyTests
                 });
             edit.AddCopyPass<FailureData, byte>("worker callback completing during failure",
                 PassQueueSelection.Exact(support.GraphicsQueue), data,
-                new PassOptions(Culling: PassCullingMode.NeverCull),
+                new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64),
                 static (ref PassDefinition pass, ref FailureData data) =>
                     pass.Read(data.Source, new BufferRange(0, 4), PipelineSync.Copy, ResourceAccess.CopySource),
                 static (ref CopyPassCommandScope _, in FailureData data, in byte _) =>
@@ -116,9 +118,13 @@ public sealed class RecordingConcurrencyTests
                     Assert.True(data.Release.Wait(TimeSpan.FromSeconds(10)));
                     data.Finished.Set();
                 });
+            edit.AddCopyFramePass("independent worker work", PassQueueSelection.Exact(support.GraphicsQueue), 0,
+                new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedRecordingCost: 64),
+                static (ref PassDefinition _, ref int _) => { },
+                static (ref CopyPassCommandScope _, in int _) => { });
             edit.Commit();
         }
-        using RenderGraphFrame frame = graph.BeginFrame();
+        using RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(FrameSubmissionMode.RecordAhead));
         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         bool failed = false;
         try { frame.Execute(completions); }

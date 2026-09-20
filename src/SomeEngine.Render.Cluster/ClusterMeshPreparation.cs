@@ -1,6 +1,6 @@
+using SomeEngine.Resources;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
-using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;
@@ -34,7 +34,7 @@ internal sealed class ClusterMeshCache
 
     internal ClusterMeshesSnapshot CaptureSnapshot() => _residency.CaptureMeshesSnapshot();
 
-    internal bool IsRegistered(MeshData mesh)
+    internal bool IsRegistered(Mesh mesh)
         => _residency.IsMeshRegistered(mesh);
 
     internal async ValueTask<bool> PrepareAsync(
@@ -48,7 +48,7 @@ internal sealed class ClusterMeshCache
         return result.Added;
     }
 
-    internal bool TryGetPublishedRoot(MeshData mesh, out uint root)
+    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         if (_residency.TryGetPublishedRoot(mesh, out root))
             return true;
@@ -77,7 +77,7 @@ internal sealed class ClusterMeshCache
                 required = Math.Max(required, checked(entities[row].Index + 1));
             EnsureInstanceGeometryCapacity(required);
 
-            MeshData? lastMesh = null;
+            Mesh? lastMesh = null;
             uint lastRoot = ClusterRenderFeature.MissingBvhRoot;
             bool lastRootPublished = false;
             for (int row = 0; row < entities.Length; row++)
@@ -146,10 +146,11 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     private readonly RenderWorld _world;
     private readonly ClusterMeshCache _cache;
     private readonly QueryHandle _meshQuery;
-    private readonly HashSet<Mesh> _seen = [];
-    private readonly List<RenderMesh> _missing = [];
-    private long _topologyRevision = -1;
-    private int _referencedMeshCount;
+    private readonly EntityTableChanges _tableChanges;
+    private readonly Dictionary<Entity, Mesh> _entityMeshes = [];
+    private readonly Dictionary<Mesh, int> _meshReferences = [];
+    private readonly Dictionary<Mesh, RenderMesh> _missing = [];
+    private uint _lastVersion;
     private int _preparing;
     private int _disposed;
 
@@ -181,7 +182,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                 if (!_world.IsAlive(entity) || !_world.Has<RenderMesh>(entity))
                     SetMesh(entity, null);
                 else
-                    SetMesh(entity, _world.Read<RenderMesh>(entity).Mesh);
+                    SetMesh(entity, _world.Read<RenderMesh>(entity));
             }
             uint version = _lastVersion;
             _world.ExecuteQuery(_meshQuery, _lastVersion, cursor =>
@@ -192,12 +193,8 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                     if (!chunk.HasChangedSinceLastSystemVersion<RenderMesh>()) continue;
                     ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                     for (int row = 0; row < meshes.Length; row++)
-                    {
-                        Mesh mesh = meshes[row].Mesh;
-                        if (!_seen.Add(mesh) || _cache.IsRegistered(mesh))
-                            continue;
-                        _missing.Add(meshes[row] with { PageSource = meshes[row].PageSource?.Retain() });
-                    }
+                        if (chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row))
+                            SetMesh(chunk.Entities[row], meshes[row]);
                 }
             });
             // These indexes describe observed input only. Registration obligations remain in
@@ -218,9 +215,10 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         }
     }
 
-    private void SetMesh(Entity entity, MeshData? mesh)
+    private void SetMesh(Entity entity, RenderMesh? value)
     {
-        if (_entityMeshes.TryGetValue(entity, out MeshData? previous))
+        Mesh? mesh = value?.Mesh;
+        if (_entityMeshes.TryGetValue(entity, out Mesh? previous))
         {
             if (ReferenceEquals(previous, mesh)) return;
             _entityMeshes.Remove(entity);
@@ -236,7 +234,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         _entityMeshes.Add(entity, mesh);
         _meshReferences.TryGetValue(mesh, out int references);
         _meshReferences[mesh] = references + 1;
-        if (references == 0 && !_cache.IsRegistered(mesh)) _missing.Add(mesh);
+        if (references == 0 && !_cache.IsRegistered(mesh)) _missing.TryAdd(mesh, value!.Value);
     }
 
     private async ValueTask<ClusterMeshPrepareResult> PrepareMissingAsync(
@@ -248,10 +246,10 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
             while (_missing.Count != 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                MeshData mesh = _missing.First();
+                RenderMesh mesh = _missing.First().Value;
                 if (await _cache.PrepareAsync(mesh, cancellationToken).ConfigureAwait(false))
                     registered++;
-                _missing.Remove(mesh);
+                _missing.Remove(mesh.Mesh);
             }
             return new ClusterMeshPrepareResult(_meshReferences.Count, registered, 0);
         }
@@ -259,20 +257,6 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         {
             Volatile.Write(ref _preparing, 0);
         }
-    }
-
-    private void ClearScratch()
-    {
-        List<Exception>? failures = null;
-        foreach (RenderMesh mesh in _missing)
-        {
-            try { mesh.PageSource?.Dispose(); }
-            catch (Exception failure) { (failures ??= []).Add(failure); }
-        }
-        _missing.Clear();
-        _seen.Clear();
-        Volatile.Write(ref _preparing, 0);
-        if (failures is not null) throw new AggregateException("Mesh page sources could not all be released.", failures);
     }
 
     public void Dispose()

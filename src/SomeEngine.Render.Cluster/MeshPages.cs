@@ -12,7 +12,7 @@ namespace SomeEngine.Render.Cluster;
 internal readonly record struct PageRetirement(uint PageID, uint Offset, uint Size);
 
 internal readonly record struct RegisteredMeshPages(
-    MeshData Mesh,
+    Mesh Mesh,
     uint FirstPageId,
     int PageCount,
     MeshPayloadSource Source,
@@ -21,7 +21,7 @@ internal readonly record struct RegisteredMeshPages(
 internal sealed class PreparedMeshPages
 {
     internal PreparedMeshPages(
-        MeshData mesh,
+        Mesh mesh,
         uint firstPageId,
         int registrationIndex,
         MeshPayloadSource source,
@@ -38,7 +38,7 @@ internal sealed class PreparedMeshPages
         PageCount = pageCount;
     }
 
-    internal MeshData Mesh { get; }
+    internal Mesh Mesh { get; }
     internal uint FirstPageId { get; }
     internal int RegistrationIndex { get; }
     internal MeshPayloadSource Source { get; }
@@ -84,7 +84,7 @@ internal readonly struct MeshPageReadSource
 
 internal sealed class MeshPages
 {
-    private readonly FlatDictionary<MeshData, int> _registrationByMesh = new();
+    private readonly FlatDictionary<Mesh, int> _registrationByMesh = new();
     private readonly List<RegisteredMeshPages> _registrations = [];
     private readonly List<int> _pageRegistrationIndices = [];
     private readonly FlatDictionary<uint, ResidencyReservation> _gpuReservations = new();
@@ -102,7 +102,7 @@ internal sealed class MeshPages
     public int PendingEvictionCount => _pendingEvictions.Count;
 
     public PreparedMeshPages PrepareStreamedRegistration(
-        MeshData mesh,
+        Mesh mesh,
         MeshPayloadSource streamedSource,
         bool ownsSource = true)
     {
@@ -175,7 +175,7 @@ internal sealed class MeshPages
     }
 
     public bool TryRegistration(
-        MeshData mesh,
+        Mesh mesh,
         out uint firstPageId,
         out uint pageCount)
     {
@@ -191,7 +191,7 @@ internal sealed class MeshPages
         return false;
     }
 
-    private void EnsureCanRegister(MeshData mesh, int pageCount)
+    private void EnsureCanRegister(Mesh mesh, int pageCount)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         if (_registrationByMesh.ContainsKey(mesh))
@@ -276,14 +276,14 @@ internal sealed class MeshPages
         if (gpuReservation.ResidencyClass != ResidencyClass.Gpu)
             throw new ArgumentException("A resident mesh page requires a GPU reservation.", nameof(gpuReservation));
         if (_residentPages.Contains(pageId) || IsLoadPending(pageId))
-            throw new InvalidOperationException($"MeshData page {pageId} is already resident or awaiting publication.");
+            throw new InvalidOperationException($"Mesh page {pageId} is already resident or awaiting publication.");
         if (_gpuReservations.ContainsKey(pageId))
-            throw new InvalidOperationException($"MeshData page {pageId} already owns a GPU reservation.");
+            throw new InvalidOperationException($"Mesh page {pageId} already owns a GPU reservation.");
 
         _pendingLoads.EnsureCapacity(checked(_pendingLoads.Count + 1));
         _gpuReservations.EnsureCapacity(checked(_gpuReservations.Count + 1));
         if (!_pendingLoads.Add(pageId))
-            throw new InvalidOperationException($"MeshData page {pageId} could not enter the pending-load state.");
+            throw new InvalidOperationException($"Mesh page {pageId} could not enter the pending-load state.");
         try
         {
             _gpuReservations[pageId] = gpuReservation;
@@ -304,7 +304,7 @@ internal sealed class MeshPages
             !_gpuReservations.TryGetValue(pageId, out ResidencyReservation? reservation) ||
             !ReferenceEquals(reservation, expectedReservation))
         {
-            throw new InvalidOperationException($"MeshData page {pageId} does not own the expected staged GPU reservation.");
+            throw new InvalidOperationException($"Mesh page {pageId} does not own the expected staged GPU reservation.");
         }
 
         _pendingLoads.Remove(pageId);
@@ -326,7 +326,7 @@ internal sealed class MeshPages
 
         _pendingEvictions.EnsureCapacity(checked(_pendingEvictions.Count + 1));
         if (!TrySource(pageId, out uint size, out _))
-            throw new InvalidOperationException($"MeshData page {pageId} has no canonical source descriptor.");
+            throw new InvalidOperationException($"Mesh page {pageId} has no canonical source descriptor.");
         retirement = new PageRetirement(pageId, offset, size);
         _pendingEvictions.Add(pageId);
         Remove(pageId);
@@ -369,7 +369,7 @@ internal sealed class MeshPages
         foreach (uint pageId in _pendingEvictions)
         {
             if (!TrySource(pageId, out uint size, out _))
-                throw new InvalidOperationException($"MeshData page {pageId} has no canonical source descriptor.");
+                throw new InvalidOperationException($"Mesh page {pageId} has no canonical source descriptor.");
             retirements[index++] = new PageRetirement(
                 pageId,
                 _offsets[checked((int)pageId)],
@@ -387,7 +387,7 @@ internal sealed class MeshPages
             _residentPages.Contains(pageId) ||
             !_gpuReservations.ContainsKey(pageId))
         {
-            throw new InvalidOperationException($"MeshData page {pageId} is not ready for residency publication.");
+            throw new InvalidOperationException($"Mesh page {pageId} is not ready for residency publication.");
         }
 
         _pendingLoads.Remove(pageId);
@@ -401,7 +401,7 @@ internal sealed class MeshPages
             !_residentPages.Contains(pageId) ||
             !_gpuReservations.TryGetValue(pageId, out ResidencyReservation? gpuReservation))
         {
-            throw new InvalidOperationException($"MeshData page {pageId} has no GPU reservation to release.");
+            throw new InvalidOperationException($"Mesh page {pageId} has no GPU reservation to release.");
         }
 
         _pendingEvictions.Remove(pageId);
@@ -424,7 +424,7 @@ internal sealed class MeshPages
                 !_gpuReservations.ContainsKey(pageId))
             {
                 throw new InvalidOperationException(
-                    $"MeshData page {pageId} is not ready to complete residency publication.");
+                    $"Mesh page {pageId} is not ready to complete residency publication.");
             }
         }
 
@@ -438,7 +438,7 @@ internal sealed class MeshPages
                 size != retirement.Size)
             {
                 throw new InvalidOperationException(
-                    $"MeshData page {retirement.PageID} is not ready to complete eviction publication.");
+                    $"Mesh page {retirement.PageID} is not ready to complete eviction publication.");
             }
         }
     }

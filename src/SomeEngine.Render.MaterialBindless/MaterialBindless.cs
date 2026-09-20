@@ -115,10 +115,10 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             throw new InvalidOperationException(
                 "MaterialBindless texture bindings must be fixed before the material is first used.");
         }
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Properties;
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         if (materialSlot >= definitions.Count)
             throw new ArgumentOutOfRangeException(nameof(materialSlot));
-        if (!typeof(SomeEngine.Assets.Schema.Texture).IsAssignableFrom(definitions[checked((int)materialSlot)].ValueType))
+        if (!typeof(SomeEngine.Resources.Texture).IsAssignableFrom(definitions[checked((int)materialSlot)].ValueType))
         {
             throw new InvalidOperationException(
                 $"Material slot {materialSlot} is not a Texture slot.");
@@ -557,7 +557,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
 
     private MaterialResourceBinding[] ResolveMaterialBindings(MaterialData material)
     {
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Properties;
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         var result = new List<MaterialResourceBinding>(definitions.Count);
         _textureRequests.TryGetValue(material.MaterialId, out Dictionary<uint, TextureRequest>? textureRequests);
         for (uint slot = 0; slot < definitions.Count; slot++)
@@ -565,7 +565,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             Type type = definitions[checked((int)slot)].ValueType;
             TextureRequest textureRequest = default;
             MaterialResourceKind? kind =
-                typeof(SomeEngine.Assets.Schema.Texture).IsAssignableFrom(type)
+                typeof(SomeEngine.Resources.Texture).IsAssignableFrom(type)
                     ? ResolveTextureKind(slot, textureRequests, out textureRequest) :
                 type == typeof(SamplerDesc) ? MaterialResourceKind.Sampler :
                 typeof(BufferSrv).IsAssignableFrom(type) ? MaterialResourceKind.BufferSrv :

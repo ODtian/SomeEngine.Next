@@ -336,6 +336,12 @@ public static class DefaultContent
         const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
         using var settings = new VirtualShadowMapShadersBlock
             {
+                ResetFrame = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_frame_reset.shader"),
+                    "ResetVirtualShadowFrame", ShaderStage.Compute),
+                DynamicResolution = ShaderReference(
+                    ResolveRequired(project, "assets/Shaders/vsm_dynamic_resolution.shader"),
+                    "UpdateVirtualShadowDynamicResolution", ShaderStage.Compute),
                 MarkPages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_mark_pages.shader"),
                     "MarkVirtualShadowPages",

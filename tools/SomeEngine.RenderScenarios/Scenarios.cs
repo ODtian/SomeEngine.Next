@@ -199,7 +199,7 @@ File.WriteAllText(shaderPath, shader);
 AssetProject project = new AssetProject(destination, [Game.Importing.MaterialImport.CreateGltf()], sourceFormats: [new ShaderSourceFormat([engineShaders])]);
 await project.BuildAsync(Path.ChangeExtension(shaderPath, ".shader"));
 IAssetStorage storage = project.CreateStorage();
-AssetGuid sceneId = project.Resolve("assets/Scenes/default.scene.asset")!.Value;
+Guid sceneId = project.Resolve("assets/Scenes/default.scene.asset")!.Value;
 if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationException();
 await using var loader = new AssetLoader(storage);
 using var sceneFile = await WorldAsset.OpenAsync(loader, new AssetId<WorldAsset>(sceneId));

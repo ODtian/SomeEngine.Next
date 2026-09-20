@@ -1,4 +1,4 @@
-using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests;
 
@@ -17,8 +17,8 @@ public sealed class MaterialInheritanceTests
         Assert.Equal(0.25f, material.Roughness);
         Assert.Equal(0.75f, material.Coating);
         Assert.Equal(0.5f, material.Tint);
-        Assert.Equal(3, material.SlotCount);
-        Assert.Equal(3, material.Slots.Select(property => property.Name).Distinct().Count());
+        Assert.Equal(3, material.PropertyCount);
+        Assert.Equal(3, material.Properties.Select(property => property.Name).Distinct().Count());
 
         material.Coating = 0.9f;
         Assert.Equal(0.25f, material.Roughness);

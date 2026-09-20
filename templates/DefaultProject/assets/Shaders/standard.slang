@@ -1,5 +1,6 @@
 #include "generated/render_instance_layout.slang"
 #include "cluster_shade_pipeline.slang"
+#include "triangle_surface.slang"
 
 float3 MaterialCameraPosition(uint viewIndex)
 {
@@ -10,7 +11,7 @@ float3 MaterialCameraPosition(uint viewIndex)
 
 typedef StaticVertexEval VertexEvaluate;
 typedef LinearSurface DomainEvaluate;
-typedef OpaquePixelEvaluate PixelEvaluate;
+typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 typedef StandardMaterial SurfaceEvaluate;
 
 #include "cluster_material_entries.slang"

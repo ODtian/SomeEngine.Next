@@ -1,3 +1,4 @@
+using SomeEngine.Resources;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -23,8 +24,9 @@ public sealed class TemporalRenderingTests
         string root = FindRoot();
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library", "AssetManifest"));
         await using var assets = new AssetLoader(new LooseAssetStorage(root, manifest));
-        var record = manifest.List(AssetType<Shader>.Name).Single(item => item.Name == "temporal_resolve");
-        Shader shader = await assets.LoadAsync(new AssetId<Shader>(record.Guid));
+        var record = manifest.List(ShaderAsset.FileType).Single(item => item.Name == "temporal_resolve");
+        using ShaderAsset file = await ShaderAsset.OpenAsync(assets, new(record.AssetGuid));
+        using Shader shader = await file.GetBlock<ShaderBlock>().CreateAsync(file.Name);
         using IGraphicsBackend backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         var enumeration = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         backend.TryEnumerateAdapters(enumeration, [], out int count);
@@ -145,7 +147,7 @@ public sealed class TemporalRenderingTests
     private static string FindRoot()
     {
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) return directory.FullName;
+            if (File.Exists(Path.Combine(directory.FullName, "SomeEngine.slnx"))) return Path.Combine(directory.FullName, "templates", "DefaultProject");
         throw new DirectoryNotFoundException();
     }
 }

@@ -16,6 +16,27 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
     private PageBufferMap? _pixels;
     private int _disposed;
     private Texture() { }
+    private static long _nextTextureId;
+    private long _textureId = Interlocked.Increment(ref _nextTextureId);
+    private readonly List<Texture> _capturedContents = [];
+    private Texture? _capturedContent;
+    public long TextureId => _textureId;
+    public event Action<Texture>? Changed;
+
+    /// <summary>Retains this version's ready pixels for extraction into the rendering world.</summary>
+    public Texture CaptureData()
+    {
+        lock (_deviceGate)
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            if (_capturedContent is not null && _capturedContent.Revision == Revision) return _capturedContent;
+            Texture content = Create(GetDescription(), MipTiles, _pixels!, SampledDimension, SampledFormat);
+            content.Revision = Revision;
+            content._textureId = _textureId;
+            _capturedContents.Add(content);
+            return _capturedContent = content;
+        }
+    }
 
     public string? Name { get; private set; }
     public TextureDimension Dimension { get; private set; }
@@ -185,6 +206,7 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         current._pixels = Interlocked.Exchange(ref replacement._pixels, null);
         current.Revision = revision;
         previous?.Dispose();
+        current.Changed?.Invoke(current);
         return ValueTask.CompletedTask;
     }
 
@@ -194,7 +216,13 @@ public sealed partial class Texture : IDisposable, IAsyncDisposable
         try { ReleaseDevices(); }
         finally
         {
-            lock (_deviceGate) Interlocked.Exchange(ref _pixels, null)?.Dispose();
+            lock (_deviceGate)
+            {
+                Interlocked.Exchange(ref _pixels, null)?.Dispose();
+                foreach (Texture content in _capturedContents) content.Dispose();
+                _capturedContents.Clear();
+                _capturedContent = null;
+            }
         }
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }

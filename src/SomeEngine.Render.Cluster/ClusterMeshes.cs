@@ -29,7 +29,7 @@ internal sealed class ClusterPageSourceException : Exception
 }
 
 internal readonly record struct ClusterMeshRegistration(
-    MeshData Mesh,
+    Mesh Mesh,
     uint FirstPageId,
     uint PageCount,
     uint RootNode);
@@ -765,7 +765,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             _ => throw new ArgumentOutOfRangeException(nameof(index)),
         };
 
-    public bool TryGetPublishedRoot(MeshData mesh, out uint root)
+    public bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         lock (_gate)
         {

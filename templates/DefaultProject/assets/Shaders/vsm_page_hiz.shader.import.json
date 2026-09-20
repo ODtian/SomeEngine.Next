@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "3cffcda24ed7a79d599eac7dc991200c07f2396c8413269c376fd1a2447b4b6f",
+  "input_hash": "6e0bce398e963cf9f3ac49c0d85cdbd91ebbcd83fd8cd41fefd01ea2edd5b194",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/resource_effects.slang",
@@ -13,11 +13,11 @@
     },
     {
       "relative_path": "../../assets/Shaders/vsm_page_hiz_common.slang",
-      "content_hash": "3f8623db46777e7ae64848399f8bb7edaa735a7b441e2d4b6b5a24c163c6b6a8"
+      "content_hash": "dee7ba9a7248593d702d468cabfcbe553dc291c90876f1736f57efca562ab53b"
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_vsm_page_hiz.slang",
-      "content_hash": "9e925e127299269fcfc7a10a4660a68179a722794d2452dbe6d326ce0431a6d2"
+      "content_hash": "946a206c350e45e5b40d0936ae336850b887af23755d38c1b07bfc8f5ade5d57"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -25,7 +25,7 @@
     },
     {
       "relative_path": "assets/Shaders/vsm_page_hiz.shader",
-      "content_hash": "9fbe736c2578c3a07d4b84aa1a3fca5a407b0eb89a0fe36e6b54d95e6d448731"
+      "content_hash": "b5a41160e09c49efa81cfcf5287f0881e952929eac290bd4357740f3b7fdbbfd"
     }
   ],
   "reported_inputs": [],
@@ -33,11 +33,11 @@
     {
       "asset_guid": "9e2b02d5-9009-5400-931a-e6567172c763",
       "sub_asset_key": "",
-      "input_hash": "3cffcda24ed7a79d599eac7dc991200c07f2396c8413269c376fd1a2447b4b6f",
+      "input_hash": "6e0bce398e963cf9f3ac49c0d85cdbd91ebbcd83fd8cd41fefd01ea2edd5b194",
       "dependencies": [],
       "asset_path": "vsm_page_hiz.shader.asset",
-      "version": "6ae202fb-c4ba-0089-6269-f29f5cd783b0",
-      "content_hash": "CE18B76AE21E9C1948AB70F1B81FA35A6258DB5F9B06ABDE40603BA0985167F6",
+      "version": "9a364a86-bc74-48d8-b287-c330cc661269",
+      "content_hash": "1C002DFBA2B3FF85F0D03CD2A9003461C18C0463F2AC77A2B59898DA64A94B24",
       "asset_dependencies": []
     }
   ]

@@ -232,7 +232,7 @@ internal sealed partial class ClusterMeshes
         return idle;
     }
 
-    internal bool IsMeshRegistered(MeshData mesh)
+    internal bool IsMeshRegistered(Mesh mesh)
     {
         lock (_gate)
         {

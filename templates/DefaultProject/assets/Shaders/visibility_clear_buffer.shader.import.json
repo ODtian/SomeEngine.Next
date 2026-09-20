@@ -1,7 +1,7 @@
 {
   "importer_id": "00000000-0000-0000-0000-000000000000",
   "importer_version": 26,
-  "input_hash": "c7099a04fac0fa18ec621d2e35154df68a6a1df6a3bc62f62c820fa83bee195e",
+  "input_hash": "9ee723b05dc5aa5260a815f89f543388f1fa7b68efe468b99c1c23c74d9a8fa0",
   "inputs": [
     {
       "relative_path": "../../assets/Shaders/visibility_clear.slang",
@@ -13,7 +13,7 @@
     },
     {
       "relative_path": "assets/Shaders/Pipeline/build_visibility_clear_buffer.slang",
-      "content_hash": "45e4fe18dfeea9807987db1e610b2a866b46a02491643dabf6d8c04e25f40623"
+      "content_hash": "286cef85e02f21a96689e3d740f773888340f1e53ac08ec8f9f261dba0d4f48d"
     },
     {
       "relative_path": "assets/Shaders/generated/render_instance_layout.slang",
@@ -21,7 +21,7 @@
     },
     {
       "relative_path": "assets/Shaders/visibility_clear_buffer.shader",
-      "content_hash": "c33e7df014f63e81e84c0c77723b61745217ba7c85920dff5649a5de00cc01ae"
+      "content_hash": "3e49cf1c8642250f55a51761219538a23ca80638f95688406643e5f192afeea3"
     }
   ],
   "reported_inputs": [],
@@ -29,11 +29,11 @@
     {
       "asset_guid": "1976ef5e-8434-56cf-90bc-11c0ea91d60c",
       "sub_asset_key": "",
-      "input_hash": "c7099a04fac0fa18ec621d2e35154df68a6a1df6a3bc62f62c820fa83bee195e",
+      "input_hash": "9ee723b05dc5aa5260a815f89f543388f1fa7b68efe468b99c1c23c74d9a8fa0",
       "dependencies": [],
       "asset_path": "visibility_clear_buffer.shader.asset",
-      "version": "fdbf902a-7b3a-5f7c-710c-8c5f1afb7480",
-      "content_hash": "FBDC1F2EBC126C19A5011DBEDD189BC6DBDD8EEB5049AFF553A745F3E7509AC9",
+      "version": "518711d6-af94-74b4-9ca1-f8957a15de90",
+      "content_hash": "DF10AA8762F3985E91A7EEA2C77F105DC59CADFF9FB6969F6D0C7D6ECBABB632",
       "asset_dependencies": []
     }
   ]

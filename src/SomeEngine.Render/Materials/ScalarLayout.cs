@@ -184,7 +184,7 @@ public sealed class ScalarLayout
     internal ScalarMaterialLayout Resolve(MaterialData material)
     {
         ArgumentNullException.ThrowIfNull(material);
-        IReadOnlyList<MaterialSlotDefinition> definitions = material.Properties;
+        IReadOnlyList<MaterialPropertyDefinition> definitions = material.Properties;
         var bindings = new List<ScalarMaterialBinding>(_fields.Count);
         for (int fieldIndex = 0; fieldIndex < _fields.Count; fieldIndex++)
         {

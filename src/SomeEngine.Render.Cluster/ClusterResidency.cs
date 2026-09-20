@@ -205,7 +205,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         return _meshes.RegisterMeshAsync(mesh, cancellationToken, pageSource);
     }
 
-    internal bool IsMeshRegistered(MeshData mesh)
+    internal bool IsMeshRegistered(Mesh mesh)
     {
         ThrowIfNotActive();
         return _meshes.IsMeshRegistered(mesh);
@@ -255,7 +255,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             throw new InvalidOperationException("The discarded Cluster residency publication is stale.");
     }
 
-    internal bool TryGetPublishedRoot(MeshData mesh, out uint root)
+    internal bool TryGetPublishedRoot(Mesh mesh, out uint root)
     {
         ThrowIfNotActive();
         return _meshes.TryGetPublishedRoot(mesh, out root);

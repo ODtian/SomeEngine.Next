@@ -4,8 +4,7 @@ using SomeEngine.Serialization.IO;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
-[Asset(".reading.asset")]
-public sealed partial class ReadingSample : IDisposable
+public sealed class ReadingSample : IDisposable
 {
     public static int Created;
     public ReadingSample() : this("sample", 0) { }

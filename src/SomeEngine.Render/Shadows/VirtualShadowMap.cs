@@ -81,7 +81,7 @@ public sealed class VirtualShadowMap : IDisposable
         try
         {
             resetFrame = LinkedComputePipeline.Create(
-                _backend, _device, assets, shaders.ResetFrame, "Virtual shadow frame reset");
+                _backend, _device, shaders.ResetFrame, "Virtual shadow frame reset");
             markPages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -135,7 +135,6 @@ public sealed class VirtualShadowMap : IDisposable
             dynamicResolution = LinkedComputePipeline.Create(
                 _backend,
                 _device,
-                assets,
                 shaders.DynamicResolution,
                 "Virtual shadow dynamic resolution feedback");
             physicalPageOwners = _backend.CreateBuffer(
